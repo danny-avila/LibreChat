@@ -1,0 +1,13 @@
+{
+  "editor.lightbulb.enabled": false,
+  "editor.parameterHints.enabled": false,
+  "editor.renderWhitespace": "all",
+  "editor.snippetSuggestions": "none",
+  "editor.tabSize": 2,
+  "editor.wordWrap": "on",
+  "emmet.showExpandedAbbreviation": "never",
+  "files.trimTrailingWhitespace": true,
+  "javascript.suggest.enabled": false,
+  "javascript.updateImportsOnFileMove.enabled": "never",
+  "javascript.validate.enable": false
+}
