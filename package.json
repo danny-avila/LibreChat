@@ -20,6 +20,9 @@
   },
   "homepage": "https://github.com/danny-avila/rpp2210-mvp#readme",
   "dependencies": {
+    "chatgpt": "^4.1.1",
+    "dotenv": "^16.0.3",
+    "mongoose": "^6.9.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
@@ -39,6 +42,7 @@
     "eslint-config-prettier": "^8.6.0",
     "eslint-plugin-jest": "^27.2.1",
     "html-webpack-plugin": "^5.5.0",
+    "nodemon": "^2.0.20",
     "path": "^0.12.7",
     "postcss": "^8.4.21",
     "postcss-loader": "^7.0.2",
