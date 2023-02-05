@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import TextChat from './components/TextChat';
 
 const App = () => {
+  const [messages, setMessages] = useState([]);
 
   return (
     <div className="flex h-screen">

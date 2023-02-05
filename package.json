@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "webpack-dev-server .",
-    "build": "Webpack .",
+    "build": "Webpack . --watch",
+    "server": "npx nodemon server/index.js",
     "test": "test"
   },
   "repository": {
@@ -21,6 +22,7 @@
   "homepage": "https://github.com/danny-avila/rpp2210-mvp#readme",
   "dependencies": {
     "chatgpt": "^4.1.1",
+    "cors": "^2.8.5",
     "crypto-browserify": "^3.12.0",
     "dotenv": "^16.0.3",
     "eventsource": "^2.0.2",
