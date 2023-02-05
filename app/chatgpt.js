@@ -1,10 +1,12 @@
 require('dotenv').config();
-(async () => {
+
+const ask = async (question) => {
   const { ChatGPTAPI } = await import('chatgpt');
-
   const api = new ChatGPTAPI({ apiKey: process.env.OPENAI_KEY });
+  const res = await api.sendMessage(question, {
+    onProgress: (partialRes) => console.log(partialRes.text)
+  });
+  return res;
+};
 
-  // send a message and wait for the response
-  let res = await api.sendMessage('What is OpenAI?');
-  console.log(res);
-})();
+module.exports = { ask };
