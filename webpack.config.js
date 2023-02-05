@@ -59,7 +59,20 @@ module.exports = {
      * resolve the one with the extension listed first in the array and skip the rest.
      * This is what enables users to leave off the extension when importing
      */
-    extensions: ['.js', '.jsx', '.json']
+    extensions: ['.js', '.jsx', '.json'],
+    fallback: {
+      url: require.resolve('url/'),
+      fs: false,
+      tls: false,
+      net: false,
+      path: false,
+      zlib: false,
+      http: false,
+      https: false,
+      stream: false,
+      crypto: false,
+      'crypto-browserify': require.resolve('crypto-browserify') //if you want to use this module also don't forget npm i crypto-browserify
+    }
   },
   module: {
     /** "rules"

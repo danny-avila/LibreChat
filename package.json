@@ -21,10 +21,13 @@
   "homepage": "https://github.com/danny-avila/rpp2210-mvp#readme",
   "dependencies": {
     "chatgpt": "^4.1.1",
+    "crypto-browserify": "^3.12.0",
     "dotenv": "^16.0.3",
+    "eventsource": "^2.0.2",
     "mongoose": "^6.9.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "url": "^0.11.0"
   },
   "devDependencies": {
     "@babel/cli": "^7.20.7",
