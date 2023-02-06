@@ -1,5 +1,5 @@
 const express = require('express');
-const { ask } = require('../app/chatgpt');
+const { ask, titleConversation } = require('../app/chatgpt');
 const dbConnect = require('../models/dbConnect');
 const { saveMessage } = require('../models/Message');
 const { saveConversation } = require('../models/Conversation');
@@ -52,6 +52,8 @@ app.post('/ask', async (req, res) => {
   if (!!parentMessageId) {
     // console.log('req parent vs res parent', parentMessageId, gptResponse.parentMessageId);
     gptResponse = { ...gptResponse, parentMessageId };
+  } else {
+    gptResponse.title = await titleConversation(text, gptResponse.text);
   }
 
   gptResponse.sender = 'GPT';

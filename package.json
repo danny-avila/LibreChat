@@ -29,6 +29,7 @@
     "eventsource": "^2.0.2",
     "keyv": "^4.5.2",
     "mongoose": "^6.9.0",
+    "openai": "^3.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-textarea-autosize": "^8.4.0",

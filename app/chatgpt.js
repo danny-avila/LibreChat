@@ -1,5 +1,6 @@
 require('dotenv').config();
 const Keyv = require('keyv');
+const { Configuration, OpenAIApi } = require('openai');
 const messageStore = new Keyv(process.env.MONGODB_URI, { namespace: 'chatgpt' });
 
 const ask = async (question, progressCallback, convo) => {
@@ -21,4 +22,17 @@ const ask = async (question, progressCallback, convo) => {
   return res;
 };
 
-module.exports = { ask };
+const titleConversation = async (message, response) => {
+  const configuration = new Configuration({
+    apiKey: process.env.OPENAI_KEY
+  });
+  const openai = new OpenAIApi(configuration);
+  const completion = await openai.createCompletion({
+    model: 'text-davinci-002',
+    prompt: `Make a short title (goal: 5 words or less) in title case summarizing this conversation:\nuser:"${message}"\nGPT:"${response}"\nTitle: `
+  });
+  console.log(completion.data.choices[0].text);
+  return completion.data.choices[0].text.replace(/\n/g, '');
+};
+
+module.exports = { ask, titleConversation };

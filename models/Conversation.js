@@ -11,6 +11,10 @@ const convoSchema = mongoose.Schema({
     type: String,
     required: true
   },
+  title: {
+    type: String,
+    default: 'New conversation',
+  },
   messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
   created: {
     type: Date,
@@ -22,12 +26,16 @@ const Conversation =
   mongoose.models.Conversation || mongoose.model('Conversation', convoSchema);
 
 module.exports = {
-  saveConversation: async ({ conversationId, parentMessageId }) => {
+  saveConversation: async ({ conversationId, parentMessageId, title }) => {
     const messages = await Message.find({ conversationId });
+    const update = { parentMessageId, messages };
+    if (title) {
+      update.title = title;
+    }
 
     await Conversation.findOneAndUpdate(
       { conversationId },
-      { $set: { parentMessageId, messages } },
+      { $set: update },
       { new: true, upsert: true }
     ).exec();
   }
