@@ -21,11 +21,13 @@
   },
   "homepage": "https://github.com/danny-avila/rpp2210-mvp#readme",
   "dependencies": {
+    "@keyv/mongo": "^2.1.8",
     "chatgpt": "^4.1.1",
     "cors": "^2.8.5",
     "crypto-browserify": "^3.12.0",
     "dotenv": "^16.0.3",
     "eventsource": "^2.0.2",
+    "keyv": "^4.5.2",
     "mongoose": "^6.9.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
