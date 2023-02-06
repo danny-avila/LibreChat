@@ -2,7 +2,7 @@ const express = require('express');
 const { ask, titleConversation } = require('../app/chatgpt');
 const dbConnect = require('../models/dbConnect');
 const { saveMessage } = require('../models/Message');
-const { saveConversation } = require('../models/Conversation');
+const { saveConversation, getConversations } = require('../models/Conversation');
 const crypto = require('crypto');
 const path = require('path');
 const cors = require('cors');
@@ -19,6 +19,10 @@ dbConnect().then((connection) => console.log('Connected to MongoDB'));
 app.get('/', function (req, res) {
   console.log(path.join(projectPath, 'public', 'index.html'));
   res.sendFile(path.join(projectPath, 'public', 'index.html'));
+});
+
+app.get('/convos', async (req, res) => {
+  res.status(200).send(await getConversations());
 });
 
 app.post('/ask', async (req, res) => {

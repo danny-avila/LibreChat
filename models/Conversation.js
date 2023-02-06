@@ -38,5 +38,8 @@ module.exports = {
       { $set: update },
       { new: true, upsert: true }
     ).exec();
-  }
+  },
+  getConversations: async () => {
+    return await Conversation.find({}).exec();
+  },
 };
