@@ -2,6 +2,7 @@ const express = require('express');
 const { ask } = require('../app/chatgpt');
 const dbConnect = require('../models/dbConnect');
 const { saveMessage } = require('../models/Message');
+const { saveConversation } = require('../models/Conversation');
 const crypto = require('crypto');
 const path = require('path');
 const cors = require('cors');
@@ -55,6 +56,7 @@ app.post('/ask', async (req, res) => {
 
   gptResponse.sender = 'GPT';
   await saveMessage(gptResponse);
+  await saveConversation(gptResponse);
 
   res.write(`event: message\ndata: ${JSON.stringify(gptResponse)}\n\n`);
   res.end();

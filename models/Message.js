@@ -40,5 +40,6 @@ module.exports = {
       sender,
       text
     });
-  }
+  },
+  Message,
 }
