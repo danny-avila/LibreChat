@@ -39,7 +39,12 @@ const handleSubmit = (text, messageHandler, convo, convoHandler) => {
   events.stream();
 };
 
-export default function TextChat({ messages, setMessages, conversation = null }) {
+export default function TextChat({
+  messages,
+  setMessages,
+  reloadConvos,
+  conversation = null
+}) {
   const [text, setText] = useState('');
   const [convo, setConvo] = useState({ conversationId: null, parentMessageId: null });
 
@@ -65,6 +70,8 @@ export default function TextChat({ messages, setMessages, conversation = null })
           const { conversationId, parentMessageId } = data;
           setConvo({ conversationId, parentMessageId: data.id });
         }
+
+        reloadConvos();
       };
       console.log('User Input:', payload);
       handleSubmit(payload, messageHandler, convo, convoHandler);
@@ -93,7 +100,7 @@ export default function TextChat({ messages, setMessages, conversation = null })
               onKeyUp={handleKeyPress}
               onChange={(e) => setText(e.target.value)}
               placeholder=""
-              className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-2 pr-7 leading-6 focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-0"
+              className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-2 pr-7 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-0"
             />
             <button className="absolute bottom-1.5 right-1 rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:hover:bg-transparent dark:hover:bg-gray-900 dark:hover:text-gray-400 dark:disabled:hover:bg-transparent md:bottom-2.5 md:right-2">
               <svg

@@ -27,7 +27,7 @@ const Conversation =
 
 module.exports = {
   saveConversation: async ({ conversationId, parentMessageId, title }) => {
-    const messages = await Message.find({ conversationId });
+    const messages = await Message.find({ conversationId }).exec();
     const update = { parentMessageId, messages };
     if (title) {
       update.title = title;
@@ -39,7 +39,5 @@ module.exports = {
       { new: true, upsert: true }
     ).exec();
   },
-  getConversations: async () => {
-    return await Conversation.find({}).exec();
-  },
+  getConversations: async () => await Conversation.find({}).exec(),
 };
