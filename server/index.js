@@ -25,6 +25,10 @@ app.get('/convos', async (req, res) => {
   res.status(200).send(await getConversations());
 });
 
+app.get('/messages', async (req, res) => {
+  res.status(200).send(await getConversations());
+});
+
 app.post('/ask', async (req, res) => {
   console.log(req.body);
   const { text, parentMessageId, conversationId } = req.body;

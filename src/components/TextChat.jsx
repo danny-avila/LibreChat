@@ -43,14 +43,15 @@ export default function TextChat({
   messages,
   setMessages,
   reloadConvos,
-  conversation = null
+  convo,
+  setConvo,
 }) {
   const [text, setText] = useState('');
-  const [convo, setConvo] = useState({ conversationId: null, parentMessageId: null });
+  // const [convo, setConvo] = useState({ conversationId: null, parentMessageId: null });
 
-  if (!!conversation) {
-    setConvo(conversation);
-  }
+  // if (!!conversation) {
+  //   setConvo(conversation);
+  // }
 
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && e.shiftKey) {
