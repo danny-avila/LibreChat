@@ -6,9 +6,9 @@ const ask = async (question, progressCallback, convo) => {
   const { ChatGPTAPI } = await import('chatgpt');
   const api = new ChatGPTAPI({ apiKey: process.env.OPENAI_KEY, messageStore });
   let options = {
-    onProgress: (partialRes) => {
+    onProgress: async (partialRes) => {
       if (partialRes.text.length > 0) {
-        progressCallback(partialRes);
+        await progressCallback(partialRes);
       }
     }
   };

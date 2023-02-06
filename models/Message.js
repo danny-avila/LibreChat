@@ -32,11 +32,12 @@ const Message = mongoose.models.Message || mongoose.model('Message', messageSche
 
 module.exports = {
   saveMessage: async (message) => {
-    const { text, id, parentMessageId, conversationId } = message;
+    const { id, conversationId, parentMessageId, sender, text } = message;
     await Message.create({
       id,
       conversationId,
       parentMessageId,
+      sender,
       text
     });
   }

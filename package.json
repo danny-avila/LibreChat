@@ -31,6 +31,7 @@
     "mongoose": "^6.9.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-textarea-autosize": "^8.4.0",
     "url": "^0.11.0"
   },
   "devDependencies": {

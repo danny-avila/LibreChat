@@ -25,12 +25,13 @@ async function dbConnect() {
     const opts = {
       useNewUrlParser: true,
       useUnifiedTopology: true,
-      bufferCommands: false,
+      bufferCommands: false
       // bufferMaxEntries: 0,
       // useFindAndModify: true,
       // useCreateIndex: true
     };
 
+    mongoose.set('strictQuery', true);
     cached.promise = mongoose.connect(MONGO_URI, opts).then((mongoose) => {
       return mongoose;
     });
