@@ -1,7 +1,7 @@
 const express = require('express');
-const { ask, titleConversation } = require('../app/chatgpt');
 const dbConnect = require('../models/dbConnect');
-const { saveMessage } = require('../models/Message');
+const { ask, titleConversation } = require('../app/chatgpt');
+const { saveMessage, getMessages } = require('../models/Message');
 const { saveConversation, getConversations } = require('../models/Conversation');
 const crypto = require('crypto');
 const path = require('path');
@@ -25,8 +25,9 @@ app.get('/convos', async (req, res) => {
   res.status(200).send(await getConversations());
 });
 
-app.get('/messages', async (req, res) => {
-  res.status(200).send(await getConversations());
+app.get('/messages/:conversationId', async (req, res) => {
+  const { conversationId } = req.params;
+  res.status(200).send(await getMessages({ conversationId }));
 });
 
 app.post('/ask', async (req, res) => {
@@ -44,7 +45,8 @@ app.post('/ask', async (req, res) => {
   });
 
   let i = 0;
-  const progressCallback = async (partial) => { // console.log('partial', partial);
+  const progressCallback = async (partial) => {
+    // console.log('partial', partial);
     if (i === 0) {
       userMessage.parentMessageId = parentMessageId ? parentMessageId : partial.id;
       userMessage.conversationId = conversationId ? conversationId : partial.conversationId;
@@ -58,7 +60,6 @@ app.post('/ask', async (req, res) => {
 
   let gptResponse = await ask(text, progressCallback, { parentMessageId, conversationId });
   if (!!parentMessageId) {
-    // console.log('req parent vs res parent', parentMessageId, gptResponse.parentMessageId);
     gptResponse = { ...gptResponse, parentMessageId };
   } else {
     gptResponse.title = await titleConversation(text, gptResponse.text);

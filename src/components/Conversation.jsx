@@ -1,8 +1,16 @@
 import React from 'react';
 
-export default function Conversation({ id, title = 'New conversation'}) {
+export default function Conversation({
+  id,
+  parentMessageId,
+  convoHandler,
+  title = 'New conversation'
+}) {
   return (
-    <a className="animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-800 py-3 px-3 pr-14 hover:bg-gray-800">
+    <a
+      onClick={() => convoHandler(id, parentMessageId)}
+      className="animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-800 py-3 px-3 pr-14 hover:bg-gray-800"
+    >
       <svg
         stroke="currentColor"
         fill="none"

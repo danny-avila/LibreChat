@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { Message } = require('./Message');
+const { getMessages } = require('./Message');
 
 const convoSchema = mongoose.Schema({
   conversationId: {
@@ -27,7 +27,7 @@ const Conversation =
 
 module.exports = {
   saveConversation: async ({ conversationId, parentMessageId, title }) => {
-    const messages = await Message.find({ conversationId }).exec();
+    const messages = await getMessages({ conversationId });
     const update = { parentMessageId, messages };
     if (title) {
       update.title = title;

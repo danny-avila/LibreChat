@@ -40,5 +40,5 @@ module.exports = {
       text
     });
   },
-  Message,
+  getMessages: async (filter) => await Message.find(filter).exec(),
 }

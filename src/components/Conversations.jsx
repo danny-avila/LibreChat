@@ -9,8 +9,10 @@ export default function Conversations({ conversations, convoHandler }) {
           conversations.map((convo, i) => (
             <Conversation
               key={convo.conversationId}
+              id={convo.conversationId}
+              parentMessageId={convo.parentMessageId}
               title={convo.title}
-              onClick={() => convoHandler(convo.conversationId)}
+              convoHandler={convoHandler}
             />
           ))}
         {conversations && conversations.length >= 12 && (
