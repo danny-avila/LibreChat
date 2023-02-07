@@ -6,9 +6,10 @@ import { useSelector, useDispatch } from 'react-redux';
 import { setConversation } from '../../store/convoSlice';
 import { setMessages } from '../../store/messageSlice';
 
-export default function TextChat({ messages, reloadConvos, convo }) {
+export default function TextChat({ messages, reloadConvos }) {
   const [text, setText] = useState('');
   const dispatch = useDispatch();
+  const convo = useSelector((state) => state.convo);
 
   const submitMessage = () => {
     const payload = text.trim();
@@ -21,7 +22,6 @@ export default function TextChat({ messages, reloadConvos, convo }) {
     const convoHandler = (data) => {
       if (convo.conversationId === null && convo.parentMessageId === null) {
         const { conversationId, parentMessageId } = data;
-        // setConvo({ conversationId, parentMessageId: data.id });
         dispatch(setConversation({ conversationId, parentMessageId: data.id }));
       }
 

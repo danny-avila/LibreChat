@@ -7,13 +7,11 @@ const currentSlice = createSlice({
   initialState,
   reducers: {
     setMessages: (state, action) => {
-      console.log('in setMessages reducer');
       const { payload } = action;
-      state = payload;
+      return [...payload];
     },
   }
 });
-//
 
 export const { setMessages } = currentSlice.actions;
 

@@ -10,21 +10,19 @@ const fetcher = (url) => fetch(url).then((res) => res.json());
 
 export default function Conversation({ id, parentMessageId, title = 'New conversation' }) {
   const dispatch = useDispatch();
+  const conversationId = useSelector((state) => state.convo.conversationId);
+
   const { trigger, isMutating } = useSWRMutation(
-    //{ trigger, isMutating }
     `http://localhost:3050/messages/${id}`,
     fetcher,
     {
       onSuccess: function (res) {
-        console.log('success', res);
         dispatch(setMessages(res));
-        // setMessages(res);
       }
     }
   );
 
   const onConvoClick = (id, parentMessageId) => {
-    console.log('convo was clicked');
     dispatch(setConversation({ conversationId: id, parentMessageId }));
     trigger();
   };
@@ -52,8 +50,8 @@ export default function Conversation({ id, parentMessageId, title = 'New convers
         {title}
       </div>
       <div className="visible absolute right-1 z-10 flex text-gray-300">
-        <RenameButton />
-        <DeleteButton />
+        {id === conversationId && <RenameButton />}
+        {id === conversationId && <DeleteButton />}
       </div>
     </a>
   );
