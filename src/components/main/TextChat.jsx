@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import SubmitButton from './SubmitButton';
 import TextareaAutosize from 'react-textarea-autosize';
-import handleSubmit from '../utils/handleSubmit';
+import handleSubmit from '~/utils/handleSubmit';
 import { useSelector, useDispatch } from 'react-redux';
-import { setConversation } from '../../store/convoSlice';
-import { setMessages } from '../../store/messageSlice';
+import { setConversation } from '~/store/convoSlice';
+import { setMessages } from '~/store/messageSlice';
 
 export default function TextChat({ messages, reloadConvos }) {
   const [text, setText] = useState('');

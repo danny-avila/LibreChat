@@ -2,7 +2,7 @@ import React from 'react';
 // import reactDom from 'react-dom'; ---> deprecated
 import { createRoot } from 'react-dom/client';
 import { Provider } from 'react-redux';
-import { store } from './store';
+import { store } from './src/store';
 import App from './src/App';
 import './src/style.css';
 

@@ -1,9 +1,11 @@
 import React from 'react';
+import TrashIcon from '../svg/TrashIcon';
 
 export default function DeleteButton({ onClick, disabled }) {
   return (
     <button className="p-1 hover:text-white">
-      <svg
+      <TrashIcon />
+      {/* <svg
         stroke="currentColor"
         fill="none"
         strokeWidth="2"
@@ -29,7 +31,7 @@ export default function DeleteButton({ onClick, disabled }) {
           x2="14"
           y2="17"
         />
-      </svg>
+      </svg> */}
     </button>
   );
 }

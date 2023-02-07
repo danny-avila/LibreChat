@@ -1,9 +1,9 @@
 import React from 'react';
 import { useSelector } from 'react-redux';
-import Messages from './components/Messages';
-import TextChat from './components/TextChat';
+import Messages from './components/main/Messages';
+import TextChat from './components/main/TextChat';
 import Nav from './components/Nav';
-import MobileNav from './components/MobileNav';
+import MobileNav from './components/Nav/MobileNav';
 import useSWR from 'swr';
 
 const fetcher = (url) => fetch(url).then((res) => res.json());

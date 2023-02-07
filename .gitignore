@@ -22,6 +22,7 @@ coverage
 build/
 dist/
 public/main.js
+public/main.js.map
 
 # Dependency directorys
 # Deployed apps should consider commenting these lines out:

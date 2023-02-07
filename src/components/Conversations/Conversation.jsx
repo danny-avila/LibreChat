@@ -2,8 +2,8 @@ import React from 'react';
 import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
 import { useSelector, useDispatch } from 'react-redux';
-import { setConversation } from '../../store/convoSlice';
-import { setMessages } from '../../store/messageSlice';
+import { setConversation } from '~/store/convoSlice';
+import { setMessages } from '~/store/messageSlice';
 import useSWRMutation from 'swr/mutation';
 
 const fetcher = (url) => fetch(url).then((res) => res.json());

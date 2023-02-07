@@ -1,6 +1,6 @@
 import React from 'react';
 import NewChat from './NewChat';
-import Conversations from './Conversations';
+import Conversations from '../Conversations';
 import NavLinks from './NavLinks';
 
 export default function Nav({ conversations }) {

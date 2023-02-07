@@ -11,6 +11,13 @@
       Babel's code transformations are enabled by applying plugins (or presets) to your configuration file.
   */
   "plugins": [
-      "@babel/plugin-transform-runtime"
+      "@babel/plugin-transform-runtime",
+      [
+        "babel-plugin-root-import",
+        {
+          "rootPathPrefix": "~/",
+          "rootPathSuffix": "./src"
+        }
+      ]
   ]
 }
