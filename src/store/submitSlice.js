@@ -1,19 +1,19 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
-  messages: [],
+  isSubmitting: false,
 };
 
 const currentSlice = createSlice({
-  name: 'messages',
+  name: 'submit',
   initialState,
   reducers: {
-    setMessages: (state, action) => {
-      state.messages = [...action.payload];
+    setSubmitState: (state, action) => {
+      state.isSubmitting = action.payload;
     },
   }
 });
 
-export const { setMessages, setSubmitState } = currentSlice.actions;
+export const { setSubmitState } = currentSlice.actions;
 
 export default currentSlice.reducer;

@@ -1,7 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import Message from './Message';
+import Landing from './Landing';
 
 export default function Messages({ messages }) {
+
+  if (messages.length === 0) {
+    return <Landing />
+  };
+
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -23,6 +29,7 @@ export default function Messages({ messages }) {
           key={i}
           sender={message.sender}
           text={message.text}
+          last={i === messages.length - 1}
         />
       ))}
       <div ref={messagesEndRef} />

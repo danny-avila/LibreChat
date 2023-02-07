@@ -6,3 +6,33 @@
   box-sizing: border-box;
   outline: 1px solid limegreen !important;
 } */
+
+.blink {
+  animation: blink 1s linear infinite;
+}
+@keyframes blink {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.blink2 {
+  animation: blink 1500ms linear infinite;
+}
+@keyframes blink2 {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}

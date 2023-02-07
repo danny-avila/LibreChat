@@ -1,8 +1,30 @@
 import React from 'react';
+import { useSelector } from 'react-redux';
+import useDidMountEffect from '~/hooks/useDidMountEffect';
 
-export default function SubmitButton({ onClick, disabled }) {
+export default function SubmitButton({ submitMessage }) {
+  const { isSubmitting } = useSelector((state) => state.submit);
+  const clickHandler = (e) => {
+    e.preventDefault();
+    submitMessage();
+  };
+
+  if (isSubmitting) {
+    return (
+      <button className="absolute bottom-1.5 right-1 rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:bottom-0.5 disabled:hover:bg-transparent dark:hover:bg-gray-900 dark:hover:text-gray-400 dark:disabled:hover:bg-transparent md:bottom-2.5 md:right-2 md:disabled:bottom-1">
+        <div className="text-2xl">
+          <span >·</span>
+          <span className="blink">·</span>
+          <span className="blink2">·</span>
+        </div>
+      </button>
+    );
+  }
   return (
-    <button onClick={onClick} className="absolute bottom-1.5 right-1 rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:hover:bg-transparent dark:hover:bg-gray-900 dark:hover:text-gray-400 dark:disabled:hover:bg-transparent md:bottom-2.5 md:right-2">
+    <button
+      onClick={clickHandler}
+      className="absolute bottom-1.5 right-1 rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:hover:bg-transparent dark:hover:bg-gray-900 dark:hover:text-gray-400 dark:disabled:hover:bg-transparent md:bottom-2.5 md:right-2"
+    >
       <svg
         stroke="currentColor"
         fill="none"
@@ -25,4 +47,8 @@ export default function SubmitButton({ onClick, disabled }) {
       </svg>
     </button>
   );
+}
+
+{
+  /* <div class="text-2xl"><span class="">·</span><span class="">·</span><span class="invisible">·</span></div> */
 }

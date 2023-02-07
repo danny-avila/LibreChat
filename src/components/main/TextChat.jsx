@@ -5,16 +5,23 @@ import handleSubmit from '~/utils/handleSubmit';
 import { useSelector, useDispatch } from 'react-redux';
 import { setConversation } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
+import { setSubmitState } from '~/store/submitSlice';
 
 export default function TextChat({ messages, reloadConvos }) {
   const [text, setText] = useState('');
   const dispatch = useDispatch();
   const convo = useSelector((state) => state.convo);
+  const { isSubmitting } = useSelector((state) => state.submit);
 
   const submitMessage = () => {
+    if (!!isSubmitting || text.trim() === '') {
+      return;
+    }
+    dispatch(setSubmitState(true));
     const payload = text.trim();
     const currentMsg = { sender: 'user', text: payload, current: true };
-    dispatch(setMessages([...messages, currentMsg]));
+    const initialResponse = { sender: 'GPT', text: '' };
+    dispatch(setMessages([...messages, currentMsg, initialResponse]));
     setText('');
     const messageHandler = (data) => {
       dispatch(setMessages([...messages, currentMsg, { sender: 'GPT', text: data }]));
@@ -26,6 +33,7 @@ export default function TextChat({ messages, reloadConvos }) {
       }
 
       reloadConvos();
+      dispatch(setSubmitState(false));
     };
     console.log('User Input:', payload);
     handleSubmit(payload, messageHandler, convo, convoHandler);
@@ -37,18 +45,22 @@ export default function TextChat({ messages, reloadConvos }) {
     }
 
     if (e.key === 'Enter' && !e.shiftKey) {
+      if (!!isSubmitting) {
+        return;
+      }
       submitMessage();
     }
   };
 
-  // <>
-  //   <textarea
-  //     className="m-10 h-16 p-4"
-  //     value={text}
-  //     onKeyUp={handleKeyPress}
-  //     onChange={(e) => setText(e.target.value)}
-  //   />
-  // </>
+  const changeHandler = (e) => {
+    // console.log('changeHandler', JSON.stringify(e.target.value));
+    const { value } = e.target;
+    if (isSubmitting && (value === '' || value === '\n')) {
+      return;
+    }
+    setText(value);
+  };
+
   return (
     <div className="md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient w-full border-t bg-white dark:border-white/20 dark:bg-gray-800 md:border-t-0 md:border-transparent md:!bg-transparent md:dark:border-transparent">
       <form className="stretch mx-2 flex flex-row gap-3 pt-2 last:mb-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
@@ -61,11 +73,11 @@ export default function TextChat({ messages, reloadConvos }) {
               rows="1"
               value={text}
               onKeyUp={handleKeyPress}
-              onChange={(e) => setText(e.target.value)}
+              onChange={changeHandler}
               placeholder=""
               className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-2 pr-7 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-0"
             />
-            <SubmitButton onClick={() => submitMessage()} />
+            <SubmitButton submitMessage={submitMessage} />
           </div>
         </div>
       </form>

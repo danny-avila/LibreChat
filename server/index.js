@@ -1,8 +1,8 @@
 const express = require('express');
 const dbConnect = require('../models/dbConnect');
 const { ask, titleConversation } = require('../app/chatgpt');
-const { saveMessage, getMessages, deleteAllMessages } = require('../models/Message');
-const { saveConversation, getConversations } = require('../models/Conversation');
+const { saveMessage, getMessages } = require('../models/Message');
+const { saveConvo, getConvos, deleteConvos } = require('../models/Conversation');
 const crypto = require('crypto');
 const path = require('path');
 const cors = require('cors');
@@ -22,7 +22,7 @@ app.get('/', function (req, res) {
 });
 
 app.get('/convos', async (req, res) => {
-  res.status(200).send(await getConversations());
+  res.status(200).send(await getConvos());
 });
 
 app.get('/messages/:conversationId', async (req, res) => {
@@ -31,10 +31,20 @@ app.get('/messages/:conversationId', async (req, res) => {
 });
 
 app.post('/clear_convos', async (req, res) => {
-  const { conversationId } = req.body;
+  let filter = {};
+  const { conversationId } = req.body.arg;
   console.log('conversationId', conversationId);
-  const filter = {};
-  res.status(201).send(await deleteAllMessages(filter));
+  if (!!conversationId) {
+    filter = { conversationId };
+  }
+
+  try {
+    const dbResponse = await deleteConvos(filter);
+    res.status(201).send(dbResponse);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send(error);
+  }
 });
 
 app.post('/ask', async (req, res) => {
@@ -50,6 +60,8 @@ app.post('/ask', async (req, res) => {
     'Access-Control-Allow-Origin': '*',
     'X-Accel-Buffering': 'no'
   });
+
+  // res.write(`event: message\ndata: ${JSON.stringify('')}\n\n`);
 
   let i = 0;
   const progressCallback = async (partial) => {
@@ -74,7 +86,7 @@ app.post('/ask', async (req, res) => {
 
   gptResponse.sender = 'GPT';
   await saveMessage(gptResponse);
-  await saveConversation(gptResponse);
+  await saveConvo(gptResponse);
 
   res.write(`event: message\ndata: ${JSON.stringify(gptResponse)}\n\n`);
   res.end();

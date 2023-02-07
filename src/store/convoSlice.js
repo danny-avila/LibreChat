@@ -11,9 +11,7 @@ const currentSlice = createSlice({
   initialState,
   reducers: {
     setConversation: (state, action) => {
-      const { conversationId, parentMessageId } = action.payload;
-      state.conversationId = conversationId;
-      state.parentMessageId = parentMessageId;
+      return { ...state, ...action.payload };
     },
   }
 });

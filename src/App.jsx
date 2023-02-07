@@ -4,14 +4,14 @@ import Messages from './components/main/Messages';
 import TextChat from './components/main/TextChat';
 import Nav from './components/Nav';
 import MobileNav from './components/Nav/MobileNav';
-import useSWR from 'swr';
-
-const fetcher = (url) => fetch(url).then((res) => res.json());
-// const postRequest = async (url, { arg }) => await axios.post(url, { arg });
+import { swr } from './utils/fetchers';
+import useDidMountEffect from './hooks/useDidMountEffect';
 
 const App = () => {
-  const messages = useSelector((state) => state.messages);
-  const { data, error, isLoading, mutate } = useSWR('http://localhost:3050/convos', fetcher);
+  const { messages } = useSelector((state) => state.messages);
+  const convo = useSelector((state) => state.convo);
+  const { data, error, isLoading, mutate } = swr('http://localhost:3050/convos');
+  useDidMountEffect(() => mutate(), [convo]);
 
   return (
     <div className="flex h-screen">
@@ -22,7 +22,10 @@ const App = () => {
         {/* <main className="relative h-full w-full transition-width flex flex-col overflow-hidden items-stretch flex-1"> */}
         <MobileNav />
         <Messages messages={messages} />
-        <TextChat messages={messages} reloadConvos={mutate} />
+        <TextChat
+          messages={messages}
+          reloadConvos={mutate}
+        />
         {/* </main> */}
       </div>
     </div>

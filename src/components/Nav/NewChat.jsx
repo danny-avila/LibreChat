@@ -1,8 +1,21 @@
 import React from 'react';
+import { useDispatch } from 'react-redux';
+import { setConversation } from '~/store/convoSlice';
+import { setMessages } from '~/store/messageSlice';
 
 export default function NewChat() {
+  const dispatch = useDispatch();
+
+  const clickHandler = () => {
+    dispatch(setMessages([]));
+    dispatch(setConversation({ conversationId: null, parentMessageId: null }));
+  };
+
   return (
-    <a className="mb-2 flex flex-shrink-0 cursor-pointer items-center gap-3 rounded-md border border-white/20 py-3 px-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10">
+    <a
+      onClick={clickHandler}
+      className="mb-2 flex flex-shrink-0 cursor-pointer items-center gap-3 rounded-md border border-white/20 py-3 px-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10"
+    >
       <svg
         stroke="currentColor"
         fill="none"

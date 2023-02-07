@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { getMessages } = require('./Message');
+const { getMessages, deleteMessages } = require('./Message');
 
 const convoSchema = mongoose.Schema({
   conversationId: {
@@ -26,7 +26,7 @@ const Conversation =
   mongoose.models.Conversation || mongoose.model('Conversation', convoSchema);
 
 module.exports = {
-  saveConversation: async ({ conversationId, parentMessageId, title }) => {
+  saveConvo: async ({ conversationId, parentMessageId, title }) => {
     const messages = await getMessages({ conversationId });
     const update = { parentMessageId, messages };
     if (title) {
@@ -39,5 +39,16 @@ module.exports = {
       { new: true, upsert: true }
     ).exec();
   },
-  getConversations: async () => await Conversation.find({}).exec(),
+  getConvos: async () => await Conversation.find({}).exec(),
+  deleteConvos: async (filter) => {
+    // const filter = {};
+
+    // if (!!conversationId) {
+    //   filter = conversationId;
+    // }
+
+    let deleteCount = await Conversation.deleteMany(filter).exec();
+    deleteCount.messages = await deleteMessages(filter);
+    return deleteCount;
+  }
 };

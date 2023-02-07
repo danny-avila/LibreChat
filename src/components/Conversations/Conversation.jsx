@@ -4,32 +4,29 @@ import DeleteButton from './DeleteButton';
 import { useSelector, useDispatch } from 'react-redux';
 import { setConversation } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
-import useSWRMutation from 'swr/mutation';
-
-const fetcher = (url) => fetch(url).then((res) => res.json());
+import manualSWR from '~/utils/fetchers';
 
 export default function Conversation({ id, parentMessageId, title = 'New conversation' }) {
   const dispatch = useDispatch();
   const conversationId = useSelector((state) => state.convo.conversationId);
-
-  const { trigger, isMutating } = useSWRMutation(
+  const { trigger, isMutating } = manualSWR(
     `http://localhost:3050/messages/${id}`,
-    fetcher,
-    {
-      onSuccess: function (res) {
-        dispatch(setMessages(res));
-      }
-    }
+    'get',
+    (res) => dispatch(setMessages(res))
   );
 
-  const onConvoClick = (id, parentMessageId) => {
+  const clickHandler = () => {
+    if (conversationId === id) {
+      return;
+    }
+
     dispatch(setConversation({ conversationId: id, parentMessageId }));
     trigger();
   };
 
   return (
     <a
-      onClick={() => onConvoClick(id, parentMessageId)}
+      onClick={() => clickHandler()}
       className="animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-800 py-3 px-3 pr-14 hover:bg-gray-800"
     >
       <svg
@@ -50,8 +47,8 @@ export default function Conversation({ id, parentMessageId, title = 'New convers
         {title}
       </div>
       <div className="visible absolute right-1 z-10 flex text-gray-300">
-        {id === conversationId && <RenameButton />}
-        {id === conversationId && <DeleteButton />}
+        {id === conversationId && <RenameButton conversationId={id} />}
+        {id === conversationId && <DeleteButton conversationId={id} />}
       </div>
     </a>
   );
