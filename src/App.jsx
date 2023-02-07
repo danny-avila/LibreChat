@@ -9,13 +9,14 @@ import useDidMountEffect from './hooks/useDidMountEffect.js';
 import axios from 'axios';
 
 const fetcher = (url) => fetch(url).then((res) => res.json());
+const postRequest = async (url, { arg }) => await axios.post(url, { arg });
 
 const App = () => {
   const [messages, setMessages] = useState([]);
   const [convo, setConvo] = useState({ conversationId: null, parentMessageId: null });
   const { data, error, isLoading, mutate } = useSWR('http://localhost:3050/convos', fetcher);
 
-  const { trigger, isMutating } = useSWRMutation(
+  const conversation = useSWRMutation( //{ trigger, isMutating }
     `http://localhost:3050/messages/${convo.conversationId}`,
     fetcher,
     {
@@ -26,7 +27,7 @@ const App = () => {
     }
   );
 
-  useDidMountEffect(() => trigger(), [convo]);
+  useDidMountEffect(() => conversation.trigger(), [convo]);
 
   const onConvoClick = (conversationId, parentMessageId) => {
     console.log('convo was clicked');
@@ -38,6 +39,7 @@ const App = () => {
       {/* <div className="w-80 bg-slate-800"></div> */}
       <Nav
         conversations={data}
+        convo={convo}
         convoHandler={onConvoClick}
       />
       {/* <div className="flex h-full flex-1 flex-col md:pl-[260px]"> */}

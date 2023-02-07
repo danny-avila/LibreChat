@@ -41,4 +41,5 @@ module.exports = {
     });
   },
   getMessages: async (filter) => await Message.find(filter).exec(),
+  deleteMessages: async (filter) => await Message.deleteMany(filter).exec()
 }

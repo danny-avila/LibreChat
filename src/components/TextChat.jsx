@@ -1,57 +1,29 @@
 import React, { useState } from 'react';
-import { SSE } from '../../app/sse';
+import SubmitButton from './SubmitButton';
 import TextareaAutosize from 'react-textarea-autosize';
+import handleSubmit from '../utils/handleSubmit';
 
-const handleSubmit = (text, messageHandler, convo, convoHandler) => {
-  let payload = { text };
-  if (convo.conversationId && convo.parentMessageId) {
-    payload = {
-      ...payload,
-      conversationId: convo.conversationId,
-      parentMessageId: convo.parentMessageId
-    };
-  }
-
-  const events = new SSE('http://localhost:3050/ask', {
-    payload: JSON.stringify(payload),
-    headers: { 'Content-Type': 'application/json' }
-  });
-
-  events.onopen = function () {
-    console.log('connection is opened');
-  };
-
-  events.onmessage = function (e) {
-    const data = JSON.parse(e.data);
-    if (!!data.message) {
-      messageHandler(data.text.replace(/^\n/, ''));
-    } else {
-      console.log(data);
-      convoHandler(data);
-    }
-  };
-
-  events.onerror = function (e) {
-    console.log(e, 'error in opening conn.');
-    events.close();
-  };
-
-  events.stream();
-};
-
-export default function TextChat({
-  messages,
-  setMessages,
-  reloadConvos,
-  convo,
-  setConvo,
-}) {
+export default function TextChat({ messages, setMessages, reloadConvos, convo, setConvo }) {
   const [text, setText] = useState('');
-  // const [convo, setConvo] = useState({ conversationId: null, parentMessageId: null });
+  const submitMessage = () => {
+    const payload = text.trim();
+    const currentMsg = { sender: 'user', text: payload, current: true };
+    setMessages([...messages, currentMsg]);
+    setText('');
+    const messageHandler = (data) => {
+      setMessages([...messages, currentMsg, { sender: 'GPT', text: data }]);
+    };
+    const convoHandler = (data) => {
+      if (convo.conversationId === null && convo.parentMessageId === null) {
+        const { conversationId, parentMessageId } = data;
+        setConvo({ conversationId, parentMessageId: data.id });
+      }
 
-  // if (!!conversation) {
-  //   setConvo(conversation);
-  // }
+      reloadConvos();
+    };
+    console.log('User Input:', payload);
+    handleSubmit(payload, messageHandler, convo, convoHandler);
+  };
 
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && e.shiftKey) {
@@ -59,23 +31,7 @@ export default function TextChat({
     }
 
     if (e.key === 'Enter' && !e.shiftKey) {
-      const payload = text.trim();
-      const currentMsg = { sender: 'user', text: payload, current: true };
-      setMessages([...messages, currentMsg]);
-      setText('');
-      const messageHandler = (data) => {
-        setMessages([...messages, currentMsg, { sender: 'GPT', text: data }]);
-      };
-      const convoHandler = (data) => {
-        if (convo.conversationId === null && convo.parentMessageId === null) {
-          const { conversationId, parentMessageId } = data;
-          setConvo({ conversationId, parentMessageId: data.id });
-        }
-
-        reloadConvos();
-      };
-      console.log('User Input:', payload);
-      handleSubmit(payload, messageHandler, convo, convoHandler);
+      submitMessage();
     }
   };
 
@@ -103,7 +59,8 @@ export default function TextChat({
               placeholder=""
               className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-2 pr-7 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-0"
             />
-            <button className="absolute bottom-1.5 right-1 rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:hover:bg-transparent dark:hover:bg-gray-900 dark:hover:text-gray-400 dark:disabled:hover:bg-transparent md:bottom-2.5 md:right-2">
+            <SubmitButton onClick={() => submitMessage()} />
+            {/* <button className="absolute bottom-1.5 right-1 rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:hover:bg-transparent dark:hover:bg-gray-900 dark:hover:text-gray-400 dark:disabled:hover:bg-transparent md:bottom-2.5 md:right-2">
               <svg
                 stroke="currentColor"
                 fill="none"
@@ -124,7 +81,7 @@ export default function TextChat({
                 />
                 <polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
-            </button>
+            </button> */}
           </div>
         </div>
       </form>

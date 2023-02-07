@@ -1,7 +1,7 @@
 const express = require('express');
 const dbConnect = require('../models/dbConnect');
 const { ask, titleConversation } = require('../app/chatgpt');
-const { saveMessage, getMessages } = require('../models/Message');
+const { saveMessage, getMessages, deleteAllMessages } = require('../models/Message');
 const { saveConversation, getConversations } = require('../models/Conversation');
 const crypto = require('crypto');
 const path = require('path');
@@ -28,6 +28,13 @@ app.get('/convos', async (req, res) => {
 app.get('/messages/:conversationId', async (req, res) => {
   const { conversationId } = req.params;
   res.status(200).send(await getMessages({ conversationId }));
+});
+
+app.post('/clear_convos', async (req, res) => {
+  const { conversationId } = req.body;
+  console.log('conversationId', conversationId);
+  const filter = {};
+  res.status(201).send(await deleteAllMessages(filter));
 });
 
 app.post('/ask', async (req, res) => {

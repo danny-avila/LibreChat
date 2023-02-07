@@ -1,7 +1,7 @@
 import React from 'react';
 import Conversation from './Conversation';
 
-export default function Conversations({ conversations, convoHandler }) {
+export default function Conversations({ convoState, conversations, convoHandler }) {
   return (
     <div className="-mr-2 flex-1 flex-col overflow-y-auto border-b border-white/20">
       <div className="flex flex-col gap-2 text-sm text-gray-100">
@@ -12,6 +12,7 @@ export default function Conversations({ conversations, convoHandler }) {
               id={convo.conversationId}
               parentMessageId={convo.parentMessageId}
               title={convo.title}
+              convo={convoState}
               convoHandler={convoHandler}
             />
           ))}

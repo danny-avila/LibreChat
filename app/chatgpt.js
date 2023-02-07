@@ -29,7 +29,7 @@ const titleConversation = async (message, response) => {
   const openai = new OpenAIApi(configuration);
   const completion = await openai.createCompletion({
     model: 'text-davinci-002',
-    prompt: `Make a short title (goal: 5 words or less) in title case summarizing this conversation:\nuser:"${message}"\nGPT:"${response}"\nTitle: `
+    prompt: `Write a short title in title case, ideally in 5 words or less, and do not refer to the user or GPT, that summarizes this conversation:\nUser:"${message}"\nGPT:"${response}"\nTitle: `
   });
   console.log(completion.data.choices[0].text);
   return completion.data.choices[0].text.replace(/\n/g, '');
