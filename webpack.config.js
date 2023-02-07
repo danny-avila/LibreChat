@@ -22,8 +22,10 @@ module.exports = {
     /** "filename"
      * the name of the output file
      */
-    filename: 'main.js'
+    filename: 'main.js',
+    sourceMapFilename: '[name].js.map'
   },
+  devtool: 'source-map',
   /** "target"
    * setting "node" as target app (server side), and setting it as "web" is
    * for browser (client side). Default is "web"
@@ -91,7 +93,12 @@ module.exports = {
         test: /\.css$/i,
         include: path.resolve(__dirname, 'src'),
         use: ['style-loader', 'css-loader', 'postcss-loader']
-      }
+      },
+      { // source: https://stackoverflow.com/questions/61767538/devtools-failed-to-load-sourcemap-for-webpack-node-modules-js-map-http-e
+        test: /\.js$/,
+        enforce: 'pre',
+        use: ['source-map-loader'],
+      },
     ]
   }
   // plugins: [new HtmlWebpackPlugin()],
