@@ -1,17 +1,37 @@
 import React from 'react';
 import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
+import { useSelector, useDispatch } from 'react-redux';
+import { setConversation } from '../../store/convoSlice';
+import { setMessages } from '../../store/messageSlice';
+import useSWRMutation from 'swr/mutation';
 
-export default function Conversation({
-  id,
-  parentMessageId,
-  convo,
-  convoHandler,
-  title = 'New conversation'
-}) {
+const fetcher = (url) => fetch(url).then((res) => res.json());
+
+export default function Conversation({ id, parentMessageId, title = 'New conversation' }) {
+  const dispatch = useDispatch();
+  const { trigger, isMutating } = useSWRMutation(
+    //{ trigger, isMutating }
+    `http://localhost:3050/messages/${id}`,
+    fetcher,
+    {
+      onSuccess: function (res) {
+        console.log('success', res);
+        dispatch(setMessages(res));
+        // setMessages(res);
+      }
+    }
+  );
+
+  const onConvoClick = (id, parentMessageId) => {
+    console.log('convo was clicked');
+    dispatch(setConversation({ conversationId: id, parentMessageId }));
+    trigger();
+  };
+
   return (
     <a
-      onClick={() => convoHandler(id, parentMessageId)}
+      onClick={() => onConvoClick(id, parentMessageId)}
       className="animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-800 py-3 px-3 pr-14 hover:bg-gray-800"
     >
       <svg

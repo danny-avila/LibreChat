@@ -1,11 +1,11 @@
 import { configureStore } from '@reduxjs/toolkit';
 
 import convoReducer from './convoSlice.js';
-// import uploadReducer from './uploadSlice.js'
+import messageReducer from './messageSlice.js'
 
 export const store = configureStore({
   reducer: {
     convo: convoReducer,
-    // upload: uploadReducer,
+    messages: messageReducer,
   },
 });

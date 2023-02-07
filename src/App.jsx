@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
 import Messages from './components/Messages';
 import TextChat from './components/TextChat';
 import Nav from './components/Nav';
@@ -12,27 +13,33 @@ const fetcher = (url) => fetch(url).then((res) => res.json());
 const postRequest = async (url, { arg }) => await axios.post(url, { arg });
 
 const App = () => {
-  const [messages, setMessages] = useState([]);
-  const [convo, setConvo] = useState({ conversationId: null, parentMessageId: null });
+  // const [messages, setMessages] = useState([]);
+  const messages = useSelector((state) => state.messages);
+  // const [convo, setConvo] = useState({ conversationId: null, parentMessageId: null });
   const { data, error, isLoading, mutate } = useSWR('http://localhost:3050/convos', fetcher);
 
-  const conversation = useSWRMutation( //{ trigger, isMutating }
-    `http://localhost:3050/messages/${convo.conversationId}`,
-    fetcher,
-    {
-      onSuccess: function (res) {
-        console.log('success', res);
-        setMessages(res);
-      }
-    }
-  );
+  const convo = useSelector((state) => state.convo);
+  const conversationId = useSelector((state) => state.convo.conversationId);
+  console.log('conversationId', conversationId);
 
-  useDidMountEffect(() => conversation.trigger(), [convo]);
+  // const conversation = useSWRMutation(
+  //   //{ trigger, isMutating }
+  //   `http://localhost:3050/messages/${conversationId}`,
+  //   fetcher,
+  //   {
+  //     onSuccess: function (res) {
+  //       console.log('success', res);
+  //       setMessages(res);
+  //     }
+  //   }
+  // );
 
-  const onConvoClick = (conversationId, parentMessageId) => {
-    console.log('convo was clicked');
-    setConvo({ conversationId, parentMessageId });
-  };
+  // useDidMountEffect(() => conversation.trigger(), [conversationId]);
+
+  // const onConvoClick = (conversationId, parentMessageId) => {
+  //   console.log('convo was clicked');
+  //   setConvo({ conversationId, parentMessageId });
+  // };
 
   return (
     <div className="flex h-screen">
@@ -40,7 +47,6 @@ const App = () => {
       <Nav
         conversations={data}
         convo={convo}
-        convoHandler={onConvoClick}
       />
       {/* <div className="flex h-full flex-1 flex-col md:pl-[260px]"> */}
       <div className="flex h-full w-full flex-1 flex-col bg-gray-50 md:pl-[260px]">
@@ -49,10 +55,9 @@ const App = () => {
         <Messages messages={messages} />
         <TextChat
           messages={messages}
-          setMessages={setMessages}
+          // setMessages={setMessages}
           reloadConvos={mutate}
           convo={convo}
-          setConvo={setConvo}
         />
         {/* </main> */}
       </div>

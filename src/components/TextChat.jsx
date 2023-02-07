@@ -2,21 +2,27 @@ import React, { useState } from 'react';
 import SubmitButton from './SubmitButton';
 import TextareaAutosize from 'react-textarea-autosize';
 import handleSubmit from '../utils/handleSubmit';
+import { useSelector, useDispatch } from 'react-redux';
+import { setConversation } from '../../store/convoSlice';
+import { setMessages } from '../../store/messageSlice';
 
-export default function TextChat({ messages, setMessages, reloadConvos, convo, setConvo }) {
+export default function TextChat({ messages, reloadConvos, convo }) {
   const [text, setText] = useState('');
+  const dispatch = useDispatch();
+
   const submitMessage = () => {
     const payload = text.trim();
     const currentMsg = { sender: 'user', text: payload, current: true };
-    setMessages([...messages, currentMsg]);
+    dispatch(setMessages([...messages, currentMsg]));
     setText('');
     const messageHandler = (data) => {
-      setMessages([...messages, currentMsg, { sender: 'GPT', text: data }]);
+      dispatch(setMessages([...messages, currentMsg, { sender: 'GPT', text: data }]));
     };
     const convoHandler = (data) => {
       if (convo.conversationId === null && convo.parentMessageId === null) {
         const { conversationId, parentMessageId } = data;
-        setConvo({ conversationId, parentMessageId: data.id });
+        // setConvo({ conversationId, parentMessageId: data.id });
+        dispatch(setConversation({ conversationId, parentMessageId: data.id }));
       }
 
       reloadConvos();
@@ -60,28 +66,6 @@ export default function TextChat({ messages, setMessages, reloadConvos, convo, s
               className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-2 pr-7 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-0"
             />
             <SubmitButton onClick={() => submitMessage()} />
-            {/* <button className="absolute bottom-1.5 right-1 rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:hover:bg-transparent dark:hover:bg-gray-900 dark:hover:text-gray-400 dark:disabled:hover:bg-transparent md:bottom-2.5 md:right-2">
-              <svg
-                stroke="currentColor"
-                fill="none"
-                strokeWidth="2"
-                viewBox="0 0 24 24"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="mr-1 h-4 w-4"
-                height="1em"
-                width="1em"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <line
-                  x1="22"
-                  y1="2"
-                  x2="11"
-                  y2="13"
-                />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
-            </button> */}
           </div>
         </div>
       </form>
