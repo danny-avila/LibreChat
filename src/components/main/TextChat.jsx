@@ -51,7 +51,13 @@ export default function TextChat({ messages, reloadConvos }) {
     handleSubmit({ text: payload, messageHandler, convo, convoHandler, errorHandler });
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+    }
+  };
+
+  const handleKeyUp = (e) => {
     if (e.key === 'Enter' && e.shiftKey) {
       console.log('Enter + Shift');
     }
@@ -60,12 +66,12 @@ export default function TextChat({ messages, reloadConvos }) {
       if (!!isSubmitting) {
         return;
       }
+
       submitMessage();
     }
   };
 
   const changeHandler = (e) => {
-    // console.log('changeHandler', JSON.stringify(e.target.value));
     const { value } = e.target;
     if (isSubmitting && (value === '' || value === '\n')) {
       return;
@@ -84,7 +90,8 @@ export default function TextChat({ messages, reloadConvos }) {
               // style={{maxHeight: '200px', height: '24px', overflowY: 'hidden'}}
               rows="1"
               value={text}
-              onKeyUp={handleKeyPress}
+              onKeyUp={handleKeyUp}
+              onKeyDown={handleKeyDown}
               onChange={changeHandler}
               placeholder=""
               className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-2 pr-7 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-0"

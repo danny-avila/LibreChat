@@ -15,6 +15,9 @@ export default function Conversation({ id, parentMessageId, title = 'New convers
   );
 
   const clickHandler = async () => {
+    if (conversationId === id) {
+      return;
+    }
 
     dispatch(setConversation({ conversationId: id, parentMessageId }));
     const data = await trigger();
