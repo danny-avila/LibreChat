@@ -14,6 +14,8 @@ export default function Messages({ messages }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  // this useEffect triggers the following warning:
+  // Warning: Internal React error: Expected static flag was missing.
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
