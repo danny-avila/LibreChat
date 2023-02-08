@@ -13,7 +13,7 @@ export default function ClearConvos() {
     'post',
     () => {
       dispatch(setMessages([]));
-      dispatch(setConversation({ conversationId: null, parentMessageId: null }));
+      dispatch(setConversation({ error: false, conversationId: null, parentMessageId: null }));
     }
   );
 

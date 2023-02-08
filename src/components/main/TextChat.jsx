@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import SubmitButton from './SubmitButton';
+import Regenerate from './Regenerate';
 import TextareaAutosize from 'react-textarea-autosize';
 import handleSubmit from '~/utils/handleSubmit';
 import { useSelector, useDispatch } from 'react-redux';
-import { setConversation } from '~/store/convoSlice';
+import { setConversation, setError } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setSubmitState } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
@@ -13,8 +14,13 @@ export default function TextChat({ messages, reloadConvos }) {
   const convo = useSelector((state) => state.convo);
   const { isSubmitting } = useSelector((state) => state.submit);
   const { text } = useSelector((state) => state.text);
+  const { error } = convo;
 
   const submitMessage = () => {
+    if (!!error) {
+      dispatch(setError(false));
+    }
+
     if (!!isSubmitting || text.trim() === '') {
       return;
     }
@@ -45,8 +51,9 @@ export default function TextChat({ messages, reloadConvos }) {
         error: true
       };
       dispatch(setSubmitState(false));
-      dispatch(setMessages([...messages, currentMsg, errorResponse]));
+      dispatch(setMessages([...messages.slice(0, -2), currentMsg, errorResponse]));
       dispatch(setText(payload));
+      dispatch(setError(true));
       return;
     };
     console.log('User Input:', payload);
@@ -86,20 +93,27 @@ export default function TextChat({ messages, reloadConvos }) {
       <form className="stretch mx-2 flex flex-row gap-3 pt-2 last:mb-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
         <div className="relative flex h-full flex-1 md:flex-col">
           <div className="ml-1 mt-1.5 flex justify-center gap-0 md:m-auto md:mb-2 md:w-full md:gap-2" />
-          <div className="relative flex w-full flex-grow flex-col rounded-md border border-black/10 bg-white py-2 shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:border-gray-900/50 dark:bg-gray-700 dark:text-white dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] md:py-3 md:pl-4">
-            <TextareaAutosize
-              tabIndex="0"
-              // style={{maxHeight: '200px', height: '24px', overflowY: 'hidden'}}
-              rows="1"
-              value={text}
-              onKeyUp={handleKeyUp}
-              onKeyDown={handleKeyDown}
-              onChange={changeHandler}
-              placeholder=""
-              className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-2 pr-7 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-0"
-            />
-            <SubmitButton submitMessage={submitMessage} />
-          </div>
+
+          {/* removed this prop shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] */}
+
+          {!!error ? (
+            <Regenerate submitMessage={submitMessage} />
+          ) : (
+            <div className="relative flex w-full flex-grow flex-col rounded-md border border-black/10 bg-white py-2 shadow-md dark:border-gray-900/50 dark:bg-gray-700 dark:text-white dark:shadow-lg md:py-3 md:pl-4">
+              <TextareaAutosize
+                tabIndex="0"
+                // style={{maxHeight: '200px', height: '24px', overflowY: 'hidden'}}
+                rows="1"
+                value={text}
+                onKeyUp={handleKeyUp}
+                onKeyDown={handleKeyDown}
+                onChange={changeHandler}
+                placeholder=""
+                className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-2 pr-7 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-0"
+              />
+              <SubmitButton submitMessage={submitMessage} />
+            </div>
+          )}
         </div>
       </form>
       <div className="px-3 pt-2 pb-3 text-center text-xs text-black/50 dark:text-white/50 md:px-4 md:pt-3 md:pb-6">

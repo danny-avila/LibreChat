@@ -11,7 +11,7 @@ export default function Message({ sender, text, last = false, error = false }) {
 
   if (sender === 'GPT') {
     props.className =
-      'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-50 dark:bg-[#444654]';
+      'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-100 dark:bg-[#444654]';
   }
 
   return (

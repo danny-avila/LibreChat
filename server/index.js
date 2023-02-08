@@ -1,7 +1,7 @@
 const express = require('express');
 const dbConnect = require('../models/dbConnect');
 const { ask, titleConversation } = require('../app/chatgpt');
-const { saveMessage, getMessages } = require('../models/Message');
+const { saveMessage, getMessages, deleteMessages } = require('../models/Message');
 const { saveConvo, getConvos, deleteConvos } = require('../models/Conversation');
 const crypto = require('crypto');
 const path = require('path');
@@ -62,11 +62,9 @@ app.post('/ask', async (req, res) => {
     'X-Accel-Buffering': 'no'
   });
 
-  // res.write(`event: message\ndata: ${JSON.stringify('')}\n\n`);
   try {
     let i = 0;
     const progressCallback = async (partial) => {
-      // console.log('partial', partial);
       if (i === 0) {
         userMessage.parentMessageId = parentMessageId ? parentMessageId : partial.id;
         userMessage.conversationId = conversationId ? conversationId : partial.conversationId;
@@ -87,8 +85,12 @@ app.post('/ask', async (req, res) => {
       gptResponse.title = await titleConversation(text, gptResponse.text);
     }
 
-    if (gptResponse.text.includes('2023')) {
-      res.status(500).write('event: error\ndata: empty string error?');
+    if (
+      gptResponse.text.includes('2023') ||
+      gptResponse.text.toLowerCase().includes('no response') ||
+      gptResponse.text.toLowerCase().includes('no answer')
+    ) {
+      res.status(500).write('event: error\ndata: Prompt empty or too short');
       res.end();
       return;
     }
@@ -101,6 +103,7 @@ app.post('/ask', async (req, res) => {
     res.end();
   } catch (error) {
     console.log(error);
+    await deleteMessages({ id: userMessageId });
     res.status(500).write('event: error\ndata: ' + error.message);
     res.end();
   }

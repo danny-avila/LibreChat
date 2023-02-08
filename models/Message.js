@@ -46,6 +46,20 @@ module.exports = {
       return { message: 'Error saving message' };
     }
   },
-  getMessages: async (filter) => await Message.find(filter).exec(),
-  deleteMessages: async (filter) => await Message.deleteMany(filter).exec()
+  getMessages: async (filter) => {
+    try {
+      return await Message.find(filter).exec()
+    } catch (error) {
+      console.error(error);
+      return { message: 'Error getting messages' };
+    }
+  },
+  deleteMessages: async (filter) => {
+    try {
+      return await Message.deleteMany(filter).exec()
+    } catch (error) {
+      console.error(error);
+      return { message: 'Error deleting messages' };
+    }
+  }
 }

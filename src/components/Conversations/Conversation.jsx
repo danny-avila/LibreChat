@@ -4,11 +4,12 @@ import DeleteButton from './DeleteButton';
 import { useSelector, useDispatch } from 'react-redux';
 import { setConversation } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
+import { setText } from '~/store/textSlice';
 import manualSWR from '~/utils/fetchers';
 
 export default function Conversation({ id, parentMessageId, title = 'New conversation' }) {
   const dispatch = useDispatch();
-  const conversationId = useSelector((state) => state.convo.conversationId);
+  const { conversationId } = useSelector((state) => state.convo);
   const { trigger, isMutating } = manualSWR(`http://localhost:3050/messages/${id}`, 'get');
 
   const clickHandler = async () => {
@@ -16,9 +17,10 @@ export default function Conversation({ id, parentMessageId, title = 'New convers
       return;
     }
 
-    dispatch(setConversation({ conversationId: id, parentMessageId }));
+    dispatch(setConversation({ error: false, conversationId: id, parentMessageId }));
     const data = await trigger();
     dispatch(setMessages(data));
+    dispatch(setText(''));
   };
 
   const aProps = {
@@ -53,11 +55,13 @@ export default function Conversation({ id, parentMessageId, title = 'New convers
       <div className="relative max-h-5 flex-1 overflow-hidden text-ellipsis break-all">
         {title}
       </div>
-      {conversationId === id && (
+      {conversationId === id ? (
         <div className="visible absolute right-1 z-10 flex text-gray-300">
           <RenameButton conversationId={id} />
           <DeleteButton conversationId={id} />
         </div>
+      ) : (
+        <div className="absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-gray-900 group-hover:from-[#2A2B32]" />
       )}
     </a>
   );
