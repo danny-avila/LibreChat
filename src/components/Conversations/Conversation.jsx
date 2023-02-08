@@ -9,10 +9,7 @@ import manualSWR from '~/utils/fetchers';
 export default function Conversation({ id, parentMessageId, title = 'New conversation' }) {
   const dispatch = useDispatch();
   const conversationId = useSelector((state) => state.convo.conversationId);
-  const { trigger, isMutating } = manualSWR(
-    `http://localhost:3050/messages/${id}`,
-    'get'
-  );
+  const { trigger, isMutating } = manualSWR(`http://localhost:3050/messages/${id}`, 'get');
 
   const clickHandler = async () => {
     if (conversationId === id) {
@@ -24,10 +21,20 @@ export default function Conversation({ id, parentMessageId, title = 'New convers
     dispatch(setMessages(data));
   };
 
+  const aProps = {
+    className:
+      'animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-800 py-3 px-3 pr-14 hover:bg-gray-800'
+  };
+
+  if (conversationId !== id) {
+    aProps.className =
+      'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-[#2A2B32] hover:pr-4';
+  }
+
   return (
     <a
       onClick={() => clickHandler()}
-      className="animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-800 py-3 px-3 pr-14 hover:bg-gray-800"
+      {...aProps}
     >
       <svg
         stroke="currentColor"
@@ -46,10 +53,12 @@ export default function Conversation({ id, parentMessageId, title = 'New convers
       <div className="relative max-h-5 flex-1 overflow-hidden text-ellipsis break-all">
         {title}
       </div>
-      <div className="visible absolute right-1 z-10 flex text-gray-300">
-        {id === conversationId && <RenameButton conversationId={id} />}
-        {id === conversationId && <DeleteButton conversationId={id} />}
-      </div>
+      {conversationId === id && (
+        <div className="visible absolute right-1 z-10 flex text-gray-300">
+          <RenameButton conversationId={id} />
+          <DeleteButton conversationId={id} />
+        </div>
+      )}
     </a>
   );
 }
