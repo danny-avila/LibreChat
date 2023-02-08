@@ -11,8 +11,11 @@ const postRequest = async (url, { arg }) => {
 export const swr = (path) => useSWR(path, fetcher);
 
 export default function manualSWR(path, type, successCallback) {
+  const options = {};
+
+  if (successCallback) {
+    options.onSuccess = successCallback;
+  }
   const fetchFunction = type === 'get' ? fetcher : postRequest;
-  return useSWRMutation(path, fetchFunction, {
-    onSuccess: successCallback
-  });
+  return useSWRMutation(path, fetchFunction, options);
 };

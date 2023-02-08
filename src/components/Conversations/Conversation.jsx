@@ -11,17 +11,14 @@ export default function Conversation({ id, parentMessageId, title = 'New convers
   const conversationId = useSelector((state) => state.convo.conversationId);
   const { trigger, isMutating } = manualSWR(
     `http://localhost:3050/messages/${id}`,
-    'get',
-    (res) => dispatch(setMessages(res))
+    'get'
   );
 
-  const clickHandler = () => {
-    if (conversationId === id) {
-      return;
-    }
+  const clickHandler = async () => {
 
     dispatch(setConversation({ conversationId: id, parentMessageId }));
-    trigger();
+    const data = await trigger();
+    dispatch(setMessages(data));
   };
 
   return (

@@ -9,7 +9,7 @@ const currentSlice = createSlice({
   initialState,
   reducers: {
     setMessages: (state, action) => {
-      state.messages = [...action.payload];
+      state.messages = action.payload;
     },
   }
 });

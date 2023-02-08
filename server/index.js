@@ -33,7 +33,6 @@ app.get('/messages/:conversationId', async (req, res) => {
 app.post('/clear_convos', async (req, res) => {
   let filter = {};
   const { conversationId } = req.body.arg;
-  console.log('conversationId', conversationId);
   if (!!conversationId) {
     filter = { conversationId };
   }
@@ -77,19 +76,24 @@ app.post('/ask', async (req, res) => {
     res.write(`event: message\ndata: ${data}\n\n`);
   };
 
-  let gptResponse = await ask(text, progressCallback, { parentMessageId, conversationId });
-  if (!!parentMessageId) {
-    gptResponse = { ...gptResponse, parentMessageId };
-  } else {
-    gptResponse.title = await titleConversation(text, gptResponse.text);
+  try {
+    let gptResponse = await ask(text, progressCallback, { parentMessageId, conversationId });
+    if (!!parentMessageId) {
+      gptResponse = { ...gptResponse, parentMessageId };
+    } else {
+      gptResponse.title = await titleConversation(text, gptResponse.text);
+    }
+
+    gptResponse.sender = 'GPT';
+    await saveMessage(gptResponse);
+    await saveConvo(gptResponse);
+
+    res.write(`event: message\ndata: ${JSON.stringify(gptResponse)}\n\n`);
+    res.end();
+  } catch (error) {
+    console.error(error);
+    res.status(500).send(error);
   }
-
-  gptResponse.sender = 'GPT';
-  await saveMessage(gptResponse);
-  await saveConvo(gptResponse);
-
-  res.write(`event: message\ndata: ${JSON.stringify(gptResponse)}\n\n`);
-  res.end();
 });
 
 app.listen(port, () => {
