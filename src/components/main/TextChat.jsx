@@ -6,12 +6,14 @@ import { useSelector, useDispatch } from 'react-redux';
 import { setConversation } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setSubmitState } from '~/store/submitSlice';
+import { setText } from '~/store/textSlice';
 
 export default function TextChat({ messages, reloadConvos }) {
-  const [text, setText] = useState('');
+  // const [text, setText] = useState('');
   const dispatch = useDispatch();
   const convo = useSelector((state) => state.convo);
   const { isSubmitting } = useSelector((state) => state.submit);
+  const { text } = useSelector((state) => state.text);
 
   const submitMessage = () => {
     if (!!isSubmitting || text.trim() === '') {
@@ -22,7 +24,7 @@ export default function TextChat({ messages, reloadConvos }) {
     const currentMsg = { sender: 'user', text: payload, current: true };
     const initialResponse = { sender: 'GPT', text: '' };
     dispatch(setMessages([...messages, currentMsg, initialResponse]));
-    setText('');
+    dispatch(setText(''));
     const messageHandler = (data) => {
       dispatch(setMessages([...messages, currentMsg, { sender: 'GPT', text: data }]));
     };
@@ -76,7 +78,7 @@ export default function TextChat({ messages, reloadConvos }) {
     if (isSubmitting && (value === '' || value === '\n')) {
       return;
     }
-    setText(value);
+    dispatch(setText(value));
   };
 
   return (

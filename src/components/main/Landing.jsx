@@ -1,6 +1,16 @@
 import React from 'react';
+import { useDispatch } from 'react-redux';
+import { setText } from '~/store/textSlice';
 
 export default function Landing() {
+  const dispatch = useDispatch();
+
+  const clickHandler = (e) => {
+    e.preventDefault();
+    const { innerText } = e.target;
+    const quote = innerText.split('"')[1].trim();
+    dispatch(setText(quote));
+  };
   return (
     <div className="flex h-full flex-col items-center text-sm dark:bg-gray-800">
       <div className="w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
@@ -26,7 +36,7 @@ export default function Landing() {
                   cx="12"
                   cy="12"
                   r="5"
-                ></circle>
+                />
                 <line
                   x1="12"
                   y1="1"
@@ -79,13 +89,13 @@ export default function Landing() {
               Examples
             </h2>
             <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
-              <button className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900">
+              <button onClick={clickHandler} className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900">
                 "Explain quantum computing in simple terms" →
               </button>
-              <button className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900">
-                "Got any creative ideas for a 10 year old’s birthday?" →
+              <button onClick={clickHandler} className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900">
+                "Got any creative ideas for a 10 year old's birthday?" →
               </button>
-              <button className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900">
+              <button onClick={clickHandler} className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900">
                 "How do I make an HTTP request in Javascript?" →
               </button>
             </ul>
