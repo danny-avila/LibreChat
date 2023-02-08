@@ -9,7 +9,6 @@ import { setSubmitState } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
 
 export default function TextChat({ messages, reloadConvos }) {
-  // const [text, setText] = useState('');
   const dispatch = useDispatch();
   const convo = useSelector((state) => state.convo);
   const { isSubmitting } = useSelector((state) => state.submit);
@@ -47,6 +46,7 @@ export default function TextChat({ messages, reloadConvos }) {
       };
       dispatch(setSubmitState(false));
       dispatch(setMessages([...messages, currentMsg, errorResponse]));
+      dispatch(setText(payload));
       return;
     };
     console.log('User Input:', payload);

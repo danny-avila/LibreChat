@@ -9,9 +9,9 @@ import useDidMountEffect from './hooks/useDidMountEffect';
 
 const App = () => {
   const { messages } = useSelector((state) => state.messages);
-  const convo = useSelector((state) => state.convo);
+  const { conversationId } = useSelector((state) => state.convo);
   const { data, error, isLoading, mutate } = swr('http://localhost:3050/convos');
-  useDidMountEffect(() => mutate(), [convo]);
+  useDidMountEffect(() => mutate(), [conversationId]);
 
   return (
     <div className="flex h-screen">
