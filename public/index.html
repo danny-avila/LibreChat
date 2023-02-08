@@ -1,12 +1,39 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <meta charset="utf-8">
+    <meta charset="utf-8" />
     <title>ChatGPT Clone</title>
-    <link rel="shortcut icon" href="#">
-  <meta name="viewport" content="width=device-width, initial-scale=1"><script defer src="main.js"></script></head>
+    <link
+      rel="shortcut icon"
+      href="#"
+    />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    />
+    <script
+      defer
+      src="main.js"
+    ></script>
+    <!-- <script>
+      // It's best to inline this in `head` to avoid FOUC (flash of unstyled content) when changing pages or themes
+      if (
+        localStorage.getItem('color-theme') === 'dark' ||
+        (!('color-theme' in localStorage) &&
+          window.matchMedia('(prefers-color-scheme: dark)').matches)
+      ) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    </script> -->
+  </head>
   <body>
     <div id="root"></div>
-    <script type="text/javascript" src="main.js"></script>
+
+    <script
+      type="text/javascript"
+      src="main.js"
+    ></script>
   </body>
 </html>

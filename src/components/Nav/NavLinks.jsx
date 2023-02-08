@@ -1,17 +1,14 @@
 import React from 'react';
-import ClearConvos from './ClearConvos';
 import NavLink from './NavLink';
-import DarkModeIcon from '../svg/DarkModeIcon';
 import LogOutIcon from '../svg/LogOutIcon';
+import ClearConvos from './ClearConvos';
+import DarkMode from './DarkMode';
 
 export default function NavLinks() {
   return (
     <>
       <ClearConvos />
-      <NavLink
-        svg={DarkModeIcon}
-        text="Dark mode"
-      />
+      <DarkMode />
       <NavLink
         svg={LogOutIcon}
         text="Log out"

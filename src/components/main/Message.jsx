@@ -5,12 +5,12 @@ export default function Message({ sender, text, last = false, error = false }) {
   const { isSubmitting } = useSelector((state) => state.submit);
   const props = {
     className:
-      'group w-full border-b border-black/10 text-gray-800 dark:border-gray-900/50 dark:bg-gray-800 dark:text-gray-100'
+      'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group dark:bg-gray-800'
   };
 
   if (sender === 'GPT') {
     props.className =
-      'group w-full border-b border-black/10 bg-gray-100 text-gray-800 dark:border-gray-900/50 dark:bg-[#444654] dark:text-gray-100';
+      'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-50 dark:bg-[#444654]';
   }
 
   return (

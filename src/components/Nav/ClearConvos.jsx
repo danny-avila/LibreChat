@@ -1,5 +1,4 @@
 import React from 'react';
-import NavLink from './NavLink';
 import TrashIcon from '../svg/TrashIcon';
 import manualSWR from '~/utils/fetchers';
 import { useDispatch } from 'react-redux';

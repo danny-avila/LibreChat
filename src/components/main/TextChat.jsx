@@ -36,11 +36,11 @@ export default function TextChat({ messages, reloadConvos }) {
       dispatch(setSubmitState(false));
     };
 
-    const errorHandler = (data) => {
-      console.log('Error:', data);
+    const errorHandler = (event) => {
+      console.log('Error:', event);
       const errorResponse = {
         ...initialResponse,
-        text: 'An error occurred. Please try again in a few moments.',
+        text: `An error occurred. Please try again in a few moments.\n\nError message: ${event.data}`,
         error: true
       };
       dispatch(setSubmitState(false));
@@ -80,7 +80,7 @@ export default function TextChat({ messages, reloadConvos }) {
   };
 
   return (
-    <div className="md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient w-full border-t bg-white dark:border-white/20 dark:bg-gray-800 md:border-t-0 md:border-transparent md:!bg-transparent md:dark:border-transparent">
+    <div className="md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient absolute bottom-0 left-0 w-full border-t bg-white dark:border-white/20 dark:bg-gray-800 md:border-t-0 md:border-transparent md:!bg-transparent md:dark:border-transparent">
       <form className="stretch mx-2 flex flex-row gap-3 pt-2 last:mb-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
         <div className="relative flex h-full flex-1 md:flex-col">
           <div className="ml-1 mt-1.5 flex justify-center gap-0 md:m-auto md:mb-2 md:w-full md:gap-2" />

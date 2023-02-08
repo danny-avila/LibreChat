@@ -38,7 +38,7 @@ export default function handleSubmit({
   };
 
   events.onerror = function (e) {
-    console.log(e, 'error in opening conn.');
+    console.log('error in opening conn.');
     events.close();
     errorHandler(e);
   };
