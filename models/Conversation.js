@@ -27,25 +27,25 @@ const Conversation =
 
 module.exports = {
   saveConvo: async ({ conversationId, parentMessageId, title }) => {
-    const messages = await getMessages({ conversationId });
-    const update = { parentMessageId, messages };
-    if (title) {
-      update.title = title;
-    }
+    try {
+      const messages = await getMessages({ conversationId });
+      const update = { parentMessageId, messages };
+      if (title) {
+        update.title = title;
+      }
 
-    await Conversation.findOneAndUpdate(
-      { conversationId },
-      { $set: update },
-      { new: true, upsert: true }
-    ).exec();
+      return await Conversation.findOneAndUpdate(
+        { conversationId },
+        { $set: update },
+        { new: true, upsert: true }
+      ).exec();
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error saving conversation' };
+    }
   },
   getConvos: async () => await Conversation.find({}).exec(),
   deleteConvos: async (filter) => {
-    // const filter = {};
-
-    // if (!!conversationId) {
-    //   filter = conversationId;
-    // }
 
     let deleteCount = await Conversation.deleteMany(filter).exec();
     deleteCount.messages = await deleteMessages(filter);

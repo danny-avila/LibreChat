@@ -35,8 +35,20 @@ export default function TextChat({ messages, reloadConvos }) {
       reloadConvos();
       dispatch(setSubmitState(false));
     };
+
+    const errorHandler = (data) => {
+      console.log('Error:', data);
+      const errorResponse = {
+        ...initialResponse,
+        text: 'An error occurred. Please try again in a few moments.',
+        error: true
+      };
+      dispatch(setSubmitState(false));
+      dispatch(setMessages([...messages, currentMsg, errorResponse]));
+      return;
+    };
     console.log('User Input:', payload);
-    handleSubmit(payload, messageHandler, convo, convoHandler);
+    handleSubmit({ text: payload, messageHandler, convo, convoHandler, errorHandler });
   };
 
   const handleKeyPress = (e) => {

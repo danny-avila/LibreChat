@@ -52,6 +52,8 @@ app.post('/ask', async (req, res) => {
   const userMessageId = crypto.randomUUID();
   let userMessage = { id: userMessageId, sender: 'User', text };
 
+  console.log(userMessage, req.body);
+
   res.writeHead(200, {
     Connection: 'keep-alive',
     'Content-Type': 'text/event-stream',
@@ -61,27 +63,34 @@ app.post('/ask', async (req, res) => {
   });
 
   // res.write(`event: message\ndata: ${JSON.stringify('')}\n\n`);
-
-  let i = 0;
-  const progressCallback = async (partial) => {
-    // console.log('partial', partial);
-    if (i === 0) {
-      userMessage.parentMessageId = parentMessageId ? parentMessageId : partial.id;
-      userMessage.conversationId = conversationId ? conversationId : partial.conversationId;
-      await saveMessage(userMessage);
-      res.write(`event: message\ndata: ${JSON.stringify({ ...partial, initial: true })}\n\n`);
-      i++;
-    }
-    const data = JSON.stringify({ ...partial, message: true });
-    res.write(`event: message\ndata: ${data}\n\n`);
-  };
-
   try {
+    let i = 0;
+    const progressCallback = async (partial) => {
+      // console.log('partial', partial);
+      if (i === 0) {
+        userMessage.parentMessageId = parentMessageId ? parentMessageId : partial.id;
+        userMessage.conversationId = conversationId ? conversationId : partial.conversationId;
+        await saveMessage(userMessage);
+        res.write(
+          `event: message\ndata: ${JSON.stringify({ ...partial, initial: true })}\n\n`
+        );
+        i++;
+      }
+      const data = JSON.stringify({ ...partial, message: true });
+      res.write(`event: message\ndata: ${data}\n\n`);
+    };
+
     let gptResponse = await ask(text, progressCallback, { parentMessageId, conversationId });
     if (!!parentMessageId) {
       gptResponse = { ...gptResponse, parentMessageId };
     } else {
       gptResponse.title = await titleConversation(text, gptResponse.text);
+    }
+
+    if (gptResponse.text.includes('2023')) {
+      res.status(500).write('event: error\ndata: empty string error?');
+      res.end();
+      return;
     }
 
     gptResponse.sender = 'GPT';
@@ -91,8 +100,9 @@ app.post('/ask', async (req, res) => {
     res.write(`event: message\ndata: ${JSON.stringify(gptResponse)}\n\n`);
     res.end();
   } catch (error) {
-    console.error(error);
-    res.status(500).send(error);
+    console.log(error);
+    res.status(500).write('event: error\ndata: ' + error.message);
+    res.end();
   }
 });
 

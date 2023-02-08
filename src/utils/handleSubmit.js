@@ -1,6 +1,12 @@
 import { SSE } from '../../app/sse';
 
-export default function handleSubmit(text, messageHandler, convo, convoHandler) {
+export default function handleSubmit({
+  text,
+  convo,
+  messageHandler,
+  convoHandler,
+  errorHandler
+}) {
   let payload = { text };
   if (convo.conversationId && convo.parentMessageId) {
     payload = {
@@ -34,7 +40,8 @@ export default function handleSubmit(text, messageHandler, convo, convoHandler) 
   events.onerror = function (e) {
     console.log(e, 'error in opening conn.');
     events.close();
+    errorHandler(e);
   };
 
   events.stream();
-};
+}

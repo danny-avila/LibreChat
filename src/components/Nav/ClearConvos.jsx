@@ -18,7 +18,10 @@ export default function ClearConvos() {
     }
   );
 
-  const clickHandler = () => trigger({});
+  const clickHandler = () => {
+    console.log('Clearing conversations...');
+    trigger({});
+  };
 
   return (
     <NavLink

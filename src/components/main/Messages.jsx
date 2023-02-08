@@ -32,6 +32,7 @@ export default function Messages({ messages }) {
           sender={message.sender}
           text={message.text}
           last={i === messages.length - 1}
+          error={!!message.error ? true : false}
         />
       ))}
       <div ref={messagesEndRef} />

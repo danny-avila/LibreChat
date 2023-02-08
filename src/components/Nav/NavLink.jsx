@@ -8,6 +8,7 @@ export default function NavLink({ svg, text, clickHandler }) {
 
   if (clickHandler) {
     props.onClick = clickHandler;
+    console.log('clickHandler: ', clickHandler);
   }
 
   return (
