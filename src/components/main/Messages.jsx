@@ -21,7 +21,7 @@ export default function Messages({ messages }) {
 
   return (
     <div className="flex-1 overflow-y-auto ">
-      <div className="flex-1 overflow-hidden">
+      {/* <div className="flex-1 overflow-hidden"> */}
         <div className="h-full dark:bg-gray-800">
           <div className="flex h-full flex-col items-center text-sm dark:bg-gray-800">
             {messages.map((message, i) => (
@@ -39,7 +39,7 @@ export default function Messages({ messages }) {
             />
           </div>
         </div>
-      </div>
+      {/* </div> */}
     </div>
   );
 }

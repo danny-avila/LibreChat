@@ -17,15 +17,13 @@ const App = () => {
     <div className="flex h-screen">
       <Nav conversations={data} />
       <div className="flex h-full w-full flex-1 flex-col bg-gray-50 md:pl-[260px]">
-        <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden">
-          <div className="h-full dark:bg-gray-800">
+        <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden dark:bg-gray-800">
           <MobileNav />
           <Messages messages={messages} />
           <TextChat
             messages={messages}
             reloadConvos={mutate}
           />
-          </div>
         </div>
       </div>
     </div>
