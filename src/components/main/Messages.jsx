@@ -1,11 +1,14 @@
 import React, { useEffect, useRef } from 'react';
+import useDocumentTitle from '~/hooks/useDocumentTitle';
 import Message from './Message';
 import Landing from './Landing';
 
-export default function Messages({ messages }) {
+export default function Messages({ messages, title }) {
   if (messages.length === 0) {
-    return <Landing />;
+    return <Landing title={title}/>;
   }
+
+  useDocumentTitle(title);
 
   const messagesEndRef = useRef(null);
 

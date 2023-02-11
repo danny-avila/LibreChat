@@ -1,8 +1,8 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
-  active: false,
   error: false,
+  title: 'ChatGPT Clone',
   conversationId: null,
   parentMessageId: null,
 };

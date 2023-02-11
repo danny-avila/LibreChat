@@ -2,7 +2,8 @@ const express = require('express');
 const dbConnect = require('../models/dbConnect');
 const { ask, titleConversation } = require('../app/chatgpt');
 const { saveMessage, getMessages, deleteMessages } = require('../models/Message');
-const { saveConvo, getConvos, deleteConvos } = require('../models/Conversation');
+const { saveConvo, getConvos, deleteConvos, updateConvo } = require('../models/Conversation');
+const { savePrompt, getPrompts, deletePrompts } = require('../models/Prompt');
 const crypto = require('crypto');
 const path = require('path');
 const cors = require('cors');
@@ -25,6 +26,15 @@ app.get('/convos', async (req, res) => {
   res.status(200).send(await getConvos());
 });
 
+app.get('/prompts', async (req, res) => {
+  let filter = {};
+  // const { search } = req.body.arg;
+  // if (!!search) {
+  //   filter = { conversationId };
+  // }
+  res.status(200).send(await getPrompts(filter));
+});
+
 app.get('/messages/:conversationId', async (req, res) => {
   const { conversationId } = req.params;
   res.status(200).send(await getMessages({ conversationId }));
@@ -39,6 +49,18 @@ app.post('/clear_convos', async (req, res) => {
 
   try {
     const dbResponse = await deleteConvos(filter);
+    res.status(201).send(dbResponse);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send(error);
+  }
+});
+
+app.post('/update_convo', async (req, res) => {
+  const update = req.body.arg;
+
+  try {
+    const dbResponse = await updateConvo(update);
     res.status(201).send(dbResponse);
   } catch (error) {
     console.error(error);

@@ -10,6 +10,7 @@ import useDidMountEffect from './hooks/useDidMountEffect';
 const App = () => {
   const { messages } = useSelector((state) => state.messages);
   const { conversationId } = useSelector((state) => state.convo);
+  const { title } = useSelector((state) => state.convo);
   const { data, error, isLoading, mutate } = swr('http://localhost:3050/convos');
   useDidMountEffect(() => mutate(), [conversationId]);
 
@@ -19,7 +20,7 @@ const App = () => {
       <div className="flex h-full w-full flex-1 flex-col bg-gray-50 md:pl-[260px]">
         <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden dark:bg-gray-800">
           <MobileNav />
-          <Messages messages={messages} />
+          <Messages messages={messages} title={title}/>
           <TextChat
             messages={messages}
             reloadConvos={mutate}

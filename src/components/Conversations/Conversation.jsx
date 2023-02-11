@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
 import { useSelector, useDispatch } from 'react-redux';
@@ -6,21 +6,54 @@ import { setConversation } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setText } from '~/store/textSlice';
 import manualSWR from '~/utils/fetchers';
+import ConvoIcon from '../svg/ConvoIcon';
 
 export default function Conversation({ id, parentMessageId, title = 'New conversation' }) {
+  const [renaming, setRenaming] = useState(false);
+  const [titleInput, setTitleInput] = useState(title);
+  const inputRef = useRef(null);
   const dispatch = useDispatch();
   const { conversationId } = useSelector((state) => state.convo);
   const { trigger, isMutating } = manualSWR(`http://localhost:3050/messages/${id}`, 'get');
+  const rename = manualSWR(`http://localhost:3050/update_convo`, 'post');
 
   const clickHandler = async () => {
     if (conversationId === id) {
       return;
     }
 
-    dispatch(setConversation({ error: false, conversationId: id, parentMessageId }));
+    dispatch(setConversation({ title, error: false, conversationId: id, parentMessageId }));
     const data = await trigger();
     dispatch(setMessages(data));
     dispatch(setText(''));
+  };
+
+  const renameHandler = (e) => {
+    e.preventDefault();
+    setRenaming(true);
+    setTimeout(() => {
+      inputRef.current.focus();
+    }, 25);
+  };
+
+  const cancelHandler = (e) => {
+    e.preventDefault();
+    setRenaming(false);
+  };
+
+  const onRename = (e) => {
+    e.preventDefault();
+    setRenaming(false);
+    if (titleInput === title) {
+      return;
+    }
+    rename.trigger({ conversationId, title: titleInput });
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      onRename(e);
+    }
   };
 
   const aProps = {
@@ -38,27 +71,35 @@ export default function Conversation({ id, parentMessageId, title = 'New convers
       onClick={() => clickHandler()}
       {...aProps}
     >
-      <svg
-        stroke="currentColor"
-        fill="none"
-        strokeWidth="2"
-        viewBox="0 0 24 24"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="h-4 w-4"
-        height="1em"
-        width="1em"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-      </svg>
+      <ConvoIcon />
       <div className="relative max-h-5 flex-1 overflow-hidden text-ellipsis break-all">
-        {title}
+        {renaming === true ? (
+          <input
+            ref={inputRef}
+            type="text"
+            className="m-0 mr-0 w-full leading-tight border border-blue-500 bg-transparent p-0 text-sm outline-none"
+            value={titleInput}
+            onChange={(e) => setTitleInput(e.target.value)}
+            onBlur={onRename}
+            onKeyPress={handleKeyPress}
+          />
+        ) : (
+          title
+        )}
       </div>
       {conversationId === id ? (
         <div className="visible absolute right-1 z-10 flex text-gray-300">
-          <RenameButton conversationId={id} />
-          <DeleteButton conversationId={id} />
+          <RenameButton
+            conversationId={id}
+            renaming={renaming}
+            renameHandler={renameHandler}
+            onRename={onRename}
+          />
+          <DeleteButton
+            conversationId={id}
+            renaming={renaming}
+            cancelHandler={cancelHandler}
+          />
         </div>
       ) : (
         <div className="absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-gray-900 group-hover:from-[#2A2B32]" />

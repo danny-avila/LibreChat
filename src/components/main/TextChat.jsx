@@ -88,6 +88,11 @@ export default function TextChat({ messages, reloadConvos }) {
     dispatch(setText(value));
   };
 
+  const tryAgain = (e) => {
+    e.preventDefault();
+    dispatch(setError(false));
+  };
+
   return (
     <div className="md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient absolute bottom-0 left-0 w-full border-t bg-white dark:border-white/20 dark:bg-gray-800 md:border-t-0 md:border-transparent md:!bg-transparent md:dark:border-transparent">
       <form className="stretch mx-2 flex flex-row gap-3 pt-2 last:mb-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
@@ -97,7 +102,10 @@ export default function TextChat({ messages, reloadConvos }) {
           {/* removed this prop shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] */}
 
           {!!error ? (
-            <Regenerate submitMessage={submitMessage} />
+            <Regenerate
+              submitMessage={submitMessage}
+              tryAgain={tryAgain}
+            />
           ) : (
             <div className="relative flex w-full flex-grow flex-col rounded-md border border-black/10 bg-white py-2 shadow-md dark:border-gray-900/50 dark:bg-gray-700 dark:text-white dark:shadow-lg md:py-3 md:pl-4">
               <TextareaAutosize

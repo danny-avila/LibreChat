@@ -10,7 +10,7 @@ export default function NewChat() {
   const clickHandler = () => {
     dispatch(setText(''));
     dispatch(setMessages([]));
-    dispatch(setConversation({ error: false, conversationId: null, parentMessageId: null }));
+    dispatch(setConversation({ title: 'New Chat', error: false, conversationId: null, parentMessageId: null }));
   };
 
   return (

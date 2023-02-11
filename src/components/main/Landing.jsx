@@ -1,13 +1,15 @@
 import React from 'react';
 import { useDispatch } from 'react-redux';
 import { setText } from '~/store/textSlice';
-import Templates from './Templates';
+import useDocumentTitle from '~/hooks/useDocumentTitle';
+import Templates from '../Prompts/Templates';
 import SunIcon from '../svg/SunIcon';
 import LightningIcon from '../svg/LightningIcon';
 import CautionIcon from '../svg/CautionIcon';
 
-export default function Landing() {
+export default function Landing({ title }) {
   const dispatch = useDispatch();
+  useDocumentTitle(title);
 
   const clickHandler = (e) => {
     e.preventDefault();
