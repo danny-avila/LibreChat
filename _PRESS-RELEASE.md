@@ -19,40 +19,48 @@ Once the project moves into development, the press release can be used as a touc
 
 ## Heading ##
   > Name the product in a way the reader (i.e. your target customers) will understand.
-  # ChatGPT Clone
+  ChatGPT Clone
 
 ## Sub-Heading ##
   > Describe who the market for the product is and what benefit they get. One sentence only underneath the title.
-  # Wrap all conversational AIs under one roof.
+
+  Wrap all conversational AIs under one roof.
 
 ## Summary ##
   > Give a summary of the product and the benefit. Assume the reader will not read anything else so make this paragraph good.
-  # Conversational/Utility AIs are the future and OpenAI revolutionized this movement with ChatGPT. This app commemorates the original
-  # styling of ChatGPT, with the ability to integrate any current/future conversational AI models through user-provided APIs.
+
+  Conversational/Utility AIs are the future and OpenAI revolutionized this movement with ChatGPT. This app commemorates the original
+  styling of ChatGPT, with the ability to integrate any current/future conversational AI models through user-provided APIs.
 
 ## Problem ##
   > Describe the problem your product solves.
-  # ChatGPT is down ( and don't want to pay for ChatGPT Plus). ChatGPT/Google Bard/Bing AI conversations are lost in space or
-  # cannot be searched past a certain timeframe.
+
+  ChatGPT is down ( and don't want to pay for ChatGPT Plus). ChatGPT/Google Bard/Bing AI conversations are lost in space or
+  cannot be searched past a certain timeframe.
 
 ## Solution ##
   > Describe how your product elegantly solves the problem.
-  # Serves and searches all conversations reliably. All AI convos under one house.
-  # Pay per call and not per month (cents compared to dollars).
+
+  Serves and searches all conversations reliably. All AI convos under one house.
+  Pay per call and not per month (cents compared to dollars).
 
 ## Quote from You ##
   > A quote from a spokesperson in your company.
-  # Keep AI open
+
+  Keep AI open
 
 ## How to Get Started ##
   > Describe how easy it is to get started.
-  # Input your API key(s) and you're ready to go.
+
+  Input your API key(s) and you're ready to go.
 
 ## Customer Quote ##
   > Provide a quote from a hypothetical customer that describes how they experienced the benefit.
-  # I can semantically search my conversations and customize templates for any AI model!
+
+  I can semantically search my conversations and customize templates for any AI model!
 
 ## Closing and Call to Action ##
   > Wrap it up and give pointers where the reader should go next.
-  # Keep an eye out for new conversational AI models and respective API access! Own your
-  # conversations! Pay per call and not subscription!
+
+  Keep an eye out for new conversational AI models and respective API access! Own your
+  conversations! Pay per call and not subscription!
