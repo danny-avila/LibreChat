@@ -83,7 +83,7 @@ export default function Conversation({ id, parentMessageId, conversationId, titl
             onKeyPress={handleKeyPress}
           />
         ) : (
-          title
+          titleInput
         )}
       </div>
       {conversationId === id ? (
