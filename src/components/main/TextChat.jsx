@@ -101,9 +101,7 @@ export default function TextChat({ messages, reloadConvos }) {
       <form className="stretch mx-2 flex flex-row gap-3 pt-2 last:mb-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
         <div className="relative flex h-full flex-1 md:flex-col">
           <div className="ml-1 mt-1.5 flex justify-center gap-0 md:m-auto md:mb-2 md:w-full md:gap-2" />
-
           {/* removed this prop shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] */}
-
           {!!error ? (
             <Regenerate
               submitMessage={submitMessage}
