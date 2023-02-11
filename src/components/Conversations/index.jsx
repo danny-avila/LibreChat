@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useSelector } from 'react-redux';
 import Conversation from './Conversation';
 
 export default function Conversations({ conversations }) {
+  const [isHovering, setIsHovering] = useState(false);
   const { conversationId } = useSelector((state) => state.convo);
   // const currentRef = useRef(null);
 
@@ -17,7 +18,13 @@ export default function Conversations({ conversations }) {
   // }, [conversationId]);
 
   return (
-    <div className="-mr-2 flex-1 flex-col overflow-y-auto border-b border-white/20">
+    <div
+      className={`-mr-2 flex-1 flex-col overflow-y-auto ${
+        isHovering ? '' : 'scrollbar-transparent'
+      } border-b border-white/20`}
+      onMouseEnter={() => setIsHovering(true)}
+      onMouseLeave={() => setIsHovering(false)}
+    >
       <div className="flex flex-col gap-2 text-sm text-gray-100">
         {/* <div ref={currentRef} /> */}
         {conversations &&
