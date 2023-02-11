@@ -86,7 +86,7 @@ app.post('/ask', async (req, res) => {
     }
 
     if (
-      gptResponse.text.includes('2023') ||
+      (gptResponse.text.includes('2023') && !gptResponse.text.trim().includes(' ')) ||
       gptResponse.text.toLowerCase().includes('no response') ||
       gptResponse.text.toLowerCase().includes('no answer')
     ) {
