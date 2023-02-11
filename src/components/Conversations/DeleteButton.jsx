@@ -13,7 +13,7 @@ export default function DeleteButton({ conversationId, renaming, cancelHandler }
     'post',
     () => {
       dispatch(setMessages([]));
-      dispatch(setConversation({ conversationId: null, parentMessageId: null }));
+      dispatch(setConversation({ title: 'New chat', conversationId: null, parentMessageId: null }));
     }
   );
 
