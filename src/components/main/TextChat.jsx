@@ -10,6 +10,7 @@ import { setSubmitState } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
 
 export default function TextChat({ messages, reloadConvos }) {
+  const [errorMessage, setErrorMessage] = useState('');
   const dispatch = useDispatch();
   const convo = useSelector((state) => state.convo);
   const { isSubmitting } = useSelector((state) => state.submit);
@@ -35,8 +36,8 @@ export default function TextChat({ messages, reloadConvos }) {
     };
     const convoHandler = (data) => {
       if (convo.conversationId === null && convo.parentMessageId === null) {
-        const { conversationId, parentMessageId } = data;
-        dispatch(setConversation({ conversationId, parentMessageId: data.id }));
+        const { title, conversationId, parentMessageId } = data;
+        dispatch(setConversation({ title, conversationId, parentMessageId: data.id }));
       }
 
       reloadConvos();
@@ -50,6 +51,7 @@ export default function TextChat({ messages, reloadConvos }) {
         text: `An error occurred. Please try again in a few moments.\n\nError message: ${event.data}`,
         error: true
       };
+      setErrorMessage(event.data);
       dispatch(setSubmitState(false));
       dispatch(setMessages([...messages.slice(0, -2), currentMsg, errorResponse]));
       dispatch(setText(payload));
@@ -105,6 +107,7 @@ export default function TextChat({ messages, reloadConvos }) {
             <Regenerate
               submitMessage={submitMessage}
               tryAgain={tryAgain}
+              errorMessage={errorMessage}
             />
           ) : (
             <div className="relative flex w-full flex-grow flex-col rounded-md border border-black/10 bg-white py-2 shadow-md dark:border-gray-900/50 dark:bg-gray-700 dark:text-white dark:shadow-lg md:py-3 md:pl-4">

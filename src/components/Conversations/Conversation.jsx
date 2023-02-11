@@ -1,19 +1,18 @@
 import React, { useState, useRef } from 'react';
 import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
-import { useSelector, useDispatch } from 'react-redux';
+import { useDispatch } from 'react-redux';
 import { setConversation } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setText } from '~/store/textSlice';
 import manualSWR from '~/utils/fetchers';
 import ConvoIcon from '../svg/ConvoIcon';
 
-export default function Conversation({ id, parentMessageId, title = 'New conversation' }) {
+export default function Conversation({ id, parentMessageId, conversationId, title = 'New conversation' }) {
   const [renaming, setRenaming] = useState(false);
   const [titleInput, setTitleInput] = useState(title);
   const inputRef = useRef(null);
   const dispatch = useDispatch();
-  const { conversationId } = useSelector((state) => state.convo);
   const { trigger, isMutating } = manualSWR(`http://localhost:3050/messages/${id}`, 'get');
   const rename = manualSWR(`http://localhost:3050/update_convo`, 'post');
 
@@ -72,7 +71,7 @@ export default function Conversation({ id, parentMessageId, title = 'New convers
       {...aProps}
     >
       <ConvoIcon />
-      <div className="relative max-h-5 flex-1 overflow-hidden text-ellipsis break-all">
+      <div className="relative max-h-5 flex-1 overflow-hidden text-ellipsis break-all" >
         {renaming === true ? (
           <input
             ref={inputRef}

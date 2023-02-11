@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { setText } from '~/store/textSlice';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
@@ -6,8 +6,10 @@ import Templates from '../Prompts/Templates';
 import SunIcon from '../svg/SunIcon';
 import LightningIcon from '../svg/LightningIcon';
 import CautionIcon from '../svg/CautionIcon';
+import ChatIcon from '../svg/ChatIcon';
 
 export default function Landing({ title }) {
+  const [showingTemplates, setShowingTemplates] = useState(false);
   const dispatch = useDispatch();
   useDocumentTitle(title);
 
@@ -17,6 +19,12 @@ export default function Landing({ title }) {
     const quote = innerText.split('"')[1].trim();
     dispatch(setText(quote));
   };
+
+  const showTemplates = (e) => {
+    e.preventDefault();
+    setShowingTemplates(!showingTemplates);
+  };
+
   return (
     <div className="flex h-full flex-col items-center overflow-y-auto text-sm dark:bg-gray-800">
       <div className="w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
@@ -85,10 +93,19 @@ export default function Landing({ title }) {
             </ul>
           </div>
         </div>
-        <Templates />
-        <div
-          className="group h-32 w-full flex-shrink-0 dark:border-gray-900/50 dark:bg-gray-800 md:h-48"
-        />
+        {!showingTemplates && (
+          <div className="mt-8 mb-4 flex flex-col items-center gap-3.5 md:mt-16">
+            <button
+              onClick={showTemplates}
+              className="btn btn-neutral justify-center gap-2 border-0 md:border"
+            >
+              <ChatIcon />
+              Show Prompt Templates
+            </button>
+          </div>
+        )}
+        {!!showingTemplates && <Templates showTemplates={showTemplates}/>}
+        <div className="group h-32 w-full flex-shrink-0 dark:border-gray-900/50 dark:bg-gray-800 md:h-48" />
       </div>
     </div>
   );

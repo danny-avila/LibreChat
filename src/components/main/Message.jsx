@@ -40,7 +40,7 @@ export default function Message({ sender, text, last = false, error = false }) {
             ) : (
               <span>
                 {text}
-                {isSubmitting && last && sender === 'GPT' && <span className="blink">█</span>}
+                {isSubmitting && last && sender === 'GPT' && <span className="cursorBlink">█</span>}
               </span>
             )}
           </div>

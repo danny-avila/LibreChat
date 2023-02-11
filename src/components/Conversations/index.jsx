@@ -1,10 +1,25 @@
 import React from 'react';
+import { useSelector } from 'react-redux';
 import Conversation from './Conversation';
 
 export default function Conversations({ conversations }) {
+  const { conversationId } = useSelector((state) => state.convo);
+  // const currentRef = useRef(null);
+
+  // const scrollToTop = () => {
+  //   currentRef.current?.scrollIntoView({ behavior: 'smooth' });
+  // };
+
+  // // this useEffect triggers the following warning in the Messages component (but not here):
+  // // Warning: Internal React error: Expected static flag was missing.
+  // useEffect(() => {
+  //   scrollToTop();
+  // }, [conversationId]);
+
   return (
     <div className="-mr-2 flex-1 flex-col overflow-y-auto border-b border-white/20">
       <div className="flex flex-col gap-2 text-sm text-gray-100">
+        {/* <div ref={currentRef} /> */}
         {conversations &&
           conversations.map((convo, i) => (
             <Conversation
@@ -12,6 +27,7 @@ export default function Conversations({ conversations }) {
               id={convo.conversationId}
               parentMessageId={convo.parentMessageId}
               title={convo.title}
+              conversationId={conversationId}
             />
           ))}
         {conversations && conversations.length >= 12 && (

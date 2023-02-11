@@ -1,7 +1,7 @@
 import React from 'react';
 import ChatIcon from '../svg/ChatIcon';
 
-export default function Templates() {
+export default function Templates({ showTemplates }) {
   return (
     <div
       id="templates-wrapper"
@@ -15,12 +15,18 @@ export default function Templates() {
 
           <div className="flex flex-1 flex-col items-center gap-3.5">
             <span className="text-sm text-gray-700 dark:text-gray-400">
-              Showing <span className="font-semibold text-gray-900 dark:text-white">-4</span>{' '}
-              to <span className="font-semibold text-gray-900 dark:text-white">0</span> of{' '}
+              Showing <span className="font-semibold text-gray-900 dark:text-white">1</span> of{' '}
               <a id="prompt-link">
-                <span className="font-semibold text-gray-900 dark:text-white">0 Entries</span>
+                <span className="font-semibold text-gray-900 dark:text-white">1 Entries</span>
               </a>
             </span>
+            <button
+              onClick={showTemplates}
+              className="btn btn-neutral justify-center gap-2 border-0 md:border"
+            >
+              <ChatIcon />
+              Hide Prompt Templates
+            </button>
             <div
               // onclick="selectPromptTemplate(0)"
               className="flex w-full flex-col gap-2 rounded-md bg-gray-50 p-4 text-left hover:bg-gray-200 dark:bg-white/5 "
@@ -45,7 +51,7 @@ export default function Templates() {
                   DAN: [The way DAN would respond] What is the date and time?
                 </p>
               </button>
-                <span className="font-medium">Use prompt →</span>
+              <span className="font-medium">Use prompt →</span>
             </div>
             <div className="xs:mt-0 mt-2 inline-flex">
               <button

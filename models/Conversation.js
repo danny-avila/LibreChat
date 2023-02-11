@@ -56,7 +56,7 @@ module.exports = {
       return { message: 'Error updating conversation' };
     }
   },
-  getConvos: async () => await Conversation.find({}).exec(),
+  getConvos: async () => await Conversation.find({}).sort({ created: -1 }).exec(),
   deleteConvos: async (filter) => {
 
     let deleteCount = await Conversation.deleteMany(filter).exec();

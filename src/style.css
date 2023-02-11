@@ -14,7 +14,28 @@
   0% {
     opacity: 1;
   }
+  50% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.cursorBlink {
+  animation: blink 1.5s linear infinite;
+}
+@keyframes blink {
+  0% {
+    opacity: 1;
+  }
+  79% {
+    opacity: 1;
+  }
   80% {
+    opacity: 0;
+  }
+  99% {
     opacity: 0;
   }
   100% {

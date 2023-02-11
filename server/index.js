@@ -69,12 +69,17 @@ app.post('/update_convo', async (req, res) => {
 });
 
 app.post('/ask', async (req, res) => {
-  console.log(req.body);
   const { text, parentMessageId, conversationId } = req.body;
+  if (!text.trim().includes(' ') && text.length < 5) {
+    res.status(500).write('Prompt empty or too short');
+    res.end();
+    return;
+  }
+
   const userMessageId = crypto.randomUUID();
   let userMessage = { id: userMessageId, sender: 'User', text };
 
-  console.log(userMessage, req.body);
+  console.log('initial ask log', userMessage);
 
   res.writeHead(200, {
     Connection: 'keep-alive',
