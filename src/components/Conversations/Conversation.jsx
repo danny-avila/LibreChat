@@ -14,7 +14,7 @@ export default function Conversation({ id, parentMessageId, conversationId, titl
   const inputRef = useRef(null);
   const dispatch = useDispatch();
   const { trigger, isMutating } = manualSWR(`http://localhost:3050/messages/${id}`, 'get');
-  const rename = manualSWR(`http://localhost:3050/update_convo`, 'post');
+  const rename = manualSWR(`http://localhost:3050/convos/update`, 'post');
 
   const clickHandler = async () => {
     if (conversationId === id) {

@@ -9,7 +9,7 @@ import { setMessages } from '~/store/messageSlice';
 export default function DeleteButton({ conversationId, renaming, cancelHandler }) {
   const dispatch = useDispatch();
   const { trigger, isMutating } = manualSWR(
-    'http://localhost:3050/clear_convos',
+    'http://localhost:3050/convos/clear',
     'post',
     () => {
       dispatch(setMessages([]));

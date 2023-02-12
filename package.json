@@ -6,7 +6,7 @@
   "scripts": {
     "start": "webpack-dev-server .",
     "build": "Webpack . --watch",
-    "server": "node server/index.js",
+    "server": "npx nodemon server/index.js",
     "test": "test"
   },
   "repository": {
