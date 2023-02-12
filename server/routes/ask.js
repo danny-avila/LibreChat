@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { ask, titleConversation } = require('../../app/chatgpt');
+const { ask, titleConvo } = require('../../app/chatgpt');
 const { saveMessage, deleteMessages } = require('../../models/Message');
 const { saveConvo } = require('../../models/Conversation');
 
@@ -16,7 +16,7 @@ router.post('/', async (req, res) => {
   const userMessageId = crypto.randomUUID();
   let userMessage = { id: userMessageId, sender: 'User', text };
 
-  console.log('initial ask log', userMessage);
+  console.log('ask log', userMessage);
 
   res.writeHead(200, {
     Connection: 'keep-alive',
@@ -46,7 +46,7 @@ router.post('/', async (req, res) => {
     if (!!parentMessageId) {
       gptResponse = { ...gptResponse, parentMessageId };
     } else {
-      gptResponse.title = await titleConversation(text, gptResponse.text);
+      gptResponse.title = await titleConvo(text, gptResponse.text);
     }
 
     if (

@@ -22,7 +22,7 @@ const ask = async (question, progressCallback, convo) => {
   return res;
 };
 
-const titleConversation = async (message, response) => {
+const titleConvo = async (message, response) => {
   const configuration = new Configuration({
     apiKey: process.env.OPENAI_KEY
   });
@@ -31,8 +31,8 @@ const titleConversation = async (message, response) => {
     model: 'text-davinci-002',
     prompt: `Write a short title in title case, ideally in 5 words or less, and do not refer to the user or GPT, that summarizes this conversation:\nUser:"${message}"\nGPT:"${response}"\nTitle: `
   });
-  console.log(completion.data.choices[0].text);
+
   return completion.data.choices[0].text.replace(/\n/g, '');
 };
 
-module.exports = { ask, titleConversation };
+module.exports = { ask, titleConvo };
