@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import SubmitButton from './SubmitButton';
 import Regenerate from './Regenerate';
+import ModelMenu from './ModelMenu';
 import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
 import handleSubmit from '~/utils/handleSubmit';
@@ -45,7 +46,6 @@ export default function TextChat({ messages }) {
         console.log('convo after dispatch', convo);
       }
 
-      // reloadConvos();
       dispatch(setSubmitState(false));
     };
 
@@ -105,7 +105,6 @@ export default function TextChat({ messages }) {
       <form className="stretch mx-2 flex flex-row gap-3 pt-2 last:mb-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
         <div className="relative flex h-full flex-1 md:flex-col">
           <div className="ml-1 mt-1.5 flex justify-center gap-0 md:m-auto md:mb-2 md:w-full md:gap-2" />
-          {/* removed this prop shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] */}
           {!!error ? (
             <Regenerate
               submitMessage={submitMessage}
@@ -114,6 +113,7 @@ export default function TextChat({ messages }) {
             />
           ) : (
             <div className="relative flex w-full flex-grow flex-col rounded-md border border-black/10 bg-white py-2 shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:border-gray-900/50 dark:bg-gray-700 dark:text-white dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] md:py-3 md:pl-4">
+              <ModelMenu />
               <TextareaAutosize
                 tabIndex="0"
                 // style={{maxHeight: '200px', height: '24px', overflowY: 'hidden'}}
@@ -123,7 +123,7 @@ export default function TextChat({ messages }) {
                 onKeyDown={handleKeyDown}
                 onChange={changeHandler}
                 placeholder=""
-                className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-2 pr-7 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-0"
+                className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-9 pr-7 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-7"
               />
               <SubmitButton submitMessage={submitMessage} />
             </div>

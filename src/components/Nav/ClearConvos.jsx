@@ -15,7 +15,7 @@ export default function ClearConvos() {
     'post',
     () => {
       dispatch(setMessages([]));
-      dispatch(setConversation({ error: false, conversationId: null, parentMessageId: null }));
+      dispatch(setConversation({ error: false, title: 'New chat', conversationId: null, parentMessageId: null }));
       mutate('http://localhost:3050/convos');
     }
   );
