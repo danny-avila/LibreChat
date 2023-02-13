@@ -38,12 +38,14 @@ export default function TextChat({ messages, reloadConvos }) {
     const convoHandler = (data) => {
       console.log('in convo handler');
       if (convo.conversationId === null && convo.parentMessageId === null) {
-        const { title, conversationId, parentMessageId } = data;
+        const { title, conversationId, id } = data;
         console.log('convo is null');
-        dispatch(setConversation({ title, conversationId, parentMessageId: data.id }));
+        console.log('title, convoId, id', title, conversationId, id);
+        dispatch(setConversation({ title, conversationId, parentMessageId: id }));
+        console.log('convo after dispatch', convo);
       }
 
-      reloadConvos();
+      // reloadConvos();
       dispatch(setSubmitState(false));
     };
 
@@ -111,7 +113,7 @@ export default function TextChat({ messages, reloadConvos }) {
               errorMessage={errorMessage}
             />
           ) : (
-            <div className="relative flex w-full flex-grow flex-col rounded-md border border-black/10 bg-white py-2 shadow-md dark:border-gray-900/50 dark:bg-gray-700 dark:text-white dark:shadow-lg md:py-3 md:pl-4">
+            <div className="relative flex w-full flex-grow flex-col rounded-md border border-black/10 bg-white py-2 shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:border-gray-900/50 dark:bg-gray-700 dark:text-white dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] md:py-3 md:pl-4">
               <TextareaAutosize
                 tabIndex="0"
                 // style={{maxHeight: '200px', height: '24px', overflowY: 'hidden'}}
