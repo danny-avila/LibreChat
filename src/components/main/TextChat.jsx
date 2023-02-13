@@ -10,7 +10,7 @@ import { setMessages } from '~/store/messageSlice';
 import { setSubmitState } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
 
-export default function TextChat({ messages, reloadConvos }) {
+export default function TextChat({ messages }) {
   const [errorMessage, setErrorMessage] = useState('');
   const dispatch = useDispatch();
   const convo = useSelector((state) => state.convo);

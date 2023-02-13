@@ -1,5 +1,6 @@
 import React from 'react';
 import TrashIcon from '../svg/TrashIcon';
+import { useSWRConfig } from "swr"
 import manualSWR from '~/utils/fetchers';
 import { useDispatch } from 'react-redux';
 import { setConversation } from '~/store/convoSlice';
@@ -7,6 +8,7 @@ import { setMessages } from '~/store/messageSlice';
 
 export default function ClearConvos() {
   const dispatch = useDispatch();
+  const { mutate } = useSWRConfig()
 
   const { trigger, isMutating } = manualSWR(
     'http://localhost:3050/convos/clear',
@@ -14,6 +16,7 @@ export default function ClearConvos() {
     () => {
       dispatch(setMessages([]));
       dispatch(setConversation({ error: false, conversationId: null, parentMessageId: null }));
+      mutate('http://localhost:3050/convos');
     }
   );
 

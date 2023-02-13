@@ -6,18 +6,25 @@ const { askClient } = require('../../app/chatgpt-client');
 const { saveMessage, deleteMessages } = require('../../models/Message');
 const { saveConvo } = require('../../models/Conversation');
 
+const handleError = (res, errorMessage) => {
+  res.status(500).write(`event: error\ndata: ${errorMessage}`);
+  res.end();
+};
+
+const sendMessage = (res, message) => {
+  res.write(`event: message\ndata: ${JSON.stringify(message)}\n\n`);
+};
+
 router.post('/', async (req, res) => {
   const { text, parentMessageId, conversationId } = req.body;
   if (!text.trim().includes(' ') && text.length < 5) {
-    res.status(500).write('Prompt empty or too short');
-    res.end();
-    return;
+    return handleError(res, 'Prompt empty or too short');
   }
 
   const userMessageId = crypto.randomUUID();
   let userMessage = { id: userMessageId, sender: 'User', text };
 
-  console.log('ask log', userMessage);
+  console.log('ask log', { ...userMessage, parentMessageId, conversationId });
 
   res.writeHead(200, {
     Connection: 'keep-alive',
@@ -35,70 +42,57 @@ router.post('/', async (req, res) => {
         userMessage.parentMessageId = parentMessageId ? parentMessageId : partial.id;
         userMessage.conversationId = conversationId ? conversationId : partial.conversationId;
         await saveMessage(userMessage);
-        res.write(
-          `event: message\ndata: ${JSON.stringify({ ...partial, initial: true })}\n\n`
-        );
+        sendMessage(res, { ...partial, initial: true });
         i++;
       }
 
       if (typeof partial === 'object') {
-        const data = JSON.stringify({ ...partial, message: true });
-        res.write(`event: message\ndata: ${data}\n\n`);
+        sendMessage(res, { ...partial, message: true });
       } else {
         tokens += partial;
-        res.write(`event: message\ndata: ${JSON.stringify({ text: tokens, message: true })}\n\n`);
+        sendMessage(res, { text: tokens, message: true });
       }
     };
 
-    let gptResponse = await askClient(text, progressCallback, { parentMessageId, conversationId });
+    let gptResponse = await askClient(text, progressCallback, {
+      parentMessageId,
+      conversationId
+    });
 
     console.log('CLIENT RESPONSE', gptResponse);
 
-    if (!!parentMessageId) {
-      gptResponse = { ...gptResponse, parentMessageId };
-    } else {
+    if (!parentMessageId) {
       gptResponse.title = await titleConvo(text, gptResponse.text);
     }
 
-    if (!gptResponse.parentMessageId && !parentMessageId) {
-      userMessage.parentMessageId = gptResponse.messageId;
-      gptResponse.parentMessageId = gptResponse.messageId;
-      userMessage.conversationId = gptResponse.conversationId;
-    }
-
-    const response = gptResponse.text || gptResponse.response;
-
-    if (gptResponse.response) {
-      await saveMessage(userMessage);
+    if (!gptResponse.parentMessageId) {
       gptResponse.text = gptResponse.response;
       gptResponse.id = gptResponse.messageId;
+      gptResponse.parentMessageId = gptResponse.messageId;
+      userMessage.parentMessageId = parentMessageId ? parentMessageId : gptResponse.messageId;
+      userMessage.conversationId = conversationId ? conversationId : gptResponse.conversationId;
+      await saveMessage(userMessage);
       delete gptResponse.response;
     }
 
     if (
-      (response.includes('2023') && !response.trim().includes(' ')) ||
-      response.toLowerCase().includes('no response') ||
-      response.toLowerCase().includes('no answer')
+      (gptResponse.text.includes('2023') && !gptResponse.text.trim().includes(' ')) ||
+      gptResponse.text.toLowerCase().includes('no response') ||
+      gptResponse.text.toLowerCase().includes('no answer')
     ) {
-      res.status(500).write('event: error\ndata: Prompt empty or too short');
-      res.end();
-      return;
+      return handleError(res, 'Prompt empty or too short');
     }
 
     gptResponse.sender = 'GPT';
     gptResponse.final = true;
-    // console.log('gptResponse', gptResponse);
-
     await saveMessage(gptResponse);
     await saveConvo(gptResponse);
-
-    res.write(`event: message\ndata: ${JSON.stringify(gptResponse)}\n\n`);
+    sendMessage(res, gptResponse);
     res.end();
   } catch (error) {
     console.log(error);
     await deleteMessages({ id: userMessageId });
-    res.status(500).write('event: error\ndata: ' + error.message);
-    res.end();
+    handleError(res, error.message);
   }
 });
 

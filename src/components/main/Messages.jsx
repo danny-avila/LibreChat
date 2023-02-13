@@ -1,9 +1,11 @@
 import React, { useEffect, useRef } from 'react';
+import { useSelector } from 'react-redux';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
+import useDidMountEffect from '~/hooks/useDidMountEffect';
 import Message from './Message';
 import Landing from './Landing';
 
-export default function Messages({ messages, title }) {
+export default function Messages({ title, messages }) {
   if (messages.length === 0) {
     return <Landing title={title}/>;
   }
@@ -18,9 +20,11 @@ export default function Messages({ messages, title }) {
 
   // this useEffect triggers the following warning:
   // Warning: Internal React error: Expected static flag was missing.
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  // useEffect(() => {
+  //   scrollToBottom();
+  // }, [messages]);
+
+  useDidMountEffect(() => scrollToBottom(), [messages]);
 
   return (
     <div className="flex-1 overflow-y-auto ">

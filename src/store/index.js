@@ -11,5 +11,6 @@ export const store = configureStore({
     messages: messageReducer,
     text: textReducer,
     submit: submitReducer,
-  }
+  },
+  devTools: true,
 });
