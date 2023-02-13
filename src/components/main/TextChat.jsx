@@ -123,7 +123,7 @@ export default function TextChat({ messages }) {
                 onKeyDown={handleKeyDown}
                 onChange={changeHandler}
                 placeholder=""
-                className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-9 pr-7 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-7"
+                className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-9 pr-7 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-8"
               />
               <SubmitButton submitMessage={submitMessage} />
             </div>
