@@ -86,8 +86,8 @@ router.post('/', async (req, res) => {
     }
 
     gptResponse.sender = 'GPT';
-
-    console.log('gptResponse', gptResponse);
+    gptResponse.final = true;
+    // console.log('gptResponse', gptResponse);
 
     await saveMessage(gptResponse);
     await saveConvo(gptResponse);

@@ -36,8 +36,10 @@ export default function TextChat({ messages, reloadConvos }) {
       dispatch(setMessages([...messages, currentMsg, { sender: 'GPT', text: data }]));
     };
     const convoHandler = (data) => {
+      console.log('in convo handler');
       if (convo.conversationId === null && convo.parentMessageId === null) {
         const { title, conversationId, parentMessageId } = data;
+        console.log('convo is null');
         dispatch(setConversation({ title, conversationId, parentMessageId: data.id }));
       }
 
