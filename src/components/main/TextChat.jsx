@@ -15,7 +15,7 @@ export default function TextChat({ messages }) {
   const [errorMessage, setErrorMessage] = useState('');
   const dispatch = useDispatch();
   const convo = useSelector((state) => state.convo);
-  const { isSubmitting } = useSelector((state) => state.submit);
+  const { isSubmitting, model } = useSelector((state) => state.submit);
   const { text } = useSelector((state) => state.text);
   const { error } = convo;
 
@@ -28,8 +28,8 @@ export default function TextChat({ messages }) {
       return;
     }
     dispatch(setSubmitState(true));
-    const payload = text.trim();
-    const currentMsg = { sender: 'User', text: payload, current: true };
+    const message = text.trim();
+    const currentMsg = { sender: 'User', text: message, current: true };
     const initialResponse = { sender: 'GPT', text: '' };
     dispatch(setMessages([...messages, currentMsg, initialResponse]));
     dispatch(setText(''));
@@ -59,12 +59,20 @@ export default function TextChat({ messages }) {
       setErrorMessage(event.data);
       dispatch(setSubmitState(false));
       dispatch(setMessages([...messages.slice(0, -2), currentMsg, errorResponse]));
-      dispatch(setText(payload));
+      dispatch(setText(message));
       dispatch(setError(true));
       return;
     };
-    console.log('User Input:', payload);
-    handleSubmit({ text: payload, messageHandler, convo, convoHandler, errorHandler });
+    const submission = {
+      model,
+      text: message,
+      convo,
+      messageHandler,
+      convoHandler,
+      errorHandler
+    };
+    console.log('User Input:', message);
+    handleSubmit(submission);
   };
 
   const handleKeyDown = (e) => {

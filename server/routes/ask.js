@@ -16,7 +16,7 @@ const sendMessage = (res, message) => {
 };
 
 router.post('/', async (req, res) => {
-  const { text, parentMessageId, conversationId } = req.body;
+  const { model, text, parentMessageId, conversationId } = req.body;
   if (!text.trim().includes(' ') && text.length < 5) {
     return handleError(res, 'Prompt empty or too short');
   }
@@ -24,7 +24,7 @@ router.post('/', async (req, res) => {
   const userMessageId = crypto.randomUUID();
   let userMessage = { id: userMessageId, sender: 'User', text };
 
-  console.log('ask log', { ...userMessage, parentMessageId, conversationId });
+  console.log('ask log', { model, ...userMessage, parentMessageId, conversationId });
 
   res.writeHead(200, {
     Connection: 'keep-alive',
@@ -54,9 +54,14 @@ router.post('/', async (req, res) => {
       }
     };
 
-    let gptResponse = await askClient(text, progressCallback, {
-      parentMessageId,
-      conversationId
+    let gptResponse = await askClient({
+      model,
+      text,
+      progressCallback,
+      convo: {
+        parentMessageId,
+        conversationId
+      }
     });
 
     console.log('CLIENT RESPONSE', gptResponse);
@@ -70,7 +75,9 @@ router.post('/', async (req, res) => {
       gptResponse.id = gptResponse.messageId;
       gptResponse.parentMessageId = gptResponse.messageId;
       userMessage.parentMessageId = parentMessageId ? parentMessageId : gptResponse.messageId;
-      userMessage.conversationId = conversationId ? conversationId : gptResponse.conversationId;
+      userMessage.conversationId = conversationId
+        ? conversationId
+        : gptResponse.conversationId;
       await saveMessage(userMessage);
       delete gptResponse.response;
     }

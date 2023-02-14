@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
-import Message from './Message';
-import ScrollToBottom from './ScrollToBottom';
 import { CSSTransition } from 'react-transition-group';
+import ScrollToBottom from './ScrollToBottom';
+import Message from './Message';
 
 const Messages = ({ messages }) => {
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -13,7 +13,7 @@ const Messages = ({ messages }) => {
       const scrollable = scrollableRef.current;
       const hasScrollbar = scrollable.scrollHeight > scrollable.clientHeight;
       setShowScrollButton(hasScrollbar);
-    }, 850);
+    }, 650);
 
     return () => {
       clearTimeout(timeoutId);
@@ -69,7 +69,7 @@ const Messages = ({ messages }) => {
           ))}
           <CSSTransition
             in={showScrollButton}
-            timeout={650}
+            timeout={400}
             classNames="scroll-down"
             unmountOnExit={false}
             appear

@@ -19,7 +19,6 @@ const currentSlice = createSlice({
     },
   }
 });
-//
 
 export const { setConversation, setError } = currentSlice.actions;
 

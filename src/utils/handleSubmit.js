@@ -1,13 +1,14 @@
 import { SSE } from '../../app/sse';
 
 export default function handleSubmit({
+  model,
   text,
   convo,
   messageHandler,
   convoHandler,
   errorHandler
 }) {
-  let payload = { text };
+  let payload = { model, text };
   if (convo.conversationId && convo.parentMessageId) {
     payload = {
       ...payload,

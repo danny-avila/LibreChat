@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { setConversation, setError } from '~/store/convoSlice';
+import { setModel } from '~/store/submitSlice';
 import GPTIcon from '../svg/GPTIcon';
 import { DropdownMenuCheckboxItemProps } from '@radix-ui/react-dropdown-menu';
 
@@ -17,7 +17,11 @@ import {
 } from '../ui/DropdownMenu.tsx';
 
 export default function ModelMenu() {
-  const [model, setModel] = useState('chatgpt');
+  const dispatch = useDispatch();
+  const { model } = useSelector((state) => state.submit);
+  const onChange = (value) => {
+    dispatch(setModel(value));
+  };
 
   const defaultColorProps = [
     'text-gray-500',
@@ -57,7 +61,7 @@ export default function ModelMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuRadioGroup
           value={model}
-          onValueChange={setModel}
+          onValueChange={onChange}
         >
           <DropdownMenuRadioItem value="chatgpt">ChatGPT</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="davinci">Davinci</DropdownMenuRadioItem>
