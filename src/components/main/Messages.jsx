@@ -1,31 +1,46 @@
 import React, { useEffect, useState, useRef } from 'react';
-import useDidMountEffect from '~/hooks/useDidMountEffect';
 import Message from './Message';
 import ScrollToBottom from './ScrollToBottom';
+import { CSSTransition } from 'react-transition-group';
 
 const Messages = ({ messages }) => {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const scrollableRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-
   useEffect(() => {
-    const scrollable = scrollableRef.current;
-    const hasScrollbar = scrollable.scrollHeight > scrollable.clientHeight;
-    setShowScrollButton(hasScrollbar);
-  }, [scrollableRef]);
+    const timeoutId = setTimeout(() => {
+      const scrollable = scrollableRef.current;
+      const hasScrollbar = scrollable.scrollHeight > scrollable.clientHeight;
+      setShowScrollButton(hasScrollbar);
+    }, 850);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setShowScrollButton(false);
   };
 
-  const handleScroll = (e) => {
-    const bottom = e.target.scrollHeight - e.target.scrollTop === e.target.clientHeight;
+  const handleScroll = () => {
+    const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
+    const diff = Math.abs(scrollHeight - scrollTop);
+    const bottom =
+      diff === clientHeight || (diff <= clientHeight + 25 && diff >= clientHeight - 25);
     if (bottom) {
       setShowScrollButton(false);
     } else {
       setShowScrollButton(true);
     }
+  };
+
+  let timeoutId = null;
+  const debouncedHandleScroll = () => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(handleScroll, 100);
   };
 
   const scrollHandler = (e) => {
@@ -37,7 +52,7 @@ const Messages = ({ messages }) => {
     <div
       className="flex-1 overflow-y-auto "
       ref={scrollableRef}
-      onScroll={handleScroll}
+      onScroll={debouncedHandleScroll}
     >
       {/* <div className="flex-1 overflow-hidden"> */}
       <div className="h-full dark:bg-gray-800">
@@ -49,9 +64,19 @@ const Messages = ({ messages }) => {
               text={message.text}
               last={i === messages.length - 1}
               error={!!message.error ? true : false}
+              scrollToBottom={i === messages.length - 1 ? scrollToBottom : null}
             />
           ))}
-          {showScrollButton && <ScrollToBottom scrollHandler={scrollHandler} />}
+          <CSSTransition
+            in={showScrollButton}
+            timeout={650}
+            classNames="scroll-down"
+            unmountOnExit={false}
+            appear
+          >
+            {(state) => showScrollButton && <ScrollToBottom scrollHandler={scrollHandler} />}
+          </CSSTransition>
+
           <div
             className="group h-32 w-full flex-shrink-0 dark:border-gray-900/50 dark:bg-gray-800 md:h-48"
             ref={messagesEndRef}
@@ -63,4 +88,4 @@ const Messages = ({ messages }) => {
   );
 };
 
-export default Messages
+export default Messages;

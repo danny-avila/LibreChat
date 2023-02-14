@@ -29,7 +29,7 @@ export default function TextChat({ messages }) {
     }
     dispatch(setSubmitState(true));
     const payload = text.trim();
-    const currentMsg = { sender: 'user', text: payload, current: true };
+    const currentMsg = { sender: 'User', text: payload, current: true };
     const initialResponse = { sender: 'GPT', text: '' };
     dispatch(setMessages([...messages, currentMsg, initialResponse]));
     dispatch(setText(''));

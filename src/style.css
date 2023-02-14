@@ -7,6 +7,27 @@
   outline: 1px solid limegreen !important;
 } */
 
+.scroll-down-enter {
+  opacity: 0;
+}
+.scroll-down-appear {
+  opacity: 0;
+}
+
+.scroll-down-enter-active {
+  opacity: 1;
+  transition: opacity 650ms;
+}
+
+.scroll-down-exit {
+  opacity: 1;
+}
+
+.scroll-down-exit-active {
+  opacity: 0;
+  transition: opacity 650ms;
+}
+
 .blink {
   animation: blink 1s linear infinite;
 }

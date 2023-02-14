@@ -30,7 +30,7 @@ export default function ModelMenu() {
 
   const chatgptColorProps = [
     'text-green-700',
-    // 'dark:text-green-400',
+    'dark:text-emerald-300',
     'hover:bg-green-100',
     'disabled:hover:bg-transparent',
     'dark:hover:bg-opacity-50',

@@ -1,6 +1,8 @@
 import React from 'react';
+import { CSSTransition } from 'react-transition-group';
 
-export default function ScrollToBottom({ scrollHandler }) {
+export default function ScrollToBottom({ scrollHandler}) {
+
   return (
     <button
       onClick={scrollHandler}

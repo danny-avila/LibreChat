@@ -41,6 +41,7 @@
     "react-dom": "^18.2.0",
     "react-redux": "^8.0.5",
     "react-textarea-autosize": "^8.4.0",
+    "react-transition-group": "^4.4.5",
     "swr": "^2.0.3",
     "tailwind-merge": "^1.9.1",
     "tailwindcss-animate": "^1.0.5",
