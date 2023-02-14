@@ -39,3 +39,4 @@ bower_components/
 
 # Environment
 .env
+cache.json

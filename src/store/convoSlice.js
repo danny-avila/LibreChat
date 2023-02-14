@@ -5,7 +5,7 @@ const initialState = {
   title: 'ChatGPT Clone',
   conversationId: null,
   parentMessageId: null,
-  convos: [],
+  // convos: [],
   convosLoading: false,
 };
 
@@ -19,7 +19,7 @@ const currentSlice = createSlice({
     setError: (state, action) => {
       state.error = action.payload;
     },
-    setConvos: (state, action) => state.convos = action.payload,
+    // setConvos: (state, action) => state.convos = action.payload,
   }
 });
 
