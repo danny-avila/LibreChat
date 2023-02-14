@@ -5,6 +5,8 @@ const initialState = {
   title: 'ChatGPT Clone',
   conversationId: null,
   parentMessageId: null,
+  convos: [],
+  convosLoading: false,
 };
 
 const currentSlice = createSlice({
@@ -17,9 +19,10 @@ const currentSlice = createSlice({
     setError: (state, action) => {
       state.error = action.payload;
     },
+    setConvos: (state, action) => state.convos = action.payload,
   }
 });
 
-export const { setConversation, setError } = currentSlice.actions;
+export const { setConversation, setConvos, setError } = currentSlice.actions;
 
 export default currentSlice.reducer;

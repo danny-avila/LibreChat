@@ -8,7 +8,15 @@ const postRequest = async (url, { arg }) => {
   return await axios.post(url, { arg });
 };
 
-export const swr = (path) => useSWR(path, fetcher);
+export const swr = (path, successCallback) => {
+  const options = {};
+
+  if (successCallback) {
+    options.onSuccess = successCallback;
+  }
+
+  return useSWR(path, fetcher);
+}
 
 export default function manualSWR(path, type, successCallback) {
   const options = {};

@@ -1,16 +1,13 @@
 import React, { useState } from 'react';
 import { useSelector } from 'react-redux';
 import Conversation from './Conversation';
-import { swr } from '~/utils/fetchers';
+// import { swr } from '~/utils/fetchers';
 import useDidMountEffect from '~/hooks/useDidMountEffect';
 
 export default function Conversations() {
-  const { data, error, isLoading, mutate } = swr('http://localhost:3050/convos');
-  const conversations = data;
   const [isHovering, setIsHovering] = useState(false);
   const { conversationId } = useSelector((state) => state.convo);
-
-  useDidMountEffect(() => mutate(), [conversationId]);
+  // useDidMountEffect(() => mutate(), [conversationId]);
   // const currentRef = useRef(null);
 
   // const scrollToTop = () => {

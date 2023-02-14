@@ -4,6 +4,8 @@ import Conversations from '../Conversations';
 import NavLinks from './NavLinks';
 
 export default function Nav() {
+  const { conversationId } = useSelector((state) => state.convo);
+
   return (
     <div className="dark hidden bg-gray-900 md:fixed md:inset-y-0 md:flex md:w-[260px] md:flex-col">
       <div className="flex h-full min-h-0 flex-col ">

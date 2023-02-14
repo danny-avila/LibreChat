@@ -5,11 +5,14 @@ import TextChat from './components/main/TextChat';
 import Nav from './components/Nav';
 import MobileNav from './components/Nav/MobileNav';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { setConvos } from '~/store/convoSlice';
 
 const App = () => {
   const { messages } = useSelector((state) => state.messages);
   const { title } = useSelector((state) => state.convo);
+  const dispatch = useDispatch();
+  const { data, error, isLoading, mutate } = swr('http://localhost:3050/convos', (res) => dispatch(setConvos(res)));
 
   useDocumentTitle(title);
 
