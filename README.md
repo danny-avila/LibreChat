@@ -23,11 +23,12 @@ Currently, this project is only functional with the `text-davinci-003` model.
 > Here are my planned/recently finished features.
 
 - [x] AI Model Selection
+- [ ] Highlight.js for code blocks
 - [ ] Prompt Templates
 - [ ] Conversation/Prompt Search
-- [ ] Semantic Search Option (requires more tokens)
-- [ ] Config file for easy startup
 - [ ] Bing AI integration (still on the waitlist myself)
+- [ ] Config file for easy startup
+- [ ] Semantic Search Option (requires more tokens)
 
 ### Features
 
@@ -43,10 +44,11 @@ Currently, this project is only functional with the `text-davinci-003` model.
 - Redux Toolkit, and React-Redux for state management
 - Backend: Node.js, Express, MongoDB
 
-## Use Case ##
+## Use Cases ##
 
   ![use case example](./use_case.png "GPT is down! Plus is too expensive!")
-  ChatGPT is down ( and don't want to pay for ChatGPT Plus). ChatGPT/Google Bard/Bing AI conversations are lost in space or
+  - ChatGPT is down ( and don't want to pay for ChatGPT Plus).
+  - ChatGPT/Google Bard/Bing AI conversations are lost in space or
   cannot be searched past a certain timeframe.
 
 
