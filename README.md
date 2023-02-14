@@ -59,7 +59,7 @@ Currently, this project is only functional with the `text-davinci-003` model.
 
 ## How to Get Started ##
 > **Warning**
->  Working on easy startup code. Still in development.
+>  Working on easy startup/config code. Still in development.
 
   <!-- ## License
 

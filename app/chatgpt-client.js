@@ -18,9 +18,9 @@ const davinciOptions = {
 };
 
 const askClient = async ({ model, text, progressCallback, convo }) => {
-  const clientOptions = model === 'chatgpt' ? proxyOptions : davinciOptions;
+  // const clientOptions = model === 'chatgpt' ? proxyOptions : davinciOptions;
   const ChatGPTClient = (await import('@waylaidwanderer/chatgpt-api')).default;
-  const client = new ChatGPTClient(process.env.CHATGPT_TOKEN, clientOptions, {
+  const client = new ChatGPTClient(process.env.CHATGPT_TOKEN, davinciOptions, {
     store: new KeyvFile({ filename: 'cache.json' })
   });
   let options = {
