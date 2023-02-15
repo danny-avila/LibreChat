@@ -38,11 +38,10 @@ Currently, this project is only functional with the `text-davinci-003` model.
 
 ### Technologies used
 
-- Utilizes waylaidwanderer's [node-chatgpt-api package](https://github.com/waylaidwanderer/node-chatgpt-api) for current conversational AIs
+- Utilizes waylaidwanderer's [node-chatgpt-api package](https://github.com/waylaidwanderer/node-chatgpt-api)
 - Response streaming identical to ChatGPT through server-sent events
-- Use of Tailwind CSS (just like the official site) and [shadcn/ui](https://github.com/shadcn/ui) components
-- Redux Toolkit, and React-Redux for state management
-- Backend: Node.js, Express, MongoDB
+- Use of Tailwind CSS (like the official site) and [shadcn/ui](https://github.com/shadcn/ui) components
+- Backend: Node.js, Redux Toolkit, Express, MongoDB, Keyv
 
 ## Use Cases ##
 
