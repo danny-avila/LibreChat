@@ -23,6 +23,7 @@ Currently, this project is only functional with the `text-davinci-003` model.
 
 - [x] Rename, delete conversations
 - [x] Persistent conversation
+- [x] UI Error handling
 - [x] AI Model Selection
 - [ ] Highlight.js for code blocks
 - [ ] Prompt Templates
@@ -52,13 +53,9 @@ Currently, this project is only functional with the `text-davinci-003` model.
   - ChatGPT/Google Bard/Bing AI conversations are lost in space or
   cannot be searched past a certain timeframe.
 
-
-## Solution ##
+<!-- ## Solution ##
   Serves and searches all conversations reliably. All AI convos under one house.
-  Pay per call and not per month (cents compared to dollars).
-
-## How to Get Started ##
-- Originally built with the [chatgpt-api](https://github.com/transitive-bullshit/chatgpt-api) package.
+  Pay per call and not per month (cents compared to dollars). -->
 
 ## How to Get Started ##
 > **Warning**
