@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { setModel } from '~/store/submitSlice';
 import GPTIcon from '../svg/GPTIcon';
+import BingIcon from '../svg/BingIcon';
 import { DropdownMenuCheckboxItemProps } from '@radix-ui/react-dropdown-menu';
 
 import { Button } from '../ui/Button.tsx';
@@ -44,6 +45,7 @@ export default function ModelMenu() {
   ];
 
   const colorProps = model === 'chatgpt' ? chatgptColorProps : defaultColorProps;
+  const icon = model === 'bingai' ? <BingIcon button={true} /> : <GPTIcon button={true} /> ;
 
   return (
     <DropdownMenu>
@@ -53,7 +55,7 @@ export default function ModelMenu() {
           // style={{backgroundColor: 'rgb(16, 163, 127)'}}
           className={`absolute bottom-0.5 rounded-md border-0 p-1 pl-2 outline-none ${colorProps.join(' ')} focus:ring-0 focus:ring-offset-0 disabled:bottom-0.5 md:pl-1 md:bottom-1 md:left-2 md:disabled:bottom-1`}
         >
-          <GPTIcon button={true} />
+          {icon}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56">
@@ -63,6 +65,7 @@ export default function ModelMenu() {
           value={model}
           onValueChange={onChange}
         >
+          <DropdownMenuRadioItem value="bingai">BingAI</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="chatgpt">ChatGPT</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="davinci">Davinci</DropdownMenuRadioItem>
           {/* <DropdownMenuRadioItem value="right">Right</DropdownMenuRadioItem> */}

@@ -2,7 +2,7 @@ import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
   isSubmitting: false,
-  model: 'chatgpt'
+  model: 'bingai'
 };
 
 const currentSlice = createSlice({

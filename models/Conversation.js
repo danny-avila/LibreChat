@@ -15,6 +15,15 @@ const convoSchema = mongoose.Schema({
     type: String,
     default: 'New conversation',
   },
+  conversationSignature: {
+    type: String,
+  },
+  clientId: {
+    type: String,
+  },
+  invocationId: {
+    type: String,
+  },
   messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
   created: {
     type: Date,
