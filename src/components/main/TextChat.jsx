@@ -30,11 +30,11 @@ export default function TextChat({ messages }) {
     dispatch(setSubmitState(true));
     const message = text.trim();
     const currentMsg = { sender: 'User', text: message, current: true };
-    const initialResponse = { sender: 'GPT', text: '' };
+    const initialResponse = { sender: model, text: '' };
     dispatch(setMessages([...messages, currentMsg, initialResponse]));
     dispatch(setText(''));
     const messageHandler = (data) => {
-      dispatch(setMessages([...messages, currentMsg, { sender: 'GPT', text: data }]));
+      dispatch(setMessages([...messages, currentMsg, { sender: model, text: data }]));
     };
     const convoHandler = (data) => {
       console.log('in convo handler');

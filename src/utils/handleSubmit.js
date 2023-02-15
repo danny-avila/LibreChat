@@ -1,4 +1,5 @@
 import { SSE } from '../../app/sse';
+const endpoint = 'http://localhost:3050/ask';
 
 export default function handleSubmit({
   model,
@@ -17,7 +18,8 @@ export default function handleSubmit({
     };
   }
 
-  const events = new SSE('http://localhost:3050/ask', {
+  const server = model === 'bingai' ? endpoint + '/bing' : endpoint;
+  const events = new SSE(server, {
     payload: JSON.stringify(payload),
     headers: { 'Content-Type': 'application/json' }
   });
@@ -28,8 +30,9 @@ export default function handleSubmit({
 
   events.onmessage = function (e) {
     const data = JSON.parse(e.data);
+    const text = data.text || data.response;
     if (!!data.message) {
-      messageHandler(data.text.replace(/^\n/, ''));
+      messageHandler(text.replace(/^\n/, ''));
     } else if (!!data.final) {
       console.log(data);
       convoHandler(data);
