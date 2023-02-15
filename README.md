@@ -8,6 +8,10 @@
 
 ## Updates
 <details open>
+<summary><strong>2023-02-15</strong></summary>
+Just got access to Bing AI so I'll be focusing on integrating that through waylaidwanderer's 'experimental' BingAIClient.
+</details>
+<details open>
 <summary><strong>2023-02-14</strong></summary>
 
 Official ChatGPT use is no longer possible though I recently used it with waylaidwanderer's [reverse proxy method](https://github.com/waylaidwanderer/node-chatgpt-api/blob/main/README.md#using-a-reverse-proxy), and before that, through leaked models he also discovered.
@@ -18,17 +22,20 @@ Currently, this project is only functional with the `text-davinci-003` model.
 ## Roadmap
 
 > **Warning**
->  This is a work in progress. I'm building this in public. You can follow the progress here or on my [Linkedin]().
+
+>  This is a work in progress. I'm building this in public. You can follow the progress here or on my [Linkedin](www.linkedin.com/in/danny-avila).
+
 > Here are my planned/recently finished features.
 
 - [x] Rename, delete conversations
 - [x] Persistent conversation
 - [x] UI Error handling
 - [x] AI Model Selection
+- [ ] Bing AI integration (just got off the waitlist so this is up next!)
+- [ ] Server convo pagination (limit fetch and load more with 'show more' button)
 - [ ] Highlight.js for code blocks
 - [ ] Prompt Templates
 - [ ] Conversation/Prompt Search
-- [ ] Bing AI integration (still on the waitlist myself)
 - [ ] Config file for easy startup
 - [ ] Mobile styling (half-finished)
 - [ ] Semantic Search Option (requires more tokens)
