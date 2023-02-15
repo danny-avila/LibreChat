@@ -18,7 +18,7 @@ const Messages = ({ messages }) => {
     return () => {
       clearTimeout(timeoutId);
     };
-  }, []);
+  }, [messages]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -72,7 +72,7 @@ const Messages = ({ messages }) => {
             timeout={400}
             classNames="scroll-down"
             unmountOnExit={false}
-            appear
+            // appear
           >
             {(state) => showScrollButton && <ScrollToBottom scrollHandler={scrollHandler} />}
           </CSSTransition>

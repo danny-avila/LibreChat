@@ -10,13 +10,13 @@
 .scroll-down-enter {
   opacity: 0;
 }
-.scroll-down-appear {
+/* .scroll-down-appear {
   opacity: 0;
-}
+} */
 
 .scroll-down-enter-active {
   opacity: 1;
-  transition: opacity 650ms;
+  transition: opacity 400ms;
 }
 
 .scroll-down-exit {
@@ -25,7 +25,7 @@
 
 .scroll-down-exit-active {
   opacity: 0;
-  transition: opacity 650ms;
+  transition: opacity 400ms;
 }
 
 .blink {
