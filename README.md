@@ -21,6 +21,8 @@ Currently, this project is only functional with the `text-davinci-003` model.
 >  This is a work in progress. I'm building this in public. You can follow the progress here or on my [Linkedin]().
 > Here are my planned/recently finished features.
 
+- [x] Rename, delete conversations
+- [x] Persistent conversation
 - [x] AI Model Selection
 - [ ] Highlight.js for code blocks
 - [ ] Prompt Templates
