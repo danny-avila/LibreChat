@@ -13,17 +13,21 @@ const convoSchema = mongoose.Schema({
   },
   title: {
     type: String,
-    default: 'New conversation',
+    default: 'New conversation'
   },
   conversationSignature: {
-    type: String,
+    type: String
   },
   clientId: {
-    type: String,
+    type: String
   },
   invocationId: {
-    type: String,
+    type: String
   },
+  model: {
+    type: String
+  },
+  suggestions: [{ type: String }],
   messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
   created: {
     type: Date,
@@ -35,10 +39,10 @@ const Conversation =
   mongoose.models.Conversation || mongoose.model('Conversation', convoSchema);
 
 module.exports = {
-  saveConvo: async ({ conversationId, parentMessageId, title }) => {
+  saveConvo: async ({ conversationId, title, ...convo }) => {
     try {
       const messages = await getMessages({ conversationId });
-      const update = { parentMessageId, messages };
+      const update = { ...convo, messages };
       if (title) {
         update.title = title;
       }
@@ -55,11 +59,9 @@ module.exports = {
   },
   updateConvo: async ({ conversationId, ...update }) => {
     try {
-      return await Conversation.findOneAndUpdate(
-        { conversationId },
-        update,
-        { new: true }
-      ).exec();
+      return await Conversation.findOneAndUpdate({ conversationId }, update, {
+        new: true
+      }).exec();
     } catch (error) {
       console.log(error);
       return { message: 'Error updating conversation' };
@@ -67,7 +69,6 @@ module.exports = {
   },
   getConvos: async () => await Conversation.find({}).sort({ created: -1 }).exec(),
   deleteConvos: async (filter) => {
-
     let deleteCount = await Conversation.deleteMany(filter).exec();
     deleteCount.messages = await deleteMessages(filter);
     return deleteCount;

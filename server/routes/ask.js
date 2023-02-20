@@ -17,7 +17,7 @@ const sendMessage = (res, message) => {
 };
 
 router.post('/bing', async (req, res) => {
-  const { model, text, parentMessageId, conversationId } = req.body;
+  const { model, text, conversationSignature, conversationId } = req.body;
   if (!text.trim().includes(' ') && text.length < 5) {
     return handleError(res, 'Prompt empty or too short');
   }
@@ -25,7 +25,7 @@ router.post('/bing', async (req, res) => {
   const userMessageId = crypto.randomUUID();
   let userMessage = { id: userMessageId, sender: 'User', text };
 
-  console.log('ask log', { model, ...userMessage, parentMessageId, conversationId });
+  console.log('ask log', { model, ...userMessage, conversationSignature, conversationId });
 
   res.writeHead(200, {
     Connection: 'keep-alive',
@@ -39,13 +39,13 @@ router.post('/bing', async (req, res) => {
     let i = 0;
     let tokens = '';
     const progressCallback = async (partial) => {
-        tokens += partial;
-        sendMessage(res, { text: tokens, message: true });
+      tokens += partial;
+      sendMessage(res, { text: tokens, message: true });
     };
 
     let response = await askBing({
       text,
-      progressCallback,
+      progressCallback
       // convo: {
       //   parentMessageId,
       //   conversationId
@@ -53,23 +53,13 @@ router.post('/bing', async (req, res) => {
     });
 
     console.log('CLIENT RESPONSE');
-    console.dir(response, {depth: null});
+    console.dir(response, { depth: null });
 
-    // if (!parentMessageId) {
-    //   response.title = await titleConvo(text, response.text);
-    // }
-
-    // if (!response.parentMessageId) {
-    //   response.text = response.response;
-    //   response.id = response.messageId;
-    //   response.parentMessageId = response.messageId;
-    //   userMessage.parentMessageId = parentMessageId ? parentMessageId : response.messageId;
-    //   userMessage.conversationId = conversationId
-    //     ? conversationId
-    //     : response.conversationId;
-    //   await saveMessage(userMessage);
-    //   delete response.response;
-    // }
+    userMessage.conversationSignature =
+      conversationSignature || response.conversationSignature;
+    userMessage.conversationId = conversationId || response.conversationId;
+    userMessage.invocationId = response.invocationId;
+    await saveMessage(userMessage);
 
     // if (
     //   (response.text.includes('2023') && !response.text.trim().includes(' ')) ||
@@ -79,15 +69,22 @@ router.post('/bing', async (req, res) => {
     //   return handleError(res, 'Prompt empty or too short');
     // }
 
-    response.sender = 'Bing';
+    if (!conversationSignature) {
+      response.title = await titleConvo(text, response.response);
+    }
+
+    response.text = response.response;
+    response.id = response.details.messageId;
+    response.suggestions = response.details.suggestedResponses.map((s) => s.text);
+    response.sender = model;
     response.final = true;
-    // await saveMessage(response);
-    // await saveConvo(response);
+    await saveMessage(response);
+    await saveConvo(response);
     sendMessage(res, response);
     res.end();
   } catch (error) {
     console.log(error);
-    // await deleteMessages({ id: userMessageId });
+    await deleteMessages({ id: userMessageId });
     handleError(res, error.message);
   }
 });
@@ -143,10 +140,6 @@ router.post('/', async (req, res) => {
 
     console.log('CLIENT RESPONSE', gptResponse);
 
-    if (!parentMessageId) {
-      gptResponse.title = await titleConvo(text, gptResponse.text);
-    }
-
     if (!gptResponse.parentMessageId) {
       gptResponse.text = gptResponse.response;
       gptResponse.id = gptResponse.messageId;
@@ -167,6 +160,9 @@ router.post('/', async (req, res) => {
       return handleError(res, 'Prompt empty or too short');
     }
 
+    if (!parentMessageId) {
+      gptResponse.title = await titleConvo(text, gptResponse.text);
+    }
     gptResponse.sender = model;
     gptResponse.final = true;
     await saveMessage(gptResponse);
