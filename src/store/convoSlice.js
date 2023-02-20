@@ -5,7 +5,9 @@ const initialState = {
   title: 'ChatGPT Clone',
   conversationId: null,
   parentMessageId: null,
-  // convos: [],
+  conversationSignature: null,
+  clientId: null,
+  invocationId: null,
   convosLoading: false,
 };
 

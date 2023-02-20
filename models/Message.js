@@ -10,9 +10,19 @@ const messageSchema = mongoose.Schema({
     type: String,
     required: true
   },
+  conversationSignature: {
+    type: String,
+    // required: true
+  },
+  clientId: {
+    type: String,
+  },
+  invocationId: {
+    type: Number,
+  },
   parentMessageId: {
     type: String,
-    required: true
+    // required: true
   },
   sender: {
     type: String,
