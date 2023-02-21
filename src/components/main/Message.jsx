@@ -31,7 +31,7 @@ export default function Message({
   }
 
   let icon = `${sender}:`;
-  const isGPT = sender === 'chatgpt' || sender === 'davinci';
+  const isGPT = sender === 'chatgpt' || sender === 'davinci' || sender === 'GPT';
 
   if (sender.toLowerCase() !== 'user') {
     icon = (

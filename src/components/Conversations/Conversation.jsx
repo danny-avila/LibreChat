@@ -8,7 +8,13 @@ import { setText } from '~/store/textSlice';
 import manualSWR from '~/utils/fetchers';
 import ConvoIcon from '../svg/ConvoIcon';
 
-export default function Conversation({ id, parentMessageId, conversationId, title = 'New conversation' }) {
+export default function Conversation({
+  id,
+  parentMessageId,
+  conversationId,
+  title = 'New conversation',
+  bingData
+}) {
   const [renaming, setRenaming] = useState(false);
   const [titleInput, setTitleInput] = useState(title);
   const inputRef = useRef(null);
@@ -21,7 +27,34 @@ export default function Conversation({ id, parentMessageId, conversationId, titl
       return;
     }
 
-    dispatch(setConversation({ title, error: false, conversationId: id, parentMessageId }));
+    if (bingData) {
+      const { title, conversationSignature, clientId, conversationId, invocationId } =
+        bingData;
+      dispatch(
+        setConversation({
+          title,
+          conversationSignature,
+          clientId,
+          conversationId,
+          invocationId,
+          error: false,
+          conversationId: id,
+          parentMessageId: null
+        })
+      );
+    } else {
+      dispatch(
+        setConversation({
+          title,
+          error: false,
+          conversationId: id,
+          parentMessageId,
+          conversationSignature: null,
+          clientId: null,
+          invocationId: null
+        })
+      );
+    }
     const data = await trigger();
     dispatch(setMessages(data));
     dispatch(setText(''));
@@ -71,12 +104,12 @@ export default function Conversation({ id, parentMessageId, conversationId, titl
       {...aProps}
     >
       <ConvoIcon />
-      <div className="relative max-h-5 flex-1 overflow-hidden text-ellipsis break-all" >
+      <div className="relative max-h-5 flex-1 overflow-hidden text-ellipsis break-all">
         {renaming === true ? (
           <input
             ref={inputRef}
             type="text"
-            className="m-0 mr-0 w-full leading-tight border border-blue-500 bg-transparent p-0 text-sm outline-none"
+            className="m-0 mr-0 w-full border border-blue-500 bg-transparent p-0 text-sm leading-tight outline-none"
             value={titleInput}
             onChange={(e) => setTitleInput(e.target.value)}
             onBlur={onRename}
