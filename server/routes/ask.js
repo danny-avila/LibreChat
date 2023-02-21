@@ -17,7 +17,7 @@ const sendMessage = (res, message) => {
 };
 
 router.post('/bing', async (req, res) => {
-  const { model, text, conversationSignature, conversationId } = req.body;
+  const { model, text, ...convo } = req.body;
   if (!text.trim().includes(' ') && text.length < 5) {
     return handleError(res, 'Prompt empty or too short');
   }
@@ -25,7 +25,7 @@ router.post('/bing', async (req, res) => {
   const userMessageId = crypto.randomUUID();
   let userMessage = { id: userMessageId, sender: 'User', text };
 
-  console.log('ask log', { model, ...userMessage, conversationSignature, conversationId });
+  console.log('ask log', { model, ...userMessage, ...convo });
 
   res.writeHead(200, {
     Connection: 'keep-alive',
@@ -45,19 +45,16 @@ router.post('/bing', async (req, res) => {
 
     let response = await askBing({
       text,
-      progressCallback
-      // convo: {
-      //   parentMessageId,
-      //   conversationId
-      // }
+      progressCallback,
+      convo
     });
 
     console.log('CLIENT RESPONSE');
     console.dir(response, { depth: null });
 
     userMessage.conversationSignature =
-      conversationSignature || response.conversationSignature;
-    userMessage.conversationId = conversationId || response.conversationId;
+      convo.conversationSignature || response.conversationSignature;
+    userMessage.conversationId = convo.conversationId || response.conversationId;
     userMessage.invocationId = response.invocationId;
     await saveMessage(userMessage);
 
@@ -69,7 +66,7 @@ router.post('/bing', async (req, res) => {
     //   return handleError(res, 'Prompt empty or too short');
     // }
 
-    if (!conversationSignature) {
+    if (!convo.conversationSignature) {
       response.title = await titleConvo(text, response.response);
     }
 

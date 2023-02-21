@@ -8,7 +8,7 @@ const initialState = {
   conversationSignature: null,
   clientId: null,
   invocationId: null,
-  convosLoading: false,
+  convosLoading: false
 };
 
 const currentSlice = createSlice({
@@ -20,7 +20,7 @@ const currentSlice = createSlice({
     },
     setError: (state, action) => {
       state.error = action.payload;
-    },
+    }
     // setConvos: (state, action) => state.convos = action.payload,
   }
 });

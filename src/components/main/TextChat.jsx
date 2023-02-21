@@ -38,12 +38,31 @@ export default function TextChat({ messages }) {
     };
     const convoHandler = (data) => {
       console.log('in convo handler');
-      if (convo.conversationId === null && convo.parentMessageId === null) {
+      if (model !== 'bingai' && convo.parentMessageId === null) {
         const { title, conversationId, id } = data;
-        console.log('convo is null');
+        console.log('parentMessageId is null');
         console.log('title, convoId, id', title, conversationId, id);
         dispatch(setConversation({ title, conversationId, parentMessageId: id }));
-        console.log('convo after dispatch', convo);
+      } else if (convo.conversationSignature === null) {
+        const { title, conversationSignature, clientId, conversationId, invocationId } = data;
+        console.log('convoSig is null');
+        console.log(
+          'bing res data',
+          title,
+          conversationSignature,
+          clientId,
+          conversationId,
+          invocationId
+        );
+        dispatch(
+          setConversation({
+            title,
+            conversationSignature,
+            clientId,
+            conversationId,
+            invocationId
+          })
+        );
       }
 
       dispatch(setSubmitState(false));
