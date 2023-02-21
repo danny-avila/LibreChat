@@ -18,7 +18,7 @@ const messageSchema = mongoose.Schema({
     type: String,
   },
   invocationId: {
-    type: Number,
+    type: String,
   },
   parentMessageId: {
     type: String,

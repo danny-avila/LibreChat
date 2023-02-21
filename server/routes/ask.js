@@ -49,8 +49,8 @@ router.post('/bing', async (req, res) => {
       convo
     });
 
-    console.log('CLIENT RESPONSE');
-    console.dir(response, { depth: null });
+    // console.log('CLIENT RESPONSE');
+    // console.dir(response, { depth: null });
 
     userMessage.conversationSignature =
       convo.conversationSignature || response.conversationSignature;
@@ -72,7 +72,7 @@ router.post('/bing', async (req, res) => {
 
     response.text = response.response;
     response.id = response.details.messageId;
-    response.suggestions = response.details.suggestedResponses.map((s) => s.text);
+    response.suggestions = response.details.suggestedResponses && response.details.suggestedResponses.map((s) => s.text);
     response.sender = model;
     response.final = true;
     await saveMessage(response);
