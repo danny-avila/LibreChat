@@ -18,6 +18,16 @@ export default function handleSubmit({
     };
   }
 
+  if (model === 'bingai' && convo.conversationId) {
+    payload = {
+      ...payload,
+      conversationId: convo.conversationId,
+      conversationSignature: convo.conversationSignature,
+      clientId: convo.clientId,
+      invocationId: convo.invocationId,
+    };
+  }
+
   const server = model === 'bingai' ? endpoint + '/bing' : endpoint;
   const events = new SSE(server, {
     payload: JSON.stringify(payload),

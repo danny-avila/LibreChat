@@ -42,8 +42,17 @@ export default function TextChat({ messages }) {
         const { title, conversationId, id } = data;
         console.log('parentMessageId is null');
         console.log('title, convoId, id', title, conversationId, id);
-        dispatch(setConversation({ title, conversationId, parentMessageId: id }));
-      } else if (convo.conversationSignature === null) {
+        dispatch(
+          setConversation({
+            title,
+            conversationId,
+            parentMessageId: id,
+            conversationSignature: null,
+            clientId: null,
+            invocationId: null
+          })
+        );
+      } else if (convo.invocationId === null) {
         const { title, conversationSignature, clientId, conversationId, invocationId } = data;
         console.log('convoSig is null');
         console.log(
@@ -60,7 +69,8 @@ export default function TextChat({ messages }) {
             conversationSignature,
             clientId,
             conversationId,
-            invocationId
+            invocationId,
+            parentMessageId: null
           })
         );
       }
