@@ -8,10 +8,14 @@
 
 ## Updates
 <details open>
+<summary><strong>2023-02-21</strong></summary>
+BingAI is integrated (although sadly limited by Microsoft with the 5 msg/convo limit, 50 msgs/day). I will need to handle the case when Bing refuses to give more answers on top of the other styling features I have in mind. Official ChatGPT use is back with the new BrowserClient. Brainstorming how to handle the UI when the Ai model changes, since conversations can't be persisted between them (or perhaps build a way to achieve this at some level).
+</details>
+<details >
 <summary><strong>2023-02-15</strong></summary>
 Just got access to Bing AI so I'll be focusing on integrating that through waylaidwanderer's 'experimental' BingAIClient.
 </details>
-<details open>
+<details>
 <summary><strong>2023-02-14</strong></summary>
 
 Official ChatGPT use is no longer possible though I recently used it with waylaidwanderer's [reverse proxy method](https://github.com/waylaidwanderer/node-chatgpt-api/blob/main/README.md#using-a-reverse-proxy), and before that, through leaked models he also discovered.
@@ -31,11 +35,15 @@ Currently, this project is only functional with the `text-davinci-003` model.
 - [x] Persistent conversation
 - [x] UI Error handling
 - [x] AI Model Selection
-- [ ] Bing AI integration (just got off the waitlist so this is up next!)
-- [ ] Server convo pagination (limit fetch and load more with 'show more' button)
+- [x] Bing AI integration
+- [ ] Remember last selected model
+- [ ] AI model change handling (whether to pseudo-persist convos or start new convos within existing convo)
 - [ ] Highlight.js for code blocks
+- [ ] Server convo pagination (limit fetch and load more with 'show more' button)
 - [ ] Prompt Templates
+- [ ] Bing AI Styling (for suggested responses, convo end, etc.)
 - [ ] Conversation/Prompt Search
+- [ ] Refactor/clean up code
 - [ ] Config file for easy startup
 - [ ] Mobile styling (half-finished)
 - [ ] Semantic Search Option (requires more tokens)
@@ -46,7 +54,7 @@ Currently, this project is only functional with the `text-davinci-003` model.
 - UI from original ChatGPT, including Dark mode
 - AI model selection
 
-### Technologies used
+### Tech Stack
 
 - Utilizes [node-chatgpt-api](https://github.com/waylaidwanderer/node-chatgpt-api)
 - Response streaming identical to ChatGPT through server-sent events
@@ -59,6 +67,7 @@ Currently, this project is only functional with the `text-davinci-003` model.
   - ChatGPT is down ( and don't want to pay for ChatGPT Plus).
   - ChatGPT/Google Bard/Bing AI conversations are lost in space or
   cannot be searched past a certain timeframe.
+  - Quick one stop shop for all conversational AIs, with the added bonus of searching
 
 <!-- ## Solution ##
   Serves and searches all conversations reliably. All AI convos under one house.
