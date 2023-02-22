@@ -1,13 +1,11 @@
 require('dotenv').config();
-const Keyv = require('keyv');
 const { KeyvFile } = require('keyv-file');
 
 const proxyOptions = {
-  reverseProxyUrl: 'https://chatgpt.pawan.krd/api/completions',
-  modelOptions: {
-    model: 'text-davinci-002-render'
-  },
-  debug: false
+  // Warning: This will expose your access token to a third party. Consider the risks before using this.
+  reverseProxyUrl: 'https://chatgpt.duti.tech/api/conversation',
+  // Access token from https://chat.openai.com/api/auth/session
+  accessToken: process.env.CHATGPT_TOKEN
 };
 
 const davinciOptions = {
@@ -18,14 +16,27 @@ const davinciOptions = {
 };
 
 const askClient = async ({ model, text, progressCallback, convo }) => {
-  // const clientOptions = model === 'chatgpt' ? proxyOptions : davinciOptions;
-  const ChatGPTClient = (await import('@waylaidwanderer/chatgpt-api')).default;
-  const client = new ChatGPTClient(process.env.OPENAI_KEY, davinciOptions, {
+  const davinciClient = (await import('@waylaidwanderer/chatgpt-api')).default;
+  const { ChatGPTBrowserClient } = await import('@waylaidwanderer/chatgpt-api');
+  const clientOptions = model === 'chatgpt' ? proxyOptions : davinciOptions;
+  const modelClient = model === 'chatgpt' ? ChatGPTBrowserClient : davinciClient;
+  const store = {
     store: new KeyvFile({ filename: 'cache.json' })
-  });
+  };
+
+  const params =
+    model === 'chatgpt'
+      ? [clientOptions, store]
+      : [
+          process.env.OPENAI_KEY,
+          clientOptions,
+          store
+        ];
+
+  const client = new modelClient(...params);
+
   let options = {
     onProgress: async (partialRes) => await progressCallback(partialRes)
-    // onProgress: progressCallback
   };
 
   if (!!convo.parentMessageId && !!convo.conversationId) {

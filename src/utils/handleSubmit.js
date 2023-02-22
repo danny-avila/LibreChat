@@ -41,9 +41,9 @@ export default function handleSubmit({
   events.onmessage = function (e) {
     const data = JSON.parse(e.data);
     const text = data.text || data.response;
-    if (!!data.message) {
-      messageHandler(text.replace(/^\n/, ''));
-    } else if (!!data.final) {
+    if (data.message) {
+      messageHandler(text);
+    } else if (data.final) {
       console.log(data);
       convoHandler(data);
     } else {

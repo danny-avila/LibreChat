@@ -9,7 +9,7 @@ router.get('/', async (req, res) => {
 router.post('/clear', async (req, res) => {
   let filter = {};
   const { conversationId } = req.body.arg;
-  if (!!conversationId) {
+  if (conversationId) {
     filter = { conversationId };
   }
 
