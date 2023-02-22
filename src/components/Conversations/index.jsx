@@ -1,25 +1,13 @@
-import React, { useState } from 'react';
+import React from 'react';
 import Conversation from './Conversation';
 
 export default function Conversations({ conversations, conversationId }) {
-  // const currentRef = useRef(null);
-
-  // const scrollToTop = () => {
-  //   currentRef.current?.scrollIntoView({ behavior: 'smooth' });
-  // };
-
-  // // this useEffect triggers the following warning in the Messages component (but not here):
-  // // Warning: Internal React error: Expected static flag was missing.
-  // useEffect(() => {
-  //   scrollToTop();
-  // }, [conversationId]);
 
   return (
     <>
-      {/* <div ref={currentRef} /> */}
       {conversations &&
         conversations.length > 0 &&
-        conversations.map((convo, i) => {
+        conversations.map((convo) => {
           const bingData = convo.conversationSignature
             ? {
                 conversationSignature: convo.conversationSignature,

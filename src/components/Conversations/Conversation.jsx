@@ -19,7 +19,8 @@ export default function Conversation({
   const [titleInput, setTitleInput] = useState(title);
   const inputRef = useRef(null);
   const dispatch = useDispatch();
-  const { trigger, isMutating } = manualSWR(`http://localhost:3050/messages/${id}`, 'get');
+  // const { trigger, isMutating } = manualSWR(`http://localhost:3050/messages/${id}`, 'get');
+  const { trigger } = manualSWR(`http://localhost:3050/messages/${id}`, 'get');
   const rename = manualSWR(`http://localhost:3050/convos/update`, 'post');
 
   const clickHandler = async () => {
@@ -28,18 +29,16 @@ export default function Conversation({
     }
 
     if (bingData) {
-      const { title, conversationSignature, clientId, conversationId, invocationId } =
-        bingData;
+      const { conversationSignature, clientId, invocationId } = bingData;
       dispatch(
         setConversation({
           title,
-          conversationSignature,
-          clientId,
-          conversationId,
-          invocationId,
           error: false,
           conversationId: id,
-          parentMessageId: null
+          parentMessageId: null,
+          conversationSignature,
+          clientId,
+          invocationId
         })
       );
     } else {

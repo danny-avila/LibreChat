@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import GPTIcon from '../svg/GPTIcon';
 import BingIcon from '../svg/BingIcon';
@@ -11,13 +11,22 @@ export default function Message({
   scrollToBottom
 }) {
   const { isSubmitting } = useSelector((state) => state.submit);
+  const [abortScroll, setAbort] = useState(false);
   const blinker = isSubmitting && last && sender.toLowerCase() !== 'user';
 
   useEffect(() => {
-    if (blinker) {
+    if (blinker && !abortScroll) {
       scrollToBottom();
     }
-  }, [isSubmitting, text, blinker, scrollToBottom]);
+  }, [isSubmitting, text, blinker, scrollToBottom, abortScroll]);
+
+  const handleWheel = () => {
+    if (blinker) {
+      setAbort(true);
+    } else {
+      setAbort(false);
+    }
+  };
 
   const props = {
     className:
@@ -35,20 +44,21 @@ export default function Message({
   if (sender.toLowerCase() !== 'user') {
     icon = (
       <div
-        style={ isGPT ? { backgroundColor: 'rgb(16, 163, 127)' } : {}}
+        style={isGPT ? { backgroundColor: 'rgb(16, 163, 127)' } : {}}
         className="relative flex h-[30px] w-[30px] items-center justify-center rounded-sm p-1 text-white"
       >
-        { sender === 'bingai' ? <BingIcon /> : <GPTIcon />}
+        {sender === 'bingai' ? <BingIcon /> : <GPTIcon />}
       </div>
     );
   }
 
   return (
-    <div {...props}>
+    <div
+      {...props}
+      onWheel={handleWheel}
+    >
       <div className="m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
-        <strong className="relative flex w-[30px] flex-col items-end">
-          {icon}
-        </strong>
+        <strong className="relative flex w-[30px] flex-col items-end">{icon}</strong>
         <div className="relative flex w-[calc(100%-50px)] flex-col gap-1 whitespace-pre-wrap md:gap-3 lg:w-[calc(100%-115px)]">
           <div className="flex flex-grow flex-col gap-3">
             {error ? (
