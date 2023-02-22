@@ -1,14 +1,12 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { setModel } from '~/store/submitSlice';
 import GPTIcon from '../svg/GPTIcon';
 import BingIcon from '../svg/BingIcon';
-import { DropdownMenuCheckboxItemProps } from '@radix-ui/react-dropdown-menu';
 
 import { Button } from '../ui/Button.tsx';
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,

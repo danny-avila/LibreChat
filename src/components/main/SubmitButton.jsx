@@ -1,6 +1,5 @@
 import React from 'react';
 import { useSelector } from 'react-redux';
-import useDidMountEffect from '~/hooks/useDidMountEffect';
 
 export default function SubmitButton({ submitMessage }) {
   const { isSubmitting } = useSelector((state) => state.submit);
