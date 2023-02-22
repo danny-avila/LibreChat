@@ -22,14 +22,14 @@ const ask = async (question, progressCallback, convo) => {
   return res;
 };
 
-const titleConvo = async (message, response) => {
+const titleConvo = async (message, response, model) => {
   const configuration = new Configuration({
     apiKey: process.env.OPENAI_KEY
   });
   const openai = new OpenAIApi(configuration);
   const completion = await openai.createCompletion({
     model: 'text-davinci-002',
-    prompt: `Write a short title in title case, ideally in 5 words or less, and do not refer to the user or GPT, that summarizes this conversation:\nUser:"${message}"\nGPT:"${response}"\nTitle: `
+    prompt: `Write a short title in title case, ideally in 5 words or less, and do not refer to the user or ${model}, that summarizes this conversation:\nUser:"${message}"\n${model}:"${response}"\nTitle: `
   });
 
   return completion.data.choices[0].text.replace(/\n/g, '');

@@ -1,4 +1,3 @@
-// import { BingAIClient } from '@waylaidwanderer/chatgpt-api';
 require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
 
@@ -18,21 +17,11 @@ const askBing = async ({ text, progressCallback, convo }) => {
     onProgress: async (partialRes) => await progressCallback(partialRes),
   };
 
-  if (!!convo) {
+  if (convo) {
     options = { ...options, ...convo };
   }
 
   const res = await bingAIClient.sendMessage(text, options
-  // Options for reference
-  //  {
-  //   conversationSignature: response.conversationSignature,
-  //   conversationId: response.conversationId,
-  //   clientId: response.clientId,
-  //   invocationId: response.invocationId,
-  //   onProgress: (token) => {
-  //     process.stdout.write(token);
-  //   },
-  // }
   );
 
   return res;

@@ -38,7 +38,7 @@ export default function TextChat({ messages }) {
     };
     const convoHandler = (data) => {
       console.log('in convo handler');
-      if (model !== 'bingai' && convo.parentMessageId === null) {
+      if (model !== 'bingai' && convo.conversationId && convo.parentMessageId === null) {
         const { title, conversationId, id } = data;
         console.log('parentMessageId is null');
         console.log('title, convoId, id', title, conversationId, id);
@@ -52,7 +52,7 @@ export default function TextChat({ messages }) {
             invocationId: null
           })
         );
-      } else if (convo.invocationId === null) {
+      } else if (model === 'bingai' && convo.invocationId === null) {
         const { title, conversationSignature, clientId, conversationId, invocationId } = data;
         console.log('convoSig is null');
         console.log(

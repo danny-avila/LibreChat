@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { ask, titleConvo } = require('../../app/chatgpt');
+const { titleConvo } = require('../../app/chatgpt');
 const { askClient } = require('../../app/chatgpt-client');
 const { askBing } = require('../../app/bingai');
 const { saveMessage, deleteMessages } = require('../../models/Message');
@@ -36,7 +36,6 @@ router.post('/bing', async (req, res) => {
   });
 
   try {
-    let i = 0;
     let tokens = '';
     const progressCallback = async (partial) => {
       tokens += partial;
@@ -58,21 +57,15 @@ router.post('/bing', async (req, res) => {
     userMessage.invocationId = response.invocationId;
     await saveMessage(userMessage);
 
-    // if (
-    //   (response.text.includes('2023') && !response.text.trim().includes(' ')) ||
-    //   response.text.toLowerCase().includes('no response') ||
-    //   response.text.toLowerCase().includes('no answer')
-    // ) {
-    //   return handleError(res, 'Prompt empty or too short');
-    // }
-
     if (!convo.conversationSignature) {
-      response.title = await titleConvo(text, response.response);
+      response.title = await titleConvo(text, response.response, model);
     }
 
     response.text = response.response;
     response.id = response.details.messageId;
-    response.suggestions = response.details.suggestedResponses && response.details.suggestedResponses.map((s) => s.text);
+    response.suggestions =
+      response.details.suggestedResponses &&
+      response.details.suggestedResponses.map((s) => s.text);
     response.sender = model;
     response.final = true;
     await saveMessage(response);
@@ -121,6 +114,9 @@ router.post('/', async (req, res) => {
         sendMessage(res, { ...partial, message: true });
       } else {
         tokens += partial;
+        if (tokens.includes('[DONE]')) {
+          tokens = tokens.replace('[DONE]', '');
+        }
         sendMessage(res, { text: tokens, message: true });
       }
     };
@@ -158,7 +154,7 @@ router.post('/', async (req, res) => {
     }
 
     if (!parentMessageId) {
-      gptResponse.title = await titleConvo(text, gptResponse.text);
+      gptResponse.title = await titleConvo(text, gptResponse.text, model);
     }
     gptResponse.sender = model;
     gptResponse.final = true;
