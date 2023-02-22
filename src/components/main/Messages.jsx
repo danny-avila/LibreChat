@@ -63,7 +63,7 @@ const Messages = ({ messages }) => {
               sender={message.sender}
               text={message.text}
               last={i === messages.length - 1}
-              error={!!message.error ? true : false}
+              error={message.error ? true : false}
               scrollToBottom={i === messages.length - 1 ? scrollToBottom : null}
             />
           ))}
@@ -74,7 +74,7 @@ const Messages = ({ messages }) => {
             unmountOnExit={false}
             // appear
           >
-            {(state) => showScrollButton && <ScrollToBottom scrollHandler={scrollHandler} />}
+            {() => showScrollButton && <ScrollToBottom scrollHandler={scrollHandler} />}
           </CSSTransition>
 
           <div

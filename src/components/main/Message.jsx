@@ -2,7 +2,6 @@ import React, { useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import GPTIcon from '../svg/GPTIcon';
 import BingIcon from '../svg/BingIcon';
-// import useCustomEffect from '~/hooks/useCustomEffect';
 
 export default function Message({
   sender,
@@ -18,7 +17,7 @@ export default function Message({
     if (blinker) {
       scrollToBottom();
     }
-  }, [isSubmitting, text]);
+  }, [isSubmitting, text, blinker, scrollToBottom]);
 
   const props = {
     className:
@@ -52,7 +51,7 @@ export default function Message({
         </strong>
         <div className="relative flex w-[calc(100%-50px)] flex-col gap-1 whitespace-pre-wrap md:gap-3 lg:w-[calc(100%-115px)]">
           <div className="flex flex-grow flex-col gap-3">
-            {!!error ? (
+            {error ? (
               <div className="flex flex min-h-[20px] flex-row flex-col items-start gap-4 gap-2 whitespace-pre-wrap text-red-500">
                 <div className="rounded-md border border-red-500 bg-red-500/10 py-2 px-3 text-sm text-gray-600 dark:text-gray-100">
                   {text}

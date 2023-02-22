@@ -20,7 +20,7 @@ export default function TextChat({ messages }) {
   const { error } = convo;
 
   const submitMessage = () => {
-    if (!!error) {
+    if (error) {
       dispatch(setError(false));
     }
 
@@ -116,7 +116,7 @@ export default function TextChat({ messages }) {
     }
 
     if (e.key === 'Enter' && !e.shiftKey) {
-      if (!!isSubmitting) {
+      if (isSubmitting) {
         return;
       }
 
@@ -142,7 +142,7 @@ export default function TextChat({ messages }) {
       <form className="stretch mx-2 flex flex-row gap-3 pt-2 last:mb-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
         <div className="relative flex h-full flex-1 md:flex-col">
           <div className="ml-1 mt-1.5 flex justify-center gap-0 md:m-auto md:mb-2 md:w-full md:gap-2" />
-          {!!error ? (
+          {error ? (
             <Regenerate
               submitMessage={submitMessage}
               tryAgain={tryAgain}
