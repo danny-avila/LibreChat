@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { setModel } from '~/store/submitSlice';
 import GPTIcon from '../svg/GPTIcon';
@@ -21,6 +21,18 @@ export default function ModelMenu() {
   const onChange = (value) => {
     dispatch(setModel(value));
   };
+
+  useEffect(() => {
+    const lastSelectedModel = JSON.parse(localStorage.getItem('model'));
+    if (lastSelectedModel) {
+      dispatch(setModel(lastSelectedModel));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('model', JSON.stringify(model));
+  }, [model]);
 
   const defaultColorProps = [
     'text-gray-500',
