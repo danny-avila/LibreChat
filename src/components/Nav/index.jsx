@@ -28,7 +28,7 @@ export default function Nav() {
               onMouseLeave={() => setIsHovering(false)}
             >
               <div className="flex flex-col gap-2 text-sm text-gray-100">
-                {!!isLoading ? <Spinner /> : <Conversations conversations={data} conversationId={conversationId}/>}
+                {isLoading ? <Spinner /> : <Conversations conversations={data} conversationId={conversationId}/>}
               </div>
             </div>
             <NavLinks />

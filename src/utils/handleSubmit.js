@@ -1,5 +1,6 @@
 import { SSE } from '../../app/sse';
 const endpoint = 'http://localhost:3050/ask';
+// const newLineRegex = /^\n+/;
 
 export default function handleSubmit({
   model,
@@ -40,8 +41,10 @@ export default function handleSubmit({
 
   events.onmessage = function (e) {
     const data = JSON.parse(e.data);
-    const text = data.text || data.response;
+    let text = data.text || data.response;
     if (data.message) {
+      // text = text.match(newLineRegex) ? text.replace(newLineRegex, '') : text;
+      // console.log(data);
       messageHandler(text);
     } else if (data.final) {
       console.log(data);
