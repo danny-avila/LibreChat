@@ -1,5 +1,5 @@
 import React from 'react';
-import Messages from './components/Main/Messages';
+import Messages from './components/Messages';
 import Landing from './components/Main/Landing';
 import TextChat from './components/Main/TextChat';
 import Nav from './components/Nav';

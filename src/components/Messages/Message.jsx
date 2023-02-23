@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import CodeWrapper from './CodeWrapper';
 import { useSelector } from 'react-redux';
 import GPTIcon from '../svg/GPTIcon';
 import BingIcon from '../svg/BingIcon';
@@ -52,6 +53,8 @@ export default function Message({
     );
   }
 
+  const wrapText = (text) => <CodeWrapper text={text} />;
+
   return (
     <div
       {...props}
@@ -64,14 +67,16 @@ export default function Message({
             {error ? (
               <div className="flex flex min-h-[20px] flex-row flex-col items-start gap-4 gap-2 whitespace-pre-wrap text-red-500">
                 <div className="rounded-md border border-red-500 bg-red-500/10 py-2 px-3 text-sm text-gray-600 dark:text-gray-100">
-                  {text}
+                  {wrapText(text)}
                 </div>
               </div>
             ) : (
-              <span>
-                {text}
-                {blinker && <span className="result-streaming">█</span>}
-              </span>
+              <div className="flex min-h-[20px] flex-col items-start gap-4 whitespace-pre-wrap">
+                <div className="markdown prose dark:prose-invert light w-full break-words">
+                  {wrapText(text)}
+                  {blinker && <span className="result-streaming">█</span>}
+                </div>
+              </div>
             )}
           </div>
         </div>
