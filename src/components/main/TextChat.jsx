@@ -38,7 +38,7 @@ export default function TextChat({ messages }) {
     };
     const convoHandler = (data) => {
       console.log('in convo handler');
-      if (model !== 'bingai' && convo.conversationId && convo.parentMessageId === null) {
+      if (model !== 'bingai' && convo.conversationId === null && convo.parentMessageId === null) {
         const { title, conversationId, id } = data;
         console.log('parentMessageId is null');
         console.log('title, convoId, id', title, conversationId, id);
