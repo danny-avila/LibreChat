@@ -6,6 +6,28 @@
   box-sizing: border-box;
   outline: 1px solid limegreen !important;
 } */
+.prose :where(code):not(:where([class~="not-prose"] *)) {
+	color: var(--tw-prose-code);
+	font-size: .875em;
+	font-weight: 600;
+}
+
+.prose :where(code):not(:where([class~="not-prose"] *))::before {
+	content: "`";
+}
+
+.prose :where(code):not(:where([class~="not-prose"] *))::after {
+	content: "`";
+}
+
+code, pre {
+	font-family: Söhne Mono,Monaco,Andale Mono,Ubuntu Mono,monospace !important;
+}
+
+code, kbd, pre, samp {
+	font-family: Söhne Mono,Monaco,Andale Mono,Ubuntu Mono,monospace;
+	font-size: 1em;
+}
 
 .scroll-down-enter {
   opacity: 0;
