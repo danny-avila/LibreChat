@@ -1,4 +1,3 @@
-// const string = 'Some text before\n```python\nThis is some `Python` code with ```backticks``` inside the enclosure\n```\nSome text after\n```javascript\nThis is some JavaScript code\n```\n';
 const regex = /```([^`\n]*?)\n([\s\S]*?)\n```/g;
 
 export default function regexSplit(string) {
@@ -8,8 +7,7 @@ export default function regexSplit(string) {
   for (let i = 0; i < matches.length; i++) {
     const [fullMatch, language, code] = matches[i];
     // const formattedCode = code.replace(/`+/g, '\\`');
-    const formattedCode = code;
-    output.push(`\`\`\`${language}\n${formattedCode}\n\`\`\``);
+    output.push(`\`\`\`${language}\n${code}\n\`\`\``);
     if (i < matches.length - 1) {
       const nextText = string.slice(matches[i].index + fullMatch.length, matches[i + 1].index);
       output.push(nextText.trim());

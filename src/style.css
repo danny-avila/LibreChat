@@ -7,6 +7,10 @@
   outline: 1px solid limegreen !important;
 } */
 
+blockquote, dd, dl, fieldset, figure, h1, h2, h3, h4, h5, h6, hr, p, pre {
+	margin: 0;
+}
+
 .scroll-down-enter {
   opacity: 0;
 }
@@ -242,7 +246,7 @@
  .prose :where(code):not(:where([class~=not-prose] *)) {
   color:var(--tw-prose-code);
   font-size:.875em;
-  font-weight:600
+  font-weight:600;
  }
  .prose :where(code):not(:where([class~=not-prose] *)):before {
   content:"`"
