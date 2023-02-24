@@ -6,9 +6,6 @@ module.exports = {
   // darkMode: 'class',
   darkMode: ['class'],
   theme: {
-    extend: {}
-  },
-  theme: {
     extend: {
       // fontFamily: {
       //   sans: ['var(--font-sans)', ...fontFamily.sans]
@@ -29,5 +26,8 @@ module.exports = {
       }
     }
   },
-  plugins: [require('tailwindcss-animate')]
+  plugins: [
+    require('tailwindcss-animate'),
+    // require('@tailwindcss/typography'),
+  ]
 };
