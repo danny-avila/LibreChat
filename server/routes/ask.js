@@ -48,8 +48,8 @@ router.post('/bing', async (req, res) => {
       convo
     });
 
-    // console.log('CLIENT RESPONSE');
-    // console.dir(response, { depth: null });
+    console.log('CLIENT RESPONSE');
+    console.dir(response, { depth: null });
 
     userMessage.conversationSignature =
       convo.conversationSignature || response.conversationSignature;

@@ -44,7 +44,7 @@ const inLineWrap = (parts) => {
 };
 
 export default function TextWrapper({ text }) {
-  // append triple backticks to the end of the text if only singular found and language found
+  // append triple backticks to the end of the text only if singular found and language found
   if (text.match(/```/g)?.length === 1 && text.match(languageMatch)) {
     text += '```';
   }
