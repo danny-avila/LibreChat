@@ -36,9 +36,9 @@ Currently, this project is only functional with the `text-davinci-003` model.
 - [x] UI Error handling
 - [x] AI Model Selection
 - [x] Bing AI integration
-- [ ] Remember last selected model
-- [ ] AI model change handling (whether to pseudo-persist convos or start new convos within existing convo)
+- [x] Remember last selected model
 - [ ] Highlight.js for code blocks
+- [ ] AI model change handling (whether to pseudo-persist convos or start new convos within existing convo)
 - [ ] Server convo pagination (limit fetch and load more with 'show more' button)
 - [ ] Prompt Templates
 - [ ] Bing AI Styling (for suggested responses, convo end, etc.)
