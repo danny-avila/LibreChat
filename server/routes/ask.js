@@ -117,7 +117,8 @@ router.post('/', async (req, res) => {
         if (tokens.includes('[DONE]')) {
           tokens = tokens.replace('[DONE]', '');
         }
-        sendMessage(res, { text: tokens, message: true });
+        sendMessage(res, { text: tokens, message: true, initial: i === 0 ? true : false });
+        i++;
       }
     };
 
