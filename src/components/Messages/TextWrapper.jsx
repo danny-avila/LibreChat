@@ -1,50 +1,60 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import supersub from 'remark-supersub'
 import Embed from './Embed';
 import Highlight from './Highlight';
 import regexSplit from '~/utils/regexSplit';
-// const codeRegex = /(```[^`]+?```)/g;
-const codeRegex = /(```[\s\S]*?```)/g;
-const inLineRegex = /(`[^`]+?`)/g;
-const matchRegex = /(`[^`]+?`)/g;
-const languageMatch = /^```(\w+)/;
-const newLineMatch = /^```(\n+)/;
-const languages = [
-  'java',
-  'c',
-  'python',
-  'c++',
-  'javascript',
-  'csharp',
-  'php',
-  'typescript',
-  'swift',
-  'objectivec',
-  'sql',
-  'r',
-  'kotlin',
-  'ruby',
-  'go',
-  'x86asm',
-  'matlab',
-  'perl',
-  'pascal'
-];
+import { languages, wrapperRegex } from '~/utils';
+const { codeRegex, inLineRegex, matchRegex, languageMatch, newLineMatch } = wrapperRegex;
 
-const inLineWrap = (parts) =>
-  parts.map((part, i) => {
+// original function
+// const inLineWrap = (parts) =>
+//   parts.map((part, i) => {
+//     if (part.match(matchRegex)) {
+//       return <code key={i} >{part.slice(1, -1)}</code>;
+//     } else {
+//       // return <p key={i}>{part}</p>;
+//       // return part;
+//       return part.includes('`') ? part : <ReactMarkdown key={i}>{part}</ReactMarkdown>;
+//     }
+//   });
+
+const inLineWrap = (parts) => {
+  let previousElement = null;
+  return parts.map((part, i) => {
     if (part.match(matchRegex)) {
-      return <code key={i}>{part.slice(1, -1)}</code>;
+      const codeElement = <code key={i}>{part.slice(1, -1)}</code>;
+      if (previousElement && typeof previousElement !== 'string') {
+        // Append code element as a child to previous non-code element
+        previousElement = (
+          <ReactMarkdown remarkPlugins={[supersub]} key={i}>
+            {previousElement}
+            {codeElement}
+          </ReactMarkdown>
+        );
+        return previousElement;
+      } else {
+        return codeElement;
+      }
     } else {
-      // return <p key={i}>{part}</p>;
-      return part;
+      previousElement = part;
+      return previousElement;
     }
   });
+};
 
-export default function CodeWrapper({ text }) {
-  if (text.includes('```')) {
+export default function TextWrapper({ text }) {
+  // append triple backticks to the end of the text if only singular found and language found
+  if (text.match(/```/g)?.length === 1 && text.match(languageMatch)) {
+    text += '```';
+  }
+
+  if (text.match(codeRegex)) {
+    // if (text.includes('```')) {
     // const parts = text.split(codeRegex);
+
     const parts = regexSplit(text);
-    console.log(parts);
+    // console.log(parts);
     const codeParts = parts.map((part, i) => {
       if (part.match(codeRegex)) {
         let language = 'javascript';
@@ -73,7 +83,8 @@ export default function CodeWrapper({ text }) {
         const innerParts = part.split(inLineRegex);
         return inLineWrap(innerParts);
       } else {
-        return part;
+        // return part;
+        return <ReactMarkdown remarkPlugins={[supersub]} key={i}>{part}</ReactMarkdown>;
       }
     });
 
