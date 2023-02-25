@@ -38,8 +38,8 @@ export default function TextWrapper({ text }) {
   let embedTest = false;
 
   // to match unenclosed code blocks
-  // if (text.match(/```/g)?.length === 1 && text.match(/```(\w+)/)) {
-  if (text.match(/```/g)?.length === 1) {
+  if (text.match(/```/g)?.length === 1 && text.match(/```(\w+)/)) {
+  // if (text.match(/```/g)?.length === 1) {
     // const splitString = text.split('```')[1].split(/\s+/).slice(1).join('').trim();
     // embedTest = splitString.length > 0;
     embedTest = true;
@@ -48,6 +48,7 @@ export default function TextWrapper({ text }) {
   // match enclosed code blocks
   if (text.match(codeRegex)) {
     const parts = regexSplit(text);
+    // console.log(parts);
     const codeParts = parts.map((part, i) => {
       if (part.match(codeRegex)) {
         let language = 'javascript';
@@ -89,11 +90,11 @@ export default function TextWrapper({ text }) {
 
     return <>{codeParts}</>; // return the wrapped text
   } else if (embedTest) {
-    const language = text.match(/```(\w+)/)[1].toLowerCase();
-    const parts = text.split(text.match(/```(\w+)/)[0]);
+    const language = text.match(/```(\w+)/)?.[1].toLowerCase() || 'javascript';
+    const parts = text.split(text.match(/```(\w+)/)?.[0] || '```');
     const codeParts = parts.map((part, i) => {
       if (i === 1) {
-        part = part.replace(newLineMatch, '```');
+        part = part.replace(/^\n+/, '');
 
         return (
           <Embed
