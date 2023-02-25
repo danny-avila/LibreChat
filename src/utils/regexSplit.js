@@ -2,11 +2,11 @@ const regex = /```([^`\n]*?)\n([\s\S]*?)\n```/g;
 
 const unenclosedCodeTest = (text) => {
   let workingText = text;
-  if (workingText.startsWith('<') || (!workingText.startsWith('`') && workingText.match(/```/g)?.length === 1)) {
-    workingText = `\`\`\`${workingText}`
-  }
+  // if (workingText.startsWith('<') || (!workingText.startsWith('`') && workingText.match(/```/g)?.length === 1)) {
+  //   workingText = `\`\`\`${workingText}`
+  // }
 
-  return workingText;
+  return workingText.trim();
 };
 
 export default function regexSplit(string) {
@@ -35,22 +35,6 @@ export default function regexSplit(string) {
       }
     }
   }
-
-  console.log(output);
-
-  // for (let i = 0; i < matches.length; i++) {
-  //   const [fullMatch, language, code] = matches[i];
-  //   output.push(`\`\`\`${language}\n${code}\n\`\`\``);
-  //   if (i < matches.length - 1 && matches[i + 1]) {
-  //     const nextText = string.slice(matches[i].index + fullMatch.length, matches[i + 1].index);
-  //     output.push(nextText.trim());
-  //   } else if (i === matches.length - 1) {
-  //     const nextText = string.slice(matches[i].index + fullMatch.length);
-  //     output.push(nextText.trim());
-  //   }
-  // }
-
-  // console.log(output);
 
   return output;
 }
