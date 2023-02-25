@@ -10,9 +10,13 @@ import { useSelector } from 'react-redux';
 export default function Nav() {
   const [isHovering, setIsHovering] = useState(false);
   const { conversationId } = useSelector((state) => state.convo);
-  const { data, error, isLoading, mutate } = swr('http://localhost:3050/convos');
+  const { data, isLoading, mutate } = swr('http://localhost:3050/convos');
 
   useDidMountEffect(() => mutate(), [conversationId]);
+
+  const containerClasses = isLoading
+    ? 'flex flex-col gap-2 text-gray-100 text-sm h-full justify-center items-center'
+    : 'flex flex-col gap-2 text-gray-100 text-sm';
 
   return (
     <div className="dark hidden bg-gray-900 md:fixed md:inset-y-0 md:flex md:w-[260px] md:flex-col">
@@ -27,8 +31,15 @@ export default function Nav() {
               onMouseEnter={() => setIsHovering(true)}
               onMouseLeave={() => setIsHovering(false)}
             >
-              <div className="flex flex-col gap-2 text-sm text-gray-100">
-                {isLoading ? <Spinner /> : <Conversations conversations={data} conversationId={conversationId}/>}
+              <div className={containerClasses}>
+                {isLoading ? (
+                  <Spinner />
+                ) : (
+                  <Conversations
+                    conversations={data}
+                    conversationId={conversationId}
+                  />
+                )}
               </div>
             </div>
             <NavLinks />

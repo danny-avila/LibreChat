@@ -39,10 +39,10 @@ Currently, this project is only functional with the `text-davinci-003` model.
 - [x] Remember last selected model
 - [x] Highlight.js for code blocks
 - [x] Markdown handling
+- [ ] Bing AI Styling (for suggested responses, convo end, etc.)
 - [ ] AI model change handling (whether to pseudo-persist convos or start new convos within existing convo)
 - [ ] Server convo pagination (limit fetch and load more with 'show more' button)
 - [ ] Prompt Templates
-- [ ] Bing AI Styling (for suggested responses, convo end, etc.)
 - [ ] Conversation/Prompt Search
 - [ ] Refactor/clean up code
 - [ ] Config file for easy startup
