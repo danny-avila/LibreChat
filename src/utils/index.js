@@ -38,7 +38,7 @@ export const languages = [
 export const wrapperRegex = {
   codeRegex: /(```[\s\S]*?```)/g,
   inLineRegex: /(`[^`]+?`)/g,
-  matchRegex: /(`[^`]+?`)/g,
+  markupRegex: /(`[^`]+?`)/g,
   languageMatch: /^```(\w+)/,
   newLineMatch: /^```(\n+)/
 };
