@@ -44,10 +44,13 @@ export default function handleSubmit({
     let text = data.text || data.response;
     if (data.message) {
       messageHandler(text);
-    } else if (data.final) {
+    }
+
+    if (data.final) {
       convoHandler(data);
+      console.log('final', data);
     } else {
-      console.log('initial', data);
+      console.log('dataStream', data);
     }
   };
 

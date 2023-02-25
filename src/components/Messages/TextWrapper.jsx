@@ -1,25 +1,24 @@
 import React from 'react';
-// import ReactMarkdown from 'react-markdown';
-// import supersub from 'remark-supersub'
 import Markdown from 'markdown-to-jsx';
 import Embed from './Embed';
 import Highlight from './Highlight';
 import regexSplit from '~/utils/regexSplit';
 import { languages, wrapperRegex } from '~/utils';
-const { codeRegex, inLineRegex, matchRegex, languageMatch, newLineMatch } = wrapperRegex;
+const { codeRegex, inLineRegex, markupRegex, languageMatch, newLineMatch } = wrapperRegex;
 const mdOptions = { wrapper: React.Fragment, forceWrapper: true };
-
 
 const inLineWrap = (parts) => {
   let previousElement = null;
   return parts.map((part, i) => {
-    if (part.match(matchRegex)) {
+    if (part.match(markupRegex)) {
       const codeElement = <code key={i}>{part.slice(1, -1)}</code>;
       if (previousElement && typeof previousElement !== 'string') {
         // Append code element as a child to previous non-code element
         previousElement = (
-          // <ReactMarkdown remarkPlugins={[supersub]} key={i}>
-          <Markdown options={mdOptions} key={i}>
+          <Markdown
+            options={mdOptions}
+            key={i}
+          >
             {previousElement}
             {codeElement}
           </Markdown>
@@ -36,11 +35,17 @@ const inLineWrap = (parts) => {
 };
 
 export default function TextWrapper({ text }) {
-  // append triple backticks to the end of the text only if singular found and language found
-  if (text.match(/```/g)?.length === 1 && text.match(languageMatch)) {
-    text += '\n```';
+  let embedTest = false;
+
+  // to match unenclosed code blocks
+  // if (text.match(/```/g)?.length === 1 && text.match(/```(\w+)/)) {
+  if (text.match(/```/g)?.length === 1) {
+    // const splitString = text.split('```')[1].split(/\s+/).slice(1).join('').trim();
+    // embedTest = splitString.length > 0;
+    embedTest = true;
   }
 
+  // match enclosed code blocks
   if (text.match(codeRegex)) {
     const parts = regexSplit(text);
     const codeParts = parts.map((part, i) => {
@@ -71,21 +76,58 @@ export default function TextWrapper({ text }) {
         const innerParts = part.split(inLineRegex);
         return inLineWrap(innerParts);
       } else {
-        // return part;
-        // return <ReactMarkdown remarkPlugins={[supersub]} key={i}>{part}</ReactMarkdown>;
-        return <Markdown options={mdOptions} key={i}>{part}</Markdown>
+        return (
+          <Markdown
+            options={mdOptions}
+            key={i}
+          >
+            {part}
+          </Markdown>
+        );
       }
     });
 
     return <>{codeParts}</>; // return the wrapped text
-  } else if (text.match(matchRegex)) {
+  } else if (embedTest) {
+    const language = text.match(/```(\w+)/)[1].toLowerCase();
+    const parts = text.split(text.match(/```(\w+)/)[0]);
+    const codeParts = parts.map((part, i) => {
+      if (i === 1) {
+        part = part.replace(newLineMatch, '```');
+
+        return (
+          <Embed
+            key={i}
+            language={language}
+          >
+            <Highlight
+              code={part}
+              language={language}
+            />
+          </Embed>
+        );
+      } else if (part.match(inLineRegex)) {
+        const innerParts = part.split(inLineRegex);
+        return inLineWrap(innerParts);
+      } else {
+        return (
+          <Markdown
+            options={mdOptions}
+            key={i}
+          >
+            {part}
+          </Markdown>
+        );
+      }
+    });
+
+    return <>{codeParts}</>; // return the wrapped text
+  } else if (text.match(markupRegex)) {
     // map over the parts and wrap any text between tildes with <code> tags
-    const parts = text.split(matchRegex);
+    const parts = text.split(markupRegex);
     const codeParts = inLineWrap(parts);
     return <>{codeParts}</>; // return the wrapped text
   } else {
-    // return <ReactMarkdown  remarkPlugins={[supersub]}>{text}</ReactMarkdown>;
-    // return text
     return <Markdown options={mdOptions}>{text}</Markdown>;
   }
 }
