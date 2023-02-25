@@ -11,6 +11,10 @@ blockquote, dd, dl, fieldset, figure, h1, h2, h3, h4, h5, h6, hr, p, pre {
 	margin: 0;
 }
 
+.markdown ol li, .markdown ol li > p, .markdown ol ol, .markdown ol ul, .markdown ul li, .markdown ul li > p, .markdown ul ol, .markdown ul ul {
+	margin: 0;
+}
+
 .scroll-down-enter {
   opacity: 0;
 }
@@ -901,11 +905,15 @@ html {
   padding-left: 1rem;
 }
 
-.markdown ol,
+/* .markdown ol, */
 .markdown ul {
   display: flex;
   flex-direction: column;
   padding-left: 1rem;
+}
+
+.markdown ol {
+  list-style-type: decimal;
 }
 
 .markdown ol li,
@@ -1227,3 +1235,4 @@ html {
   margin-left: 0.25rem;
   vertical-align: baseline;
 }
+

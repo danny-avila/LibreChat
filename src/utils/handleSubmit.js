@@ -43,11 +43,8 @@ export default function handleSubmit({
     const data = JSON.parse(e.data);
     let text = data.text || data.response;
     if (data.message) {
-      // text = text.match(newLineRegex) ? text.replace(newLineRegex, '') : text;
-      // console.log(data);
       messageHandler(text);
     } else if (data.final) {
-      console.log(data);
       convoHandler(data);
     } else {
       console.log('initial', data);

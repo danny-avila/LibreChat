@@ -36,34 +36,63 @@ export default function TextChat({ messages }) {
     const messageHandler = (data) => {
       dispatch(setMessages([...messages, currentMsg, { sender: model, text: data }]));
     };
-    const convoHandler = (data) => {
-      console.log('in convo handler');
-      if (model !== 'bingai' && convo.conversationId === null && convo.parentMessageId === null) {
-        const { title, conversationId, id } = data;
-        dispatch(
-          setConversation({
-            title,
-            conversationId,
-            parentMessageId: id,
-            conversationSignature: null,
-            clientId: null,
-            invocationId: null
-          })
-        );
-      } else if (model === 'bingai' && convo.conversationId === null && convo.invocationId === null) {
-        const { title, conversationSignature, clientId, conversationId, invocationId } = data;
-        dispatch(
-          setConversation({
-            title,
-            conversationSignature,
-            clientId,
-            conversationId,
-            invocationId,
-            parentMessageId: null
-          })
-        );
-      }
+    // const convoHandler = (data) => {
+    //   dispatch(
+    //     setMessages([...messages, { sender: model, text: data.text || data.response }])
+    //   );
 
+    //   if (
+    //     model !== 'bingai' &&
+    //     convo.conversationId === null &&
+    //     convo.parentMessageId === null
+    //   ) {
+    //     const { title, conversationId, id } = data;
+    //     dispatch(
+    //       setConversation({
+    //         title,
+    //         conversationId,
+    //         parentMessageId: id,
+    //         conversationSignature: null,
+    //         clientId: null,
+    //         invocationId: null
+    //       })
+    //     );
+    //   } else if (
+    //     model === 'bingai' &&
+    //     convo.conversationId === null &&
+    //     convo.invocationId === null
+    //   ) {
+    //     const { title, conversationSignature, clientId, conversationId, invocationId } = data;
+    //     dispatch(
+    //       setConversation({
+    //         title,
+    //         conversationSignature,
+    //         clientId,
+    //         conversationId,
+    //         invocationId,
+    //         parentMessageId: null
+    //       })
+    //     );
+    //   }
+
+    //   dispatch(setSubmitState(false));
+    // };
+
+    const convoHandler = (data) => {
+      const { conversationId, id, invocationId, text } = data;
+      const conversationData = {
+        title: data.title,
+        conversationId,
+        parentMessageId:
+          model !== 'bingai' && !convo.conversationId && !convo.parentMessageId ? id : null,
+        conversationSignature:
+          model === 'bingai' && !convo.conversationId ? data.conversationSignature : null,
+        clientId: model === 'bingai' && !convo.conversationId ? data.clientId : null,
+        // invocationId: model === 'bingai' && !convo.conversationId ? data.invocationId : null
+        invocationId: invocationId ? invocationId : null
+      };
+      dispatch(setMessages([...messages, currentMsg, { sender: model, text: text || data.response }]));
+      dispatch(setConversation(conversationData));
       dispatch(setSubmitState(false));
     };
 
