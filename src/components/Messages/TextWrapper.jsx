@@ -39,9 +39,6 @@ export default function TextWrapper({ text }) {
 
   // to match unenclosed code blocks
   if (text.match(/```/g)?.length === 1) {
-  // if (text.match(/```/g)?.length === 1) {
-    // const splitString = text.split('```')[1].split(/\s+/).slice(1).join('').trim();
-    // embedTest = splitString.length > 0;
     embedTest = true;
   }
 

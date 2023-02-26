@@ -70,6 +70,7 @@ export default function Message({
               </div>
             ) : (
               <div className="flex min-h-[20px] flex-col items-start gap-4 whitespace-pre-wrap">
+                {/* <div className={`${blinker ? 'result-streaming' : ''} markdown prose dark:prose-invert light w-full break-words`}> */}
                 <div className="markdown prose dark:prose-invert light w-full break-words">
                   {notUser ? wrapText(text) : text}
                   {blinker && <span className="result-streaming">█</span>}

@@ -40,3 +40,5 @@ bower_components/
 # Environment
 .env
 cache.json
+
+src/style - official.css
