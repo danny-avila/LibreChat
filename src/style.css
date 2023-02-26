@@ -1200,17 +1200,6 @@ html {
   color: rgba(172, 172, 190, var(--tw-text-opacity));
 }
 
-/* .result-streaming>:not(ol):not(ul):not(pre):last-child:after,
-.result-streaming>ol:last-child li:last-child:after,
-.result-streaming>pre:last-child code:after,
-.result-streaming>ul:last-child li:last-child:after {
- -webkit-animation:blink 1s steps(5,start) infinite;
- animation:blink 1s steps(5,start) infinite;
- content:"▋";
- margin-left:.25rem;
- vertical-align:baseline
-} */
-
 @-webkit-keyframes spin {
   to {
     -webkit-transform: rotate(1turn);
@@ -1231,8 +1220,20 @@ html {
 .result-streaming {
   -webkit-animation: blink 1s steps(5, start) infinite;
   animation: blink 1s steps(5, start) infinite;
-  /* content:"▋"; */
+  content:"▋";
   margin-left: 0.25rem;
   vertical-align: baseline;
 }
+
+
+/* .result-streaming>:not(ol):not(ul):not(pre):last-child:after,
+.result-streaming>ol:last-child li:last-child:after,
+.result-streaming>pre:last-child code:after,
+.result-streaming>ul:last-child li:last-child:after {
+ -webkit-animation:blink 1s steps(5,start) infinite;
+ animation:blink 1s steps(5,start) infinite;
+ content:"▋";
+ margin-left:.25rem;
+ vertical-align:baseline
+} */
 
