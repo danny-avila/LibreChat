@@ -25,7 +25,8 @@ const detectCode = async (text) => {
         const language = await modelOperations.runModel(code);
         return part.replace(/^```/, `\`\`\`${language[0].languageId}`);
       } else {
-        return i > 0 ? '\n' + part : part;
+        // return i > 0 ? '\n' + part : part;
+        return part;
       }
     });
 
