@@ -1,11 +1,11 @@
 import React from 'react';
 
-export default function Embed({ children, language = ''}) {
+export default function Embed({ children, language = '', matched}) {
   return (
     <pre>
       <div className="mb-4 rounded-md bg-black">
         <div className="relative flex items-center bg-gray-800 px-4 py-2 font-sans text-xs text-gray-200 rounded-tl-md rounded-tr-md">
-          <span className="">{ language }</span>
+          <span className="">{ (language === 'javascript' && !matched ? '' : language) }</span>
           <button className="ml-auto flex gap-2">
             <svg
               stroke="currentColor"
