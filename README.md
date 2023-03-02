@@ -29,7 +29,7 @@ Currently, this project is only functional with the `text-davinci-003` model.
 
 > **Warning**
 
->  This is a work in progress. I'm building this in public. You can follow the progress here or on my [Linkedin](www.linkedin.com/in/danny-avila).
+>  This is a work in progress. I'm building this in public. You can follow the progress here or on my [Linkedin](https://www.linkedin.com/in/danny-avila).
 
 > Here are my planned/recently finished features.
 
@@ -41,7 +41,7 @@ Currently, this project is only functional with the `text-davinci-003` model.
 - [x] Remember last selected model
 - [x] Highlight.js for code blocks
 - [x] Markdown handling
-- [x] Language Detection fpr code blocks
+- [x] Language Detection for code blocks
 - [ ] 'Copy to clipboard' button for code and messages
 - [ ] Set user/model label and prompt prefix view option
 - [ ] AI model change handling (whether to pseudo-persist convos or start new convos within existing convo)
