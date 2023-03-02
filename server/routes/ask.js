@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const askBing = require('./askBing');
-const { titleConvo, askClient, browserClient } = require('../../app/');
+const { titleConvo, askClient, browserClient, detectCode } = require('../../app/');
 const { saveMessage, deleteMessages, saveConvo } = require('../../models');
 const { handleError, sendMessage } = require('./handlers');
 
@@ -49,7 +49,7 @@ router.post('/', async (req, res) => {
           tokens = tokens.replace('[DONE]', '');
         }
 
-        // tokens = appendCode(tokens);
+        // tokens = await detectCode(tokens);
         sendMessage(res, { text: tokens, message: true, initial: i === 0 ? true : false });
         i++;
       }
@@ -91,6 +91,7 @@ router.post('/', async (req, res) => {
     }
     gptResponse.sender = model;
     gptResponse.final = true;
+    gptResponse.text = await detectCode(gptResponse.text);
     await saveMessage(gptResponse);
     await saveConvo(gptResponse);
     sendMessage(res, gptResponse);

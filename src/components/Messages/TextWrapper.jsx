@@ -49,12 +49,16 @@ export default function TextWrapper({ text }) {
     const codeParts = parts.map((part, i) => {
       if (part.match(codeRegex)) {
         let language = 'javascript';
+        let matched = false;
 
         if (part.match(languageMatch)) {
           language = part.match(languageMatch)[1].toLowerCase();
-          const validLanguage = languages.some((lang) => language === lang);
-          part = validLanguage ? part.replace(languageMatch, '```') : part;
-          language = validLanguage ? language : 'javascript';
+          part = part.replace(languageMatch, '```');
+          matched = true;
+          // highlight.js language validation
+          // const validLanguage = languages.some((lang) => language === lang);
+          // part = validLanguage ? part.replace(languageMatch, '```') : part;
+          // language = validLanguage ? language : 'javascript';
         }
 
         part = part.replace(newLineMatch, '```');
@@ -63,6 +67,7 @@ export default function TextWrapper({ text }) {
           <Embed
             key={i}
             language={language}
+            matched={matched}
           >
             <Highlight
               code={part.slice(3, -3)}
