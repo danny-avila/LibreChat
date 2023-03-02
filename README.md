@@ -1,10 +1,7 @@
 # ChatGPT Clone #
 ![chatgpt-clone demo](./public/demo.gif)
 ## Wrap all conversational AIs under one roof. ##
-  Conversational/Utility AIs are the future and OpenAI revolutionized this movement with ChatGPT. While numerous methods exist to integrate conversational AIs, this app commemorates the original styling of ChatGPT, with the ability to integrate any current/future conversational AI models through user-provided APIs, while also having in mind improved client features, such as conversation search, and prompt templates. This project was also built with the anticipation of the official ChatGPT API from OpenAI, though it uses unofficial packages. Through this clone, you can avoid subscription-based models in favor of either free or pay-per-call APIs. I will most likely not deploy this app, as it's mainly a learning experience, but feel free to clone or fork to create your own custom wrapper.
-
-## Origin ##
-  This project was originally created as a Minimum Viable Product (or MVP) for the [@HackReactor](https://github.com/hackreactor/) Bootcamp. It was built with OpenAI response streaming and most of the UI completed in under 20 hours. 20 hours in, I had most of the UI and basic functionality done. This was created without using any boilerplates or templates, including create-react-app and other toolchains. The purpose of the exercise was to learn setting up a full stack project from scratch. Please feel free to give feedback, suggestions, or fork the project for your own use.
+  Assistant AIs are the future and OpenAI revolutionized this movement with ChatGPT. While numerous methods exist to integrate these AIs, this app commemorates the original styling of ChatGPT, with the ability to integrate any current/future AI models through user-provided API keys, while improving upon original client features, such as conversation search and prompt templates. This project was built with the anticipation of the official ChatGPT API from OpenAI, and now uses it along with the free access method. Through this clone, you can avoid subscription-based models in favor of free or pay-per-call APIs. I will most likely not deploy this app, as it's mainly a learning experience, but feel free to clone or fork to create your own custom wrapper.
 
 ## Updates
 <details open>
@@ -76,6 +73,9 @@ Currently, this project is only functional with the `text-davinci-003` model.
   - ChatGPT/Google Bard/Bing AI conversations are lost in space or
   cannot be searched past a certain timeframe.
   - Quick one stop shop for all conversational AIs, with the added bonus of searching
+
+## Origin ##
+  This project was originally created as a Minimum Viable Product (or MVP) for the [@HackReactor](https://github.com/hackreactor/) Bootcamp. It was built with OpenAI response streaming and most of the UI completed in under 20 hours. 20 hours in, I had most of the UI and basic functionality done. This was created without using any boilerplates or templates, including create-react-app and other toolchains. The purpose of the exercise was to learn setting up a full stack project from scratch. Please feel free to give feedback, suggestions, or fork the project for your own use.
 
 <!-- ## Solution ##
   Serves and searches all conversations reliably. All AI convos under one house.
