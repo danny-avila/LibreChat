@@ -1,5 +1,5 @@
 # ChatGPT Clone #
-![chatgpt-clone demo](./demo.gif)
+![chatgpt-clone demo](./public/demo.gif)
 ## Wrap all conversational AIs under one roof. ##
   Conversational/Utility AIs are the future and OpenAI revolutionized this movement with ChatGPT. While numerous methods exist to integrate conversational AIs, this app commemorates the original styling of ChatGPT, with the ability to integrate any current/future conversational AI models through user-provided APIs, while also having in mind improved client features, such as conversation search, and prompt templates. This project was also built with the anticipation of the official ChatGPT API from OpenAI, though it uses unofficial packages. Through this clone, you can avoid subscription-based models in favor of either free or pay-per-call APIs. I will most likely not deploy this app, as it's mainly a learning experience, but feel free to clone or fork to create your own custom wrapper.
 
@@ -8,6 +8,11 @@
 
 ## Updates
 <details open>
+<summary><strong>2023-03-01</strong></summary>
+Official ChatGPT API is out! Removed davinci since the official API is extremely fast and 10x less expensive. Since user labeling and prompt prefixing is officially supported, I will add a View feature so you can set this within chat, which gives the UI an added use case. I've kept the BrowserClient, since it's free to use like the official site.
+
+The Messages UI correctly mirrors code syntax highlighting. The exact replication of the cursor is not 1-to-1 yet, but pretty close. Later on in the project, I'll implement tests for code edge cases and explore the possibility of running code in-browser. Right now, unknown code defaults to javascript, but will detect language as close as possible.
+<details>
 <summary><strong>2023-02-21</strong></summary>
 BingAI is integrated (although sadly limited by Microsoft with the 5 msg/convo limit, 50 msgs/day). I will need to handle the case when Bing refuses to give more answers on top of the other styling features I have in mind. Official ChatGPT use is back with the new BrowserClient. Brainstorming how to handle the UI when the Ai model changes, since conversations can't be persisted between them (or perhaps build a way to achieve this at some level).
 </details>
@@ -39,9 +44,11 @@ Currently, this project is only functional with the `text-davinci-003` model.
 - [x] Remember last selected model
 - [x] Highlight.js for code blocks
 - [x] Markdown handling
-- [ ] Bing AI Styling (for suggested responses, convo end, etc.)
+- [ ] 'Copy to clipboard' button for code and messages
+- [ ] Set user/model label and prompt prefix view option
 - [ ] AI model change handling (whether to pseudo-persist convos or start new convos within existing convo)
 - [ ] Server convo pagination (limit fetch and load more with 'show more' button)
+- [ ] Bing AI Styling (for suggested responses, convo end, etc.)
 - [ ] Prompt Templates
 - [ ] Conversation/Prompt Search
 - [ ] Refactor/clean up code
@@ -64,7 +71,7 @@ Currently, this project is only functional with the `text-davinci-003` model.
 
 ## Use Cases ##
 
-  ![use case example](./use_case.png "GPT is down! Plus is too expensive!")
+  ![use case example](./public/use_case.png "GPT is down! Plus is too expensive!")
   - ChatGPT is down ( and don't want to pay for ChatGPT Plus).
   - ChatGPT/Google Bard/Bing AI conversations are lost in space or
   cannot be searched past a certain timeframe.
