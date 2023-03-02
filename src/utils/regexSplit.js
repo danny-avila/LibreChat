@@ -1,4 +1,5 @@
-const regex = /```([^`\n]*?)\n([\s\S]*?)\n```/g;
+const primaryRegex = /```([^`\n]*?)\n([\s\S]*?)\n```/g;
+const secondaryRegex = /```([^`\n]*?)\n?([\s\S]*?)\n?```/g;
 
 const unenclosedCodeTest = (text) => {
   let workingText = text;
@@ -10,7 +11,12 @@ const unenclosedCodeTest = (text) => {
 };
 
 export default function regexSplit(string) {
-  const matches = [...string.matchAll(regex)];
+  let matches = [...string.matchAll(primaryRegex)];
+
+  if (!matches[0]) {
+    matches = [...string.matchAll(secondaryRegex)];
+  }
+
   const output = [matches[0].input.slice(0, matches[0].index)];
 
   // console.log(matches);
