@@ -87,7 +87,7 @@ router.post('/', async (req, res) => {
     }
 
     if (!parentMessageId) {
-      gptResponse.title = await titleConvo(text, JSON.stringify(gptResponse.text), model);
+      gptResponse.title = await titleConvo({ model, message: text, response: JSON.stringify(gptResponse.text) });
     }
     gptResponse.sender = model;
     gptResponse.final = true;
