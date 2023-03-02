@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const askBing = require('./askBing');
-const { titleConvo, askClient } = require('../../app/');
+const { titleConvo, askClient, browserClient } = require('../../app/');
 const { saveMessage, deleteMessages, saveConvo } = require('../../models');
 const { handleError, sendMessage } = require('./handlers');
 
@@ -18,6 +18,8 @@ router.post('/', async (req, res) => {
   let userMessage = { id: userMessageId, sender: 'User', text };
 
   console.log('ask log', { model, ...userMessage, parentMessageId, conversationId });
+
+  const client = model === 'chatgpt' ? askClient : browserClient;
 
   res.writeHead(200, {
     Connection: 'keep-alive',
@@ -53,8 +55,7 @@ router.post('/', async (req, res) => {
       }
     };
 
-    let gptResponse = await askClient({
-      model,
+    let gptResponse = await client({
       text,
       progressCallback,
       convo: {
@@ -63,7 +64,7 @@ router.post('/', async (req, res) => {
       }
     });
 
-    // console.log('CLIENT RESPONSE', gptResponse);
+    console.log('CLIENT RESPONSE', gptResponse);
 
     if (!gptResponse.parentMessageId) {
       gptResponse.text = gptResponse.response;

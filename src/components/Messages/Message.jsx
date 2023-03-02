@@ -35,15 +35,21 @@ export default function Message({
       'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group dark:bg-gray-800'
   };
 
+  const bgColors = {
+    chatgpt: 'rgb(16, 163, 127)',
+    chatgptBrowser: 'rgb(25, 207, 207)',
+    bingai: '',
+  };
+
   let icon = `${sender}:`;
-  const isGPT = sender === 'chatgpt' || sender === 'davinci' || sender === 'GPT';
+  let backgroundColor = bgColors[sender];
 
   if (notUser) {
     props.className =
       'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-100 dark:bg-[#444654]';
     icon = (
       <div
-        style={isGPT ? { backgroundColor: 'rgb(16, 163, 127)' } : {}}
+        style={{ backgroundColor }}
         className="relative flex h-[30px] w-[30px] items-center justify-center rounded-sm p-1 text-white"
       >
         {sender === 'bingai' ? <BingIcon /> : <GPTIcon />}

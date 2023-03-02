@@ -75,10 +75,9 @@ export default function ModelMenu() {
           value={model}
           onValueChange={onChange}
         >
-          <DropdownMenuRadioItem value="bingai">BingAI</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="chatgpt">ChatGPT</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="davinci">Davinci</DropdownMenuRadioItem>
-          {/* <DropdownMenuRadioItem value="right">Right</DropdownMenuRadioItem> */}
+          <DropdownMenuRadioItem value="bingai">BingAI</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="chatgptBrowser">{'ChatGPT (free)'}</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -40,5 +40,7 @@ bower_components/
 # Environment
 .env
 cache.json
+data/
+.eslintrc.js
 
 src/style - official.css

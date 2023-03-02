@@ -1,5 +1,5 @@
 {
   "ignore": [
-    "cache.json"
+    "data/"
   ]
 }
