@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import Clipboard from '../svg/Clipboard';
 
 export default function Embed({ children, language = '', matched}) {

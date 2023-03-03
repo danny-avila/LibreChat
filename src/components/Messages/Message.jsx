@@ -3,6 +3,7 @@ import TextWrapper from './TextWrapper';
 import { useSelector } from 'react-redux';
 import GPTIcon from '../svg/GPTIcon';
 import BingIcon from '../svg/BingIcon';
+import HoverButtons from './HoverButtons';
 
 export default function Message({
   sender,
@@ -13,6 +14,7 @@ export default function Message({
 }) {
   const { isSubmitting } = useSelector((state) => state.submit);
   const [abortScroll, setAbort] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
   const notUser = sender.toLowerCase() !== 'user';
   const blinker = isSubmitting && last && notUser;
 
@@ -30,6 +32,14 @@ export default function Message({
     }
   };
 
+  const handleMouseOver = () => {
+    setIsHovering(true);
+  };
+
+  const handleMouseOut = () => {
+    setIsHovering(false);
+  };
+
   const props = {
     className:
       'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group dark:bg-gray-800'
@@ -38,7 +48,7 @@ export default function Message({
   const bgColors = {
     chatgpt: 'rgb(16, 163, 127)',
     chatgptBrowser: 'rgb(25, 207, 207)',
-    bingai: '',
+    bingai: ''
   };
 
   let icon = `${sender}:`;
@@ -63,6 +73,8 @@ export default function Message({
     <div
       {...props}
       onWheel={handleWheel}
+      onMouseOver={handleMouseOver}
+      onMouseOut={handleMouseOut}
     >
       <div className="m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
         <strong className="relative flex w-[30px] flex-col items-end">{icon}</strong>
@@ -83,6 +95,9 @@ export default function Message({
                 </div>
               </div>
             )}
+          </div>
+          <div className="flex justify-between">
+            {isHovering && <HoverButtons user={!notUser} />}
           </div>
         </div>
       </div>
