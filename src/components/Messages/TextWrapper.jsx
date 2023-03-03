@@ -3,7 +3,7 @@ import Markdown from 'markdown-to-jsx';
 import Embed from './Embed';
 import Highlight from './Highlight';
 import regexSplit from '~/utils/regexSplit';
-import { languages, wrapperRegex } from '~/utils';
+import { wrapperRegex } from '~/utils';
 const { codeRegex, inLineRegex, markupRegex, languageMatch, newLineMatch } = wrapperRegex;
 const mdOptions = { wrapper: React.Fragment, forceWrapper: true };
 
@@ -67,11 +67,12 @@ export default function TextWrapper({ text }) {
           <Embed
             key={i}
             language={language}
+            code={part.slice(3, -3)}
             matched={matched}
           >
             <Highlight
-              code={part.slice(3, -3)}
               language={language}
+              code={part.slice(3, -3)}
             />
           </Embed>
         );
