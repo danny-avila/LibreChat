@@ -72,8 +72,10 @@ export default function ModelMenu() {
     'text-gray-500',
     'hover:bg-gray-100',
     'disabled:hover:bg-transparent',
+    'dark:hover:bg-opacity-40',
     'dark:hover:bg-gray-900',
     'dark:hover:text-gray-400',
+    'dark:data-[state=open]:bg-transparent',
     'dark:disabled:hover:bg-transparent'
   ];
 
@@ -85,6 +87,7 @@ export default function ModelMenu() {
     'dark:hover:bg-opacity-50',
     'dark:hover:bg-green-900',
     'dark:hover:text-gray-100',
+    // 'dark:data-[state=open]:bg-green-100',
     'dark:disabled:hover:bg-transparent'
   ];
 
@@ -107,23 +110,23 @@ export default function ModelMenu() {
             {icon}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-56">
+        <DropdownMenuContent className="w-56 dark:bg-gray-700">
           <DropdownMenuLabel>Select a Model</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
             value={model}
             onValueChange={onChange}
           >
-            <DropdownMenuRadioItem value="chatgpt">
+            <DropdownMenuRadioItem value="chatgpt" className="dark:font-semibold">
               ChatGPT <sup>$</sup>
             </DropdownMenuRadioItem>
             <DialogTrigger asChild>
-              <DropdownMenuRadioItem value="chatgptCustom">
+              <DropdownMenuRadioItem value="chatgptCustom" className="dark:font-semibold">
                 CustomGPT <sup>$</sup>
               </DropdownMenuRadioItem>
             </DialogTrigger>
-            <DropdownMenuRadioItem value="bingai">BingAI</DropdownMenuRadioItem>
-            <DropdownMenuRadioItem value="chatgptBrowser">ChatGPT</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="bingai" className="dark:font-semibold">BingAI</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="chatgptBrowser" className="dark:font-semibold">ChatGPT</DropdownMenuRadioItem>
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -152,7 +155,7 @@ export default function ModelMenu() {
               onChange={(e) => setChatGptLabel(e.target.value)}
               placeholder="Set a custom name for ChatGPT"
               className="col-span-3 invalid:border-red-400 invalid:text-red-600 invalid:placeholder-red-600 invalid:placeholder-opacity-70
-              focus:ring-opacity-20 focus:invalid:border-red-400 focus:invalid:ring-red-400 focus:invalid:ring-opacity-20"
+              focus:ring-opacity-20 focus:invalid:border-red-400 focus:invalid:ring-red-400 focus:invalid:ring-opacity-20 dark:invalid:border-red-600 dark:invalid:text-red-300  dark:focus:invalid:ring-red-600"
               {...requiredProp}
             />
           </div>
@@ -174,6 +177,12 @@ export default function ModelMenu() {
         </div>
         <DialogFooter>
           <DialogClose>Cancel</DialogClose>
+          <Button
+            style={{backgroundColor: 'rgb(16, 163, 127)'}}
+            className="inline-flex h-10 items-center justify-center rounded-md border-none py-2 px-4 text-sm font-semibold text-white transition-colors"
+          >
+            Save
+          </Button>
           <DialogClose
             onClick={submitHandler}
             className="inline-flex h-10 items-center justify-center rounded-md border-none bg-slate-900 py-2 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 dark:focus:ring-slate-400 dark:focus:ring-offset-slate-900"
