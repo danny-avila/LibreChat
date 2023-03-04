@@ -2,7 +2,7 @@
 import React, { useState, useRef } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useDispatch } from 'react-redux';
-import { setModel, setDisabled, setCustomGpt } from '~/store/submitSlice';
+import { setModel, setCustomGpt } from '~/store/submitSlice';
 import manualSWR from '~/utils/fetchers';
 import { Button } from '../ui/Button.tsx';
 import { Input } from '../ui/Input.tsx';
@@ -35,7 +35,7 @@ export default function ModelDialog({ mutate }) {
     }
     dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
     dispatch(setModel('chatgptCustom'));
-    dispatch(setDisabled(false));
+    // dispatch(setDisabled(false));
   };
 
   const saveHandler = (e) => {
@@ -56,8 +56,8 @@ export default function ModelDialog({ mutate }) {
       setSaveText('Save');
     }, 2500);
 
-    // dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
-    // dispatch(setModel('chatgptCustom'));
+    dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
+    dispatch(setModel('chatgptCustom'));
     // dispatch(setDisabled(false));
   };
 

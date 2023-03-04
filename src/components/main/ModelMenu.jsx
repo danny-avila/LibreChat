@@ -1,18 +1,16 @@
 import React, { useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { setModel, setDisabled } from '~/store/submitSlice';
+import { setModel, setDisabled, setCustomGpt } from '~/store/submitSlice';
 import { setConversation } from '~/store/convoSlice';
 import ModelDialog from './ModelDialog';
 import MenuItems from './MenuItems';
-// import useDidMountEffect from '~/hooks/useDidMountEffect';
-// import { swr } from '~/utils/fetchers';
 import manualSWR from '~/utils/fetchers';
-// import { setMessages } from '~/store/messageSlice';
 import { setModels } from '~/store/modelSlice';
-// import ModelItem from './ModelItem';
 import GPTIcon from '../svg/GPTIcon';
 import BingIcon from '../svg/BingIcon';
 import { Button } from '../ui/Button.tsx';
+
+const initial = new Set(['chatgpt', 'chatgptCustom', 'bingai', 'chatgptBrowser']);
 
 import {
   DropdownMenu,
@@ -29,6 +27,14 @@ export default function ModelMenu() {
   const dispatch = useDispatch();
   const { model } = useSelector((state) => state.submit);
   const { models } = useSelector((state) => state.models);
+  const modelMap = new Map(
+    models
+      .slice(4)
+      .map((modelItem) => [
+        modelItem.value,
+        { chatGptLabel: modelItem.chatGptLabel, promptPrefix: modelItem.promptPrefix }
+      ])
+  );
   const { trigger } = manualSWR('http://localhost:3050/customGpts', 'get', (res) => {
     console.log('models data (response)', res);
     if (models.length + res.length === models.length) {
@@ -43,12 +49,10 @@ export default function ModelMenu() {
     dispatch(setModels(fetchedModels));
   });
 
-  // useDidMountEffect(() => mutate(), [chatGptLabel]);
-
   useEffect(() => {
-    const lastSelectedModel = JSON.parse(localStorage.getItem('model'));
-    if (lastSelectedModel && lastSelectedModel !== 'chatgptCustom') {
-      dispatch(setModel(lastSelectedModel));
+    const lastSelected = JSON.parse(localStorage.getItem('model'));
+    if (lastSelected && lastSelected !== 'chatgptCustom' && initial.has(lastSelected)) {
+      dispatch(setModel(lastSelected));
     }
 
     const cachedModels = JSON.parse(localStorage.getItem('models'));
@@ -75,13 +79,22 @@ export default function ModelMenu() {
       dispatch(setModel(value));
       dispatch(setDisabled(false));
     }
+
+    if (!initial.has(value)) {
+    const chatGptLabel = modelMap.get(value)?.chatGptLabel;
+    const promptPrefix = modelMap.get(value)?.promptPrefix;
+
+    dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
+    dispatch(setModel('chatgptCustom'));
+    }
+
     // Set new conversation
     dispatch(
       setConversation({
         title: 'New Chat',
         error: false,
         conversationId: null,
-        parentMessageId: null
+        parentMessageId: null,
       })
     );
   };

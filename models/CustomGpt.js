@@ -43,18 +43,6 @@ module.exports = {
       return { customGpt: 'Error getting customGpts' };
     }
   },
-  // updateCustomGpt: async ({ _id, ...update }) => {
-  //   try {
-  //     console.log('updateCustomGpt', _id, update);
-  //     return await CustomGpt.findOneAndUpdate({ _id }, update, {
-  //       new: true,
-  //       upsert: true
-  //     }).exec();
-  //   } catch (error) {
-  //     console.log(error);
-  //     return { message: 'Error updating customGpt' };
-  //   }
-  // },
   updateCustomGpt: async ({ value, ...update }) => {
     try {
       console.log('updateCustomGpt', value, update);
