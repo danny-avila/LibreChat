@@ -42,7 +42,7 @@ export default function Message({
 
   const props = {
     className:
-      'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group dark:bg-gray-800'
+      'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 bg-white dark:text-gray-100 group dark:bg-gray-800'
   };
 
   const bgColors = {

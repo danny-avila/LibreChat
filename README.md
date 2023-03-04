@@ -5,6 +5,10 @@
 
 ## Updates
 <details open>
+<summary><strong>2023-03-04</strong></summary>
+
+<details>
+<details>
 <summary><strong>2023-03-01</strong></summary>
 Official ChatGPT API is out! Removed davinci since the official API is extremely fast and 10x less expensive. Since user labeling and prompt prefixing is officially supported, I will add a View feature so you can set this within chat, which gives the UI an added use case. I've kept the BrowserClient, since it's free to use like the official site.
 
@@ -43,7 +47,7 @@ Here are my planned/recently finished features.
 - [x] Markdown handling
 - [x] Language Detection for code blocks
 - [x] 'Copy to clipboard' button for code blocks
-- [ ] Customize prompt prefix/label (custom ChatGPT using official API)
+- [x] Customize prompt prefix/label (custom ChatGPT using official API)
 - [ ] AI model change handling (whether to pseudo-persist convos or start new convos within existing convo)
 - [ ] Server convo pagination (limit fetch and load more with 'show more' button)
 - [ ] Bing AI Styling (for suggested responses, convo end, etc.)

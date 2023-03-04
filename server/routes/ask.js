@@ -120,6 +120,15 @@ router.post('/', async (req, res) => {
     gptResponse.sender = model === 'chatgptCustom' ? chatGptLabel : model;
     gptResponse.final = true;
     gptResponse.text = await detectCode(gptResponse.text);
+
+    if (chatGptLabel?.length > 0 && model === 'chatgptCustom') {
+      gptResponse.chatGptLabel = chatGptLabel;
+    }
+
+    if (promptPrefix?.length > 0 && model === 'chatgptCustom') {
+      gptResponse.promptPrefix = promptPrefix;
+    }
+
     await saveMessage(gptResponse);
     await saveConvo(gptResponse);
     sendMessage(res, gptResponse);

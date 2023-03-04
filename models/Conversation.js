@@ -24,6 +24,12 @@ const convoSchema = mongoose.Schema({
   invocationId: {
     type: String
   },
+  chatGptLabel: {
+    type: String
+  },
+  promptPrefix: {
+    type: String
+  },
   model: {
     type: String
   },
