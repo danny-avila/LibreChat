@@ -10,7 +10,7 @@ export default function ClearConvos() {
   const dispatch = useDispatch();
   const { mutate } = useSWRConfig()
 
-  const { trigger, isMutating } = manualSWR(
+  const { trigger } = manualSWR(
     'http://localhost:3050/convos/clear',
     'post',
     () => {

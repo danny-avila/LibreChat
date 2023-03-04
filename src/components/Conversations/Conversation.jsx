@@ -13,13 +13,14 @@ export default function Conversation({
   parentMessageId,
   conversationId,
   title = 'New conversation',
-  bingData
+  bingData,
+  chatGptLabel = null,
+  promptPrefix = null,
 }) {
   const [renaming, setRenaming] = useState(false);
   const [titleInput, setTitleInput] = useState(title);
   const inputRef = useRef(null);
   const dispatch = useDispatch();
-  // const { trigger, isMutating } = manualSWR(`http://localhost:3050/messages/${id}`, 'get');
   const { trigger } = manualSWR(`http://localhost:3050/messages/${id}`, 'get');
   const rename = manualSWR(`http://localhost:3050/convos/update`, 'post');
 
@@ -28,13 +29,13 @@ export default function Conversation({
       return;
     }
 
+    const convo = { title, error: false, conversationId: id, chatGptLabel, promptPrefix };
+
     if (bingData) {
       const { conversationSignature, clientId, invocationId } = bingData;
       dispatch(
         setConversation({
-          title,
-          error: false,
-          conversationId: id,
+          ...convo,
           parentMessageId: null,
           conversationSignature,
           clientId,
@@ -44,9 +45,7 @@ export default function Conversation({
     } else {
       dispatch(
         setConversation({
-          title,
-          error: false,
-          conversationId: id,
+          ...convo,
           parentMessageId,
           conversationSignature: null,
           clientId: null,

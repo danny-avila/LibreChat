@@ -59,7 +59,9 @@ export default function TextChat({ messages }) {
             parentMessageId: id,
             conversationSignature: null,
             clientId: null,
-            invocationId: null
+            invocationId: null,
+            chatGptLabel: model === 'chatgptCustom' ? chatGptLabel : null,
+            promptPrefix: model === 'chatgptCustom' ? promptPrefix : null,
           })
         );
       } else if (

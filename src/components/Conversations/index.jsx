@@ -23,6 +23,8 @@ export default function Conversations({ conversations, conversationId }) {
               parentMessageId={convo.parentMessageId}
               title={convo.title}
               conversationId={conversationId}
+              chatGptLabel={convo.chatGptLabel}
+              promptPrefix={convo.promptPrefix}
               bingData={bingData}
             />
           );
