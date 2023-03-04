@@ -54,9 +54,12 @@ export default function Message({
   let icon = `${sender}:`;
   let backgroundColor = bgColors[sender];
 
-  if (notUser && backgroundColor) {
+  if (notUser) {
     props.className =
-      'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-100 dark:bg-[#444654]';
+    'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-100 dark:bg-[#444654]';
+  }
+
+  if (notUser && backgroundColor || sender === 'bingai') {
     icon = (
       <div
         style={{ backgroundColor }}
