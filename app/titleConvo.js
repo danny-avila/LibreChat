@@ -17,7 +17,8 @@ const titleConvo = async ({ message, response, model }) => {
     ]
   });
 
-  return completion.data.choices[0].message.content.replace(/"/g, '');
+  //eslint-disable-next-line
+  return completion.data.choices[0].message.content.replace(/["\.]/g, '');
 };
 
 module.exports = titleConvo;
