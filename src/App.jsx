@@ -16,7 +16,7 @@ const App = () => {
     <div className="flex h-screen">
       <Nav />
       <div className="flex h-full w-full flex-1 flex-col bg-gray-50 md:pl-[260px]">
-        <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden dark:bg-gray-800">
+        <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden dark:bg-gray-800/90">
           <MobileNav />
           {messages.length === 0 ? (
             <Landing title={title} />

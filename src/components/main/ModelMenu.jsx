@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useSelector, useDispatch } from 'react-redux';
 import { setModel, setDisabled, setCustomGpt } from '~/store/submitSlice';
+// import { setModels } from '~/store/modelSlice';
+import ModelItem from './ModelItem';
 import GPTIcon from '../svg/GPTIcon';
 import BingIcon from '../svg/BingIcon';
 import { Button } from '../ui/Button.tsx';
@@ -13,14 +15,14 @@ import {
   DropdownMenuContent,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
+  // DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '../ui/DropdownMenu.tsx';
 
 import {
   Dialog,
-  DialogTrigger,
+  // DialogTrigger,
   DialogClose,
   DialogContent,
   DialogDescription,
@@ -32,9 +34,11 @@ import {
 export default function ModelMenu() {
   const dispatch = useDispatch();
   const { model } = useSelector((state) => state.submit);
+  const { models } = useSelector((state) => state.models);
   const [chatGptLabel, setChatGptLabel] = useState('');
   const [promptPrefix, setPromptPrefix] = useState('');
   const [required, setRequired] = useState(false);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     const lastSelectedModel = JSON.parse(localStorage.getItem('model'));
@@ -61,6 +65,7 @@ export default function ModelMenu() {
     if (chatGptLabel.length === 0) {
       e.preventDefault();
       setRequired(true);
+      inputRef.current.focus();
       return;
     }
     dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
@@ -72,10 +77,10 @@ export default function ModelMenu() {
     'text-gray-500',
     'hover:bg-gray-100',
     'disabled:hover:bg-transparent',
-    'dark:hover:bg-opacity-40',
+    'dark:hover:bg-opacity-20',
     'dark:hover:bg-gray-900',
     'dark:hover:text-gray-400',
-    'dark:data-[state=open]:bg-transparent',
+    // 'dark:data-[state=open]:bg-transparent',
     'dark:disabled:hover:bg-transparent'
   ];
 
@@ -87,7 +92,7 @@ export default function ModelMenu() {
     'dark:hover:bg-opacity-50',
     'dark:hover:bg-green-900',
     'dark:hover:text-gray-100',
-    // 'dark:data-[state=open]:bg-green-100',
+    // 'dark:data-[state=open]:bg-gray-700',
     'dark:disabled:hover:bg-transparent'
   ];
 
@@ -105,7 +110,7 @@ export default function ModelMenu() {
             // style={{backgroundColor: 'rgb(16, 163, 127)'}}
             className={`absolute bottom-0.5 rounded-md border-0 p-1 pl-2 outline-none ${colorProps.join(
               ' '
-            )} focus:ring-0 focus:ring-offset-0 disabled:bottom-0.5 md:bottom-1 md:left-2 md:pl-1 md:disabled:bottom-1`}
+            )} focus:ring-0 focus:ring-offset-0 disabled:bottom-0.5 dark:data-[state=open]:bg-gray-800 dark:data-[state=open]:bg-opacity-50 md:bottom-1 md:left-2 md:pl-1 md:disabled:bottom-1`}
           >
             {icon}
           </Button>
@@ -117,26 +122,53 @@ export default function ModelMenu() {
             value={model}
             onValueChange={onChange}
           >
-            <DropdownMenuRadioItem value="chatgpt" className="dark:font-semibold">
+            {models.map((modelItem, i) => (
+              <ModelItem
+                key={i}
+                modelName={modelItem.name}
+                value={modelItem.value}
+              />
+            ))}
+            {/* <DropdownMenuRadioItem
+              value="chatgpt"
+              className="dark:font-semibold dark:hover:bg-gray-800"
+            >
               ChatGPT <sup>$</sup>
             </DropdownMenuRadioItem>
             <DialogTrigger asChild>
-              <DropdownMenuRadioItem value="chatgptCustom" className="dark:font-semibold">
+              <DropdownMenuRadioItem
+                value="chatgptCustom"
+                className=" dark:hover:bg-gray-800"
+              >
                 CustomGPT <sup>$</sup>
               </DropdownMenuRadioItem>
             </DialogTrigger>
-            <DropdownMenuRadioItem value="bingai" className="dark:font-semibold">BingAI</DropdownMenuRadioItem>
-            <DropdownMenuRadioItem value="chatgptBrowser" className="dark:font-semibold">ChatGPT</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem
+              value="bingai"
+              className=" dark:hover:bg-gray-800"
+            >
+              BingAI
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem
+              value="chatgptBrowser"
+              className=" dark:hover:bg-gray-800"
+            >
+              ChatGPT
+            </DropdownMenuRadioItem> */}
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
-      <DialogContent>
+      <DialogContent className="dark:bg-gray-800">
         <DialogHeader>
           <DialogTitle>Customize ChatGPT</DialogTitle>
           <DialogDescription>
             Note: important instructions are often better placed in your message rather than
             the prefix.{' '}
-            <a href="https://platform.openai.com/docs/guides/chat/instructing-chat-models">
+            <a
+              href="https://platform.openai.com/docs/guides/chat/instructing-chat-models"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               <u>More info here</u>
             </a>
           </DialogDescription>
@@ -152,10 +184,11 @@ export default function ModelMenu() {
             <Input
               id="chatGptLabel"
               value={chatGptLabel}
+              ref={inputRef}
               onChange={(e) => setChatGptLabel(e.target.value)}
               placeholder="Set a custom name for ChatGPT"
-              className="col-span-3 invalid:border-red-400 invalid:text-red-600 invalid:placeholder-red-600 invalid:placeholder-opacity-70
-              focus:ring-opacity-20 focus:invalid:border-red-400 focus:invalid:ring-red-400 focus:invalid:ring-opacity-20 dark:invalid:border-red-600 dark:invalid:text-red-300  dark:focus:invalid:ring-red-600"
+              className="col-span-3 shadow-[0_0_10px_rgba(0,0,0,0.10)] invalid:border-red-400 invalid:text-red-600 invalid:placeholder-red-600
+              invalid:placeholder-opacity-70 invalid:ring-opacity-20 focus:ring-opacity-20 focus:invalid:border-red-400 focus:invalid:ring-red-400 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)]  dark:invalid:border-red-600 dark:invalid:text-red-300 dark:invalid:placeholder-opacity-80 dark:focus:invalid:ring-red-600 dark:focus:invalid:ring-opacity-50"
               {...requiredProp}
             />
           </div>
@@ -171,14 +204,14 @@ export default function ModelMenu() {
               value={promptPrefix}
               onChange={(e) => setPromptPrefix(e.target.value)}
               placeholder="Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
-              className="col-span-3 flex h-20 w-full resize-none rounded-md border border-slate-300 bg-transparent py-2 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-50 dark:focus:ring-slate-400 dark:focus:ring-offset-slate-900"
+              className="col-span-3 flex h-20 w-full resize-none rounded-md border border-slate-300 bg-transparent py-2 px-3 text-sm shadow-[0_0_10px_rgba(0,0,0,0.10)] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:ring-slate-400 dark:focus:ring-offset-slate-900"
             />
           </div>
         </div>
         <DialogFooter>
           <DialogClose>Cancel</DialogClose>
           <Button
-            style={{backgroundColor: 'rgb(16, 163, 127)'}}
+            style={{ backgroundColor: 'rgb(16, 163, 127)' }}
             className="inline-flex h-10 items-center justify-center rounded-md border-none py-2 px-4 text-sm font-semibold text-white transition-colors"
           >
             Save
