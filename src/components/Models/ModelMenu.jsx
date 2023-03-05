@@ -116,7 +116,7 @@ export default function ModelMenu() {
 
   return (
     <Dialog>
-      <DropdownMenu>
+      <DropdownMenu >
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
@@ -129,7 +129,7 @@ export default function ModelMenu() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-56 dark:bg-gray-700">
-          <DropdownMenuLabel>Select a Model</DropdownMenuLabel>
+          <DropdownMenuLabel className="dark:text-gray-300">Select a Model</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
             value={customModel ? customModel : model}
