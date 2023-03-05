@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import SubmitButton from './SubmitButton';
 import Regenerate from './Regenerate';
-import ModelMenu from './ModelMenu';
+import ModelMenu from '../Models/ModelMenu';
 import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
 import handleSubmit from '~/utils/handleSubmit';
@@ -15,9 +15,13 @@ export default function TextChat({ messages }) {
   const [errorMessage, setErrorMessage] = useState('');
   const dispatch = useDispatch();
   const convo = useSelector((state) => state.convo);
-  const { isSubmitting, disabled, model, chatGptLabel, promptPrefix } = useSelector((state) => state.submit);
+  const { initial } = useSelector((state) => state.models);
+  const { isSubmitting, disabled, model, chatGptLabel, promptPrefix } = useSelector(
+    (state) => state.submit
+  );
   const { text } = useSelector((state) => state.text);
   const { error } = convo;
+  const isCustomModel = model === 'chatgptCustom' || !initial[model];
 
   const submitMessage = () => {
     if (error) {
@@ -30,7 +34,7 @@ export default function TextChat({ messages }) {
     dispatch(setSubmitState(true));
     const message = text.trim();
     const currentMsg = { sender: 'User', text: message, current: true };
-    const sender = model === 'chatgptCustom' ? chatGptLabel : model
+    const sender = model === 'chatgptCustom' ? chatGptLabel : model;
     const initialResponse = { sender, text: '' };
     dispatch(setMessages([...messages, currentMsg, initialResponse]));
     dispatch(setText(''));
@@ -39,11 +43,7 @@ export default function TextChat({ messages }) {
     };
     const convoHandler = (data) => {
       dispatch(
-        setMessages([
-          ...messages,
-          currentMsg,
-          { sender, text: data.text || data.response }
-        ])
+        setMessages([...messages, currentMsg, { sender, text: data.text || data.response }])
       );
 
       if (
@@ -60,8 +60,8 @@ export default function TextChat({ messages }) {
             conversationSignature: null,
             clientId: null,
             invocationId: null,
-            chatGptLabel: model === 'chatgptCustom' ? chatGptLabel : null,
-            promptPrefix: model === 'chatgptCustom' ? promptPrefix : null,
+            chatGptLabel: model === isCustomModel ? chatGptLabel : null,
+            promptPrefix: model === isCustomModel ? promptPrefix : null
           })
         );
       } else if (

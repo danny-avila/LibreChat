@@ -22,7 +22,9 @@ const initialState = {
       name: 'ChatGPT',
       value: 'chatgptBrowser'
     }
-  ]
+  ],
+  modelMap: {},
+  initial: { chatgpt: true, chatgptCustom: true, bingai: true, chatgptBrowser: true }
 };
 
 const currentSlice = createSlice({
@@ -31,7 +33,18 @@ const currentSlice = createSlice({
   reducers: {
     setModels: (state, action) => {
       console.log('setModels', action.payload);
-      state.models = [...initialState.models, ...action.payload];
+      const models = [...initialState.models, ...action.payload];
+      state.models = models;
+      const modelMap = {};
+
+      models.slice(4).forEach((modelItem) => {
+        modelMap[modelItem.value] = {
+          chatGptLabel: modelItem.chatGptLabel,
+          promptPrefix: modelItem.promptPrefix
+        };
+      });
+
+      state.modelMap = modelMap;
     }
   }
 });

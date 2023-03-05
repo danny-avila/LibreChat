@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { setModel, setDisabled, setCustomGpt } from '~/store/submitSlice';
 import { setConversation } from '~/store/convoSlice';
@@ -9,8 +9,6 @@ import { setModels } from '~/store/modelSlice';
 import GPTIcon from '../svg/GPTIcon';
 import BingIcon from '../svg/BingIcon';
 import { Button } from '../ui/Button.tsx';
-
-const initial = new Set(['chatgpt', 'chatgptCustom', 'bingai', 'chatgptBrowser']);
 
 import {
   DropdownMenu,
@@ -26,15 +24,8 @@ import { Dialog } from '../ui/Dialog.tsx';
 export default function ModelMenu() {
   const dispatch = useDispatch();
   const { model } = useSelector((state) => state.submit);
-  const { models } = useSelector((state) => state.models);
-  const modelMap = new Map(
-    models
-      .slice(4)
-      .map((modelItem) => [
-        modelItem.value,
-        { chatGptLabel: modelItem.chatGptLabel, promptPrefix: modelItem.promptPrefix }
-      ])
-  );
+  const [customModel, setCustomModel] = useState(false);
+  const { models, modelMap, initial } = useSelector((state) => state.models);
   const { trigger } = manualSWR('http://localhost:3050/customGpts', 'get', (res) => {
     console.log('models data (response)', res);
     if (models.length + res.length === models.length) {
@@ -51,7 +42,7 @@ export default function ModelMenu() {
 
   useEffect(() => {
     const lastSelected = JSON.parse(localStorage.getItem('model'));
-    if (lastSelected && lastSelected !== 'chatgptCustom' && initial.has(lastSelected)) {
+    if (lastSelected && lastSelected !== 'chatgptCustom' && initial[lastSelected]) {
       dispatch(setModel(lastSelected));
     }
 
@@ -75,17 +66,16 @@ export default function ModelMenu() {
       return;
     } else if (value === 'chatgptCustom') {
       // dispatch(setMessages([]));
-    } else {
+    } else if (initial[value]) {
       dispatch(setModel(value));
       dispatch(setDisabled(false));
-    }
-
-    if (!initial.has(value)) {
-    const chatGptLabel = modelMap.get(value)?.chatGptLabel;
-    const promptPrefix = modelMap.get(value)?.promptPrefix;
-
-    dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
-    dispatch(setModel('chatgptCustom'));
+      setCustomModel(false);
+    } else if (!initial[value]) {
+      const chatGptLabel = modelMap[value]?.chatGptLabel;
+      const promptPrefix = modelMap[value]?.promptPrefix;
+      dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
+      dispatch(setModel('chatgptCustom'));
+      setCustomModel(value);
     }
 
     // Set new conversation
@@ -141,7 +131,7 @@ export default function ModelMenu() {
           <DropdownMenuLabel>Select a Model</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
-            value={model}
+            value={customModel ? customModel : model}
             onValueChange={onChange}
             className="overflow-y-auto"
           >
