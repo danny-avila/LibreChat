@@ -55,12 +55,12 @@ Here are my planned/recently finished features.
 - [x] 'Copy to clipboard' button for code blocks
 - [x] Customize prompt prefix/label (custom ChatGPT using official API)
 - [x] AI model change handling (start new convos within existing convo)
-- [ ] Server convo pagination (limit fetch and load more with 'show more' button)
+- [x] Server convo pagination (limit fetch and load more with 'show more' button)
+- [ ] Config file for easy startup
 - [ ] Bing AI Styling (for suggested responses, convo end, etc.)
 - [ ] Prompt Templates
 - [ ] Conversation/Prompt Search
-- [ ] Refactor/clean up code
-- [ ] Config file for easy startup
+- [ ] Refactor/clean up code (tech debt)
 - [ ] Mobile styling (half-finished)
 - [ ] Semantic Search Option (requires more tokens)
 

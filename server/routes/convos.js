@@ -3,7 +3,8 @@ const router = express.Router();
 const { getConvos, deleteConvos, updateConvo } = require('../../models/Conversation');
 
 router.get('/', async (req, res) => {
-  res.status(200).send(await getConvos());
+  const pageNumber = req.query.pageNumber || 1;
+  res.status(200).send(await getConvos(pageNumber));
 });
 
 router.post('/clear', async (req, res) => {

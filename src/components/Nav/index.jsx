@@ -1,20 +1,46 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import NewChat from './NewChat';
 import Spinner from '../svg/Spinner';
 import Conversations from '../Conversations';
 import NavLinks from './NavLinks';
 import useDidMountEffect from '~/hooks/useDidMountEffect';
 import { swr } from '~/utils/fetchers';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { incrementPage } from '~/store/convoSlice';
 
 export default function Nav() {
+  const dispatch = useDispatch();
   const [isHovering, setIsHovering] = useState(false);
-  const { conversationId } = useSelector((state) => state.convo);
-  const { data, isLoading, mutate } = swr('http://localhost:3050/convos');
+  const { conversationId, pageNumber } = useSelector((state) => state.convo);
+  const { data, isLoading, mutate } = swr(
+    `http://localhost:3050/convos?pageNumber=${pageNumber}`
+  );
+  const containerRef = useRef(null);
+  const scrollPositionRef = useRef(null);
+
+  const showMore = async () => {
+    const container = containerRef.current;
+    if (container) {
+      scrollPositionRef.current = container.scrollTop;
+    }
+    dispatch(incrementPage());
+    await mutate();
+  };
 
   useDidMountEffect(() => mutate(), [conversationId]);
 
-  const containerClasses = isLoading
+  useEffect(() => {
+    const container = containerRef.current;
+
+    if (container && scrollPositionRef.current !== null) {
+      const { scrollHeight, clientHeight } = container;
+      const maxScrollTop = scrollHeight - clientHeight;
+
+      container.scrollTop = Math.min(maxScrollTop, scrollPositionRef.current);
+    }
+  }, [data]);
+
+  const containerClasses = isLoading && pageNumber === 1
     ? 'flex flex-col gap-2 text-gray-100 text-sm h-full justify-center items-center'
     : 'flex flex-col gap-2 text-gray-100 text-sm';
 
@@ -30,14 +56,17 @@ export default function Nav() {
               } border-b border-white/20`}
               onMouseEnter={() => setIsHovering(true)}
               onMouseLeave={() => setIsHovering(false)}
+              ref={containerRef}
             >
               <div className={containerClasses}>
-                {isLoading ? (
+                {isLoading && pageNumber === 1 ? (
                   <Spinner />
                 ) : (
                   <Conversations
                     conversations={data}
                     conversationId={conversationId}
+                    showMore={showMore}
+                    pageNumber={pageNumber}
                   />
                 )}
               </div>
