@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { setModel, setDisabled, setCustomGpt } from '~/store/submitSlice';
+import { setModel, setDisabled, setCustomGpt, setCustomModel } from '~/store/submitSlice';
 import { setConversation } from '~/store/convoSlice';
 import ModelDialog from './ModelDialog';
 import MenuItems from './MenuItems';
@@ -23,8 +23,7 @@ import { Dialog } from '../ui/Dialog.tsx';
 
 export default function ModelMenu() {
   const dispatch = useDispatch();
-  const { model } = useSelector((state) => state.submit);
-  const [customModel, setCustomModel] = useState(false);
+  const { model, customModel } = useSelector((state) => state.submit);
   const { models, modelMap, initial } = useSelector((state) => state.models);
   const { trigger } = manualSWR('http://localhost:3050/customGpts', 'get', (res) => {
     console.log('models data (response)', res);
@@ -69,13 +68,15 @@ export default function ModelMenu() {
     } else if (initial[value]) {
       dispatch(setModel(value));
       dispatch(setDisabled(false));
-      setCustomModel(false);
+      setCustomModel(null);
     } else if (!initial[value]) {
       const chatGptLabel = modelMap[value]?.chatGptLabel;
       const promptPrefix = modelMap[value]?.promptPrefix;
       dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
       dispatch(setModel('chatgptCustom'));
       setCustomModel(value);
+    } else if (!modelMap[value]) {
+      setCustomModel(null);
     }
 
     // Set new conversation
@@ -84,7 +85,7 @@ export default function ModelMenu() {
         title: 'New Chat',
         error: false,
         conversationId: null,
-        parentMessageId: null,
+        parentMessageId: null
       })
     );
   };

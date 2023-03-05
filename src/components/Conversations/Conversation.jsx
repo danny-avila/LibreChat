@@ -1,9 +1,9 @@
 import React, { useState, useRef } from 'react';
 import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
-import { useDispatch } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { setConversation } from '~/store/convoSlice';
-import { setCustomGpt, setModel } from '~/store/submitSlice';
+import { setCustomGpt, setModel, setCustomModel } from '~/store/submitSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setText } from '~/store/textSlice';
 import manualSWR from '~/utils/fetchers';
@@ -20,6 +20,7 @@ export default function Conversation({
 }) {
   const [renaming, setRenaming] = useState(false);
   const [titleInput, setTitleInput] = useState(title);
+  const { modelMap } = useSelector((state) => state.models);
   const inputRef = useRef(null);
   const dispatch = useDispatch();
   const { trigger } = manualSWR(`http://localhost:3050/messages/${id}`, 'get');
@@ -60,6 +61,13 @@ export default function Conversation({
       dispatch(setModel('chatgptCustom'));
     } else {
       dispatch(setModel(data[1].sender));
+    }
+
+    if (modelMap[data[1].sender.toLowerCase()]) {
+      console.log('sender', data[1].sender);
+      dispatch(setCustomModel(data[1].sender.toLowerCase()));
+    } else {
+      dispatch(setCustomModel(null));
     }
 
     dispatch(setMessages(data));
