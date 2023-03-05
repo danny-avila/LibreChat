@@ -55,8 +55,8 @@ const Messages = ({ messages }) => {
       onScroll={debouncedHandleScroll}
     >
       {/* <div className="flex-1 overflow-hidden"> */}
-      <div className="h-full dark:bg-gray-800">
-        <div className="flex h-full flex-col items-center text-sm dark:bg-gray-800">
+      <div className="h-full dark:gpt-dark-gray">
+        <div className="flex h-full flex-col items-center text-sm dark:gpt-dark-gray">
           {messages.map((message, i) => (
             <Message
               key={i}
@@ -78,7 +78,7 @@ const Messages = ({ messages }) => {
           </CSSTransition>
 
           <div
-            className="group h-32 w-full flex-shrink-0 dark:border-gray-900/50 dark:bg-gray-800 md:h-48"
+            className="group h-32 w-full flex-shrink-0 dark:border-gray-900/50 dark:gpt-dark-gray md:h-48"
             ref={messagesEndRef}
           />
         </div>

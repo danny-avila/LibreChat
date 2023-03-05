@@ -8,7 +8,7 @@ export default function ModelItem({ modelName, value }) {
       <DialogTrigger className="w-full">
         <DropdownMenuRadioItem
           value={value}
-          className="dark:font-semibold dark:hover:bg-gray-800"
+          className="dark:font-semibold dark:hover:bg-gray-800 dark:text-gray-100"
         >
           {modelName}
           <sup>$</sup>
@@ -20,7 +20,7 @@ export default function ModelItem({ modelName, value }) {
   return (
     <DropdownMenuRadioItem
       value={value}
-      className="dark:font-semibold dark:hover:bg-gray-800"
+      className="dark:font-semibold dark:hover:bg-gray-800 dark:text-gray-100"
     >
       {modelName}
       {value === 'chatgpt' && <sup>$</sup>}
