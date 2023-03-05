@@ -133,7 +133,7 @@ export default function ModelMenu() {
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
-      <ModelDialog mutate={trigger} />
+      <ModelDialog mutate={trigger} modelMap={modelMap}/>
     </Dialog>
   );
 }
