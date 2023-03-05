@@ -6,6 +6,7 @@ const initialState = {
   model: 'chatgpt',
   promptPrefix: '',
   chatGptLabel: '',
+  customModel: null
 };
 
 const currentSlice = createSlice({
@@ -25,9 +26,13 @@ const currentSlice = createSlice({
       state.promptPrefix = action.payload.promptPrefix;
       state.chatGptLabel = action.payload.chatGptLabel;
     },
+    setCustomModel: (state, action) => {
+      state.customModel = action.payload;
+    }
   }
 });
 
-export const { setSubmitState, setDisabled, setModel, setCustomGpt } = currentSlice.actions;
+export const { setSubmitState, setDisabled, setModel, setCustomGpt, setCustomModel } =
+  currentSlice.actions;
 
 export default currentSlice.reducer;

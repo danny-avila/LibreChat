@@ -32,7 +32,6 @@ const currentSlice = createSlice({
   initialState,
   reducers: {
     setModels: (state, action) => {
-      console.log('setModels', action.payload);
       const models = [...initialState.models, ...action.payload];
       state.models = models;
       const modelMap = {};
