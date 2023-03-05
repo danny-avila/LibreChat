@@ -22,7 +22,10 @@
   "homepage": "https://github.com/danny-avila/rpp2210-mvp#readme",
   "dependencies": {
     "@keyv/mongo": "^2.1.8",
+    "@radix-ui/react-alert-dialog": "^1.0.2",
+    "@radix-ui/react-dialog": "^1.0.2",
     "@radix-ui/react-dropdown-menu": "^2.0.2",
+    "@radix-ui/react-label": "^2.0.0",
     "@radix-ui/react-tabs": "^1.0.2",
     "@reduxjs/toolkit": "^1.9.2",
     "@vscode/vscode-languagedetection": "^1.0.22",

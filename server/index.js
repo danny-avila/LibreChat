@@ -20,6 +20,7 @@ app.get('/', function (req, res) {
 app.use('/ask', routes.ask);
 app.use('/messages', routes.messages);
 app.use('/convos', routes.convos);
+app.use('/customGpts', routes.customGpts);
 app.use('/prompts', routes.prompts);
 
 app.listen(port, () => {

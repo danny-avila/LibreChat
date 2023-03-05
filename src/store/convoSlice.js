@@ -1,4 +1,4 @@
-import { createSlice, current } from '@reduxjs/toolkit';
+import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
   error: false,
@@ -8,6 +8,8 @@ const initialState = {
   conversationSignature: null,
   clientId: null,
   invocationId: null,
+  chatGptLabel: null,
+  promptPrefix: null,
   convosLoading: false
 };
 
