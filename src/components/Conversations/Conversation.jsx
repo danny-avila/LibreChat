@@ -3,6 +3,7 @@ import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
 import { useDispatch } from 'react-redux';
 import { setConversation } from '~/store/convoSlice';
+import { setCustomGpt, setModel } from '~/store/submitSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setText } from '~/store/textSlice';
 import manualSWR from '~/utils/fetchers';
@@ -15,7 +16,7 @@ export default function Conversation({
   title = 'New conversation',
   bingData,
   chatGptLabel = null,
-  promptPrefix = null,
+  promptPrefix = null
 }) {
   const [renaming, setRenaming] = useState(false);
   const [titleInput, setTitleInput] = useState(title);
@@ -54,7 +55,15 @@ export default function Conversation({
       );
     }
     const data = await trigger();
+
+    if (chatGptLabel) {
+      dispatch(setModel('chatgptCustom'));
+    } else {
+      dispatch(setModel(data[1].sender));
+    }
+
     dispatch(setMessages(data));
+    dispatch(setCustomGpt(convo));
     dispatch(setText(''));
   };
 

@@ -809,7 +809,7 @@ button {
 }
 
 ::-webkit-scrollbar {
-  height: 1rem;
+  height: 0.85em;
   width: 0.5rem;
 }
 
