@@ -1,7 +1,11 @@
 import React from 'react';
 import Conversation from './Conversation';
 
-export default function Conversations({ conversations, conversationId }) {
+export default function Conversations({ conversations, conversationId, showMore }) {
+  const clickHandler = async (e) => {
+    e.preventDefault();
+    await showMore();
+  };
 
   return (
     <>
@@ -29,8 +33,11 @@ export default function Conversations({ conversations, conversationId }) {
             />
           );
         })}
-      {conversations && conversations.length >= 12 && (
-        <button className="btn btn-dark btn-small m-auto mb-2 flex justify-center gap-2">
+      {conversations && conversations.length >= 12 && conversations.length % 12 === 0 && (
+        <button
+          onClick={clickHandler}
+          className="btn btn-dark btn-small m-auto mb-2 flex justify-center gap-2"
+        >
           Show more
         </button>
       )}

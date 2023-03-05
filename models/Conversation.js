@@ -73,7 +73,19 @@ module.exports = {
       return { message: 'Error updating conversation' };
     }
   },
-  getConvos: async () => await Conversation.find({}).sort({ created: -1 }).exec(),
+  // getConvos: async () => await Conversation.find({}).sort({ created: -1 }).exec(),
+  getConvos: async (pageNumber = 1, pageSize = 12) => {
+    // const skip = (pageNumber - 1) * pageSize;
+    const limit = pageNumber * pageSize;
+
+    const conversations = await Conversation.find({})
+      .sort({ created: -1 })
+      // .skip(skip)
+      .limit(limit)
+      .exec();
+
+    return conversations;
+  },
   deleteConvos: async (filter) => {
     let deleteCount = await Conversation.deleteMany(filter).exec();
     deleteCount.messages = await deleteMessages(filter);
