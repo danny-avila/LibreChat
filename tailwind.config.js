@@ -6,6 +6,9 @@ module.exports = {
   // darkMode: 'class',
   darkMode: ['class'],
   theme: {
+    // colors: {
+    //   'gpt-dark-gray': '#343541',
+    // },
     extend: {
       // fontFamily: {
       //   sans: ['var(--font-sans)', ...fontFamily.sans]
@@ -23,7 +26,21 @@ module.exports = {
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out'
-      }
+      },
+      colors: {
+        gray: {
+          '50': '#f7f7f8',
+          '100': '#d9d9e3',
+          '200': '#d9d9e3', // Replacing .bg-gray-200
+          '300': '#c5c5d2',
+          '400': '#acacb1',
+          '500': '#8e8ea0',
+          '600': '#565869',
+          '700': '#40414f', // Replacing .dark .dark:bg-gray-700 and .dark .dark:hover:bg-gray-700:hover
+          '800': '#343541', // Replacing .dark .dark:bg-gray-800, .bg-gray-800, and .dark .dark:hover:bg-gray-800\/90
+          '900': '#202123' // Replacing .dark .dark:bg-gray-900, .bg-gray-900, and .dark .dark:hover:bg-gray-900:hover
+        }
+    }
     }
   },
   plugins: [
