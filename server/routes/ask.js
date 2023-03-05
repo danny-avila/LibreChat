@@ -2,14 +2,21 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const askBing = require('./askBing');
-const { titleConvo, askClient, browserClient, detectCode } = require('../../app/');
+const {
+  titleConvo,
+  askClient,
+  browserClient,
+  customClient,
+  detectCode
+} = require('../../app/');
 const { saveMessage, deleteMessages, saveConvo } = require('../../models');
 const { handleError, sendMessage } = require('./handlers');
 
 router.use('/bing', askBing);
 
 router.post('/', async (req, res) => {
-  const { model, text, parentMessageId, conversationId } = req.body;
+  const { model, text, parentMessageId, conversationId, chatGptLabel, promptPrefix } =
+    req.body;
   if (!text.trim().includes(' ') && text.length < 5) {
     return handleError(res, 'Prompt empty or too short');
   }
@@ -17,9 +24,24 @@ router.post('/', async (req, res) => {
   const userMessageId = crypto.randomUUID();
   let userMessage = { id: userMessageId, sender: 'User', text };
 
-  console.log('ask log', { model, ...userMessage, parentMessageId, conversationId });
+  console.log('ask log', {
+    model,
+    ...userMessage,
+    parentMessageId,
+    conversationId,
+    chatGptLabel,
+    promptPrefix
+  });
 
-  const client = model === 'chatgpt' ? askClient : browserClient;
+  let client;
+
+  if (model === 'chatgpt') {
+    client = askClient;
+  } else if (model === 'chatgptCustom') {
+    client = customClient;
+  } else {
+    client = browserClient;
+  }
 
   res.writeHead(200, {
     Connection: 'keep-alive',
@@ -61,7 +83,9 @@ router.post('/', async (req, res) => {
       convo: {
         parentMessageId,
         conversationId
-      }
+      },
+      chatGptLabel,
+      promptPrefix
     });
 
     console.log('CLIENT RESPONSE', gptResponse);
@@ -87,11 +111,24 @@ router.post('/', async (req, res) => {
     }
 
     if (!parentMessageId) {
-      gptResponse.title = await titleConvo({ model, message: text, response: JSON.stringify(gptResponse.text) });
+      gptResponse.title = await titleConvo({
+        model,
+        message: text,
+        response: JSON.stringify(gptResponse.text)
+      });
     }
-    gptResponse.sender = model;
+    gptResponse.sender = model === 'chatgptCustom' ? chatGptLabel : model;
     gptResponse.final = true;
     gptResponse.text = await detectCode(gptResponse.text);
+
+    if (chatGptLabel?.length > 0 && model === 'chatgptCustom') {
+      gptResponse.chatGptLabel = chatGptLabel;
+    }
+
+    if (promptPrefix?.length > 0 && model === 'chatgptCustom') {
+      gptResponse.promptPrefix = promptPrefix;
+    }
+
     await saveMessage(gptResponse);
     await saveConvo(gptResponse);
     sendMessage(res, gptResponse);

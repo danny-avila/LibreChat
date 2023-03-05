@@ -5,10 +5,19 @@
 
 ## Updates
 <details open>
+<summary><strong>2023-03-04</strong></summary>
+Custom prompt prefixing and labeling is now supported through the official API. This nets some interesting results when you need ChatGPT for specific uses or entertainment. Select 'CustomGPT' in the model menu to configure this, and you can choose to save the configuration or reference it by conversation. Model selection will change by conversation.
+</details>
+
+<details>
+<summary><strong>Previous Updates</strong></summary>
+
+<details>
 <summary><strong>2023-03-01</strong></summary>
 Official ChatGPT API is out! Removed davinci since the official API is extremely fast and 10x less expensive. Since user labeling and prompt prefixing is officially supported, I will add a View feature so you can set this within chat, which gives the UI an added use case. I've kept the BrowserClient, since it's free to use like the official site.
 
 The Messages UI correctly mirrors code syntax highlighting. The exact replication of the cursor is not 1-to-1 yet, but pretty close. Later on in the project, I'll implement tests for code edge cases and explore the possibility of running code in-browser. Right now, unknown code defaults to javascript, but will detect language as close as possible.
+</details>
 <details>
 <summary><strong>2023-02-21</strong></summary>
 BingAI is integrated (although sadly limited by Microsoft with the 5 msg/convo limit, 50 msgs/day). I will need to handle the case when Bing refuses to give more answers on top of the other styling features I have in mind. Official ChatGPT use is back with the new BrowserClient. Brainstorming how to handle the UI when the Ai model changes, since conversations can't be persisted between them (or perhaps build a way to achieve this at some level).
@@ -24,6 +33,7 @@ Official ChatGPT use is no longer possible though I recently used it with waylai
 
 Currently, this project is only functional with the `text-davinci-003` model.
 </details>
+</details>
 
 ## Roadmap
 
@@ -31,7 +41,7 @@ Currently, this project is only functional with the `text-davinci-003` model.
 
 >  This is a work in progress. I'm building this in public. You can follow the progress here or on my [Linkedin](https://www.linkedin.com/in/danny-avila).
 
-> Here are my planned/recently finished features.
+Here are my planned/recently finished features.
 
 - [x] Rename, delete conversations
 - [x] Persistent conversation
@@ -43,8 +53,8 @@ Currently, this project is only functional with the `text-davinci-003` model.
 - [x] Markdown handling
 - [x] Language Detection for code blocks
 - [x] 'Copy to clipboard' button for code blocks
-- [ ] Set user/model label and prompt prefix view option
-- [ ] AI model change handling (whether to pseudo-persist convos or start new convos within existing convo)
+- [x] Customize prompt prefix/label (custom ChatGPT using official API)
+- [x] AI model change handling (start new convos within existing convo)
 - [ ] Server convo pagination (limit fetch and load more with 'show more' button)
 - [ ] Bing AI Styling (for suggested responses, convo end, etc.)
 - [ ] Prompt Templates
@@ -58,25 +68,26 @@ Currently, this project is only functional with the `text-davinci-003` model.
 
 - Response streaming identical to ChatGPT
 - UI from original ChatGPT, including Dark mode
-- AI model selection
+- AI model selection, including OpenAI's official ChatGPT API
 
 ### Tech Stack
 
 - Utilizes [node-chatgpt-api](https://github.com/waylaidwanderer/node-chatgpt-api)
 - Response streaming identical to ChatGPT through server-sent events
 - Use of Tailwind CSS (like the official site) and [shadcn/ui](https://github.com/shadcn/ui) components
-- useSWR, Redux Toolkit, Express, MongoDB, [Keyv](https://www.npmjs.com/package/keyv)
+- highlight.js, useSWR, Redux, Express, MongoDB, [Keyv](https://www.npmjs.com/package/keyv)
 
 ## Use Cases ##
 
   ![use case example](./public/use_case.png "GPT is down! Plus is too expensive!")
-  - ChatGPT is down ( and don't want to pay for ChatGPT Plus).
+  - One stop shop for all conversational AIs, with the added bonus of searching past conversations.
+  - Using the official API, you'd have to generate 7.5 million words to expense the same cost as ChatGPT Plus ($20).
+  - ChatGPT Free is down.
   - ChatGPT/Google Bard/Bing AI conversations are lost in space or
   cannot be searched past a certain timeframe.
-  - Quick one stop shop for all conversational AIs, with the added bonus of searching
 
 ## Origin ##
-  This project was originally created as a Minimum Viable Product (or MVP) for the [@HackReactor](https://github.com/hackreactor/) Bootcamp. It was built with OpenAI response streaming and most of the UI completed in under 20 hours. 20 hours in, I had most of the UI and basic functionality done. This was created without using any boilerplates or templates, including create-react-app and other toolchains. The purpose of the exercise was to learn setting up a full stack project from scratch. Please feel free to give feedback, suggestions, or fork the project for your own use.
+  This project was originally created as a Minimum Viable Product (or MVP) for the [@HackReactor](https://github.com/hackreactor/) Bootcamp. It was built with OpenAI response streaming and most of the UI completed in under 20 hours. During the end of that time, I had most of the UI and basic functionality done. This was created without using any boilerplates or templates, including create-react-app and other toolchains. I didn't follow any 'un-official chatgpt' video tutorials, and simply referenced the official site for the UI. The purpose of the exercise was to learn setting up a full stack project from scratch. Please feel free to give feedback, suggestions, or fork the project for your own use.
 
 <!-- ## Solution ##
   Serves and searches all conversations reliably. All AI convos under one house.

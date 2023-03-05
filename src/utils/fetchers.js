@@ -16,7 +16,7 @@ export const swr = (path, successCallback) => {
     options.onSuccess = successCallback;
   }
 
-  return useSWR(path, fetcher);
+  return useSWR(path, fetcher, options);
 }
 
 export default function manualSWR(path, type, successCallback) {
@@ -27,4 +27,4 @@ export default function manualSWR(path, type, successCallback) {
   }
   const fetchFunction = type === 'get' ? fetcher : postRequest;
   return useSWRMutation(path, fetchFunction, options);
-};
+}

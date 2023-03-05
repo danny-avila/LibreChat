@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import SubmitButton from './SubmitButton';
 import Regenerate from './Regenerate';
-import ModelMenu from './ModelMenu';
+import ModelMenu from '../Models/ModelMenu';
 import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
 import handleSubmit from '~/utils/handleSubmit';
@@ -15,9 +15,13 @@ export default function TextChat({ messages }) {
   const [errorMessage, setErrorMessage] = useState('');
   const dispatch = useDispatch();
   const convo = useSelector((state) => state.convo);
-  const { isSubmitting, model } = useSelector((state) => state.submit);
+  const { initial } = useSelector((state) => state.models);
+  const { isSubmitting, disabled, model, chatGptLabel, promptPrefix } = useSelector(
+    (state) => state.submit
+  );
   const { text } = useSelector((state) => state.text);
   const { error } = convo;
+  const isCustomModel = model === 'chatgptCustom' || !initial[model];
 
   const submitMessage = () => {
     if (error) {
@@ -30,15 +34,16 @@ export default function TextChat({ messages }) {
     dispatch(setSubmitState(true));
     const message = text.trim();
     const currentMsg = { sender: 'User', text: message, current: true };
-    const initialResponse = { sender: model, text: '' };
+    const sender = model === 'chatgptCustom' ? chatGptLabel : model;
+    const initialResponse = { sender, text: '' };
     dispatch(setMessages([...messages, currentMsg, initialResponse]));
     dispatch(setText(''));
     const messageHandler = (data) => {
-      dispatch(setMessages([...messages, currentMsg, { sender: model, text: data }]));
+      dispatch(setMessages([...messages, currentMsg, { sender, text: data }]));
     };
     const convoHandler = (data) => {
       dispatch(
-        setMessages([...messages, currentMsg, { sender: model, text: data.text || data.response }])
+        setMessages([...messages, currentMsg, { sender, text: data.text || data.response }])
       );
 
       if (
@@ -54,7 +59,9 @@ export default function TextChat({ messages }) {
             parentMessageId: id,
             conversationSignature: null,
             clientId: null,
-            invocationId: null
+            invocationId: null,
+            chatGptLabel: model === isCustomModel ? chatGptLabel : null,
+            promptPrefix: model === isCustomModel ? promptPrefix : null
           })
         );
       } else if (
@@ -116,7 +123,9 @@ export default function TextChat({ messages }) {
       convo,
       messageHandler,
       convoHandler,
-      errorHandler
+      errorHandler,
+      chatGptLabel,
+      promptPrefix
     };
     console.log('User Input:', message);
     handleSubmit(submission);
@@ -167,7 +176,13 @@ export default function TextChat({ messages }) {
               errorMessage={errorMessage}
             />
           ) : (
-            <div className="relative flex w-full flex-grow flex-col rounded-md border border-black/10 bg-white py-2 shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:border-gray-900/50 dark:bg-gray-700 dark:text-white dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] md:py-3 md:pl-4">
+            <div
+              className={`relative flex w-full flex-grow flex-col rounded-md border border-black/10 ${
+                disabled ? 'bg-gray-100' : 'bg-white'
+              } py-2 shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:border-gray-900/50 ${
+                disabled ? 'dark:bg-gray-900' : 'dark:bg-gray-700'
+              } dark:text-white dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] md:py-3 md:pl-4`}
+            >
               <ModelMenu />
               <TextareaAutosize
                 tabIndex="0"
@@ -177,7 +192,8 @@ export default function TextChat({ messages }) {
                 onKeyUp={handleKeyUp}
                 onKeyDown={handleKeyDown}
                 onChange={changeHandler}
-                placeholder=""
+                placeholder={disabled ? 'Choose another model or customize GPT again' : ''}
+                disabled={disabled}
                 className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-9 pr-8 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-8"
               />
               <SubmitButton submitMessage={submitMessage} />

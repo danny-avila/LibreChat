@@ -8,9 +8,11 @@ export default function handleSubmit({
   convo,
   messageHandler,
   convoHandler,
-  errorHandler
+  errorHandler,
+  chatGptLabel,
+  promptPrefix
 }) {
-  let payload = { model, text };
+  let payload = { model, text, chatGptLabel, promptPrefix };
   if (convo.conversationId && convo.parentMessageId) {
     payload = {
       ...payload,
