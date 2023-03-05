@@ -79,12 +79,18 @@ Here are my planned/recently finished features.
 
 ## Use Cases ##
 
-  ![use case example](./public/use_case.png "GPT is down! Plus is too expensive!")
   - One stop shop for all conversational AIs, with the added bonus of searching past conversations.
   - Using the official API, you'd have to generate 7.5 million words to expense the same cost as ChatGPT Plus ($20).
-  - ChatGPT Free is down.
   - ChatGPT/Google Bard/Bing AI conversations are lost in space or
   cannot be searched past a certain timeframe.
+  - ChatGPT Free (at [chat.openai.com](https://chat.openai.com/chat)) is more limited than the API
+
+    ![use case example](./public/use_case2.png "chat.openai.com is getting more limited by the day!")
+
+  - ChatGPT Free is down.
+
+    ![use case example](./public/use_case.png "GPT is down! Plus is too expensive!")
+
 
 ## Origin ##
   This project was originally created as a Minimum Viable Product (or MVP) for the [@HackReactor](https://github.com/hackreactor/) Bootcamp. It was built with OpenAI response streaming and most of the UI completed in under 20 hours. During the end of that time, I had most of the UI and basic functionality done. This was created without using any boilerplates or templates, including create-react-app and other toolchains. I didn't follow any 'un-official chatgpt' video tutorials, and simply referenced the official site for the UI. The purpose of the exercise was to learn setting up a full stack project from scratch. Please feel free to give feedback, suggestions, or fork the project for your own use.
