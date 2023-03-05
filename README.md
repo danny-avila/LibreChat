@@ -6,13 +6,18 @@
 ## Updates
 <details open>
 <summary><strong>2023-03-04</strong></summary>
+Custom prompt prefixing and labeling is now supported through the official API. This nets some interesting results when you need ChatGPT for specific uses or entertainment. Select 'CustomGPT' in the model menu to configure this, and you can choose to save the configuration or reference it by conversation. Model selection will change by conversation.
+</details>
 
 <details>
+<summary><strong>Previous Updates</strong></summary>
+
 <details>
 <summary><strong>2023-03-01</strong></summary>
 Official ChatGPT API is out! Removed davinci since the official API is extremely fast and 10x less expensive. Since user labeling and prompt prefixing is officially supported, I will add a View feature so you can set this within chat, which gives the UI an added use case. I've kept the BrowserClient, since it's free to use like the official site.
 
 The Messages UI correctly mirrors code syntax highlighting. The exact replication of the cursor is not 1-to-1 yet, but pretty close. Later on in the project, I'll implement tests for code edge cases and explore the possibility of running code in-browser. Right now, unknown code defaults to javascript, but will detect language as close as possible.
+</details>
 <details>
 <summary><strong>2023-02-21</strong></summary>
 BingAI is integrated (although sadly limited by Microsoft with the 5 msg/convo limit, 50 msgs/day). I will need to handle the case when Bing refuses to give more answers on top of the other styling features I have in mind. Official ChatGPT use is back with the new BrowserClient. Brainstorming how to handle the UI when the Ai model changes, since conversations can't be persisted between them (or perhaps build a way to achieve this at some level).
@@ -27,6 +32,7 @@ Just got access to Bing AI so I'll be focusing on integrating that through wayla
 Official ChatGPT use is no longer possible though I recently used it with waylaidwanderer's [reverse proxy method](https://github.com/waylaidwanderer/node-chatgpt-api/blob/main/README.md#using-a-reverse-proxy), and before that, through leaked models he also discovered.
 
 Currently, this project is only functional with the `text-davinci-003` model.
+</details>
 </details>
 
 ## Roadmap
@@ -48,7 +54,7 @@ Here are my planned/recently finished features.
 - [x] Language Detection for code blocks
 - [x] 'Copy to clipboard' button for code blocks
 - [x] Customize prompt prefix/label (custom ChatGPT using official API)
-- [ ] AI model change handling (whether to pseudo-persist convos or start new convos within existing convo)
+- [x] AI model change handling (start new convos within existing convo)
 - [ ] Server convo pagination (limit fetch and load more with 'show more' button)
 - [ ] Bing AI Styling (for suggested responses, convo end, etc.)
 - [ ] Prompt Templates
