@@ -10,7 +10,9 @@ const initialState = {
   invocationId: null,
   chatGptLabel: null,
   promptPrefix: null,
-  convosLoading: false
+  convosLoading: false,
+  pageNumber: 1,
+  convos: [],
 };
 
 const currentSlice = createSlice({
@@ -22,11 +24,14 @@ const currentSlice = createSlice({
     },
     setError: (state, action) => {
       state.error = action.payload;
+    },
+    incrementPage: (state) => {
+      state.pageNumber = state.pageNumber + 1;
     }
     // setConvos: (state, action) => state.convos = action.payload,
   }
 });
 
-export const { setConversation, setConvos, setError } = currentSlice.actions;
+export const { setConversation, setConvos, setError, incrementPage } = currentSlice.actions;
 
 export default currentSlice.reducer;
