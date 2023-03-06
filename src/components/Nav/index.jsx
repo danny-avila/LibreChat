@@ -6,15 +6,19 @@ import NavLinks from './NavLinks';
 import useDidMountEffect from '~/hooks/useDidMountEffect';
 import { swr } from '~/utils/fetchers';
 import { useDispatch, useSelector } from 'react-redux';
-import { incrementPage } from '~/store/convoSlice';
+import { incrementPage, setConvos } from '~/store/convoSlice';
 
 export default function Nav() {
   const dispatch = useDispatch();
   const [isHovering, setIsHovering] = useState(false);
-  const { conversationId, pageNumber } = useSelector((state) => state.convo);
+  const { conversationId, convos, pageNumber } = useSelector((state) => state.convo);
+  const onSuccess = (data) => {
+    dispatch(setConvos(data));
+  };
+
   const { data, isLoading, mutate } = swr(
     `http://localhost:3050/convos?pageNumber=${pageNumber}`
-  );
+  , onSuccess);
   const containerRef = useRef(null);
   const scrollPositionRef = useRef(null);
 
@@ -63,7 +67,7 @@ export default function Nav() {
                   <Spinner />
                 ) : (
                   <Conversations
-                    conversations={data}
+                    conversations={convos}
                     conversationId={conversationId}
                     showMore={showMore}
                     pageNumber={pageNumber}
