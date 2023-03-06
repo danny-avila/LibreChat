@@ -1,5 +1,4 @@
 const path = require('path');
-require('dotenv').config();
 // const HtmlWebpackPlugin = require('html-webpack-plugin');
 
 /*We are basically telling webpack to take index.js from entry. Then check for all file extensions in resolve.
@@ -10,7 +9,7 @@ module.exports = {
    * the environment - development, production, none. tells webpack
    * to use its built-in optimizations accordingly. default is production
    */
-  mode: process.env.NODE_ENV,
+  mode: 'development',
   /** "entry"
    * the entry point
    */

@@ -10,3 +10,5 @@ COPY . /api/
 EXPOSE 3080
 # Run the app when the container launches
 CMD ["npm", "start"]
+
+# docker build -t node-api .

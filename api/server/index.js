@@ -17,11 +17,11 @@ app.get('/', function (req, res) {
   res.sendFile(path.join(projectPath, 'public', 'index.html'));
 });
 
-app.use('/ask', routes.ask);
-app.use('/messages', routes.messages);
-app.use('/convos', routes.convos);
-app.use('/customGpts', routes.customGpts);
-app.use('/prompts', routes.prompts);
+app.use('/api/ask', routes.ask);
+app.use('/api/messages', routes.messages);
+app.use('/api/convos', routes.convos);
+app.use('/api/customGpts', routes.customGpts);
+app.use('/api/prompts', routes.prompts);
 
 app.listen(port, () => {
   console.log(`Server listening at http://localhost:${port}`);

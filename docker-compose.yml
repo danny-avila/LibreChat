@@ -2,7 +2,7 @@ version: "2"
 
 services:
     client:
-        image: react-app
+        image: react-client
         restart: always
         ports:
             - "3050:80"
