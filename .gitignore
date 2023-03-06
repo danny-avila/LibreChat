@@ -50,6 +50,6 @@ api/data/
 .eslintrc.js
 owner.yml
 archive
-.vscode
+.vscode/settings.json
 
 src/style - official.css
