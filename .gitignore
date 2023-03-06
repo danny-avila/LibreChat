@@ -48,5 +48,6 @@ bower_components/
 cache.json
 api/data/
 .eslintrc.js
+owner.yml
 
 src/style - official.css
