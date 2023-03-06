@@ -1,6 +1,7 @@
 ### node etc ###
 
 # Logs
+data-node
 logs
 *.log
 
@@ -24,11 +25,16 @@ dist/
 public/main.js
 public/main.js.map
 public/main.js.LICENSE.txt
+client/public/main.js
+client/public/main.js.map
+client/public/main.js.LICENSE.txt
 
 # Dependency directorys
 # Deployed apps should consider commenting these lines out:
 # see https://npmjs.org/doc/faq.html#Should-I-check-my-node_modules-folder-into-git
 node_modules/
+api/node_modules/
+client/node_modules/
 bower_components/
 
 # Floobits
@@ -40,7 +46,10 @@ bower_components/
 # Environment
 .env
 cache.json
-data/
+api/data/
 .eslintrc.js
+owner.yml
+archive
+.vscode/settings.json
 
 src/style - official.css
