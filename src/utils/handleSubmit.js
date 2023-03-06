@@ -1,5 +1,4 @@
-import { SSE } from '../../app/sse';
-const endpoint = 'http://localhost:3050/ask';
+import { SSE } from './sse';
 // const newLineRegex = /^\n+/;
 
 export default function handleSubmit({
@@ -12,6 +11,7 @@ export default function handleSubmit({
   chatGptLabel,
   promptPrefix
 }) {
+  const endpoint = `http://localhost:3080/ask`;
   let payload = { model, text, chatGptLabel, promptPrefix };
   if (convo.conversationId && convo.parentMessageId) {
     payload = {

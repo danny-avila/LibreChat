@@ -8,11 +8,17 @@ const clientOptions = {
   debug: false
 };
 
-const askClient = async ({ text, progressCallback, convo }) => {
+const customClient = async ({ text, progressCallback, convo, promptPrefix, chatGptLabel }) => {
   const ChatGPTClient = (await import('@waylaidwanderer/chatgpt-api')).default;
   const store = {
-    store: new KeyvFile({ filename: './data/cache.json' })
+    store: new KeyvFile({ filename: './api/data/cache.json' })
   };
+
+  clientOptions.chatGptLabel = chatGptLabel;
+
+  if (promptPrefix.length > 0) {
+    clientOptions.promptPrefix = promptPrefix;
+  }
 
   const client = new ChatGPTClient(process.env.OPENAI_KEY, clientOptions, store);
 
@@ -28,4 +34,4 @@ const askClient = async ({ text, progressCallback, convo }) => {
   return res;
 };
 
-module.exports = { askClient };
+module.exports = customClient;

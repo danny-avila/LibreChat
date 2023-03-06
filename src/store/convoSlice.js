@@ -29,7 +29,10 @@ const currentSlice = createSlice({
       state.pageNumber = state.pageNumber + 1;
     },
     setConvos: (state, action) => {
-      state.convos = [...state.convos, ...action.payload];
+      const newConvos = action.payload.filter((convo) => {
+        return !state.convos.some((c) => c.conversationId === convo.conversationId);
+      });
+      state.convos = [...state.convos, ...newConvos];
     },
   }
 });
