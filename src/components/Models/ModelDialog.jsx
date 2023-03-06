@@ -16,7 +16,7 @@ import {
   DialogTitle
 } from '../ui/Dialog.tsx';
 
-export default function ModelDialog({ mutate }) {
+export default function ModelDialog({ mutate, modelMap }) {
   const dispatch = useDispatch();
   const [chatGptLabel, setChatGptLabel] = useState('');
   const [promptPrefix, setPromptPrefix] = useState('');
@@ -50,7 +50,7 @@ export default function ModelDialog({ mutate }) {
     updateCustomGpt.trigger({ value, chatGptLabel, promptPrefix });
 
     mutate();
-    setSaveText('Saved!');
+    setSaveText((prev) => prev + 'd!');
     setTimeout(() => {
       setSaveText('Save');
     }, 2500);
@@ -59,6 +59,10 @@ export default function ModelDialog({ mutate }) {
     dispatch(setModel('chatgptCustom'));
     // dispatch(setDisabled(false));
   };
+
+  if (modelMap[chatGptLabel.toLowerCase()] && saveText === 'Save') {
+    setSaveText('Update');
+  }
 
   const requiredProp = required ? { required: true } : {};
 
