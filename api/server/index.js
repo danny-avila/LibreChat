@@ -4,7 +4,7 @@ const path = require('path');
 const cors = require('cors');
 const routes = require('./routes');
 const app = express();
-const port = process.env.PORT || 3050;
+const port = process.env.PORT || 3080;
 const projectPath = path.join(__dirname, '..', '..', 'client');
 dbConnect().then(() => console.log('Connected to MongoDB'));
 

@@ -4,7 +4,7 @@
   "description": "",
   "main": "server/index.js",
   "scripts": {
-    "start": "npx node server/index.js",
+    "start": "node server/index.js",
     "server-dev": "npx nodemon server/index.js"
   },
   "repository": {
