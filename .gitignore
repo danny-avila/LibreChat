@@ -1,6 +1,7 @@
 ### node etc ###
 
 # Logs
+data-node
 logs
 *.log
 
@@ -24,6 +25,9 @@ dist/
 public/main.js
 public/main.js.map
 public/main.js.LICENSE.txt
+client/public/main.js
+client/public/main.js.map
+client/public/main.js.LICENSE.txt
 
 # Dependency directorys
 # Deployed apps should consider commenting these lines out:
