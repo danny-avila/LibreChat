@@ -75,13 +75,14 @@ module.exports = {
   },
   // getConvos: async () => await Conversation.find({}).sort({ created: -1 }).exec(),
   getConvos: async (pageNumber = 1, pageSize = 12) => {
-    // const skip = (pageNumber - 1) * pageSize;
-    const limit = pageNumber * pageSize;
+    const skip = (pageNumber - 1) * pageSize;
+    // const limit = pageNumber * pageSize;
 
     const conversations = await Conversation.find({})
       .sort({ created: -1 })
-      // .skip(skip)
-      .limit(limit)
+      .skip(skip)
+      // .limit(limit)
+      .limit(pageSize)
       .exec();
 
     return conversations;

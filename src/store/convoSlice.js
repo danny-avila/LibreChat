@@ -27,8 +27,10 @@ const currentSlice = createSlice({
     },
     incrementPage: (state) => {
       state.pageNumber = state.pageNumber + 1;
-    }
-    // setConvos: (state, action) => state.convos = action.payload,
+    },
+    setConvos: (state, action) => {
+      state.convos = [...state.convos, ...action.payload];
+    },
   }
 });
 

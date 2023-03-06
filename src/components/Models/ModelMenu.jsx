@@ -40,25 +40,18 @@ export default function ModelMenu() {
   });
 
   useEffect(() => {
+    trigger();
     const lastSelected = JSON.parse(localStorage.getItem('model'));
     if (lastSelected && lastSelected !== 'chatgptCustom' && initial[lastSelected]) {
       dispatch(setModel(lastSelected));
     }
 
-    const cachedModels = JSON.parse(localStorage.getItem('models'));
-    if (cachedModels) {
-      dispatch(setModels(cachedModels));
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     localStorage.setItem('model', JSON.stringify(model));
   }, [model]);
-
-  useEffect(() => {
-    localStorage.setItem('models', JSON.stringify(models.slice(4)));
-  }, [models]);
 
   const onChange = (value) => {
     if (!value) {
@@ -140,7 +133,7 @@ export default function ModelMenu() {
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
-      <ModelDialog mutate={trigger} />
+      <ModelDialog mutate={trigger} modelMap={modelMap}/>
     </Dialog>
   );
 }

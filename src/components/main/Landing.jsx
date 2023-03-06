@@ -93,7 +93,7 @@ export default function Landing({ title }) {
             </ul>
           </div>
         </div>
-        {!showingTemplates && (
+        {/* {!showingTemplates && (
           <div className="mt-8 mb-4 flex flex-col items-center gap-3.5 md:mt-16">
             <button
               onClick={showTemplates}
@@ -104,7 +104,7 @@ export default function Landing({ title }) {
             </button>
           </div>
         )}
-        {!!showingTemplates && <Templates showTemplates={showTemplates}/>}
+        {!!showingTemplates && <Templates showTemplates={showTemplates}/>} */}
         <div className="group h-32 w-full flex-shrink-0 dark:border-gray-900/50 dark:bg-gray-800 md:h-48" />
       </div>
     </div>
