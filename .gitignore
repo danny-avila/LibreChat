@@ -49,5 +49,7 @@ cache.json
 api/data/
 .eslintrc.js
 owner.yml
+archive
+.vscode
 
 src/style - official.css
