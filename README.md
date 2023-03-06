@@ -1,10 +1,14 @@
 # ChatGPT Clone #
 ![chatgpt-clone demo](./public/demo.gif)
 ## Wrap all conversational AIs under one roof. ##
-  Assistant AIs are the future and OpenAI revolutionized this movement with ChatGPT. While numerous methods exist to integrate these AIs, this app commemorates the original styling of ChatGPT, with the ability to integrate any current/future AI models through user-provided API keys, while improving upon original client features, such as conversation search and prompt templates. This project was built with the anticipation of the official ChatGPT API from OpenAI, and now uses it along with the free access method. Through this clone, you can avoid subscription-based models in favor of free or pay-per-call APIs. I will most likely not deploy this app, as it's mainly a learning experience, but feel free to clone or fork to create your own custom wrapper.
+  Assistant AIs are the future and OpenAI revolutionized this movement with ChatGPT. While numerous methods exist to integrate these AIs, this app commemorates the original styling of ChatGPT, with the ability to integrate any current/future AI models, while improving upon original client features, such as conversation search and prompt templates (currently WIP). This project was started early in Feb '23, anticipating the release of the official ChatGPT API from OpenAI, and now uses it along with access to the free version. Through this clone, you can avoid subscription-based models (ChatGPT Plus) in favor of free or pay-per-call APIs. I will soon deploy a demo of this app. Feel free to contribute, clone, or fork. Currently dockerized.
 
 ## Updates
 <details open>
+<summary><strong>2023-03-06</strong></summary>
+Due to increased interest in the repo, I've dockerized the app as of this update for quick setup! See setup instructions below. I realize this still takes some time with installing docker dependencies, so it's on the roadmap to have a deployed demo. Besides this, I've made major improvements for a lot of the existing features across the board, mainly UI/UX.
+</details>
+<details>
 <summary><strong>2023-03-04</strong></summary>
 Custom prompt prefixing and labeling is now supported through the official API. This nets some interesting results when you need ChatGPT for specific uses or entertainment. Select 'CustomGPT' in the model menu to configure this, and you can choose to save the configuration or reference it by conversation. Model selection will change by conversation.
 </details>
@@ -35,48 +39,61 @@ Currently, this project is only functional with the `text-davinci-003` model.
 </details>
 </details>
 
+# Table of Contents
+   * [Roadmap](#roadmap)
+   * [Features](#features)
+   * [Tech Stack](#tech-stack)
+   * [Getting Started](#getting-started)
+      * [Prerequisites](#prerequisites)
+      * [Usage](#usage)
+         <!-- * [Module](#module)
+         * [API Server](#api-server)
+         * [CLI](#cli) -->
+      * [Using a Reverse Proxy](#using-a-reverse-proxy)
+   * [Caveats](#caveats)
+   * [Contributing](#contributing)
+   * [License](#license)
+
 ## Roadmap
 
 > **Warning**
 
 >  This is a work in progress. I'm building this in public. You can follow the progress here or on my [Linkedin](https://www.linkedin.com/in/danny-avila).
 
-Here are my planned/recently finished features.
+Here are my recently completed and planned features:
 
-- [x] Rename, delete conversations
 - [x] Persistent conversation
+- [x] Rename, delete conversations
 - [x] UI Error handling
-- [x] AI Model Selection
 - [x] Bing AI integration
-- [x] Remember last selected model
-- [x] Highlight.js for code blocks
+- [x] AI model change handling (start new convos within existing, remembers last selected)
+- [x] Code block handling (highlighting, markdown, clipboard, language detection)
 - [x] Markdown handling
-- [x] Language Detection for code blocks
-- [x] 'Copy to clipboard' button for code blocks
 - [x] Customize prompt prefix/label (custom ChatGPT using official API)
-- [x] AI model change handling (start new convos within existing convo)
 - [x] Server convo pagination (limit fetch and load more with 'show more' button)
-- [ ] Config file for easy startup
+- [x] Config file for easy startup (docker compose)
 - [ ] Conversation Search (by title)
 - [ ] Resubmit/edit sent messages
 - [ ] Semantic Search Option (requires more tokens)
 - [ ] Bing AI Styling (for suggested responses, convo end, etc.)
 - [ ] Prompt Templates/Search
 - [ ] Refactor/clean up code (tech debt)
+- [ ] Optional use of local storage for credentials
 - [ ] Mobile styling (half-finished)
+- [ ] Deploy demo
 
 ### Features
 
-- Response streaming identical to ChatGPT
+- Response streaming identical to ChatGPT through server-sent events
 - UI from original ChatGPT, including Dark mode
 - AI model selection, including OpenAI's official ChatGPT API
 
 ### Tech Stack
 
 - Utilizes [node-chatgpt-api](https://github.com/waylaidwanderer/node-chatgpt-api)
-- Response streaming identical to ChatGPT through server-sent events
-- Use of Tailwind CSS (like the official site) and [shadcn/ui](https://github.com/shadcn/ui) components
-- highlight.js, useSWR, Redux, Express, MongoDB, [Keyv](https://www.npmjs.com/package/keyv)
+- No React boilerplate/toolchain, created from scratch with react@latest
+- Use of Tailwind CSS and [shadcn/ui](https://github.com/shadcn/ui) components
+- Docker, useSWR, Redux, Express, MongoDB, [Keyv](https://www.npmjs.com/package/keyv)
 
 ## Use Cases ##
 
@@ -100,10 +117,37 @@ Here are my planned/recently finished features.
   Serves and searches all conversations reliably. All AI convos under one house.
   Pay per call and not per month (cents compared to dollars). -->
 
-## How to Get Started ##
-> **Warning**
->  Working on easy startup/config code. Still in development.
+## Getting Started
 
-  <!-- ## License
+### Prerequisites
+- Node.js >= 19.0.0
+- npm
+- [Docker (optional)](https://www.docker.com/get-started/)
+- [OpenAI API key](https://platform.openai.com/account/api-keys)
+- BingAI, ChatGPT access tokens (optional, free AIs)
 
-Licensed under the [insert license here](). -->
+## Usage
+
+<details open>
+<summary><strong>BingAI Instructions</strong></summary>
+
+<details open>
+<summary><strong>ChatGPT Free Instructions</strong></summary>
+
+See [`demos/use-browser-client.js`](demos/use-browser-client.js).
+</details>
+
+## Caveats
+### Regarding `ChatGPTClient`
+From @waylaidwanderer's use of the official API: Since `gpt-3.5-turbo` is ChatGPT's underlying model, I had to do my best to replicate the way the official ChatGPT website uses it.
+This means my implementation or the underlying model may not behave exactly the same in some ways:
+- Conversations are not tied to any user IDs, so if that's important to you, you should implement your own user ID system.
+- ChatGPT's model parameters (temperature, frequency penalty, etc.) are unknown, so I set some defaults that I thought would be reasonable.
+- Conversations are limited to roughly the last 3000 tokens, so earlier messages may be forgotten during longer conversations.
+  - This works in a similar way to ChatGPT, except I'm pretty sure they have some additional way of retrieving context from earlier messages when needed (which can probably be achieved with embeddings, but I consider that out-of-scope for now).
+
+## Contributing
+If you'd like to contribute, please create a pull request with a detailed description of your changes.
+
+## License
+This project is licensed under the MIT License.
