@@ -11,12 +11,12 @@ export default function ClearConvos() {
   const { mutate } = useSWRConfig()
 
   const { trigger } = manualSWR(
-    'http://localhost:3050/convos/clear',
+    `http://localhost:3080/convos/clear`,
     'post',
     () => {
       dispatch(setMessages([]));
       dispatch(setConversation({ error: false, title: 'New chat', conversationId: null, parentMessageId: null }));
-      mutate('http://localhost:3050/convos');
+      mutate(`http://localhost:3080/convos`);
     }
   );
 

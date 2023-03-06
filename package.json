@@ -1,27 +1,27 @@
 {
-  "name": "rpp2210-mvp",
+  "name": "chatgpt-clone",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
     "start": "webpack-dev-server .",
     "build": "Webpack .",
-    "server": "npx node server/index.js",
+    "server": "npx node api/server/index.js",
     "build-dev": "Webpack . --watch",
-    "server-dev": "npx nodemon server/index.js",
+    "server-dev": "npx nodemon api/server/index.js",
     "test": "test"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danny-avila/rpp2210-mvp.git"
+    "url": "git+https://github.com/danny-avila/chatgpt-clone.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/danny-avila/rpp2210-mvp/issues"
+    "url": "https://github.com/danny-avila/chatgpt-clone/issues"
   },
-  "homepage": "https://github.com/danny-avila/rpp2210-mvp#readme",
+  "homepage": "https://github.com/danny-avila/chatgpt-clone#readme",
   "dependencies": {
     "@keyv/mongo": "^2.1.8",
     "@radix-ui/react-alert-dialog": "^1.0.2",
@@ -32,7 +32,6 @@
     "@reduxjs/toolkit": "^1.9.2",
     "@vscode/vscode-languagedetection": "^1.0.22",
     "@waylaidwanderer/chatgpt-api": "^1.15.1",
-    "chatgpt": "^4.2.0",
     "class-variance-authority": "^0.4.0",
     "clsx": "^1.2.1",
     "cors": "^2.8.5",
@@ -50,7 +49,6 @@
     "react-redux": "^8.0.5",
     "react-textarea-autosize": "^8.4.0",
     "react-transition-group": "^4.4.5",
-    "remark-supersub": "^1.0.0",
     "swr": "^2.0.3",
     "tailwind-merge": "^1.9.1",
     "tailwindcss-animate": "^1.0.5",

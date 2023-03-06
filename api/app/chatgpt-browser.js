@@ -12,7 +12,7 @@ const browserClient = async ({ text, progressCallback, convo }) => {
   const { ChatGPTBrowserClient } = await import('@waylaidwanderer/chatgpt-api');
 
   const store = {
-    store: new KeyvFile({ filename: './data/cache.json' })
+    store: new KeyvFile({ filename: './api/data/cache.json' })
   };
 
   const client = new ChatGPTBrowserClient(clientOptions, store);
