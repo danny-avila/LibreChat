@@ -1,10 +1,14 @@
 # ChatGPT Clone #
 ![chatgpt-clone demo](./public/demo.gif)
 ## Wrap all conversational AIs under one roof. ##
-  Assistant AIs are the future and OpenAI revolutionized this movement with ChatGPT. While numerous methods exist to integrate these AIs, this app commemorates the original styling of ChatGPT, with the ability to integrate any current/future AI models through user-provided API keys, while improving upon original client features, such as conversation search and prompt templates. This project was built with the anticipation of the official ChatGPT API from OpenAI, and now uses it along with the free access method. Through this clone, you can avoid subscription-based models in favor of free or pay-per-call APIs. I will most likely not deploy this app, as it's mainly a learning experience, but feel free to clone or fork to create your own custom wrapper.
+  Assistant AIs are the future and OpenAI revolutionized this movement with ChatGPT. While numerous methods exist to integrate these AIs, this app commemorates the original styling of ChatGPT, with the ability to integrate any current/future AI models through user-provided API keys, while improving upon original client features, such as conversation search and prompt templates. This project was built with the anticipation of the official ChatGPT API from OpenAI, and now uses it along with the free access method. Through this clone, you can avoid subscription-based models in favor of free or pay-per-call APIs. I will deploy a demo of this app, but feel free to clone or fork to create your own custom wrapper. Currently dockerized.
 
 ## Updates
 <details open>
+<summary><strong>2023-03-06</strong></summary>
+Due to more interest in this repo, I've dockerized the app as of this update for quick setup! See setup instructions below. I realize this still takes some time with installing docker dependencies, so it's on the roadmap to have a deployed demo. Besides this, I've made major improvements for a lot of the existing features across the board, mainly UI/UX.
+</details>
+<details>
 <summary><strong>2023-03-04</strong></summary>
 Custom prompt prefixing and labeling is now supported through the official API. This nets some interesting results when you need ChatGPT for specific uses or entertainment. Select 'CustomGPT' in the model menu to configure this, and you can choose to save the configuration or reference it by conversation. Model selection will change by conversation.
 </details>
@@ -56,7 +60,7 @@ Here are my planned/recently finished features.
 - [x] Customize prompt prefix/label (custom ChatGPT using official API)
 - [x] AI model change handling (start new convos within existing convo)
 - [x] Server convo pagination (limit fetch and load more with 'show more' button)
-- [ ] Config file for easy startup
+- [x] Config file for easy startup (docker compose)
 - [ ] Conversation Search (by title)
 - [ ] Resubmit/edit sent messages
 - [ ] Semantic Search Option (requires more tokens)
@@ -64,6 +68,7 @@ Here are my planned/recently finished features.
 - [ ] Prompt Templates/Search
 - [ ] Refactor/clean up code (tech debt)
 - [ ] Mobile styling (half-finished)
+- [ ] Deploy demo
 
 ### Features
 

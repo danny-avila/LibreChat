@@ -19,7 +19,7 @@ services:
         environment:
                 - PORT=3080
                 - MONGO_URI=mongodb://mongodb:27017
-                - OPENAI_KEY=
+                - OPENAI_KEY=""
                 - CHATGPT_TOKEN=""
                 - BING_TOKEN=""
         ports:
