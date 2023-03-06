@@ -1,4 +1,4 @@
-FROM node:latest
+FROM node:19-alpine
 WORKDIR /api
 # copy package.json into the container at /api
 COPY package*.json /api/

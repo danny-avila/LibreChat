@@ -12,7 +12,7 @@ const initialState = {
   promptPrefix: null,
   convosLoading: false,
   pageNumber: 1,
-  convos: [],
+  convos: []
 };
 
 const currentSlice = createSlice({
@@ -32,8 +32,10 @@ const currentSlice = createSlice({
       const newConvos = action.payload.filter((convo) => {
         return !state.convos.some((c) => c.conversationId === convo.conversationId);
       });
-      state.convos = [...state.convos, ...newConvos];
-    },
+      state.convos = [...state.convos, ...newConvos].sort(
+        (a, b) => new Date(b.created) - new Date(a.created)
+      );
+    }
   }
 });
 
