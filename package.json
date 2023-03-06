@@ -5,8 +5,10 @@
   "main": "index.js",
   "scripts": {
     "start": "webpack-dev-server .",
-    "build": "Webpack . --watch",
-    "server": "npx nodemon server/index.js",
+    "build": "Webpack .",
+    "server": "npx node server/index.js",
+    "build-dev": "Webpack . --watch",
+    "server-dev": "npx nodemon server/index.js",
     "test": "test"
   },
   "repository": {
