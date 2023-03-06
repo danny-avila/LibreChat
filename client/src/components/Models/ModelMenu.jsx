@@ -25,8 +25,7 @@ export default function ModelMenu() {
   const dispatch = useDispatch();
   const { model, customModel } = useSelector((state) => state.submit);
   const { models, modelMap, initial } = useSelector((state) => state.models);
-  const { trigger } = manualSWR(`http://localhost:3080/customGpts`, 'get', (res) => {
-    console.log('models data (response)', res);
+  const { trigger } = manualSWR(`http://api:3080/customGpts`, 'get', (res) => {
     if (models.length + res.length === models.length) {
       return;
     }

@@ -56,16 +56,21 @@ export default function Message({
 
   if (notUser) {
     props.className =
-    'w-full border-b border-black/10 bg-gray-50 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-100 dark:bg-[#444654]';
+      'w-full border-b border-black/10 bg-gray-50 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-100 dark:bg-[#444654]';
   }
 
-  if (notUser && backgroundColor || sender === 'bingai') {
+  if ((notUser && backgroundColor) || sender === 'bingai') {
     icon = (
       <div
         style={{ backgroundColor }}
         className="relative flex h-[30px] w-[30px] items-center justify-center rounded-sm p-1 text-white"
       >
         {sender === 'bingai' ? <BingIcon /> : <GPTIcon />}
+        {error && (
+          <span className="absolute right-0 top-[20px] -mr-2 flex h-4 w-4 items-center justify-center rounded-full border border-white bg-red-500 text-[10px] text-white">
+            !
+          </span>
+        )}
       </div>
     );
   }

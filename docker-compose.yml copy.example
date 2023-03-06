@@ -1,0 +1,48 @@
+version: "2"
+
+services:
+    client:
+        image: react-app
+        restart: always
+        ports:
+            - "3050:80"
+        volumes:
+            - ./client:/client
+            - /client/node_modules
+        links:
+            - api
+        networks:
+            - webappnetwork
+    api:
+        image: node-api
+        restart: always
+        environment:
+                - PORT=3080
+                - MONGO_URI=mongodb://mongodb:27017
+                - OPENAI_KEY=
+                - CHATGPT_TOKEN=""
+                - BING_TOKEN=""
+        ports:
+            - "3080:3080"
+        volumes:
+            - ./api:/api
+            - /api/node_modules
+        depends_on:
+            - mongodb
+        networks:
+            - webappnetwork
+    mongodb:
+        image: mongo
+        restart: always
+        container_name: mongodb
+        volumes:
+            - ./data-node:/data/db
+        ports:
+            - 27020:27017
+        command: mongod --noauth
+        networks:
+            - webappnetwork
+
+networks:
+    webappnetwork:
+        driver: bridge
