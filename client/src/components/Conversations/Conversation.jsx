@@ -23,8 +23,8 @@ export default function Conversation({
   const { modelMap } = useSelector((state) => state.models);
   const inputRef = useRef(null);
   const dispatch = useDispatch();
-  const { trigger } = manualSWR(`http://localhost:3080/messages/${id}`, 'get');
-  const rename = manualSWR(`http://localhost:3080/convos/update`, 'post');
+  const { trigger } = manualSWR(`http://api:3080/messages/${id}`, 'get');
+  const rename = manualSWR(`http://api:3080/convos/update`, 'post');
 
   const clickHandler = async () => {
     if (conversationId === id) {
