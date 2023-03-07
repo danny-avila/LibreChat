@@ -1,5 +1,6 @@
 {
   "ignore": [
-    "data/"
+    "api/data/",
+    "data"
   ]
 }
