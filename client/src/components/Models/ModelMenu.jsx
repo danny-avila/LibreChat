@@ -24,7 +24,6 @@ import { Dialog } from '../ui/Dialog.tsx';
 export default function ModelMenu() {
   const dispatch = useDispatch();
   const [modelSave, setModelSave] = useState(false);
-  // const [dialogOpen, setDialogOpen] = useState(false);
   const { model, customModel } = useSelector((state) => state.submit);
   const { models, modelMap, initial } = useSelector((state) => state.models);
   const { trigger } = manualSWR(`http://localhost:3080/api/customGpts`, 'get', (res) => {
