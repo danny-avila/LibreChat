@@ -1,5 +1,5 @@
 # ChatGPT Clone #
-![chatgpt-clone demo](./client/public/demo.gif)
+![chatgpt-clone demo](./images/demo.gif)
 ## All AI Conversations under One Roof. ##
   Assistant AIs are the future and OpenAI revolutionized this movement with ChatGPT. While numerous methods exist to integrate them, this app commemorates the original styling of ChatGPT, with the ability to integrate any current/future AI models, while improving upon original client features, such as conversation search and prompt templates (currently WIP).
 
@@ -151,12 +151,12 @@ Here are my recently completed and planned features:
 
 <details>
 <summary><strong>ChatGPT Free Instructions</strong></summary>
+
+
 **This has been disabled as is no longer working as of 3-07-23**
 
 
-
 To get your Access token For ChatGPT 'Free Version', login to chat.openai.com, then visit https://chat.openai.com/api/auth/session.
-
 
 
 **Warning:** There may be a high chance of your account being banned with this method. Continue doing so at your own risk.
@@ -181,15 +181,15 @@ The Bing Access Token is the "_U" cookie from bing.com. Use dev tools or an exte
   cannot be searched past a certain timeframe.
   - **Customize ChatGPT**
 
-    ![use case example](./client/public/use_case3.png "Make a Custom GPT")
+    ![use case example](./images/use_case3.png "Make a Custom GPT")
 
   - **API is not as limited as ChatGPT Free (at [chat.openai.com](https://chat.openai.com/chat))**
 
-    ![use case example](./client/public/use_case2.png "chat.openai.com is getting more limited by the day!")
+    ![use case example](./images/use_case2.png "chat.openai.com is getting more limited by the day!")
 
   - **ChatGPT Free is down.**
 
-    ![use case example](./client/public/use_case.png "GPT is down! Plus is too expensive!")
+    ![use case example](./images/use_case.png "GPT is down! Plus is too expensive!")
 
 
 ## Origin ##
