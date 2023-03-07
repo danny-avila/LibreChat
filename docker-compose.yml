@@ -5,7 +5,7 @@ services:
         image: react-client
         restart: always
         ports:
-            - "3050:80"
+            - "3080:80"
         volumes:
             - ./client:/client
             - /client/node_modules
@@ -23,7 +23,7 @@ services:
                 - CHATGPT_TOKEN=""
                 - BING_TOKEN=""
         ports:
-            - "3080:3080"
+            - "9000:3080"
         volumes:
             - ./api:/api
             - /api/node_modules

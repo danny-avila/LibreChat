@@ -151,7 +151,13 @@ Here are my recently completed and planned features:
 
 <details>
 <summary><strong>ChatGPT Free Instructions</strong></summary>
+**This has been disabled as is no longer working as of 3-07-23**
+
+
+
 To get your Access token For ChatGPT 'Free Version', login to chat.openai.com, then visit https://chat.openai.com/api/auth/session.
+
+
 
 **Warning:** There may be a high chance of your account being banned with this method. Continue doing so at your own risk.
 
