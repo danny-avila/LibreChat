@@ -38,11 +38,14 @@ const currentSlice = createSlice({
     },
     removeConvo: (state, action) => {
       state.convos = state.convos.filter((convo) => convo.conversationId !== action.payload);
+    },
+    removeAll: (state) => {
+      state.convos = [];
     }
   }
 });
 
-export const { setConversation, setConvos, setError, incrementPage, removeConvo } =
+export const { setConversation, setConvos, setError, incrementPage, removeConvo, removeAll } =
   currentSlice.actions;
 
 export default currentSlice.reducer;
