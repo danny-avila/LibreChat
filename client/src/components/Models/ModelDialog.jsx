@@ -16,10 +16,11 @@ import {
   DialogTitle
 } from '../ui/Dialog.tsx';
 
-export default function ModelDialog({ mutate, modelMap }) {
+export default function ModelDialog({ mutate, modelMap, setModelSave, handleSaveState }) {
   const dispatch = useDispatch();
   const [chatGptLabel, setChatGptLabel] = useState('');
   const [promptPrefix, setPromptPrefix] = useState('');
+  
   const [saveText, setSaveText] = useState('Save');
   const [required, setRequired] = useState(false);
   const inputRef = useRef(null);
@@ -34,11 +35,13 @@ export default function ModelDialog({ mutate, modelMap }) {
     }
     dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
     dispatch(setModel('chatgptCustom'));
+    handleSaveState(chatGptLabel.toLowerCase());
     // dispatch(setDisabled(false));
   };
 
   const saveHandler = (e) => {
     e.preventDefault();
+    setModelSave(true);
     const value = chatGptLabel.toLowerCase();
 
     if (chatGptLabel.length === 0) {
@@ -60,7 +63,11 @@ export default function ModelDialog({ mutate, modelMap }) {
     // dispatch(setDisabled(false));
   };
 
-  if (modelMap[chatGptLabel.toLowerCase()] && saveText === 'Save') {
+  if (
+    chatGptLabel !== 'chatgptCustom' &&
+    modelMap[chatGptLabel.toLowerCase()] &&
+    saveText === 'Save'
+  ) {
     setSaveText('Update');
   }
 

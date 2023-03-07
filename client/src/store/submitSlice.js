@@ -6,7 +6,7 @@ const initialState = {
   model: 'chatgpt',
   promptPrefix: '',
   chatGptLabel: '',
-  customModel: null
+  customModel: ''
 };
 
 const currentSlice = createSlice({
@@ -27,6 +27,7 @@ const currentSlice = createSlice({
       state.chatGptLabel = action.payload.chatGptLabel;
     },
     setCustomModel: (state, action) => {
+      console.log('setCustomModel', action.payload);
       state.customModel = action.payload;
     }
   }
