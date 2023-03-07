@@ -1,5 +1,5 @@
 const { saveMessage, deleteMessages } = require('./Message');
-const { getCustomGpts, updateCustomGpt, deleteCustomGpts } = require('./CustomGpt');
+const { getCustomGpts, updateCustomGpt, updateByLabel, deleteCustomGpts } = require('./CustomGpt');
 const { saveConvo } = require('./Conversation');
 
 module.exports = {
@@ -8,5 +8,6 @@ module.exports = {
   saveConvo,
   getCustomGpts,
   updateCustomGpt,
+  updateByLabel,
   deleteCustomGpts
 };

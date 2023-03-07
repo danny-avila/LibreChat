@@ -24,13 +24,10 @@ import { Dialog } from '../ui/Dialog.tsx';
 export default function ModelMenu() {
   const dispatch = useDispatch();
   const [modelSave, setModelSave] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const { model, customModel } = useSelector((state) => state.submit);
   const { models, modelMap, initial } = useSelector((state) => state.models);
   const { trigger } = manualSWR(`http://localhost:3080/api/customGpts`, 'get', (res) => {
-    if (models.length + res.length === models.length) {
-      return;
-    }
-
     const fetchedModels = res.map((modelItem) => ({
       ...modelItem,
       name: modelItem.chatGptLabel
@@ -53,7 +50,7 @@ export default function ModelMenu() {
     localStorage.setItem('model', JSON.stringify(model));
   }, [model]);
 
-  const onChange = (value) => {
+  const onChange = (value, custom = false) => {
     if (!value) {
       return;
     } else if (value === 'chatgptCustom') {
@@ -62,12 +59,18 @@ export default function ModelMenu() {
       dispatch(setModel(value));
       dispatch(setDisabled(false));
       dispatch(setCustomModel(null));
+      if (custom) {
+        trigger();
+      }
     } else if (!initial[value]) {
       const chatGptLabel = modelMap[value]?.chatGptLabel;
       const promptPrefix = modelMap[value]?.promptPrefix;
       dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
       dispatch(setModel('chatgptCustom'));
       dispatch(setCustomModel(value));
+      if (custom) {
+        setMenuOpen((prevOpen) => !prevOpen);
+      }
     } else if (!modelMap[value]) {
       dispatch(setCustomModel(null));
     }
@@ -101,7 +104,9 @@ export default function ModelMenu() {
   const defaultColorProps = [
     'text-gray-500',
     'hover:bg-gray-100',
+    'hover:bg-opacity-20',
     'disabled:hover:bg-transparent',
+    'dark:data-[state=open]:bg-gray-800',
     'dark:hover:bg-opacity-20',
     'dark:hover:bg-gray-900',
     'dark:hover:text-gray-400',
@@ -110,9 +115,11 @@ export default function ModelMenu() {
 
   const chatgptColorProps = [
     'text-green-700',
+    'data-[state=open]:bg-green-100',
     'dark:text-emerald-300',
     'hover:bg-green-100',
     'disabled:hover:bg-transparent',
+    'dark:data-[state=open]:bg-green-900',
     'dark:hover:bg-opacity-50',
     'dark:hover:bg-green-900',
     'dark:hover:text-gray-100',
@@ -124,14 +131,17 @@ export default function ModelMenu() {
 
   return (
     <Dialog onOpenChange={onOpenChange}>
-      <DropdownMenu>
+      <DropdownMenu
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+      >
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
             // style={{backgroundColor: 'rgb(16, 163, 127)'}}
             className={`absolute bottom-0.5 rounded-md border-0 p-1 pl-2 outline-none ${colorProps.join(
               ' '
-            )} focus:ring-0 focus:ring-offset-0 disabled:bottom-0.5 dark:data-[state=open]:bg-gray-800 dark:data-[state=open]:bg-opacity-50 md:bottom-1 md:left-2 md:pl-1 md:disabled:bottom-1`}
+            )} focus:ring-0 focus:ring-offset-0 disabled:bottom-0.5 dark:data-[state=open]:bg-opacity-50 md:bottom-1 md:left-2 md:pl-1 md:disabled:bottom-1`}
           >
             {icon}
           </Button>
@@ -140,11 +150,14 @@ export default function ModelMenu() {
           <DropdownMenuLabel className="dark:text-gray-300">Select a Model</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
-            value={customModel?.length > 0 ? customModel : model}
+            value={customModel ? customModel : model}
             onValueChange={onChange}
             className="overflow-y-auto"
           >
-            <MenuItems models={models} />
+            <MenuItems
+              models={models}
+              onSelect={onChange}
+            />
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>

@@ -6,7 +6,7 @@ const initialState = {
   model: 'chatgpt',
   promptPrefix: '',
   chatGptLabel: '',
-  customModel: ''
+  customModel: null
 };
 
 const currentSlice = createSlice({

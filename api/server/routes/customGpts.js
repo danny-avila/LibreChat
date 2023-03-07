@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getCustomGpts, updateCustomGpt, deleteCustomGpts } = require('../../models');
+const { getCustomGpts, updateCustomGpt, updateByLabel, deleteCustomGpts } = require('../../models');
 
 router.get('/', async (req, res) => {
   const models = (await getCustomGpts()).map(model => {
@@ -8,20 +8,14 @@ router.get('/', async (req, res) => {
     model._id = model._id.toString();
     return model;
   });
-  // console.log(models);
   res.status(200).send(models);
 });
 
-router.post('/delete/:_id', async (req, res) => {
-  const { _id } = req.params;
-  let filter = {};
-
-  if (_id) {
-    filter = { _id };
-  }
+router.post('/delete', async (req, res) => {
+  const { arg } = req.body;
 
   try {
-    const dbResponse = await deleteCustomGpts(filter);
+    const dbResponse = await deleteCustomGpts(arg);
     res.status(201).send(dbResponse);
   } catch (error) {
     console.error(error);
@@ -44,8 +38,14 @@ router.post('/delete/:_id', async (req, res) => {
 router.post('/', async (req, res) => {
   const update = req.body.arg;
 
+  let setter = updateCustomGpt;
+
+  if (update.prevLabel) {
+    setter = updateByLabel;
+  }
+
   try {
-    const dbResponse = await updateCustomGpt(update);
+    const dbResponse = await setter(update);
     res.status(201).send(dbResponse);
   } catch (error) {
     console.error(error);
