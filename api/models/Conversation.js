@@ -75,17 +75,30 @@ module.exports = {
   },
   // getConvos: async () => await Conversation.find({}).sort({ created: -1 }).exec(),
   getConvos: async (pageNumber = 1, pageSize = 12) => {
-    const skip = (pageNumber - 1) * pageSize;
-    // const limit = pageNumber * pageSize;
+    try {
+      const skip = (pageNumber - 1) * pageSize;
+      // const limit = pageNumber * pageSize;
 
-    const conversations = await Conversation.find({})
-      .sort({ created: -1 })
-      .skip(skip)
-      // .limit(limit)
-      .limit(pageSize)
-      .exec();
+      const conversations = await Conversation.find({})
+        .sort({ created: -1 })
+        .skip(skip)
+        // .limit(limit)
+        .limit(pageSize)
+        .exec();
 
-    return conversations;
+      return conversations;
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error getting conversations' };
+    }
+  },
+  getConvo: async (conversationId) => {
+    try {
+      return await Conversation.findOne({ conversationId }).exec();
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error getting single conversation' };
+    }
   },
   deleteConvos: async (filter) => {
     let deleteCount = await Conversation.deleteMany(filter).exec();

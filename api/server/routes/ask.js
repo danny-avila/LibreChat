@@ -9,14 +9,13 @@ const {
   customClient,
   detectCode
 } = require('../../app/');
-const { saveMessage, deleteMessages, saveConvo } = require('../../models');
+const { getConvo, saveMessage, deleteMessages, saveConvo } = require('../../models');
 const { handleError, sendMessage } = require('./handlers');
 
 router.use('/bing', askBing);
 
 router.post('/', async (req, res) => {
-  const { model, text, parentMessageId, conversationId, chatGptLabel, promptPrefix } =
-    req.body;
+  let { model, text, parentMessageId, conversationId, chatGptLabel, promptPrefix } = req.body;
   if (!text.trim().includes(' ') && text.length < 5) {
     return handleError(res, 'Prompt empty or too short');
   }
@@ -41,6 +40,15 @@ router.post('/', async (req, res) => {
     client = customClient;
   } else {
     client = browserClient;
+  }
+
+  if (model === 'chatgptCustom' && !chatGptLabel && conversationId) {
+    const convo = await getConvo({ conversationId });
+    if (convo) {
+      console.log('found convo for custom gpt', { convo })
+      chatGptLabel = convo.chatGptLabel;
+      promptPrefix = convo.promptPrefix;
+    }
   }
 
   res.writeHead(200, {

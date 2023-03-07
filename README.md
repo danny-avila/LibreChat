@@ -7,8 +7,10 @@
 
 ## Updates
 <details open>
-<summary><strong>2023-03-06</strong></summary>
+<summary><strong>2023-03-07</strong></summary>
 Due to increased interest in the repo, I've dockerized the app as of this update for quick setup! See setup instructions below. I realize this still takes some time with installing docker dependencies, so it's on the roadmap to have a deployed demo. Besides this, I've made major improvements for a lot of the existing features across the board, mainly UI/UX.
+
+Also worth noting, the method to access the Free Version is no longer working, so I've removed it from model selection until further notice.
 </details>
 
 <details>

@@ -16,15 +16,16 @@ const initialState = {
       _id: '2',
       name: 'BingAI',
       value: 'bingai'
-    },
-    {
-      _id: '3',
-      name: 'ChatGPT',
-      value: 'chatgptBrowser'
     }
+    // {
+    //   _id: '3',
+    //   name: 'ChatGPT',
+    //   value: 'chatgptBrowser'
+    // }
   ],
   modelMap: {},
-  initial: { chatgpt: true, chatgptCustom: true, bingai: true, chatgptBrowser: true }
+  // initial: { chatgpt: true, chatgptCustom: true, bingai: true, chatgptBrowser: true }
+  initial: { chatgpt: true, chatgptCustom: true, bingai: true, }
 };
 
 const currentSlice = createSlice({
@@ -37,7 +38,7 @@ const currentSlice = createSlice({
       state.models = models;
       const modelMap = {};
 
-      models.slice(4).forEach((modelItem) => {
+      models.slice(initialState.models.length).forEach((modelItem) => {
         modelMap[modelItem.value] = {
           chatGptLabel: modelItem.chatGptLabel,
           promptPrefix: modelItem.promptPrefix
