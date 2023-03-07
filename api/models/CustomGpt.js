@@ -60,6 +60,17 @@ module.exports = {
       return { message: 'Error updating customGpt' };
     }
   },
+  updateByLabel: async ({ prevLabel, ...update }) => {
+    try {
+      return await CustomGpt.findOneAndUpdate({ chatGptLabel: prevLabel }, update, {
+        new: true,
+        upsert: true
+      }).exec();
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error updating customGpt' };
+    }
+  },
   deleteCustomGpts: async (filter) => {
     try {
       return await CustomGpt.deleteMany(filter).exec();

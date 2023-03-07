@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { useDispatch } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { setModel, setCustomGpt } from '~/store/submitSlice';
 import manualSWR from '~/utils/fetchers';
 import { Button } from '../ui/Button.tsx';
@@ -16,8 +16,9 @@ import {
   DialogTitle
 } from '../ui/Dialog.tsx';
 
-export default function ModelDialog({ mutate, modelMap, setModelSave, handleSaveState }) {
+export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
   const dispatch = useDispatch();
+  const { modelMap, initial } = useSelector((state) => state.models);
   const [chatGptLabel, setChatGptLabel] = useState('');
   const [promptPrefix, setPromptPrefix] = useState('');
   const [saveText, setSaveText] = useState('Save');
@@ -65,9 +66,12 @@ export default function ModelDialog({ mutate, modelMap, setModelSave, handleSave
   if (
     chatGptLabel !== 'chatgptCustom' &&
     modelMap[chatGptLabel.toLowerCase()] &&
+    !initial[chatGptLabel.toLowerCase()] &&
     saveText === 'Save'
   ) {
     setSaveText('Update');
+  } else if (!modelMap[chatGptLabel.toLowerCase()] && saveText === 'Update') {
+    setSaveText('Save');
   }
 
   const requiredProp = required ? { required: true } : {};
