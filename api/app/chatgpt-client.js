@@ -11,7 +11,7 @@ const clientOptions = {
 const askClient = async ({ text, progressCallback, convo }) => {
   const ChatGPTClient = (await import('@waylaidwanderer/chatgpt-api')).default;
   const store = {
-    store: new KeyvFile({ filename: './api/data/cache.json' })
+    store: new KeyvFile({ filename: './data/cache.json' })
   };
 
   const client = new ChatGPTClient(process.env.OPENAI_KEY, clientOptions, store);
