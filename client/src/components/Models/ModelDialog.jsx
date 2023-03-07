@@ -20,7 +20,6 @@ export default function ModelDialog({ mutate, modelMap, setModelSave, handleSave
   const dispatch = useDispatch();
   const [chatGptLabel, setChatGptLabel] = useState('');
   const [promptPrefix, setPromptPrefix] = useState('');
-  
   const [saveText, setSaveText] = useState('Save');
   const [required, setRequired] = useState(false);
   const inputRef = useRef(null);
