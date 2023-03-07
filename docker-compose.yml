@@ -18,7 +18,7 @@ services:
         restart: always
         environment:
                 - PORT=3080
-                - MONGO_URI=mongodb://mongodb:27017
+                - MONGO_URI=mongodb://mongodb:27017/chatgpt-clone
                 - OPENAI_KEY=""
                 - CHATGPT_TOKEN=""
                 - BING_TOKEN=""
