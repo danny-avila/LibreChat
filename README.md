@@ -1,7 +1,9 @@
 # ChatGPT Clone #
 ![chatgpt-clone demo](./client/public/demo.gif)
 ## All AI Conversations under One Roof. ##
-  Assistant AIs are the future and OpenAI revolutionized this movement with ChatGPT. While numerous methods exist to integrate these AIs, this app commemorates the original styling of ChatGPT, with the ability to integrate any current/future AI models, while improving upon original client features, such as conversation search and prompt templates (currently WIP). This project was started early in Feb '23, anticipating the release of the official ChatGPT API from OpenAI, and now uses it along with access to the free version. Through this clone, you can avoid subscription-based models (ChatGPT Plus) in favor of free or pay-per-call APIs. I will soon deploy a demo of this app. Feel free to contribute, clone, or fork. Currently dockerized.
+  Assistant AIs are the future and OpenAI revolutionized this movement with ChatGPT. While numerous methods exist to integrate them, this app commemorates the original styling of ChatGPT, with the ability to integrate any current/future AI models, while improving upon original client features, such as conversation search and prompt templates (currently WIP).
+
+  This project was started early in Feb '23, anticipating the release of the official ChatGPT API from OpenAI, and now uses it. Through this clone, you can avoid ChatGPT Plus in favor of free or pay-per-call APIs. I will soon deploy a demo of this app. Feel free to contribute, clone, or fork. Currently dockerized.
 
 ## Updates
 <details open>
@@ -75,6 +77,7 @@ Here are my recently completed and planned features:
 - [x] Customize prompt prefix/label (custom ChatGPT using official API)
 - [x] Server convo pagination (limit fetch and load more with 'show more' button)
 - [x] Config file for easy startup (docker compose)
+- [ ] Build test suite for CI/CD
 - [ ] Conversation Search (by title)
 - [ ] Resubmit/edit sent messages
 - [ ] Semantic Search Option (requires more tokens)
@@ -92,7 +95,7 @@ Here are my recently completed and planned features:
 - AI model selection (official ChatGPT API, BingAI, ChatGPT Free)
 - Create and Save custom ChatGPTs*
 
-^* ChatGPT can be 'customized' by setting a system prompt prefix and alternate 'role' to the API request
+^* ChatGPT can be 'customized' by setting a system message or prompt prefix and alternate 'role' to the API request
 
 [More info here](https://platform.openai.com/docs/guides/chat/instructing-chat-models). Here's an [example from this app.]()
 
@@ -138,16 +141,16 @@ Here are my recently completed and planned features:
     - `client/`
     ```bash
     docker build -t react-client .
-    ``` 
+    ```
 - **Run** `docker-compose build` in project root dir and then `docker-compose up` to start the app
 
 ### Access Tokens
 
 <details>
 <summary><strong>ChatGPT Free Instructions</strong></summary>
-To get your Access token For ChatGPT 'Free Version', login to chat.openai.com, then visit https://chat.openai.com/api/auth/session. 
+To get your Access token For ChatGPT 'Free Version', login to chat.openai.com, then visit https://chat.openai.com/api/auth/session.
 
-Warning: There may be a high chance of your account being banned with this method. Continue doing so at your own risk.
+**Warning:** There may be a high chance of your account being banned with this method. Continue doing so at your own risk.
 
 </details>
 
@@ -155,7 +158,7 @@ Warning: There may be a high chance of your account being banned with this metho
 <summary><strong>BingAI Instructions</strong></summary>
 The Bing Access Token is the "_U" cookie from bing.com. Use dev tools or an extension while logged into the site to view it.
 
-Note: Specific error handling and styling for this model is still in progress.
+**Note:** Specific error handling and styling for this model is still in progress.
 </details>
 
 ### Updating
