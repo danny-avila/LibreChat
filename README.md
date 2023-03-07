@@ -55,7 +55,6 @@ Currently, this project is only functional with the `text-davinci-003` model.
          * [Docker](#docker)
          * [Access Tokens](#access-tokens)
          * [Updating](#updating)
-      * [Using a Reverse Proxy](#using-a-reverse-proxy)
    * [Use Cases](#use-cases)
    * [Origin](#origin)
    * [Caveats](#caveats)
