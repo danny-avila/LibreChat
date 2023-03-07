@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { setModel, setDisabled, setCustomGpt, setCustomModel } from '~/store/submitSlice';
 import { setConversation } from '~/store/convoSlice';
@@ -23,6 +23,8 @@ import { Dialog } from '../ui/Dialog.tsx';
 
 export default function ModelMenu() {
   const dispatch = useDispatch();
+  const [modelSave, setModelSave] = useState(false);
+  // const [dialogOpen, setDialogOpen] = useState(false);
   const { model, customModel } = useSelector((state) => state.submit);
   const { models, modelMap, initial } = useSelector((state) => state.models);
   const { trigger } = manualSWR(`http://localhost:3080/api/customGpts`, 'get', (res) => {
@@ -60,15 +62,15 @@ export default function ModelMenu() {
     } else if (initial[value]) {
       dispatch(setModel(value));
       dispatch(setDisabled(false));
-      setCustomModel(null);
+      dispatch(setCustomModel(null));
     } else if (!initial[value]) {
       const chatGptLabel = modelMap[value]?.chatGptLabel;
       const promptPrefix = modelMap[value]?.promptPrefix;
       dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
       dispatch(setModel('chatgptCustom'));
-      setCustomModel(value);
+      dispatch(setCustomModel(value));
     } else if (!modelMap[value]) {
-      setCustomModel(null);
+      dispatch(setCustomModel(null));
     }
 
     // Set new conversation
@@ -80,6 +82,21 @@ export default function ModelMenu() {
         parentMessageId: null
       })
     );
+  };
+
+  const onOpenChange = (open) => {
+    if (!open) {
+      setModelSave(false);
+    }
+  };
+
+  const handleSaveState = (value) => {
+    if (!modelSave) {
+      return;
+    }
+
+    dispatch(setCustomModel(value));
+    setModelSave(false);
   };
 
   const defaultColorProps = [
@@ -107,8 +124,8 @@ export default function ModelMenu() {
   const icon = model === 'bingai' ? <BingIcon button={true} /> : <GPTIcon button={true} />;
 
   return (
-    <Dialog>
-      <DropdownMenu >
+    <Dialog onOpenChange={onOpenChange}>
+      <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
@@ -124,7 +141,7 @@ export default function ModelMenu() {
           <DropdownMenuLabel className="dark:text-gray-300">Select a Model</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
-            value={customModel ? customModel : model}
+            value={customModel?.length > 0 ? customModel : model}
             onValueChange={onChange}
             className="overflow-y-auto"
           >
@@ -132,7 +149,12 @@ export default function ModelMenu() {
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
-      <ModelDialog mutate={trigger} modelMap={modelMap}/>
+      <ModelDialog
+        mutate={trigger}
+        modelMap={modelMap}
+        setModelSave={setModelSave}
+        handleSaveState={handleSaveState}
+      />
     </Dialog>
   );
 }

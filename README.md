@@ -61,7 +61,7 @@ Currently, this project is only functional with the `text-davinci-003` model.
 
 > **Warning**
 
->  This is a work in progress. I'm building this in public. You can follow the progress here or on my [Linkedin](https://www.linkedin.com/in/danny-avila).
+>  This is a work in progress. I'm building this in public. FYI there is still a lot of tech debt to cleanup. You can follow the progress here or on my [Linkedin](https://www.linkedin.com/in/danny-avila).
 
 Here are my recently completed and planned features:
 
@@ -153,9 +153,9 @@ Warning: There may be a high chance of your account being banned with this metho
 
 <details>
 <summary><strong>BingAI Instructions</strong></summary>
+The Bing Access Token is the "_U" cookie from bing.com. Use dev tools or an extension while logged into the site to view it.
 
-
-Note: Specific Styling for this model is still in progress.
+Note: Specific error handling and styling for this model is still in progress.
 </details>
 
 ### Updating
@@ -167,15 +167,15 @@ Note: Specific Styling for this model is still in progress.
   - Using the official API, you'd have to generate 7.5 million words to expense the same cost as ChatGPT Plus ($20).
   - ChatGPT/Google Bard/Bing AI conversations are lost in space or
   cannot be searched past a certain timeframe.
-  - Customize ChatGPT
+  - **Customize ChatGPT**
 
     ![use case example](./client/public/use_case3.png "Make a Custom GPT")
 
-  - API is not as limited as ChatGPT Free (at [chat.openai.com](https://chat.openai.com/chat))
+  - **API is not as limited as ChatGPT Free (at [chat.openai.com](https://chat.openai.com/chat))**
 
     ![use case example](./client/public/use_case2.png "chat.openai.com is getting more limited by the day!")
 
-  - ChatGPT Free is down.
+  - **ChatGPT Free is down.**
 
     ![use case example](./client/public/use_case.png "GPT is down! Plus is too expensive!")
 

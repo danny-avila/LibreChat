@@ -45,8 +45,6 @@ module.exports = {
   },
   updateCustomGpt: async ({ value, ...update }) => {
     try {
-      console.log('updateCustomGpt', value, update);
-
       const customGpt = await CustomGpt.findOne({ value }).exec();
 
       if (!customGpt) {
