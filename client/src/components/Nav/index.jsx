@@ -17,17 +17,20 @@ export default function Nav() {
   };
 
   const { data, isLoading, mutate } = swr(
-    `http://localhost:3080/api/convos?pageNumber=${pageNumber}`
-  , onSuccess);
+    `http://localhost:3080/api/convos?pageNumber=${pageNumber}`,
+    onSuccess
+  );
   const containerRef = useRef(null);
   const scrollPositionRef = useRef(null);
 
-  const showMore = async () => {
-    const container = containerRef.current;
-    if (container) {
-      scrollPositionRef.current = container.scrollTop;
+  const showMore = async (increment = true) => {
+    if (increment) {
+      const container = containerRef.current;
+      if (container) {
+        scrollPositionRef.current = container.scrollTop;
+      }
+      dispatch(incrementPage());
     }
-    dispatch(incrementPage());
     await mutate();
   };
 
@@ -44,9 +47,10 @@ export default function Nav() {
     }
   }, [data]);
 
-  const containerClasses = isLoading && pageNumber === 1
-    ? 'flex flex-col gap-2 text-gray-100 text-sm h-full justify-center items-center'
-    : 'flex flex-col gap-2 text-gray-100 text-sm';
+  const containerClasses =
+    isLoading && pageNumber === 1
+      ? 'flex flex-col gap-2 text-gray-100 text-sm h-full justify-center items-center'
+      : 'flex flex-col gap-2 text-gray-100 text-sm';
 
   return (
     <div className="dark hidden bg-gray-900 md:fixed md:inset-y-0 md:flex md:w-[260px] md:flex-col">

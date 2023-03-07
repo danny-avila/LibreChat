@@ -35,10 +35,14 @@ const currentSlice = createSlice({
       state.convos = [...state.convos, ...newConvos].sort(
         (a, b) => new Date(b.created) - new Date(a.created)
       );
+    },
+    removeConvo: (state, action) => {
+      state.convos = state.convos.filter((convo) => convo.conversationId !== action.payload);
     }
   }
 });
 
-export const { setConversation, setConvos, setError, incrementPage } = currentSlice.actions;
+export const { setConversation, setConvos, setError, incrementPage, removeConvo } =
+  currentSlice.actions;
 
 export default currentSlice.reducer;

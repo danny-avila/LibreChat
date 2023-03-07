@@ -16,7 +16,7 @@ export default function Conversation({
   title = 'New conversation',
   bingData,
   chatGptLabel = null,
-  promptPrefix = null
+  promptPrefix = null,
 }) {
   const [renaming, setRenaming] = useState(false);
   const [titleInput, setTitleInput] = useState(title);
@@ -97,7 +97,7 @@ export default function Conversation({
     rename.trigger({ conversationId, title: titleInput });
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
       onRename(e);
     }
@@ -128,7 +128,7 @@ export default function Conversation({
             value={titleInput}
             onChange={(e) => setTitleInput(e.target.value)}
             onBlur={onRename}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyDown}
           />
         ) : (
           titleInput
