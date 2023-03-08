@@ -1,5 +1,6 @@
 # ChatGPT Clone #
-![chatgpt-clone demo](./images/demo.gif)
+https://user-images.githubusercontent.com/110412045/223754183-8b7f45ce-6517-4bd5-9b39-c624745bf399.mp4
+
 ## All AI Conversations under One Roof. ##
   Assistant AIs are the future and OpenAI revolutionized this movement with ChatGPT. While numerous methods exist to integrate them, this app commemorates the original styling of ChatGPT, with the ability to integrate any current/future AI models, while improving upon original client features, such as conversation search and prompt templates (currently WIP).
 
@@ -79,6 +80,7 @@ Here are my recently completed and planned features:
 - [x] Customize prompt prefix/label (custom ChatGPT using official API)
 - [x] Server convo pagination (limit fetch and load more with 'show more' button)
 - [x] Config file for easy startup (docker compose)
+- [ ] Add warning before clearing convos
 - [ ] Build test suite for CI/CD
 - [ ] Conversation Search (by title)
 - [ ] Resubmit/edit sent messages
