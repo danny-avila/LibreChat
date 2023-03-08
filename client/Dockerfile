@@ -7,8 +7,8 @@ COPY package*.json /client/
 RUN npm install
 # Copy the current directory contents into the container at /client
 COPY . /client/
-# Run the app when the container launches
-CMD ["npm", "run", "build"]
+# Build webpack artifacts
+RUN npm run build
 
 # Stage 2
 FROM nginx:stable-alpine
