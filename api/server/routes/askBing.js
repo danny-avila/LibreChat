@@ -1,9 +1,10 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { titleConvo, askBing } = require('../../app/');
+const { titleConvo, getCitations, citeText, askBing } = require('../../app/');
 const { saveMessage, deleteMessages, saveConvo } = require('../../models');
 const { handleError, sendMessage } = require('./handlers');
+const citationRegex = /\[\^\d+?\^]/g;
 
 router.post('/', async (req, res) => {
   const { model, text, ...convo } = req.body;
@@ -29,6 +30,7 @@ router.post('/', async (req, res) => {
     const progressCallback = async (partial) => {
       tokens += partial === text ? '' : partial;
       // tokens = appendCode(tokens);
+      tokens = citeText(tokens, true);
       sendMessage(res, { text: tokens, message: true });
     };
 
@@ -39,7 +41,8 @@ router.post('/', async (req, res) => {
     });
 
     console.log('BING RESPONSE');
-    console.dir(response, { depth: null });
+    // console.dir(response, { depth: null });
+    const hasCitations = citationRegex.test(response.response);
 
     userMessage.conversationSignature =
       convo.conversationSignature || response.conversationSignature;
@@ -56,12 +59,19 @@ router.post('/', async (req, res) => {
     }
 
     response.text = response.response;
+    delete response.response;
     response.id = response.details.messageId;
     response.suggestions =
       response.details.suggestedResponses &&
       response.details.suggestedResponses.map((s) => s.text);
     response.sender = model;
     response.final = true;
+
+    const links = getCitations(response);
+    response.text =
+      citeText(response) +
+      (links?.length > 0 && hasCitations ? `\n<small>${links}</small>` : '');
+
     await saveMessage(response);
     await saveConvo(response);
     sendMessage(res, response);

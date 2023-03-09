@@ -8,7 +8,7 @@ const citeText = (res, noLinks = false) => {
   if (noLinks) {
     citations.forEach((citation) => {
       const digit = citation.match(/\d+?/g)[0];
-      result = result.replaceAll(citation, `<sup>[${digit}](#)</sup>`);
+      result = result.replaceAll(citation, `<sup>[${digit}](#)  </sup>`);
     });
 
     return result;
@@ -20,7 +20,7 @@ const citeText = (res, noLinks = false) => {
 
   citations.forEach((citation) => {
     const digit = citation.match(/\d+?/g)[0];
-    result = result.replaceAll(citation, `<sup>[${digit}](${sources[digit - 1]})</sup>`);
+    result = result.replaceAll(citation, `<sup>[${digit}](${sources[digit - 1]})  </sup>`);
   });
 
   return result;

@@ -91,7 +91,6 @@ export default function TextChat({ messages }) {
           })
         );
       } else if (model === 'sydney') {
-        console.log('Sydney data:', data)
         const {
           title,
           jailbreakConversationId,
