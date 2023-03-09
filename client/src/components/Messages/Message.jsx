@@ -49,7 +49,7 @@ export default function Message({
     chatgpt: 'rgb(16, 163, 127)',
     chatgptBrowser: 'rgb(25, 207, 207)',
     bingai: '',
-    sydney: 'rgb(214, 255, 255)',
+    sydney: '',
   };
 
   const isBing = sender === 'bingai' || sender === 'sydney';
@@ -65,7 +65,7 @@ export default function Message({
   if ((notUser && backgroundColor) || isBing) {
     icon = (
       <div
-        style={{ backgroundColor }}
+        style={isBing ? { background: 'radial-gradient(circle at 90% 110%, #F0F0FA, #D0E0F9)' } : { backgroundColor }}
         className="relative flex h-[30px] w-[30px] items-center justify-center rounded-sm p-1 text-white"
       >
         {isBing ? <BingIcon /> : <GPTIcon />}

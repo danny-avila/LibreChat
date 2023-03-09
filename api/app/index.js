@@ -4,6 +4,7 @@ const customClient = require('./chatgpt-custom');
 const { askBing } = require('./bingai');
 const { askSydney } = require('./sydney');
 const titleConvo = require('./titleConvo');
+const getCitations = require('./getCitations');
 const detectCode = require('./detectCode');
 
 module.exports = {
@@ -13,5 +14,6 @@ module.exports = {
   askBing,
   askSydney,
   titleConvo,
+  getCitations,
   detectCode
 };

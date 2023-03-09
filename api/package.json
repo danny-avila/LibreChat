@@ -21,7 +21,7 @@
   "dependencies": {
     "@keyv/mongo": "^2.1.8",
     "@vscode/vscode-languagedetection": "^1.0.22",
-    "@waylaidwanderer/chatgpt-api": "^1.28.0",
+    "@waylaidwanderer/chatgpt-api": "^1.28.2",
     "cors": "^2.8.5",
     "dotenv": "^16.0.3",
     "express": "^4.18.2",
