@@ -24,7 +24,6 @@ export default function handleSubmit({
   const isBing = model === 'bingai' || model === 'sydney';
   if (isBing && convo.conversationId) {
 
-    console.log('bing convo', convo);
     payload = {
       ...payload,
       jailbreakConversationId: convo.jailbreakConversationId,

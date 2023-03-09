@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { titleConvo, getCitations, askSydney } = require('../../app/');
+const { titleConvo, getCitations, citeText, askSydney } = require('../../app/');
 const { saveMessage, deleteMessages, saveConvo, getConvoTitle } = require('../../models');
 const { handleError, sendMessage } = require('./handlers');
 
@@ -29,6 +29,7 @@ router.post('/', async (req, res) => {
     const progressCallback = async (partial) => {
       tokens += partial === text ? '' : partial;
       // tokens = appendCode(tokens);
+      tokens = citeText(tokens, true);
       sendMessage(res, { text: tokens, message: true });
     };
 
@@ -60,6 +61,7 @@ router.post('/', async (req, res) => {
       ? convo.conversationSignature
       : crypto.randomUUID();
     response.text = response.response;
+    delete response.response;
     response.suggestions =
       response.details.suggestedResponses &&
       response.details.suggestedResponses.map((s) => s.text);
@@ -67,7 +69,7 @@ router.post('/', async (req, res) => {
     response.final = true;
 
     const links = getCitations(response);
-    console.log('sydney links', links);
+    response.text = citeText(response);
 
     // Save user message
     userMessage.conversationId = response.conversationId;

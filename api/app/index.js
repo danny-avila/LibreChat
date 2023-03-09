@@ -5,6 +5,7 @@ const { askBing } = require('./bingai');
 const { askSydney } = require('./sydney');
 const titleConvo = require('./titleConvo');
 const getCitations = require('./getCitations');
+const citeText = require('./citeText');
 const detectCode = require('./detectCode');
 
 module.exports = {
@@ -15,5 +16,6 @@ module.exports = {
   askSydney,
   titleConvo,
   getCitations,
+  citeText,
   detectCode
 };
