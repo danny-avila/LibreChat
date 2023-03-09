@@ -1,6 +1,6 @@
 import React from 'react';
 import { useDispatch } from 'react-redux';
-import { setConversation } from '~/store/convoSlice';
+import { setNewConvo } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setText } from '~/store/textSlice';
 
@@ -10,7 +10,8 @@ export default function NewChat() {
   const clickHandler = () => {
     dispatch(setText(''));
     dispatch(setMessages([]));
-    dispatch(setConversation({ title: 'New Chat', error: false, conversationId: null, parentMessageId: null }));
+    dispatch(setNewConvo());
+    // dispatch(setConversation({ title: 'New Chat', error: false, conversationId: null, parentMessageId: null }));
   };
 
   return (

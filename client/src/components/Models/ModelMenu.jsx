@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { setModel, setDisabled, setCustomGpt, setCustomModel } from '~/store/submitSlice';
-import { setConversation } from '~/store/convoSlice';
+import { setNewConvo } from '~/store/convoSlice';
 import ModelDialog from './ModelDialog';
 import MenuItems from './MenuItems';
 import manualSWR from '~/utils/fetchers';
@@ -76,14 +76,15 @@ export default function ModelMenu() {
     }
 
     // Set new conversation
-    dispatch(
-      setConversation({
-        title: 'New Chat',
-        error: false,
-        conversationId: null,
-        parentMessageId: null
-      })
-    );
+    dispatch(setNewConvo());
+    // dispatch(
+    //   setConversation({
+    //     title: 'New Chat',
+    //     error: false,
+    //     conversationId: null,
+    //     parentMessageId: null
+    //   })
+    // );
   };
 
   const onOpenChange = (open) => {

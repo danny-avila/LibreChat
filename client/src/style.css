@@ -25,7 +25,7 @@
 
 p > small {
   opacity: 0;
-  animation: fadein 2s forwards;
+  animation: fadein 3s forwards;
 }
 
 @keyframes fadein {
