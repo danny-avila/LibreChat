@@ -46,8 +46,10 @@ export default function TextChat({ messages }) {
         setMessages([...messages, currentMsg, { sender, text: data.text || data.response }])
       );
 
+      const isBing = model === 'bingai' || model === 'sydney';
+
       if (
-        model !== 'bingai' &&
+        !isBing &&
         convo.conversationId === null &&
         convo.parentMessageId === null
       ) {
@@ -66,13 +68,15 @@ export default function TextChat({ messages }) {
           })
         );
       } else if (
-        model === 'bingai' &&
+        isBing &&
         convo.conversationId === null &&
         convo.invocationId === null
       ) {
+        console.log('Bing data:', data)
         const {
           title,
           jailbreakConversationId,
+          parentMessageId,
           conversationSignature,
           clientId,
           conversationId,
@@ -82,35 +86,17 @@ export default function TextChat({ messages }) {
           setConversation({
             title,
             jailbreakConversationId,
+            parentMessageId: parentMessageId || null,
             conversationSignature,
             clientId,
             conversationId,
             invocationId,
-            parentMessageId: null
           })
         );
       }
 
       dispatch(setSubmitState(false));
     };
-
-    // const convoHandler = (data) => {
-    //   const { conversationId, id, invocationId } = data;
-    //   const conversationData = {
-    //     title: data.title,
-    //     conversationId,
-    //     parentMessageId:
-    //       model !== 'bingai' && !convo.conversationId && !convo.parentMessageId ? id : null,
-    //     conversationSignature:
-    //       model === 'bingai' && !convo.conversationId ? data.conversationSignature : null,
-    //     clientId: model === 'bingai' && !convo.conversationId ? data.clientId : null,
-    //     // invocationId: model === 'bingai' && !convo.conversationId ? data.invocationId : null
-    //     invocationId: invocationId ? invocationId : null
-    //   };
-    //   dispatch(setMessages([...messages, currentMsg, { sender: model, text: data.text || data.response }]));
-    //   dispatch(setConversation(conversationData));
-    //   dispatch(setSubmitState(false));
-    // };
 
     const errorHandler = (event) => {
       console.log('Error:', event);

@@ -38,8 +38,8 @@ router.post('/', async (req, res) => {
       convo
     });
 
-    console.log('CLIENT RESPONSE');
-    console.dir(response, { depth: null });
+    console.log('SYDNEY RESPONSE');
+    // console.dir(response, { depth: null });
 
     userMessage.conversationSignature =
       convo.conversationSignature || response.conversationSignature;
@@ -47,7 +47,7 @@ router.post('/', async (req, res) => {
     userMessage.invocationId = response.invocationId;
     userMessage.jailbreakConversationId = convo.jailbreakConversationId || response.jailbreakConversationId;
     await saveMessage(userMessage);
-
+    
     if (!convo.conversationSignature) {
       response.title = await titleConvo({
         model,
@@ -55,8 +55,9 @@ router.post('/', async (req, res) => {
         response: JSON.stringify(response.response)
       });
     }
-
+    
     response.text = response.response;
+    response.parentMessageId = convo.parentMessageId || response.messageId;
     response.id = response.details.messageId;
     response.suggestions =
       response.details.suggestedResponses &&

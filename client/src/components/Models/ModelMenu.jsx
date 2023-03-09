@@ -126,8 +126,9 @@ export default function ModelMenu() {
     'dark:disabled:hover:bg-transparent'
   ];
 
+  const isBing = model === 'bingai' || model === 'sydney';
   const colorProps = model === 'chatgpt' ? chatgptColorProps : defaultColorProps;
-  const icon = model === 'bingai' ? <BingIcon button={true} /> : <GPTIcon button={true} />;
+  const icon = isBing ? <BingIcon button={true} /> : <GPTIcon button={true} />;
 
   return (
     <Dialog onOpenChange={onOpenChange}>
