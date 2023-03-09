@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { titleConvo, askSydney } = require('../../app/');
+const { titleConvo, getCitations, askSydney } = require('../../app/');
 const { saveMessage, deleteMessages, saveConvo, getConvoTitle } = require('../../models');
 const { handleError, sendMessage } = require('./handlers');
 
@@ -39,17 +39,8 @@ router.post('/', async (req, res) => {
     });
 
     console.log('SYDNEY RESPONSE');
-    // the usual values expected by the client are generated since only
-    // jailbreakConversationId and initial messageId is needed by sydney
-    // to continue the conversation
-    // if (!convo.jailbreakConversationId) {
-    //   response.title = await titleConvo({
-    //     model,
-    //     message: text,
-    //     response: JSON.stringify(response.response)
-    //   });
-    // }
-
+    // console.dir(response, { depth: null });
+    
     // Save sydney response
     response.id = response.messageId;
     // response.parentMessageId = convo.parentMessageId ? convo.parentMessageId : response.messageId;
@@ -74,6 +65,9 @@ router.post('/', async (req, res) => {
       response.details.suggestedResponses.map((s) => s.text);
     response.sender = model;
     response.final = true;
+
+    const links = getCitations(response);
+    console.log('sydney links', links);
 
     // Save user message
     userMessage.conversationId = response.conversationId;
