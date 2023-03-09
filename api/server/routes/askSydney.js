@@ -4,6 +4,7 @@ const router = express.Router();
 const { titleConvo, getCitations, citeText, askSydney } = require('../../app/');
 const { saveMessage, deleteMessages, saveConvo, getConvoTitle } = require('../../models');
 const { handleError, sendMessage } = require('./handlers');
+const citationRegex = /\[\^\d+?\^]/g;
 
 router.post('/', async (req, res) => {
   const { model, text, ...convo } = req.body;
@@ -40,8 +41,10 @@ router.post('/', async (req, res) => {
     });
 
     console.log('SYDNEY RESPONSE');
+    console.log(response.response);
     // console.dir(response, { depth: null });
-    
+    const hasCitations = citationRegex.test(response.response);
+
     // Save sydney response
     response.id = response.messageId;
     // response.parentMessageId = convo.parentMessageId ? convo.parentMessageId : response.messageId;
@@ -69,7 +72,9 @@ router.post('/', async (req, res) => {
     response.final = true;
 
     const links = getCitations(response);
-    response.text = citeText(response);
+    response.text =
+      citeText(response) +
+      (links?.length > 0 && hasCitations ? `\n<small>${links}</small>` : '');
 
     // Save user message
     userMessage.conversationId = response.conversationId;
