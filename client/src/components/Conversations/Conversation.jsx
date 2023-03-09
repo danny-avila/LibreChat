@@ -34,11 +34,12 @@ export default function Conversation({
     const convo = { title, error: false, conversationId: id, chatGptLabel, promptPrefix };
 
     if (bingData) {
-      const { conversationSignature, clientId, invocationId } = bingData;
+      const { conversationSignature, jailbreakConversationId, clientId, invocationId } = bingData;
       dispatch(
         setConversation({
           ...convo,
           parentMessageId: null,
+          jailbreakConversationId,
           conversationSignature,
           clientId,
           invocationId
@@ -49,6 +50,7 @@ export default function Conversation({
         setConversation({
           ...convo,
           parentMessageId,
+          jailbreakConversationId: null,
           conversationSignature: null,
           clientId: null,
           invocationId: null

@@ -57,6 +57,7 @@ export default function TextChat({ messages }) {
             title,
             conversationId,
             parentMessageId: id,
+            jailbreakConversationId: null,
             conversationSignature: null,
             clientId: null,
             invocationId: null,
@@ -69,10 +70,18 @@ export default function TextChat({ messages }) {
         convo.conversationId === null &&
         convo.invocationId === null
       ) {
-        const { title, conversationSignature, clientId, conversationId, invocationId } = data;
+        const {
+          title,
+          jailbreakConversationId,
+          conversationSignature,
+          clientId,
+          conversationId,
+          invocationId
+        } = data;
         dispatch(
           setConversation({
             title,
+            jailbreakConversationId,
             conversationSignature,
             clientId,
             conversationId,

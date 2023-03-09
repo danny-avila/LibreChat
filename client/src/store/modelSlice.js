@@ -16,16 +16,16 @@ const initialState = {
       _id: '2',
       name: 'BingAI',
       value: 'bingai'
-    }
-    // {
-    //   _id: '3',
-    //   name: 'ChatGPT',
-    //   value: 'chatgptBrowser'
-    // }
+    },
+    {
+      _id: '3',
+      name: 'ChatGPT',
+      value: 'chatgptBrowser'
+    },
   ],
   modelMap: {},
-  // initial: { chatgpt: true, chatgptCustom: true, bingai: true, chatgptBrowser: true }
-  initial: { chatgpt: true, chatgptCustom: true, bingai: true, }
+  initial: { chatgpt: true, chatgptCustom: true, bingai: true, chatgptBrowser: true }
+  // initial: { chatgpt: true, chatgptCustom: true, bingai: true, }
 };
 
 const currentSlice = createSlice({
