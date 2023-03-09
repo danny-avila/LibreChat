@@ -13,7 +13,8 @@ const {
 const { getConvo, saveMessage, deleteMessages, saveConvo } = require('../../models');
 const { handleError, sendMessage } = require('./handlers');
 
-router.use('/bing', askSydney);
+router.use('/bing', askBing);
+router.use('/sydney', askSydney);
 
 router.post('/', async (req, res) => {
   let { model, text, parentMessageId, conversationId, chatGptLabel, promptPrefix } = req.body;

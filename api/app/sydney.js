@@ -10,7 +10,7 @@ const askSydney = async ({ text, progressCallback, convo }) => {
     // If the above doesn't work, provide all your cookies as a string instead
     // cookies: '',
     debug: false,
-    cache: new KeyvFile({ filename: './data/cache.json' })
+    cache: { store: new KeyvFile({ filename: './data/cache.json' }) }
   });
 
   let options = {
@@ -18,9 +18,11 @@ const askSydney = async ({ text, progressCallback, convo }) => {
     onProgress: async (partialRes) => await progressCallback(partialRes),
   };
 
-  if (convo) {
-    options = { ...options, ...convo };
+  if (convo.parentMessageId) {
+    options = { ...options, jailbreakConversationId: convo.jailbreakConversationId, parentMessageId: convo.parentMessageId };
   }
+
+  console.log('sydney options', options);
 
   const res = await sydneyClient.sendMessage(text, options
   );

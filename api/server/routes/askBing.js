@@ -38,7 +38,7 @@ router.post('/', async (req, res) => {
       convo
     });
 
-    console.log('CLIENT RESPONSE');
+    console.log('BING RESPONSE');
     console.dir(response, { depth: null });
 
     userMessage.conversationSignature =

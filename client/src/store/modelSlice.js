@@ -19,12 +19,17 @@ const initialState = {
     },
     {
       _id: '3',
+      name: 'Sydney',
+      value: 'sydney'
+    },
+    {
+      _id: '4',
       name: 'ChatGPT',
       value: 'chatgptBrowser'
     },
   ],
   modelMap: {},
-  initial: { chatgpt: true, chatgptCustom: true, bingai: true, chatgptBrowser: true }
+  initial: { chatgpt: true, chatgptCustom: true, bingai: true, sydney: true, chatgptBrowser: true }
   // initial: { chatgpt: true, chatgptCustom: true, bingai: true, }
 };
 
