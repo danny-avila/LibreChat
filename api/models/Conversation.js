@@ -15,6 +15,9 @@ const convoSchema = mongoose.Schema({
     type: String,
     default: 'New conversation'
   },
+  jailbreakConversationId: {
+    type: String
+  },
   conversationSignature: {
     type: String
   },

@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { titleConvo, askBing } = require('../../app/');
+const { titleConvo, askSydney } = require('../../app/');
 const { saveMessage, deleteMessages, saveConvo } = require('../../models');
 const { handleError, sendMessage } = require('./handlers');
 
@@ -32,7 +32,7 @@ router.post('/', async (req, res) => {
       sendMessage(res, { text: tokens, message: true });
     };
 
-    let response = await askBing({
+    let response = await askSydney({
       text,
       progressCallback,
       convo
@@ -45,6 +45,7 @@ router.post('/', async (req, res) => {
       convo.conversationSignature || response.conversationSignature;
     userMessage.conversationId = convo.conversationId || response.conversationId;
     userMessage.invocationId = response.invocationId;
+    userMessage.jailbreakConversationId = convo.jailbreakConversationId || response.jailbreakConversationId;
     await saveMessage(userMessage);
 
     if (!convo.conversationSignature) {
