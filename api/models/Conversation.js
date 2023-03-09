@@ -47,6 +47,15 @@ const convoSchema = mongoose.Schema({
 const Conversation =
   mongoose.models.Conversation || mongoose.model('Conversation', convoSchema);
 
+const getConvo = async (conversationId) => {
+  try {
+    return await Conversation.findOne({ conversationId }).exec();
+  } catch (error) {
+    console.log(error);
+    return { message: 'Error getting single conversation' };
+  }
+};
+
 module.exports = {
   saveConvo: async ({ conversationId, title, ...convo }) => {
     try {
@@ -95,12 +104,14 @@ module.exports = {
       return { message: 'Error getting conversations' };
     }
   },
-  getConvo: async (conversationId) => {
+  getConvo,
+  getConvoTitle: async (conversationId) => {
     try {
-      return await Conversation.findOne({ conversationId }).exec();
+      const convo = await getConvo(conversationId);
+      return convo.title;
     } catch (error) {
       console.log(error);
-      return { message: 'Error getting single conversation' };
+      return { message: 'Error getting conversation title' };
     }
   },
   deleteConvos: async (filter) => {
