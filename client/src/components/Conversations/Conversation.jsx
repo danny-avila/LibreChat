@@ -44,7 +44,7 @@ export default function Conversation({
       dispatch(
         setConversation({
           ...convo,
-          parentMessageId: parentMessageId || null,
+          parentMessageId,
           jailbreakConversationId,
           conversationSignature,
           clientId,

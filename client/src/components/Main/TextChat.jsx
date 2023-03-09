@@ -68,11 +68,30 @@ export default function TextChat({ messages }) {
           })
         );
       } else if (
-        isBing &&
+        model === 'bingai' &&
         convo.conversationId === null &&
         convo.invocationId === null
       ) {
         console.log('Bing data:', data)
+        const {
+          title,
+          conversationSignature,
+          clientId,
+          conversationId,
+          invocationId
+        } = data;
+        dispatch(
+          setConversation({
+            title,
+            parentMessageId: null,
+            conversationSignature,
+            clientId,
+            conversationId,
+            invocationId,
+          })
+        );
+      } else if (model === 'sydney') {
+        console.log('Sydney data:', data)
         const {
           title,
           jailbreakConversationId,
@@ -86,7 +105,7 @@ export default function TextChat({ messages }) {
           setConversation({
             title,
             jailbreakConversationId,
-            parentMessageId: parentMessageId || null,
+            parentMessageId,
             conversationSignature,
             clientId,
             conversationId,

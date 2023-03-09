@@ -16,6 +16,7 @@ export default function Conversations({ conversations, conversationId, showMore 
             ? {
                 jailbreakConversationId: convo.jailbreakConversationId,
                 conversationSignature: convo.conversationSignature,
+                parentMessageId: convo.parentMessageId || null,
                 clientId: convo.clientId,
                 invocationId: convo.invocationId
               }

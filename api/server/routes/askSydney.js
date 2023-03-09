@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const { titleConvo, askSydney } = require('../../app/');
-const { saveMessage, deleteMessages, saveConvo } = require('../../models');
+const { saveMessage, deleteMessages, saveConvo, getConvoTitle } = require('../../models');
 const { handleError, sendMessage } = require('./handlers');
 
 router.post('/', async (req, res) => {
@@ -39,31 +39,48 @@ router.post('/', async (req, res) => {
     });
 
     console.log('SYDNEY RESPONSE');
-    // console.dir(response, { depth: null });
+    // the usual values expected by the client are generated since only
+    // jailbreakConversationId and initial messageId is needed by sydney
+    // to continue the conversation
+    // if (!convo.jailbreakConversationId) {
+    //   response.title = await titleConvo({
+    //     model,
+    //     message: text,
+    //     response: JSON.stringify(response.response)
+    //   });
+    // }
 
-    userMessage.conversationSignature =
-      convo.conversationSignature || response.conversationSignature;
-    userMessage.conversationId = convo.conversationId || response.conversationId;
-    userMessage.invocationId = response.invocationId;
-    userMessage.jailbreakConversationId = convo.jailbreakConversationId || response.jailbreakConversationId;
-    await saveMessage(userMessage);
-    
-    if (!convo.conversationSignature) {
-      response.title = await titleConvo({
-        model,
-        message: text,
-        response: JSON.stringify(response.response)
-      });
-    }
-    
+    // Save sydney response
+    response.id = response.messageId;
+    // response.parentMessageId = convo.parentMessageId ? convo.parentMessageId : response.messageId;
+    response.parentMessageId = response.messageId;
+    response.invocationId = convo.invocationId ? convo.invocationId + 1 : 1;
+    response.title = convo.jailbreakConversationId
+      ? await getConvoTitle(convo.conversationId)
+      : await titleConvo({
+          model,
+          message: text,
+          response: JSON.stringify(response.response)
+        });
+    response.conversationId = convo.conversationId
+      ? convo.conversationId
+      : crypto.randomUUID();
+    response.conversationSignature = convo.conversationSignature
+      ? convo.conversationSignature
+      : crypto.randomUUID();
     response.text = response.response;
-    response.parentMessageId = convo.parentMessageId || response.messageId;
-    response.id = response.details.messageId;
     response.suggestions =
       response.details.suggestedResponses &&
       response.details.suggestedResponses.map((s) => s.text);
     response.sender = model;
     response.final = true;
+
+    // Save user message
+    userMessage.conversationId = response.conversationId;
+    userMessage.parentMessageId = response.parentMessageId;
+    await saveMessage(userMessage);
+
+    // Save sydney response & convo, then send
     await saveMessage(response);
     await saveConvo(response);
     sendMessage(res, response);
