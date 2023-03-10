@@ -14,7 +14,6 @@ export default function DeleteButton({ conversationId, renaming, cancelHandler }
     () => {
       dispatch(setMessages([]));
       dispatch(removeConvo(conversationId));
-      // dispatch(setConversation({ title: 'New chat', conversationId: null, parentMessageId: null }));
       dispatch(setNewConvo());
     }
   );

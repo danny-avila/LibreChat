@@ -43,7 +43,7 @@ router.post('/', async (req, res) => {
     console.log('SYDNEY RESPONSE');
     console.log(response.response);
     // console.dir(response, { depth: null });
-    const hasCitations = citationRegex.test(response.response);
+    const hasCitations = response.response.match(citationRegex)?.length > 0;
 
     // Save sydney response
     response.id = response.messageId;
