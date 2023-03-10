@@ -39,15 +39,6 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
     handleSaveState(chatGptLabel.toLowerCase());
     // Set new conversation
     dispatch(setNewConvo());
-    // dispatch(
-    //   setConversation({
-    //     title: 'New Chat',
-    //     error: false,
-    //     conversationId: null,
-    //     parentMessageId: null
-    //   })
-    // );
-    // dispatch(setDisabled(false));
   };
 
   const saveHandler = (e) => {
