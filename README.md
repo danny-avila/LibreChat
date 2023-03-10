@@ -110,7 +110,7 @@ Here are my recently completed and planned features:
 
 ^* ChatGPT can be 'customized' by setting a system message or prompt prefix and alternate 'role' to the API request
 
-[More info here](https://platform.openai.com/docs/guides/chat/instructing-chat-models). Here's an [example from this app.]()
+[More info here](https://platform.openai.com/docs/guides/chat/instructing-chat-models). Here's an [example from this app.](#use-cases)
 
 ### Tech Stack
 
@@ -126,8 +126,8 @@ Here are my recently completed and planned features:
 - Node.js >= 19.0.0
 - MongoDB installed or [MongoDB Atlas](https://account.mongodb.com/account/login) (required if not using Docker)
 - [Docker (optional)](https://www.docker.com/get-started/)
-- [OpenAI API key](https://platform.openai.com/account/api-keys)
-- BingAI, ChatGPT access tokens (optional, free AIs)
+- [OpenAI API key](https://platform.openai.com/account/api-keys) (optional: chats will not be titled and only free models will work)
+- BingAI, ChatGPT access tokens (optional for free AI models)
 
 ## Usage
 
@@ -161,12 +161,7 @@ Here are my recently completed and planned features:
 
 <details>
 <summary><strong>ChatGPT Free Instructions</strong></summary>
-
-
-**This has been disabled as is no longer working as of 3-07-23**
-
-
-To get your Access token For ChatGPT 'Free Version', login to chat.openai.com, then visit https://chat.openai.com/api/auth/session.
+To get your Access token For ChatGPT 'Free Version', login to chat.openai.com, then visit https://chat.openai.com/api/auth/session. Set it to `CHATGPT_TOKEN` in `.env` or `docker-compose.yml`
 
 
 **Warning:** There may be a high chance of your account being banned with this method. Continue doing so at your own risk.
@@ -175,7 +170,7 @@ To get your Access token For ChatGPT 'Free Version', login to chat.openai.com, t
 
 <details>
 <summary><strong>BingAI Instructions</strong></summary>
-The Bing Access Token is the "_U" cookie from bing.com. Use dev tools or an extension while logged into the site to view it.
+The Bing Access Token is the "_U" cookie from bing.com. Use dev tools or an extension while logged into the site to view it. Set it in `.env` or `docker-compose.yml` to `BING_TOKEN`; if setting the user token doesn't work, try setting the entire cookie string from bing request header to `BING_COOKIES`
 
 **Note:** Specific error handling and styling for this model is still in progress.
 </details>

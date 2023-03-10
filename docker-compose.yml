@@ -22,6 +22,12 @@ services:
                 - OPENAI_KEY=""
                 - CHATGPT_TOKEN=""
                 - BING_TOKEN=""
+                # if setting the user token doesn't work, try setting the entire cookie string from bing request header
+                - BING_COOKIES=""
+                # Change this to proxy any request.
+                - PROXY=""
+                # Change this if you need to configure host name, default: 'localhost'
+                - HOST=""
         ports:
             - "9000:3080"
         volumes:
