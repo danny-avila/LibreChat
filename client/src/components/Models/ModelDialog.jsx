@@ -25,7 +25,7 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
   const [saveText, setSaveText] = useState('Save');
   const [required, setRequired] = useState(false);
   const inputRef = useRef(null);
-  const updateCustomGpt = manualSWR(`/api/customGpts/`, 'post');
+  const updateCustomGpt = manualSWR(`http://localhost:3080/api/customGpts/`, 'post');
 
   const submitHandler = (e) => {
     if (chatGptLabel.length === 0) {

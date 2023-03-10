@@ -2,32 +2,27 @@ require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
 
 const askBing = async ({ text, progressCallback, convo }) => {
-  const { BingAIClient } = await import('@waylaidwanderer/chatgpt-api');
+  const { BingAIClient } = (await import('@waylaidwanderer/chatgpt-api'));
 
-  const clientOptions = {
+  const bingAIClient = new BingAIClient({
+    // "_U" cookie from bing.com
     userToken: process.env.BING_TOKEN,
+    // If the above doesn't work, provide all your cookies as a string instead
+    // cookies: '',
     debug: false,
     cache: { store: new KeyvFile({ filename: './data/cache.json' }) }
-  };
-
-  const cookies = process.env.BING_COOKIES;
-
-  if (cookies?.length > 0) {
-    clientOptions.cookies = cookies;
-    delete clientOptions.userToken;
-  }
-
-  const bingAIClient = new BingAIClient(clientOptions);
+  });
 
   let options = {
-    onProgress: async (partialRes) => await progressCallback(partialRes)
+    onProgress: async (partialRes) => await progressCallback(partialRes),
   };
 
   if (convo) {
     options = { ...options, ...convo };
   }
 
-  const res = await bingAIClient.sendMessage(text, options);
+  const res = await bingAIClient.sendMessage(text, options
+  );
 
   return res;
 

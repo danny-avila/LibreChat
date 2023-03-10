@@ -5,7 +5,6 @@ const clientOptions = {
   modelOptions: {
     model: 'gpt-3.5-turbo'
   },
-  proxy: process.env.PROXY || null,
   debug: false
 };
 

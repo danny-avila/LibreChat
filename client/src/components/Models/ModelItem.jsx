@@ -15,8 +15,8 @@ export default function ModelItem({ modelName, value, onSelect }) {
   const [currentName, setCurrentName] = useState(modelName);
   const [modelInput, setModelInput] = useState(modelName);
   const inputRef = useRef(null);
-  const rename = manualSWR(`/api/customGpts`, 'post');
-  const deleteCustom = manualSWR(`/api/customGpts/delete`, 'post');
+  const rename = manualSWR(`http://localhost:3080/api/customGpts`, 'post');
+  const deleteCustom = manualSWR(`http://localhost:3080/api/customGpts/delete`, 'post');
 
   if (value === 'chatgptCustom') {
     return (
