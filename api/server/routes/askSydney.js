@@ -1,8 +1,8 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { titleConvo, getCitations, citeText, askBing } = require('../../app/');
-const { saveMessage, deleteMessages, saveConvo } = require('../../models');
+const { titleConvo, getCitations, citeText, askSydney } = require('../../app/');
+const { saveMessage, deleteMessages, saveConvo, getConvoTitle } = require('../../models');
 const { handleError, sendMessage } = require('./handlers');
 const citationRegex = /\[\^\d+?\^]/g;
 
@@ -34,33 +34,37 @@ router.post('/', async (req, res) => {
       sendMessage(res, { text: tokens, message: true });
     };
 
-    let response = await askBing({
+    let response = await askSydney({
       text,
       progressCallback,
       convo
     });
 
-    console.log('BING RESPONSE');
+    console.log('SYDNEY RESPONSE');
+    console.log(response.response);
     // console.dir(response, { depth: null });
     const hasCitations = response.response.match(citationRegex)?.length > 0;
 
-    userMessage.conversationSignature =
-      convo.conversationSignature || response.conversationSignature;
-    userMessage.conversationId = convo.conversationId || response.conversationId;
-    userMessage.invocationId = response.invocationId;
-    await saveMessage(userMessage);
-
-    if (!convo.conversationSignature) {
-      response.title = await titleConvo({
-        model,
-        message: text,
-        response: JSON.stringify(response.response)
-      });
-    }
-
+    // Save sydney response
+    response.id = response.messageId;
+    // response.parentMessageId = convo.parentMessageId ? convo.parentMessageId : response.messageId;
+    response.parentMessageId = response.messageId;
+    response.invocationId = convo.invocationId ? convo.invocationId + 1 : 1;
+    response.title = convo.jailbreakConversationId
+      ? await getConvoTitle(convo.conversationId)
+      : await titleConvo({
+          model,
+          message: text,
+          response: JSON.stringify(response.response)
+        });
+    response.conversationId = convo.conversationId
+      ? convo.conversationId
+      : crypto.randomUUID();
+    response.conversationSignature = convo.conversationSignature
+      ? convo.conversationSignature
+      : crypto.randomUUID();
     response.text = response.response;
     delete response.response;
-    response.id = response.details.messageId;
     response.suggestions =
       response.details.suggestedResponses &&
       response.details.suggestedResponses.map((s) => s.text);
@@ -72,6 +76,12 @@ router.post('/', async (req, res) => {
       citeText(response) +
       (links?.length > 0 && hasCitations ? `\n<small>${links}</small>` : '');
 
+    // Save user message
+    userMessage.conversationId = response.conversationId;
+    userMessage.parentMessageId = response.parentMessageId;
+    await saveMessage(userMessage);
+
+    // Save sydney response & convo, then send
     await saveMessage(response);
     await saveConvo(response);
     sendMessage(res, response);

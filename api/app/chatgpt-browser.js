@@ -5,7 +5,8 @@ const clientOptions = {
   // Warning: This will expose your access token to a third party. Consider the risks before using this.
   reverseProxyUrl: 'https://chatgpt.duti.tech/api/conversation',
   // Access token from https://chat.openai.com/api/auth/session
-  accessToken: process.env.CHATGPT_TOKEN
+  accessToken: process.env.CHATGPT_TOKEN,
+  // debug: true
 };
 
 const browserClient = async ({ text, progressCallback, convo }) => {

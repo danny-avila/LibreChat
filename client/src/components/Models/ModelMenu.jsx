@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { setModel, setDisabled, setCustomGpt, setCustomModel } from '~/store/submitSlice';
-import { setConversation } from '~/store/convoSlice';
+import { setNewConvo } from '~/store/convoSlice';
 import ModelDialog from './ModelDialog';
 import MenuItems from './MenuItems';
 import manualSWR from '~/utils/fetchers';
@@ -68,22 +68,15 @@ export default function ModelMenu() {
       dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
       dispatch(setModel('chatgptCustom'));
       dispatch(setCustomModel(value));
-      if (custom) {
-        setMenuOpen((prevOpen) => !prevOpen);
-      }
+      // if (custom) {
+      //   setMenuOpen((prevOpen) => !prevOpen);
+      // }
     } else if (!modelMap[value]) {
       dispatch(setCustomModel(null));
     }
 
     // Set new conversation
-    dispatch(
-      setConversation({
-        title: 'New Chat',
-        error: false,
-        conversationId: null,
-        parentMessageId: null
-      })
-    );
+    dispatch(setNewConvo());
   };
 
   const onOpenChange = (open) => {
@@ -126,8 +119,9 @@ export default function ModelMenu() {
     'dark:disabled:hover:bg-transparent'
   ];
 
+  const isBing = model === 'bingai' || model === 'sydney';
   const colorProps = model === 'chatgpt' ? chatgptColorProps : defaultColorProps;
-  const icon = model === 'bingai' ? <BingIcon button={true} /> : <GPTIcon button={true} />;
+  const icon = isBing ? <BingIcon button={true} /> : <GPTIcon button={true} />;
 
   return (
     <Dialog onOpenChange={onOpenChange}>

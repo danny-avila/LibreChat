@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const askBing = require('./askBing');
+const askSydney = require('./askSydney');
 const {
   titleConvo,
   askClient,
@@ -13,6 +14,7 @@ const { getConvo, saveMessage, deleteMessages, saveConvo } = require('../../mode
 const { handleError, sendMessage } = require('./handlers');
 
 router.use('/bing', askBing);
+router.use('/sydney', askSydney);
 
 router.post('/', async (req, res) => {
   let { model, text, parentMessageId, conversationId, chatGptLabel, promptPrefix } = req.body;

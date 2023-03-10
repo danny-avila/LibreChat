@@ -16,7 +16,7 @@ export default function Conversation({
   title = 'New conversation',
   bingData,
   chatGptLabel = null,
-  promptPrefix = null,
+  promptPrefix = null
 }) {
   const [renaming, setRenaming] = useState(false);
   const [titleInput, setTitleInput] = useState(title);
@@ -34,11 +34,18 @@ export default function Conversation({
     const convo = { title, error: false, conversationId: id, chatGptLabel, promptPrefix };
 
     if (bingData) {
-      const { conversationSignature, clientId, invocationId } = bingData;
+      const {
+        parentMessageId,
+        conversationSignature,
+        jailbreakConversationId,
+        clientId,
+        invocationId
+      } = bingData;
       dispatch(
         setConversation({
           ...convo,
-          parentMessageId: null,
+          parentMessageId,
+          jailbreakConversationId,
           conversationSignature,
           clientId,
           invocationId
@@ -49,6 +56,7 @@ export default function Conversation({
         setConversation({
           ...convo,
           parentMessageId,
+          jailbreakConversationId: null,
           conversationSignature: null,
           clientId: null,
           invocationId: null

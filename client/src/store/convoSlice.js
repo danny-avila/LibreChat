@@ -5,6 +5,7 @@ const initialState = {
   title: 'ChatGPT Clone',
   conversationId: null,
   parentMessageId: null,
+  jailbreakConversationId: null,
   conversationSignature: null,
   clientId: null,
   invocationId: null,
@@ -28,6 +29,20 @@ const currentSlice = createSlice({
     incrementPage: (state) => {
       state.pageNumber = state.pageNumber + 1;
     },
+    setNewConvo: (state) => {
+      state.error = false;
+      state.title = 'New Chat';
+      state.conversationId = null;
+      state.parentMessageId = null;
+      state.jailbreakConversationId = null;
+      state.conversationSignature = null;
+      state.clientId = null;
+      state.invocationId = null;
+      state.chatGptLabel = null;
+      state.promptPrefix = null;
+      state.convosLoading = false;
+      state.pageNumber = 1;
+    },
     setConvos: (state, action) => {
       const newConvos = action.payload.filter((convo) => {
         return !state.convos.some((c) => c.conversationId === convo.conversationId);
@@ -45,7 +60,7 @@ const currentSlice = createSlice({
   }
 });
 
-export const { setConversation, setConvos, setError, incrementPage, removeConvo, removeAll } =
+export const { setConversation, setConvos, setNewConvo, setError, incrementPage, removeConvo, removeAll } =
   currentSlice.actions;
 
 export default currentSlice.reducer;
