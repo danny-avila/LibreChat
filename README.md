@@ -136,6 +136,7 @@ Here are my recently completed and planned features:
   git clone https://github.com/danny-avila/chatgpt-clone.git
 ```
 - If using MongoDB Atlas, remove `&w=majority` from default connection string.
+- You can configure proxy, host, and port environment variables as needed
 
 ### Local
 - **Run npm** install in both the api and client directories
