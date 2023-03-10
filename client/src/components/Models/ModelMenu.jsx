@@ -27,7 +27,7 @@ export default function ModelMenu() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { model, customModel } = useSelector((state) => state.submit);
   const { models, modelMap, initial } = useSelector((state) => state.models);
-  const { trigger } = manualSWR(`/api/customGpts`, 'get', (res) => {
+  const { trigger } = manualSWR(`http://localhost:3080/api/customGpts`, 'get', (res) => {
     const fetchedModels = res.map((modelItem) => ({
       ...modelItem,
       name: modelItem.chatGptLabel
