@@ -89,12 +89,12 @@ Here are my recently completed and planned features:
 - [x] Customize prompt prefix/label (custom ChatGPT using official API)
 - [x] Server convo pagination (limit fetch and load more with 'show more' button)
 - [x] Config file for easy startup (docker compose)
+- [ ] Bing AI Styling (for suggested responses, convo end, etc.) - **In progress**
 - [ ] Add warning before clearing convos
 - [ ] Build test suite for CI/CD
 - [ ] Conversation Search (by title)
 - [ ] Resubmit/edit sent messages
 - [ ] Semantic Search Option (requires more tokens)
-- [ ] Bing AI Styling (for suggested responses, convo end, etc.)
 - [ ] Prompt Templates/Search
 - [ ] Refactor/clean up code (tech debt)
 - [ ] Optional use of local storage for credentials
@@ -181,7 +181,7 @@ The Bing Access Token is the "_U" cookie from bing.com. Use dev tools or an exte
 </details>
 
 ### Updating
-- As the project is still a work-in-progress, you should pull the latest and run some of the steps above again
+- As the project is still a work-in-progress, you should pull the latest and run the steps over. Reset your browser cache/clear site data.
 
 ## Use Cases ##
 
