@@ -17,7 +17,7 @@ export default function Nav() {
   };
 
   const { data, isLoading, mutate } = swr(
-    `http://localhost:3080/api/convos?pageNumber=${pageNumber}`,
+    `/api/convos?pageNumber=${pageNumber}`,
     onSuccess
   );
   const containerRef = useRef(null);
