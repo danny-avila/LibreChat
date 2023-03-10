@@ -1,11 +1,23 @@
 import React from 'react';
+import TabLink from './TabLink';
 import Markdown from 'markdown-to-jsx';
 import Embed from './Embed';
 import Highlight from './Highlight';
 import regexSplit from '~/utils/regexSplit';
 import { wrapperRegex } from '~/utils';
 const { codeRegex, inLineRegex, markupRegex, languageMatch, newLineMatch } = wrapperRegex;
-const mdOptions = { wrapper: React.Fragment, forceWrapper: true };
+const mdOptions = {
+  wrapper: React.Fragment,
+  forceWrapper: true,
+  overrides: {
+    a: {
+      component: TabLink,
+      // props: {
+      //   className: 'foo'
+      // }
+    }
+  }
+};
 
 const inLineWrap = (parts) => {
   let previousElement = null;
