@@ -11,7 +11,7 @@ export default function handleSubmit({
   chatGptLabel,
   promptPrefix
 }) {
-  const endpoint = `http://localhost:3080/api/ask`;
+  const endpoint = `/api/ask`;
   let payload = { model, text, chatGptLabel, promptPrefix };
   if (convo.conversationId && convo.parentMessageId) {
     payload = {

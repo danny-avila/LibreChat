@@ -7,6 +7,7 @@ const clientOptions = {
   // Access token from https://chat.openai.com/api/auth/session
   accessToken: process.env.CHATGPT_TOKEN,
   // debug: true
+  proxy: process.env.PROXY || null,
 };
 
 const browserClient = async ({ text, progressCallback, convo }) => {
