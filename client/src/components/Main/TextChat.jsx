@@ -46,8 +46,10 @@ export default function TextChat({ messages }) {
         setMessages([...messages, currentMsg, { sender, text: data.text || data.response }])
       );
 
+      const isBing = model === 'bingai' || model === 'sydney';
+
       if (
-        model !== 'bingai' &&
+        !isBing &&
         convo.conversationId === null &&
         convo.parentMessageId === null
       ) {
@@ -57,6 +59,7 @@ export default function TextChat({ messages }) {
             title,
             conversationId,
             parentMessageId: id,
+            jailbreakConversationId: null,
             conversationSignature: null,
             clientId: null,
             invocationId: null,
@@ -69,39 +72,49 @@ export default function TextChat({ messages }) {
         convo.conversationId === null &&
         convo.invocationId === null
       ) {
-        const { title, conversationSignature, clientId, conversationId, invocationId } = data;
+        console.log('Bing data:', data)
+        const {
+          title,
+          conversationSignature,
+          clientId,
+          conversationId,
+          invocationId
+        } = data;
         dispatch(
           setConversation({
             title,
+            parentMessageId: null,
             conversationSignature,
             clientId,
             conversationId,
             invocationId,
-            parentMessageId: null
+          })
+        );
+      } else if (model === 'sydney') {
+        const {
+          title,
+          jailbreakConversationId,
+          parentMessageId,
+          conversationSignature,
+          clientId,
+          conversationId,
+          invocationId
+        } = data;
+        dispatch(
+          setConversation({
+            title,
+            jailbreakConversationId,
+            parentMessageId,
+            conversationSignature,
+            clientId,
+            conversationId,
+            invocationId,
           })
         );
       }
 
       dispatch(setSubmitState(false));
     };
-
-    // const convoHandler = (data) => {
-    //   const { conversationId, id, invocationId } = data;
-    //   const conversationData = {
-    //     title: data.title,
-    //     conversationId,
-    //     parentMessageId:
-    //       model !== 'bingai' && !convo.conversationId && !convo.parentMessageId ? id : null,
-    //     conversationSignature:
-    //       model === 'bingai' && !convo.conversationId ? data.conversationSignature : null,
-    //     clientId: model === 'bingai' && !convo.conversationId ? data.clientId : null,
-    //     // invocationId: model === 'bingai' && !convo.conversationId ? data.invocationId : null
-    //     invocationId: invocationId ? invocationId : null
-    //   };
-    //   dispatch(setMessages([...messages, currentMsg, { sender: model, text: data.text || data.response }]));
-    //   dispatch(setConversation(conversationData));
-    //   dispatch(setSubmitState(false));
-    // };
 
     const errorHandler = (event) => {
       console.log('Error:', event);

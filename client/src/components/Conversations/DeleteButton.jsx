@@ -3,7 +3,7 @@ import TrashIcon from '../svg/TrashIcon';
 import CrossIcon from '../svg/CrossIcon';
 import manualSWR from '~/utils/fetchers';
 import { useDispatch } from 'react-redux';
-import { setConversation, removeConvo } from '~/store/convoSlice';
+import { setNewConvo, removeConvo } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
 
 export default function DeleteButton({ conversationId, renaming, cancelHandler }) {
@@ -14,7 +14,7 @@ export default function DeleteButton({ conversationId, renaming, cancelHandler }
     () => {
       dispatch(setMessages([]));
       dispatch(removeConvo(conversationId));
-      dispatch(setConversation({ title: 'New chat', conversationId: null, parentMessageId: null }));
+      dispatch(setNewConvo());
     }
   );
 

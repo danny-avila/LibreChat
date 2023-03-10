@@ -14,7 +14,9 @@ export default function Conversations({ conversations, conversationId, showMore 
         conversations.map((convo) => {
           const bingData = convo.conversationSignature
             ? {
+                jailbreakConversationId: convo.jailbreakConversationId,
                 conversationSignature: convo.conversationSignature,
+                parentMessageId: convo.parentMessageId || null,
                 clientId: convo.clientId,
                 invocationId: convo.invocationId
               }

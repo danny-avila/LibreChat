@@ -10,7 +10,7 @@ const askBing = async ({ text, progressCallback, convo }) => {
     // If the above doesn't work, provide all your cookies as a string instead
     // cookies: '',
     debug: false,
-    store: new KeyvFile({ filename: './data/cache.json' })
+    cache: { store: new KeyvFile({ filename: './data/cache.json' }) }
   });
 
   let options = {

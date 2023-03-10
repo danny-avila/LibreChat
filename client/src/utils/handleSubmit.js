@@ -21,9 +21,12 @@ export default function handleSubmit({
     };
   }
 
-  if (model === 'bingai' && convo.conversationId) {
+  const isBing = model === 'bingai' || model === 'sydney';
+  if (isBing && convo.conversationId) {
+
     payload = {
       ...payload,
+      jailbreakConversationId: convo.jailbreakConversationId,
       conversationId: convo.conversationId,
       conversationSignature: convo.conversationSignature,
       clientId: convo.clientId,
@@ -31,7 +34,10 @@ export default function handleSubmit({
     };
   }
 
-  const server = model === 'bingai' ? endpoint + '/bing' : endpoint;
+  let server = endpoint;
+  server = model === 'bingai' ? server + '/bing' : server;
+  server = model === 'sydney' ? server + '/sydney' : server;
+  
   const events = new SSE(server, {
     payload: JSON.stringify(payload),
     headers: { 'Content-Type': 'application/json' }

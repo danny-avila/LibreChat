@@ -3,7 +3,7 @@ import TrashIcon from '../svg/TrashIcon';
 import { useSWRConfig } from 'swr';
 import manualSWR from '~/utils/fetchers';
 import { useDispatch } from 'react-redux';
-import { setConversation, removeAll } from '~/store/convoSlice';
+import { setNewConvo, removeAll } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
 
 export default function ClearConvos() {
@@ -12,14 +12,7 @@ export default function ClearConvos() {
 
   const { trigger } = manualSWR(`http://localhost:3080/api/convos/clear`, 'post', () => {
     dispatch(setMessages([]));
-    dispatch(
-      setConversation({
-        error: false,
-        title: 'New chat',
-        conversationId: null,
-        parentMessageId: null
-      })
-    );
+    dispatch(setNewConvo());
     mutate(`http://localhost:3080/api/convos`);
   });
 
