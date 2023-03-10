@@ -68,23 +68,15 @@ export default function ModelMenu() {
       dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
       dispatch(setModel('chatgptCustom'));
       dispatch(setCustomModel(value));
-      if (custom) {
-        setMenuOpen((prevOpen) => !prevOpen);
-      }
+      // if (custom) {
+      //   setMenuOpen((prevOpen) => !prevOpen);
+      // }
     } else if (!modelMap[value]) {
       dispatch(setCustomModel(null));
     }
 
     // Set new conversation
     dispatch(setNewConvo());
-    // dispatch(
-    //   setConversation({
-    //     title: 'New Chat',
-    //     error: false,
-    //     conversationId: null,
-    //     parentMessageId: null
-    //   })
-    // );
   };
 
   const onOpenChange = (open) => {

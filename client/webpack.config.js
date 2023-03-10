@@ -10,7 +10,7 @@ module.exports = {
    * to use its built-in optimizations accordingly. default is production
    */
   mode: 'development',
-  cache: false,
+  // cache: false,
   /** "entry"
    * the entry point
    */

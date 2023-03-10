@@ -13,14 +13,6 @@ export default function ClearConvos() {
   const { trigger } = manualSWR(`http://localhost:3080/api/convos/clear`, 'post', () => {
     dispatch(setMessages([]));
     dispatch(setNewConvo());
-    // dispatch(
-    //   setConversation({
-    //     error: false,
-    //     title: 'New chat',
-    //     conversationId: null,
-    //     parentMessageId: null
-    //   })
-    // );
     mutate(`http://localhost:3080/api/convos`);
   });
 
