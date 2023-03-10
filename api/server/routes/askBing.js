@@ -42,7 +42,7 @@ router.post('/', async (req, res) => {
 
     console.log('BING RESPONSE');
     // console.dir(response, { depth: null });
-    const hasCitations = citationRegex.test(response.response);
+    const hasCitations = response.response.match(citationRegex)?.length > 0;
 
     userMessage.conversationSignature =
       convo.conversationSignature || response.conversationSignature;

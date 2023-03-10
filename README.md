@@ -8,14 +8,23 @@ https://user-images.githubusercontent.com/110412045/223754183-8b7f45ce-6517-4bd5
 
 ## Updates
 <details open>
+<summary><strong>2023-03-09</strong></summary>
+Released v.0.0.2
+
+Adds Sydney (jailbroken Bing AI) to the model menu. Thank you [DavesDevFails](https://github.com/DavesDevFails) for bringing it to my attention in this [issue](https://github.com/danny-avila/chatgpt-clone/issues/13). Bing/Sydney now correctly cite links, more styling to come. Fix some overlooked bugs, and model menu doesn't close upon deleting a customGpt.
+
+
+I've re-enabled the ChatGPT browser client (free version) since it might be working for most people, it no longer works for me. Sydney is the best free route anyway.
+</details>
+
+<details>
+<details>
 <summary><strong>2023-03-07</strong></summary>
 Due to increased interest in the repo, I've dockerized the app as of this update for quick setup! See setup instructions below. I realize this still takes some time with installing docker dependencies, so it's on the roadmap to have a deployed demo. Besides this, I've made major improvements for a lot of the existing features across the board, mainly UI/UX.
 
 
 Also worth noting, the method to access the Free Version is no longer working, so I've removed it from model selection until further notice.
 </details>
-
-<details>
 <summary><strong>Previous Updates</strong></summary>
 
 <details>

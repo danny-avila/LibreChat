@@ -11,7 +11,6 @@ export default function NewChat() {
     dispatch(setText(''));
     dispatch(setMessages([]));
     dispatch(setNewConvo());
-    // dispatch(setConversation({ title: 'New Chat', error: false, conversationId: null, parentMessageId: null }));
   };
 
   return (
