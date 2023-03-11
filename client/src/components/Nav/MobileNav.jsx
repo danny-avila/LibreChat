@@ -1,11 +1,33 @@
 import React from 'react';
+import { useSelector, useDispatch } from 'react-redux';
+import { setNewConvo } from '~/store/convoSlice';
+import { setMessages } from '~/store/messageSlice';
+import { setText } from '~/store/textSlice';
 
-export default function MobileNav({ title = 'New Chat' }) {
+export default function MobileNav({ setNavVisible }) {
+  const dispatch = useDispatch();
+  const { conversationId, convos } = useSelector((state) => state.convo);
+
+  const toggleNavVisible = () => {
+    setNavVisible((prev) => {
+      return !prev
+    })
+  }
+
+  const newConvo = () => {
+    dispatch(setText(''));
+    dispatch(setMessages([]));
+    dispatch(setNewConvo());
+  }
+
+  const title = convos?.find(element => element?.conversationId == conversationId)?.title || 'New Chat';
+
   return (
     <div className="sticky top-0 z-10 flex items-center border-b border-white/20 bg-gray-800 pl-1 pt-1 text-gray-200 sm:pl-3 md:hidden">
       <button
         type="button"
         className="-ml-0.5 -mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-md hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white dark:hover:text-white"
+        onClick={toggleNavVisible}
       >
         <span className="sr-only">Open sidebar</span>
         <svg
@@ -44,6 +66,7 @@ export default function MobileNav({ title = 'New Chat' }) {
       <button
         type="button"
         className="px-3"
+        onClick={newConvo}
       >
         <svg
           stroke="currentColor"
