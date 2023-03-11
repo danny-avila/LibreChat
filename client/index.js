@@ -5,6 +5,7 @@ import { store } from './src/store';
 import { ThemeProvider } from './src/hooks/ThemeContext';
 import App from './src/App';
 import './src/style.css';
+import './src/mobile.css'
 
 const container = document.getElementById('root');
 const root = createRoot(container);
