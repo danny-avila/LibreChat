@@ -36,7 +36,7 @@
         left: calc(-100%);;
         top: 0;
         bottom: 0;
-        max-width: 400px;
+        max-width: 320px;
         width: calc(100% - 60px);
         opacity: 0;
     }
