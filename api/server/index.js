@@ -25,5 +25,8 @@ app.use('/api/customGpts', routes.customGpts);
 app.use('/api/prompts', routes.prompts);
 
 app.listen(port, host,  () => {
-  console.log(`Server listening at http://${host}:${port}`);
+  if (host=='0.0.0.0')
+    console.log(`Server listening on all interface at port ${port}. Use http://localhost:${port} to access it`);
+  else
+    console.log(`Server listening at http://${host=='0.0.0.0'?'localhost':host}:${port}`);
 });
