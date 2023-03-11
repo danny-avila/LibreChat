@@ -3,8 +3,8 @@ import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
 import { useSelector, useDispatch } from 'react-redux';
 import { setConversation } from '~/store/convoSlice';
-import { setCustomGpt, setModel, setCustomModel } from '~/store/submitSlice';
-import { setMessages } from '~/store/messageSlice';
+import { setStopStream, setCustomGpt, setModel, setCustomModel } from '~/store/submitSlice';
+import { setMessages, setEmptyMessage } from '~/store/messageSlice';
 import { setText } from '~/store/textSlice';
 import manualSWR from '~/utils/fetchers';
 import ConvoIcon from '../svg/ConvoIcon';
@@ -23,13 +23,16 @@ export default function Conversation({
   const { modelMap } = useSelector((state) => state.models);
   const inputRef = useRef(null);
   const dispatch = useDispatch();
-  const { trigger } = manualSWR(`/api/messages/${id}`, 'get');
+  const { trigger, isMutating } = manualSWR(`/api/messages/${id}`, 'get');
   const rename = manualSWR(`/api/convos/update`, 'post');
 
   const clickHandler = async () => {
     if (conversationId === id) {
       return;
     }
+
+    dispatch(setStopStream(true));
+    dispatch(setEmptyMessage());
 
     const convo = { title, error: false, conversationId: id, chatGptLabel, promptPrefix };
 
@@ -64,6 +67,12 @@ export default function Conversation({
       );
     }
     const data = await trigger();
+    // while (isMutating) {
+    //   await new Promise((resolve) => setTimeout(() => {
+    //     dispatch(setMessages([]));
+    //     resolve();
+    //   }, 50));
+    // }
 
     if (chatGptLabel) {
       dispatch(setModel('chatgptCustom'));
@@ -81,6 +90,7 @@ export default function Conversation({
     dispatch(setMessages(data));
     dispatch(setCustomGpt(convo));
     dispatch(setText(''));
+    dispatch(setStopStream(false));
   };
 
   const renameHandler = (e) => {
