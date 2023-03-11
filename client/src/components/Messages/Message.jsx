@@ -14,7 +14,6 @@ export default function Message({
 }) {
   const { isSubmitting } = useSelector((state) => state.submit);
   const [abortScroll, setAbort] = useState(false);
-  const [isHovering, setIsHovering] = useState(false);
   const notUser = sender.toLowerCase() !== 'user';
   const blinker = isSubmitting && last && notUser;
 
@@ -32,14 +31,6 @@ export default function Message({
     }
   };
 
-  const handleMouseOver = () => {
-    setIsHovering(true);
-  };
-
-  const handleMouseOut = () => {
-    setIsHovering(false);
-  };
-
   const props = {
     className:
       'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 bg-white dark:text-gray-100 group dark:bg-gray-800'
@@ -49,7 +40,7 @@ export default function Message({
     chatgpt: 'rgb(16, 163, 127)',
     chatgptBrowser: 'rgb(25, 207, 207)',
     bingai: '',
-    sydney: '',
+    sydney: ''
   };
 
   const isBing = sender === 'bingai' || sender === 'sydney';
@@ -65,7 +56,11 @@ export default function Message({
   if ((notUser && backgroundColor) || isBing) {
     icon = (
       <div
-        style={isBing ? { background: 'radial-gradient(circle at 90% 110%, #F0F0FA, #D0E0F9)' } : { backgroundColor }}
+        style={
+          isBing
+            ? { background: 'radial-gradient(circle at 90% 110%, #F0F0FA, #D0E0F9)' }
+            : { backgroundColor }
+        }
         className="relative flex h-[30px] w-[30px] items-center justify-center rounded-sm p-1 text-white"
       >
         {isBing ? <BingIcon /> : <GPTIcon />}
@@ -84,12 +79,14 @@ export default function Message({
     <div
       {...props}
       onWheel={handleWheel}
-      onMouseOver={handleMouseOver}
-      onMouseOut={handleMouseOut}
     >
       <div className="m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
-        <strong className="relative flex w-[30px] flex-col items-end text-right">
-          {icon}
+        <strong className="relative flex w-[30px] flex-col items-end text-right text-xs md:text-sm">
+          {typeof icon === 'string' && icon.match(/[^\u0000-\u007F]+/) ? (
+            <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>
+          ) : (
+            icon
+          )}
         </strong>
         <div className="relative flex w-[calc(100%-50px)] flex-col gap-1 whitespace-pre-wrap md:gap-3 lg:w-[calc(100%-115px)]">
           <div className="flex flex-grow flex-col gap-3">
@@ -109,9 +106,7 @@ export default function Message({
               </div>
             )}
           </div>
-          <div className="flex justify-between">
-            {isHovering && <HoverButtons user={!notUser} />}
-          </div>
+            <HoverButtons user={!notUser} />
         </div>
       </div>
     </div>
