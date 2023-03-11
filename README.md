@@ -170,10 +170,6 @@ By default, only local machine can access this server. To share within network o
 <details>
 <summary><strong>ChatGPT Free Instructions</strong></summary>
 
-
-**This has been disabled as is no longer working as of 3-07-23**
-
-
 To get your Access token For ChatGPT 'Free Version', login to chat.openai.com, then visit https://chat.openai.com/api/auth/session.
 
 
