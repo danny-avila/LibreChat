@@ -55,21 +55,27 @@ Currently, this project is only functional with the `text-davinci-003` model.
 </details>
 
 # Table of Contents
-   * [Roadmap](#roadmap)
-   * [Features](#features)
-   * [Tech Stack](#tech-stack)
-   * [Getting Started](#getting-started)
-      * [Prerequisites](#prerequisites)
-      * [Usage](#usage)
-         * [Local (npm)](#npm)
-         * [Docker](#docker)
-         * [Access Tokens](#access-tokens)
-         * [Updating](#updating)
-   * [Use Cases](#use-cases)
-   * [Origin](#origin)
-   * [Caveats](#caveats)
-   * [Contributing](#contributing)
-   * [License](#license)
+- [ChatGPT Clone](#chatgpt-clone)
+  - [All AI Conversations under One Roof.](#all-ai-conversations-under-one-roof)
+  - [Updates](#updates)
+- [Table of Contents](#table-of-contents)
+  - [Roadmap](#roadmap)
+    - [Features](#features)
+    - [Tech Stack](#tech-stack)
+  - [Getting Started](#getting-started)
+    - [Prerequisites](#prerequisites)
+  - [Usage](#usage)
+    - [Local](#local)
+    - [Docker](#docker)
+    - [Access Tokens](#access-tokens)
+    - [Proxy](#proxy)
+    - [Updating](#updating)
+  - [Use Cases](#use-cases)
+  - [Origin](#origin)
+  - [Caveats](#caveats)
+    - [Regarding use of Official ChatGPT API](#regarding-use-of-official-chatgpt-api)
+  - [Contributing](#contributing)
+  - [License](#license)
 
 ## Roadmap
 
@@ -143,6 +149,8 @@ Here are my recently completed and planned features:
 - **Run** `npm run build` in /client/ dir, `npm start` in /api/ dir
 - **Visit** http://localhost:3080 (default port) & enjoy
 
+By default, only local machine can access this server. To share within network or serve as a public server, set `HOST` to `0.0.0.0` in `.env` file
+
 ### Docker
 
 - **Provide** all credentials, (API keys, access tokens, and Mongo Connection String) in [docker-compose.yml](docker-compose.yml) under api service
@@ -178,6 +186,42 @@ To get your Access token For ChatGPT 'Free Version', login to chat.openai.com, t
 The Bing Access Token is the "_U" cookie from bing.com. Use dev tools or an extension while logged into the site to view it.
 
 **Note:** Specific error handling and styling for this model is still in progress.
+</details>
+
+### Proxy
+
+If your server cannot connect to the chatGPT API server by some reason, (eg in China). You can set a environment variable `PROXY`. This will be transmitted to `node-chatgpt-api` interface.
+
+**Warning:** `PROXY` is not `reverseProxyUrl` in `node-chatgpt-api`
+
+<details>
+<summary><strong>Set up proxy in local environment </strong></summary>
+
+Here is two ways to set proxy.
+- Option 1: system level environment
+`export PROXY="http://127.0.0.1:7890"`
+- Option 2: set in .env file
+`PROXY="http://127.0.0.1:7890"`
+
+**Change `http://127.0.0.1:7890` to your proxy server**
+</details>
+
+<details>
+<summary><strong>Set up proxy in docker environment </strong></summary>
+
+set in docker-compose.yml file, under services - api - environment
+
+```
+    api:
+        ...
+        environment:
+                ...
+                - "PROXY=http://127.0.0.1:7890"
+                # add this line ↑
+```
+
+**Change `http://127.0.0.1:7890` to your proxy server**
+
 </details>
 
 ### Updating
