@@ -17,11 +17,11 @@ services:
         image: node-api
         restart: always
         environment:
-                - PORT=3080
-                - MONGO_URI=mongodb://mongodb:27017/chatgpt-clone
-                - OPENAI_KEY=""
-                - CHATGPT_TOKEN=""
-                - BING_TOKEN=""
+                - "PORT=3080"
+                - "MONGO_URI=mongodb://mongodb:27017/chatgpt-clone"
+                - "OPENAI_KEY="
+                - "CHATGPT_TOKEN="
+                - "BING_TOKEN="
         ports:
             - "9000:3080"
         volumes:
