@@ -45,7 +45,7 @@ const detectCode = async (input) => {
     return (await Promise.all(output)).join('');
   } catch (e) {
     console.log('Error in detectCode function\n', e);
-    return text;
+    return input;
   }
 };
 
