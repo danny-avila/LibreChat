@@ -8,7 +8,7 @@ const citationRegex = /\[\^\d+?\^]/g;
 
 router.post('/', async (req, res) => {
   const { model, text, ...convo } = req.body;
-  if (!text.trim().includes(' ') && text.length < 5) {
+  if (text.length === 0) {
     return handleError(res, 'Prompt empty or too short');
   }
 
