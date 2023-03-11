@@ -17,7 +17,7 @@ const customClient = async ({ text, progressCallback, convo, promptPrefix, chatG
 
   clientOptions.chatGptLabel = chatGptLabel;
 
-  if (promptPrefix.length > 0) {
+  if (promptPrefix?.length > 0) {
     clientOptions.promptPrefix = promptPrefix;
   }
 
