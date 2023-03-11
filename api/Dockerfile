@@ -8,6 +8,8 @@ RUN npm install
 COPY . /api/
 # Make port 3080 available to the world outside this container
 EXPOSE 3080
+# Expose the server to 0.0.0.0
+ENV HOST=0.0.0.0
 # Run the app when the container launches
 CMD ["npm", "start"]
 
