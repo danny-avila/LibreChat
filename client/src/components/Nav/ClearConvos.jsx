@@ -10,10 +10,10 @@ export default function ClearConvos() {
   const dispatch = useDispatch();
   const { mutate } = useSWRConfig();
 
-  const { trigger } = manualSWR(`http://localhost:3080/api/convos/clear`, 'post', () => {
+  const { trigger } = manualSWR(`/api/convos/clear`, 'post', () => {
     dispatch(setMessages([]));
     dispatch(setNewConvo());
-    mutate(`http://localhost:3080/api/convos`);
+    mutate(`/api/convos`);
   });
 
   const clickHandler = () => {
