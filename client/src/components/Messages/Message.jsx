@@ -4,6 +4,7 @@ import { useSelector } from 'react-redux';
 import GPTIcon from '../svg/GPTIcon';
 import BingIcon from '../svg/BingIcon';
 import HoverButtons from './HoverButtons';
+import Spinner from '../svg/Spinner';
 
 export default function Message({
   sender,
@@ -22,6 +23,10 @@ export default function Message({
       scrollToBottom();
     }
   }, [isSubmitting, text, blinker, scrollToBottom, abortScroll]);
+  
+  if (sender === '') {
+    return <Spinner />;
+  }
 
   const handleWheel = () => {
     if (blinker) {

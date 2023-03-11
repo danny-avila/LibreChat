@@ -16,7 +16,7 @@ export default function TextChat({ messages }) {
   const dispatch = useDispatch();
   const convo = useSelector((state) => state.convo);
   const { initial } = useSelector((state) => state.models);
-  const { isSubmitting, disabled, model, chatGptLabel, promptPrefix } = useSelector(
+  const { isSubmitting, stopStream, disabled, model, chatGptLabel, promptPrefix } = useSelector(
     (state) => state.submit
   );
   const { text } = useSelector((state) => state.text);
@@ -38,7 +38,12 @@ export default function TextChat({ messages }) {
     const initialResponse = { sender, text: '' };
     dispatch(setMessages([...messages, currentMsg, initialResponse]));
     dispatch(setText(''));
-    const messageHandler = (data) => {
+    const messageHandler = (data, events) => {
+      if (stopStream) {
+        console.log('Stopping stream');
+        events.close();
+        return;
+      }
       dispatch(setMessages([...messages, currentMsg, { sender, text: data }]));
     };
     const convoHandler = (data) => {
