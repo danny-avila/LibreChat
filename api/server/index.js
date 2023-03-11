@@ -5,6 +5,7 @@ const cors = require('cors');
 const routes = require('./routes');
 const app = express();
 const port = process.env.PORT || 3080;
+const host = process.env.HOST || 'localhost'
 const projectPath = path.join(__dirname, '..', '..', 'client');
 dbConnect().then(() => console.log('Connected to MongoDB'));
 
@@ -23,6 +24,6 @@ app.use('/api/convos', routes.convos);
 app.use('/api/customGpts', routes.customGpts);
 app.use('/api/prompts', routes.prompts);
 
-app.listen(port, () => {
-  console.log(`Server listening at http://localhost:${port}`);
-});
+app.listen(port, host,  () => {
+  console.log(`Server listening at http://${host}:${port}`);
+});
