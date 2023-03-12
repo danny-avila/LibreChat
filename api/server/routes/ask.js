@@ -10,20 +10,20 @@ const {
   customClient,
   detectCode
 } = require('../../app/');
-const { getConvo, saveMessage, deleteMessages, saveConvo } = require('../../models');
+const { getConvo, saveMessage, deleteMessagesSince, deleteMessages, saveConvo } = require('../../models');
 const { handleError, sendMessage } = require('./handlers');
 
 router.use('/bing', askBing);
 router.use('/sydney', askSydney);
 
 router.post('/', async (req, res) => {
-  let { model, text, parentMessageId, conversationId, chatGptLabel, promptPrefix } = req.body;
+  let { id, model, text, parentMessageId, conversationId, chatGptLabel, promptPrefix } = req.body;
   if (text.length === 0) {
     return handleError(res, 'Prompt empty or too short');
   }
 
-  const userMessageId = crypto.randomUUID();
-  let userMessage = { id: userMessageId, sender: 'User', text };
+  const userMessageId = id || crypto.randomUUID();
+  let userMessage = { id: userMessageId, sender: 'User', text, parentMessageId, conversationId, isCreatedByUser: true };
 
   console.log('ask log', {
     model,
@@ -52,6 +52,12 @@ router.post('/', async (req, res) => {
       promptPrefix = convo.promptPrefix;
     }
   }
+
+  if (id) {
+    // existing conversation
+    await saveMessage(userMessage);
+    await deleteMessagesSince(userMessage);
+  } else {}
 
   res.writeHead(200, {
     Connection: 'keep-alive',

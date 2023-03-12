@@ -48,7 +48,7 @@ const currentSlice = createSlice({
         return !state.convos.some((c) => c.conversationId === convo.conversationId);
       });
       state.convos = [...state.convos, ...newConvos].sort(
-        (a, b) => new Date(b.created) - new Date(a.created)
+        (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
       );
     },
     removeConvo: (state, action) => {

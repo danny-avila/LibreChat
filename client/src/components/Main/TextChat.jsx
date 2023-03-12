@@ -29,13 +29,14 @@ export default function TextChat({ messages }) {
   }, [convo?.conversationId, ])
 
   const messageHandler = (data, currentState) => {
-    const { messages, currentMsg, sender } = currentState;
+    const { messages, currentMsg, message, sender } = currentState;
     dispatch(setMessages([...messages, currentMsg, { sender, text: data }]));
   };
 
   const convoHandler = (data, currentState) => {
-    const { messages, currentMsg, sender, isCustomModel, model, chatGptLabel, promptPrefix } =
+    const { messages, currentMsg, message, isCustomModel, sender } =
       currentState;
+    const { model, chatGptLabel, promptPrefix } = message;
     dispatch(
       setMessages([...messages, currentMsg, { sender, text: data.text || data.response }])
     );
@@ -111,7 +112,7 @@ export default function TextChat({ messages }) {
     setErrorMessage(event.data);
     dispatch(setSubmitState(false));
     dispatch(setMessages([...messages.slice(0, -2), currentMsg, errorResponse]));
-    dispatch(setText(message));
+    dispatch(setText(message?.text));
     dispatch(setError(true));
     return;
   };
@@ -127,7 +128,7 @@ export default function TextChat({ messages }) {
 
     const isCustomModel = model === 'chatgptCustom' || !initial[model];
     const message = text.trim();
-    const currentMsg = { sender: 'User', text: message, current: true };
+    const currentMsg = { sender: 'User', text: message, current: true, isCreatedByUser: true };
     const sender = model === 'chatgptCustom' ? chatGptLabel : model;
     const initialResponse = { sender, text: '' };
 
@@ -136,36 +137,41 @@ export default function TextChat({ messages }) {
     dispatch(setText(''));
 
     const submission = {
-      model,
-      text: message,
-      convo,
-      chatGptLabel,
-      promptPrefix,
       isCustomModel,
-      message,
+      message: { 
+        sender: 'User',
+        text: message, 
+        isCreatedByUser: true,
+        model,
+        chatGptLabel,
+        promptPrefix,
+      },
       messages,
       currentMsg,
+      initialResponse,
       sender,
-      initialResponse
     };
     console.log('User Input:', message);
     // handleSubmit(submission);
     dispatch(setSubmission(submission));
   };
 
-  const createPayload = ({ model, text, convo, chatGptLabel, promptPrefix }) => {
+  const createPayload = ({ convo, message }) => {
     const endpoint = `/api/ask`;
-    let payload = { model, text, chatGptLabel, promptPrefix };
-    if (convo.conversationId && convo.parentMessageId) {
-      payload = {
-        ...payload,
-        conversationId: convo.conversationId,
-        parentMessageId: convo.parentMessageId
-      };
-    }
+    let payload = { ...message };
+    const { model } = message
+
+    if (!payload.conversationId)
+      if (convo?.conversationId && convo?.parentMessageId) {
+        payload = {
+          ...payload,
+          conversationId: convo.conversationId,
+          parentMessageId: convo.parentMessageId
+        };
+      }
 
     const isBing = model === 'bingai' || model === 'sydney';
-    if (isBing && convo.conversationId) {
+    if (isBing && convo?.conversationId) {
       payload = {
         ...payload,
         jailbreakConversationId: convo.jailbreakConversationId,

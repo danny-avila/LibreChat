@@ -42,19 +42,30 @@ const messageSchema = mongoose.Schema({
 const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
 
 module.exports = {
-  saveMessage: async ({ id, conversationId, parentMessageId, sender, text }) => {
+  saveMessage: async ({ id, conversationId, parentMessageId, sender, text, isCreatedByUser=false }) => {
     try {
-      await Message.create({
-        id,
+      await Message.findOneAndUpdate({ id }, {
         conversationId,
         parentMessageId,
         sender,
-        text
-      });
-      return { id, conversationId, parentMessageId, sender, text };
+        text,
+        isCreatedByUser
+      }, { upsert: true, new: true });
+      return { id, conversationId, parentMessageId, sender, text, isCreatedByUser };
     } catch (error) {
       console.error(error);
       return { message: 'Error saving message' };
+    }
+  },
+  deleteMessagesSince: async ({ id, conversationId }) => {
+    try {
+      message = await Message.findOne({ id }).exec()
+
+      if (message) 
+        return await Message.find({ conversationId }).deleteMany({ createdAt: { $gt: message.createdAt } }).exec();
+    } catch (error) {
+      console.error(error);
+      return { message: 'Error deleting messages' };
     }
   },
   getMessages: async (filter) => {

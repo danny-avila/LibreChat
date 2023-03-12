@@ -4,9 +4,11 @@ import ScrollToBottom from './ScrollToBottom';
 import Message from './Message';
 
 const Messages = ({ messages }) => {
+  const [currentEditIdx, setCurrentEditIdx] = useState(-1)
   const [showScrollButton, setShowScrollButton] = useState(false);
   const scrollableRef = useRef(null);
   const messagesEndRef = useRef(null);
+
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -60,11 +62,13 @@ const Messages = ({ messages }) => {
           {messages.map((message, i) => (
             <Message
               key={i}
-              sender={message.sender}
-              text={message.text}
+              message={message}
+              messages={messages}
               last={i === messages.length - 1}
-              error={message.error ? true : false}
               scrollToBottom={i === messages.length - 1 ? scrollToBottom : null}
+              edit={i===currentEditIdx}
+              currentEditIdx={currentEditIdx}
+              enterEdit={(cancel) => setCurrentEditIdx(cancel?-1:i)}
             />
           ))}
           <CSSTransition
