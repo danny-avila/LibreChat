@@ -35,7 +35,6 @@ export default function Conversation({
     if (!stopStream) {
       dispatch(setStopStream(true));
       dispatch(setSubmission({}));
-      dispatch(setSubmitState(false));
     }
     dispatch(setEmptyMessage());
 

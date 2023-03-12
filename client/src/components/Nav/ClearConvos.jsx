@@ -13,6 +13,7 @@ export default function ClearConvos() {
   const { trigger } = manualSWR(`/api/convos/clear`, 'post', () => {
     dispatch(setMessages([]));
     dispatch(setNewConvo());
+    dispatch(setSubmission({}));
     mutate(`/api/convos`);
   });
 
