@@ -2,6 +2,7 @@ import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { setNewConvo } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
+import { setSubmission } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
 
 export default function MobileNav({ setNavVisible }) {
