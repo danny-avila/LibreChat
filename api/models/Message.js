@@ -32,11 +32,12 @@ const messageSchema = mongoose.Schema({
     type: String,
     required: true
   },
-  created: {
-    type: Date,
-    default: Date.now
+  isCreatedByUser: {
+    type: Boolean,
+    required: true,
+    default: false
   }
-});
+}, { timestamps: true });
 
 const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
 
@@ -58,7 +59,7 @@ module.exports = {
   },
   getMessages: async (filter) => {
     try {
-      return await Message.find(filter).exec()
+      return await Message.find(filter).sort({createdAt: 1}).exec()
     } catch (error) {
       console.error(error);
       return { message: 'Error getting messages' };

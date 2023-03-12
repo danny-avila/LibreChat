@@ -38,11 +38,7 @@ const convoSchema = mongoose.Schema({
   },
   suggestions: [{ type: String }],
   messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
-  created: {
-    type: Date,
-    default: Date.now
-  }
-});
+}, { timestamps: true });
 
 const Conversation =
   mongoose.models.Conversation || mongoose.model('Conversation', convoSchema);
@@ -85,14 +81,14 @@ module.exports = {
       return { message: 'Error updating conversation' };
     }
   },
-  // getConvos: async () => await Conversation.find({}).sort({ created: -1 }).exec(),
+  // getConvos: async () => await Conversation.find({}).sort({ createdAt: -1 }).exec(),
   getConvos: async (pageNumber = 1, pageSize = 12) => {
     try {
       const skip = (pageNumber - 1) * pageSize;
       // const limit = pageNumber * pageSize;
 
       const conversations = await Conversation.find({})
-        .sort({ created: -1 })
+        .sort({ createdAt: -1 })
         .skip(skip)
         // .limit(limit)
         .limit(pageSize)
