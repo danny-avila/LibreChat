@@ -1,9 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const { getCustomGpts, updateCustomGpt, updateByLabel, deleteCustomGpts } = require('../../models');
+const {
+  getCustomGpts,
+  updateCustomGpt,
+  updateByLabel,
+  deleteCustomGpts
+} = require('../../models');
 
 router.get('/', async (req, res) => {
-  const models = (await getCustomGpts()).map(model => {
+  const models = (await getCustomGpts()).map((model) => {
     model = model.toObject();
     model._id = model._id.toString();
     return model;
@@ -15,8 +20,14 @@ router.post('/delete', async (req, res) => {
   const { arg } = req.body;
 
   try {
-    const dbResponse = await deleteCustomGpts(arg);
-    res.status(201).send(dbResponse);
+    await deleteCustomGpts(arg);
+    const models = (await getCustomGpts()).map((model) => {
+      model = model.toObject();
+      model._id = model._id.toString();
+      return model;
+    });
+    res.status(201).send(models);
+    // res.status(201).send(dbResponse);
   } catch (error) {
     console.error(error);
     res.status(500).send(error);

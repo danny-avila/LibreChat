@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { setSubmission, setModel, setDisabled, setCustomGpt, setCustomModel } from '~/store/submitSlice';
+import {
+  setSubmission,
+  setModel,
+  setDisabled,
+  setCustomGpt,
+  setCustomModel
+} from '~/store/submitSlice';
 import { setNewConvo } from '~/store/convoSlice';
 import ModelDialog from './ModelDialog';
 import MenuItems from './MenuItems';
-import manualSWR from '~/utils/fetchers';
+import { swr } from '~/utils/fetchers';
 import { setModels } from '~/store/modelSlice';
 import GPTIcon from '../svg/GPTIcon';
 import BingIcon from '../svg/BingIcon';
@@ -27,7 +33,7 @@ export default function ModelMenu() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { model, customModel } = useSelector((state) => state.submit);
   const { models, modelMap, initial } = useSelector((state) => state.models);
-  const { trigger } = manualSWR(`/api/customGpts`, 'get', (res) => {
+  const { data, isLoading, mutate } = swr(`/api/customGpts`, (res) => {
     const fetchedModels = res.map((modelItem) => ({
       ...modelItem,
       name: modelItem.chatGptLabel
@@ -37,7 +43,7 @@ export default function ModelMenu() {
   });
 
   useEffect(() => {
-    trigger();
+    mutate();
     const lastSelected = JSON.parse(localStorage.getItem('model'));
     if (lastSelected && lastSelected !== 'chatgptCustom' && initial[lastSelected]) {
       dispatch(setModel(lastSelected));
@@ -51,6 +57,9 @@ export default function ModelMenu() {
   }, [model]);
 
   const onChange = (value, custom = false) => {
+    // if (custom) {
+    //   mutate();
+    // }
     if (!value) {
       return;
     } else if (value === 'chatgptCustom') {
@@ -59,9 +68,6 @@ export default function ModelMenu() {
       dispatch(setModel(value));
       dispatch(setDisabled(false));
       dispatch(setCustomModel(null));
-      if (custom) {
-        trigger();
-      }
     } else if (!initial[value]) {
       const chatGptLabel = modelMap[value]?.chatGptLabel;
       const promptPrefix = modelMap[value]?.promptPrefix;
@@ -81,6 +87,7 @@ export default function ModelMenu() {
   };
 
   const onOpenChange = (open) => {
+    mutate();
     if (!open) {
       setModelSave(false);
     }
@@ -157,7 +164,7 @@ export default function ModelMenu() {
         </DropdownMenuContent>
       </DropdownMenu>
       <ModelDialog
-        mutate={trigger}
+        mutate={mutate}
         modelMap={modelMap}
         setModelSave={setModelSave}
         handleSaveState={handleSaveState}
