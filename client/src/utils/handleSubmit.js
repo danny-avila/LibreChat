@@ -51,7 +51,7 @@ export default function handleSubmit({
     const data = JSON.parse(e.data);
     let text = data.text || data.response;
     if (data.message) {
-      messageHandler(text);
+      messageHandler(text, events);
     }
 
     if (data.final) {
@@ -67,6 +67,12 @@ export default function handleSubmit({
     events.close();
     errorHandler(e);
   };
+
+  events.addEventListener('stop', () => {
+    // Close the SSE stream
+    console.log('stop event received');
+    events.close();
+  });
 
   events.stream();
 }

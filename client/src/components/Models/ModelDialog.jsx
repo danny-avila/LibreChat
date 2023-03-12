@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useSelector, useDispatch } from 'react-redux';
-import { setModel, setCustomGpt } from '~/store/submitSlice';
+import { setSubmission, setModel, setCustomGpt } from '~/store/submitSlice';
 import { setNewConvo } from '~/store/convoSlice';
 import manualSWR from '~/utils/fetchers';
 import { Button } from '../ui/Button.tsx';
@@ -39,6 +39,7 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
     handleSaveState(chatGptLabel.toLowerCase());
     // Set new conversation
     dispatch(setNewConvo());
+    dispatch(setSubmission({}));
   };
 
   const saveHandler = (e) => {

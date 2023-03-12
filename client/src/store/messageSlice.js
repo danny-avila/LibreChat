@@ -11,9 +11,20 @@ const currentSlice = createSlice({
     setMessages: (state, action) => {
       state.messages = action.payload;
     },
+    setEmptyMessage: (state) => {
+      state.messages = [
+        {
+          id: '1',
+          conversationId: '1',
+          parentMessageId: '1',
+          sender: '',
+          text: ''
+        }
+      ]
+    },
   }
 });
 
-export const { setMessages, setSubmitState } = currentSlice.actions;
+export const { setMessages, setEmptyMessage } = currentSlice.actions;
 
 export default currentSlice.reducer;

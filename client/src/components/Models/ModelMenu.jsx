@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { setModel, setDisabled, setCustomGpt, setCustomModel } from '~/store/submitSlice';
+import { setSubmission, setModel, setDisabled, setCustomGpt, setCustomModel } from '~/store/submitSlice';
 import { setNewConvo } from '~/store/convoSlice';
 import ModelDialog from './ModelDialog';
 import MenuItems from './MenuItems';
@@ -77,6 +77,7 @@ export default function ModelMenu() {
 
     // Set new conversation
     dispatch(setNewConvo());
+    dispatch(setSubmission({}));
   };
 
   const onOpenChange = (open) => {

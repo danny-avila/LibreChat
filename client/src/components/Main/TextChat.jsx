@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { SSE } from '~/utils/sse';
 import SubmitButton from './SubmitButton';
 import Regenerate from './Regenerate';
 import ModelMenu from '../Models/ModelMenu';
@@ -8,7 +9,7 @@ import handleSubmit from '~/utils/handleSubmit';
 import { useSelector, useDispatch } from 'react-redux';
 import { setConversation, setError } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
-import { setSubmitState } from '~/store/submitSlice';
+import { setSubmitState, setSubmission } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
 
 export default function TextChat({ messages }) {
@@ -16,12 +17,98 @@ export default function TextChat({ messages }) {
   const dispatch = useDispatch();
   const convo = useSelector((state) => state.convo);
   const { initial } = useSelector((state) => state.models);
-  const { isSubmitting, disabled, model, chatGptLabel, promptPrefix } = useSelector(
-    (state) => state.submit
-  );
+  const { isSubmitting, stopStream, submission, disabled, model, chatGptLabel, promptPrefix } =
+    useSelector((state) => state.submit);
   const { text } = useSelector((state) => state.text);
   const { error } = convo;
-  const isCustomModel = model === 'chatgptCustom' || !initial[model];
+
+  const messageHandler = (data, currentState) => {
+    const { messages, currentMsg, sender } = currentState;
+    dispatch(setMessages([...messages, currentMsg, { sender, text: data }]));
+  };
+
+  const convoHandler = (data, currentState) => {
+    const { messages, currentMsg, sender, isCustomModel, model, chatGptLabel, promptPrefix } =
+      currentState;
+    dispatch(
+      setMessages([...messages, currentMsg, { sender, text: data.text || data.response }])
+    );
+
+    const isBing = model === 'bingai' || model === 'sydney';
+
+    if (!isBing && convo.conversationId === null && convo.parentMessageId === null) {
+      const { title, conversationId, id } = data;
+      dispatch(
+        setConversation({
+          title,
+          conversationId,
+          parentMessageId: id,
+          jailbreakConversationId: null,
+          conversationSignature: null,
+          clientId: null,
+          invocationId: null,
+          chatGptLabel: model === isCustomModel ? chatGptLabel : null,
+          promptPrefix: model === isCustomModel ? promptPrefix : null
+        })
+      );
+    } else if (
+      model === 'bingai' &&
+      convo.conversationId === null &&
+      convo.invocationId === null
+    ) {
+      console.log('Bing data:', data);
+      const { title, conversationSignature, clientId, conversationId, invocationId } = data;
+      dispatch(
+        setConversation({
+          title,
+          parentMessageId: null,
+          conversationSignature,
+          clientId,
+          conversationId,
+          invocationId
+        })
+      );
+    } else if (model === 'sydney') {
+      const {
+        title,
+        jailbreakConversationId,
+        parentMessageId,
+        conversationSignature,
+        clientId,
+        conversationId,
+        invocationId
+      } = data;
+      dispatch(
+        setConversation({
+          title,
+          jailbreakConversationId,
+          parentMessageId,
+          conversationSignature,
+          clientId,
+          conversationId,
+          invocationId
+        })
+      );
+    }
+
+    dispatch(setSubmitState(false));
+  };
+
+  const errorHandler = (event, currentState) => {
+    const { initialResponse, messages, currentMsg, message } = currentState;
+    console.log('Error:', event);
+    const errorResponse = {
+      ...initialResponse,
+      text: `An error occurred. Please try again in a few moments.\n\nError message: ${event.data}`,
+      error: true
+    };
+    setErrorMessage(event.data);
+    dispatch(setSubmitState(false));
+    dispatch(setMessages([...messages.slice(0, -2), currentMsg, errorResponse]));
+    dispatch(setText(message));
+    dispatch(setError(true));
+    return;
+  };
 
   const submitMessage = () => {
     if (error) {
@@ -31,118 +118,114 @@ export default function TextChat({ messages }) {
     if (!!isSubmitting || text.trim() === '') {
       return;
     }
-    dispatch(setSubmitState(true));
+
+    const isCustomModel = model === 'chatgptCustom' || !initial[model];
     const message = text.trim();
     const currentMsg = { sender: 'User', text: message, current: true };
     const sender = model === 'chatgptCustom' ? chatGptLabel : model;
     const initialResponse = { sender, text: '' };
+
+    dispatch(setSubmitState(true));
     dispatch(setMessages([...messages, currentMsg, initialResponse]));
     dispatch(setText(''));
-    const messageHandler = (data) => {
-      dispatch(setMessages([...messages, currentMsg, { sender, text: data }]));
-    };
-    const convoHandler = (data) => {
-      dispatch(
-        setMessages([...messages, currentMsg, { sender, text: data.text || data.response }])
-      );
 
-      const isBing = model === 'bingai' || model === 'sydney';
-
-      if (
-        !isBing &&
-        convo.conversationId === null &&
-        convo.parentMessageId === null
-      ) {
-        const { title, conversationId, id } = data;
-        dispatch(
-          setConversation({
-            title,
-            conversationId,
-            parentMessageId: id,
-            jailbreakConversationId: null,
-            conversationSignature: null,
-            clientId: null,
-            invocationId: null,
-            chatGptLabel: model === isCustomModel ? chatGptLabel : null,
-            promptPrefix: model === isCustomModel ? promptPrefix : null
-          })
-        );
-      } else if (
-        model === 'bingai' &&
-        convo.conversationId === null &&
-        convo.invocationId === null
-      ) {
-        console.log('Bing data:', data)
-        const {
-          title,
-          conversationSignature,
-          clientId,
-          conversationId,
-          invocationId
-        } = data;
-        dispatch(
-          setConversation({
-            title,
-            parentMessageId: null,
-            conversationSignature,
-            clientId,
-            conversationId,
-            invocationId,
-          })
-        );
-      } else if (model === 'sydney') {
-        const {
-          title,
-          jailbreakConversationId,
-          parentMessageId,
-          conversationSignature,
-          clientId,
-          conversationId,
-          invocationId
-        } = data;
-        dispatch(
-          setConversation({
-            title,
-            jailbreakConversationId,
-            parentMessageId,
-            conversationSignature,
-            clientId,
-            conversationId,
-            invocationId,
-          })
-        );
-      }
-
-      dispatch(setSubmitState(false));
-    };
-
-    const errorHandler = (event) => {
-      console.log('Error:', event);
-      const errorResponse = {
-        ...initialResponse,
-        text: `An error occurred. Please try again in a few moments.\n\nError message: ${event.data}`,
-        error: true
-      };
-      setErrorMessage(event.data);
-      dispatch(setSubmitState(false));
-      dispatch(setMessages([...messages.slice(0, -2), currentMsg, errorResponse]));
-      dispatch(setText(message));
-      dispatch(setError(true));
-      return;
-    };
     const submission = {
       model,
       text: message,
       convo,
-      messageHandler,
-      convoHandler,
-      errorHandler,
       chatGptLabel,
-      promptPrefix
+      promptPrefix,
+      isCustomModel,
+      message,
+      messages,
+      currentMsg,
+      sender,
+      initialResponse
     };
     console.log('User Input:', message);
-    handleSubmit(submission);
+    // handleSubmit(submission);
+    dispatch(setSubmission(submission));
   };
+
+  const createPayload = ({ model, text, convo, chatGptLabel, promptPrefix }) => {
+    const endpoint = `/api/ask`;
+    let payload = { model, text, chatGptLabel, promptPrefix };
+    if (convo.conversationId && convo.parentMessageId) {
+      payload = {
+        ...payload,
+        conversationId: convo.conversationId,
+        parentMessageId: convo.parentMessageId
+      };
+    }
+
+    const isBing = model === 'bingai' || model === 'sydney';
+    if (isBing && convo.conversationId) {
+      payload = {
+        ...payload,
+        jailbreakConversationId: convo.jailbreakConversationId,
+        conversationId: convo.conversationId,
+        conversationSignature: convo.conversationSignature,
+        clientId: convo.clientId,
+        invocationId: convo.invocationId
+      };
+    }
+
+    let server = endpoint;
+    server = model === 'bingai' ? server + '/bing' : server;
+    server = model === 'sydney' ? server + '/sydney' : server;
+    return { server, payload };
+  };
+
+  useEffect(() => {
+    if (Object.keys(submission).length === 0) {
+      return;
+    }
+
+    const currentState = submission;
+    const { server, payload } = createPayload(submission);
+    const onMessage = (e) => {
+      if (stopStream) {
+        return;
+      }
+
+      const data = JSON.parse(e.data);
+      let text = data.text || data.response;
+      if (data.message) {
+        messageHandler(text, currentState);
+      }
+
+      if (data.final) {
+        convoHandler(data, currentState);
+        console.log('final', data);
+      } else {
+        // console.log('dataStream', data);
+      }
+    };
+
+    const events = new SSE(server, {
+      payload: JSON.stringify(payload),
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    events.onopen = function () {
+      console.log('connection is opened');
+    };
+
+    events.onmessage = onMessage;
+
+    events.onerror = function (e) {
+      console.log('error in opening conn.');
+      events.close();
+      errorHandler(e, currentState);
+    };
+
+    events.stream();
+
+    return () => {
+      events.removeEventListener('message', onMessage);
+      events.close();
+    };
+  }, [submission]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
