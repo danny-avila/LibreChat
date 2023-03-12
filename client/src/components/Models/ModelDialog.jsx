@@ -27,7 +27,7 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
   const inputRef = useRef(null);
   const updateCustomGpt = manualSWR(`/api/customGpts/`, 'post');
 
-  const submitHandler = (e) => {
+  const selectHandler = (e) => {
     if (chatGptLabel.length === 0) {
       e.preventDefault();
       setRequired(true);
@@ -140,10 +140,10 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
           {saveText}
         </Button>
         <DialogClose
-          onClick={submitHandler}
+          onClick={selectHandler}
           className="inline-flex h-10 items-center justify-center rounded-md border-none bg-gray-900 py-2 px-4 text-sm font-semibold text-white transition-colors hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900"
         >
-          Submit
+          Select
         </DialogClose>
       </DialogFooter>
     </DialogContent>
