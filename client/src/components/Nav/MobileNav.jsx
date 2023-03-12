@@ -18,6 +18,7 @@ export default function MobileNav({ setNavVisible }) {
     dispatch(setText(''));
     dispatch(setMessages([]));
     dispatch(setNewConvo());
+    dispatch(setSubmission({}));
   }
 
   const title = convos?.find(element => element?.conversationId == conversationId)?.title || 'New Chat';

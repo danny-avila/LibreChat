@@ -20,6 +20,9 @@ const currentSlice = createSlice({
     },
     setSubmission: (state, action) => {
       state.submission = action.payload;
+      if (Object.keys(action.payload).length === 0) {
+        state.isSubmitting = false;
+      }
     },
     setStopStream: (state, action) => {
       state.stopStream = action.payload;
