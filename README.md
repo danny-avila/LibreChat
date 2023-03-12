@@ -8,6 +8,18 @@ https://user-images.githubusercontent.com/110412045/223754183-8b7f45ce-6517-4bd5
 
 ## Updates
 <details open>
+<summary><strong>2023-03-12</strong></summary>
+Really thankful for all the issues reported and contributions made, the project's features and improvements have accelerated as result. Honorable mention is [wtlyu](https://github.com/wtlyu) for contributing a lot of mindful code, namely hostname configuration and mobile styling.
+
+
+Many improvements across the board, the biggest is being able to start conversations simultaneously (again thanks to [wtlyu](https://github.com/wtlyu) for bringing it to my attention), as you can switch conversations or start a new chat without any response streaming from a prior one, and the backend still does this thing. Just watch out for any rate limiting from OpenAI/Microsoft if this is done excessively.
+
+
+Adding support for conversation search is next! Thank you [mysticaltech](https://github.com/mysticaltech) for bringing up a method I can use for this.
+</details>
+
+<details>
+<details>
 <summary><strong>2023-03-09</strong></summary>
 Released v.0.0.2
 
@@ -16,8 +28,6 @@ Adds Sydney (jailbroken Bing AI) to the model menu. Thank you [DavesDevFails](ht
 
 I've re-enabled the ChatGPT browser client (free version) since it might be working for most people, it no longer works for me. Sydney is the best free route anyway.
 </details>
-
-<details>
 <details>
 <summary><strong>2023-03-07</strong></summary>
 Due to increased interest in the repo, I've dockerized the app as of this update for quick setup! See setup instructions below. I realize this still takes some time with installing docker dependencies, so it's on the roadmap to have a deployed demo. Besides this, I've made major improvements for a lot of the existing features across the board, mainly UI/UX.
@@ -95,6 +105,7 @@ Here are my recently completed and planned features:
 - [x] Customize prompt prefix/label (custom ChatGPT using official API)
 - [x] Server convo pagination (limit fetch and load more with 'show more' button)
 - [x] Config file for easy startup (docker compose)
+- [x] Mobile styling (thanks to [wtlyu](https://github.com/wtlyu))
 - [ ] Bing AI Styling (for suggested responses, convo end, etc.) - **In progress**
 - [ ] Add warning before clearing convos
 - [ ] Build test suite for CI/CD
@@ -104,7 +115,6 @@ Here are my recently completed and planned features:
 - [ ] Prompt Templates/Search
 - [ ] Refactor/clean up code (tech debt)
 - [ ] Optional use of local storage for credentials
-- [ ] Mobile styling (half-finished)
 - [ ] Deploy demo
 
 ### Features
