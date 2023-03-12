@@ -1,22 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import TextWrapper from './TextWrapper';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import GPTIcon from '../svg/GPTIcon';
 import BingIcon from '../svg/BingIcon';
 import HoverButtons from './HoverButtons';
 import Spinner from '../svg/Spinner';
+import { setError } from '~/store/convoSlice';
+import { setMessages } from '~/store/messageSlice';
+import { setSubmitState, setSubmission } from '~/store/submitSlice';
+import { setText } from '~/store/textSlice';
 
 export default function Message({
-  sender,
-  text,
+  message,
+  messages,
   last = false,
-  error = false,
-  scrollToBottom
+  scrollToBottom,
+  edit,
+  currentEditIdx,
+  enterEdit
 }) {
-  const { isSubmitting } = useSelector((state) => state.submit);
+  const { isSubmitting, model, chatGptLabel, promptPrefix } = useSelector((state) => state.submit);
   const [abortScroll, setAbort] = useState(false);
-  const notUser = sender.toLowerCase() !== 'user';
-  const blinker = isSubmitting && last && notUser;
+  const { sender, text, isCreatedByUser, error } = message
+  const textEditor = useRef(null)
+  const convo = useSelector((state) => state.convo);
+  const { initial } = useSelector((state) => state.models);
+  const { error: convoError } = convo;
+
+  const dispatch = useDispatch();
+
+  // const notUser = !isCreatedByUser; // sender.toLowerCase() !== 'user';
+  const blinker = isSubmitting && last && !isCreatedByUser;
 
   useEffect(() => {
     if (blinker && !abortScroll) {
@@ -53,12 +67,12 @@ export default function Message({
   let icon = `${sender}:`;
   let backgroundColor = bgColors[sender];
 
-  if (notUser) {
+  if (!isCreatedByUser) {
     props.className =
       'w-full border-b border-black/10 bg-gray-50 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-100 dark:bg-[#444654]';
   }
 
-  if ((notUser && backgroundColor) || isBing) {
+  if ((!isCreatedByUser && backgroundColor) || isBing) {
     icon = (
       <div
         style={
@@ -80,6 +94,49 @@ export default function Message({
 
   const wrapText = (text) => <TextWrapper text={text} />;
 
+  const resubmitMessage = () => {
+    const text = textEditor.current.innerHTML
+
+    if (convoError) {
+      dispatch(setError(false));
+    }
+
+    if (!!isSubmitting || text.trim() === '') {
+      return;
+    }
+
+    const isCustomModel = model === 'chatgptCustom' || !initial[model];
+    const currentMsg = { ...message, sender: 'User', text: text.trim(), current: true, isCreatedByUser: true };
+    console.log(model)
+    const sender = model === 'chatgptCustom' ? chatGptLabel : model;
+
+    const initialResponse = { sender, text: '' };
+
+    dispatch(setSubmitState(true));
+    dispatch(setMessages([...messages.slice(0, currentEditIdx), currentMsg, initialResponse]));
+    dispatch(setText(''));
+
+    const submission = {
+      isCustomModel,
+      message: { 
+        ...message, 
+        text: text.trim(),
+        model,
+        chatGptLabel,
+        promptPrefix,
+      },
+      messages: messages.slice(0, currentEditIdx),
+      currentMsg,
+      initialResponse,
+      sender,
+    };
+    console.log('User Input:', message);
+    // handleSubmit(submission);
+    dispatch(setSubmission(submission));
+
+    enterEdit(true);
+  };
+
   return (
     <div
       {...props}
@@ -96,22 +153,47 @@ export default function Message({
         <div className="relative flex w-[calc(100%-50px)] flex-col gap-1 whitespace-pre-wrap md:gap-3 lg:w-[calc(100%-115px)]">
           <div className="flex flex-grow flex-col gap-3">
             {error ? (
-              <div className="flex flex min-h-[20px] flex-row flex-col items-start gap-4 gap-2 whitespace-pre-wrap text-red-500">
+              <div className="flex flex min-h-[20px] flex-col flex-grow items-start gap-4 gap-2 whitespace-pre-wrap text-red-500">
                 <div className="rounded-md border border-red-500 bg-red-500/10 py-2 px-3 text-sm text-gray-600 dark:text-gray-100">
                   {text}
                 </div>
               </div>
-            ) : (
-              <div className="flex min-h-[20px] flex-col items-start gap-4 whitespace-pre-wrap">
-                {/* <div className={`${blinker ? 'result-streaming' : ''} markdown prose dark:prose-invert light w-full break-words`}> */}
-                <div className="markdown prose dark:prose-invert light w-full break-words">
-                  {notUser ? wrapText(text) : text}
-                  {blinker && <span className="result-streaming">█</span>}
+            ) : 
+              edit ? (
+                <div className="flex min-h-[20px] flex-col flex-grow items-start gap-4 whitespace-pre-wrap">
+                  {/* <div className={`${blinker ? 'result-streaming' : ''} markdown prose dark:prose-invert light w-full break-words`}> */}
+                  
+                  <div className="markdown prose dark:prose-invert light w-full break-words border-none" 
+                    contentEditable={true} ref={textEditor} suppressContentEditableWarning={true}>
+                    {text}
+                  </div>
+                  <div className="text-center mt-2 flex w-full justify-center">
+                    <button
+                      className="btn relative btn-primary mr-2"
+                      disabled={isSubmitting}
+                      onClick={resubmitMessage}
+                    >
+                      Save & Submit
+                    </button>
+                    <button
+                      className="btn relative btn-neutral"
+                      onClick={() => enterEdit(true)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="flex min-h-[20px] flex-col flex-grow items-start gap-4 whitespace-pre-wrap">
+                  {/* <div className={`${blinker ? 'result-streaming' : ''} markdown prose dark:prose-invert light w-full break-words`}> */}
+                  <div className="markdown prose dark:prose-invert light w-full break-words">
+                    {!isCreatedByUser ? wrapText(text) : text}
+                    {blinker && <span className="result-streaming">█</span>}
+                  </div>
+                </div>
+              )}
           </div>
-            <HoverButtons user={!notUser} />
+            <HoverButtons user={!error && isCreatedByUser} onClick={() => enterEdit()}/>
         </div>
       </div>
     </div>

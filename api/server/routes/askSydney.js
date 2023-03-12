@@ -2,21 +2,27 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const { titleConvo, getCitations, citeText, askSydney } = require('../../app/');
-const { saveMessage, deleteMessages, saveConvo, getConvoTitle } = require('../../models');
+const { saveMessage, deleteMessages, saveConvo, deleteMessagesSince, getConvoTitle } = require('../../models');
 const { handleError, sendMessage } = require('./handlers');
 const citationRegex = /\[\^\d+?\^]/g;
 
 router.post('/', async (req, res) => {
-  const { model, text, ...convo } = req.body;
+  const { id, model, text, ...convo } = req.body;
   if (text.length === 0) {
     return handleError(res, 'Prompt empty or too short');
   }
 
-  const userMessageId = crypto.randomUUID();
-  let userMessage = { id: userMessageId, sender: 'User', text };
+  const userMessageId = id || crypto.randomUUID();
+  let userMessage = { id: userMessageId, sender: 'User', text, isCreatedByUser: true };
 
   console.log('ask log', { model, ...userMessage, ...convo });
 
+  if (id) {
+    // existing conversation
+    await saveMessage(userMessage);
+    await deleteMessagesSince(userMessage);
+  } else {}
+  
   res.writeHead(200, {
     Connection: 'keep-alive',
     'Content-Type': 'text/event-stream',
