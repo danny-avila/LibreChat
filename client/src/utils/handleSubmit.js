@@ -68,5 +68,11 @@ export default function handleSubmit({
     errorHandler(e);
   };
 
+  events.addEventListener('stop', () => {
+    // Close the SSE stream
+    console.log('stop event received');
+    events.close();
+  });
+
   events.stream();
 }
