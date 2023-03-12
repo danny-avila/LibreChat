@@ -2,12 +2,13 @@ import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
   isSubmitting: false,
+  submission: {},
   stopStream: false,
   disabled: false,
   model: 'chatgpt',
   promptPrefix: '',
   chatGptLabel: '',
-  customModel: null
+  customModel: null,
 };
 
 const currentSlice = createSlice({
@@ -16,6 +17,9 @@ const currentSlice = createSlice({
   reducers: {
     setSubmitState: (state, action) => {
       state.isSubmitting = action.payload;
+    },
+    setSubmission: (state, action) => {
+      state.submission = action.payload;
     },
     setStopStream: (state, action) => {
       state.stopStream = action.payload;
@@ -36,7 +40,7 @@ const currentSlice = createSlice({
   }
 });
 
-export const { setSubmitState, setStopStream, setDisabled, setModel, setCustomGpt, setCustomModel } =
+export const { setSubmitState, setSubmission, setStopStream, setDisabled, setModel, setCustomGpt, setCustomModel } =
   currentSlice.actions;
 
 export default currentSlice.reducer;
