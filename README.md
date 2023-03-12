@@ -9,6 +9,10 @@ https://user-images.githubusercontent.com/110412045/223754183-8b7f45ce-6517-4bd5
 ## Updates
 <details open>
 <summary><strong>2023-03-12</strong></summary>
+
+
+
+
 Really thankful for all the issues reported and contributions made, the project's features and improvements have accelerated as result. Honorable mention is [wtlyu](https://github.com/wtlyu) for contributing a lot of mindful code, namely hostname configuration and mobile styling. I will upload images on next release for faster docker setup, and starting updating them simultaneously with this repo.
 
 
