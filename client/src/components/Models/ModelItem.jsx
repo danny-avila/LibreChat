@@ -1,13 +1,15 @@
 import React, { useState, useRef } from 'react';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { DropdownMenuRadioItem } from '../ui/DropdownMenu.tsx';
+import { setModels } from '~/store/modelSlice';
 import { Circle } from 'lucide-react';
 import { DialogTrigger } from '../ui/Dialog.tsx';
 import RenameButton from '../Conversations/RenameButton';
 import TrashIcon from '../svg/TrashIcon';
 import manualSWR from '~/utils/fetchers';
 
-export default function ModelItem({ modelName, value, onSelect }) {
+export default function ModelItem({ modelName, value, onSelect, id }) {
+  const dispatch = useDispatch();
   const { customModel } = useSelector((state) => state.submit);
   const { initial } = useSelector((state) => state.models);
   const [isHovering, setIsHovering] = useState(false);
@@ -16,7 +18,14 @@ export default function ModelItem({ modelName, value, onSelect }) {
   const [modelInput, setModelInput] = useState(modelName);
   const inputRef = useRef(null);
   const rename = manualSWR(`/api/customGpts`, 'post');
-  const deleteCustom = manualSWR(`/api/customGpts/delete`, 'post');
+  const deleteCustom = manualSWR(`/api/customGpts/delete`, 'post', (res) => {
+    const fetchedModels = res.data.map((modelItem) => ({
+      ...modelItem,
+      name: modelItem.chatGptLabel
+    }));
+
+    dispatch(setModels(fetchedModels));
+  });
 
   if (value === 'chatgptCustom') {
     return (
@@ -77,8 +86,7 @@ export default function ModelItem({ modelName, value, onSelect }) {
 
   const onDelete = async (e) => {
     e.preventDefault();
-    await deleteCustom.trigger({ value: currentName.toLowerCase() });
-    // await mutate();
+    await deleteCustom.trigger({ _id: id });
     onSelect('chatgpt', true);
   };
 
@@ -90,25 +98,24 @@ export default function ModelItem({ modelName, value, onSelect }) {
 
   const buttonClass = {
     className:
-      'z-50 rounded-md m-0 text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+      'invisible group-hover:visible z-50 rounded-md m-0 text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
   };
 
   const itemClass = {
     className:
-      'relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm font-medium outline-none hover:bg-slate-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:hover:bg-slate-700 dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800'
+      'relative flex group cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm font-medium outline-none hover:bg-slate-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:hover:bg-slate-700 dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800'
   };
-
-  const showButtons = isHovering && !initial[value];
 
   return (
     <span
       value={value}
       className={itemClass.className}
       onClick={(e) => {
+        if (isHovering) {
+          return;
+        }
         onSelect(value, true);
       }}
-      onMouseOver={handleMouseOver}
-      onMouseOut={handleMouseOut}
     >
       {customModel === value && (
         <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
@@ -118,35 +125,36 @@ export default function ModelItem({ modelName, value, onSelect }) {
       {renaming === true ? (
         <input
           ref={inputRef}
+          key={id}
           type="text"
           className="pointer-events-auto z-50 m-0 mr-2 w-3/4 border border-blue-500 bg-transparent p-0 text-sm leading-tight outline-none"
           value={modelInput}
           onClick={(e) => e.stopPropagation()}
           onChange={(e) => setModelInput(e.target.value)}
-          onBlur={onRename}
+          // onBlur={onRename}
           onKeyDown={handleKeyDown}
         />
       ) : (
-        modelInput
+        <div className="w-3/4 overflow-hidden">{modelInput}</div>
       )}
 
       {value === 'chatgpt' && <sup>$</sup>}
-      {showButtons && (
-        <>
-          <RenameButton
-            twcss={`ml-auto mr-2 ${buttonClass.className}`}
-            onRename={onRename}
-            renaming={renaming}
-            renameHandler={renameHandler}
-          />
-          <button
-            {...buttonClass}
-            onClick={onDelete}
-          >
-            <TrashIcon />
-          </button>
-        </>
-      )}
+      <RenameButton
+        twcss={`ml-auto mr-2 ${buttonClass.className}`}
+        onRename={onRename}
+        renaming={renaming}
+        onMouseOver={handleMouseOver}
+        onMouseOut={handleMouseOut}
+        renameHandler={renameHandler}
+      />
+      <button
+        {...buttonClass}
+        onMouseOver={handleMouseOver}
+        onMouseOut={handleMouseOut}
+        onClick={onDelete}
+      >
+        <TrashIcon />
+      </button>
     </span>
   );
 }
