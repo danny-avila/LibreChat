@@ -3,8 +3,8 @@ import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
 import { useSelector, useDispatch } from 'react-redux';
 import { setConversation } from '~/store/convoSlice';
-import { setCustomGpt, setModel, setCustomModel } from '~/store/submitSlice';
-import { setMessages } from '~/store/messageSlice';
+import { setSubmission, setStopStream, setCustomGpt, setModel, setCustomModel } from '~/store/submitSlice';
+import { setMessages, setEmptyMessage } from '~/store/messageSlice';
 import { setText } from '~/store/textSlice';
 import manualSWR from '~/utils/fetchers';
 import ConvoIcon from '../svg/ConvoIcon';
@@ -14,13 +14,15 @@ export default function Conversation({
   parentMessageId,
   conversationId,
   title = 'New conversation',
-  bingData,
   chatGptLabel = null,
-  promptPrefix = null
+  promptPrefix = null,
+  bingData,
+  retainView,
 }) {
   const [renaming, setRenaming] = useState(false);
   const [titleInput, setTitleInput] = useState(title);
   const { modelMap } = useSelector((state) => state.models);
+  const { stopStream } = useSelector((state) => state.submit);
   const inputRef = useRef(null);
   const dispatch = useDispatch();
   const { trigger } = manualSWR(`/api/messages/${id}`, 'get');
@@ -30,6 +32,12 @@ export default function Conversation({
     if (conversationId === id) {
       return;
     }
+
+    if (!stopStream) {
+      dispatch(setStopStream(true));
+      dispatch(setSubmission({}));
+    }
+    dispatch(setEmptyMessage());
 
     const convo = { title, error: false, conversationId: id, chatGptLabel, promptPrefix };
 
@@ -81,6 +89,7 @@ export default function Conversation({
     dispatch(setMessages(data));
     dispatch(setCustomGpt(convo));
     dispatch(setText(''));
+    dispatch(setStopStream(false));
   };
 
   const renameHandler = (e) => {
@@ -154,6 +163,7 @@ export default function Conversation({
             conversationId={id}
             renaming={renaming}
             cancelHandler={cancelHandler}
+            retainView={retainView}
           />
         </div>
       ) : (

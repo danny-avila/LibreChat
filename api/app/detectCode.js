@@ -2,7 +2,7 @@ const { ModelOperations } = require('@vscode/vscode-languagedetection');
 const languages = require('../utils/languages.js');
 const codeRegex = /(```[\s\S]*?```)/g;
 // const languageMatch = /```(\w+)/;
-const replaceRegex = /```\w+/g;
+const replaceRegex = /```\w+\n/g;
 
 const detectCode = async (input) => {
   try {
@@ -22,7 +22,7 @@ const detectCode = async (input) => {
         }
 
         console.log('[detectCode.js] replacing', match, 'with', '```shell');
-        text = text.replace(match, '```shell');
+        text = text.replace(match, '```shell\n');
       });
 
       return text;

@@ -32,10 +32,11 @@ export default function Conversations({ conversations, conversationId, showMore 
               chatGptLabel={convo.chatGptLabel}
               promptPrefix={convo.promptPrefix}
               bingData={bingData}
+              retainView={showMore.bind(null, false)}
             />
           );
         })}
-      {conversations && conversations.length >= 12 && conversations.length % 12 === 0 && (
+      {conversations?.length >= 12 && (
         <button
           onClick={clickHandler}
           className="btn btn-dark btn-small m-auto mb-2 flex justify-center gap-2"

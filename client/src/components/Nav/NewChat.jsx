@@ -2,6 +2,7 @@ import React from 'react';
 import { useDispatch } from 'react-redux';
 import { setNewConvo } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
+import { setSubmission } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
 
 export default function NewChat() {
@@ -11,6 +12,7 @@ export default function NewChat() {
     dispatch(setText(''));
     dispatch(setMessages([]));
     dispatch(setNewConvo());
+    dispatch(setSubmission({}));
   };
 
   return (
