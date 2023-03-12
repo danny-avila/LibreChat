@@ -3,7 +3,7 @@ import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
 import { useSelector, useDispatch } from 'react-redux';
 import { setConversation } from '~/store/convoSlice';
-import { setSubmitState, setSubmission, setStopStream, setCustomGpt, setModel, setCustomModel } from '~/store/submitSlice';
+import { setSubmission, setStopStream, setCustomGpt, setModel, setCustomModel } from '~/store/submitSlice';
 import { setMessages, setEmptyMessage } from '~/store/messageSlice';
 import { setText } from '~/store/textSlice';
 import manualSWR from '~/utils/fetchers';
@@ -14,9 +14,10 @@ export default function Conversation({
   parentMessageId,
   conversationId,
   title = 'New conversation',
-  bingData,
   chatGptLabel = null,
-  promptPrefix = null
+  promptPrefix = null,
+  bingData,
+  retainView,
 }) {
   const [renaming, setRenaming] = useState(false);
   const [titleInput, setTitleInput] = useState(title);
@@ -24,7 +25,7 @@ export default function Conversation({
   const { stopStream } = useSelector((state) => state.submit);
   const inputRef = useRef(null);
   const dispatch = useDispatch();
-  const { trigger, isMutating } = manualSWR(`/api/messages/${id}`, 'get');
+  const { trigger } = manualSWR(`/api/messages/${id}`, 'get');
   const rename = manualSWR(`/api/convos/update`, 'post');
 
   const clickHandler = async () => {
@@ -162,6 +163,7 @@ export default function Conversation({
             conversationId={id}
             renaming={renaming}
             cancelHandler={cancelHandler}
+            retainView={retainView}
           />
         </div>
       ) : (

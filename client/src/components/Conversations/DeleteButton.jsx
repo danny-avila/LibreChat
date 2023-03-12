@@ -7,7 +7,7 @@ import { setNewConvo, removeConvo } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setSubmission } from '~/store/submitSlice';
 
-export default function DeleteButton({ conversationId, renaming, cancelHandler }) {
+export default function DeleteButton({ conversationId, renaming, cancelHandler, retainView }) {
   const dispatch = useDispatch();
   const { trigger } = manualSWR(
     `/api/convos/clear`,
@@ -17,6 +17,7 @@ export default function DeleteButton({ conversationId, renaming, cancelHandler }
       dispatch(removeConvo(conversationId));
       dispatch(setNewConvo());
       dispatch(setSubmission({}));
+      retainView();
     }
   );
 

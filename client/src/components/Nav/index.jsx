@@ -24,14 +24,15 @@ export default function Nav({ navVisible, setNavVisible }) {
   const scrollPositionRef = useRef(null);
 
   const showMore = async (increment = true) => {
-    if (increment) {
-      const container = containerRef.current;
-      if (container) {
-        scrollPositionRef.current = container.scrollTop;
-      }
-      dispatch(incrementPage());
+    const container = containerRef.current;
+    if (container) {
+      scrollPositionRef.current = container.scrollTop;
     }
-    await mutate();
+
+    if (increment) {
+      dispatch(incrementPage());
+      await mutate();
+    }
   };
 
   useDidMountEffect(() => mutate(), [conversationId]);
