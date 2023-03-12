@@ -4,9 +4,10 @@ import ModelItem from './ModelItem';
 export default function MenuItems({ models, onSelect }) {
   return (
     <>
-      {models.map((modelItem, i) => (
+      {models.map((modelItem) => (
         <ModelItem
-          key={i}
+          key={modelItem._id}
+          id={modelItem._id}
           modelName={modelItem.name}
           value={modelItem.value}
           onSelect={onSelect}
