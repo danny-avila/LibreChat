@@ -77,6 +77,10 @@ router.post('/', async (req, res) => {
         sendMessage(res, { ...partial, message: true });
       } else {
         tokens += partial === text ? '' : partial;
+        if (tokens.match(/^\n/)) {
+          tokens = tokens.replace(/^\n/, '');
+        }
+
         if (tokens.includes('[DONE]')) {
           tokens = tokens.replace('[DONE]', '');
         }
