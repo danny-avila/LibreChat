@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { SSE } from '~/utils/sse';
+import axios from 'axios';
 import SubmitButton from './SubmitButton';
 import Regenerate from './Regenerate';
 import ModelMenu from '../Models/ModelMenu';
@@ -7,10 +8,11 @@ import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
 import handleSubmit from '~/utils/handleSubmit';
 import { useSelector, useDispatch } from 'react-redux';
-import { setConversation, setError } from '~/store/convoSlice';
+import { setConversation, setError, refreshConversation } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setSubmitState, setSubmission } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
+import manualSWR from '~/utils/fetchers';
 
 export default function TextChat({ messages }) {
   const [errorMessage, setErrorMessage] = useState('');
@@ -22,6 +24,7 @@ export default function TextChat({ messages }) {
     useSelector((state) => state.submit);
   const { text } = useSelector((state) => state.text);
   const { error } = convo;
+  const genTitle = manualSWR(`/api/convos/gen_title`, 'post');
 
   // auto focus to input, when enter a conversation.
   useEffect(() => {
@@ -45,26 +48,24 @@ export default function TextChat({ messages }) {
 
   const convoHandler = (data, currentState, currentMsg) => {
     const { requestMessage, responseMessage } = data;
+    const { conversationId } = currentMsg;
     const { messages, _currentMsg, message, isCustomModel, sender } =
       currentState;
     const { model, chatGptLabel, promptPrefix } = message;
     dispatch(
-      setMessages([...messages, 
-        { 
-          ...requestMessage, 
-          // messageId: data?.parentMessageId,  
-        }, 
-        { 
-          ...responseMessage,
-          // sender, 
-          // text: data.text || data.response, 
-        }
-      ])
+      setMessages([...messages, requestMessage, responseMessage,])
     );
 
     const isBing = model === 'bingai' || model === 'sydney';
 
-    // if (!message.messageId)
+    if (requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
+      genTitle.trigger({ conversationId }).then((ret) => {
+        const title = ret?.data
+
+        if (title)
+          dispatch(refreshConversation());
+      })
+    }
 
     if (!isBing && convo.conversationId === null && convo.parentMessageId === null) {
       const { title } = data;

@@ -13,6 +13,7 @@ const initialState = {
   promptPrefix: null,
   convosLoading: false,
   pageNumber: 1,
+  refreshConvoHint: 0,
   convos: []
 };
 
@@ -20,6 +21,9 @@ const currentSlice = createSlice({
   name: 'convo',
   initialState,
   reducers: {
+    refreshConversation: (state, action) => {
+      state.refreshConvoHint = state.refreshConvoHint + 1;
+    },
     setConversation: (state, action) => {
       return { ...state, ...action.payload };
     },
@@ -44,10 +48,7 @@ const currentSlice = createSlice({
       state.pageNumber = 1;
     },
     setConvos: (state, action) => {
-      const newConvos = action.payload.filter((convo) => {
-        return !state.convos.some((c) => c.conversationId === convo.conversationId);
-      });
-      state.convos = [...state.convos, ...newConvos].sort(
+      state.convos = action.payload.sort(
         (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
       );
     },
@@ -60,7 +61,7 @@ const currentSlice = createSlice({
   }
 });
 
-export const { setConversation, setConvos, setNewConvo, setError, incrementPage, removeConvo, removeAll } =
+export const { refreshConversation, setConversation, setConvos, setNewConvo, setError, incrementPage, removeConvo, removeAll } =
   currentSlice.actions;
 
 export default currentSlice.reducer;

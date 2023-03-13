@@ -8,13 +8,14 @@ import { setMessages, setEmptyMessage } from '~/store/messageSlice';
 import { setText } from '~/store/textSlice';
 import manualSWR from '~/utils/fetchers';
 import ConvoIcon from '../svg/ConvoIcon';
+import { refreshConversation } from '../../store/convoSlice';
 
 export default function Conversation({
   id,
   model,
   parentMessageId,
   conversationId,
-  title = 'New conversation',
+  title,
   chatGptLabel = null,
   promptPrefix = null,
   bingData,
@@ -95,6 +96,7 @@ export default function Conversation({
 
   const renameHandler = (e) => {
     e.preventDefault();
+    setTitleInput(title);
     setRenaming(true);
     setTimeout(() => {
       inputRef.current.focus();
@@ -112,7 +114,10 @@ export default function Conversation({
     if (titleInput === title) {
       return;
     }
-    rename.trigger({ conversationId, title: titleInput });
+    rename.trigger({ conversationId, title: titleInput })
+      .then(() => {
+        dispatch(refreshConversation())
+      });
   };
 
   const handleKeyDown = (e) => {
@@ -149,7 +154,7 @@ export default function Conversation({
             onKeyDown={handleKeyDown}
           />
         ) : (
-          titleInput
+          title
         )}
       </div>
       {conversationId === id ? (

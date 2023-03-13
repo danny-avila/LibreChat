@@ -10,7 +10,7 @@ const {
   customClient,
   detectCode
 } = require('../../app/');
-const { getConvo, saveMessage, deleteMessagesSince, deleteMessages, saveConvo } = require('../../models');
+const { getConvo, saveMessage, getConvoTitle, saveConvo } = require('../../models');
 const { handleError, sendMessage } = require('./handlers');
 
 router.use('/bing', askBing);
@@ -156,6 +156,7 @@ router.post('/', async (req, res) => {
     await saveMessage(gptResponse);
     await saveConvo(gptResponse);
     sendMessage(res, {
+      title: await getConvoTitle(conversationId),
       final: true, 
       requestMessage: userMessage, 
       responseMessage: gptResponse

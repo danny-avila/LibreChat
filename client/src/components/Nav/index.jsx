@@ -11,7 +11,7 @@ import { incrementPage, setConvos } from '~/store/convoSlice';
 export default function Nav({ navVisible, setNavVisible }) {
   const dispatch = useDispatch();
   const [isHovering, setIsHovering] = useState(false);
-  const { conversationId, convos, pageNumber } = useSelector((state) => state.convo);
+  const { conversationId, convos, pageNumber, refreshConvoHint } = useSelector((state) => state.convo);
   const onSuccess = (data) => {
     dispatch(setConvos(data));
   };
@@ -20,6 +20,7 @@ export default function Nav({ navVisible, setNavVisible }) {
     `/api/convos?pageNumber=${pageNumber}`,
     onSuccess
   );
+
   const containerRef = useRef(null);
   const scrollPositionRef = useRef(null);
 
@@ -35,7 +36,7 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   };
 
-  useDidMountEffect(() => mutate(), [conversationId]);
+  useDidMountEffect(() => mutate(), [conversationId, refreshConvoHint]);
 
   useEffect(() => {
     const container = containerRef.current;
