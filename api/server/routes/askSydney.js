@@ -141,7 +141,8 @@ const ask = async ({
     response.text = await handleText(response, true);
     // Save sydney response & convo, then send
     await saveMessage(response);
-    await saveConvo({ ...response, model, chatGptLabel: null, promptPrefix: null, ...convo });
+    await saveConvo(req?.session?.user?.username, { ...response, model, chatGptLabel: null, promptPrefix: null, ...convo });
+    
     sendMessage(res, {
       title: await getConvoTitle(conversationId),
       final: true,

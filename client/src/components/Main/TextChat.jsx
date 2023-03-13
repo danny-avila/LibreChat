@@ -18,6 +18,7 @@ export default function TextChat({ messages }) {
   const inputRef = useRef(null)
   const isComposing = useRef(false);
   const dispatch = useDispatch();
+  const { user } = useSelector((state) => state.user);
   const convo = useSelector((state) => state.convo);
   const { initial } = useSelector((state) => state.models);
   const { isSubmitting, stopStream, submission, disabled, model, chatGptLabel, promptPrefix } =

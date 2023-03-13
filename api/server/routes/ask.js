@@ -176,7 +176,7 @@ const ask = async ({
     gptResponse.parentMessageId = overrideParentMessageId || userMessageId;
 
     await saveMessage(gptResponse);
-    await saveConvo(gptResponse);
+    await saveConvo(req?.session?.user?.username, gptResponse);
     sendMessage(res, {
       title: await getConvoTitle(conversationId),
       final: true,

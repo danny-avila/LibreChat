@@ -43,6 +43,9 @@ const convoSchema = mongoose.Schema(
       type: String,
       required: true
     },
+    user: {
+      type: String
+    },
     suggestions: [{ type: String }],
     messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }]
   },
@@ -52,9 +55,9 @@ const convoSchema = mongoose.Schema(
 const Conversation =
   mongoose.models.Conversation || mongoose.model('Conversation', convoSchema);
 
-const getConvo = async (conversationId) => {
+const getConvo = async (user, conversationId) => {
   try {
-    return await Conversation.findOne({ conversationId }).exec();
+    return await Conversation.findOne({ user, conversationId }).exec();
   } catch (error) {
     console.log(error);
     return { message: 'Error getting single conversation' };
@@ -62,12 +65,13 @@ const getConvo = async (conversationId) => {
 };
 
 module.exports = {
-  saveConvo: async ({ conversationId, newConversationId, title, ...convo }) => {
+  saveConvo: async (user, { conversationId, newConversationId, title, ...convo }) => {
     try {
       const messages = await getMessages({ conversationId });
       const update = { ...convo, messages };
       if (title) {
         update.title = title;
+        update.user = user
       }
       if (newConversationId) {
         update.conversationId = newConversationId;
@@ -81,8 +85,10 @@ module.exports = {
         update.promptPrefix = null;
       }
 
+      console.error(user)
+
       return await Conversation.findOneAndUpdate(
-        { conversationId },
+        { conversationId: conversationId, user: user },
         { $set: update },
         { new: true, upsert: true }
       ).exec();
@@ -91,9 +97,9 @@ module.exports = {
       return { message: 'Error saving conversation' };
     }
   },
-  updateConvo: async ({ conversationId, ...update }) => {
+  updateConvo: async (user, { conversationId, ...update }) => {
     try {
-      return await Conversation.findOneAndUpdate({ conversationId }, update, {
+      return await Conversation.findOneAndUpdate({ conversationId: conversationId, user: user }, update, {
         new: true
       }).exec();
     } catch (error) {
@@ -101,12 +107,11 @@ module.exports = {
       return { message: 'Error updating conversation' };
     }
   },
-  // getConvos: async () => await Conversation.find({}).sort({ createdAt: -1 }).exec(),
-  getConvosByPage: async (pageNumber = 1, pageSize = 12) => {
+  getConvosByPage: async (user, pageNumber = 1, pageSize = 12) => {
     try {
-      const totalConvos = (await Conversation.countDocuments()) || 1;
+      const totalConvos = (await Conversation.countDocuments({ user: user })) || 1;
       const totalPages = Math.ceil(totalConvos / pageSize);
-      const convos = await Conversation.find()
+      const convos = await Conversation.find({ user: user })
         .sort({ createdAt: -1, created: -1 })
         .skip((pageNumber - 1) * pageSize)
         .limit(pageSize)
@@ -119,17 +124,17 @@ module.exports = {
     }
   },
   getConvo,
-  getConvoTitle: async (conversationId) => {
+  getConvoTitle: async (user, conversationId) => {
     try {
-      const convo = await getConvo(conversationId);
+      const convo = await getConvo(user, conversationId);
       return convo.title;
     } catch (error) {
       console.log(error);
       return { message: 'Error getting conversation title' };
     }
   },
-  deleteConvos: async (filter) => {
-    let deleteCount = await Conversation.deleteMany(filter).exec();
+  deleteConvos: async (user, filter) => {
+    let deleteCount = await Conversation.deleteMany({...filter, user: user}).exec();
     deleteCount.messages = await deleteMessages(filter);
     return deleteCount;
   },
