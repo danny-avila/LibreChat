@@ -17,6 +17,7 @@ import manualSWR from '~/utils/fetchers';
 export default function TextChat({ messages }) {
   const [errorMessage, setErrorMessage] = useState('');
   const inputRef = useRef(null)
+  const isComposing = useRef(false);
   const dispatch = useDispatch();
   const convo = useSelector((state) => state.convo);
   const { initial } = useSelector((state) => state.models);
@@ -278,6 +279,11 @@ export default function TextChat({ messages }) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
     }
+
+    if (e.key === 'Enter' && !e.shiftKey) {
+      if (!isComposing.current)
+        submitMessage();
+    }
   };
 
   const handleKeyUp = (e) => {
@@ -288,11 +294,15 @@ export default function TextChat({ messages }) {
     if (isSubmitting) {
       return;
     }
-
-    if (e.key === 'Enter' && !e.shiftKey) {
-      submitMessage();
-    }
   };
+  
+  const handleCompositionStart = (e) => {
+    isComposing.current = true
+  }
+
+  const handleCompositionEnd = (e) => {
+    isComposing.current = false;
+  }
 
   const changeHandler = (e) => {
     const { value } = e.target;
@@ -337,6 +347,8 @@ export default function TextChat({ messages }) {
                 onKeyUp={handleKeyUp}
                 onKeyDown={handleKeyDown}
                 onChange={changeHandler}
+                onCompositionStart={handleCompositionStart}
+                onCompositionEnd={handleCompositionEnd}
                 placeholder={disabled ? 'Choose another model or customize GPT again' : ''}
                 disabled={disabled}
                 className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-9 pr-8 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-8"
