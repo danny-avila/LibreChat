@@ -14,7 +14,6 @@ const proxyEnvToAxiosProxy = (proxyString) => {
   
   return proxyConfig
 }
-console.log(proxyEnvToAxiosProxy(process.env.PROXY || null))
 
 const titleConvo = async ({ message, response, model }) => {
   const configuration = new Configuration({
