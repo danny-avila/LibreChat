@@ -26,6 +26,7 @@ export default function Conversations({ conversations, conversationId, showMore 
             <Conversation
               key={convo.conversationId}
               id={convo.conversationId}
+              model={convo.model}
               parentMessageId={convo.parentMessageId}
               title={convo.title}
               conversationId={conversationId}
