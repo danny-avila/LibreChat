@@ -30,6 +30,10 @@
         margin-left: 20px;
     }
 
+    .resubmit-edit-button {
+        display: block;
+    }
+
     .nav {
         position: fixed;
         z-index: 999;
