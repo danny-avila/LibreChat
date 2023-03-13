@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { SSE } from '~/utils/sse';
 import SubmitButton from './SubmitButton';
 import Regenerate from './Regenerate';
@@ -14,6 +14,7 @@ import { setText } from '~/store/textSlice';
 
 export default function TextChat({ messages }) {
   const [errorMessage, setErrorMessage] = useState('');
+  const inputRef = useRef(null)
   const dispatch = useDispatch();
   const convo = useSelector((state) => state.convo);
   const { initial } = useSelector((state) => state.models);
@@ -21,6 +22,11 @@ export default function TextChat({ messages }) {
     useSelector((state) => state.submit);
   const { text } = useSelector((state) => state.text);
   const { error } = convo;
+
+  // auto focus to input, when enter a conversation.
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [convo?.conversationId, ])
 
   const messageHandler = (data, currentState) => {
     const { messages, currentMsg, sender } = currentState;
@@ -282,6 +288,8 @@ export default function TextChat({ messages }) {
               <ModelMenu />
               <TextareaAutosize
                 tabIndex="0"
+                autoFocus
+                ref={inputRef}
                 // style={{maxHeight: '200px', height: '24px', overflowY: 'hidden'}}
                 rows="1"
                 value={text}
