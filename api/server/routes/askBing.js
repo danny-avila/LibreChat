@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const { titleConvo, getCitations, citeText, askBing } = require('../../app/');
-const { saveMessage, deleteMessages, deleteMessagesSince, saveConvo } = require('../../models');
+const { saveMessage, getConvoTitle, saveConvo } = require('../../models');
 const { handleError, sendMessage } = require('./handlers');
 const citationRegex = /\[\^\d+?\^]/g;
 
@@ -11,7 +11,7 @@ router.post('/', async (req, res) => {
   if (text.length === 0) {
     return handleError(res, 'Prompt empty or too short');
   }
-  
+
   const conversationId = oldConversationId || crypto.randomUUID();
 
   const userMessageId = messageId;
@@ -98,6 +98,7 @@ router.post('/', async (req, res) => {
     await saveMessage(response);
     await saveConvo(response);
     sendMessage(res, {
+      title: await getConvoTitle(conversationId),
       final: true, 
       requestMessage: userMessage, 
       responseMessage: gptResponse
