@@ -166,7 +166,11 @@ export default function Message({
     // this is not a real messageId, it is used as placeholder before real messageId returned
     const fakeMessageId = crypto.randomUUID();
     const isCustomModel = model === 'chatgptCustom' || !initial[model];
-    const currentMsg = { ...message, sender: 'User', text: text.trim(), current: true, isCreatedByUser: true, messageId: fakeMessageId };
+    const currentMsg = { 
+      sender: 'User', text: text.trim(), current: true, isCreatedByUser: true, 
+      parentMessageId: message?.parentMessageId, 
+      conversationId: message?.conversationId, 
+      messageId: fakeMessageId };
     const sender = model === 'chatgptCustom' ? chatGptLabel : model;
 
     const initialResponse = { sender, text: '', parentMessageId: fakeMessageId, submitting: true };
@@ -217,7 +221,7 @@ export default function Message({
               {error ? (
                 <div className="flex flex min-h-[20px] flex-col flex-grow items-start gap-4 gap-2 whitespace-pre-wrap text-red-500">
                   <div className="rounded-md border border-red-500 bg-red-500/10 py-2 px-3 text-sm text-gray-600 dark:text-gray-100">
-                    {text}
+                    {`An error occurred. Please try again in a few moments.\n\nError message: ${text}`}
                   </div>
                 </div>
               ) : 
