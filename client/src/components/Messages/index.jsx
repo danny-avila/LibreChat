@@ -1,14 +1,16 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { CSSTransition } from 'react-transition-group';
 import ScrollToBottom from './ScrollToBottom';
-import Message from './Message';
+import { MultiMessage } from './Message';
+import Conversation from '../Conversations/Conversation';
+import { useSelector } from 'react-redux';
 
 const Messages = ({ messages }) => {
-  const [currentEditIdx, setCurrentEditIdx] = useState(-1)
+  const [currentEditId, setCurrentEditId] = useState(-1)
+  const { conversationId } = useSelector((state) => state.convo);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const scrollableRef = useRef(null);
   const messagesEndRef = useRef(null);
-
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -21,6 +23,29 @@ const Messages = ({ messages }) => {
       clearTimeout(timeoutId);
     };
   }, [messages]);
+  
+  const messageTree = useMemo(() => buildTree(messages), [messages, ]);
+
+  function buildTree(messages) {
+    let messageMap = {};
+    let rootMessages = [];
+  
+    // Traverse the messages array and store each element in messageMap.
+    messages.forEach(message => {
+      messageMap[message.messageId] = {...message, children: []};
+
+      if (message.parentMessageId === "00000000-0000-0000-0000-000000000000") {
+        rootMessages.push(messageMap[message.messageId]);
+      } else {
+        const parentMessage = messageMap[message.parentMessageId];
+        if (parentMessage) {
+          parentMessage.children.push(messageMap[message.messageId]);
+        }
+      }
+    });
+  
+    return rootMessages;
+  }
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -59,18 +84,14 @@ const Messages = ({ messages }) => {
       {/* <div className="flex-1 overflow-hidden"> */}
       <div className="h-full dark:gpt-dark-gray">
         <div className="flex h-full flex-col items-center text-sm dark:gpt-dark-gray">
-          {messages.map((message, i) => (
-            <Message
-              key={i}
-              message={message}
-              messages={messages}
-              last={i === messages.length - 1}
-              scrollToBottom={i === messages.length - 1 ? scrollToBottom : null}
-              edit={i===currentEditIdx}
-              currentEditIdx={currentEditIdx}
-              enterEdit={(cancel) => setCurrentEditIdx(cancel?-1:i)}
-            />
-          ))}
+          <MultiMessage
+            key={conversationId} // avoid internal state mixture
+            messageList={messageTree}
+            messages={messages}
+            scrollToBottom={scrollToBottom}
+            currentEditId={currentEditId}
+            setCurrentEditId={setCurrentEditId}
+          />
           <CSSTransition
             in={showScrollButton}
             timeout={400}
