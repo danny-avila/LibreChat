@@ -22,6 +22,14 @@
 }
 
 @media (max-width: 767px) {
+    .sibling-switch {
+        left: 114px;
+        top: unset;
+        bottom: 6px;
+        visibility: visible;
+        z-index: 2;
+    }
+
     .nav-close-button {
         display: block;
         position: absolute;

@@ -34,7 +34,7 @@ export default function TextChat({ messages }) {
   const messageHandler = (data, currentState, currentMsg) => {
     const { messages, _currentMsg, message, sender } = currentState;
 
-    dispatch(setMessages([...messages, currentMsg, { sender, text: data, parentMessageId: currentMsg?.messageId, messageId: currentMsg?.messageId + '_' }]));
+    dispatch(setMessages([...messages, currentMsg, { sender, text: data, parentMessageId: currentMsg?.messageId, messageId: currentMsg?.messageId + '_', submitting: true }]));
   };
 
   const createdHandler = (data, currentState, currentMsg) => {
@@ -158,7 +158,7 @@ export default function TextChat({ messages }) {
     const message = text.trim();
     const currentMsg = { sender: 'User', text: message, current: true, isCreatedByUser: true, parentMessageId: convo.parentMessageId || '00000000-0000-0000-0000-000000000000', messageId: fakeMessageId };
     const sender = model === 'chatgptCustom' ? chatGptLabel : model;
-    const initialResponse = { sender, text: '', parentMessageId: fakeMessageId };
+    const initialResponse = { sender, text: '', parentMessageId: fakeMessageId, submitting: true };
 
     dispatch(setSubmitState(true));
     dispatch(setMessages([...messages, currentMsg, initialResponse]));
