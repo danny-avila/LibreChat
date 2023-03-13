@@ -22,7 +22,7 @@ router.post('/gen_title', async (req, res) => {
     : await titleConvo({
         model: convo?.model,
         message: firstMessage?.text,
-        response: JSON.stringify(secondMessage?.text || '')
+        // response: JSON.stringify(secondMessage?.text || '')
       });
 
   await saveConvo({
