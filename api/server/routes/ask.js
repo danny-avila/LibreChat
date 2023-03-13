@@ -17,18 +17,26 @@ router.use('/bing', askBing);
 router.use('/sydney', askSydney);
 
 router.post('/', async (req, res) => {
-  let { id, model, text, parentMessageId, conversationId, chatGptLabel, promptPrefix } = req.body;
+  let { model, text, parentMessageId, conversationId, chatGptLabel, promptPrefix } = req.body;
   if (text.length === 0) {
     return handleError(res, 'Prompt empty or too short');
   }
 
-  const userMessageId = id || crypto.randomUUID();
-  let userMessage = { id: userMessageId, sender: 'User', text, parentMessageId, conversationId, isCreatedByUser: true };
+  const userMessageId = crypto.randomUUID();
+  const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000'
+  let userMessage = {
+     messageId: userMessageId, 
+     sender: 'User', 
+     text, 
+     parentMessageId: userParentMessageId,
+     conversationId, 
+     isCreatedByUser: true 
+  };
 
   console.log('ask log', {
     model,
     ...userMessage,
-    parentMessageId,
+    parentMessageId: userParentMessageId,
     conversationId,
     chatGptLabel,
     promptPrefix
@@ -53,11 +61,11 @@ router.post('/', async (req, res) => {
     }
   }
 
-  if (id) {
-    // existing conversation
-    await saveMessage(userMessage);
-    await deleteMessagesSince(userMessage);
-  } else {}
+  // if (messageId) {
+  //   // existing conversation
+  //   await saveMessage(userMessage);
+  //   await deleteMessagesSince(userMessage);
+  // } else {}
 
   res.writeHead(200, {
     Connection: 'keep-alive',
@@ -72,7 +80,6 @@ router.post('/', async (req, res) => {
     let tokens = '';
     const progressCallback = async (partial) => {
       if (i === 0 && typeof partial === 'object') {
-        userMessage.parentMessageId = parentMessageId ? parentMessageId : partial.id;
         userMessage.conversationId = conversationId ? conversationId : partial.conversationId;
         await saveMessage(userMessage);
         sendMessage(res, { ...partial, initial: true });
@@ -101,7 +108,7 @@ router.post('/', async (req, res) => {
       text,
       progressCallback,
       convo: {
-        parentMessageId,
+        parentMessageId: userParentMessageId,
         conversationId
       },
       chatGptLabel,
@@ -112,9 +119,8 @@ router.post('/', async (req, res) => {
 
     if (!gptResponse.parentMessageId) {
       gptResponse.text = gptResponse.response;
-      gptResponse.id = gptResponse.messageId;
-      gptResponse.parentMessageId = gptResponse.messageId;
-      userMessage.parentMessageId = parentMessageId ? parentMessageId : gptResponse.messageId;
+      // gptResponse.id = gptResponse.messageId;
+      gptResponse.parentMessageId = userMessage.messageId;
       userMessage.conversationId = conversationId
         ? conversationId
         : gptResponse.conversationId;
@@ -130,15 +136,15 @@ router.post('/', async (req, res) => {
       return handleError(res, 'Prompt empty or too short');
     }
 
-    if (!parentMessageId) {
-      gptResponse.title = await titleConvo({
-        model,
-        message: text,
-        response: JSON.stringify(gptResponse.text)
-      });
-    }
+    // if (!parentMessageId) {
+    //   gptResponse.title = await titleConvo({
+    //     model,
+    //     message: text,
+    //     response: JSON.stringify(gptResponse.text)
+    //   });
+    // }
     gptResponse.sender = model === 'chatgptCustom' ? chatGptLabel : model;
-    gptResponse.final = true;
+    // gptResponse.final = true;
     gptResponse.text = await detectCode(gptResponse.text);
 
     if (chatGptLabel?.length > 0 && model === 'chatgptCustom') {
@@ -151,11 +157,15 @@ router.post('/', async (req, res) => {
 
     await saveMessage(gptResponse);
     await saveConvo(gptResponse);
-    sendMessage(res, gptResponse);
+    sendMessage(res, {
+      final: true, 
+      requestMessage: userMessage, 
+      responseMessage: gptResponse
+    });
     res.end();
   } catch (error) {
     console.log(error);
-    await deleteMessages({ id: userMessageId });
+    await deleteMessages({ messageId: userMessageId });
     handleError(res, error.message);
   }
 });

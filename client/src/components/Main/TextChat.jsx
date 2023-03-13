@@ -34,22 +34,36 @@ export default function TextChat({ messages }) {
   };
 
   const convoHandler = (data, currentState) => {
+    const { requestMessage, responseMessage } = data;
     const { messages, currentMsg, message, isCustomModel, sender } =
       currentState;
     const { model, chatGptLabel, promptPrefix } = message;
     dispatch(
-      setMessages([...messages, currentMsg, { sender, text: data.text || data.response }])
+      setMessages([...messages, 
+        { 
+          ...requestMessage, 
+          // messageId: data?.parentMessageId,  
+        }, 
+        { 
+          ...responseMessage,
+          // sender, 
+          // text: data.text || data.response, 
+        }
+      ])
     );
 
     const isBing = model === 'bingai' || model === 'sydney';
 
+    // if (!message.messageId)
+
     if (!isBing && convo.conversationId === null && convo.parentMessageId === null) {
-      const { title, conversationId, id } = data;
+      const { title } = data;
+      const { conversationId, messageId } = responseMessage;
       dispatch(
         setConversation({
           title,
           conversationId,
-          parentMessageId: id,
+          parentMessageId: messageId,
           jailbreakConversationId: null,
           conversationSignature: null,
           clientId: null,
@@ -64,7 +78,8 @@ export default function TextChat({ messages }) {
       convo.invocationId === null
     ) {
       console.log('Bing data:', data);
-      const { title, conversationSignature, clientId, conversationId, invocationId } = data;
+      const { title } = data;
+      const { conversationSignature, clientId, conversationId, invocationId } = responseMessage;
       dispatch(
         setConversation({
           title,
@@ -76,15 +91,15 @@ export default function TextChat({ messages }) {
         })
       );
     } else if (model === 'sydney') {
+      const { title } = data;
       const {
-        title,
         jailbreakConversationId,
         parentMessageId,
         conversationSignature,
         clientId,
         conversationId,
         invocationId
-      } = data;
+      } = responseMessage;
       dispatch(
         setConversation({
           title,
@@ -202,16 +217,19 @@ export default function TextChat({ messages }) {
       }
 
       const data = JSON.parse(e.data);
-      let text = data.text || data.response;
-      console.log(data)
-      if (data.message) {
-        messageHandler(text, currentState);
-      }
+
+      // if (data.message) {
+      //   messageHandler(text, currentState);
+      // }
 
       if (data.final) {
         convoHandler(data, currentState);
         console.log('final', data);
       } else {
+        let text = data.text || data.response;
+        if (data.message) {
+          messageHandler(text, currentState);
+        }
         // console.log('dataStream', data);
       }
     };

@@ -7,22 +7,36 @@ const { handleError, sendMessage } = require('./handlers');
 const citationRegex = /\[\^\d+?\^]/g;
 
 router.post('/', async (req, res) => {
-  const { id, model, text, ...convo } = req.body;
+  const { model, text, parentMessageId, conversationId, ...convo } = req.body;
   if (text.length === 0) {
     return handleError(res, 'Prompt empty or too short');
   }
 
-  const userMessageId = id || crypto.randomUUID();
-  let userMessage = { id: userMessageId, sender: 'User', text, isCreatedByUser: true };
+  const userMessageId = messageId;
+  const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000'
+  let userMessage = {
+    messageId: userMessageId, 
+    sender: 'User', 
+    text, 
+    parentMessageId: userParentMessageId,
+    conversationId, 
+    isCreatedByUser: true 
+ };
 
-  console.log('ask log', { model, ...userMessage, ...convo });
+ console.log('ask log', {
+    model,
+    ...userMessage,
+    parentMessageId: userParentMessageId,
+    conversationId,
+    ...convo
+  });
 
-  if (id) {
-    // existing conversation
-    await saveMessage(userMessage);
-    await deleteMessagesSince(userMessage);
-  } else {}
-  
+  // if (messageId) {
+  //   // existing conversation
+  //   await saveMessage(userMessage);
+  //   await deleteMessagesSince(userMessage);
+  // } else {}
+
   res.writeHead(200, {
     Connection: 'keep-alive',
     'Content-Type': 'text/event-stream',
@@ -43,7 +57,11 @@ router.post('/', async (req, res) => {
     let response = await askBing({
       text,
       progressCallback,
-      convo
+      convo: {
+        parentMessageId: userParentMessageId,
+        conversationId,
+        ...convo
+      },
     });
 
     console.log('BING RESPONSE');
@@ -52,26 +70,27 @@ router.post('/', async (req, res) => {
 
     userMessage.conversationSignature =
       convo.conversationSignature || response.conversationSignature;
-    userMessage.conversationId = convo.conversationId || response.conversationId;
+    userMessage.conversationId = conversationId || response.conversationId;
     userMessage.invocationId = response.invocationId;
     await saveMessage(userMessage);
 
-    if (!convo.conversationSignature) {
-      response.title = await titleConvo({
-        model,
-        message: text,
-        response: JSON.stringify(response.response)
-      });
-    }
+    // if (!convo.conversationSignature) {
+    //   response.title = await titleConvo({
+    //     model,
+    //     message: text,
+    //     response: JSON.stringify(response.response)
+    //   });
+    // }
 
     response.text = response.response;
     delete response.response;
-    response.id = response.details.messageId;
+    // response.id = response.details.messageId;
     response.suggestions =
       response.details.suggestedResponses &&
       response.details.suggestedResponses.map((s) => s.text);
     response.sender = model;
-    response.final = true;
+    response.parentMessageId = gptResponse.parentMessageId || userMessage.messageId
+    // response.final = true;
 
     const links = getCitations(response);
     response.text =
@@ -80,11 +99,15 @@ router.post('/', async (req, res) => {
 
     await saveMessage(response);
     await saveConvo(response);
-    sendMessage(res, response);
+    sendMessage(res, {
+      final: true, 
+      requestMessage: userMessage, 
+      responseMessage: gptResponse
+    });
     res.end();
   } catch (error) {
     console.log(error);
-    await deleteMessages({ id: userMessageId });
+    await deleteMessages({ messageId: userMessageId });
     handleError(res, error.message);
   }
 });
