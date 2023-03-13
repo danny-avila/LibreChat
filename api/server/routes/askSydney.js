@@ -7,10 +7,12 @@ const { handleError, sendMessage } = require('./handlers');
 const citationRegex = /\[\^\d+?\^]/g;
 
 router.post('/', async (req, res) => {
-  const { model, text, parentMessageId, conversationId, ...convo } = req.body;
+  const { model, text, parentMessageId, conversationId: oldConversationId, ...convo } = req.body;
   if (text.length === 0) {
     return handleError(res, 'Prompt empty or too short');
   }
+  
+  const conversationId = oldConversationId || crypto.randomUUID();
 
   const userMessageId = messageId;
   const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000'
@@ -27,16 +29,8 @@ router.post('/', async (req, res) => {
  console.log('ask log', {
     model,
     ...userMessage,
-    parentMessageId: userParentMessageId,
-    conversationId,
     ...convo
   });
-
-  // if (messageId) {
-  //   // existing conversation
-  //   await saveMessage(userMessage);
-  //   await deleteMessagesSince(userMessage);
-  // } else {}
 
   res.writeHead(200, {
     Connection: 'keep-alive',
@@ -45,6 +39,10 @@ router.post('/', async (req, res) => {
     'Access-Control-Allow-Origin': '*',
     'X-Accel-Buffering': 'no'
   });
+
+  await saveMessage(userMessage);
+  await saveConvo({ ...userMessage, model, chatGptLabel, promptPrefix });
+  sendMessage(res, { message: userMessage, created: true });
 
   try {
     let tokens = '';
@@ -117,7 +115,7 @@ router.post('/', async (req, res) => {
     res.end();
   } catch (error) {
     console.log(error);
-    await deleteMessages({ messageId: userMessageId });
+    // await deleteMessages({ messageId: userMessageId });
     handleError(res, error.message);
   }
 });

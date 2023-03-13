@@ -11,6 +11,7 @@ import ConvoIcon from '../svg/ConvoIcon';
 
 export default function Conversation({
   id,
+  model,
   parentMessageId,
   conversationId,
   title = 'New conversation',
@@ -76,12 +77,12 @@ export default function Conversation({
     if (chatGptLabel) {
       dispatch(setModel('chatgptCustom'));
     } else {
-      dispatch(setModel(data[1].sender));
+      dispatch(setModel(model));
     }
 
-    if (modelMap[data[1].sender.toLowerCase()]) {
-      console.log('sender', data[1].sender);
-      dispatch(setCustomModel(data[1].sender.toLowerCase()));
+    if (modelMap[model.toLowerCase()]) {
+      console.log('sender', model);
+      dispatch(setCustomModel(model.toLowerCase()));
     } else {
       dispatch(setCustomModel(null));
     }

@@ -28,14 +28,24 @@ export default function TextChat({ messages }) {
     inputRef.current?.focus();
   }, [convo?.conversationId, ])
 
-  const messageHandler = (data, currentState) => {
-    const { messages, currentMsg, message, sender } = currentState;
+  const messageHandler = (data, currentState, currentMsg) => {
+    const { messages, _currentMsg, message, sender } = currentState;
+
     dispatch(setMessages([...messages, currentMsg, { sender, text: data }]));
   };
 
-  const convoHandler = (data, currentState) => {
+  const createdHandler = (data, currentState, currentMsg) => {
+    const { conversationId } = currentMsg;
+    dispatch(
+      setConversation({
+        conversationId,
+      })
+    );
+  };
+
+  const convoHandler = (data, currentState, currentMsg) => {
     const { requestMessage, responseMessage } = data;
-    const { messages, currentMsg, message, isCustomModel, sender } =
+    const { messages, _currentMsg, message, isCustomModel, sender } =
       currentState;
     const { model, chatGptLabel, promptPrefix } = message;
     dispatch(
@@ -210,6 +220,7 @@ export default function TextChat({ messages }) {
     }
 
     const currentState = submission;
+    let currentMsg = currentState.currentMsg;
     const { server, payload } = createPayload(submission);
     const onMessage = (e) => {
       if (stopStream) {
@@ -223,12 +234,15 @@ export default function TextChat({ messages }) {
       // }
 
       if (data.final) {
-        convoHandler(data, currentState);
+        convoHandler(data, currentState, currentMsg);
         console.log('final', data);
+      } if (data.created) {
+        currentMsg = data.message;
+        createdHandler(data, currentState, currentMsg);
       } else {
         let text = data.text || data.response;
         if (data.message) {
-          messageHandler(text, currentState);
+          messageHandler(text, currentState, currentMsg);
         }
         // console.log('dataStream', data);
       }
