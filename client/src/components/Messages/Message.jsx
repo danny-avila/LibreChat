@@ -95,7 +95,7 @@ export default function Message({
   const wrapText = (text) => <TextWrapper text={text} />;
 
   const resubmitMessage = () => {
-    const text = textEditor.current.innerHTML
+    const text = textEditor.current.innerText
 
     if (convoError) {
       dispatch(setError(false));
@@ -163,7 +163,7 @@ export default function Message({
                 <div className="flex min-h-[20px] flex-col flex-grow items-start gap-4 whitespace-pre-wrap">
                   {/* <div className={`${blinker ? 'result-streaming' : ''} markdown prose dark:prose-invert light w-full break-words`}> */}
                   
-                  <div className="markdown prose dark:prose-invert light w-full break-words border-none" 
+                  <div className="markdown prose dark:prose-invert light w-full break-words border-none focus:outline-none" 
                     contentEditable={true} ref={textEditor} suppressContentEditableWarning={true}>
                     {text}
                   </div>
