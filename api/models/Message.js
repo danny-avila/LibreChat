@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const messageSchema = mongoose.Schema({
-  id: {
+  messageId: {
     type: String,
     unique: true,
     required: true
@@ -42,24 +42,24 @@ const messageSchema = mongoose.Schema({
 const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
 
 module.exports = {
-  saveMessage: async ({ id, conversationId, parentMessageId, sender, text, isCreatedByUser=false }) => {
+  saveMessage: async ({ messageId, conversationId, parentMessageId, sender, text, isCreatedByUser=false }) => {
     try {
-      await Message.findOneAndUpdate({ id }, {
+      await Message.findOneAndUpdate({ messageId }, {
         conversationId,
         parentMessageId,
         sender,
         text,
         isCreatedByUser
       }, { upsert: true, new: true });
-      return { id, conversationId, parentMessageId, sender, text, isCreatedByUser };
+      return { messageId, conversationId, parentMessageId, sender, text, isCreatedByUser };
     } catch (error) {
       console.error(error);
       return { message: 'Error saving message' };
     }
   },
-  deleteMessagesSince: async ({ id, conversationId }) => {
+  deleteMessagesSince: async ({ messageId, conversationId }) => {
     try {
-      message = await Message.findOne({ id }).exec()
+      message = await Message.findOne({ messageId }).exec()
 
       if (message) 
         return await Message.find({ conversationId }).deleteMany({ createdAt: { $gt: message.createdAt } }).exec();

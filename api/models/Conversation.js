@@ -13,7 +13,7 @@ const convoSchema = mongoose.Schema({
   },
   title: {
     type: String,
-    default: 'New conversation'
+    default: 'New Chat'
   },
   jailbreakConversationId: {
     type: String

@@ -14,7 +14,7 @@ const currentSlice = createSlice({
     setEmptyMessage: (state) => {
       state.messages = [
         {
-          id: '1',
+          messageId: '1',
           conversationId: '1',
           parentMessageId: '1',
           sender: '',
