@@ -137,6 +137,7 @@ export default function TextChat({ messages }) {
     dispatch(setText(''));
 
     const submission = {
+      convo,
       isCustomModel,
       message: { 
         sender: 'User',
@@ -202,6 +203,7 @@ export default function TextChat({ messages }) {
 
       const data = JSON.parse(e.data);
       let text = data.text || data.response;
+      console.log(data)
       if (data.message) {
         messageHandler(text, currentState);
       }
