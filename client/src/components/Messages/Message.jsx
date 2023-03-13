@@ -60,7 +60,7 @@ export default function Message({
 }) {
   const { isSubmitting, model, chatGptLabel, promptPrefix } = useSelector((state) => state.submit);
   const [abortScroll, setAbort] = useState(false);
-  const { sender, text, isCreatedByUser, error } = message
+  const { sender, text, isCreatedByUser, error, submitting } = message
   const textEditor = useRef(null)
   const convo = useSelector((state) => state.convo);
   const { initial } = useSelector((state) => state.models);
@@ -72,7 +72,7 @@ export default function Message({
   const dispatch = useDispatch();
 
   // const notUser = !isCreatedByUser; // sender.toLowerCase() !== 'user';
-  const blinker = isSubmitting && last && !isCreatedByUser;
+  const blinker = submitting && isSubmitting && last && !isCreatedByUser;
 
   useEffect(() => {
     if (blinker && !abortScroll) {
@@ -113,7 +113,16 @@ export default function Message({
 
   const isBing = sender === 'bingai' || sender === 'sydney';
 
-  let icon = `${sender}:`;
+  let icon = (
+    <div
+      style={{ background: 'radial-gradient(circle at 90% 110%, rgb(1 43 128), rgb(17, 139, 161))', color: 'white', fontSize: 12 }}
+      className="relative flex h-[30px] w-[30px] items-center justify-center rounded-sm p-1 text-white"
+    >
+      User
+    </div>
+  );
+    //`${sender}:`;
+
   let backgroundColor = bgColors[sender];
 
   if (!isCreatedByUser) {
@@ -160,7 +169,7 @@ export default function Message({
     const currentMsg = { ...message, sender: 'User', text: text.trim(), current: true, isCreatedByUser: true, messageId: fakeMessageId };
     const sender = model === 'chatgptCustom' ? chatGptLabel : model;
 
-    const initialResponse = { sender, text: '', parentMessageId: fakeMessageId };
+    const initialResponse = { sender, text: '', parentMessageId: fakeMessageId, submitting: true };
 
     dispatch(setSubmitState(true));
     dispatch(setMessages([...messages, currentMsg, initialResponse]));

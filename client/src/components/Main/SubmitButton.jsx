@@ -10,7 +10,7 @@ export default function SubmitButton({ submitMessage }) {
 
   if (isSubmitting) {
     return (
-      <button className="absolute bottom-1.5 right-1 rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:bottom-0.5 disabled:hover:bg-transparent dark:hover:bg-gray-900 dark:hover:text-gray-400 dark:disabled:hover:bg-transparent md:bottom-2.5 md:right-2 md:disabled:bottom-1">
+      <button className="absolute bottom-0 h-[50px] w-[30px] right-1 rounded-md p-1 text-gray-500 hover:bg-gray-100disabled:hover:bg-transparent dark:hover:bg-gray-900 dark:hover:text-gray-400 dark:disabled:hover:bg-transparent md:right-2" disabled>
         <div className="text-2xl">
           <span >·</span>
           <span className="blink">·</span>
@@ -23,7 +23,7 @@ export default function SubmitButton({ submitMessage }) {
     <button
       onClick={clickHandler}
       disabled={disabled}
-      className="absolute bottom-1.5 right-1 rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:hover:bg-transparent dark:hover:bg-gray-900 dark:hover:text-gray-400 dark:disabled:hover:bg-transparent md:bottom-2.5 md:right-2"
+      className="absolute bottom-0 flex justify-center items-center h-[50px] w-[50px] right-0 rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:hover:bg-transparent dark:hover:bg-gray-900 dark:hover:text-gray-400 dark:disabled:hover:bg-transparent"
     >
       <svg
         stroke="currentColor"
