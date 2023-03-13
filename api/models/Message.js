@@ -36,20 +36,25 @@ const messageSchema = mongoose.Schema({
     type: Boolean,
     required: true,
     default: false
-  }
+  },
+  error: {
+    type: Boolean,
+    default: false
+  },
 }, { timestamps: true });
 
 const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
 
 module.exports = {
-  saveMessage: async ({ messageId, conversationId, parentMessageId, sender, text, isCreatedByUser=false }) => {
+  saveMessage: async ({ messageId, conversationId, parentMessageId, sender, text, isCreatedByUser=false, error }) => {
     try {
       await Message.findOneAndUpdate({ messageId }, {
         conversationId,
         parentMessageId,
         sender,
         text,
-        isCreatedByUser
+        isCreatedByUser,
+        error
       }, { upsert: true, new: true });
       return { messageId, conversationId, parentMessageId, sender, text, isCreatedByUser };
     } catch (error) {

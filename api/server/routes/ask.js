@@ -131,6 +131,10 @@ router.post('/', async (req, res) => {
       gptResponse.text.toLowerCase().includes('no response') ||
       gptResponse.text.toLowerCase().includes('no answer')
     ) {
+      await saveMessage({ 
+        messageId: crypto.randomUUID(), sender: model, 
+        conversationId, parentMessageId: userMessageId,
+        error: true, text: 'Prompt empty or too short'});
       return handleError(res, 'Prompt empty or too short');
     }
 
@@ -165,6 +169,10 @@ router.post('/', async (req, res) => {
   } catch (error) {
     console.log(error);
     // await deleteMessages({ messageId: userMessageId });
+    await saveMessage({ 
+      messageId: crypto.randomUUID(), sender: model, 
+      conversationId, parentMessageId: userMessageId,
+      error: true, text: error.message});
     handleError(res, error.message);
   }
 });

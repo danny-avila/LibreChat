@@ -128,13 +128,14 @@ export default function TextChat({ messages }) {
     dispatch(setSubmitState(false));
   };
 
-  const errorHandler = (event, currentState) => {
-    const { initialResponse, messages, currentMsg, message } = currentState;
+  const errorHandler = (event, currentState, currentMsg) => {
+    const { initialResponse, messages, _currentMsg, message } = currentState;
     console.log('Error:', event);
     const errorResponse = {
       ...initialResponse,
-      text: `An error occurred. Please try again in a few moments.\n\nError message: ${event.data}`,
-      error: true
+      text: `${event.data}`,
+      error: true,
+      parentMessageId: currentMsg?.messageId,
     };
     setErrorMessage(event.data);
     dispatch(setSubmitState(false));
@@ -264,7 +265,7 @@ export default function TextChat({ messages }) {
     events.onerror = function (e) {
       console.log('error in opening conn.');
       events.close();
-      errorHandler(e, currentState);
+      errorHandler(e, currentState, currentMsg);
     };
 
     events.stream();
@@ -306,6 +307,7 @@ export default function TextChat({ messages }) {
 
   const changeHandler = (e) => {
     const { value } = e.target;
+    console.log(value)
     if (isSubmitting && (value === '' || value === '\n')) {
       return;
     }
