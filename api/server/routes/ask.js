@@ -12,12 +12,13 @@ const {
 } = require('../../app/');
 const { getConvo, saveMessage, getConvoTitle, saveConvo } = require('../../models');
 const { handleError, sendMessage } = require('./handlers');
+const { getMessages } = require('../../models/Message');
 
 router.use('/bing', askBing);
 router.use('/sydney', askSydney);
 
 router.post('/', async (req, res) => {
-  let { model, text, parentMessageId, conversationId: oldConversationId , chatGptLabel, promptPrefix } = req.body;
+  let { model, text, parentMessageId, conversationId: oldConversationId , ...convo } = req.body;
   if (text.length === 0) {
     return handleError(res, { text: 'Prompt empty or too short' });
   }
@@ -27,20 +28,93 @@ router.post('/', async (req, res) => {
   const userMessageId = crypto.randomUUID();
   const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000'
   let userMessage = {
-     messageId: userMessageId, 
-     sender: 'User', 
-     text, 
-     parentMessageId: userParentMessageId,
-     conversationId, 
-     isCreatedByUser: true 
+    messageId: userMessageId, 
+    sender: 'User', 
+    text, 
+    parentMessageId: userParentMessageId,
+    conversationId, 
+    isCreatedByUser: true 
   };
 
   console.log('ask log', {
     model,
     ...userMessage,
-    chatGptLabel,
-    promptPrefix
+    ...convo
   });
+
+  // if (model === 'chatgptCustom' && !chatGptLabel && conversationId) {
+  //   const convo = await getConvo({ conversationId });
+  //   if (convo) {
+  //     console.log('found convo for custom gpt', { convo })
+  //     chatGptLabel = convo.chatGptLabel;
+  //     promptPrefix = convo.promptPrefix;
+  //   }
+  // }
+
+  await saveMessage(userMessage);
+  await saveConvo({ ...userMessage, model, ...convo });
+
+  return await ask({
+    userMessage, 
+    model,
+    convo,
+    preSendRequest: true,
+    req, res 
+  });
+})
+
+router.post('/regenerate', async (req, res) => {
+  const { parentMessageId, model, chatGptLabel, promptPrefix } = req.body;
+
+  const oldUserMessage = await getMessages({ messageId: req.body })
+
+  if (oldUserMessage) {
+    const convo = await getConvo(userMessage?.conversationId)
+
+    const userMessageId = crypto.randomUUID();
+
+    let userMessage = {
+      ...userMessage,
+      messageId: userMessageId, 
+    };
+
+    console.log('ask log for regeneration', {
+      model,
+      ...userMessage,
+      ...convo
+    });
+
+    return await ask({
+      userMessage, 
+      model,
+      convo,
+      preSendRequest: false,
+      req, res 
+    });
+  } else 
+    return handleError(res, { text: 'Parent message not found' });
+
+  // if (model === 'chatgptCustom' && !chatGptLabel && conversationId) {
+  //   const convo = await getConvo({ conversationId });
+  //   if (convo) {
+  //     console.log('found convo for custom gpt', { convo })
+  //     chatGptLabel = convo.chatGptLabel;
+  //     promptPrefix = convo.promptPrefix;
+  //   }
+  // }
+
+  // await saveConvo({ ...userMessage, model, chatGptLabel, promptPrefix });
+});
+
+const ask = async ({ 
+  userMessage, 
+  overrideParentMessageId = null,
+  model,
+  convo,
+  preSendRequest = true,
+  req, res 
+}) => {
+  let { sender, text, parentMessageId: userParentMessageId, conversationId, messageId: userMessageId } = userMessage;
 
   let client;
 
@@ -52,15 +126,6 @@ router.post('/', async (req, res) => {
     client = browserClient;
   }
 
-  if (model === 'chatgptCustom' && !chatGptLabel && conversationId) {
-    const convo = await getConvo({ conversationId });
-    if (convo) {
-      console.log('found convo for custom gpt', { convo })
-      chatGptLabel = convo.chatGptLabel;
-      promptPrefix = convo.promptPrefix;
-    }
-  }
-
   res.writeHead(200, {
     Connection: 'keep-alive',
     'Content-Type': 'text/event-stream',
@@ -69,9 +134,8 @@ router.post('/', async (req, res) => {
     'X-Accel-Buffering': 'no'
   });
 
-  await saveMessage(userMessage);
-  await saveConvo({ ...userMessage, model, chatGptLabel, promptPrefix });
-  sendMessage(res, { message: userMessage, created: true });
+  if (preSendRequest)
+    sendMessage(res, { message: userMessage, created: true });
 
   try {
     let i = 0;
@@ -80,12 +144,12 @@ router.post('/', async (req, res) => {
       if (i === 0 && typeof partial === 'object') {
         userMessage.conversationId = conversationId ? conversationId : partial.conversationId;
         await saveMessage(userMessage);
-        sendMessage(res, { ...partial, initial: true });
+        sendMessage(res, { ...partial, parentMessageId: overrideParentMessageId || userMessageId, initial: true });
         i++;
       }
 
       if (typeof partial === 'object') {
-        sendMessage(res, { ...partial, message: true });
+        sendMessage(res, { ...partial, parentMessageId: overrideParentMessageId || userMessageId, message: true });
       } else {
         tokens += partial === text ? '' : partial;
         if (tokens.match(/^\n/)) {
@@ -107,10 +171,10 @@ router.post('/', async (req, res) => {
       progressCallback,
       convo: {
         parentMessageId: userParentMessageId,
-        conversationId
+        conversationId,
+        ...convo
       },
-      chatGptLabel,
-      promptPrefix
+      ...convo
     });
 
     console.log('CLIENT RESPONSE', gptResponse);
@@ -118,7 +182,7 @@ router.post('/', async (req, res) => {
     if (!gptResponse.parentMessageId) {
       gptResponse.text = gptResponse.response;
       // gptResponse.id = gptResponse.messageId;
-      gptResponse.parentMessageId = userMessage.messageId;
+      gptResponse.parentMessageId = overrideParentMessageId || userMessageId;
       userMessage.conversationId = conversationId
         ? conversationId
         : gptResponse.conversationId;
@@ -133,22 +197,25 @@ router.post('/', async (req, res) => {
     ) {
       await saveMessage({ 
         messageId: crypto.randomUUID(), sender: model, 
-        conversationId, parentMessageId: userMessageId,
+        conversationId, parentMessageId: overrideParentMessageId || userMessageId,
         error: true, text: 'Prompt empty or too short'});
       return handleError(res, { text: 'Prompt empty or too short' });
     }
 
-    gptResponse.sender = model === 'chatgptCustom' ? chatGptLabel : model;
+    gptResponse.sender = model === 'chatgptCustom' ? convo.chatGptLabel : model;
     // gptResponse.final = true;
     gptResponse.text = await detectCode(gptResponse.text);
 
-    if (chatGptLabel?.length > 0 && model === 'chatgptCustom') {
-      gptResponse.chatGptLabel = chatGptLabel;
+    if (convo.chatGptLabel?.length > 0 && model === 'chatgptCustom') {
+      gptResponse.chatGptLabel = convo.chatGptLabel;
     }
 
-    if (promptPrefix?.length > 0 && model === 'chatgptCustom') {
-      gptResponse.promptPrefix = promptPrefix;
+    if (convo.promptPrefix?.length > 0 && model === 'chatgptCustom') {
+      gptResponse.promptPrefix = convo.promptPrefix;
     }
+
+    // override the parentMessageId, for the regeneration.
+    gptResponse.parentMessageId = overrideParentMessageId || userMessageId
 
     await saveMessage(gptResponse);
     await saveConvo(gptResponse);
@@ -160,7 +227,7 @@ router.post('/', async (req, res) => {
     });
     res.end();
 
-    if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
+    if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
       const title = await titleConvo({
         model,
         message: text,
@@ -184,6 +251,6 @@ router.post('/', async (req, res) => {
     await saveMessage(errorMessage);
     handleError(res, errorMessage);
   }
-});
+};
 
 module.exports = router;

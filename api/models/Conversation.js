@@ -57,12 +57,15 @@ const getConvo = async (conversationId) => {
 };
 
 module.exports = {
-  saveConvo: async ({ conversationId, title, ...convo }) => {
+  saveConvo: async ({ conversationId, newConversationId, title, ...convo }) => {
     try {
       const messages = await getMessages({ conversationId });
       const update = { ...convo, messages };
       if (title) {
         update.title = title;
+      }
+      if (newConversationId) {
+        update.conversationId = newConversationId;
       }
       if (!update.jailbreakConversationId)
         update.jailbreakConversationId = null

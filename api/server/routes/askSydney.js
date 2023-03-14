@@ -13,6 +13,7 @@ router.post('/', async (req, res) => {
   }
 
   const conversationId = oldConversationId || crypto.randomUUID();
+  const isNewConversation = !oldConversationId
 
   const userMessageId = crypto.randomUUID();
   const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000'
@@ -25,12 +26,35 @@ router.post('/', async (req, res) => {
     isCreatedByUser: true 
  };
 
-
  console.log('ask log', {
     model,
     ...userMessage,
     ...convo
   });
+
+  await saveMessage(userMessage);
+  await saveConvo({ ...userMessage, model, ...convo });
+
+  return await ask({
+    isNewConversation,
+    userMessage, 
+    model,
+    convo,
+    preSendRequest: true,
+    req, res 
+  });
+})
+
+const ask = async ({ 
+  isNewConversation,
+  overrideParentMessageId = null,
+  userMessage, 
+  model,
+  convo,
+  preSendRequest = true,
+  req, res 
+}) => {
+  let { sender, text, parentMessageId: userParentMessageId, conversationId, messageId: userMessageId } = userMessage;
 
   res.writeHead(200, {
     Connection: 'keep-alive',
@@ -40,9 +64,8 @@ router.post('/', async (req, res) => {
     'X-Accel-Buffering': 'no'
   });
 
-  await saveMessage(userMessage);
-  await saveConvo({ ...userMessage, model, chatGptLabel, promptPrefix });
-  sendMessage(res, { message: userMessage, created: true });
+  if (preSendRequest)
+    sendMessage(res, { message: userMessage, created: true });
 
   try {
     let tokens = '';
@@ -50,7 +73,7 @@ router.post('/', async (req, res) => {
       tokens += partial === text ? '' : partial;
       // tokens = appendCode(tokens);
       tokens = citeText(tokens, true);
-      sendMessage(res, { text: tokens, message: true });
+      sendMessage(res, { text: tokens, message: true, parentMessageId: overrideParentMessageId || userMessageId });
     };
 
     let response = await askSydney({
@@ -63,15 +86,19 @@ router.post('/', async (req, res) => {
       },
     });
 
-    console.log('SYDNEY RESPONSE');
-    console.log(response.response);
+    console.log('SYDNEY RESPONSE', response);
     // console.dir(response, { depth: null });
     const hasCitations = response.response.match(citationRegex)?.length > 0;
 
+    userMessage.conversationSignature =
+      convo.conversationSignature || response.conversationSignature;
+    userMessage.conversationId = response.conversationId || conversationId;
+    userMessage.invocationId = response.invocationId;
+    // Unlike gpt and bing, Sydney will never accept our given userMessage.messageId, it will generate its own one.
+    await saveMessage(userMessage);
+    
     // Save sydney response
     // response.id = response.messageId;
-    // response.parentMessageId = convo.parentMessageId ? convo.parentMessageId : response.messageId;
-    response.parentMessageId = response.messageId;
     response.invocationId = convo.invocationId ? convo.invocationId + 1 : 1;
     response.conversationId = conversationId
       ? conversationId
@@ -85,8 +112,10 @@ router.post('/', async (req, res) => {
       response.details.suggestedResponses &&
       response.details.suggestedResponses.map((s) => s.text);
     response.sender = model;
-    response.parentMessageId = gptResponse.parentMessageId || userMessage.messageId
     // response.final = true;
+
+    // override the parentMessageId, for the regeneration.
+    response.parentMessageId = overrideParentMessageId || response.parentMessageId || userMessageId;
 
     const links = getCitations(response);
     response.text =
@@ -94,25 +123,33 @@ router.post('/', async (req, res) => {
       (links?.length > 0 && hasCitations ? `\n<small>${links}</small>` : '');
 
     // Save user message
-    userMessage.conversationId = response.conversationId;
+    userMessage.conversationId = response.conversationId || conversationId;
     await saveMessage(userMessage);
+
+    // Bing API will not use our conversationId at the first time,
+    // so change the placeholder conversationId to the real one.
+    // Attition: the api will also create new conversationId while using invalid userMessage.parentMessageId,
+    // but in this situation, don't change the conversationId, but create new convo.
+    if (conversationId != userMessage.conversationId && isNewConversation) 
+      await saveConvo({ conversationId: conversationId, newConversationId: userMessage.conversationId });
+    conversationId = userMessage.conversationId;
 
     // Save sydney response & convo, then send
     await saveMessage(response);
-    await saveConvo(response);
+    await saveConvo({...response, model, ...convo});
     sendMessage(res, {
       title: await getConvoTitle(conversationId),
       final: true, 
       requestMessage: userMessage, 
-      responseMessage: gptResponse
+      responseMessage: response
     });
     res.end();
 
-    if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
+    if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
       const title = await titleConvo({
         model,
         message: text,
-        response: JSON.stringify(gptResponse?.text)
+        response: JSON.stringify(response?.text)
       });
 
       console.log('CONVERSATION TITLE', title);
@@ -132,6 +169,6 @@ router.post('/', async (req, res) => {
     await saveMessage(errorMessage);
     handleError(res, errorMessage);
   }
-});
+};
 
 module.exports = router;

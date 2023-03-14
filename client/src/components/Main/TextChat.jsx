@@ -49,7 +49,7 @@ export default function TextChat({ messages }) {
 
   const convoHandler = (data, currentState, currentMsg) => {
     const { requestMessage, responseMessage } = data;
-    const { conversationId } = currentMsg;
+    const { conversationId } = requestMessage;
     const { messages, _currentMsg, message, isCustomModel, sender } =
       currentState;
     const { model, chatGptLabel, promptPrefix } = message;
@@ -66,7 +66,7 @@ export default function TextChat({ messages }) {
 
       // in case it takes too long.
       setTimeout(() => {
-          dispatch(refreshConversation());
+        dispatch(refreshConversation());
       }, 5000);
     }
 
@@ -87,9 +87,7 @@ export default function TextChat({ messages }) {
         })
       );
     } else if (
-      model === 'bingai' &&
-      convo.conversationId === null &&
-      convo.invocationId === null
+      model === 'bingai'
     ) {
       console.log('Bing data:', data);
       const { title } = data;
