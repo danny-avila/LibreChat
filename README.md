@@ -1,4 +1,4 @@
-# ChatGPT Maison
+# ChatGPT Lab FR
 https://user-images.githubusercontent.com/110412045/223754183-8b7f45ce-6517-4bd5-9b39-c624745bf399.mp4
 
 ## Toutes les conversations sur l'IA sous un même toit. ##
