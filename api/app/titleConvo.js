@@ -11,9 +11,9 @@ const titleConvo = async ({ message, response, model }) => {
       {
         role: 'system',
         content:
-          'You are a title-generator with one job: giving a conversation, detect the language and titling the conversation provided by a user in title case, using the same language.'
+          'Vous êtes un générateur de titres avec une seule tâche : donner une conversation, détecter la langue et titrer la conversation fournie par un utilisateur en cas de titre, en utilisant la même langue.'
       },
-      { role: 'user', content: `In 5 words or less, summarize the conversation below with a title in title case using the language the user writes in. Don't refer to the participants of the conversation by name. Do not include punctuation or quotation marks. Your response should be in title case, exclusively containing the title. Conversation:\n\nUser: "${message}"\n\n${model}: "${response}"\n\nTitle: ` },
+      { role: 'user', content: `En 5 mots ou moins, résumez la conversation ci-dessous avec un titre en majuscules en utilisant la langue dans laquelle l'utilisateur écrit. Ne faites pas référence aux participants de la conversation par leur nom. N'incluez pas de ponctuation ou de guillemets. Votre réponse doit être rédigée en majuscules et contenir exclusivement le titre. Conversation:\n\nUser: "${message}"\n\n${model}: "${response}"\n\nTitle: ` },
     ]
   });
 
