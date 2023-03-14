@@ -1876,3 +1876,6 @@ button.scroll-convo {
   background-color:hsla(0,0%,100%,.4)
  }
 }
+.hidden-visibility {
+  visibility: hidden;
+}

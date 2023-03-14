@@ -1,10 +1,10 @@
 import React from 'react';
 import Conversation from './Conversation';
 
-export default function Conversations({ conversations, conversationId, showMore }) {
-  const clickHandler = async (e) => {
+export default function Conversations({ conversations, conversationId, pageNumber, pages, nextPage, previousPage, moveToTop }) {
+  const clickHandler = (func) => async (e) => {
     e.preventDefault();
-    await showMore();
+    await func();
   };
 
   return (
@@ -33,18 +33,29 @@ export default function Conversations({ conversations, conversationId, showMore 
               chatGptLabel={convo.chatGptLabel}
               promptPrefix={convo.promptPrefix}
               bingData={bingData}
-              retainView={showMore.bind(null, false)}
+              retainView={moveToTop}
             />
           );
         })}
-      {conversations?.length >= 12 && (
-        <button
-          onClick={clickHandler}
-          className="btn btn-dark btn-small m-auto mb-2 flex justify-center gap-2"
-        >
-          Show more
-        </button>
-      )}
+        <div className="m-auto mt-4 mb-2 flex justify-center items-center gap-2">
+          <button
+            onClick={clickHandler(previousPage)}
+            className={"flex btn btn-small transition bg-transition dark:text-white disabled:text-gray-300 dark:disabled:text-gray-400 m-auto gap-2 hover:bg-gray-800" + (pageNumber<=1?" hidden-visibility":"")}
+            disabled={pageNumber<=1}
+          >
+            &lt;&lt;
+          </button>
+          <span className="flex-none text-gray-400">
+            {pageNumber} / {pages}
+          </span>
+          <button
+            onClick={clickHandler(nextPage)}
+            className={"flex btn btn-small transition bg-transition dark:text-white disabled:text-gray-300 dark:disabled:text-gray-400 m-auto gap-2 hover:bg-gray-800" + (pageNumber>=pages?" hidden-visibility":"")}
+            disabled={pageNumber>=pages}
+          >
+            &gt;&gt;
+          </button>
+        </div>
     </>
   );
 }

@@ -91,19 +91,17 @@ module.exports = {
     }
   },
   // getConvos: async () => await Conversation.find({}).sort({ createdAt: -1 }).exec(),
-  getConvos: async (pageNumber = 1, pageSize = 12) => {
+  getConvosByPage: async (pageNumber = 1, pageSize = 12) => {
     try {
-      const skip = (pageNumber - 1) * pageSize;
-      // const limit = pageNumber * pageSize;
-
-      const conversations = await Conversation.find({})
+      const totalConvos = await Conversation.countDocuments();
+      const totalPages = Math.ceil(totalConvos / pageSize);
+      const convos = await Conversation.find()
         .sort({ createdAt: -1 })
-        .skip(skip)
-        // .limit(limit)
+        .skip((pageNumber - 1) * pageSize)
         .limit(pageSize)
         .exec();
 
-      return conversations;
+      return { conversations: convos, pages: totalPages, pageNumber, pageSize };
     } catch (error) {
       console.log(error);
       return { message: 'Error getting conversations' };
