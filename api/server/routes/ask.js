@@ -19,7 +19,7 @@ router.use('/sydney', askSydney);
 router.post('/', async (req, res) => {
   let { model, text, parentMessageId, conversationId: oldConversationId , chatGptLabel, promptPrefix } = req.body;
   if (text.length === 0) {
-    return handleError(res, 'Prompt empty or too short');
+    return handleError(res, { text: 'Prompt empty or too short' });
   }
 
   const conversationId = oldConversationId || crypto.randomUUID();
@@ -135,7 +135,7 @@ router.post('/', async (req, res) => {
         messageId: crypto.randomUUID(), sender: model, 
         conversationId, parentMessageId: userMessageId,
         error: true, text: 'Prompt empty or too short'});
-      return handleError(res, 'Prompt empty or too short');
+      return handleError(res, { text: 'Prompt empty or too short' });
     }
 
     gptResponse.sender = model === 'chatgptCustom' ? chatGptLabel : model;
@@ -175,11 +175,12 @@ router.post('/', async (req, res) => {
   } catch (error) {
     console.log(error);
     // await deleteMessages({ messageId: userMessageId });
-    await saveMessage({ 
+    const errorMessage = { 
       messageId: crypto.randomUUID(), sender: model, 
-      conversationId, parentMessageId: userMessageId,
-      error: true, text: error.message});
-    handleError(res, error.message);
+      conversationId, parentMessageId: overrideParentMessageId || userMessageId,
+      error: true, text: error.message}
+    await saveMessage(errorMessage);
+    handleError(res, errorMessage);
   }
 });
 

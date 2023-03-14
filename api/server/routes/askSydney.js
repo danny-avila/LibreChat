@@ -9,7 +9,7 @@ const citationRegex = /\[\^\d+?\^]/g;
 router.post('/', async (req, res) => {
   const { model, text, parentMessageId, conversationId: oldConversationId, ...convo } = req.body;
   if (text.length === 0) {
-    return handleError(res, 'Prompt empty or too short');
+    return handleError(res, { text: 'Prompt empty or too short' });
   }
 
   const conversationId = oldConversationId || crypto.randomUUID();
@@ -123,11 +123,12 @@ router.post('/', async (req, res) => {
   } catch (error) {
     console.log(error);
     // await deleteMessages({ messageId: userMessageId });
-    await saveMessage({ 
+    const errorMessage = { 
       messageId: crypto.randomUUID(), sender: model, 
-      conversationId, parentMessageId: userMessageId,
-      error: true, text: error.message});
-    handleError(res, error.message);
+      conversationId, parentMessageId: overrideParentMessageId || userMessageId,
+      error: true, text: error.message}
+    await saveMessage(errorMessage);
+    handleError(res, errorMessage);
   }
 });
 

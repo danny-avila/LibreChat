@@ -1,5 +1,5 @@
-const handleError = (res, errorMessage) => {
-  res.status(500).write(`event: error\ndata: ${errorMessage}`);
+const handleError = (res, message) => {
+  res.write(`event: error\ndata: ${JSON.stringify(message)}\n\n`);
   res.end();
 };
 
