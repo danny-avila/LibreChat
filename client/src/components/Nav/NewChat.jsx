@@ -45,7 +45,7 @@ export default function NewChat() {
           y2="12"
         />
       </svg>
-      New chat
+      Nouvelle conversation
     </a>
   );
 }
