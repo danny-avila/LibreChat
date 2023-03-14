@@ -42,19 +42,19 @@ export default function Landing({ title }) {
                 onClick={clickHandler}
                 className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
               >
-                &quot;Explain quantum computing in simple terms&quot; →
+                &quot;Expliquer l'informatique quantique en terme simple &quot; →
               </button>
               <button
                 onClick={clickHandler}
                 className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
               >
-                &quot;Got any creative ideas for a 10 year old&apos;s birthday?&quot; →
+                &quot;Peux-tu m'aider à rédiger un article pour Linkedin ?&quot; →
               </button>
               <button
                 onClick={clickHandler}
                 className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
               >
-                &quot;How do I make an HTTP request in Javascript?&quot; →
+                &quot;Comment construire une requête Oracle SQL?&quot; →
               </button>
             </ul>
           </div>
@@ -65,13 +65,13 @@ export default function Landing({ title }) {
             </h2>
             <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                Remembers what user said earlier in the conversation
+                Se souvient de ce que l'utilisateur a dit plus tôt dans la conversation
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                Allows user to provide follow-up corrections
+                Permet à l'utilisateur de fournir des corrections complémentaires
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                Trained to decline inappropriate requests
+                Formé à refuser les demandes inappropriées
               </li>
             </ul>
           </div>
@@ -82,14 +82,14 @@ export default function Landing({ title }) {
             </h2>
             <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                May occasionally generate incorrect information
+                Peut occasionnellement produire des informations incorrectes
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                May occasionally produce harmful instructions or biased content
+                Peut occasionnellement produire des instructions nuisibles ou un contenu tendancieux.
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                Limited knowledge of world and events after 2021
-              </li>
+                Connaissance limitée du monde et des événements après 2021
+               </li>
             </ul>
           </div>
         </div>
