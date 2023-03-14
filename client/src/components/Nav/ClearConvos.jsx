@@ -29,7 +29,7 @@ export default function ClearConvos() {
       onClick={clickHandler}
     >
       <TrashIcon />
-      Clear conversations
+      Supprimer les conversations
     </a>
   );
 }
