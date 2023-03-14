@@ -96,7 +96,7 @@ module.exports = {
       const totalConvos = await Conversation.countDocuments();
       const totalPages = Math.ceil(totalConvos / pageSize);
       const convos = await Conversation.find()
-        .sort({ createdAt: -1 })
+        .sort({ createdAt: -1, created: -1 })
         .skip((pageNumber - 1) * pageSize)
         .limit(pageSize)
         .exec();
@@ -127,7 +127,7 @@ module.exports = {
       const conversations = await Conversation.find({ model: null }).exec();
 
       if (!conversations || conversations.length === 0)
-        return { message: 'No conversations to migrate' };
+        return { message: '[Migrate] No conversations to migrate' };
 
       for (let convo of conversations) {
         const messages = await getMessages({
@@ -135,22 +135,20 @@ module.exports = {
           messageId: { $exists: false }
         });
 
-        const promises = [];
         let model;
         let oldId;
+        const promises = [];
         messages.forEach((message, i) => {
           const msgObj = message.toObject();
           const newId = msgObj.id;
           if (i === 0) {
             message.parentMessageId = '00000000-0000-0000-0000-000000000000';
-            oldId = newId;
           } else {
             message.parentMessageId = oldId;
-            oldId = newId;
           }
           
+          oldId = newId;
           message.messageId = newId;
-          message.createdAt = message.created;
           if (message.sender.toLowerCase() !== 'user' && !model) {
             model = message.sender.toLowerCase();
           }
@@ -164,7 +162,7 @@ module.exports = {
 
         await Conversation.findOneAndUpdate(
           { conversationId: convo.conversationId },
-          { model, createdAt: convo.created },
+          { model },
           { new: true }
         ).exec();
       }
@@ -172,11 +170,11 @@ module.exports = {
       try {
         await mongoose.connection.db.collection('messages').dropIndex('id_1');
       } catch (error) {
-        console.log("Index doesn't exist or already dropped");
+        console.log("[Migrate] Index doesn't exist or already dropped");
       }
     } catch (error) {
       console.log(error);
-      return { message: 'Error migrating conversations' };
+      return { message: '[Migrate] Error migrating conversations' };
     }
   }
 };
