@@ -93,7 +93,7 @@ module.exports = {
   // getConvos: async () => await Conversation.find({}).sort({ createdAt: -1 }).exec(),
   getConvosByPage: async (pageNumber = 1, pageSize = 12) => {
     try {
-      const totalConvos = await Conversation.countDocuments();
+      const totalConvos = (await Conversation.countDocuments()) || 1;
       const totalPages = Math.ceil(totalConvos / pageSize);
       const convos = await Conversation.find()
         .sort({ createdAt: -1, created: -1 })
