@@ -21,7 +21,7 @@ export default function MobileNav({ setNavVisible }) {
     dispatch(setSubmission({}));
   }
 
-  const title = convos?.find(element => element?.conversationId == conversationId)?.title || 'New Chat';
+  const title = convos?.find(element => element?.conversationId == conversationId)?.title || 'Nouvelle Conversation';
 
   return (
     <div className="sticky top-0 z-10 flex items-center border-b border-white/20 bg-gray-800 pl-1 pt-1 text-gray-200 sm:pl-3 md:hidden">
@@ -30,7 +30,7 @@ export default function MobileNav({ setNavVisible }) {
         className="-ml-0.5 -mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-md hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white dark:hover:text-white"
         onClick={toggleNavVisible}
       >
-        <span className="sr-only">Open sidebar</span>
+        <span className="sr-only">Ouvrir Menu Lattéral</span>
         <svg
           stroke="currentColor"
           fill="none"
