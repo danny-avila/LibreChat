@@ -27,7 +27,7 @@ export default function Regenerate({ submitMessage, tryAgain, errorMessage }) {
           className="btn btn-neutral flex justify-center gap-2 border-0 md:border"
         >
           <RegenerateIcon />
-          Try another message
+          Essayez un autre message
         </button>
       </span>
     </>
