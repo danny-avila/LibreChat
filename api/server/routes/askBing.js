@@ -14,7 +14,7 @@ router.post('/', async (req, res) => {
 
   const conversationId = oldConversationId || crypto.randomUUID();
 
-  const userMessageId = messageId;
+  const userMessageId = crypto.randomUUID();
   const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000'
   let userMessage = {
     messageId: userMessageId, 

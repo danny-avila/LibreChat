@@ -1,5 +1,6 @@
 const express = require('express');
 const dbConnect = require('../models/dbConnect');
+const { migrateDb } = require('../models');
 const path = require('path');
 const cors = require('cors');
 const routes = require('./routes');
@@ -7,7 +8,10 @@ const app = express();
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost'
 const projectPath = path.join(__dirname, '..', '..', 'client');
-dbConnect().then(() => console.log('Connected to MongoDB'));
+dbConnect().then(() => {
+  console.log('Connected to MongoDB');
+  migrateDb();
+});
 
 app.use(cors());
 app.use(express.json());
