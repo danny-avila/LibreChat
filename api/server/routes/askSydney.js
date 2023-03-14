@@ -73,13 +73,6 @@ router.post('/', async (req, res) => {
     // response.parentMessageId = convo.parentMessageId ? convo.parentMessageId : response.messageId;
     response.parentMessageId = response.messageId;
     response.invocationId = convo.invocationId ? convo.invocationId + 1 : 1;
-    response.title = convo.jailbreakConversationId
-      ? await getConvoTitle(conversationId)
-      : await titleConvo({
-          model,
-          message: text,
-          response: JSON.stringify(response.response)
-        });
     response.conversationId = conversationId
       ? conversationId
       : crypto.randomUUID();
@@ -114,6 +107,19 @@ router.post('/', async (req, res) => {
       responseMessage: gptResponse
     });
     res.end();
+
+    if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
+      const title = await titleConvo({
+        model,
+        message: text,
+        response: JSON.stringify(gptResponse?.text)
+      });
+
+      await saveConvo({
+        conversationId,
+        title
+      })
+    }
   } catch (error) {
     console.log(error);
     // await deleteMessages({ messageId: userMessageId });

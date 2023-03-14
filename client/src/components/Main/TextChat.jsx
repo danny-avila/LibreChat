@@ -307,7 +307,7 @@ export default function TextChat({ messages }) {
 
   const changeHandler = (e) => {
     const { value } = e.target;
-    console.log(value)
+
     if (isSubmitting && (value === '' || value === '\n')) {
       return;
     }
