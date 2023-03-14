@@ -259,7 +259,7 @@ export default function Message({
                   </div>
                 )}
             </div>
-              <HoverButtons user={!error && isCreatedByUser && !edit} onClick={() => enterEdit()}/>
+              <HoverButtons model={model} visible={!error && isCreatedByUser && !edit} onClick={() => enterEdit()}/>
           </div>
         </div>
       </div>
