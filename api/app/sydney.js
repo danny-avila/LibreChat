@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
 
-const askSydney = async ({ text, progressCallback, convo }) => {
+const askSydney = async ({ text, onProgress, convo }) => {
   const { BingAIClient } = (await import('@waylaidwanderer/chatgpt-api'));
 
   const sydneyClient = new BingAIClient({
@@ -15,10 +15,10 @@ const askSydney = async ({ text, progressCallback, convo }) => {
 
   let options = {
     jailbreakConversationId: true,
-    onProgress: async (partialRes) => await progressCallback(partialRes),
+    onProgress,
   };
 
-  if (convo.parentMessageId) {
+  if (convo.jailbreakConversationId) {
     options = { ...options, jailbreakConversationId: convo.jailbreakConversationId, parentMessageId: convo.parentMessageId };
   }
 

@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
 
-const askBing = async ({ text, progressCallback, convo }) => {
+const askBing = async ({ text, onProgress, convo }) => {
   const { BingAIClient } = (await import('@waylaidwanderer/chatgpt-api'));
 
   const bingAIClient = new BingAIClient({
@@ -14,10 +14,7 @@ const askBing = async ({ text, progressCallback, convo }) => {
     proxy: process.env.PROXY || null,
   });
 
-  let options = {
-    onProgress: async (partialRes) => await progressCallback(partialRes),
-  };
-
+  let options = { onProgress };
   if (convo) {
     options = { ...options, ...convo };
   }

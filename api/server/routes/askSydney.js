@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const router = express.Router();
 const { titleConvo, getCitations, citeText, askSydney } = require('../../app/');
 const { saveMessage, saveConvo, getConvoTitle } = require('../../models');
-const { handleError, sendMessage } = require('./handlers');
+const { handleError, sendMessage, createOnProgress } = require('./handlers');
 const citationRegex = /\[\^\d+?\^]/g;
 
 router.post('/', async (req, res) => {
@@ -68,17 +68,10 @@ const ask = async ({
     sendMessage(res, { message: userMessage, created: true });
 
   try {
-    let tokens = '';
-    const progressCallback = async (partial) => {
-      tokens += partial === text ? '' : partial;
-      // tokens = appendCode(tokens);
-      tokens = citeText(tokens, true);
-      sendMessage(res, { text: tokens, message: true, parentMessageId: overrideParentMessageId || userMessageId });
-    };
-
+    const progressCallback = createOnProgress();
     let response = await askSydney({
       text,
-      progressCallback,
+      onProgress: progressCallback.call(null, model, {res, text, parentMessageId: overrideParentMessageId || userMessageId }),
       convo: {
         parentMessageId: userParentMessageId,
         conversationId,
