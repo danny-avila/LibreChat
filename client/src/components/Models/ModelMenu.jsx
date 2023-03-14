@@ -149,7 +149,7 @@ export default function ModelMenu() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-56 dark:bg-gray-700">
-          <DropdownMenuLabel className="dark:text-gray-300">Select a Model</DropdownMenuLabel>
+          <DropdownMenuLabel className="dark:text-gray-300">Selectionner un Modele</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
             value={customModel ? customModel : model}
