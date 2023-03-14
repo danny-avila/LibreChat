@@ -64,7 +64,7 @@ module.exports = {
   },
   deleteMessagesSince: async ({ messageId, conversationId }) => {
     try {
-      message = await Message.findOne({ messageId }).exec()
+      const message = await Message.findOne({ messageId }).exec()
 
       if (message) 
         return await Message.find({ conversationId }).deleteMany({ createdAt: { $gt: message.createdAt } }).exec();
