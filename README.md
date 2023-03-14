@@ -1,279 +1,281 @@
-# ChatGPT Clone #
+# ChatGPT Maison
 https://user-images.githubusercontent.com/110412045/223754183-8b7f45ce-6517-4bd5-9b39-c624745bf399.mp4
 
-## All AI Conversations under One Roof. ##
-  Assistant AIs are the future and OpenAI revolutionized this movement with ChatGPT. While numerous methods exist to integrate them, this app commemorates the original styling of ChatGPT, with the ability to integrate any current/future AI models, while improving upon original client features, such as conversation search and prompt templates (currently WIP).
+## Toutes les conversations sur l'IA sous un même toit. ##
+  Les assistants IA sont l'avenir et OpenAI a révolutionné ce mouvement avec ChatGPT. Bien qu'il existe de nombreuses méthodes pour les intégrer, cette application commémore le style original de ChatGPT, avec la possibilité d'intégrer n'importe quel modèle d'IA actuel ou futur, tout en améliorant les fonctionnalités originales du client, telles que la recherche de conversation et les modèles d'invite (actuellement WIP).
 
-  This project was started early in Feb '23, anticipating the release of the official ChatGPT API from OpenAI, and now uses it. Through this clone, you can avoid ChatGPT Plus in favor of free or pay-per-call APIs. I will soon deploy a demo of this app. Feel free to contribute, clone, or fork. Currently dockerized.
+  Ce projet a été lancé au début du mois de février 23, anticipant la sortie de l'API officielle de ChatGPT d'OpenAI, et l'utilise désormais. Grâce à ce clone, vous pouvez éviter ChatGPT Plus en faveur d'API gratuites ou payantes. Je déploierai bientôt une démo de cette application. N'hésitez pas à contribuer, cloner ou forker. Actuellement dockerisé.
 
-## Updates
+## Mises à jour
 <details open>
 <summary><strong>2023-03-12</strong></summary>
 
 
 
 
-Really thankful for all the issues reported and contributions made, the project's features and improvements have accelerated as result. Honorable mention is [wtlyu](https://github.com/wtlyu) for contributing a lot of mindful code, namely hostname configuration and mobile styling. I will upload images on next release for faster docker setup, and starting updating them simultaneously with this repo.
+Vraiment reconnaissant pour tous les problèmes signalés et les contributions apportées, les fonctionnalités et les améliorations du projet se sont accélérées en conséquence. Mention honorable à [wtlyu](https://github.com/wtlyu) pour avoir contribué à une grande partie du code, à savoir la configuration du nom d'hôte et le style mobile. Je vais télécharger des images sur la prochaine version pour une installation plus rapide de docker, et commencer à les mettre à jour en même temps que ce repo.
 
 
 
-Many improvements across the board, the biggest is being able to start conversations simultaneously (again thanks to [wtlyu](https://github.com/wtlyu) for bringing it to my attention), as you can switch conversations or start a new chat without any response streaming from a prior one, as the backend will still process/save client responses. Just watch out for any rate limiting from OpenAI/Microsoft if this is done excessively.
+Beaucoup d'améliorations dans tous les domaines, la plus importante étant la possibilité de démarrer des conversations simultanément (encore merci à [wtlyu](https://github.com/wtlyu) de me l'avoir signalé), car vous pouvez changer de conversation ou démarrer un nouveau chat sans qu'aucune réponse ne soit transmise par un chat précédent, car le backend continuera à traiter/sauvegarder les réponses des clients. Il faut juste se méfier des limitations de débit d'OpenAI/Microsoft si cela est fait de manière excessive.
 
 
-Adding support for conversation search is next! Thank you [mysticaltech](https://github.com/mysticaltech) for bringing up a method I can use for this.
+L'ajout de la prise en charge de la recherche de conversation est la prochaine étape ! Merci à [mysticaltech](https://github.com/mysticaltech) d'avoir proposé une méthode que je peux utiliser pour cela.
 </details>
 
 <details>
 <details>
 <summary><strong>2023-03-09</strong></summary>
-Released v.0.0.2
+Version francophone de **chatgpt-clone**.
 
-Adds Sydney (jailbroken Bing AI) to the model menu. Thank you [DavesDevFails](https://github.com/DavesDevFails) for bringing it to my attention in this [issue](https://github.com/danny-avila/chatgpt-clone/issues/13). Bing/Sydney now correctly cite links, more styling to come. Fix some overlooked bugs, and model menu doesn't close upon deleting a customGpt.
+Sortie de la version 0.0.2
+
+Ajoute Sydney (Bing AI jailbreaké) au menu modèle. Merci à [DavesDevFails](https://github.com/DavesDevFails) d'avoir attiré mon attention sur ce [problème](https://github.com/danny-avila/chatgpt-clone/issues/13). Bing/Sydney cite maintenant correctement les liens, plus de style à venir. Correction de quelques bugs négligés, et le menu du modèle ne se ferme pas lors de la suppression d'un customGpt.
 
 
-I've re-enabled the ChatGPT browser client (free version) since it might be working for most people, it no longer works for me. Sydney is the best free route anyway.
+J'ai réactivé le client de navigation ChatGPT (version gratuite) car il pourrait fonctionner pour la plupart des gens, mais il ne fonctionne plus pour moi. Sydney est de toute façon la meilleure solution gratuite.
 </details>
 <details>
 <summary><strong>2023-03-07</strong></summary>
-Due to increased interest in the repo, I've dockerized the app as of this update for quick setup! See setup instructions below. I realize this still takes some time with installing docker dependencies, so it's on the roadmap to have a deployed demo. Besides this, I've made major improvements for a lot of the existing features across the board, mainly UI/UX.
+En raison de l'intérêt croissant pour le repo, j'ai dockerisé l'application à partir de cette mise à jour pour une installation rapide ! Voir les instructions d'installation ci-dessous. Je réalise que cela prend encore un peu de temps avec l'installation des dépendances de docker, donc c'est sur la feuille de route d'avoir une démo déployée. Par ailleurs, j'ai apporté des améliorations majeures à de nombreuses fonctionnalités existantes, principalement l'interface utilisateur et l'interface graphique.
 
 
-Also worth noting, the method to access the Free Version is no longer working, so I've removed it from model selection until further notice.
+A noter également que la méthode d'accès à la version gratuite ne fonctionne plus, je l'ai donc retirée de la sélection des modèles jusqu'à nouvel ordre.
 </details>
-<summary><strong>Previous Updates</strong></summary>
+<summary><strong>Mises à jour précédentes</strong></summary>
 
 <details>
 <summary><strong>2023-03-04</strong></summary>
-Custom prompt prefixing and labeling is now supported through the official API. This nets some interesting results when you need ChatGPT for specific uses or entertainment. Select 'CustomGPT' in the model menu to configure this, and you can choose to save the configuration or reference it by conversation. Model selection will change by conversation.
+Le préfixage et l'étiquetage personnalisés des invites sont désormais pris en charge par l'API officielle. Cela permet d'obtenir des résultats intéressants lorsque vous avez besoin de ChatGPT pour des utilisations spécifiques ou des divertissements. Sélectionnez 'CustomGPT' dans le menu du modèle pour configurer ceci, et vous pouvez choisir de sauvegarder la configuration ou de la référencer par conversation. La sélection du modèle changera en fonction de la conversation.
 </details>
 <details>
 <summary><strong>2023-03-01</strong></summary>
-Official ChatGPT API is out! Removed davinci since the official API is extremely fast and 10x less expensive. Since user labeling and prompt prefixing is officially supported, I will add a View feature so you can set this within chat, which gives the UI an added use case. I've kept the BrowserClient, since it's free to use like the official site.
+L'API officielle de ChatGPT est disponible ! Suppression de davinci car l'API officielle est extrêmement rapide et 10x moins chère. Puisque l'étiquetage utilisateur et la préfixation des invites sont officiellement supportés, je vais ajouter une fonctionnalité View pour que vous puissiez les définir dans le chat, ce qui donne à l'interface utilisateur un cas d'utilisation supplémentaire. J'ai conservé le BrowserClient, puisqu'il est libre d'utilisation comme le site officiel.
 
-The Messages UI correctly mirrors code syntax highlighting. The exact replication of the cursor is not 1-to-1 yet, but pretty close. Later on in the project, I'll implement tests for code edge cases and explore the possibility of running code in-browser. Right now, unknown code defaults to javascript, but will detect language as close as possible.
+L'interface Messages reflète correctement la coloration syntaxique du code. La réplication exacte du curseur n'est pas encore 1 pour 1, mais elle est assez proche. Plus tard dans le projet, j'implémenterai des tests pour les cas limites du code et j'explorerai la possibilité d'exécuter le code dans le navigateur. Pour l'instant, le code inconnu est par défaut du javascript, mais il détectera le langage le plus proche possible.
 </details>
 <details>
 <summary><strong>2023-02-21</strong></summary>
-BingAI is integrated (although sadly limited by Microsoft with the 5 msg/convo limit, 50 msgs/day). I will need to handle the case when Bing refuses to give more answers on top of the other styling features I have in mind. Official ChatGPT use is back with the new BrowserClient. Brainstorming how to handle the UI when the Ai model changes, since conversations can't be persisted between them (or perhaps build a way to achieve this at some level).
+BingAI est intégré (bien que malheureusement limité par Microsoft avec la limite de 5 msg/convo, 50 msgs/jour). Je vais devoir gérer le cas où Bing refuse de donner plus de réponses en plus des autres fonctionnalités de style que j'ai en tête. L'utilisation officielle de ChatGPT est de retour avec le nouveau BrowserClient. Je réfléchis à la manière de gérer l'interface utilisateur lorsque le modèle Ai change, puisque les conversations ne peuvent pas être persistées entre elles (ou peut-être construire un moyen d'y parvenir à un certain niveau).
 </details>
-<details >
+<details>
 <summary><strong>2023-02-15</strong></summary>
-Just got access to Bing AI so I'll be focusing on integrating that through waylaidwanderer's 'experimental' BingAIClient.
+Je viens d'avoir accès à Bing AI, je vais donc me concentrer sur l'intégration de cette technologie à travers le BingAIClient 'expérimental' de waylaidwanderer.
 </details>
 <details>
 <summary><strong>2023-02-14</strong></summary>
 
-Official ChatGPT use is no longer possible though I recently used it with waylaidwanderer's [reverse proxy method](https://github.com/waylaidwanderer/node-chatgpt-api/blob/main/README.md#using-a-reverse-proxy), and before that, through leaked models he also discovered.
+L'utilisation officielle de ChatGPT n'est plus possible bien que je l'ai récemment utilisé avec la [méthode de proxy inverse] de waylaidwanderer (https://github.com/waylaidwanderer/node-chatgpt-api/blob/main/README.md#using-a-reverse-proxy), et avant cela, à travers des modèles divulgués qu'il a également découverts.
 
-Currently, this project is only functional with the `text-davinci-003` model.
+Actuellement, ce projet ne fonctionne qu'avec le modèle `text-davinci-003`.
 </details>
 </details>
 
-# Table of Contents
-- [ChatGPT Clone](#chatgpt-clone)
-  - [All AI Conversations under One Roof.](#all-ai-conversations-under-one-roof)
-  - [Updates](#updates)
-- [Table of Contents](#table-of-contents)
-  - [Roadmap](#roadmap)
-    - [Features](#features)
-    - [Tech Stack](#tech-stack)
-  - [Getting Started](#getting-started)
-    - [Prerequisites](#prerequisites)
+# Table des matières
+- [ChatGPT Maison](#chatgpt-clone)
+  - [Toutes les conversations IA sous un même toit](#toutes-les-conversations-ai-sous-un-seul-toit)
+  - [Mises à jour](#misesàjour)
+- [Table des matières](#table-of-contents)
+  - [Feuille de route](#Feuille de route)
+    - [Caractéristiques](#caractéristiques)
+    - [Pile technologique](#piletechnique)
+  - [Démarrage](#démarrage)
+    - [Prérequis](#prerequisites)
   - [Usage](#usage)
     - [Local](#local)
     - [Docker](#docker)
-    - [Access Tokens](#access-tokens)
+    - [Tokens d'accès](#access-tokens)
     - [Proxy](#proxy)
-    - [Updating](#updating)
-  - [Use Cases](#use-cases)
-  - [Origin](#origin)
+    - [Mise à jour](#updating)
+  - [Cas d'utilisation](#casd'utilisation)
+  - [Origine](#origine)
   - [Caveats](#caveats)
-    - [Regarding use of Official ChatGPT API](#regarding-use-of-official-chatgpt-api)
-  - [Contributing](#contributing)
-  - [License](#license)
+    - [Concernant l'utilisation de l'API officielle de ChatGPT](#regarding-use-of-official-chatgpt-api)
+  - [Contribuer](#contribuer)
+  - [Licence](#license)
 
-## Roadmap
+## Feuille de route
 
-> **Warning**
+> **Avertissement**
 
->  This is a work in progress. I'm building this in public. FYI there is still a lot of tech debt to cleanup. You can follow the progress here or on my [Linkedin](https://www.linkedin.com/in/danny-avila).
+> Ceci est un travail en cours. Je le construis en public. Pour information, il y a encore beaucoup de dette technologique à nettoyer. Vous pouvez suivre les progrès ici ou sur mon [Linkedin] (https://www.linkedin.com/in/danny-avila).
 
-Here are my recently completed and planned features:
+Voici les fonctionnalités que j'ai récemment terminées et celles que je prévois :
 
-- [x] Persistent conversation
-- [x] Rename, delete conversations
-- [x] UI Error handling
-- [x] Bing AI integration
-- [x] AI model change handling (start new convos within existing, remembers last selected)
-- [x] Code block handling (highlighting, markdown, clipboard, language detection)
-- [x] Markdown handling
-- [x] Customize prompt prefix/label (custom ChatGPT using official API)
-- [x] Server convo pagination (limit fetch and load more with 'show more' button)
-- [x] Config file for easy startup (docker compose)
-- [x] Mobile styling (thanks to [wtlyu](https://github.com/wtlyu))
-- [ ] Bing AI Styling (for suggested responses, convo end, etc.) - **In progress**
-- [ ] Add warning before clearing convos
-- [ ] Build test suite for CI/CD
-- [ ] Conversation Search (by title)
-- [ ] Resubmit/edit sent messages
-- [ ] Semantic Search Option (requires more tokens)
-- [ ] Prompt Templates/Search
-- [ ] Refactor/clean up code (tech debt)
-- [ ] Optional use of local storage for credentials
-- [ ] Deploy demo
+- [x] Conversation persistante
+- [x] Renommer, supprimer des conversations
+- [x] Gestion des erreurs dans l'interface utilisateur
+- [x] Intégration de Bing AI
+- [x] Gestion des changements de modèle d'IA (démarrer de nouvelles conversations dans les conversations existantes, se souvenir de la dernière sélectionnée)
+- [x] Gestion des blocs de code (surlignage, markdown, presse-papiers, détection de la langue)
+- [x] Gestion du Markdown
+- [x] Personnalisation du préfixe/label de l'invite (ChatGPT personnalisé utilisant l'API officielle)
+- [x] Pagination des conversations sur le serveur (limiter la recherche et charger plus avec le bouton 'show more')
+- [x] Fichier de configuration pour un démarrage facile (docker compose)
+- [x] Style mobile (merci à [wtlyu](https://github.com/wtlyu))
+- [ ] Style de l'IA de Bing (pour les réponses suggérées, la fin de la conversation, etc.) - **En cours**
+- [ ] Ajout d'un avertissement avant d'effacer les conversations
+- [ ] Construire une suite de tests pour CI/CD
+- [ ] Recherche de conversation (par titre)
+- [ ] Resoumettre/éditer les messages envoyés
+- [ ] Option de recherche sémantique (nécessite plus de jetons)
+- [ ] Modèles d'invite/recherche
+- [ ] Refonte/nettoyage du code (dette technologique)
+- Utilisation optionnelle d'un stockage local pour les informations d'identification
+- Déployer la démo
 
-### Features
+### Caractéristiques
 
-- Response streaming identical to ChatGPT through server-sent events
-- UI from original ChatGPT, including Dark mode
-- AI model selection (official ChatGPT API, BingAI, ChatGPT Free)
-- Create and Save custom ChatGPTs*
+- Réponse en continu identique à ChatGPT par le biais d'événements envoyés par le serveur
+- Interface utilisateur du ChatGPT original, y compris le mode sombre
+- Sélection du modèle d'IA (ChatGPT API officiel, BingAI, ChatGPT Free)
+- Créer et sauvegarder des ChatGPTs personnalisés*
 
-^* ChatGPT can be 'customized' by setting a system message or prompt prefix and alternate 'role' to the API request
+Le ChatGPT peut être "personnalisé" en définissant un message système ou un préfixe d'invite et un "rôle" alternatif à la demande d'API.
 
-[More info here](https://platform.openai.com/docs/guides/chat/instructing-chat-models). Here's an [example from this app.]()
+[Plus d'informations ici] (https://platform.openai.com/docs/guides/chat/instructing-chat-models). Voici un [exemple de cette application]()
 
-### Tech Stack
+### Pile technique
 
-- Utilizes [node-chatgpt-api](https://github.com/waylaidwanderer/node-chatgpt-api)
-- No React boilerplate/toolchain/clone tutorials, created from scratch with react@latest
-- Use of Tailwind CSS and [shadcn/ui](https://github.com/shadcn/ui) components
+- Utilise [node-chatgpt-api](https://github.com/waylaidwanderer/node-chatgpt-api)
+- Pas de tutoriels React boilerplate/toolchain/clone, créé à partir de zéro avec react@latest
+- Utilisation des composants Tailwind CSS et [shadcn/ui](https://github.com/shadcn/ui)
 - Docker, useSWR, Redux, Express, MongoDB, [Keyv](https://www.npmjs.com/package/keyv)
 
-## Getting Started
+## Démarrage
 
-### Prerequisites
+### Prérequis
 - npm
 - Node.js >= 19.0.0
-- MongoDB installed or [MongoDB Atlas](https://account.mongodb.com/account/login) (required if not using Docker)
-- [Docker (optional)](https://www.docker.com/get-started/)
-- [OpenAI API key](https://platform.openai.com/account/api-keys)
-- BingAI, ChatGPT access tokens (optional, free AIs)
+- MongoDB installé ou [MongoDB Atlas](https://account.mongodb.com/account/login) (requis si vous n'utilisez pas Docker)
+- Docker (optionnel)](https://www.docker.com/get-started/)
+- Clé API OpenAI](https://platform.openai.com/account/api-keys)
+- Jetons d'accès BingAI, ChatGPT (facultatifs, IA gratuites)
 
-## Usage
+## Utilisation
 
-- **Clone/download** the repo down where desired
+- **Clonez/téléchargez** le repo à l'endroit désiré
 ```bash
   git clone https://github.com/danny-avila/chatgpt-clone.git
 ```
-- If using MongoDB Atlas, remove `&w=majority` from default connection string.
+- Si vous utilisez MongoDB Atlas, supprimez `&w=majority` de la chaîne de connexion par défaut.
 
 ### Local
-- **Run npm** install in both the api and client directories
-- **Provide** all credentials, (API keys, access tokens, and Mongo Connection String) in api/.env [(see .env example)](api/.env.example)
-- **Run** `npm run build` in /client/ dir, `npm start` in /api/ dir
-- **Visit** http://localhost:3080 (default port) & enjoy
+- Exécutez npm** install dans les répertoires api et client.
+- Fournissez toutes les informations d'identification (clés API, jetons d'accès et chaîne de connexion Mongo) dans api/.env [(voir l'exemple .env)](api/.env.example)
+- **Run** `npm run build` dans le répertoire /client/, `npm start` dans le répertoire /api/.
+- Visitez http://localhost:3080 (port par défaut) et appréciez.
 
-By default, only local machine can access this server. To share within network or serve as a public server, set `HOST` to `0.0.0.0` in `.env` file
+Par défaut, seule la machine locale peut accéder à ce serveur. Pour le partager au sein du réseau ou servir de serveur public, mettez `HOST` à `0.0.0.0` dans le fichier `.env`.
 
 ### Docker
 
-- **Provide** all credentials, (API keys, access tokens, and Mongo Connection String) in [docker-compose.yml](docker-compose.yml) under api service
-- **Build images** in both /api/ and /client/ directories (will eventually share through docker hub)
+- Fournir** toutes les informations d'identification (clés API, jetons d'accès et chaîne de connexion Mongo) dans [docker-compose.yml](docker-compose.yml) sous le service api.
+- Construire des images** dans les répertoires /api/ et /client/ (qui seront éventuellement partagées via docker hub)
     - `api/`
     ```bash
     docker build -t node-api .
     ```
     - `client/`
-    ```bash
+    ``bash
     docker build -t react-client .
     ```
-- **Run** `docker-compose build` in project root dir and then `docker-compose up` to start the app
+- **Lancer** `docker-compose build` dans le répertoire racine du projet et ensuite `docker-compose up` pour démarrer l'application
 
-### Access Tokens
+### Jetons d'accès
 
 <details>
 <summary><strong>ChatGPT Free Instructions</strong></summary>
 
-To get your Access token For ChatGPT 'Free Version', login to chat.openai.com, then visit https://chat.openai.com/api/auth/session.
+Pour obtenir votre jeton d'accès pour ChatGPT 'Free Version', connectez-vous à chat.openai.com, puis visitez https://chat.openai.com/api/auth/session.
 
 
-**Warning:** There may be a high chance of your account being banned with this method. Continue doing so at your own risk.
+**Avertissement:** Il y a de fortes chances que votre compte soit banni avec cette méthode. Continuez à le faire à vos risques et périls.
 
 </details>
 
 <details>
-<summary><strong>BingAI Instructions</strong></summary>
-The Bing Access Token is the "_U" cookie from bing.com. Use dev tools or an extension while logged into the site to view it.
+<summary><strong>Instructions BingAI</strong></summary>
+Le jeton d'accès Bing est le cookie "_U" de bing.com. Utilisez les outils de développement ou une extension lorsque vous êtes connecté au site pour le voir.
 
-**Note:** Specific error handling and styling for this model is still in progress.
+**Note:** La gestion spécifique des erreurs et le style pour ce modèle sont encore en cours de développement.
 </details>
 
 ### Proxy
 
-If your server cannot connect to the chatGPT API server by some reason, (eg in China). You can set a environment variable `PROXY`. This will be transmitted to `node-chatgpt-api` interface.
+Si votre serveur ne peut pas se connecter au serveur API de chatGPT pour une raison quelconque (par exemple en Chine). Vous pouvez définir une variable d'environnement `PROXY`. Celle-ci sera transmise à l'interface `node-chatgpt-api`.
 
-**Warning:** `PROXY` is not `reverseProxyUrl` in `node-chatgpt-api`
+**Warning:** `PROXY` n'est pas `reverseProxyUrl` dans `node-chatgpt-api`
 
 <details>
-<summary><strong>Set up proxy in local environment </strong></summary>
+<summary><strong>Mise en place d'un proxy dans l'environnement local</strong></summary>
 
-Here is two ways to set proxy.
-- Option 1: system level environment
+Il y a deux façons de configurer un proxy.
+- Option 1 : environnement au niveau du système
 `export PROXY="http://127.0.0.1:7890"`
-- Option 2: set in .env file
+- Option 2 : dans le fichier .env
 `PROXY="http://127.0.0.1:7890"`
 
-**Change `http://127.0.0.1:7890` to your proxy server**
+**Changez `http://127.0.0.1:7890` pour votre serveur proxy**
 </details>
 
 <details>
-<summary><strong>Set up proxy in docker environment </strong></summary>
+<summary><strong>Mise en place du proxy dans l'environnement docker </strong></summary>
 
-set in docker-compose.yml file, under services - api - environment
+défini dans le fichier docker-compose.yml, sous services - api - environment
 
 ```
-    api:
+    api :
         ...
-        environment:
+        environnement :
                 ...
                 - "PROXY=http://127.0.0.1:7890"
-                # add this line ↑
+                # ajouter cette ligne ↑
 ```
 
-**Change `http://127.0.0.1:7890` to your proxy server**
+**Changez `http://127.0.0.1:7890` pour votre serveur proxy**
 
 </details>
 
-### Updating
-- As the project is still a work-in-progress, you should pull the latest and run the steps over. Reset your browser cache/clear site data.
+### Mise à jour
+- Comme le projet est toujours en cours, vous devriez prendre la dernière version et exécuter les étapes ci-dessus. Réinitialisez le cache de votre navigateur/effacez les données du site.
 
-## Use Cases ##
+## Cas d'utilisation ##
 
-  - One stop shop for all conversational AIs, with the added bonus of searching past conversations.
-  - Using the official API, you'd have to generate 7.5 million words to expense the same cost as ChatGPT Plus ($20).
-  - ChatGPT/Google Bard/Bing AI conversations are lost in space or
-  cannot be searched past a certain timeframe.
-  - **Customize ChatGPT**
+  - Un guichet unique pour toutes les IA conversationnelles, avec en prime la possibilité d'effectuer des recherches dans les conversations passées.
+  - En utilisant l'API officielle, vous devriez générer 7,5 millions de mots pour dépenser le même coût que ChatGPT Plus (20 $).
+  - Les conversations ChatGPT/Google Bard/Bing AI sont perdues dans l'espace ou
+  ne peuvent être recherchées au-delà d'un certain délai.
+  - **Personnaliser ChatGPT**
 
-    ![use case example](./images/use_case3.png "Make a Custom GPT")
+    ![exemple de cas d'utilisation](./images/use_case3.png "Make a Custom GPT")
 
-  - **API is not as limited as ChatGPT Free (at [chat.openai.com](https://chat.openai.com/chat))**
+  - L'API n'est pas aussi limitée que ChatGPT Free (at [chat.openai.com](https://chat.openai.com/chat))**.
 
-    ![use case example](./images/use_case2.png "chat.openai.com is getting more limited by the day!")
+    ![exemple de cas d'utilisation](./images/use_case2.png "chat.openai.com devient plus limité de jour en jour !")
 
-  - **ChatGPT Free is down.**
+  - **ChatGPT Free est en panne.**
 
-    ![use case example](./images/use_case.png "GPT is down! Plus is too expensive!")
+    ![use case example](./images/use_case.png "GPT is down ! Plus is too expensive !")
 
 
-## Origin ##
-  This project was originally created as a Minimum Viable Product (or MVP) for the [@HackReactor](https://github.com/hackreactor/) Bootcamp. It was built with OpenAI response streaming and most of the UI completed in under 20 hours. During the end of that time, I had most of the UI and basic functionality done. This was created without using any boilerplates or templates, including create-react-app and other toolchains. I didn't follow any 'un-official chatgpt' video tutorials, and simply referenced the official site for the UI. The purpose of the exercise was to learn setting up a full stack project from scratch. Please feel free to give feedback, suggestions, or fork the project for your own use.
+## Origine ##
+  Ce projet a été créé à l'origine comme un produit minimum viable (ou MVP) pour le Bootcamp [@HackReactor](https://github.com/hackreactor/). Il a été construit avec OpenAI response streaming et la plupart de l'interface utilisateur a été réalisée en moins de 20 heures. À la fin de cette période, j'avais terminé la majeure partie de l'interface utilisateur et des fonctionnalités de base. Cette application a été créée sans utiliser de modèles ou de gabarits, y compris create-react-app et d'autres chaînes d'outils. Je n'ai pas suivi de tutoriels vidéo "non officiels de chatgpt", et j'ai simplement fait référence au site officiel pour l'interface utilisateur. Le but de l'exercice était d'apprendre à mettre en place un projet complet à partir de zéro. N'hésitez pas à nous faire part de vos commentaires, suggestions, ou à forker le projet pour votre propre usage.
 
 
 ## Caveats
-### Regarding use of Official ChatGPT API
-From [@waylaidwanderer](https://github.com/waylaidwanderer/node-chatgpt-api/blob/main/README.md#caveats):
+### Concernant l'utilisation de l'API officielle de ChatGPT
+De [@waylaidwanderer](https://github.com/waylaidwanderer/node-chatgpt-api/blob/main/README.md#caveats) :
 
-Since `gpt-3.5-turbo` is ChatGPT's underlying model, I had to do my best to replicate the way the official ChatGPT website uses it.
-This means my implementation or the underlying model may not behave exactly the same in some ways:
-- Conversations are not tied to any user IDs, so if that's important to you, you should implement your own user ID system.
-- ChatGPT's model parameters (temperature, frequency penalty, etc.) are unknown, so I set some defaults that I thought would be reasonable.
-- Conversations are limited to roughly the last 3000 tokens, so earlier messages may be forgotten during longer conversations.
-  - This works in a similar way to ChatGPT, except I'm pretty sure they have some additional way of retrieving context from earlier messages when needed (which can probably be achieved with embeddings, but I consider that out-of-scope for now).
+Puisque `gpt-3.5-turbo` est le modèle sous-jacent de ChatGPT, j'ai dû faire de mon mieux pour reproduire la façon dont le site officiel de ChatGPT l'utilise.
+Cela signifie que mon implémentation ou le modèle sous-jacent peut ne pas se comporter exactement de la même manière à certains égards :
+- Les conversations ne sont pas liées à des identifiants d'utilisateur, donc si cela est important pour vous, vous devriez implémenter votre propre système d'identifiant d'utilisateur.
+- Les paramètres du modèle de ChatGPT (température, pénalité de fréquence, etc.) sont inconnus, j'ai donc fixé des valeurs par défaut que j'ai jugées raisonnables.
+- Les conversations sont limitées aux 3000 derniers tokens, de sorte que les messages antérieurs peuvent être oubliés au cours de conversations plus longues.
+  - Le fonctionnement est similaire à celui de ChatGPT, sauf que je suis presque sûr qu'ils ont un moyen supplémentaire de récupérer le contexte des messages antérieurs en cas de besoin (ce qui peut probablement être réalisé avec des embeddings, mais je considère que c'est hors sujet pour l'instant).
 
-## Contributing
-If you'd like to contribute, please create a pull request with a detailed description of your changes.
+## Contribuer
+Si vous souhaitez contribuer, veuillez créer une demande de téléchargement avec une description détaillée de vos changements.
 
-## License
-This project is licensed under the MIT License.
+## Licence
+Ce projet est sous licence MIT.
