@@ -1106,7 +1106,7 @@ html {
 }
 .dark .dark\:bg-gray-900 {
   --tw-bg-opacity: 1;
-  background-color: rgba(32, 33, 35, var(--tw-bg-opacity));
+  background-color: rgba(41, 144, 218, var(--tw-bg-opacity));
 }
 .dark .dark\:bg-transparent {
   background-color: transparent;
