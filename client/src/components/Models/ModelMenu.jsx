@@ -44,9 +44,13 @@ export default function ModelMenu() {
 
   useEffect(() => {
     mutate();
-    const lastSelected = JSON.parse(localStorage.getItem('model'));
-    if (lastSelected && lastSelected !== 'chatgptCustom' && initial[lastSelected]) {
-      dispatch(setModel(lastSelected));
+    try {
+      const lastSelected = JSON.parse(localStorage.getItem('model'));
+      if (lastSelected && lastSelected !== 'chatgptCustom' && initial[lastSelected]) {
+        dispatch(setModel(lastSelected));
+      }
+    } catch (err) {
+      console.log(err);
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
