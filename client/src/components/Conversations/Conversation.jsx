@@ -74,6 +74,7 @@ export default function Conversation({
       );
     }
     const data = await trigger();
+    console.log('data', data);
 
     if (chatGptLabel) {
       dispatch(setModel('chatgptCustom'));
