@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const router = express.Router();
 const { titleConvo, getCitations, citeText, askBing } = require('../../app/');
 const { saveMessage, getConvoTitle, saveConvo } = require('../../models');
-const { handleError, sendMessage } = require('./handlers');
+const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 const citationRegex = /\[\^\d+?\^]/g;
 
 router.post('/', async (req, res) => {
@@ -68,17 +68,10 @@ const ask = async ({
     sendMessage(res, { message: userMessage, created: true });
 
   try {
-    let tokens = '';
-    const progressCallback = async (partial) => {
-      tokens += partial === text ? '' : partial;
-      // tokens = appendCode(tokens);
-      tokens = citeText(tokens, true);
-      sendMessage(res, { text: tokens, message: true, parentMessageId: overrideParentMessageId || userMessageId });
-    };
-
+    const progressCallback = createOnProgress();
     let response = await askBing({
       text,
-      progressCallback,
+      onProgress: progressCallback.call(null, model, {res, text, parentMessageId: overrideParentMessageId || userMessageId }),
       convo: {
         ...convo,
         parentMessageId: userParentMessageId,
@@ -120,6 +113,7 @@ const ask = async ({
     response.text =
       citeText(response) +
       (links?.length > 0 && hasCitations ? `\n<small>${links}</small>` : '');
+    response.text = await handleText(response.text);
 
     await saveMessage(response);
     await saveConvo({...response, model, ...convo});
