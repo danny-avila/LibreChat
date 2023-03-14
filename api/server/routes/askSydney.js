@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const router = express.Router();
 const { titleConvo, getCitations, citeText, askSydney } = require('../../app/');
 const { saveMessage, saveConvo, getConvoTitle } = require('../../models');
-const { handleError, sendMessage, createOnProgress } = require('./handlers');
+const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 const citationRegex = /\[\^\d+?\^]/g;
 
 router.post('/', async (req, res) => {
@@ -114,6 +114,7 @@ const ask = async ({
     response.text =
       citeText(response) +
       (links?.length > 0 && hasCitations ? `\n<small>${links}</small>` : '');
+    response.text = await handleText(response.text);
 
     // Save user message
     userMessage.conversationId = response.conversationId || conversationId;
