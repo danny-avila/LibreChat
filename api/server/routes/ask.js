@@ -11,7 +11,7 @@ const {
   detectCode
 } = require('../../app/');
 const { getConvo, saveMessage, getConvoTitle, saveConvo } = require('../../models');
-const { handleError, sendMessage } = require('./handlers');
+const { handleError, sendMessage, createOnProgress } = require('./handlers');
 const { getMessages } = require('../../models/Message');
 
 router.use('/bing', askBing);
@@ -138,37 +138,10 @@ const ask = async ({
     sendMessage(res, { message: userMessage, created: true });
 
   try {
-    let i = 0;
-    let tokens = '';
-    const progressCallback = async (partial) => {
-      if (i === 0 && typeof partial === 'object') {
-        userMessage.conversationId = conversationId ? conversationId : partial.conversationId;
-        await saveMessage(userMessage);
-        sendMessage(res, { ...partial, parentMessageId: overrideParentMessageId || userMessageId, initial: true });
-        i++;
-      }
-
-      if (typeof partial === 'object') {
-        sendMessage(res, { ...partial, parentMessageId: overrideParentMessageId || userMessageId, message: true });
-      } else {
-        tokens += partial === text ? '' : partial;
-        if (tokens.match(/^\n/)) {
-          tokens = tokens.replace(/^\n/, '');
-        }
-
-        if (tokens.includes('[DONE]')) {
-          tokens = tokens.replace('[DONE]', '');
-        }
-
-        // tokens = await detectCode(tokens);
-        sendMessage(res, { text: tokens, message: true, initial: i === 0 ? true : false });
-        i++;
-      }
-    };
-
+    const progressCallback = createOnProgress();
     let gptResponse = await client({
       text,
-      progressCallback,
+      onProgress: progressCallback.call(null, model, {res, text }),
       convo: {
         parentMessageId: userParentMessageId,
         conversationId,
