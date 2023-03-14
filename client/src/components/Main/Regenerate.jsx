@@ -10,7 +10,7 @@ export default function Regenerate({ submitMessage, tryAgain, errorMessage }) {
   return (
     <>
       <span className="mb-2 block flex justify-center text-xs text-black dark:text-white/50 md:mb-2">
-        There was an error generating a response
+        Une erreur s'est produite lors de la génération de la réponse
       </span>
       <span className="m-auto flex justify-center">
         {!errorMessage.includes('short') && (
