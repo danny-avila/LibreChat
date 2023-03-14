@@ -64,6 +64,8 @@ module.exports = {
       if (title) {
         update.title = title;
       }
+      if (!update.jailbreakConversationId)
+        update.jailbreakConversationId = null
 
       return await Conversation.findOneAndUpdate(
         { conversationId },

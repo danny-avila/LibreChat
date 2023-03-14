@@ -22,8 +22,10 @@ const askBing = async ({ text, progressCallback, convo }) => {
     options = { ...options, ...convo };
   }
 
-  const res = await bingAIClient.sendMessage(text, options
-  );
+  if (options?.jailbreakConversationId == 'false')
+    options.jailbreakConversationId = false
+
+  const res = await bingAIClient.sendMessage(text, options);
 
   return res;
 
