@@ -72,7 +72,7 @@ Actuellement, ce projet ne fonctionne qu'avec le modèle `text-davinci-003`.
 </details>
 
 # Table des matières
-- [ChatGPT Maison](#chatgpt-clone)
+- [ChatGPT Lab FR](#chatgpt-clone)
   - [Toutes les conversations IA sous un même toit](#toutes-les-conversations-ai-sous-un-seul-toit)
   - [Mises à jour](#misesàjour)
 - [Table des matières](#table-of-contents)
@@ -156,7 +156,7 @@ Le ChatGPT peut être "personnalisé" en définissant un message système ou un 
 
 - **Clonez/téléchargez** le repo à l'endroit désiré
 ```bash
-  git clone https://github.com/danny-avila/chatgpt-clone.git
+  git clone https://github.com/chrisagon/chatgpt-maison-fr.git
 ```
 - Si vous utilisez MongoDB Atlas, supprimez `&w=majority` de la chaîne de connexion par défaut.
 
