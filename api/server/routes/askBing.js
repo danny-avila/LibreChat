@@ -72,14 +72,6 @@ router.post('/', async (req, res) => {
     userMessage.invocationId = response.invocationId;
     await saveMessage(userMessage);
 
-    // if (!convo.conversationSignature) {
-    //   response.title = await titleConvo({
-    //     model,
-    //     message: text,
-    //     response: JSON.stringify(response.response)
-    //   });
-    // }
-
     response.text = response.response;
     delete response.response;
     // response.id = response.details.messageId;
@@ -104,6 +96,19 @@ router.post('/', async (req, res) => {
       responseMessage: gptResponse
     });
     res.end();
+
+    if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
+      const title = await titleConvo({
+        model,
+        message: text,
+        response: JSON.stringify(gptResponse?.text)
+      });
+
+      await saveConvo({
+        conversationId,
+        title
+      })
+    }
   } catch (error) {
     console.log(error);
     // await deleteMessages({ messageId: userMessageId });

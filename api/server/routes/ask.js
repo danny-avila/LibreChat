@@ -138,13 +138,6 @@ router.post('/', async (req, res) => {
       return handleError(res, 'Prompt empty or too short');
     }
 
-    // if (!parentMessageId) {
-    //   gptResponse.title = await titleConvo({
-    //     model,
-    //     message: text,
-    //     response: JSON.stringify(gptResponse.text)
-    //   });
-    // }
     gptResponse.sender = model === 'chatgptCustom' ? chatGptLabel : model;
     // gptResponse.final = true;
     gptResponse.text = await detectCode(gptResponse.text);
@@ -166,6 +159,19 @@ router.post('/', async (req, res) => {
       responseMessage: gptResponse
     });
     res.end();
+
+    if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
+      const title = await titleConvo({
+        model,
+        message: text,
+        response: JSON.stringify(gptResponse?.text)
+      });
+
+      await saveConvo({
+        conversationId,
+        title
+      })
+    }
   } catch (error) {
     console.log(error);
     // await deleteMessages({ messageId: userMessageId });

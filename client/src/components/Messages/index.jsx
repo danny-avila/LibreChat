@@ -26,8 +26,6 @@ const Messages = ({ messages }) => {
   
   const messageTree = useMemo(() => buildTree(messages), [messages, ]);
 
-  console.log('messageTree', messageTree);
-
   function buildTree(messages) {
     let messageMap = {};
     let rootMessages = [];
