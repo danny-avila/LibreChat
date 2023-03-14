@@ -296,7 +296,7 @@ export default function TextChat({ messages }) {
                 onKeyUp={handleKeyUp}
                 onKeyDown={handleKeyDown}
                 onChange={changeHandler}
-                placeholder={disabled ? 'Choose another model or customize GPT again' : ''}
+                placeholder={disabled ? 'Choisissez un autre modèle ou personnalisez à nouveau le GPT' : ''}
                 disabled={disabled}
                 className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-9 pr-8 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-8"
               />
