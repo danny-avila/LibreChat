@@ -34,14 +34,11 @@ const Messages = ({ messages }) => {
     messages.forEach(message => {
       messageMap[message.messageId] = {...message, children: []};
 
-      if (message.parentMessageId === "00000000-0000-0000-0000-000000000000") {
+      const parentMessage = messageMap[message.parentMessageId];
+      if (parentMessage)
+        parentMessage.children.push(messageMap[message.messageId]);
+      else 
         rootMessages.push(messageMap[message.messageId]);
-      } else {
-        const parentMessage = messageMap[message.parentMessageId];
-        if (parentMessage) {
-          parentMessage.children.push(messageMap[message.messageId]);
-        }
-      }
     });
   
     return rootMessages;
