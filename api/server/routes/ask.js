@@ -167,6 +167,8 @@ router.post('/', async (req, res) => {
         response: JSON.stringify(gptResponse?.text)
       });
 
+      console.log('CONVERSATION TITLE', title);
+
       await saveConvo({
         conversationId,
         title

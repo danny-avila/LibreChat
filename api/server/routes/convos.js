@@ -17,20 +17,23 @@ router.post('/gen_title', async (req, res) => {
   const firstMessage = (await getMessages({ conversationId }))[0]
   const secondMessage = (await getMessages({ conversationId }))[1]
 
-  const title = convo.jailbreakConversationId
-    ? await getConvoTitle(conversationId)
-    : await titleConvo({
-        model: convo?.model,
-        message: firstMessage?.text,
-        response: JSON.stringify(secondMessage?.text || '')
-      });
-
-  await saveConvo({
-    conversationId,
-    title
-  })
-
-  res.status(200).send(title);
+  // if (convo.title == 'New Chat') {
+  //   const title = await titleConvo({
+  //                   model: convo?.model,
+  //                   message: firstMessage?.text,
+  //                   response: JSON.stringify(secondMessage?.text || '')
+  //                 });
+  
+  //   console.log('CONVERSATION TITLE', title);
+  
+  //   await saveConvo({
+  //     conversationId,
+  //     title
+  //   })
+  
+  //   res.status(200).send(title);
+  // } else 
+  return res.status(200).send(convo.title);
 });
 
 router.post('/clear', async (req, res) => {
