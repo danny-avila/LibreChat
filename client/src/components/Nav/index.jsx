@@ -6,37 +6,53 @@ import NavLinks from './NavLinks';
 import useDidMountEffect from '~/hooks/useDidMountEffect';
 import { swr } from '~/utils/fetchers';
 import { useDispatch, useSelector } from 'react-redux';
-import { incrementPage, setConvos } from '~/store/convoSlice';
+import { increasePage, decreasePage, setPage, setConvos, setPages } from '~/store/convoSlice';
 
 export default function Nav({ navVisible, setNavVisible }) {
   const dispatch = useDispatch();
   const [isHovering, setIsHovering] = useState(false);
-  const { conversationId, convos, pageNumber, refreshConvoHint } = useSelector((state) => state.convo);
+  const { conversationId, convos, pages, pageNumber, refreshConvoHint } = useSelector((state) => state.convo);
   const onSuccess = (data) => {
-    dispatch(setConvos(data));
+    const { conversations, pages } = data;
+
+    if (pageNumber > pages)
+      dispatch(setPage(pages));
+    else 
+      dispatch(setConvos(conversations));
+    dispatch(setPages(pages));
   };
 
   const { data, isLoading, mutate } = swr(
     `/api/convos?pageNumber=${pageNumber}`,
-    onSuccess
+    onSuccess,
+    {revalidateOnMount: false}
   );
 
   const containerRef = useRef(null);
   const scrollPositionRef = useRef(null);
 
-  const showMore = async (increment = true) => {
+  const moveToTop = () => {
     const container = containerRef.current;
     if (container) {
       scrollPositionRef.current = container.scrollTop;
     }
+  }
 
-    if (increment) {
-      dispatch(incrementPage());
-      await mutate();
-    }
+  const nextPage = async () => {
+    moveToTop()
+
+    dispatch(increasePage());
+    await mutate();
   };
 
-  useDidMountEffect(() => mutate(), [conversationId, refreshConvoHint]);
+  const previousPage = async () => {
+    moveToTop()
+    
+    dispatch(decreasePage());
+    await mutate();
+  };
+
+  useEffect(() => {mutate()}, [pageNumber, conversationId, refreshConvoHint]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -86,8 +102,11 @@ export default function Nav({ navVisible, setNavVisible }) {
                     <Conversations
                       conversations={convos}
                       conversationId={conversationId}
-                      showMore={showMore}
+                      nextPage={nextPage}
+                      previousPage={previousPage}
+                      moveToTop={moveToTop}
                       pageNumber={pageNumber}
+                      pages={pages}
                     />
                   )}
                 </div>
