@@ -128,18 +128,17 @@ export default function TextChat({ messages }) {
     dispatch(setSubmitState(false));
   };
 
-  const errorHandler = (event, currentState, currentMsg) => {
+  const errorHandler = (data, currentState, currentMsg) => {
     const { initialResponse, messages, _currentMsg, message } = currentState;
-    console.log('Error:', event);
+    console.log('Error:', data);
     const errorResponse = {
-      ...initialResponse,
-      text: `${event.data}`,
+      ...data,
       error: true,
       parentMessageId: currentMsg?.messageId,
     };
-    setErrorMessage(event.data);
+    setErrorMessage(data?.text);
     dispatch(setSubmitState(false));
-    dispatch(setMessages([...messages.slice(0, -2), currentMsg, errorResponse]));
+    dispatch(setMessages([...messages, currentMsg, errorResponse]));
     dispatch(setText(message?.text));
     dispatch(setError(true));
     return;
@@ -265,7 +264,10 @@ export default function TextChat({ messages }) {
     events.onerror = function (e) {
       console.log('error in opening conn.');
       events.close();
-      errorHandler(e, currentState, currentMsg);
+
+      const data = JSON.parse(e.data);
+
+      errorHandler(data, currentState, currentMsg);
     };
 
     events.stream();
