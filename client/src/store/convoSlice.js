@@ -13,8 +13,9 @@ const initialState = {
   promptPrefix: null,
   convosLoading: false,
   pageNumber: 1,
+  pages: 1,
   refreshConvoHint: 0,
-  convos: []
+  convos: [],
 };
 
 const currentSlice = createSlice({
@@ -30,12 +31,18 @@ const currentSlice = createSlice({
     setError: (state, action) => {
       state.error = action.payload;
     },
-    incrementPage: (state) => {
+    increasePage: (state) => {
       state.pageNumber = state.pageNumber + 1;
+    },
+    decreasePage: (state) => {
+      state.pageNumber = state.pageNumber - 1;
+    },
+    setPage: (state, action) => {
+      state.pageNumber = action.payload;
     },
     setNewConvo: (state) => {
       state.error = false;
-      state.title = 'New Chat';
+      state.title = 'ChatGPT Clone';
       state.conversationId = null;
       state.parentMessageId = null;
       state.jailbreakConversationId = null;
@@ -45,12 +52,14 @@ const currentSlice = createSlice({
       state.chatGptLabel = null;
       state.promptPrefix = null;
       state.convosLoading = false;
-      state.pageNumber = 1;
     },
     setConvos: (state, action) => {
       state.convos = action.payload.sort(
         (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
       );
+    },
+    setPages: (state, action) => {
+      state.pages = action.payload;
     },
     removeConvo: (state, action) => {
       state.convos = state.convos.filter((convo) => convo.conversationId !== action.payload);
@@ -61,7 +70,7 @@ const currentSlice = createSlice({
   }
 });
 
-export const { refreshConversation, setConversation, setConvos, setNewConvo, setError, incrementPage, removeConvo, removeAll } =
+export const { refreshConversation, setConversation, setPages, setConvos, setNewConvo, setError, increasePage, decreasePage, setPage, removeConvo, removeAll } =
   currentSlice.actions;
 
 export default currentSlice.reducer;

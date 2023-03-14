@@ -2,12 +2,12 @@ const express = require('express');
 const router = express.Router();
 const { titleConvo } = require('../../app/');
 const { getConvo, saveConvo, getConvoTitle } = require('../../models');
-const { getConvos, deleteConvos, updateConvo } = require('../../models/Conversation');
+const { getConvosByPage, deleteConvos, updateConvo } = require('../../models/Conversation');
 const { getMessages } = require('../../models/Message');
 
 router.get('/', async (req, res) => {
   const pageNumber = req.query.pageNumber || 1;
-  res.status(200).send(await getConvos(pageNumber));
+  res.status(200).send(await getConvosByPage(pageNumber));
 });
 
 router.post('/gen_title', async (req, res) => {
