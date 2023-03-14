@@ -8,10 +8,10 @@ const {
   askClient,
   browserClient,
   customClient,
-  detectCode
+  // detectCode
 } = require('../../app/');
 const { getConvo, saveMessage, getConvoTitle, saveConvo } = require('../../models');
-const { handleError, sendMessage, createOnProgress } = require('./handlers');
+const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 const { getMessages } = require('../../models/Message');
 
 router.use('/bing', askBing);
@@ -177,7 +177,8 @@ const ask = async ({
 
     gptResponse.sender = model === 'chatgptCustom' ? convo.chatGptLabel : model;
     // gptResponse.final = true;
-    gptResponse.text = await detectCode(gptResponse.text);
+    // gptResponse.text = await detectCode(gptResponse.text);
+    gptResponse.text = await handleText(gptResponse.text);
 
     if (convo.chatGptLabel?.length > 0 && model === 'chatgptCustom') {
       gptResponse.chatGptLabel = convo.chatGptLabel;

@@ -1,4 +1,4 @@
-const { citeText } = require('../../app/');
+const { citeText, detectCode } = require('../../app/');
 const _ = require('lodash');
 const sanitizeHtml = require('sanitize-html');
 
@@ -20,11 +20,14 @@ const createOnProgress = () => {
 
   const progressCallback = async (partial, { res, text, bing = false, ...rest }) => {
     tokens += partial === text ? '' : partial;
-    tokens = tokens.trim();
     tokens = tokens.replaceAll('[DONE]', '');
-    if (tokens.includes('```')) {
-      tokens = sanitizeHtml(tokens);
+
+    if (tokens.match(/^\n/)) {
+      tokens = tokens.replace(/^\n/, '');
     }
+    // if (tokens.includes('```')) {
+    //   tokens = sanitizeHtml(tokens);
+    // }
 
     if (bing) {
       tokens = citeText(tokens, true);
@@ -42,4 +45,15 @@ const createOnProgress = () => {
   return onProgress;
 };
 
-module.exports = { handleError, sendMessage, createOnProgress };
+const handleText = async (input) => {
+  let text = input;
+  text = await detectCode(text);
+  // if (text.includes('```')) {
+  //   text = sanitizeHtml(text);
+  //   text = text.replaceAll(') =&gt;', ') =>');
+  // }
+
+  return text;
+};
+
+module.exports = { handleError, sendMessage, createOnProgress, handleText };
