@@ -9,10 +9,10 @@ export default function Footer() {
         rel="noreferrer"
         className="underline"
       >
-        ChatGPT Clone
+        ChatGPT Lab
       </a>
-      . Serves and searches all conversations reliably. All AI convos under one house. Pay per
-      call and not per month (cents compared to dollars).
+      . Servir et rechercher toutes vos conversations de manière fiable. Toutes vos conversations AI sous un même toit. Payez par
+par appel et non par mois (des centimes en lieu et place de dollars)..
     </div>
   );
 }
