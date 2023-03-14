@@ -29,7 +29,7 @@ const titleConvo = async (message, response, model) => {
   const openai = new OpenAIApi(configuration);
   const completion = await openai.createCompletion({
     model: 'text-davinci-002',
-    prompt: `Write a short title in title case, ideally in 5 words or less, and do not refer to the user or ${model}, that summarizes this conversation:\nUser:"${message}"\n${model}:"${response}"\nTitle: `
+    prompt: `Rédigez un titre court en majuscules, idéalement en 5 mots ou moins, et ne faites pas référence à l'utilisateur ou ${model}, qui résume cette conversation:\nUser:"${message}"\n${model}:"${response}"\nTitle: `
   });
 
   return completion.data.choices[0].text.replace(/\n/g, '');
