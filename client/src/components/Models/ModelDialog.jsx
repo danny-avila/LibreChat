@@ -58,7 +58,7 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
     mutate();
     setSaveText((prev) => prev + 'd!');
     setTimeout(() => {
-      setSaveText('Save');
+      setSaveText('Enregistrer');
     }, 2500);
 
     dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
@@ -82,16 +82,16 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
   return (
     <DialogContent className="shadow-2xl dark:bg-gray-800">
       <DialogHeader>
-        <DialogTitle className="text-gray-800 dark:text-white">Customize ChatGPT</DialogTitle>
+        <DialogTitle className="text-gray-800 dark:text-white">Personnalisez ChatGPT</DialogTitle>
         <DialogDescription className="text-gray-600 dark:text-gray-300">
-          Note: important instructions are often better placed in your message rather than the
-          prefix.{' '}
+          Remarque : il est souvent préférable de placer les instructions importantes dans votre message plutôt que dans le 
+          préfixe.{' '}
           <a
             href="https://platform.openai.com/docs/guides/chat/instructing-chat-models"
             target="_blank"
             rel="noopener noreferrer"
           >
-            <u>More info here</u>
+            <u>Plus d'info ici</u>
           </a>
         </DialogDescription>
       </DialogHeader>
@@ -101,14 +101,14 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
             htmlFor="chatGptLabel"
             className="text-right"
           >
-            Custom Name
+            Nom personnalisé
           </Label>
           <Input
             id="chatGptLabel"
             value={chatGptLabel}
             ref={inputRef}
             onChange={(e) => setChatGptLabel(e.target.value)}
-            placeholder="Set a custom name for ChatGPT"
+            placeholder="Donner un nom personnalisé à ChatGPT"
             className=" col-span-3 shadow-[0_0_10px_rgba(0,0,0,0.10)] outline-none placeholder:text-gray-400 invalid:border-red-400 invalid:text-red-600 invalid:placeholder-red-600 invalid:placeholder-opacity-70 invalid:ring-opacity-10 focus:ring-0 focus:invalid:border-red-400 focus:invalid:ring-red-300 dark:border-none dark:bg-gray-700
               dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:invalid:border-red-600 dark:invalid:text-red-300 dark:invalid:placeholder-opacity-80 dark:focus:border-none  dark:focus:border-transparent dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0 dark:focus:invalid:ring-red-600 dark:focus:invalid:ring-opacity-50"
             {...requiredProp}
@@ -119,19 +119,19 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
             htmlFor="promptPrefix"
             className="text-right"
           >
-            Prompt Prefix
+            Prefixe du Prompt 
           </Label>
           <TextareaAutosize
             id="promptPrefix"
             value={promptPrefix}
             onChange={(e) => setPromptPrefix(e.target.value)}
-            placeholder="Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
+            placeholder="Définir des instructions personnalisées. La valeur par défaut est : 'Vous êtes ChatGPT, un puissant modèle de langage entraîné par OpenAI.'"
             className="col-span-3 flex h-20 w-full resize-none rounded-md border border-gray-300 bg-transparent py-2 px-3 text-sm shadow-[0_0_10px_rgba(0,0,0,0.10)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-none dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-none dark:focus:border-transparent dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0"
           />
         </div>
       </div>
       <DialogFooter>
-        <DialogClose className="dark:hover:gray-400 border-gray-700">Cancel</DialogClose>
+        <DialogClose className="dark:hover:gray-400 border-gray-700">Annuler</DialogClose>
         <Button
           style={{ backgroundColor: 'rgb(16, 163, 127)' }}
           onClick={saveHandler}
@@ -143,7 +143,7 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
           onClick={selectHandler}
           className="inline-flex h-10 items-center justify-center rounded-md border-none bg-gray-900 py-2 px-4 text-sm font-semibold text-white transition-colors hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900"
         >
-          Select
+          Selectionner
         </DialogClose>
       </DialogFooter>
     </DialogContent>
