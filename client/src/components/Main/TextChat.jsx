@@ -60,12 +60,14 @@ export default function TextChat({ messages }) {
     const isBing = model === 'bingai' || model === 'sydney';
 
     if (requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
-      genTitle.trigger({ conversationId }).then((ret) => {
-        const title = ret?.data
+      setTimeout(() => {
+        dispatch(refreshConversation());
+      }, 2000);
 
-        if (title)
+      // in case it takes too long.
+      setTimeout(() => {
           dispatch(refreshConversation());
-      })
+      }, 5000);
     }
 
     if (!isBing && convo.conversationId === null && convo.parentMessageId === null) {
