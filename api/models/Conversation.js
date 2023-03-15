@@ -18,10 +18,12 @@ const convoSchema = mongoose.Schema(
       default: 'New Chat'
     },
     jailbreakConversationId: {
-      type: String
+      type: String,
+      default: null
     },
     conversationSignature: {
-      type: String
+      type: String,
+      default: null
     },
     clientId: {
       type: String
@@ -30,13 +32,16 @@ const convoSchema = mongoose.Schema(
       type: String
     },
     chatGptLabel: {
-      type: String
+      type: String,
+      default: null
     },
     promptPrefix: {
-      type: String
+      type: String,
+      default: null
     },
     model: {
-      type: String
+      type: String,
+      required: true
     },
     suggestions: [{ type: String }],
     messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }]
@@ -67,8 +72,14 @@ module.exports = {
       if (newConversationId) {
         update.conversationId = newConversationId;
       }
-      if (!update.jailbreakConversationId)
-        update.jailbreakConversationId = null
+      if (!update.jailbreakConversationId) {
+        update.jailbreakConversationId = null;
+      }
+      if (update.model !== 'chatgptCustom' && update.chatGptLabel && update.promptPrefix) {
+        console.log('Validation error: resetting chatgptCustom fields', update);
+        update.chatGptLabel = null;
+        update.promptPrefix = null;
+      }
 
       return await Conversation.findOneAndUpdate(
         { conversationId },
@@ -146,7 +157,7 @@ module.exports = {
           } else {
             message.parentMessageId = oldId;
           }
-          
+
           oldId = newId;
           message.messageId = newId;
           if (message.sender.toLowerCase() !== 'user' && !model) {
