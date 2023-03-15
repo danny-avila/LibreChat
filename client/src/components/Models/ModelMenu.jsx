@@ -46,7 +46,10 @@ export default function ModelMenu() {
     mutate();
     try {
       const lastSelected = JSON.parse(localStorage.getItem('model'));
-      if (lastSelected && lastSelected !== 'chatgptCustom' && initial[lastSelected]) {
+
+      if (lastSelected === 'chatgptCustom') {
+        return;
+      } else if (initial[lastSelected]) {
         dispatch(setModel(lastSelected));
       }
     } catch (err) {
@@ -72,6 +75,7 @@ export default function ModelMenu() {
       dispatch(setModel(value));
       dispatch(setDisabled(false));
       dispatch(setCustomModel(null));
+      dispatch(setCustomGpt({ chatGptLabel: null, promptPrefix: null }));
     } else if (!initial[value]) {
       const chatGptLabel = modelMap[value]?.chatGptLabel;
       const promptPrefix = modelMap[value]?.promptPrefix;

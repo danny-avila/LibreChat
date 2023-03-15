@@ -42,6 +42,8 @@ export default function Conversation({
     dispatch(setEmptyMessage());
 
     const convo = { title, error: false, conversationId: id, chatGptLabel, promptPrefix };
+    // debugging
+    console.log(model, chatGptLabel, promptPrefix);
 
     if (bingData) {
       const {
@@ -77,16 +79,18 @@ export default function Conversation({
 
     if (chatGptLabel) {
       dispatch(setModel('chatgptCustom'));
+      dispatch(setCustomModel(chatGptLabel.toLowerCase()));
     } else {
       dispatch(setModel(model));
-    }
-
-    if (modelMap[model.toLowerCase()]) {
-      console.log('sender', model);
-      dispatch(setCustomModel(model.toLowerCase()));
-    } else {
       dispatch(setCustomModel(null));
     }
+
+    // if (modelMap[chatGptLabel.toLowerCase()]) {
+    //   console.log('custom model', chatGptLabel);
+    //   dispatch(setCustomModel(chatGptLabel.toLowerCase()));
+    // } else {
+    //   dispatch(setCustomModel(null));
+    // }
 
     dispatch(setMessages(data));
     dispatch(setCustomGpt(convo));

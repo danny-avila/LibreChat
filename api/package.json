@@ -29,7 +29,8 @@
     "keyv-file": "^0.2.0",
     "lodash": "^4.17.21",
     "mongoose": "^6.9.0",
-    "openai": "^3.1.0"
+    "openai": "^3.1.0",
+    "sanitize-html": "^2.10.0"
   },
   "devDependencies": {
     "nodemon": "^2.0.20",

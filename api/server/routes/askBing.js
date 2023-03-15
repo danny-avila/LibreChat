@@ -7,26 +7,32 @@ const { handleError, sendMessage, createOnProgress, handleText } = require('./ha
 const citationRegex = /\[\^\d+?\^]/g;
 
 router.post('/', async (req, res) => {
-  const { model, text, parentMessageId, conversationId: oldConversationId, ...convo } = req.body;
+  const {
+    model,
+    text,
+    parentMessageId,
+    conversationId: oldConversationId,
+    ...convo
+  } = req.body;
   if (text.length === 0) {
     return handleError(res, { text: 'Prompt empty or too short' });
   }
 
   const conversationId = oldConversationId || crypto.randomUUID();
-  const isNewConversation = !oldConversationId
+  const isNewConversation = !oldConversationId;
 
   const userMessageId = crypto.randomUUID();
-  const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000'
+  const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000';
   let userMessage = {
-    messageId: userMessageId, 
-    sender: 'User', 
-    text, 
+    messageId: userMessageId,
+    sender: 'User',
+    text,
     parentMessageId: userParentMessageId,
-    conversationId, 
-    isCreatedByUser: true 
- };
+    conversationId,
+    isCreatedByUser: true
+  };
 
- console.log('ask log', {
+  console.log('ask log', {
     model,
     ...userMessage,
     ...convo
@@ -37,24 +43,31 @@ router.post('/', async (req, res) => {
 
   return await ask({
     isNewConversation,
-    userMessage, 
+    userMessage,
     model,
     convo,
     preSendRequest: true,
-    req, res 
+    req,
+    res
   });
-})
+});
 
-const ask = async ({ 
+const ask = async ({
   isNewConversation,
   overrideParentMessageId = null,
-  userMessage, 
+  userMessage,
   model,
   convo,
   preSendRequest = true,
-  req, res 
+  req,
+  res
 }) => {
-  let { sender, text, parentMessageId: userParentMessageId, conversationId, messageId: userMessageId } = userMessage;
+  let {
+    text,
+    parentMessageId: userParentMessageId,
+    conversationId,
+    messageId: userMessageId
+  } = userMessage;
 
   res.writeHead(200, {
     Connection: 'keep-alive',
@@ -64,19 +77,22 @@ const ask = async ({
     'X-Accel-Buffering': 'no'
   });
 
-  if (preSendRequest)
-    sendMessage(res, { message: userMessage, created: true });
+  if (preSendRequest) sendMessage(res, { message: userMessage, created: true });
 
   try {
     const progressCallback = createOnProgress();
     let response = await askBing({
       text,
-      onProgress: progressCallback.call(null, model, {res, text, parentMessageId: overrideParentMessageId || userMessageId }),
+      onProgress: progressCallback.call(null, model, {
+        res,
+        text,
+        parentMessageId: overrideParentMessageId || userMessageId
+      }),
       convo: {
         ...convo,
         parentMessageId: userParentMessageId,
-        conversationId,
-      },
+        conversationId
+      }
     });
 
     console.log('BING RESPONSE', response);
@@ -88,13 +104,16 @@ const ask = async ({
     userMessage.conversationId = response.conversationId || conversationId;
     userMessage.invocationId = response.invocationId;
     await saveMessage(userMessage);
-    
+
     // Bing API will not use our conversationId at the first time,
     // so change the placeholder conversationId to the real one.
     // Attition: the api will also create new conversationId while using invalid userMessage.parentMessageId,
     // but in this situation, don't change the conversationId, but create new convo.
-    if (conversationId != userMessage.conversationId && isNewConversation) 
-      await saveConvo({ conversationId: conversationId, newConversationId: userMessage.conversationId });
+    if (conversationId != userMessage.conversationId && isNewConversation)
+      await saveConvo({
+        conversationId: conversationId,
+        newConversationId: userMessage.conversationId
+      });
     conversationId = userMessage.conversationId;
 
     response.text = response.response;
@@ -107,7 +126,8 @@ const ask = async ({
     // response.final = true;
 
     // override the parentMessageId, for the regeneration.
-    response.parentMessageId = overrideParentMessageId || response.parentMessageId || userMessageId;
+    response.parentMessageId =
+      overrideParentMessageId || response.parentMessageId || userMessageId;
 
     const links = getCitations(response);
     response.text =
@@ -116,11 +136,11 @@ const ask = async ({
     response.text = await handleText(response.text);
 
     await saveMessage(response);
-    await saveConvo({...response, model, ...convo});
+    await saveConvo({ ...response, model, chatGptLabel: null, promptPrefix: null, ...convo });
     sendMessage(res, {
       title: await getConvoTitle(conversationId),
-      final: true, 
-      requestMessage: userMessage, 
+      final: true,
+      requestMessage: userMessage,
       responseMessage: response
     });
     res.end();
@@ -133,19 +153,23 @@ const ask = async ({
       });
 
       console.log('CONVERSATION TITLE', title);
-      
+
       await saveConvo({
         conversationId,
         title
-      })
+      });
     }
   } catch (error) {
     console.log(error);
     // await deleteMessages({ messageId: userMessageId });
-    const errorMessage = { 
-      messageId: crypto.randomUUID(), sender: model, 
-      conversationId, parentMessageId: overrideParentMessageId || userMessageId,
-      error: true, text: error.message}
+    const errorMessage = {
+      messageId: crypto.randomUUID(),
+      sender: model,
+      conversationId,
+      parentMessageId: overrideParentMessageId || userMessageId,
+      error: true,
+      text: error.message
+    };
     await saveMessage(errorMessage);
     handleError(res, errorMessage);
   }

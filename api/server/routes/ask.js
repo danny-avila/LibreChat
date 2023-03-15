@@ -7,7 +7,7 @@ const {
   titleConvo,
   askClient,
   browserClient,
-  customClient,
+  customClient
   // detectCode
 } = require('../../app/');
 const { getConvo, saveMessage, getConvoTitle, saveConvo } = require('../../models');
@@ -18,7 +18,7 @@ router.use('/bing', askBing);
 router.use('/sydney', askSydney);
 
 router.post('/', async (req, res) => {
-  let { model, text, parentMessageId, conversationId: oldConversationId , ...convo } = req.body;
+  let { model, text, parentMessageId, conversationId: oldConversationId, ...convo } = req.body;
   if (text.length === 0) {
     return handleError(res, { text: 'Prompt empty or too short' });
   }
@@ -26,14 +26,14 @@ router.post('/', async (req, res) => {
   const conversationId = oldConversationId || crypto.randomUUID();
 
   const userMessageId = crypto.randomUUID();
-  const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000'
+  const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000';
   let userMessage = {
-    messageId: userMessageId, 
-    sender: 'User', 
-    text, 
+    messageId: userMessageId,
+    sender: 'User',
+    text,
     parentMessageId: userParentMessageId,
-    conversationId, 
-    isCreatedByUser: true 
+    conversationId,
+    isCreatedByUser: true
   };
 
   console.log('ask log', {
@@ -55,27 +55,28 @@ router.post('/', async (req, res) => {
   await saveConvo({ ...userMessage, model, ...convo });
 
   return await ask({
-    userMessage, 
+    userMessage,
     model,
     convo,
     preSendRequest: true,
-    req, res 
+    req,
+    res
   });
-})
+});
 
 router.post('/regenerate', async (req, res) => {
-  const { parentMessageId, model, chatGptLabel, promptPrefix } = req.body;
+  const { model } = req.body;
 
-  const oldUserMessage = await getMessages({ messageId: req.body })
+  const oldUserMessage = await getMessages({ messageId: req.body });
 
   if (oldUserMessage) {
-    const convo = await getConvo(userMessage?.conversationId)
+    const convo = await getConvo(userMessage?.conversationId);
 
     const userMessageId = crypto.randomUUID();
 
     let userMessage = {
       ...userMessage,
-      messageId: userMessageId, 
+      messageId: userMessageId
     };
 
     console.log('ask log for regeneration', {
@@ -85,14 +86,14 @@ router.post('/regenerate', async (req, res) => {
     });
 
     return await ask({
-      userMessage, 
+      userMessage,
       model,
       convo,
       preSendRequest: false,
-      req, res 
+      req,
+      res
     });
-  } else 
-    return handleError(res, { text: 'Parent message not found' });
+  } else return handleError(res, { text: 'Parent message not found' });
 
   // if (model === 'chatgptCustom' && !chatGptLabel && conversationId) {
   //   const convo = await getConvo({ conversationId });
@@ -106,15 +107,21 @@ router.post('/regenerate', async (req, res) => {
   // await saveConvo({ ...userMessage, model, chatGptLabel, promptPrefix });
 });
 
-const ask = async ({ 
-  userMessage, 
+const ask = async ({
+  userMessage,
   overrideParentMessageId = null,
   model,
   convo,
   preSendRequest = true,
-  req, res 
+  req,
+  res
 }) => {
-  let { sender, text, parentMessageId: userParentMessageId, conversationId, messageId: userMessageId } = userMessage;
+  let {
+    text,
+    parentMessageId: userParentMessageId,
+    conversationId,
+    messageId: userMessageId
+  } = userMessage;
 
   let client;
 
@@ -134,14 +141,13 @@ const ask = async ({
     'X-Accel-Buffering': 'no'
   });
 
-  if (preSendRequest)
-    sendMessage(res, { message: userMessage, created: true });
+  if (preSendRequest) sendMessage(res, { message: userMessage, created: true });
 
   try {
     const progressCallback = createOnProgress();
     let gptResponse = await client({
       text,
-      onProgress: progressCallback.call(null, model, {res, text }),
+      onProgress: progressCallback.call(null, model, { res, text }),
       convo: {
         parentMessageId: userParentMessageId,
         conversationId,
@@ -168,16 +174,20 @@ const ask = async ({
       gptResponse.text.toLowerCase().includes('no response') ||
       gptResponse.text.toLowerCase().includes('no answer')
     ) {
-      await saveMessage({ 
-        messageId: crypto.randomUUID(), sender: model, 
-        conversationId, parentMessageId: overrideParentMessageId || userMessageId,
-        error: true, text: 'Prompt empty or too short'});
+      await saveMessage({
+        messageId: crypto.randomUUID(),
+        sender: model,
+        conversationId,
+        parentMessageId: overrideParentMessageId || userMessageId,
+        error: true,
+        text: 'Prompt empty or too short'
+      });
       return handleError(res, { text: 'Prompt empty or too short' });
     }
 
     gptResponse.sender = model === 'chatgptCustom' ? convo.chatGptLabel : model;
+    gptResponse.model = model;
     // gptResponse.final = true;
-    // gptResponse.text = await detectCode(gptResponse.text);
     gptResponse.text = await handleText(gptResponse.text);
 
     if (convo.chatGptLabel?.length > 0 && model === 'chatgptCustom') {
@@ -189,14 +199,14 @@ const ask = async ({
     }
 
     // override the parentMessageId, for the regeneration.
-    gptResponse.parentMessageId = overrideParentMessageId || userMessageId
+    gptResponse.parentMessageId = overrideParentMessageId || userMessageId;
 
     await saveMessage(gptResponse);
     await saveConvo(gptResponse);
     sendMessage(res, {
       title: await getConvoTitle(conversationId),
-      final: true, 
-      requestMessage: userMessage, 
+      final: true,
+      requestMessage: userMessage,
       responseMessage: gptResponse
     });
     res.end();
@@ -213,15 +223,19 @@ const ask = async ({
       await saveConvo({
         conversationId,
         title
-      })
+      });
     }
   } catch (error) {
     console.log(error);
     // await deleteMessages({ messageId: userMessageId });
-    const errorMessage = { 
-      messageId: crypto.randomUUID(), sender: model, 
-      conversationId, parentMessageId: overrideParentMessageId || userMessageId,
-      error: true, text: error.message}
+    const errorMessage = {
+      messageId: crypto.randomUUID(),
+      sender: model,
+      conversationId,
+      parentMessageId: overrideParentMessageId || userMessageId,
+      error: true,
+      text: error.message
+    };
     await saveMessage(errorMessage);
     handleError(res, errorMessage);
   }
