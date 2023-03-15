@@ -9,7 +9,7 @@ import TrashIcon from '../svg/TrashIcon';
 import manualSWR from '~/utils/fetchers';
 import { getIconOfModel } from '../../utils';
 
-export default function ModelItem({ modelName, value, onSelect, id, chatGptLabel, promptPrefix }) {
+export default function ModelItem({ modelName, value, model, onSelect, id, chatGptLabel, promptPrefix }) {
   const dispatch = useDispatch();
   const { customModel } = useSelector((state) => state.submit);
   const { initial } = useSelector((state) => state.models);
@@ -28,7 +28,7 @@ export default function ModelItem({ modelName, value, onSelect, id, chatGptLabel
     dispatch(setModels(fetchedModels));
   });
 
-  const icon = getIconOfModel({ size: 16, sender: modelName, isCreatedByUser: false, model: value, chatGptLabel, promptPrefix, error: false, className: "mr-2" });
+  const icon = getIconOfModel({ size: 16, sender: modelName, isCreatedByUser: false, model, chatGptLabel, promptPrefix, error: false, className: "mr-2" });
 
   if (value === 'chatgptCustom') {
     return (
