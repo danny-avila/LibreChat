@@ -154,7 +154,7 @@ export default function TextWrapper({ text, generateCursor }) {
   return (
     <>
     {result}
-    {(<>{generateCursor()}</>)}
+    {generateCursor()}
     </>
   );
 }
