@@ -95,4 +95,4 @@ const Messages = ({ messages, messageTree }) => {
   );
 };
 
-export default Messages;
+export default React.memo(Messages);

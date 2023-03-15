@@ -1,6 +1,7 @@
-const { titleConvo, citeText, detectCode } = require('../../app/');
 const _ = require('lodash');
 const sanitizeHtml = require('sanitize-html');
+const { titleConvo, citeText, detectCode } = require('../../app/');
+const htmlTagRegex = /(<\/?\s*[a-zA-Z]*\s*(?:\s+[a-zA-Z]+\s*=\s*(?:"[^"]*"|'[^']*'))*\s*(?:\/?)>|<\s*[a-zA-Z]+\s*(?:\s+[a-zA-Z]+\s*=\s*(?:"[^"]*"|'[^']*'))*\s*(?:\/?>|<\/?>))/g;
 
 const handleError = (res, message) => {
   res.write(`event: error\ndata: ${JSON.stringify(message)}\n\n`);
@@ -42,8 +43,13 @@ const createOnProgress = () => {
     if (tokens.match(/^\n/)) {
       tokens = tokens.replace(/^\n/, '');
     }
-    // if (tokens.includes('```')) {
-    //   tokens = sanitizeHtml(tokens);
+
+    // const htmlTags = tokens.match(htmlTagRegex);
+    // if (tokens.includes('```') && htmlTags && htmlTags.length > 0) {
+    //   htmlTags.forEach((tag) => {
+    //     const sanitizedTag = sanitizeHtml(tag);
+    //     tokens = tokens.replaceAll(tag, sanitizedTag);
+    //   });
     // }
 
     if (bing) {
@@ -65,9 +71,12 @@ const createOnProgress = () => {
 const handleText = async (input) => {
   let text = input;
   text = await detectCode(text);
-  // if (text.includes('```')) {
-  //   text = sanitizeHtml(text);
-  //   text = text.replaceAll(') =&gt;', ') =>');
+  // const htmlTags = text.match(htmlTagRegex);
+  // if (text.includes('```') && htmlTags && htmlTags.length > 0) {
+  //   htmlTags.forEach((tag) => {
+  //     const sanitizedTag = sanitizeHtml(tag);
+  //     text = text.replaceAll(tag, sanitizedTag);
+  //   });
   // }
 
   return text;
