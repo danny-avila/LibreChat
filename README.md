@@ -161,7 +161,7 @@ Le ChatGPT peut être "personnalisé" en définissant un message système ou un 
 - Si vous utilisez MongoDB Atlas, supprimez `&w=majority` de la chaîne de connexion par défaut.
 
 ### Local
-- Exécutez npm** install dans les répertoires api et client.
+- Exécutez `npm install` dans les répertoires api et client.
 - Fournissez toutes les informations d'identification (clés API, jetons d'accès et chaîne de connexion Mongo) dans api/.env [(voir l'exemple .env)](api/.env.example)
 - **Run** `npm run build` dans le répertoire /client/, `npm start` dans le répertoire /api/.
 - Visitez http://localhost:1234 (port par défaut) et appréciez.
