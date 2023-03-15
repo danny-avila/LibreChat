@@ -42,8 +42,6 @@ export default function Conversation({
     dispatch(setEmptyMessage());
 
     const convo = { title, error: false, conversationId: id, chatGptLabel, promptPrefix };
-    // debugging
-    console.log(model, chatGptLabel, promptPrefix);
 
     if (bingData) {
       const {
