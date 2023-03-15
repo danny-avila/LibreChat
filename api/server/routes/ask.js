@@ -162,7 +162,7 @@ const ask = async ({
     gptResponse.sender = model === 'chatgptCustom' ? convo.chatGptLabel : model;
     gptResponse.model = model;
     // gptResponse.final = true;
-    gptResponse.text = await handleText(gptResponse.text);
+    gptResponse.text = await handleText(gptResponse);
 
     if (convo.chatGptLabel?.length > 0 && model === 'chatgptCustom') {
       gptResponse.chatGptLabel = convo.chatGptLabel;
