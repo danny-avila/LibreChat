@@ -142,7 +142,7 @@ export default function TextWrapper({ text }) {
     // map over the parts and wrap any text between tildes with <code> tags
     const parts = text.split(markupRegex);
     const codeParts = inLineWrap(parts);
-    return <>{codeParts}</>; // return the wrapped text
+    return <Markdown options={mdOptions}>{codeParts}</Markdown>; // return the wrapped text
   } else {
     return <Markdown options={mdOptions}>{text}</Markdown>;
   }

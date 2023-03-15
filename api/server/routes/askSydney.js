@@ -1,10 +1,9 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { titleConvo, getCitations, citeText, askSydney } = require('../../app/');
+const { titleConvo, askSydney } = require('../../app/');
 const { saveMessage, saveConvo, getConvoTitle } = require('../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
-const citationRegex = /\[\^\d+?\^]/g;
 
 router.post('/', async (req, res) => {
   const {
@@ -97,7 +96,6 @@ const ask = async ({
 
     console.log('SYDNEY RESPONSE', response);
     // console.dir(response, { depth: null });
-    const hasCitations = response.response.match(citationRegex)?.length > 0;
 
     userMessage.conversationSignature =
       convo.conversationSignature || response.conversationSignature;
@@ -125,12 +123,6 @@ const ask = async ({
     response.parentMessageId =
       overrideParentMessageId || response.parentMessageId || userMessageId;
 
-    const links = getCitations(response);
-    response.text =
-      citeText(response) +
-      (links?.length > 0 && hasCitations ? `\n<small>${links}</small>` : '');
-    response.text = await handleText(response.text);
-
     // Save user message
     userMessage.conversationId = response.conversationId || conversationId;
     await saveMessage(userMessage);
@@ -146,6 +138,7 @@ const ask = async ({
       });
     conversationId = userMessage.conversationId;
 
+    response.text = await handleText(response, true);
     // Save sydney response & convo, then send
     await saveMessage(response);
     await saveConvo({ ...response, model, chatGptLabel: null, promptPrefix: null, ...convo });
