@@ -7,8 +7,9 @@ import { DialogTrigger } from '../ui/Dialog.tsx';
 import RenameButton from '../Conversations/RenameButton';
 import TrashIcon from '../svg/TrashIcon';
 import manualSWR from '~/utils/fetchers';
+import { getIconOfModel } from '../../utils';
 
-export default function ModelItem({ modelName, value, onSelect, id }) {
+export default function ModelItem({ modelName, value, model, onSelect, id, chatGptLabel, promptPrefix }) {
   const dispatch = useDispatch();
   const { customModel } = useSelector((state) => state.submit);
   const { initial } = useSelector((state) => state.models);
@@ -27,6 +28,8 @@ export default function ModelItem({ modelName, value, onSelect, id }) {
     dispatch(setModels(fetchedModels));
   });
 
+  const icon = getIconOfModel({ size: 16, sender: modelName, isCreatedByUser: false, model, chatGptLabel, promptPrefix, error: false, className: "mr-2" });
+
   if (value === 'chatgptCustom') {
     return (
       <DialogTrigger className="w-full">
@@ -34,6 +37,7 @@ export default function ModelItem({ modelName, value, onSelect, id }) {
           value={value}
           className="dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800"
         >
+          {icon}
           {modelName}
           <sup>$</sup>
         </DropdownMenuRadioItem>
@@ -47,6 +51,7 @@ export default function ModelItem({ modelName, value, onSelect, id }) {
         value={value}
         className="dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800"
       >
+        {icon}
         {modelName}
         {value === 'chatgpt' && <sup>$</sup>}
       </DropdownMenuRadioItem>
@@ -122,6 +127,9 @@ export default function ModelItem({ modelName, value, onSelect, id }) {
           <Circle className="h-2 w-2 fill-current" />
         </span>
       )}
+
+      {icon}
+
       {renaming === true ? (
         <input
           ref={inputRef}

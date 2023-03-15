@@ -12,6 +12,8 @@ import ModelDialog from './ModelDialog';
 import MenuItems from './MenuItems';
 import { swr } from '~/utils/fetchers';
 import { setModels } from '~/store/modelSlice';
+import { setMessages } from '~/store/messageSlice';
+import { setText } from '~/store/textSlice';
 import GPTIcon from '../svg/GPTIcon';
 import BingIcon from '../svg/BingIcon';
 import { Button } from '../ui/Button.tsx';
@@ -44,9 +46,16 @@ export default function ModelMenu() {
 
   useEffect(() => {
     mutate();
-    const lastSelected = JSON.parse(localStorage.getItem('model'));
-    if (lastSelected && lastSelected !== 'chatgptCustom' && initial[lastSelected]) {
-      dispatch(setModel(lastSelected));
+    try {
+      const lastSelected = JSON.parse(localStorage.getItem('model'));
+
+      if (lastSelected === 'chatgptCustom') {
+        return;
+      } else if (initial[lastSelected]) {
+        dispatch(setModel(lastSelected));
+      }
+    } catch (err) {
+      console.log(err);
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -56,32 +65,32 @@ export default function ModelMenu() {
     localStorage.setItem('model', JSON.stringify(model));
   }, [model]);
 
-  const onChange = (value, custom = false) => {
-    // if (custom) {
-    //   mutate();
-    // }
+  const onChange = (value) => {
     if (!value) {
       return;
+    } else if (value === model) {
+      return;
     } else if (value === 'chatgptCustom') {
-      // dispatch(setMessages([]));
+      // return;
     } else if (initial[value]) {
       dispatch(setModel(value));
       dispatch(setDisabled(false));
       dispatch(setCustomModel(null));
+      dispatch(setCustomGpt({ chatGptLabel: null, promptPrefix: null }));
     } else if (!initial[value]) {
       const chatGptLabel = modelMap[value]?.chatGptLabel;
       const promptPrefix = modelMap[value]?.promptPrefix;
       dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
       dispatch(setModel('chatgptCustom'));
       dispatch(setCustomModel(value));
-      // if (custom) {
-      //   setMenuOpen((prevOpen) => !prevOpen);
-      // }
+      setMenuOpen(false);
     } else if (!modelMap[value]) {
       dispatch(setCustomModel(null));
     }
 
     // Set new conversation
+    dispatch(setText(''));
+    dispatch(setMessages([]));
     dispatch(setNewConvo());
     dispatch(setSubmission({}));
   };
@@ -148,7 +157,7 @@ export default function ModelMenu() {
             {icon}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-56 dark:bg-gray-700">
+        <DropdownMenuContent className="w-56 dark:bg-gray-700" onCloseAutoFocus={(event) => event.preventDefault()}>
           <DropdownMenuLabel className="dark:text-gray-300">Select a Model</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup

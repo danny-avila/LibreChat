@@ -12,11 +12,7 @@ const customGptSchema = mongoose.Schema({
     type: String,
     required: true
   },
-  created: {
-    type: Date,
-    default: Date.now
-  }
-});
+}, { timestamps: true });
 
 const CustomGpt = mongoose.models.CustomGpt || mongoose.model('CustomGpt', customGptSchema);
 

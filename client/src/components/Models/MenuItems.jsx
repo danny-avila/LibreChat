@@ -10,7 +10,10 @@ export default function MenuItems({ models, onSelect }) {
           id={modelItem._id}
           modelName={modelItem.name}
           value={modelItem.value}
+          model={modelItem.model || 'chatgptCustom'}
           onSelect={onSelect}
+          chatGptLabel={modelItem.chatGptLabel}
+          promptPrefix={modelItem.promptPrefix}
         />
       ))}
     </>

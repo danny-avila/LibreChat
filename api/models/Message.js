@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const messageSchema = mongoose.Schema({
-  id: {
+  messageId: {
     type: String,
     unique: true,
     required: true
@@ -32,33 +32,50 @@ const messageSchema = mongoose.Schema({
     type: String,
     required: true
   },
-  created: {
-    type: Date,
-    default: Date.now
-  }
-});
+  isCreatedByUser: {
+    type: Boolean,
+    required: true,
+    default: false
+  },
+  error: {
+    type: Boolean,
+    default: false
+  },
+}, { timestamps: true });
 
 const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
 
 module.exports = {
-  saveMessage: async ({ id, conversationId, parentMessageId, sender, text }) => {
+  saveMessage: async ({ messageId, conversationId, parentMessageId, sender, text, isCreatedByUser=false, error }) => {
     try {
-      await Message.create({
-        id,
+      await Message.findOneAndUpdate({ messageId }, {
         conversationId,
         parentMessageId,
         sender,
-        text
-      });
-      return { id, conversationId, parentMessageId, sender, text };
+        text,
+        isCreatedByUser,
+        error
+      }, { upsert: true, new: true });
+      return { messageId, conversationId, parentMessageId, sender, text, isCreatedByUser };
     } catch (error) {
       console.error(error);
       return { message: 'Error saving message' };
     }
   },
+  deleteMessagesSince: async ({ messageId, conversationId }) => {
+    try {
+      const message = await Message.findOne({ messageId }).exec()
+
+      if (message) 
+        return await Message.find({ conversationId }).deleteMany({ createdAt: { $gt: message.createdAt } }).exec();
+    } catch (error) {
+      console.error(error);
+      return { message: 'Error deleting messages' };
+    }
+  },
   getMessages: async (filter) => {
     try {
-      return await Message.find(filter).exec()
+      return await Message.find(filter).sort({createdAt: 1}).exec()
     } catch (error) {
       console.error(error);
       return { message: 'Error getting messages' };

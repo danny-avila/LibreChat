@@ -21,6 +21,21 @@
     display: none;
 }
 
+@media (max-width: 1024px) {
+    .sibling-switch {
+        left: 114px;
+        top: unset;
+        bottom: 4px;
+        visibility: visible;
+        z-index: 2;
+    }
+
+    .resubmit-edit-button {
+        display: block;
+        visibility: visible;
+    }
+}
+
 @media (max-width: 767px) {
     .nav-close-button {
         display: block;

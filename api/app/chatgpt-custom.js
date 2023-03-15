@@ -9,7 +9,7 @@ const clientOptions = {
   debug: false
 };
 
-const customClient = async ({ text, progressCallback, convo, promptPrefix, chatGptLabel }) => {
+const customClient = async ({ text, onProgress, convo, promptPrefix, chatGptLabel }) => {
   const ChatGPTClient = (await import('@waylaidwanderer/chatgpt-api')).default;
   const store = {
     store: new KeyvFile({ filename: './data/cache.json' })
@@ -23,10 +23,7 @@ const customClient = async ({ text, progressCallback, convo, promptPrefix, chatG
 
   const client = new ChatGPTClient(process.env.OPENAI_KEY, clientOptions, store);
 
-  let options = {
-    onProgress: async (partialRes) => await progressCallback(partialRes)
-  };
-
+  let options = { onProgress };
   if (!!convo.parentMessageId && !!convo.conversationId) {
     options = { ...options, ...convo };
   }
