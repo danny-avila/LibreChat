@@ -8,7 +8,7 @@ import TextareaAutosize from 'react-textarea-autosize';
 import createPayload from '~/utils/createPayload';
 import resetConvo from '~/utils/resetConvo';
 import { useSelector, useDispatch } from 'react-redux';
-import { setConversation, setError, refreshConversation } from '~/store/convoSlice';
+import { setConversation, setNewConvo, setError, refreshConversation } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setSubmitState, setSubmission } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
@@ -159,6 +159,7 @@ export default function TextChat({ messages }) {
     let parentMessageId = convo.parentMessageId || '00000000-0000-0000-0000-000000000000';
     if (resetConvo(messages, sender)) {
       parentMessageId = '00000000-0000-0000-0000-000000000000';
+      dispatch(setNewConvo());
     }
     const currentMsg = { sender: 'User', text: message, current: true, isCreatedByUser: true, parentMessageId , messageId: fakeMessageId };
     const initialResponse = { sender, text: '', parentMessageId: fakeMessageId, submitting: true };
