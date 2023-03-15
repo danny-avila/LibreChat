@@ -85,8 +85,6 @@ module.exports = {
         update.promptPrefix = null;
       }
 
-      console.error(user)
-
       return await Conversation.findOneAndUpdate(
         { conversationId: conversationId, user: user },
         { $set: update },
