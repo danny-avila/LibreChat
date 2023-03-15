@@ -1,6 +1,8 @@
-const { citeText, detectCode } = require('../../app/');
 const _ = require('lodash');
 const sanitizeHtml = require('sanitize-html');
+const citationRegex = /\[\^\d+?\^]/g;
+const { getCitations, citeText, detectCode } = require('../../app/');
+// const htmlTagRegex = /(<\/?\s*[a-zA-Z]*\s*(?:\s+[a-zA-Z]+\s*=\s*(?:"[^"]*"|'[^']*'))*\s*(?:\/?)>|<\s*[a-zA-Z]+\s*(?:\s+[a-zA-Z]+\s*=\s*(?:"[^"]*"|'[^']*'))*\s*(?:\/?>|<\/?>))/g;
 
 const handleError = (res, message) => {
   res.write(`event: error\ndata: ${JSON.stringify(message)}\n\n`);
@@ -25,8 +27,13 @@ const createOnProgress = () => {
     if (tokens.match(/^\n/)) {
       tokens = tokens.replace(/^\n/, '');
     }
-    // if (tokens.includes('```')) {
-    //   tokens = sanitizeHtml(tokens);
+
+    // const htmlTags = tokens.match(htmlTagRegex);
+    // if (tokens.includes('```') && htmlTags && htmlTags.length > 0) {
+    //   htmlTags.forEach((tag) => {
+    //     const sanitizedTag = sanitizeHtml(tag);
+    //     tokens = tokens.replaceAll(tag, sanitizedTag);
+    //   });
     // }
 
     if (bing) {
@@ -45,12 +52,26 @@ const createOnProgress = () => {
   return onProgress;
 };
 
-const handleText = async (input) => {
-  let text = input;
+const handleText = async (response, bing = false) => {
+  let { text } = response;
   text = await detectCode(text);
-  // if (text.includes('```')) {
-  //   text = sanitizeHtml(text);
-  //   text = text.replaceAll(') =&gt;', ') =>');
+  response.text = text;
+
+  if (bing) {
+    // const hasCitations = response.response.match(citationRegex)?.length > 0;
+    const links = getCitations(response);
+    if (response.text.match(citationRegex)?.length > 0) {
+      text = citeText(response);
+    }
+    text += links?.length > 0 ? `\n<small>${links}</small>` : '';
+  }
+
+  // const htmlTags = text.match(htmlTagRegex);
+  // if (text.includes('```') && htmlTags && htmlTags.length > 0) {
+  //   htmlTags.forEach((tag) => {
+  //     const sanitizedTag = sanitizeHtml(tag);
+  //     text = text.replaceAll(tag, sanitizedTag);
+  //   });
   // }
 
   return text;

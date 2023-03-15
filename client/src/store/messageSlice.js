@@ -1,7 +1,9 @@
 import { createSlice } from '@reduxjs/toolkit';
+import buildTree from '~/utils/buildTree';
 
 const initialState = {
   messages: [],
+  messageTree: []
 };
 
 const currentSlice = createSlice({
@@ -10,6 +12,7 @@ const currentSlice = createSlice({
   reducers: {
     setMessages: (state, action) => {
       state.messages = action.payload;
+      state.messageTree = buildTree(action.payload);
     },
     setEmptyMessage: (state) => {
       state.messages = [

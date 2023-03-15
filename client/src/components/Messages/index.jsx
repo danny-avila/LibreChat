@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
+import Spinner from '../svg/Spinner';
 import { CSSTransition } from 'react-transition-group';
 import ScrollToBottom from './ScrollToBottom';
-import { MultiMessage } from './Message';
-import Conversation from '../Conversations/Conversation';
+import MultiMessage from './MultiMessage';
 import { useSelector } from 'react-redux';
 
-const Messages = ({ messages }) => {
-  const [currentEditId, setCurrentEditId] = useState(-1)
+const Messages = ({ messages, messageTree }) => {
+  const [currentEditId, setCurrentEditId] = useState(-1);
   const { conversationId } = useSelector((state) => state.convo);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const scrollableRef = useRef(null);
@@ -23,26 +23,6 @@ const Messages = ({ messages }) => {
       clearTimeout(timeoutId);
     };
   }, [messages]);
-  
-  const messageTree = useMemo(() => buildTree(messages), [messages, ]);
-
-  function buildTree(messages) {
-    let messageMap = {};
-    let rootMessages = [];
-  
-    // Traverse the messages array and store each element in messageMap.
-    messages.forEach(message => {
-      messageMap[message.messageId] = {...message, children: []};
-
-      const parentMessage = messageMap[message.parentMessageId];
-      if (parentMessage)
-        parentMessage.children.push(messageMap[message.messageId]);
-      else 
-        rootMessages.push(messageMap[message.messageId]);
-    });
-  
-    return rootMessages;
-  }
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -79,28 +59,33 @@ const Messages = ({ messages }) => {
       onScroll={debouncedHandleScroll}
     >
       {/* <div className="flex-1 overflow-hidden"> */}
-      <div className="h-full dark:gpt-dark-gray">
-        <div className="flex h-full flex-col items-center text-sm dark:gpt-dark-gray">
-          <MultiMessage
-            key={conversationId} // avoid internal state mixture
-            messageList={messageTree}
-            messages={messages}
-            scrollToBottom={scrollToBottom}
-            currentEditId={currentEditId}
-            setCurrentEditId={setCurrentEditId}
-          />
-          <CSSTransition
-            in={showScrollButton}
-            timeout={400}
-            classNames="scroll-down"
-            unmountOnExit={false}
-            // appear
-          >
-            {() => showScrollButton && <ScrollToBottom scrollHandler={scrollHandler} />}
-          </CSSTransition>
-
+      <div className="dark:gpt-dark-gray h-full">
+        <div className="dark:gpt-dark-gray flex h-full flex-col items-center text-sm">
+          {messageTree.length === 0 ? (
+            <Spinner />
+          ) : (
+            <>
+              <MultiMessage
+                key={conversationId} // avoid internal state mixture
+                messageList={messageTree}
+                messages={messages}
+                scrollToBottom={scrollToBottom}
+                currentEditId={currentEditId}
+                setCurrentEditId={setCurrentEditId}
+              />
+              <CSSTransition
+                in={showScrollButton}
+                timeout={400}
+                classNames="scroll-down"
+                unmountOnExit={false}
+                // appear
+              >
+                {() => showScrollButton && <ScrollToBottom scrollHandler={scrollHandler} />}
+              </CSSTransition>
+            </>
+          )}
           <div
-            className="group h-32 w-full flex-shrink-0 dark:border-gray-900/50 dark:gpt-dark-gray md:h-48"
+            className="dark:gpt-dark-gray group h-32 w-full flex-shrink-0 dark:border-gray-900/50 md:h-48"
             ref={messagesEndRef}
           />
         </div>
@@ -110,4 +95,4 @@ const Messages = ({ messages }) => {
   );
 };
 
-export default Messages;
+export default React.memo(Messages);
