@@ -64,6 +64,9 @@ export default function ModelMenu() {
   }, [model]);
 
   const onChange = (value, custom = false) => {
+    // Set new conversation
+    dispatch(setNewConvo());
+    dispatch(setSubmission({}));
     // if (custom) {
     //   mutate();
     // }
@@ -89,9 +92,7 @@ export default function ModelMenu() {
       dispatch(setCustomModel(null));
     }
 
-    // Set new conversation
-    dispatch(setNewConvo());
-    dispatch(setSubmission({}));
+
   };
 
   const onOpenChange = (open) => {
