@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import TextWrapper from './TextWrapper';
 import { useSelector, useDispatch } from 'react-redux';
-import GPTIcon from '../svg/GPTIcon';
-import BingIcon from '../svg/BingIcon';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
 import Spinner from '../svg/Spinner';
@@ -11,6 +9,7 @@ import { setMessages } from '~/store/messageSlice';
 import { setSubmitState, setSubmission } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
 import { setConversation } from '../../store/convoSlice';
+import { getIconOfModel } from '../../utils';
 
 const MultiMessage = ({
   messageList,
@@ -103,52 +102,12 @@ export default function Message({
     className:
       'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 bg-white dark:text-gray-100 group dark:bg-gray-800'
   };
-
-  const bgColors = {
-    chatgpt: 'rgb(16, 163, 127)',
-    chatgptBrowser: 'rgb(25, 207, 207)',
-    bingai: '',
-    sydney: ''
-  };
-
-  const isBing = sender === 'bingai' || sender === 'sydney';
-
-  let icon = (
-    <div
-      style={{ background: 'radial-gradient(circle at 90% 110%, rgb(1 43 128), rgb(17, 139, 161))', color: 'white', fontSize: 12 }}
-      className="relative flex h-[30px] w-[30px] items-center justify-center rounded-sm p-1 text-white"
-    >
-      User
-    </div>
-  );
-    //`${sender}:`;
-
-  let backgroundColor = bgColors[sender];
-
-  if (!isCreatedByUser) {
+  
+  const icon = getIconOfModel({ sender, isCreatedByUser, model, chatGptLabel, promptPrefix, error });
+  
+  if (!isCreatedByUser)
     props.className =
       'w-full border-b border-black/10 bg-gray-50 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-100 dark:bg-[#444654]';
-  }
-
-  if ((!isCreatedByUser && backgroundColor) || isBing) {
-    icon = (
-      <div
-        style={
-          isBing
-            ? { background: 'radial-gradient(circle at 90% 110%, #F0F0FA, #D0E0F9)' }
-            : { backgroundColor }
-        }
-        className="relative flex h-[30px] w-[30px] items-center justify-center rounded-sm p-1 text-white"
-      >
-        {isBing ? <BingIcon /> : <GPTIcon />}
-        {error && (
-          <span className="absolute right-0 top-[20px] -mr-2 flex h-4 w-4 items-center justify-center rounded-full border border-white bg-red-500 text-[10px] text-white">
-            !
-          </span>
-        )}
-      </div>
-    );
-  }
 
   const wrapText = (text) => <TextWrapper text={text} />;
 

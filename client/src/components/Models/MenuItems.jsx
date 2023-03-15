@@ -2,6 +2,7 @@ import React from 'react';
 import ModelItem from './ModelItem';
 
 export default function MenuItems({ models, onSelect }) {
+  console.log(models)
   return (
     <>
       {models.map((modelItem) => (
@@ -11,6 +12,8 @@ export default function MenuItems({ models, onSelect }) {
           modelName={modelItem.name}
           value={modelItem.value}
           onSelect={onSelect}
+          chatGptLabel={modelItem.chatGptLabel}
+          promptPrefix={modelItem.promptPrefix}
         />
       ))}
     </>
