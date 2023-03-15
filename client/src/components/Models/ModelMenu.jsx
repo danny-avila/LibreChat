@@ -65,14 +65,13 @@ export default function ModelMenu() {
     localStorage.setItem('model', JSON.stringify(model));
   }, [model]);
 
-  const onChange = (value, custom = false) => {
+  const onChange = (value) => {
     if (!value) {
       return;
     } else if (value === model) {
       return;
     } else if (value === 'chatgptCustom') {
-      // dispatch(setMessages([]));
-      return;
+      // return;
     } else if (initial[value]) {
       dispatch(setModel(value));
       dispatch(setDisabled(false));
@@ -84,9 +83,7 @@ export default function ModelMenu() {
       dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
       dispatch(setModel('chatgptCustom'));
       dispatch(setCustomModel(value));
-      // if (custom) {
-      //   setMenuOpen((prevOpen) => !prevOpen);
-      // }
+      setMenuOpen(false);
     } else if (!modelMap[value]) {
       dispatch(setCustomModel(null));
     }
@@ -160,7 +157,7 @@ export default function ModelMenu() {
             {icon}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-56 dark:bg-gray-700">
+        <DropdownMenuContent className="w-56 dark:bg-gray-700" onCloseAutoFocus={(event) => event.preventDefault()}>
           <DropdownMenuLabel className="dark:text-gray-300">Select a Model</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup

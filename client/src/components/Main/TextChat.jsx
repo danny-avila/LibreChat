@@ -28,7 +28,7 @@ export default function TextChat({ messages }) {
   // auto focus to input, when enter a conversation.
   useEffect(() => {
     inputRef.current?.focus();
-  }, [convo?.conversationId, ])
+  }, [convo?.conversationId,])
 
   const messageHandler = (data, currentState, currentMsg) => {
     const { messages, _currentMsg, message, sender } = currentState;
@@ -185,11 +185,11 @@ export default function TextChat({ messages }) {
       sender,
     };
     console.log('User Input:', message);
-    // handleSubmit(submission);
     dispatch(setSubmission(submission));
   };
 
   useEffect(() => {
+    inputRef.current?.focus();
     if (Object.keys(submission).length === 0) {
       return;
     }
