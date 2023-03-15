@@ -1,10 +1,9 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { titleConvo, getCitations, citeText, askBing } = require('../../app/');
+const { titleConvo, askBing } = require('../../app/');
 const { saveMessage, getConvoTitle, saveConvo } = require('../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
-const citationRegex = /\[\^\d+?\^]/g;
 
 router.post('/', async (req, res) => {
   const {
@@ -129,12 +128,7 @@ const ask = async ({
     response.parentMessageId =
       overrideParentMessageId || response.parentMessageId || userMessageId;
 
-    const links = getCitations(response);
-    response.text =
-      citeText(response) +
-      (links?.length > 0 && hasCitations ? `\n<small>${links}</small>` : '');
-    response.text = await handleText(response.text);
-
+    response.text = await handleText(response, true);
     await saveMessage(response);
     await saveConvo({ ...response, model, chatGptLabel: null, promptPrefix: null, ...convo });
     sendMessage(res, {
@@ -146,13 +140,7 @@ const ask = async ({
     res.end();
 
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
-      const title = await titleConvo({
-        model,
-        message: text,
-        response: JSON.stringify(response?.text)
-      });
-
-      console.log('CONVERSATION TITLE', title);
+      const title = await titleConvo({ model, text, response });
 
       await saveConvo({
         conversationId,
