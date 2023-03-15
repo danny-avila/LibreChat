@@ -12,6 +12,8 @@ import ModelDialog from './ModelDialog';
 import MenuItems from './MenuItems';
 import { swr } from '~/utils/fetchers';
 import { setModels } from '~/store/modelSlice';
+import { setMessages } from '~/store/messageSlice';
+import { setText } from '~/store/textSlice';
 import GPTIcon from '../svg/GPTIcon';
 import BingIcon from '../svg/BingIcon';
 import { Button } from '../ui/Button.tsx';
@@ -64,16 +66,13 @@ export default function ModelMenu() {
   }, [model]);
 
   const onChange = (value, custom = false) => {
-    // Set new conversation
-    dispatch(setNewConvo());
-    dispatch(setSubmission({}));
-    // if (custom) {
-    //   mutate();
-    // }
     if (!value) {
+      return;
+    } else if (value === model) {
       return;
     } else if (value === 'chatgptCustom') {
       // dispatch(setMessages([]));
+      return;
     } else if (initial[value]) {
       dispatch(setModel(value));
       dispatch(setDisabled(false));
@@ -92,7 +91,11 @@ export default function ModelMenu() {
       dispatch(setCustomModel(null));
     }
 
-
+    // Set new conversation
+    dispatch(setText(''));
+    dispatch(setMessages([]));
+    dispatch(setNewConvo());
+    dispatch(setSubmission({}));
   };
 
   const onOpenChange = (open) => {
