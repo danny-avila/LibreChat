@@ -47,7 +47,6 @@ bower_components/
 .env
 cache.json
 api/data/
-.eslintrc.js
 owner.yml
 archive
 .vscode/settings.json

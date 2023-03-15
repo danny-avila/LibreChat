@@ -157,15 +157,17 @@ export default function TextChat({ messages }) {
     const message = text.trim();
     const sender = model === 'chatgptCustom' ? chatGptLabel : model;
     let parentMessageId = convo.parentMessageId || '00000000-0000-0000-0000-000000000000';
-    if (resetConvo(messages, sender)) {
+    let currentMessages = messages;
+    if (resetConvo(currentMessages, sender)) {
       parentMessageId = '00000000-0000-0000-0000-000000000000';
       dispatch(setNewConvo());
+      currentMessages = [];
     }
     const currentMsg = { sender: 'User', text: message, current: true, isCreatedByUser: true, parentMessageId , messageId: fakeMessageId };
     const initialResponse = { sender, text: '', parentMessageId: fakeMessageId, submitting: true };
 
     dispatch(setSubmitState(true));
-    dispatch(setMessages([...messages, currentMsg, initialResponse]));
+    dispatch(setMessages([...currentMessages, currentMsg, initialResponse]));
     dispatch(setText(''));
 
     const submission = {
@@ -177,7 +179,7 @@ export default function TextChat({ messages }) {
         chatGptLabel,
         promptPrefix,
       },
-      messages,
+      messages: currentMessages,
       currentMsg,
       initialResponse,
       sender,

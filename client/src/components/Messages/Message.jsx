@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import TextWrapper from './TextWrapper';
+import MultiMessage from './MultiMessage';
 import { useSelector, useDispatch } from 'react-redux';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
@@ -10,42 +11,6 @@ import { setSubmitState, setSubmission } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
 import { setConversation } from '../../store/convoSlice';
 import { getIconOfModel } from '../../utils';
-
-const MultiMessage = ({
-  messageList,
-  messages,
-  scrollToBottom,
-  currentEditId,
-  setCurrentEditId
-}) => {
-  const [siblingIdx, setSiblingIdx] = useState(0)
-
-  const setSiblingIdxRev = (value) => {
-    setSiblingIdx(messageList?.length - value - 1)
-  }
-
-  if (!messageList?.length) return null;
-
-  if (siblingIdx >= messageList?.length) {
-    setSiblingIdx(0)
-    return null
-  }
-
-  return <Message
-          key={messageList[messageList.length - siblingIdx - 1].messageId}
-          message={messageList[messageList.length - siblingIdx - 1]}
-          messages={messages}
-          scrollToBottom={scrollToBottom}
-          currentEditId={currentEditId}
-          setCurrentEditId={setCurrentEditId}
-
-          siblingIdx={messageList.length - siblingIdx - 1}
-          siblingCount={messageList.length}
-          setSiblingIdx={setSiblingIdxRev}
-        />
-}
-
-export { MultiMessage };
 
 export default function Message({
   message,
@@ -84,9 +49,9 @@ export default function Message({
       dispatch(setConversation({parentMessageId: message?.messageId}))
   }, [last, ])
 
-  if (sender === '') {
-    return <Spinner />;
-  }
+  // if (sender === '') {
+  //   return <Spinner />;
+  // }
 
   const enterEdit = (cancel) => setCurrentEditId(cancel?-1:message.messageId)
 
@@ -167,7 +132,7 @@ export default function Message({
       >
         <div className="relative m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
 
-          <div className="relative flex w-[30px] flex-col items-end text-right text-xs md:text-sm">
+          <div className="relative flex h-[30px] w-[30px] flex-col items-end text-right text-xs md:text-sm">
             {typeof icon === 'string' && icon.match(/[^\u0000-\u007F]+/) ? (
               <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>
             ) : (
