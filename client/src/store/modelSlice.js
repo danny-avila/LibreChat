@@ -5,27 +5,32 @@ const initialState = {
     {
       _id: '0',
       name: 'ChatGPT',
-      value: 'chatgpt'
+      value: 'chatgpt',
+      model: 'chatgpt'
     },
     {
       _id: '1',
       name: 'CustomGPT',
-      value: 'chatgptCustom'
+      value: 'chatgptCustom',
+      model: 'chatgptCustom'
     },
     {
       _id: '2',
       name: 'BingAI',
-      value: 'bingai'
+      value: 'bingai',
+      model: 'bingai'
     },
     {
       _id: '3',
       name: 'Sydney',
-      value: 'sydney'
+      value: 'sydney',
+      model: 'sydney'
     },
     {
       _id: '4',
       name: 'ChatGPT',
-      value: 'chatgptBrowser'
+      value: 'chatgptBrowser',
+      model: 'chatgptBrowser'
     },
   ],
   modelMap: {},
@@ -45,7 +50,8 @@ const currentSlice = createSlice({
       models.slice(initialState.models.length).forEach((modelItem) => {
         modelMap[modelItem.value] = {
           chatGptLabel: modelItem.chatGptLabel,
-          promptPrefix: modelItem.promptPrefix
+          promptPrefix: modelItem.promptPrefix,
+          model: 'chatgptCustom'
         };
       });
 

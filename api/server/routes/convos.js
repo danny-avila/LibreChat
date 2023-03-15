@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { getConvos, deleteConvos, updateConvo } = require('../../models/Conversation');
+const { getConvosByPage, deleteConvos, updateConvo } = require('../../models/Conversation');
 
 router.get('/', async (req, res) => {
   const pageNumber = req.query.pageNumber || 1;
-  res.status(200).send(await getConvos(pageNumber));
+  res.status(200).send(await getConvosByPage(pageNumber));
 });
 
 router.post('/clear', async (req, res) => {

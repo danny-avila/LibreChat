@@ -46,8 +46,9 @@ const inLineWrap = (parts) => {
   });
 };
 
-export default function TextWrapper({ text }) {
+export default function TextWrapper({ text, generateCursor }) {
   let embedTest = false;
+  let result = null;
 
   // to match unenclosed code blocks
   if (text.match(/```/g)?.length === 1) {
@@ -137,13 +138,23 @@ export default function TextWrapper({ text }) {
       }
     });
 
-    return <>{codeParts}</>; // return the wrapped text
+    // return <>{codeParts}</>; // return the wrapped text
+    result = <>{codeParts}</>;
   } else if (text.match(markupRegex)) {
     // map over the parts and wrap any text between tildes with <code> tags
     const parts = text.split(markupRegex);
     const codeParts = inLineWrap(parts);
-    return <>{codeParts}</>; // return the wrapped text
+    // return <>{codeParts}</>; // return the wrapped text
+    result = <>{codeParts}</>;
   } else {
-    return <Markdown options={mdOptions}>{text}</Markdown>;
+    // return <Markdown options={mdOptions}>{text}</Markdown>;
+    result = <Markdown options={mdOptions}>{text}</Markdown>;
   }
+
+  return (
+    <>
+    {result}
+    {generateCursor()}
+    </>
+  );
 }

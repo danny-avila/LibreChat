@@ -1,10 +1,10 @@
 import React from 'react';
 
-export default function BingIcon() {
+export default function BingIcon({ size=25 }) {
   return (
     <svg
-      width="25"
-      height="25"
+      width={size}
+      height={size}
       viewBox="0 0 56 56"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"

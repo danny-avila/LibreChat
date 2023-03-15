@@ -12,11 +12,7 @@ const promptSchema = mongoose.Schema({
   category: {
     type: String,
   },
-  created: {
-    type: Date,
-    default: Date.now
-  }
-});
+}, { timestamps: true });
 
 const Prompt = mongoose.models.Prompt || mongoose.model('Prompt', promptSchema);
 

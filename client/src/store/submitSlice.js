@@ -6,8 +6,8 @@ const initialState = {
   stopStream: false,
   disabled: false,
   model: 'chatgpt',
-  promptPrefix: '',
-  chatGptLabel: '',
+  promptPrefix: null,
+  chatGptLabel: null,
   customModel: null,
 };
 
@@ -34,6 +34,7 @@ const currentSlice = createSlice({
       state.model = action.payload;
     },
     setCustomGpt: (state, action) => {
+      console.log('setCustomGpt', action.payload);
       state.promptPrefix = action.payload.promptPrefix;
       state.chatGptLabel = action.payload.chatGptLabel;
     },
