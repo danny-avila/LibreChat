@@ -68,7 +68,6 @@ export const getIconOfModel = ({ size=30, sender, isCreatedByUser, model, chatGp
   else if (!isCreatedByUser) {
     // TODO: use model from convo, rather than submit
     // const { model, chatGptLabel, promptPrefix } = convo;
-    console.log(model, chatGptLabel)
     let background = bgColors[model];
     const isBing = model === 'bingai' || model === 'sydney';
   
