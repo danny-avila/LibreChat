@@ -11,8 +11,8 @@ export default function Footer() {
       >
         ChatGPT Lab
       </a>
-      . Servir et rechercher toutes vos conversations de manière fiable. Toutes vos conversations AI sous un même toit. Payez par
-par appel et non par mois (des centimes en lieu et place de dollars)..
+      . Servir et rechercher toutes vos conversations de manière fiable. Toutes vos conversations AI sous un même toit. Payez 
+par utilisation et non par mois (quelques centimes au lieu de €€ )..
     </div>
   );
 }
