@@ -3,7 +3,6 @@ import Spinner from '../svg/Spinner';
 import { CSSTransition } from 'react-transition-group';
 import ScrollToBottom from './ScrollToBottom';
 import MultiMessage from './MultiMessage';
-import buildTree from '~/utils/buildTree';
 import { useSelector } from 'react-redux';
 
 const Messages = ({ messages, messageTree }) => {
