@@ -100,7 +100,7 @@ export default function Nav({ navVisible, setNavVisible }) {
           className="nav-close-button -ml-0.5 -mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-md hover:text-gray-900 focus:outline-none focus:ring-white hover:text-white text-white"
           onClick={toggleNavVisible}
         >
-          <span className="sr-only">Open sidebar</span>
+          <span className="sr-only">Menu latteral</span>
           <svg
             stroke="currentColor"
             fill="none"
