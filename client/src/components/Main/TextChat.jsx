@@ -1,18 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { SSE } from '~/utils/sse';
-import axios from 'axios';
 import SubmitButton from './SubmitButton';
 import Regenerate from './Regenerate';
 import ModelMenu from '../Models/ModelMenu';
 import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
-import handleSubmit from '~/utils/handleSubmit';
+import createPayload from '~/utils/createPayload';
+import resetConvo from '~/utils/resetConvo';
 import { useSelector, useDispatch } from 'react-redux';
 import { setConversation, setError, refreshConversation } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setSubmitState, setSubmission } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
-import manualSWR from '~/utils/fetchers';
 
 export default function TextChat({ messages }) {
   const [errorMessage, setErrorMessage] = useState('');
@@ -25,7 +24,6 @@ export default function TextChat({ messages }) {
     useSelector((state) => state.submit);
   const { text } = useSelector((state) => state.text);
   const { error } = convo;
-  const genTitle = manualSWR(`/api/convos/gen_title`, 'post');
 
   // auto focus to input, when enter a conversation.
   useEffect(() => {
@@ -157,8 +155,12 @@ export default function TextChat({ messages }) {
     const fakeMessageId = crypto.randomUUID();
     const isCustomModel = model === 'chatgptCustom' || !initial[model];
     const message = text.trim();
-    const currentMsg = { sender: 'User', text: message, current: true, isCreatedByUser: true, parentMessageId: convo.parentMessageId || '00000000-0000-0000-0000-000000000000', messageId: fakeMessageId };
     const sender = model === 'chatgptCustom' ? chatGptLabel : model;
+    let parentMessageId = convo.parentMessageId || '00000000-0000-0000-0000-000000000000';
+    if (resetConvo(messages, sender)) {
+      parentMessageId = '00000000-0000-0000-0000-000000000000';
+    }
+    const currentMsg = { sender: 'User', text: message, current: true, isCreatedByUser: true, parentMessageId , messageId: fakeMessageId };
     const initialResponse = { sender, text: '', parentMessageId: fakeMessageId, submitting: true };
 
     dispatch(setSubmitState(true));
@@ -182,38 +184,6 @@ export default function TextChat({ messages }) {
     console.log('User Input:', message);
     // handleSubmit(submission);
     dispatch(setSubmission(submission));
-  };
-
-  const createPayload = ({ convo, message }) => {
-    const endpoint = `/api/ask`;
-    let payload = { ...message };
-    const { model } = message
-
-    if (!payload.conversationId)
-      if (convo?.conversationId && convo?.parentMessageId) {
-        payload = {
-          ...payload,
-          conversationId: convo.conversationId,
-          parentMessageId: convo.parentMessageId || '00000000-0000-0000-0000-000000000000'
-        };
-      }
-
-    const isBing = model === 'bingai' || model === 'sydney';
-    if (isBing && convo?.conversationId) {
-      payload = {
-        ...payload,
-        jailbreakConversationId: convo.jailbreakConversationId,
-        conversationId: convo.conversationId,
-        conversationSignature: convo.conversationSignature,
-        clientId: convo.clientId,
-        invocationId: convo.invocationId
-      };
-    }
-
-    let server = endpoint;
-    server = model === 'bingai' ? server + '/bing' : server;
-    server = model === 'sydney' ? server + '/sydney' : server;
-    return { server, payload };
   };
 
   useEffect(() => {
