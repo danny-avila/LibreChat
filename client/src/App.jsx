@@ -8,7 +8,7 @@ import useDocumentTitle from '~/hooks/useDocumentTitle';
 import { useSelector } from 'react-redux';
 
 const App = () => {
-  const { messages } = useSelector((state) => state.messages);
+  const { messages, messageTree } = useSelector((state) => state.messages);
   const { title } = useSelector((state) => state.convo);
   const { conversationId } = useSelector((state) => state.convo);
   const [ navVisible, setNavVisible ]= useState(false)
@@ -25,6 +25,7 @@ const App = () => {
           ) : (
             <Messages
               messages={messages}
+              messageTree={messageTree}
             />
           )}
           <TextChat messages={messages} />
