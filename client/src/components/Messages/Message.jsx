@@ -154,11 +154,13 @@ export default function Message({
             ) : (
               icon
             )}
-            <SiblingSwitch
-              siblingIdx={siblingIdx}
-              siblingCount={siblingCount}
-              setSiblingIdx={setSiblingIdx}
-            />
+            <div className="sibling-switch invisible absolute left-0 top-2 -ml-4 flex -translate-x-full items-center justify-center gap-1 text-xs group-hover:visible">
+              <SiblingSwitch
+                siblingIdx={siblingIdx}
+                siblingCount={siblingCount}
+                setSiblingIdx={setSiblingIdx}
+              />
+            </div>
           </div>
           <div className="relative flex w-[calc(100%-50px)] flex-col gap-1 whitespace-pre-wrap md:gap-3 lg:w-[calc(100%-115px)]">
             <div className="flex flex-grow flex-col gap-3">
@@ -217,6 +219,15 @@ export default function Message({
               visible={!error && isCreatedByUser && !edit}
               onClick={() => enterEdit()}
             />
+            <div className="sibling-switch-container flex justify-between">
+              <div className="flex items-center justify-center gap-1 self-center pt-2 text-xs">
+                <SiblingSwitch
+                  siblingIdx={siblingIdx}
+                  siblingCount={siblingCount}
+                  setSiblingIdx={setSiblingIdx}
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
