@@ -3,15 +3,9 @@ const crypto = require('crypto');
 const router = express.Router();
 const askBing = require('./askBing');
 const askSydney = require('./askSydney');
-const { askClient, browserClient, customClient } = require('../../app/');
+const { titleConvo, askClient, browserClient, customClient } = require('../../app/');
 const { getConvo, saveMessage, getConvoTitle, saveConvo } = require('../../models');
-const {
-  handleError,
-  sendMessage,
-  createOnProgress,
-  genTitle,
-  handleText
-} = require('./handlers');
+const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 const { getMessages } = require('../../models/Message');
 
 router.use('/bing', askBing);
@@ -192,7 +186,7 @@ const ask = async ({
     res.end();
 
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
-      const title = await genTitle({ model, text, response: gptResponse });
+      const title = await titleConvo({ model, text, response: gptResponse });
 
       await saveConvo({
         conversationId,
