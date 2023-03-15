@@ -1,4 +1,4 @@
-const { citeText, detectCode } = require('../../app/');
+const { titleConvo, citeText, detectCode } = require('../../app/');
 const _ = require('lodash');
 const sanitizeHtml = require('sanitize-html');
 
@@ -12,6 +12,23 @@ const sendMessage = (res, message) => {
     return;
   }
   res.write(`event: message\ndata: ${JSON.stringify(message)}\n\n`);
+};
+
+const genTitle = async ({ model, text, response }) => {
+  let title = 'New Chat';
+  try {
+    title = await titleConvo({
+      model,
+      message: text,
+      response: JSON.stringify(response?.text)
+    });
+  } catch (e) {
+    console.error(e);
+    console.log('There was an issue generating title, see error above');
+  }
+
+  console.log('CONVERSATION TITLE', title);
+  return title;
 };
 
 const createOnProgress = () => {
@@ -56,4 +73,4 @@ const handleText = async (input) => {
   return text;
 };
 
-module.exports = { handleError, sendMessage, createOnProgress, handleText };
+module.exports = { handleError, sendMessage, createOnProgress, genTitle, handleText };

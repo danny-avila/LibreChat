@@ -3,15 +3,15 @@ const crypto = require('crypto');
 const router = express.Router();
 const askBing = require('./askBing');
 const askSydney = require('./askSydney');
-const {
-  titleConvo,
-  askClient,
-  browserClient,
-  customClient
-  // detectCode
-} = require('../../app/');
+const { askClient, browserClient, customClient } = require('../../app/');
 const { getConvo, saveMessage, getConvoTitle, saveConvo } = require('../../models');
-const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
+const {
+  handleError,
+  sendMessage,
+  createOnProgress,
+  genTitle,
+  handleText
+} = require('./handlers');
 const { getMessages } = require('../../models/Message');
 
 router.use('/bing', askBing);
@@ -41,15 +41,6 @@ router.post('/', async (req, res) => {
     ...userMessage,
     ...convo
   });
-
-  // if (model === 'chatgptCustom' && !chatGptLabel && conversationId) {
-  //   const convo = await getConvo({ conversationId });
-  //   if (convo) {
-  //     console.log('found convo for custom gpt', { convo })
-  //     chatGptLabel = convo.chatGptLabel;
-  //     promptPrefix = convo.promptPrefix;
-  //   }
-  // }
 
   await saveMessage(userMessage);
   await saveConvo({ ...userMessage, model, ...convo });
@@ -94,17 +85,6 @@ router.post('/regenerate', async (req, res) => {
       res
     });
   } else return handleError(res, { text: 'Parent message not found' });
-
-  // if (model === 'chatgptCustom' && !chatGptLabel && conversationId) {
-  //   const convo = await getConvo({ conversationId });
-  //   if (convo) {
-  //     console.log('found convo for custom gpt', { convo })
-  //     chatGptLabel = convo.chatGptLabel;
-  //     promptPrefix = convo.promptPrefix;
-  //   }
-  // }
-
-  // await saveConvo({ ...userMessage, model, chatGptLabel, promptPrefix });
 });
 
 const ask = async ({
@@ -212,13 +192,7 @@ const ask = async ({
     res.end();
 
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
-      const title = await titleConvo({
-        model,
-        message: text,
-        response: JSON.stringify(gptResponse?.text)
-      });
-
-      console.log('CONVERSATION TITLE', title);
+      const title = await genTitle({ model, text, response: gptResponse });
 
       await saveConvo({
         conversationId,
