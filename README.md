@@ -164,7 +164,7 @@ Le ChatGPT peut être "personnalisé" en définissant un message système ou un 
 - Exécutez npm** install dans les répertoires api et client.
 - Fournissez toutes les informations d'identification (clés API, jetons d'accès et chaîne de connexion Mongo) dans api/.env [(voir l'exemple .env)](api/.env.example)
 - **Run** `npm run build` dans le répertoire /client/, `npm start` dans le répertoire /api/.
-- Visitez http://localhost:3080 (port par défaut) et appréciez.
+- Visitez http://localhost:1234 (port par défaut) et appréciez.
 
 Par défaut, seule la machine locale peut accéder à ce serveur. Pour le partager au sein du réseau ou servir de serveur public, mettez `HOST` à `0.0.0.0` dans le fichier `.env`.
 
