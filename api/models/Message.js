@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
-const mongomeili = require('mongomeili');
+// const mongomeili = require('mongomeili');
+const MeiliSearch = require('meilisearch');
+const _ = require('lodash');
 
 const messageSchema = mongoose.Schema({
   messageId: {
@@ -9,7 +11,8 @@ const messageSchema = mongoose.Schema({
   },
   conversationId: {
     type: String,
-    required: true
+    required: true,
+    meiliIndex: true
   },
   conversationSignature: {
     type: String,
@@ -27,7 +30,8 @@ const messageSchema = mongoose.Schema({
   },
   sender: {
     type: String,
-    required: true
+    required: true,
+    meiliIndex: true
   },
   text: {
     type: String,
@@ -43,13 +47,19 @@ const messageSchema = mongoose.Schema({
     type: Boolean,
     default: false
   },
+  _meiliIndex: { 
+    type: Boolean, 
+    required: false, 
+    select: false, 
+    default: false 
+  }
 }, { timestamps: true });
 
-messageSchema.plugin(mongomeili, {
-  host: 'http://localhost:7700',
-  apiKey: 'MASTER_KEY',
-  indexName: 'text' // Will get created automatically if it doesn't exist already
-});
+// messageSchema.plugin(mongomeili, {
+//   host: 'http://localhost:7700',
+//   apiKey: 'MASTER_KEY',
+//   indexName: 'messages' // Will get created automatically if it doesn't exist already
+// });
 
 const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
 
