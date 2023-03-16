@@ -28,7 +28,7 @@ export default function ModelItem({ modelName, value, model, onSelect, id, chatG
     dispatch(setModels(fetchedModels));
   });
 
-  const icon = getIconOfModel({ size: 16, sender: modelName, isCreatedByUser: false, model, chatGptLabel, promptPrefix, error: false, className: "mr-2" });
+  const icon = getIconOfModel({ size: 20, sender: modelName, isCreatedByUser: false, model, chatGptLabel, promptPrefix, error: false, className: "mr-2" });
 
   if (value === 'chatgptCustom') {
     return (
@@ -143,7 +143,7 @@ export default function ModelItem({ modelName, value, model, onSelect, id, chatG
           onKeyDown={handleKeyDown}
         />
       ) : (
-        <div className="w-3/4 overflow-hidden">{modelInput}</div>
+        <div className=" overflow-hidden">{modelInput}</div>
       )}
 
       {value === 'chatgpt' && <sup>$</sup>}

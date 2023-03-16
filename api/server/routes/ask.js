@@ -37,7 +37,7 @@ router.post('/', async (req, res) => {
   });
 
   await saveMessage(userMessage);
-  await saveConvo({ ...userMessage, model, ...convo });
+  await saveConvo(req?.session?.user?.username, { ...userMessage, model, ...convo });
 
   return await ask({
     userMessage,
@@ -176,9 +176,9 @@ const ask = async ({
     gptResponse.parentMessageId = overrideParentMessageId || userMessageId;
 
     await saveMessage(gptResponse);
-    await saveConvo(gptResponse);
+    await saveConvo(req?.session?.user?.username, gptResponse);
     sendMessage(res, {
-      title: await getConvoTitle(conversationId),
+      title: await getConvoTitle(req?.session?.user?.username, conversationId),
       final: true,
       requestMessage: userMessage,
       responseMessage: gptResponse
@@ -188,10 +188,13 @@ const ask = async ({
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
       const title = await titleConvo({ model, text, response: gptResponse });
 
-      await saveConvo({
-        conversationId,
-        title
-      });
+      await saveConvo(
+        req?.session?.user?.username,
+        {
+          conversationId,
+          title
+        }
+      );
     }
   } catch (error) {
     console.log(error);

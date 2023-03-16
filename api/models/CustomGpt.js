@@ -12,16 +12,20 @@ const customGptSchema = mongoose.Schema({
     type: String,
     required: true
   },
+  user: {
+    type: String
+  },
 }, { timestamps: true });
 
 const CustomGpt = mongoose.models.CustomGpt || mongoose.model('CustomGpt', customGptSchema);
 
-const createCustomGpt = async ({ chatGptLabel, promptPrefix, value }) => {
+const createCustomGpt = async ({ chatGptLabel, promptPrefix, value, user }) => {
   try {
     await CustomGpt.create({
       chatGptLabel,
       promptPrefix,
-      value
+      value,
+      user
     });
     return { chatGptLabel, promptPrefix, value };
   } catch (error) {
@@ -31,22 +35,22 @@ const createCustomGpt = async ({ chatGptLabel, promptPrefix, value }) => {
 };
 
 module.exports = {
-  getCustomGpts: async (filter) => {
+  getCustomGpts: async (user, filter) => {
     try {
-      return await CustomGpt.find(filter).exec();
+      return await CustomGpt.find({ ...filter, user }).exec();
     } catch (error) {
       console.error(error);
       return { customGpt: 'Error getting customGpts' };
     }
   },
-  updateCustomGpt: async ({ value, ...update }) => {
+  updateCustomGpt: async (user, { value, ...update }) => {
     try {
-      const customGpt = await CustomGpt.findOne({ value }).exec();
+      const customGpt = await CustomGpt.findOne({ value, user }).exec();
 
       if (!customGpt) {
-        return await createCustomGpt({ value, ...update });
+        return await createCustomGpt({ value, ...update, user });
       } else {
-        return await CustomGpt.findOneAndUpdate({ value }, update, {
+        return await CustomGpt.findOneAndUpdate({ value, user }, update, {
           new: true,
           upsert: true
         }).exec();
@@ -56,9 +60,9 @@ module.exports = {
       return { message: 'Error updating customGpt' };
     }
   },
-  updateByLabel: async ({ prevLabel, ...update }) => {
+  updateByLabel: async (user, { prevLabel, ...update }) => {
     try {
-      return await CustomGpt.findOneAndUpdate({ chatGptLabel: prevLabel }, update, {
+      return await CustomGpt.findOneAndUpdate({ chatGptLabel: prevLabel, user }, update, {
         new: true,
         upsert: true
       }).exec();
@@ -67,9 +71,9 @@ module.exports = {
       return { message: 'Error updating customGpt' };
     }
   },
-  deleteCustomGpts: async (filter) => {
+  deleteCustomGpts: async (user, filter) => {
     try {
-      return await CustomGpt.deleteMany(filter).exec();
+      return await CustomGpt.deleteMany({ ...filter, user }).exec();
     } catch (error) {
       console.error(error);
       return { customGpt: 'Error deleting customGpts' };
