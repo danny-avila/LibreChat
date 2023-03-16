@@ -84,6 +84,14 @@ const ask = async ({
 
   try {
     const progressCallback = createOnProgress();
+
+    const abortController = new AbortController();
+    res.on('close', () => {
+      console.log('The client has disconnected.');
+      // 执行其他操作
+      abortController.abort();
+    })
+
     let response = await askBing({
       text,
       onProgress: progressCallback.call(null, model, {
@@ -95,7 +103,8 @@ const ask = async ({
         ...convo,
         parentMessageId: userParentMessageId,
         conversationId
-      }
+      },
+      abortController
     });
 
     console.log('BING RESPONSE', response);

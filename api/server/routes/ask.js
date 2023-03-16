@@ -90,6 +90,14 @@ const ask = async ({
 
   try {
     const progressCallback = createOnProgress();
+
+    const abortController = new AbortController();
+    res.on('close', () => {
+      console.log('The client has disconnected.');
+      // 执行其他操作
+      abortController.abort();
+    })
+
     let gptResponse = await client({
       text,
       onProgress: progressCallback.call(null, model, { res, text }),
@@ -98,7 +106,8 @@ const ask = async ({
         conversationId,
         ...convo
       },
-      ...convo
+      ...convo,
+      abortController
     });
 
     console.log('CLIENT RESPONSE', gptResponse);
