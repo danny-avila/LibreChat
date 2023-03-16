@@ -4,7 +4,7 @@ const initialState = {
   isSubmitting: false,
   submission: {},
   stopStream: false,
-  disabled: false,
+  disabled: true,
   model: 'chatgpt',
   promptPrefix: null,
   chatGptLabel: null,
