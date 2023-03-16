@@ -6,36 +6,56 @@ import NavLinks from './NavLinks';
 import useDidMountEffect from '~/hooks/useDidMountEffect';
 import { swr } from '~/utils/fetchers';
 import { useDispatch, useSelector } from 'react-redux';
-import { incrementPage, setConvos } from '~/store/convoSlice';
+import { increasePage, decreasePage, setPage, setConvos, setPages } from '~/store/convoSlice';
 
 export default function Nav({ navVisible, setNavVisible }) {
   const dispatch = useDispatch();
   const [isHovering, setIsHovering] = useState(false);
-  const { conversationId, convos, pageNumber } = useSelector((state) => state.convo);
+  const { conversationId, convos, pages, pageNumber, refreshConvoHint } = useSelector(
+    (state) => state.convo
+  );
   const onSuccess = (data) => {
-    dispatch(setConvos(data));
+    const { conversations, pages } = data;
+
+    if (pageNumber > pages) {
+      dispatch(setPage(pages));
+    } else {
+      dispatch(setConvos(conversations));
+      dispatch(setPages(pages));
+    }
   };
 
-  const { data, isLoading, mutate } = swr(
-    `/api/convos?pageNumber=${pageNumber}`,
-    onSuccess
-  );
+  const { data, isLoading, mutate } = swr(`/api/convos?pageNumber=${pageNumber}`, onSuccess, {
+    revalidateOnMount: false
+  });
+
   const containerRef = useRef(null);
   const scrollPositionRef = useRef(null);
 
-  const showMore = async (increment = true) => {
+  const moveToTop = () => {
     const container = containerRef.current;
     if (container) {
       scrollPositionRef.current = container.scrollTop;
     }
-
-    if (increment) {
-      dispatch(incrementPage());
-      await mutate();
-    }
   };
 
-  useDidMountEffect(() => mutate(), [conversationId]);
+  const nextPage = async () => {
+    moveToTop();
+
+    dispatch(increasePage());
+    await mutate();
+  };
+
+  const previousPage = async () => {
+    moveToTop();
+
+    dispatch(decreasePage());
+    await mutate();
+  };
+
+  useEffect(() => {
+    mutate();
+  }, [pageNumber, conversationId, refreshConvoHint]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -49,14 +69,14 @@ export default function Nav({ navVisible, setNavVisible }) {
   }, [data]);
 
   useEffect(() => {
-    setNavVisible(false)
-  }, [conversationId, ])
+    setNavVisible(false);
+  }, [conversationId]);
 
   const toggleNavVisible = () => {
     setNavVisible((prev) => {
-      return !prev
-    })
-  }
+      return !prev;
+    });
+  };
 
   const containerClasses =
     isLoading && pageNumber === 1
@@ -65,7 +85,12 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   return (
     <>
-      <div className={"dark nav bg-gray-900 md:fixed md:inset-y-0 md:flex md:w-[260px] md:flex-col" + (navVisible?' active':'')}>
+      <div
+        className={
+          'nav dark bg-gray-900 md:fixed md:inset-y-0 md:flex md:w-[260px] md:flex-col' +
+          (navVisible ? ' active' : '')
+        }
+      >
         <div className="flex h-full min-h-0 flex-col ">
           <div className="scrollbar-trigger flex h-full w-full flex-1 items-start border-white/20">
             <nav className="flex h-full flex-1 flex-col space-y-1 p-2">
@@ -85,8 +110,11 @@ export default function Nav({ navVisible, setNavVisible }) {
                     <Conversations
                       conversations={convos}
                       conversationId={conversationId}
-                      showMore={showMore}
+                      nextPage={nextPage}
+                      previousPage={previousPage}
+                      moveToTop={moveToTop}
                       pageNumber={pageNumber}
+                      pages={pages}
                     />
                   )}
                 </div>
@@ -97,7 +125,7 @@ export default function Nav({ navVisible, setNavVisible }) {
         </div>
         <button
           type="button"
-          className="nav-close-button -ml-0.5 -mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-md hover:text-gray-900 focus:outline-none focus:ring-white hover:text-white text-white"
+          className="nav-close-button -ml-0.5 -mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-md text-white hover:text-gray-900 hover:text-white focus:outline-none focus:ring-white"
           onClick={toggleNavVisible}
         >
           <span className="sr-only">Menu latteral</span>
@@ -128,8 +156,10 @@ export default function Nav({ navVisible, setNavVisible }) {
           </svg>
         </button>
       </div>
-      <div className={"nav-mask" + (navVisible?' active':'')} onClick={toggleNavVisible}>
-      </div>
+      <div
+        className={'nav-mask' + (navVisible ? ' active' : '')}
+        onClick={toggleNavVisible}
+      ></div>
     </>
   );
 }

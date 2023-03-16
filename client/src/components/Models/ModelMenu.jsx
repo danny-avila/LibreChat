@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { useSelector, useDispatch } from 'react-redux';
 import {
   setSubmission,
@@ -11,10 +12,11 @@ import { setNewConvo } from '~/store/convoSlice';
 import ModelDialog from './ModelDialog';
 import MenuItems from './MenuItems';
 import { swr } from '~/utils/fetchers';
-import { setModels } from '~/store/modelSlice';
-import GPTIcon from '../svg/GPTIcon';
-import BingIcon from '../svg/BingIcon';
+import { setModels, setInitial } from '~/store/modelSlice';
+import { setMessages } from '~/store/messageSlice';
+import { setText } from '~/store/textSlice';
 import { Button } from '../ui/Button.tsx';
+import { getIconOfModel } from '../../utils';
 
 import {
   DropdownMenu,
@@ -31,7 +33,7 @@ export default function ModelMenu() {
   const dispatch = useDispatch();
   const [modelSave, setModelSave] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const { model, customModel } = useSelector((state) => state.submit);
+  const { model, customModel, promptPrefix, chatGptLabel } = useSelector((state) => state.submit);
   const { models, modelMap, initial } = useSelector((state) => state.models);
   const { data, isLoading, mutate } = swr(`/api/customGpts`, (res) => {
     const fetchedModels = res.map((modelItem) => ({
@@ -44,44 +46,88 @@ export default function ModelMenu() {
 
   useEffect(() => {
     mutate();
-    const lastSelected = JSON.parse(localStorage.getItem('model'));
-    if (lastSelected && lastSelected !== 'chatgptCustom' && initial[lastSelected]) {
-      dispatch(setModel(lastSelected));
+    try {
+      const lastSelected = JSON.parse(localStorage.getItem('model'));
+
+      if (lastSelected === 'chatgptCustom') {
+        return;
+      } else if (initial[lastSelected]) {
+        dispatch(setModel(lastSelected));
+      }
+    } catch (err) {
+      console.log(err);
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
+    axios.get('/api/models', {
+      timeout: 1000,
+      withCredentials: true
+    }).then((res) => {
+      return res.data
+    }).then((data) => {
+      const initial = {chatgpt: data?.hasOpenAI, chatgptCustom: data?.hasOpenAI, bingai: data?.hasBing, sydney: data?.hasBing, chatgptBrowser: data?.hasChatGpt}
+      dispatch(setInitial(initial))
+      // TODO, auto reset default model
+      if (data?.hasOpenAI) {
+        dispatch(setModel('chatgpt'));
+        dispatch(setDisabled(false));
+        dispatch(setCustomModel(null));
+        dispatch(setCustomGpt({ chatGptLabel: null, promptPrefix: null }));
+      } else if (data?.hasBing) {
+        dispatch(setModel('bingai'));
+        dispatch(setDisabled(false));
+        dispatch(setCustomModel(null));
+        dispatch(setCustomGpt({ chatGptLabel: null, promptPrefix: null }));
+      } else if (data?.hasChatGpt) {
+        dispatch(setModel('chatgptBrowser'));
+        dispatch(setDisabled(false));
+        dispatch(setCustomModel(null));
+        dispatch(setCustomGpt({ chatGptLabel: null, promptPrefix: null }));
+      } else {
+        dispatch(setDisabled(true));
+      }
+    }).catch((error) => {
+      console.error(error)
+      console.log('Not login!')
+      window.location.href = "/auth/login";
+    })
+  }, [])
+
+  useEffect(() => {
     localStorage.setItem('model', JSON.stringify(model));
   }, [model]);
 
-  const onChange = (value, custom = false) => {
-    // if (custom) {
-    //   mutate();
-    // }
+  const filteredModels = models.filter(({model, _id }) => initial[model] || _id.length > 1 );
+
+  const onChange = (value) => {
     if (!value) {
       return;
+    } else if (value === model) {
+      return;
     } else if (value === 'chatgptCustom') {
-      // dispatch(setMessages([]));
+      // return;
     } else if (initial[value]) {
       dispatch(setModel(value));
       dispatch(setDisabled(false));
       dispatch(setCustomModel(null));
+      dispatch(setCustomGpt({ chatGptLabel: null, promptPrefix: null }));
     } else if (!initial[value]) {
       const chatGptLabel = modelMap[value]?.chatGptLabel;
       const promptPrefix = modelMap[value]?.promptPrefix;
       dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
       dispatch(setModel('chatgptCustom'));
       dispatch(setCustomModel(value));
-      // if (custom) {
-      //   setMenuOpen((prevOpen) => !prevOpen);
-      // }
+      setMenuOpen(false);
     } else if (!modelMap[value]) {
       dispatch(setCustomModel(null));
     }
 
     // Set new conversation
+    dispatch(setText(''));
+    dispatch(setMessages([]));
     dispatch(setNewConvo());
     dispatch(setSubmission({}));
   };
@@ -129,7 +175,7 @@ export default function ModelMenu() {
 
   const isBing = model === 'bingai' || model === 'sydney';
   const colorProps = model === 'chatgpt' ? chatgptColorProps : defaultColorProps;
-  const icon = isBing ? <BingIcon button={true} /> : <GPTIcon button={true} />;
+  const icon = getIconOfModel({ size: 32, sender: chatGptLabel || model, isCreatedByUser: false, model, chatGptLabel, promptPrefix, error: false, button: true});
 
   return (
     <Dialog onOpenChange={onOpenChange}>
@@ -141,25 +187,27 @@ export default function ModelMenu() {
           <Button
             variant="outline"
             // style={{backgroundColor: 'rgb(16, 163, 127)'}}
-            className={`absolute bottom-0.5 rounded-md border-0 p-1 pl-2 outline-none ${colorProps.join(
+            className={`absolute bottom-0.5 items-center mb-[1.75px] md:mb-0 rounded-md border-0 p-1 ml-1 md:ml-0 outline-none ${colorProps.join(
               ' '
-            )} focus:ring-0 focus:ring-offset-0 disabled:bottom-0.5 dark:data-[state=open]:bg-opacity-50 md:bottom-1 md:left-2 md:pl-1 md:disabled:bottom-1`}
+            )} focus:ring-0 focus:ring-offset-0 disabled:bottom-0.5 dark:data-[state=open]:bg-opacity-50 md:bottom-1 md:left-1 md:pl-1 md:disabled:bottom-1`}
           >
             {icon}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-56 dark:bg-gray-700">
-          <DropdownMenuLabel className="dark:text-gray-300">Selectionner un Modele</DropdownMenuLabel>
+        <DropdownMenuContent className="w-56 dark:bg-gray-700" onCloseAutoFocus={(event) => event.preventDefault()}>
+          <DropdownMenuLabel className="dark:text-gray-300">Select a Model</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
             value={customModel ? customModel : model}
             onValueChange={onChange}
             className="overflow-y-auto"
           >
-            <MenuItems
-              models={models}
-              onSelect={onChange}
-            />
+            {filteredModels.length?
+              <MenuItems
+                models={filteredModels}
+                onSelect={onChange}
+              />:<DropdownMenuLabel className="dark:text-gray-300">No model available.</DropdownMenuLabel>
+            }
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>

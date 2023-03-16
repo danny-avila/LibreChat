@@ -2,11 +2,12 @@ import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { setNewConvo } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
+import { setSubmission } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
 
 export default function MobileNav({ setNavVisible }) {
   const dispatch = useDispatch();
-  const { conversationId, convos } = useSelector((state) => state.convo);
+  const { conversationId, convos, title } = useSelector((state) => state.convo);
 
   const toggleNavVisible = () => {
     setNavVisible((prev) => {
@@ -20,8 +21,6 @@ export default function MobileNav({ setNavVisible }) {
     dispatch(setNewConvo());
     dispatch(setSubmission({}));
   }
-
-  const title = convos?.find(element => element?.conversationId == conversationId)?.title || 'Nouvelle Conversation';
 
   return (
     <div className="sticky top-0 z-10 flex items-center border-b border-white/20 bg-gray-800 pl-1 pt-1 text-gray-200 sm:pl-3 md:hidden">
@@ -63,7 +62,7 @@ export default function MobileNav({ setNavVisible }) {
           />
         </svg>
       </button>
-      <h1 className="flex-1 text-center text-base font-normal">{title}</h1>
+      <h1 className="flex-1 text-center text-base font-normal">{title || 'New Chat'}</h1>
       <button
         type="button"
         className="px-3"

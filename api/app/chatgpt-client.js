@@ -9,17 +9,14 @@ const clientOptions = {
   debug: false
 };
 
-const askClient = async ({ text, progressCallback, convo }) => {
+const askClient = async ({ text, onProgress, convo }) => {
   const ChatGPTClient = (await import('@waylaidwanderer/chatgpt-api')).default;
   const store = {
     store: new KeyvFile({ filename: './data/cache.json' })
   };
 
   const client = new ChatGPTClient(process.env.OPENAI_KEY, clientOptions, store);
-
-  let options = {
-    onProgress: async (partialRes) => await progressCallback(partialRes)
-  };
+  let options = { onProgress };
 
   if (!!convo.parentMessageId && !!convo.conversationId) {
     options = { ...options, ...convo };

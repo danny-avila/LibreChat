@@ -8,7 +8,7 @@ const {
 } = require('../../models');
 
 router.get('/', async (req, res) => {
-  const models = (await getCustomGpts()).map((model) => {
+  const models = (await getCustomGpts(req?.session?.user?.username)).map((model) => {
     model = model.toObject();
     model._id = model._id.toString();
     return model;
@@ -20,8 +20,8 @@ router.post('/delete', async (req, res) => {
   const { arg } = req.body;
 
   try {
-    await deleteCustomGpts(arg);
-    const models = (await getCustomGpts()).map((model) => {
+    await deleteCustomGpts(req?.session?.user?.username, arg);
+    const models = (await getCustomGpts(req?.session?.user?.username)).map((model) => {
       model = model.toObject();
       model._id = model._id.toString();
       return model;
@@ -56,7 +56,7 @@ router.post('/', async (req, res) => {
   }
 
   try {
-    const dbResponse = await setter(update);
+    const dbResponse = await setter(req?.session?.user?.username, update);
     res.status(201).send(dbResponse);
   } catch (error) {
     console.error(error);

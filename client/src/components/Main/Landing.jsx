@@ -28,8 +28,8 @@ export default function Landing({ title }) {
   return (
     <div className="flex h-full flex-col items-center overflow-y-auto text-sm dark:bg-gray-800">
       <div className="w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
-        <h1 className="mt-6 ml-auto mr-auto mb-10 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mt-[20vh] sm:mb-16">
-          VALERIA
+        <h1 className="mt-6 ml-auto mr-auto mb-10 flex items-center justify-center gap-2 text-center text-4xl font-semibold md:mt-[20vh] sm:mb-16">
+          ChatGPT Clone
         </h1>
          <h2><p><strong>V</strong>otre <strong>A</strong>ssistant <strong>L</strong>ogiciel <strong>E</strong>t <strong>R</strong>obotique d'<strong>I</strong>ntelligence <strong>A</strong>ugment&eacute;</p>
           </h2>

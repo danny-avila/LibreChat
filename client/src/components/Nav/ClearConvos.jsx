@@ -5,6 +5,7 @@ import manualSWR from '~/utils/fetchers';
 import { useDispatch } from 'react-redux';
 import { setNewConvo, removeAll } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
+import { setSubmission } from '~/store/submitSlice';
 
 export default function ClearConvos() {
   const dispatch = useDispatch();

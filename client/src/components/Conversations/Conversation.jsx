@@ -8,12 +8,14 @@ import { setMessages, setEmptyMessage } from '~/store/messageSlice';
 import { setText } from '~/store/textSlice';
 import manualSWR from '~/utils/fetchers';
 import ConvoIcon from '../svg/ConvoIcon';
+import { refreshConversation } from '../../store/convoSlice';
 
 export default function Conversation({
   id,
+  model,
   parentMessageId,
   conversationId,
-  title = 'New conversation',
+  title,
   chatGptLabel = null,
   promptPrefix = null,
   bingData,
@@ -75,16 +77,18 @@ export default function Conversation({
 
     if (chatGptLabel) {
       dispatch(setModel('chatgptCustom'));
+      dispatch(setCustomModel(chatGptLabel.toLowerCase()));
     } else {
-      dispatch(setModel(data[1].sender));
-    }
-
-    if (modelMap[data[1].sender.toLowerCase()]) {
-      console.log('sender', data[1].sender);
-      dispatch(setCustomModel(data[1].sender.toLowerCase()));
-    } else {
+      dispatch(setModel(model));
       dispatch(setCustomModel(null));
     }
+
+    // if (modelMap[chatGptLabel.toLowerCase()]) {
+    //   console.log('custom model', chatGptLabel);
+    //   dispatch(setCustomModel(chatGptLabel.toLowerCase()));
+    // } else {
+    //   dispatch(setCustomModel(null));
+    // }
 
     dispatch(setMessages(data));
     dispatch(setCustomGpt(convo));
@@ -94,6 +98,7 @@ export default function Conversation({
 
   const renameHandler = (e) => {
     e.preventDefault();
+    setTitleInput(title);
     setRenaming(true);
     setTimeout(() => {
       inputRef.current.focus();
@@ -111,7 +116,10 @@ export default function Conversation({
     if (titleInput === title) {
       return;
     }
-    rename.trigger({ conversationId, title: titleInput });
+    rename.trigger({ conversationId, title: titleInput })
+      .then(() => {
+        dispatch(refreshConversation())
+      });
   };
 
   const handleKeyDown = (e) => {
@@ -148,7 +156,7 @@ export default function Conversation({
             onKeyDown={handleKeyDown}
           />
         ) : (
-          titleInput
+          title
         )}
       </div>
       {conversationId === id ? (

@@ -11,6 +11,18 @@ https://user-images.githubusercontent.com/110412045/223754183-8b7f45ce-6517-4bd5
 
 ## Mises à jour
 <details open>
+<summary><strong>2023-03-16</strong></summary>
+
+
+
+[Latest release (v0.0.4)](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.0.4) includes Resubmitting messages & Branching messages, which mirrors official ChatGPT feature of editing a sent message, that then branches the conversation into separate message paths (works only with ChatGPT)
+
+Full details and [example here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.0.4). Message search is on the docket
+
+</details>
+
+<details>
+<details>
 <summary><strong>2023-03-12</strong></summary>
 
 
@@ -25,8 +37,6 @@ Beaucoup d'améliorations dans tous les domaines, la plus importante étant la p
 
 L'ajout de la prise en charge de la recherche de conversation est la prochaine étape ! Merci à [mysticaltech](https://github.com/mysticaltech) d'avoir proposé une méthode que je peux utiliser pour cela.
 </details>
-
-<details>
 <details>
 <summary><strong>2023-03-09</strong></summary>
 Version francophone de **chatgpt-clone**.
@@ -120,7 +130,7 @@ Voici les fonctionnalités que j'ai récemment terminées et celles que je prév
 - [ ] Ajout d'un avertissement avant d'effacer les conversations
 - [ ] Construire une suite de tests pour CI/CD
 - [ ] Recherche de conversation (par titre)
-- [ ] Resoumettre/éditer les messages envoyés
+- [x] Resoumettre/éditer les messages envoyés
 - [ ] Option de recherche sémantique (nécessite plus de jetons)
 - [ ] Modèles d'invite/recherche
 - [ ] Refonte/nettoyage du code (dette technologique)
@@ -184,6 +194,8 @@ Par défaut, seule la machine locale peut accéder à ce serveur. Pour le partag
     docker build -t react-client .
     ```
 - **Lancer** `docker-compose build` dans le répertoire racine du projet et ensuite `docker-compose up` pour démarrer l'application
+- **Provide** all credentials, (API keys, access tokens, and Mongo Connection String) in [docker-compose.yml](docker-compose.yml) under api service
+- **Run** `docker-compose up` to start the app
 
 ### Jetons d'accès
 
@@ -242,6 +254,38 @@ défini dans le fichier docker-compose.yml, sous services - api - environment
 
 ### Mise à jour
 - Comme le projet est toujours en cours, vous devriez prendre la dernière version et exécuter les étapes ci-dessus. Réinitialisez le cache de votre navigateur/effacez les données du site.
+### User System
+
+By default, there is no user system enabled, so anyone can access your server.
+
+**This project is not designed to provide a complete and full-featured user system.** It's not high priority task and might never be provided.
+
+[wtlyu](https://github.com/wtlyu) provide a sample user system structure, that you can implement your own user system. It's simple and not a ready-for-use edition. 
+
+(If you want to implement your user system, open this ↓)
+
+<details>
+<summary><strong>Implement your own user system </strong></summary>
+
+To enable the user system, set `ENABLE_USER_SYSTEM=1` in your `.env` file.
+
+The sample structure is simple. It provide three basic endpoint:
+
+1. `/auth/login` will redirect to your own login url. In the sample code, it's `/auth/your_login_page`.
+2. `/auth/logout` will redirect to your own logout url. In the sample code, it's `/auth/your_login_page/logout`.
+3. `/api/me` will return the userinfo: `{ username, display }`.
+   1. `username` will be used in db, used to distinguish between users.
+   2. `display` will be displayed in UI.
+
+The only one thing that drive user system work is `req.session.user`. Once it's set, the client will be trusted. Set to `null` if logout.
+
+Please refer to `/api/server/routes/authYoutLogin.js` file. It's very clear and simple to tell you how to implement your user system.
+
+</details>
+
+
+### Updating
+- As the project is still a work-in-progress, you should pull the latest and run the steps over. Reset your browser cache/clear site data.
 
 ## Cas d'utilisation ##
 
