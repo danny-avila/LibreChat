@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { useSelector, useDispatch } from 'react-redux';
 import {
   setSubmission,
@@ -11,7 +12,7 @@ import { setNewConvo } from '~/store/convoSlice';
 import ModelDialog from './ModelDialog';
 import MenuItems from './MenuItems';
 import { swr } from '~/utils/fetchers';
-import { setModels } from '~/store/modelSlice';
+import { setModels, setInitial } from '~/store/modelSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setText } from '~/store/textSlice';
 import GPTIcon from '../svg/GPTIcon';
@@ -63,8 +64,45 @@ export default function ModelMenu() {
   }, []);
 
   useEffect(() => {
+    axios.get('/api/models', {
+      timeout: 1000,
+      withCredentials: true
+    }).then((res) => {
+      return res.data
+    }).then((data) => {
+      const initial = {chatgpt: data?.hasOpenAI, chatgptCustom: data?.hasOpenAI, bingai: data?.hasBing, sydney: data?.hasBing, chatgptBrowser: data?.hasChatGpt}
+      dispatch(setInitial(initial))
+      // TODO, auto reset default model
+      if (data?.hasOpenAI) {
+        dispatch(setModel('chatgpt'));
+        dispatch(setDisabled(false));
+        dispatch(setCustomModel(null));
+        dispatch(setCustomGpt({ chatGptLabel: null, promptPrefix: null }));
+      } else if (data?.hasBing) {
+        dispatch(setModel('bingai'));
+        dispatch(setDisabled(false));
+        dispatch(setCustomModel(null));
+        dispatch(setCustomGpt({ chatGptLabel: null, promptPrefix: null }));
+      } else if (data?.hasChatGpt) {
+        dispatch(setModel('chatgptBrowser'));
+        dispatch(setDisabled(false));
+        dispatch(setCustomModel(null));
+        dispatch(setCustomGpt({ chatGptLabel: null, promptPrefix: null }));
+      } else {
+        dispatch(setDisabled(true));
+      }
+    }).catch((error) => {
+      console.error(error)
+      console.log('Not login!')
+      window.location.href = "/auth/login";
+    })
+  }, [])
+
+  useEffect(() => {
     localStorage.setItem('model', JSON.stringify(model));
   }, [model]);
+
+  const filteredModels = models.filter(({model}) => initial[model])
 
   const onChange = (value) => {
     if (!value) {
@@ -166,10 +204,12 @@ export default function ModelMenu() {
             onValueChange={onChange}
             className="overflow-y-auto"
           >
-            <MenuItems
-              models={models}
-              onSelect={onChange}
-            />
+            {filteredModels.length?
+              <MenuItems
+                models={filteredModels}
+                onSelect={onChange}
+              />:<DropdownMenuLabel className="dark:text-gray-300">No model available.</DropdownMenuLabel>
+            }
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>

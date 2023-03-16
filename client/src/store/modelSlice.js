@@ -34,7 +34,7 @@ const initialState = {
     },
   ],
   modelMap: {},
-  initial: { chatgpt: true, chatgptCustom: true, bingai: true, sydney: true, chatgptBrowser: true }
+  initial: { chatgpt: false, chatgptCustom: false, bingai: false, sydney: false, chatgptBrowser: false }
   // initial: { chatgpt: true, chatgptCustom: true, bingai: true, }
 };
 
@@ -56,10 +56,13 @@ const currentSlice = createSlice({
       });
 
       state.modelMap = modelMap;
+    },
+    setInitial: (state, action) => {
+      state.initial = action.payload;
     }
   }
 });
 
-export const { setModels } = currentSlice.actions;
+export const { setModels, setInitial } = currentSlice.actions;
 
 export default currentSlice.reducer;

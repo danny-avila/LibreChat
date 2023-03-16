@@ -51,6 +51,14 @@ app.use('/api/prompts', routes.authenticatedOr401, routes.prompts);
 app.use('/auth', routes.auth);
 
 
+app.get('/api/models', function (req, res) {
+  const hasOpenAI = !!process.env.OPENAI_KEY;
+  const hasChatGpt = !!process.env.CHATGPT_TOKEN;
+  const hasBing = !!process.env.BING_TOKEN;
+
+  res.send(JSON.stringify({ hasOpenAI, hasChatGpt, hasBing }));
+});
+
 app.listen(port, host,  () => {
   if (host=='0.0.0.0')
     console.log(`Server listening on all interface at port ${port}. Use http://localhost:${port} to access it`);

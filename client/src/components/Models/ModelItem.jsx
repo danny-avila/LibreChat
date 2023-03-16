@@ -43,9 +43,9 @@ export default function ModelItem({ modelName, value, model, onSelect, id, chatG
         </DropdownMenuRadioItem>
       </DialogTrigger>
     );
-  }
+  } 
 
-  if (initial[value]) {
+  if (initial[value])
     return (
       <DropdownMenuRadioItem
         value={value}
@@ -56,8 +56,8 @@ export default function ModelItem({ modelName, value, model, onSelect, id, chatG
         {value === 'chatgpt' && <sup>$</sup>}
       </DropdownMenuRadioItem>
     );
-  }
 
+  
   const handleMouseOver = () => {
     setIsHovering(true);
   };
