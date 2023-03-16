@@ -1,5 +1,88 @@
 import { SSE } from './sse';
-// const newLineRegex = /^\n+/;
+import resetConvo from './resetConvo';
+import { useSelector, useDispatch } from 'react-redux';
+import { setNewConvo } from '~/store/convoSlice';
+import { setMessages } from '~/store/messageSlice';
+import { setSubmitState, setSubmission } from '~/store/submitSlice';
+import { setText } from '~/store/textSlice';
+
+const useMessageHandler = () => {
+  const dispatch = useDispatch();
+  const convo = useSelector((state) => state.convo);
+  const { initial } = useSelector((state) => state.models);
+  const { messages } = useSelector((state) => state.messages);
+  const { model, chatGptLabel, promptPrefix, isSubmitting } = useSelector((state) => state.submit);
+  const { text } = useSelector((state) => state.text);
+  const { latestMessage, error } = convo;
+
+  const ask = ({ text, parentMessageId=null, conversationId=null, messageId=null}, { isRegenerate=false }={}) => {
+    if (error) {
+      dispatch(setError(false));
+    }
+
+    if (!!isSubmitting || text === '') {
+      return;
+    }
+    
+    // this is not a real messageId, it is used as placeholder before real messageId returned
+    text = text.trim();
+    const fakeMessageId = crypto.randomUUID();
+    const isCustomModel = model === 'chatgptCustom' || !initial[model];
+    const sender = model === 'chatgptCustom' ? chatGptLabel : model;
+    parentMessageId = parentMessageId || latestMessage?.messageId || '00000000-0000-0000-0000-000000000000';
+    let currentMessages = messages;
+    if (resetConvo(currentMessages, sender)) {
+      parentMessageId = '00000000-0000-0000-0000-000000000000';
+      conversationId = null;
+      dispatch(setNewConvo());
+      currentMessages = [];
+    }
+    const currentMsg = { sender: 'User', text, current: true, isCreatedByUser: true, parentMessageId, conversationId, messageId: fakeMessageId };
+    const initialResponse = { sender, text: '', parentMessageId: isRegenerate?messageId:fakeMessageId, messageId: (isRegenerate?messageId:fakeMessageId) + '_', submitting: true };
+
+    dispatch(setSubmitState(true));
+    if (isRegenerate) {
+      console.log([...currentMessages, initialResponse])
+      dispatch(setMessages([...currentMessages, initialResponse]));
+    } else {
+      console.log([...currentMessages, currentMsg, initialResponse])
+      dispatch(setMessages([...currentMessages, currentMsg, initialResponse]));
+    }
+    dispatch(setText(''));
+
+    const submission = {
+      convo,
+      isCustomModel,
+      message: { 
+        ...currentMsg,
+        model,
+        chatGptLabel,
+        promptPrefix,
+        overrideParentMessageId: isRegenerate?messageId:null
+      },
+      messages: currentMessages,
+      isRegenerate,
+      initialResponse,
+      sender,
+    };
+    console.log('User Input:', text);
+    dispatch(setSubmission(submission));
+  }
+
+  const regenerate = ({ parentMessageId }) => {
+    const parentMessage = messages?.find(element => element.messageId == parentMessageId);
+
+    if (parentMessage && parentMessage.isCreatedByUser)
+      ask({ ...parentMessage }, { isRegenerate: true })
+    else
+      console.error('Failed to regenerate the message: parentMessage not found or not created by user.', message);
+  }
+
+
+  return { ask, regenerate }
+}
+
+export { useMessageHandler };
 
 export default function handleSubmit({
   model,
