@@ -1,5 +1,5 @@
 const { ModelOperations } = require('@vscode/vscode-languagedetection');
-const languages = require('../utils/languages.js');
+const languages = require('./languages.js');
 const codeRegex = /(```[\s\S]*?```)/g;
 // const languageMatch = /```(\w+)/;
 const replaceRegex = /```\w+\n/g;

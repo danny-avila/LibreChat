@@ -1,13 +1,12 @@
 const mongoose = require('mongoose');
-// const mongomeili = require('mongomeili');
-const MeiliSearch = require('meilisearch');
-const _ = require('lodash');
+const mongoMeili = require('../lib/mongoMeili');
 
 const messageSchema = mongoose.Schema({
   messageId: {
     type: String,
     unique: true,
-    required: true
+    required: true,
+    meiliIndex: true
   },
   conversationId: {
     type: String,
@@ -55,11 +54,11 @@ const messageSchema = mongoose.Schema({
   }
 }, { timestamps: true });
 
-// messageSchema.plugin(mongomeili, {
-//   host: 'http://localhost:7700',
-//   apiKey: 'MASTER_KEY',
-//   indexName: 'messages' // Will get created automatically if it doesn't exist already
-// });
+messageSchema.plugin(mongoMeili, {
+  host: 'http://localhost:7700',
+  apiKey: 'MASTER_KEY',
+  indexName: 'messages' // Will get created automatically if it doesn't exist already
+});
 
 const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
 
