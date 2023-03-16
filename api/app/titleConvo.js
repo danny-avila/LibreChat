@@ -34,11 +34,14 @@ const titleConvo = async ({ model, text, response }) => {
           },
           {
             role: 'user',
-            content: `In 5 words or less, summarize the conversation below with a title in title case using the language the user writes in. Don't refer to the participants of the conversation by name. Do not include punctuation or quotation marks. Your response should be in title case, exclusively containing the title. Conversation:\n\nUser: "${text}"\n\n${model}: "${JSON.stringify(
+            content: `In 5 words or less, summarize the conversation below with a title in title case using the language the user writes in. Don't refer to the participants of the conversation nor the language. Do not include punctuation or quotation marks. Your response should be in title case, exclusively containing the title. Conversation:\n\nUser: "${text}"\n\n${model}: "${JSON.stringify(
               response?.text
             )}"\n\nTitle: `
           }
-        ]
+        ],
+        temperature: 0,
+        presence_penalty: 0,
+        frequency_penalty: 0,
       },
       { proxy: proxyEnvToAxiosProxy(process.env.PROXY || null) }
     );
