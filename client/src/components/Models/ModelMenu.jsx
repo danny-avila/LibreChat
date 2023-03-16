@@ -15,8 +15,6 @@ import { swr } from '~/utils/fetchers';
 import { setModels, setInitial } from '~/store/modelSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setText } from '~/store/textSlice';
-import GPTIcon from '../svg/GPTIcon';
-import BingIcon from '../svg/BingIcon';
 import { Button } from '../ui/Button.tsx';
 import { getIconOfModel } from '../../utils';
 
@@ -102,7 +100,7 @@ export default function ModelMenu() {
     localStorage.setItem('model', JSON.stringify(model));
   }, [model]);
 
-  const filteredModels = models.filter(({model}) => initial[model])
+  const filteredModels = models.filter(({model, _id }) => initial[model] || _id.length > 1 );
 
   const onChange = (value) => {
     if (!value) {
