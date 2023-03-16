@@ -139,7 +139,7 @@ export default function ModelMenu() {
 
   const isBing = model === 'bingai' || model === 'sydney';
   const colorProps = model === 'chatgpt' ? chatgptColorProps : defaultColorProps;
-  const icon = getIconOfModel({ sender: chatGptLabel || model, isCreatedByUser: false, model, chatGptLabel, promptPrefix, error: false, className: "mr-2" });
+  const icon = getIconOfModel({ size: 32, sender: chatGptLabel || model, isCreatedByUser: false, model, chatGptLabel, promptPrefix, error: false, className: "mr-2" });
 
   return (
     <Dialog onOpenChange={onOpenChange}>

@@ -61,8 +61,8 @@ export const getIconOfModel = ({ size=30, sender, isCreatedByUser, model, chatGp
     return (
       <div
         title='User'
-        style={{ background: 'radial-gradient(circle at 90% 110%, rgb(1 43 128), rgb(17, 139, 161))', color: 'white', fontSize: 12 }}
-        className={`relative flex h-[${size}px] w-[${size}px] items-center justify-center rounded-sm p-1 text-white ` + props?.className}
+        style={{ background: 'radial-gradient(circle at 90% 110%, rgb(1 43 128), rgb(17, 139, 161))', color: 'white', fontSize: 12, width: size, height: size }}
+        className={`relative flex items-center justify-center rounded-sm text-white ` + props?.className}
       >
         User
       </div>
@@ -77,11 +77,11 @@ export const getIconOfModel = ({ size=30, sender, isCreatedByUser, model, chatGp
       <div
         title={chatGptLabel || model}
         style={
-          { background } || { background: 'radial-gradient(circle at 90% 110%, #F0F0FA, #D0E0F9)' }
+          { background: background || 'radial-gradient(circle at 90% 110%, #F0F0FA, #D0E0F9)', width: size, height: size }
         }
-        className={`relative flex h-[${size}px] w-[${size}px] items-center justify-center rounded-sm p-1 text-white ` + props?.className}
+        className={`relative flex items-center justify-center rounded-sm text-white ` + props?.className}
       >
-        {isBing ? <BingIcon size={size} /> : <GPTIcon size={size} />}
+        {isBing ? <BingIcon size={size * 0.7} /> : <GPTIcon size={size * 0.7} />}
         {error && (
           <span className="absolute right-0 top-[20px] -mr-2 flex h-4 w-4 items-center justify-center rounded-full border border-white bg-red-500 text-[10px] text-white">
             !
@@ -93,8 +93,8 @@ export const getIconOfModel = ({ size=30, sender, isCreatedByUser, model, chatGp
     return (
       <div
         title='User'
-        style={{ background: 'radial-gradient(circle at 90% 110%, rgb(1 43 128), rgb(17, 139, 161))', color: 'white', fontSize: 12 }}
-        className={`relative flex h-[${size}px] w-[${size}px] items-center justify-center rounded-sm p-1 text-white ` + props?.className}
+        style={{ background: 'radial-gradient(circle at 90% 110%, rgb(1 43 128), rgb(17, 139, 161))', color: 'white', fontSize: 12, width: size, height: size }}
+        className={`relative flex items-center justify-center rounded-sm p-1 text-white ` + props?.className}
       >
         {chatGptLabel}
       </div>
