@@ -124,6 +124,7 @@ Here are my recently completed and planned features:
 - [x] Mobile styling (thanks to [wtlyu](https://github.com/wtlyu))
 - [x] Resubmit/edit sent messages (thanks to [wtlyu](https://github.com/wtlyu))
 - [ ] Message Search
+- [ ] Custom params for ChatGPT API (temp, top_p, presence_penalty)
 - [ ] Bing AI Styling (params, suggested responses, convo end, etc.) - **In progress**
 - [ ] Add warning before clearing convos
 - [ ] Build test suite for CI/CD
