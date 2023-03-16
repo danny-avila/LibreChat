@@ -9,6 +9,7 @@ router.post('/', async (req, res) => {
   const {
     model,
     text,
+    overrideParentMessageId=null,
     parentMessageId,
     conversationId: oldConversationId,
     ...convo
@@ -37,8 +38,10 @@ router.post('/', async (req, res) => {
     ...convo
   });
 
-  await saveMessage(userMessage);
-  await saveConvo(req?.session?.user?.username, { ...userMessage, model, ...convo });
+  if (!overrideParentMessageId) {
+    await saveMessage(userMessage);
+    await saveConvo(req?.session?.user?.username, { ...userMessage, model, ...convo });
+  }
 
   return await ask({
     isNewConversation,
@@ -46,6 +49,7 @@ router.post('/', async (req, res) => {
     model,
     convo,
     preSendRequest: true,
+    overrideParentMessageId,
     req,
     res
   });
@@ -102,7 +106,8 @@ const ask = async ({
     userMessage.conversationId = response.conversationId || conversationId;
     userMessage.invocationId = response.invocationId;
     // Unlike gpt and bing, Sydney will never accept our given userMessage.messageId, it will generate its own one.
-    await saveMessage(userMessage);
+    if (!overrideParentMessageId)
+      await saveMessage(userMessage);
 
     // Save sydney response
     // response.id = response.messageId;
@@ -125,7 +130,8 @@ const ask = async ({
 
     // Save user message
     userMessage.conversationId = response.conversationId || conversationId;
-    await saveMessage(userMessage);
+    if (!overrideParentMessageId)
+      await saveMessage(userMessage);
 
     // Bing API will not use our conversationId at the first time,
     // so change the placeholder conversationId to the real one.
