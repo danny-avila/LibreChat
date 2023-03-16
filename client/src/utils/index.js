@@ -47,12 +47,13 @@ export const wrapperRegex = {
 };
 
 export const getIconOfModel = ({ size=30, sender, isCreatedByUser, model, chatGptLabel, error, ...props }) => {
+  const { button } = props;
   const bgColors = {
-    chatgpt: 'rgb(16, 163, 127)',
-    chatgptBrowser: 'rgb(25, 207, 207)',
+    chatgpt: `rgb(16, 163, 127${ button ? ', 0.75' : ''})`,
+    chatgptBrowser: `rgb(25, 207, 207${ button ? ', 0.75' : ''})`,
     bingai: 'transparent',
     sydney: 'radial-gradient(circle at 90% 110%, #F0F0FA, #D0E0F9)',
-    chatgptCustom: 'rgb(0, 163, 255)',
+    chatgptCustom: `rgb(0, 163, 255${ button ? ', 0.75' : ''})`,
   };
 
   console.log(sender, isCreatedByUser, model, chatGptLabel, error, )
