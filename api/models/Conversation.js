@@ -86,7 +86,7 @@ module.exports = {
       }
 
       return await Conversation.findOneAndUpdate(
-        { conversationId: conversationId, user: user },
+        { conversationId: conversationId, user },
         { $set: update },
         { new: true, upsert: true }
       ).exec();
@@ -97,7 +97,7 @@ module.exports = {
   },
   updateConvo: async (user, { conversationId, ...update }) => {
     try {
-      return await Conversation.findOneAndUpdate({ conversationId: conversationId, user: user }, update, {
+      return await Conversation.findOneAndUpdate({ conversationId: conversationId, user }, update, {
         new: true
       }).exec();
     } catch (error) {
@@ -107,9 +107,9 @@ module.exports = {
   },
   getConvosByPage: async (user, pageNumber = 1, pageSize = 12) => {
     try {
-      const totalConvos = (await Conversation.countDocuments({ user: user })) || 1;
+      const totalConvos = (await Conversation.countDocuments({ user })) || 1;
       const totalPages = Math.ceil(totalConvos / pageSize);
-      const convos = await Conversation.find({ user: user })
+      const convos = await Conversation.find({ user })
         .sort({ createdAt: -1, created: -1 })
         .skip((pageNumber - 1) * pageSize)
         .limit(pageSize)
@@ -132,7 +132,7 @@ module.exports = {
     }
   },
   deleteConvos: async (user, filter) => {
-    let deleteCount = await Conversation.deleteMany({...filter, user: user}).exec();
+    let deleteCount = await Conversation.deleteMany({...filter, user}).exec();
     deleteCount.messages = await deleteMessages(filter);
     return deleteCount;
   },
