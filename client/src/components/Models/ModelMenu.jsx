@@ -72,6 +72,24 @@ export default function ModelMenu() {
       const initial = {chatgpt: data?.hasOpenAI, chatgptCustom: data?.hasOpenAI, bingai: data?.hasBing, sydney: data?.hasBing, chatgptBrowser: data?.hasChatGpt}
       dispatch(setInitial(initial))
       // TODO, auto reset default model
+      if (data?.hasOpenAI) {
+        dispatch(setModel('chatgpt'));
+        dispatch(setDisabled(false));
+        dispatch(setCustomModel(null));
+        dispatch(setCustomGpt({ chatGptLabel: null, promptPrefix: null }));
+      } else if (data?.hasBing) {
+        dispatch(setModel('bingai'));
+        dispatch(setDisabled(false));
+        dispatch(setCustomModel(null));
+        dispatch(setCustomGpt({ chatGptLabel: null, promptPrefix: null }));
+      } else if (data?.hasChatGpt) {
+        dispatch(setModel('chatgptBrowser'));
+        dispatch(setDisabled(false));
+        dispatch(setCustomModel(null));
+        dispatch(setCustomGpt({ chatGptLabel: null, promptPrefix: null }));
+      } else {
+        dispatch(setDisabled(true));
+      }
     }).catch((error) => {
       console.error(error)
       console.log('Not login!')
@@ -82,6 +100,8 @@ export default function ModelMenu() {
   useEffect(() => {
     localStorage.setItem('model', JSON.stringify(model));
   }, [model]);
+
+  const filteredModels = models.filter(({model}) => initial[model])
 
   const onChange = (value) => {
     if (!value) {
@@ -183,10 +203,12 @@ export default function ModelMenu() {
             onValueChange={onChange}
             className="overflow-y-auto"
           >
-            <MenuItems
-              models={models}
-              onSelect={onChange}
-            />
+            {filteredModels.length?
+              <MenuItems
+                models={filteredModels}
+                onSelect={onChange}
+              />:<DropdownMenuLabel className="dark:text-gray-300">No model available.</DropdownMenuLabel>
+            }
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>

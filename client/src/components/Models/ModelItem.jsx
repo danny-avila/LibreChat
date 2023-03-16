@@ -30,8 +30,6 @@ export default function ModelItem({ modelName, value, model, onSelect, id, chatG
 
   const icon = getIconOfModel({ size: 16, sender: modelName, isCreatedByUser: false, model, chatGptLabel, promptPrefix, error: false, className: "mr-2" });
 
-  if (!initial[model]) return null
-
   if (value === 'chatgptCustom') {
     return (
       <DialogTrigger className="w-full">
