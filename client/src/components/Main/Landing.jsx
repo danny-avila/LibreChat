@@ -102,7 +102,7 @@ export default function Landing({ title }) {
               className="btn btn-neutral justify-center gap-2 border-0 md:border"
             >
               <ChatIcon />
-              Show Prompt Templates
+              Montrer les modeles de prompts
             </button>
           </div>
         )}
