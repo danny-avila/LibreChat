@@ -30,6 +30,8 @@ export default function ModelItem({ modelName, value, model, onSelect, id, chatG
 
   const icon = getIconOfModel({ size: 16, sender: modelName, isCreatedByUser: false, model, chatGptLabel, promptPrefix, error: false, className: "mr-2" });
 
+  if (!initial[model]) return null
+
   if (value === 'chatgptCustom') {
     return (
       <DialogTrigger className="w-full">
@@ -43,9 +45,9 @@ export default function ModelItem({ modelName, value, model, onSelect, id, chatG
         </DropdownMenuRadioItem>
       </DialogTrigger>
     );
-  }
+  } 
 
-  if (initial[value]) {
+  if (initial[value])
     return (
       <DropdownMenuRadioItem
         value={value}
@@ -56,8 +58,8 @@ export default function ModelItem({ modelName, value, model, onSelect, id, chatG
         {value === 'chatgpt' && <sup>$</sup>}
       </DropdownMenuRadioItem>
     );
-  }
 
+  
   const handleMouseOver = () => {
     setIsHovering(true);
   };
