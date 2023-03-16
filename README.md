@@ -8,6 +8,18 @@ https://user-images.githubusercontent.com/110412045/223754183-8b7f45ce-6517-4bd5
 
 ## Updates
 <details open>
+<summary><strong>2023-03-16</strong></summary>
+
+
+
+[Latest release (v0.0.4)](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.0.4) includes Resubmitting messages & Branching messages, which mirrors official ChatGPT feature of editing sent message, that then branches the conversation into separate message paths (works only with ChatGPT)
+
+Full details and [example here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.0.4). Message search is on the docket
+
+</details>
+
+<details>
+<details>
 <summary><strong>2023-03-12</strong></summary>
 
 
@@ -22,8 +34,6 @@ Many improvements across the board, the biggest is being able to start conversat
 
 Adding support for conversation search is next! Thank you [mysticaltech](https://github.com/mysticaltech) for bringing up a method I can use for this.
 </details>
-
-<details>
 <details>
 <summary><strong>2023-03-09</strong></summary>
 Released v.0.0.2
@@ -111,12 +121,11 @@ Here are my recently completed and planned features:
 - [x] Server convo pagination (limit fetch and load more with 'show more' button)
 - [x] Config file for easy startup (docker compose)
 - [x] Mobile styling (thanks to [wtlyu](https://github.com/wtlyu))
-- [ ] Bing AI Styling (for suggested responses, convo end, etc.) - **In progress**
+- [x] Resubmit/edit sent messages (thanks to [wtlyu](https://github.com/wtlyu))
+- [ ] Message Search
+- [ ] Bing AI Styling (params, suggested responses, convo end, etc.) - **In progress**
 - [ ] Add warning before clearing convos
 - [ ] Build test suite for CI/CD
-- [ ] Conversation Search (by title)
-- [ ] Resubmit/edit sent messages
-- [ ] Semantic Search Option (requires more tokens)
 - [ ] Prompt Templates/Search
 - [ ] Refactor/clean up code (tech debt)
 - [ ] Optional use of local storage for credentials
@@ -169,16 +178,7 @@ By default, only local machine can access this server. To share within network o
 ### Docker
 
 - **Provide** all credentials, (API keys, access tokens, and Mongo Connection String) in [docker-compose.yml](docker-compose.yml) under api service
-- **Build images** in both /api/ and /client/ directories (will eventually share through docker hub)
-    - `api/`
-    ```bash
-    docker build -t node-api .
-    ```
-    - `client/`
-    ```bash
-    docker build -t react-client .
-    ```
-- **Run** `docker-compose build` in project root dir and then `docker-compose up` to start the app
+- **Run** `docker-compose up` to start the app
 
 ### Access Tokens
 
