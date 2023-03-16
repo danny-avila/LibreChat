@@ -12,7 +12,7 @@ router.use('/bing', askBing);
 router.use('/sydney', askSydney);
 
 router.post('/', async (req, res) => {
-  let { model, text, parentMessageId, conversationId: oldConversationId, ...convo } = req.body;
+  let { model, text, overrideParentMessageId=null, parentMessageId, conversationId: oldConversationId, ...convo } = req.body;
   if (text.length === 0) {
     return handleError(res, { text: 'Prompt empty or too short' });
   }
@@ -36,49 +36,20 @@ router.post('/', async (req, res) => {
     ...convo
   });
 
-  await saveMessage(userMessage);
-  await saveConvo(req?.session?.user?.username, { ...userMessage, model, ...convo });
+  if (!overrideParentMessageId) {
+    await saveMessage(userMessage);
+    await saveConvo(req?.session?.user?.username, { ...userMessage, model, ...convo });
+  }
 
   return await ask({
     userMessage,
     model,
     convo,
     preSendRequest: true,
+    overrideParentMessageId,
     req,
     res
   });
-});
-
-router.post('/regenerate', async (req, res) => {
-  const { model } = req.body;
-
-  const oldUserMessage = await getMessages({ messageId: req.body });
-
-  if (oldUserMessage) {
-    const convo = await getConvo(userMessage?.conversationId);
-
-    const userMessageId = crypto.randomUUID();
-
-    let userMessage = {
-      ...userMessage,
-      messageId: userMessageId
-    };
-
-    console.log('ask log for regeneration', {
-      model,
-      ...userMessage,
-      ...convo
-    });
-
-    return await ask({
-      userMessage,
-      model,
-      convo,
-      preSendRequest: false,
-      req,
-      res
-    });
-  } else return handleError(res, { text: 'Parent message not found' });
 });
 
 const ask = async ({
@@ -136,10 +107,10 @@ const ask = async ({
       gptResponse.text = gptResponse.response;
       // gptResponse.id = gptResponse.messageId;
       gptResponse.parentMessageId = overrideParentMessageId || userMessageId;
-      userMessage.conversationId = conversationId
-        ? conversationId
-        : gptResponse.conversationId;
-      await saveMessage(userMessage);
+      // userMessage.conversationId = conversationId
+      //   ? conversationId
+      //   : gptResponse.conversationId;
+      // await saveMessage(userMessage);
       delete gptResponse.response;
     }
 

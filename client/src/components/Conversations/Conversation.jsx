@@ -58,7 +58,8 @@ export default function Conversation({
           jailbreakConversationId,
           conversationSignature,
           clientId,
-          invocationId
+          invocationId,
+          latestMessage: null
         })
       );
     } else {
@@ -69,7 +70,8 @@ export default function Conversation({
           jailbreakConversationId: null,
           conversationSignature: null,
           clientId: null,
-          invocationId: null
+          invocationId: null,
+          latestMessage: null
         })
       );
     }
