@@ -64,10 +64,10 @@ const Messages = ({ messages, messageTree }) => {
     >
       {/* <div className="flex-1 overflow-hidden"> */}
       <div className="dark:gpt-dark-gray h-full">
-        <div className="flex w-full items-center justify-center gap-1 border-b border-black/10 bg-gray-50 p-3 text-gray-500 dark:border-gray-900/50 dark:bg-gray-700 dark:text-gray-300 text-sm">
-          Model: {modelName} {customModel?`(${customModel})`:null}
-        </div>
-        <div className="dark:gpt-dark-gray flex flex-col items-center text-sm">
+        <div className="dark:gpt-dark-gray flex h-full flex-col items-center text-sm">
+          <div className="flex w-full items-center justify-center gap-1 border-b border-black/10 bg-gray-50 p-3 text-gray-500 dark:border-gray-900/50 dark:bg-gray-700 dark:text-gray-300 text-sm">
+            Model: {modelName} {customModel?`(${customModel})`:null}
+          </div>
           {messageTree.length === 0 ? (
             <Spinner />
           ) : (

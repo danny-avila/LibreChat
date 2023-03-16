@@ -281,34 +281,33 @@ export default function TextChat({ messages }) {
   };
   isNotAppendable
   return (
-    <div className="md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient absolute bottom-0 left-0 w-full border-t bg-white dark:border-white/20 dark:bg-gray-800 md:border-t-0 md:border-transparent md:!bg-transparent md:dark:border-transparent">
+    <div className="input-panel absolute bottom-0 left-0 w-full border-t md:border-t-0 dark:border-white/20 md:border-transparent md:dark:border-transparent md:bg-vert-light-gradient bg-white dark:bg-gray-800 md:!bg-transparent dark:md:bg-vert-dark-gradient pt-2">
       <form className="stretch mx-2 flex flex-row gap-3 pt-2 last:mb-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
         <div className="relative flex h-full flex-1 md:flex-col">
-          <div className="ml-1 mt-1.5 flex justify-center gap-0 md:m-auto md:mb-2 md:w-full md:gap-2" />
-            <span className="flex ml-1 md:w-full md:m-auto md:mb-2 gap-0 md:gap-2 justify-center">
+            <span className="flex ml-1 md:w-full md:m-auto md:mb-2 gap-0 md:gap-2 justify-center order-last md:order-none">
               {isSubmitting?
                 <button
                   onClick={handleStopGenerating}
-                  className="btn btn-neutral flex justify-center gap-2 border-0 md:border"
+                  className="input-panel-button btn btn-neutral flex justify-center gap-2 border-0 md:border"
                   type="button"
                 >
                   <StopGeneratingIcon />
-                  Stop generating
+                  <span className="hidden md:block">Stop generating</span>
                 </button>
                 :(latestMessage&&!latestMessage?.isCreatedByUser)?
                     <button
                       onClick={handleRegenerate}
-                      className="btn btn-neutral flex justify-center gap-2 border-0 md:border"
+                      className="input-panel-button btn btn-neutral flex justify-center gap-2 border-0 md:border"
                       type="button"
                     >
                       <RegenerateIcon />
-                      Regenerate response
+                      <span className="hidden md:block">Regenerate response</span>
                     </button>
                   :null
               }
             </span>
             <div
-              className={`relative flex w-full flex-grow flex-col rounded-md border border-black/10 ${
+              className={`relative flex flex-grow flex-col rounded-md border border-black/10 ${
                 disabled ? 'bg-gray-100' : 'bg-white'
               } py-2 shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:border-gray-900/50 ${
                 disabled ? 'dark:bg-gray-900' : 'dark:bg-gray-700'

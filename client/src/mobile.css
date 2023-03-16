@@ -46,6 +46,20 @@
 }
 
 @media (max-width: 767px) {
+  .input-panel-button {
+    border: 0;
+  }
+
+  .input-panel-button svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .input-panel {
+    background: rgb(52,53,65) !important;
+    background-image: none !important;
+  }
+
   .nav-close-button {
     display: block;
     position: absolute;
