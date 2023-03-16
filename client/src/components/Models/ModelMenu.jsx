@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { useSelector, useDispatch } from 'react-redux';
 import {
   setSubmission,
@@ -11,7 +12,7 @@ import { setNewConvo } from '~/store/convoSlice';
 import ModelDialog from './ModelDialog';
 import MenuItems from './MenuItems';
 import { swr } from '~/utils/fetchers';
-import { setModels } from '~/store/modelSlice';
+import { setModels, setInitial } from '~/store/modelSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setText } from '~/store/textSlice';
 import GPTIcon from '../svg/GPTIcon';
@@ -60,6 +61,23 @@ export default function ModelMenu() {
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    axios.get('/api/models', {
+      timeout: 1000,
+      withCredentials: true
+    }).then((res) => {
+      return res.data
+    }).then((data) => {
+      const initial = {chatgpt: data?.hasOpenAI, chatgptCustom: data?.hasOpenAI, bingai: data?.hasBing, sydney: data?.hasBing, chatgptBrowser: data?.hasChatGpt}
+      dispatch(setInitial(initial))
+      // TODO, auto reset default model
+    }).catch((error) => {
+      console.error(error)
+      console.log('Not login!')
+      window.location.href = "/auth/login";
+    })
+  }, [])
 
   useEffect(() => {
     localStorage.setItem('model', JSON.stringify(model));

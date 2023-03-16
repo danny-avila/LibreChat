@@ -5,7 +5,7 @@ import TextChat from './components/Main/TextChat';
 import Nav from './components/Nav';
 import MobileNav from './components/Nav/MobileNav';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 const App = () => {
   const { messages, messageTree } = useSelector((state) => state.messages);
