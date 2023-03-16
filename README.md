@@ -1,4 +1,7 @@
-# ChatGPT Lab FR
+# VALERIA
+
+**V**otre **A**ssistant **L**ogiciel **E**t **R**obotique d'**I**ntelligence **A**ugmenté.
+
 https://user-images.githubusercontent.com/110412045/223754183-8b7f45ce-6517-4bd5-9b39-c624745bf399.mp4
 
 ## Toutes les conversations sur l'IA sous un même toit. ##
@@ -72,7 +75,7 @@ Actuellement, ce projet ne fonctionne qu'avec le modèle `text-davinci-003`.
 </details>
 
 # Table des matières
-- [ChatGPT Lab FR](#chatgpt-clone)
+- [VALERIA](#chatgpt-clone)
   - [Toutes les conversations IA sous un même toit](#toutes-les-conversations-ai-sous-un-seul-toit)
   - [Mises à jour](#misesàjour)
 - [Table des matières](#table-of-contents)
