@@ -18,6 +18,7 @@ import { setText } from '~/store/textSlice';
 import GPTIcon from '../svg/GPTIcon';
 import BingIcon from '../svg/BingIcon';
 import { Button } from '../ui/Button.tsx';
+import { getIconOfModel } from '../../utils';
 
 import {
   DropdownMenu,
@@ -34,7 +35,7 @@ export default function ModelMenu() {
   const dispatch = useDispatch();
   const [modelSave, setModelSave] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const { model, customModel } = useSelector((state) => state.submit);
+  const { model, customModel, promptPrefix, chatGptLabel } = useSelector((state) => state.submit);
   const { models, modelMap, initial } = useSelector((state) => state.models);
   const { data, isLoading, mutate } = swr(`/api/customGpts`, (res) => {
     const fetchedModels = res.map((modelItem) => ({
@@ -176,7 +177,7 @@ export default function ModelMenu() {
 
   const isBing = model === 'bingai' || model === 'sydney';
   const colorProps = model === 'chatgpt' ? chatgptColorProps : defaultColorProps;
-  const icon = isBing ? <BingIcon button={true} /> : <GPTIcon button={true} />;
+  const icon = getIconOfModel({ size: 32, sender: chatGptLabel || model, isCreatedByUser: false, model, chatGptLabel, promptPrefix, error: false, button: true});
 
   return (
     <Dialog onOpenChange={onOpenChange}>
@@ -188,9 +189,9 @@ export default function ModelMenu() {
           <Button
             variant="outline"
             // style={{backgroundColor: 'rgb(16, 163, 127)'}}
-            className={`absolute bottom-0.5 rounded-md border-0 p-1 pl-2 outline-none ${colorProps.join(
+            className={`absolute bottom-0.5 items-center mb-[1.75px] md:mb-0 rounded-md border-0 p-1 ml-1 md:ml-0 outline-none ${colorProps.join(
               ' '
-            )} focus:ring-0 focus:ring-offset-0 disabled:bottom-0.5 dark:data-[state=open]:bg-opacity-50 md:bottom-1 md:left-2 md:pl-1 md:disabled:bottom-1`}
+            )} focus:ring-0 focus:ring-offset-0 disabled:bottom-0.5 dark:data-[state=open]:bg-opacity-50 md:bottom-1 md:left-1 md:pl-1 md:disabled:bottom-1`}
           >
             {icon}
           </Button>

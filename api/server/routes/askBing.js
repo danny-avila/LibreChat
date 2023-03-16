@@ -38,7 +38,7 @@ router.post('/', async (req, res) => {
   });
 
   await saveMessage(userMessage);
-  await saveConvo({ ...userMessage, model, ...convo });
+  await saveConvo(req?.session?.user?.username, { ...userMessage, model, ...convo });
 
   return await ask({
     isNewConversation,
@@ -108,10 +108,13 @@ const ask = async ({
     // Attition: the api will also create new conversationId while using invalid userMessage.parentMessageId,
     // but in this situation, don't change the conversationId, but create new convo.
     if (conversationId != userMessage.conversationId && isNewConversation)
-      await saveConvo({
-        conversationId: conversationId,
-        newConversationId: userMessage.conversationId
-      });
+      await saveConvo(
+        req?.session?.user?.username,
+        {
+          conversationId: conversationId,
+          newConversationId: userMessage.conversationId
+        }
+      );
     conversationId = userMessage.conversationId;
 
     response.text = response.response;
@@ -129,9 +132,10 @@ const ask = async ({
 
     response.text = await handleText(response, true);
     await saveMessage(response);
-    await saveConvo({ ...response, model, chatGptLabel: null, promptPrefix: null, ...convo });
+    await saveConvo(req?.session?.user?.username, { ...response, model, chatGptLabel: null, promptPrefix: null, ...convo });
+
     sendMessage(res, {
-      title: await getConvoTitle(conversationId),
+      title: await getConvoTitle(req?.session?.user?.username, conversationId),
       final: true,
       requestMessage: userMessage,
       responseMessage: response
@@ -141,10 +145,13 @@ const ask = async ({
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
       const title = await titleConvo({ model, text, response });
 
-      await saveConvo({
-        conversationId,
-        title
-      });
+      await saveConvo(
+        req?.session?.user?.username,
+        {
+          conversationId,
+          title
+        }
+      );
     }
   } catch (error) {
     console.log(error);
