@@ -28,7 +28,9 @@ export default function TextChat({ messages }) {
     useSelector((state) => state.submit);
   const { text } = useSelector((state) => state.text);
   const { error, latestMessage } = convo;
-  const { ask, regenerate } = useMessageHandler();
+  const { ask, regenerate, stopGenerating } = useMessageHandler();
+
+  const isNotAppendable = (!isSubmitting && latestMessage?.submitting) || latestMessage?.error;
 
   // auto focus to input, when enter a conversation.
   useEffect(() => {
@@ -231,6 +233,10 @@ export default function TextChat({ messages }) {
       regenerate(latestMessage)
   }
 
+  const handleStopGenerating = () => {
+    stopGenerating()
+  }
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -273,31 +279,23 @@ export default function TextChat({ messages }) {
     e.preventDefault();
     dispatch(setError(false));
   };
-
+  isNotAppendable
   return (
     <div className="md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient absolute bottom-0 left-0 w-full border-t bg-white dark:border-white/20 dark:bg-gray-800 md:border-t-0 md:border-transparent md:!bg-transparent md:dark:border-transparent">
       <form className="stretch mx-2 flex flex-row gap-3 pt-2 last:mb-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
         <div className="relative flex h-full flex-1 md:flex-col">
           <div className="ml-1 mt-1.5 flex justify-center gap-0 md:m-auto md:mb-2 md:w-full md:gap-2" />
-          {error ? (
-            <Regenerate
-              submitMessage={submitMessage}
-              tryAgain={tryAgain}
-              errorMessage={errorMessage}
-            />
-          ) : (
-            <>
-              <span className="flex ml-1 md:w-full md:m-auto md:mb-2 gap-0 md:gap-2 justify-center">
-                {(latestMessage&&!latestMessage?.isCreatedByUser)?
-                  isSubmitting?
-                    <button
-                      onClick={null}
-                      className="btn btn-neutral flex justify-center gap-2 border-0 md:border"
-                      type="button"
-                    >
-                      <StopGeneratingIcon />
-                      Stop Generating
-                    </button>:
+            <span className="flex ml-1 md:w-full md:m-auto md:mb-2 gap-0 md:gap-2 justify-center">
+              {isSubmitting?
+                <button
+                  onClick={handleStopGenerating}
+                  className="btn btn-neutral flex justify-center gap-2 border-0 md:border"
+                  type="button"
+                >
+                  <StopGeneratingIcon />
+                  Stop generating
+                </button>
+                :(latestMessage&&!latestMessage?.isCreatedByUser)?
                     <button
                       onClick={handleRegenerate}
                       className="btn btn-neutral flex justify-center gap-2 border-0 md:border"
@@ -307,36 +305,34 @@ export default function TextChat({ messages }) {
                       Regenerate response
                     </button>
                   :null
-                }
-              </span>
-              <div
-                className={`relative flex w-full flex-grow flex-col rounded-md border border-black/10 ${
-                  disabled ? 'bg-gray-100' : 'bg-white'
-                } py-2 shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:border-gray-900/50 ${
-                  disabled ? 'dark:bg-gray-900' : 'dark:bg-gray-700'
-                } dark:text-white dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] md:py-3 md:pl-4`}
-              >
-                <ModelMenu />
-                <TextareaAutosize
-                  tabIndex="0"
-                  autoFocus
-                  ref={inputRef}
-                  // style={{maxHeight: '200px', height: '24px', overflowY: 'hidden'}}
-                  rows="1"
-                  value={text}
-                  onKeyUp={handleKeyUp}
-                  onKeyDown={handleKeyDown}
-                  onChange={changeHandler}
-                  onCompositionStart={handleCompositionStart}
-                  onCompositionEnd={handleCompositionEnd}
-                  placeholder={disabled ? 'Choose another model or customize GPT again' : ''}
-                  disabled={disabled}
-                  className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-9 pr-8 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-8"
-                />
-                <SubmitButton submitMessage={submitMessage} />
-              </div>
-            </>
-          )}
+              }
+            </span>
+            <div
+              className={`relative flex w-full flex-grow flex-col rounded-md border border-black/10 ${
+                disabled ? 'bg-gray-100' : 'bg-white'
+              } py-2 shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:border-gray-900/50 ${
+                disabled ? 'dark:bg-gray-900' : 'dark:bg-gray-700'
+              } dark:text-white dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] md:py-3 md:pl-4`}
+            >
+              <ModelMenu />
+              <TextareaAutosize
+                tabIndex="0"
+                autoFocus
+                ref={inputRef}
+                // style={{maxHeight: '200px', height: '24px', overflowY: 'hidden'}}
+                rows="1"
+                value={text}
+                onKeyUp={handleKeyUp}
+                onKeyDown={handleKeyDown}
+                onChange={changeHandler}
+                onCompositionStart={handleCompositionStart}
+                onCompositionEnd={handleCompositionEnd}
+                placeholder={disabled ? 'Choose another model or customize GPT again' : isNotAppendable ? 'Can not send new message after an error or unfinished response.' : ''}
+                disabled={disabled || isNotAppendable}
+                className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-9 pr-8 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-8"
+              />
+              <SubmitButton submitMessage={submitMessage} disabled={disabled || isNotAppendable} />
+            </div>
         </div>
       </form>
       <Footer />

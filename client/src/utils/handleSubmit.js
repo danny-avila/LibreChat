@@ -42,10 +42,8 @@ const useMessageHandler = () => {
 
     dispatch(setSubmitState(true));
     if (isRegenerate) {
-      console.log([...currentMessages, initialResponse])
       dispatch(setMessages([...currentMessages, initialResponse]));
     } else {
-      console.log([...currentMessages, currentMsg, initialResponse])
       dispatch(setMessages([...currentMessages, currentMsg, initialResponse]));
     }
     dispatch(setText(''));
@@ -78,8 +76,11 @@ const useMessageHandler = () => {
       console.error('Failed to regenerate the message: parentMessage not found or not created by user.', message);
   }
 
+  const stopGenerating = () => {
+    dispatch(setSubmission({}));
+  }
 
-  return { ask, regenerate }
+  return { ask, regenerate, stopGenerating }
 }
 
 export { useMessageHandler };

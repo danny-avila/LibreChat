@@ -58,7 +58,7 @@ export default function Message({
       dispatch(setConversation({ parentMessageId: message?.messageId }));
       dispatch(setLatestMessage({ ...message }));
     }
-  }, [last]);
+  }, [last, message]);
 
   const enterEdit = (cancel) => setCurrentEditId(cancel ? -1 : message.messageId);
 
