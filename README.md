@@ -94,6 +94,7 @@ Currently, this project is only functional with the `text-davinci-003` model.
     - [Docker](#docker)
     - [Access Tokens](#access-tokens)
     - [Proxy](#proxy)
+    - [User System](#user-system)
     - [Updating](#updating)
   - [Use Cases](#use-cases)
   - [Origin](#origin)
@@ -234,6 +235,36 @@ set in docker-compose.yml file, under services - api - environment
 **Change `http://127.0.0.1:7890` to your proxy server**
 
 </details>
+
+### User System
+
+By default, there is no user system enabled, so anyone can access your server.
+
+**This project is not designed to provide a complete and full-featured user system.** It's not high priority task and might never be provided.
+
+[wtlyu](https://github.com/wtlyu) provide a sample user system structure, that you can implement your own user system. It's simple and not a ready-for-use edition. 
+
+(If you want to implement your user system, open this ↓)
+
+<details>
+<summary><strong>Implement your own user system </strong></summary>
+
+To enable the user system, set `ENABLE_USER_SYSTEM=1` in your `.env` file.
+
+The sample structure is simple. It provide three basic endpoint:
+
+1. `/auth/login` will redirect to your own login url. In the sample code, it's `/auth/your_login_page`.
+2. `/auth/logout` will redirect to your own logout url. In the sample code, it's `/auth/your_login_page/logout`.
+3. `/api/me` will return the userinfo: `{ username, display }`.
+   1. `username` will be used in db, used to distinguish between users.
+   2. `display` will be displayed in UI.
+
+The only one thing that drive user system work is `req.session.user`. Once it's set, the client will be trusted. Set to `null` if logout.
+
+Please refer to `/api/server/routes/authYoutLogin.js` file. It's very clear and simple to tell you how to implement your user system.
+
+</details>
+
 
 ### Updating
 - As the project is still a work-in-progress, you should pull the latest and run the steps over. Reset your browser cache/clear site data.
