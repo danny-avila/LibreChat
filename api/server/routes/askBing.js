@@ -96,7 +96,6 @@ const ask = async ({
 
     console.log('BING RESPONSE', response);
     // console.dir(response, { depth: null });
-    const hasCitations = response.response.match(citationRegex)?.length > 0;
 
     userMessage.conversationSignature =
       convo.conversationSignature || response.conversationSignature;
