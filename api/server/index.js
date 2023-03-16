@@ -43,6 +43,7 @@ app.get('/api/me', function (req, res) {
   }
 });
 
+app.use('/api/search', routes.authenticatedOr401, routes.search);
 app.use('/api/ask', routes.authenticatedOr401, routes.ask);
 app.use('/api/messages', routes.authenticatedOr401, routes.messages);
 app.use('/api/convos', routes.authenticatedOr401, routes.convos);

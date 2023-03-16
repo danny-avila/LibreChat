@@ -30,6 +30,7 @@
     "keyv": "^4.5.2",
     "keyv-file": "^0.2.0",
     "lodash": "^4.17.21",
+    "mongomeili": "^0.1.8",
     "mongoose": "^6.9.0",
     "openai": "^3.1.0",
     "sanitize-html": "^2.10.0"

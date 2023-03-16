@@ -2,6 +2,7 @@
 
 # Logs
 data-node
+meili_data
 logs
 *.log
 
