@@ -310,7 +310,7 @@ export default function TextChat({ messages }) {
             <div
               className={`relative flex w-full flex-grow flex-col rounded-md border border-black/10 ${
                 disabled ? 'bg-gray-100' : 'bg-white'
-              } py-2 shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:border-gray-900/50 ${
+              } py-3 shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:border-gray-900/50 ${
                 disabled ? 'dark:bg-gray-900' : 'dark:bg-gray-700'
               } dark:text-white dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] md:py-3 md:pl-4`}
             >
