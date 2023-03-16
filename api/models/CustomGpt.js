@@ -37,7 +37,7 @@ const createCustomGpt = async ({ chatGptLabel, promptPrefix, value, user }) => {
 module.exports = {
   getCustomGpts: async (user, filter) => {
     try {
-      return await CustomGpt.find({ ...filter, user: user }).exec();
+      return await CustomGpt.find({ ...filter, user }).exec();
     } catch (error) {
       console.error(error);
       return { customGpt: 'Error getting customGpts' };
@@ -45,12 +45,12 @@ module.exports = {
   },
   updateCustomGpt: async (user, { value, ...update }) => {
     try {
-      const customGpt = await CustomGpt.findOne({ value, user: user }).exec();
+      const customGpt = await CustomGpt.findOne({ value, user }).exec();
 
       if (!customGpt) {
-        return await createCustomGpt({ value, ...update, user: user });
+        return await createCustomGpt({ value, ...update, user });
       } else {
-        return await CustomGpt.findOneAndUpdate({ value, user: user }, update, {
+        return await CustomGpt.findOneAndUpdate({ value, user }, update, {
           new: true,
           upsert: true
         }).exec();
@@ -62,7 +62,7 @@ module.exports = {
   },
   updateByLabel: async (user, { prevLabel, ...update }) => {
     try {
-      return await CustomGpt.findOneAndUpdate({ chatGptLabel: prevLabel, user: user }, update, {
+      return await CustomGpt.findOneAndUpdate({ chatGptLabel: prevLabel, user }, update, {
         new: true,
         upsert: true
       }).exec();
@@ -73,7 +73,7 @@ module.exports = {
   },
   deleteCustomGpts: async (user, filter) => {
     try {
-      return await CustomGpt.deleteMany({ ...filter, user: user }).exec();
+      return await CustomGpt.deleteMany({ ...filter, user }).exec();
     } catch (error) {
       console.error(error);
       return { customGpt: 'Error deleting customGpts' };
