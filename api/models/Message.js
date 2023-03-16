@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const mongomeili = require('mongomeili');
 
 const messageSchema = mongoose.Schema({
   messageId: {
@@ -30,7 +31,8 @@ const messageSchema = mongoose.Schema({
   },
   text: {
     type: String,
-    required: true
+    required: true,
+    meiliIndex: true
   },
   isCreatedByUser: {
     type: Boolean,
@@ -43,9 +45,17 @@ const messageSchema = mongoose.Schema({
   },
 }, { timestamps: true });
 
+messageSchema.plugin(mongomeili, {
+  host: 'http://localhost:7700',
+  apiKey: 'MASTER_KEY',
+  indexName: 'text' // Will get created automatically if it doesn't exist already
+});
+
 const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
 
 module.exports = {
+  messageSchema,
+  Message,
   saveMessage: async ({ messageId, conversationId, parentMessageId, sender, text, isCreatedByUser=false, error }) => {
     try {
       await Message.findOneAndUpdate({ messageId }, {
