@@ -7,7 +7,7 @@ import MobileNav from './components/Nav/MobileNav';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import { useSelector, useDispatch } from 'react-redux';
 import { setUser } from './store/userReducer';
-import axios from 'axios'
+import axios from 'axios';
 
 const App = () => {
   const dispatch = useDispatch();
