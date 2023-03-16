@@ -17,6 +17,7 @@ import { setText } from '~/store/textSlice';
 import GPTIcon from '../svg/GPTIcon';
 import BingIcon from '../svg/BingIcon';
 import { Button } from '../ui/Button.tsx';
+import { getIconOfModel } from '../../utils';
 
 import {
   DropdownMenu,
@@ -33,7 +34,7 @@ export default function ModelMenu() {
   const dispatch = useDispatch();
   const [modelSave, setModelSave] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const { model, customModel } = useSelector((state) => state.submit);
+  const { model, customModel, promptPrefix, chatGptLabel } = useSelector((state) => state.submit);
   const { models, modelMap, initial } = useSelector((state) => state.models);
   const { data, isLoading, mutate } = swr(`/api/customGpts`, (res) => {
     const fetchedModels = res.map((modelItem) => ({
@@ -138,7 +139,7 @@ export default function ModelMenu() {
 
   const isBing = model === 'bingai' || model === 'sydney';
   const colorProps = model === 'chatgpt' ? chatgptColorProps : defaultColorProps;
-  const icon = isBing ? <BingIcon button={true} /> : <GPTIcon button={true} />;
+  const icon = getIconOfModel({ sender: chatGptLabel || model, isCreatedByUser: false, model, chatGptLabel, promptPrefix, error: false, className: "mr-2" });
 
   return (
     <Dialog onOpenChange={onOpenChange}>
