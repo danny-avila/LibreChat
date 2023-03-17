@@ -253,10 +253,14 @@ export default function TextChat({ messages }) {
   }, [submission]);
 
   const handleRegenerate = () => {
-    if (latestMessage && !latestMessage?.isCreatedByUser) regenerate(latestMessage);
+    if (latestMessage && !latestMessage?.isCreatedByUser) {
+      dispatch(setSubmitState(true));
+      regenerate(latestMessage);
+    }
   };
 
   const handleStopGenerating = () => {
+    dispatch(setSubmitState(false));
     stopGenerating();
   };
 
