@@ -3,7 +3,6 @@ import NewChat from './NewChat';
 import Spinner from '../svg/Spinner';
 import Conversations from '../Conversations';
 import NavLinks from './NavLinks';
-import useDidMountEffect from '~/hooks/useDidMountEffect';
 import { swr } from '~/utils/fetchers';
 import { useDispatch, useSelector } from 'react-redux';
 import { increasePage, decreasePage, setPage, setConvos, setPages } from '~/store/convoSlice';
@@ -11,7 +10,7 @@ import { increasePage, decreasePage, setPage, setConvos, setPages } from '~/stor
 export default function Nav({ navVisible, setNavVisible }) {
   const dispatch = useDispatch();
   const [isHovering, setIsHovering] = useState(false);
-  const { conversationId, convos, pages, pageNumber, refreshConvoHint } = useSelector(
+  const { conversationId, convos, search, pages, pageNumber, refreshConvoHint } = useSelector(
     (state) => state.convo
   );
   const onSuccess = (data) => {
@@ -25,7 +24,7 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   };
 
-  const { data, isLoading, mutate } = swr(`/api/convos?pageNumber=${pageNumber}`, onSuccess, {
+  const { data, isLoading, mutate } = swr(`/api/${search ? 'search?q=' : `convos?pageNumber=${pageNumber}`}`, onSuccess, {
     revalidateOnMount: false
   });
 

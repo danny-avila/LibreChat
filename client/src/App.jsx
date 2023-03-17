@@ -15,29 +15,27 @@ const App = () => {
   const { messages, messageTree } = useSelector((state) => state.messages);
   const { user } = useSelector((state) => state.user);
   const { title } = useSelector((state) => state.convo);
-  const { conversationId } = useSelector((state) => state.convo);
   const [ navVisible, setNavVisible ]= useState(false)
   useDocumentTitle(title);
 
-  useEffect(() => {
-    axios.get('/api/me', {
-      timeout: 1000,
-      withCredentials: true
-    }).then((res) => {
-      return res.data
-    }).then((user) => {
-      if (user)
-        dispatch(setUser(user))
-      else {
-        console.log('Not login!')
-        window.location.href = "/auth/login";
+  useEffect(async () => {
+    try {
+      const response = await axios.get('/api/me', {
+        timeout: 1000,
+        withCredentials: true
+      });
+      const user = response.data;
+      if (user) {
+        dispatch(setUser(user));
+      } else {
+        console.log('Not login!');
+        window.location.href = '/auth/login';
       }
-    }).catch((error) => {
-      console.error(error)
-      console.log('Not login!')
-      window.location.href = "/auth/login";
-    })
-    // setUser
+    } catch (error) {
+      console.error(error);
+      console.log('Not login!');
+      window.location.href = '/auth/login';
+    }
   }, [])
 
   if (user)

@@ -15,6 +15,7 @@ const initialState = {
   pageNumber: 1,
   pages: 1,
   refreshConvoHint: 0,
+  search: false,
   convos: [],
 };
 
