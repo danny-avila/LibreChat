@@ -43,7 +43,6 @@ export default function TextChat({ messages }) {
   }, [convo?.conversationId]);
 
   const messageHandler = (data, currentState, currentMsg) => {
-
     const { messages, _currentMsg, message, sender, isRegenerate } = currentState;
 
     if (isRegenerate)
@@ -79,9 +78,32 @@ export default function TextChat({ messages }) {
     const { messages, _currentMsg, message, sender, isRegenerate } = currentState;
 
     if (isRegenerate)
-      dispatch(setMessages([...messages, { sender, text: data, parentMessageId: message?.overrideParentMessageId, messageId: message?.overrideParentMessageId + '_', cancelled: true }]));
+      dispatch(
+        setMessages([
+          ...messages,
+          {
+            sender,
+            text: data,
+            parentMessageId: message?.overrideParentMessageId,
+            messageId: message?.overrideParentMessageId + '_',
+            cancelled: true
+          }
+        ])
+      );
     else
-      dispatch(setMessages([...messages, currentMsg, { sender, text: data, parentMessageId: currentMsg?.messageId, messageId: currentMsg?.messageId + '_', cancelled: true }]));
+      dispatch(
+        setMessages([
+          ...messages,
+          currentMsg,
+          {
+            sender,
+            text: data,
+            parentMessageId: currentMsg?.messageId,
+            messageId: currentMsg?.messageId + '_',
+            cancelled: true
+          }
+        ])
+      );
   };
 
   const createdHandler = (data, currentState, currentMsg) => {
@@ -100,14 +122,8 @@ export default function TextChat({ messages }) {
     const { messages, _currentMsg, message, isCustomModel, sender, isRegenerate } =
       currentState;
     const { model, chatGptLabel, promptPrefix } = message;
-    if (isRegenerate)
-      dispatch(
-        setMessages([...messages, responseMessage,])
-      );
-    else
-      dispatch(
-        setMessages([...messages, requestMessage, responseMessage,])
-      );
+    if (isRegenerate) dispatch(setMessages([...messages, responseMessage]));
+    else dispatch(setMessages([...messages, requestMessage, responseMessage]));
     dispatch(setSubmitState(false));
 
     const isBing = model === 'bingai' || model === 'sydney';
@@ -211,7 +227,7 @@ export default function TextChat({ messages }) {
 
     let currentMsg = { ...currentState.message };
     let latestResponseText = '';
-    
+
     const { server, payload } = createPayload(submission);
     const onMessage = (e) => {
       if (stopStream) {
@@ -271,8 +287,8 @@ export default function TextChat({ messages }) {
       const isCancelled = events.readyState <= 1;
       events.close();
       if (isCancelled) {
-        const e = new Event("cancel");
-        events.dispatchEvent(e)
+        const e = new Event('cancel');
+        events.dispatchEvent(e);
       }
     };
   }, [submission]);
@@ -328,11 +344,11 @@ export default function TextChat({ messages }) {
   };
 
   return (
-    <div className="input-panel fixed md:absolute bottom-0 left-0 w-full border-t md:border-t-0 dark:border-white/20 md:border-transparent md:dark:border-transparent md:bg-vert-light-gradient bg-white dark:bg-gray-800 md:dark:bg-transparent md:bg-transparent dark:md:bg-vert-dark-gradient py-2">
-      <form className="stretch mx-2 flex flex-row gap-3 md:pt-2 last:mb-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
+    <div className="input-panel md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient fixed bottom-0 left-0 w-full border-t bg-white py-2 dark:border-white/20 dark:bg-gray-800 md:absolute md:border-t-0 md:border-transparent md:bg-transparent md:dark:border-transparent md:dark:bg-transparent">
+      <form className="stretch mx-2 flex flex-row gap-3 last:mb-2 md:pt-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
         <div className="relative flex h-full flex-1 md:flex-col">
-          <span className="flex ml-1 md:w-full md:m-auto md:mb-2 gap-0 md:gap-2 justify-center order-last md:order-none">
-            {isSubmitting?
+          <span className="order-last ml-1 flex justify-center gap-0 md:order-none md:m-auto md:mb-2 md:w-full md:gap-2">
+            {isSubmitting ? (
               <button
                 onClick={handleStopGenerating}
                 className="input-panel-button btn btn-neutral flex justify-center gap-2 border-0 md:border"
@@ -341,17 +357,16 @@ export default function TextChat({ messages }) {
                 <StopGeneratingIcon />
                 <span className="hidden md:block">Stop generating</span>
               </button>
-              :(latestMessage&&!latestMessage?.isCreatedByUser)?
-                  <button
-                    onClick={handleRegenerate}
-                    className="input-panel-button btn btn-neutral flex justify-center gap-2 border-0 md:border"
-                    type="button"
-                  >
-                    <RegenerateIcon />
-                    <span className="hidden md:block">Regenerate response</span>
-                  </button>
-                :null
-            }
+            ) : latestMessage && !latestMessage?.isCreatedByUser ? (
+              <button
+                onClick={handleRegenerate}
+                className="input-panel-button btn btn-neutral flex justify-center gap-2 border-0 md:border"
+                type="button"
+              >
+                <RegenerateIcon />
+                <span className="hidden md:block">Regenerate response</span>
+              </button>
+            ) : null}
           </span>
           <div
             className={`relative flex flex-grow flex-col rounded-md border border-black/10 ${
@@ -367,17 +382,26 @@ export default function TextChat({ messages }) {
               ref={inputRef}
               // style={{maxHeight: '200px', height: '24px', overflowY: 'hidden'}}
               rows="1"
-              value={(disabled || isNotAppendable) ? '' : text}
+              value={disabled || isNotAppendable ? '' : text}
               onKeyUp={handleKeyUp}
               onKeyDown={handleKeyDown}
               onChange={changeHandler}
               onCompositionStart={handleCompositionStart}
               onCompositionEnd={handleCompositionEnd}
-              placeholder={disabled ? 'Choose another model or customize GPT again' : isNotAppendable ? 'Try to regenerate the incomplete response.' : ''}
+              placeholder={
+                disabled
+                  ? 'Choose another model or customize GPT again'
+                  : isNotAppendable
+                  ? 'Edit your message or Regenerate.'
+                  : ''
+              }
               disabled={disabled || isNotAppendable}
-              className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-12 pr-8 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-8"
+              className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-12 pr-8 leading-6 placeholder:text-sm focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-8"
             />
-            <SubmitButton submitMessage={submitMessage} disabled={disabled || isNotAppendable} />
+            <SubmitButton
+              submitMessage={submitMessage}
+              disabled={disabled || isNotAppendable}
+            />
           </div>
         </div>
       </form>
