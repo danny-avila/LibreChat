@@ -223,6 +223,7 @@ export default function TextChat({ messages }) {
     events.stream();
 
     return () => {
+      dispatch(setSubmitState(false));
       events.removeEventListener('message', onMessage);
       events.close();
     };
@@ -281,8 +282,8 @@ export default function TextChat({ messages }) {
   };
   isNotAppendable
   return (
-    <div className="input-panel absolute bottom-0 left-0 w-full border-t md:border-t-0 dark:border-white/20 md:border-transparent md:dark:border-transparent md:bg-vert-light-gradient bg-white dark:bg-gray-800 md:!bg-transparent dark:md:bg-vert-dark-gradient pt-2">
-      <form className="stretch mx-2 flex flex-row gap-3 pt-2 last:mb-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
+    <div className="input-panel absolute bottom-0 left-0 w-full border-t md:border-t-0 dark:border-white/20 md:border-transparent md:dark:border-transparent md:bg-vert-light-gradient bg-white dark:bg-gray-800 md:bg-transparent dark:md:bg-vert-dark-gradient pt-2">
+      <form className="stretch mx-2 flex flex-row gap-3 md:pt-2 last:mb-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
         <div className="relative flex h-full flex-1 md:flex-col">
             <span className="flex ml-1 md:w-full md:m-auto md:mb-2 gap-0 md:gap-2 justify-center order-last md:order-none">
               {isSubmitting?
@@ -328,7 +329,7 @@ export default function TextChat({ messages }) {
                 onCompositionEnd={handleCompositionEnd}
                 placeholder={disabled ? 'Choose another model or customize GPT again' : isNotAppendable ? 'Can not send new message after an error or unfinished response.' : ''}
                 disabled={disabled || isNotAppendable}
-                className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-9 pr-8 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-8"
+                className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-12 pr-8 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-8"
               />
               <SubmitButton submitMessage={submitMessage} disabled={disabled || isNotAppendable} />
             </div>
