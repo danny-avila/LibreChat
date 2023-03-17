@@ -16,6 +16,7 @@ const initialState = {
   pages: 1,
   refreshConvoHint: 0,
   search: false,
+  latestMessage: null,
   convos: [],
 };
 
@@ -53,6 +54,7 @@ const currentSlice = createSlice({
       state.chatGptLabel = null;
       state.promptPrefix = null;
       state.convosLoading = false;
+      state.latestMessage = null;
     },
     setConvos: (state, action) => {
       state.convos = action.payload.sort(
@@ -67,11 +69,14 @@ const currentSlice = createSlice({
     },
     removeAll: (state) => {
       state.convos = [];
-    }
+    },
+    setLatestMessage: (state, action) => {
+      state.latestMessage = action.payload;
+    },
   }
 });
 
-export const { refreshConversation, setConversation, setPages, setConvos, setNewConvo, setError, increasePage, decreasePage, setPage, removeConvo, removeAll } =
+export const { refreshConversation, setConversation, setPages, setConvos, setNewConvo, setError, increasePage, decreasePage, setPage, removeConvo, removeAll, setLatestMessage } =
   currentSlice.actions;
 
 export default currentSlice.reducer;
