@@ -314,8 +314,8 @@ export default function TextChat({ messages }) {
   };
 
   return (
-    <div className="input-panel md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient absolute bottom-0 left-0 w-full border-t bg-white pt-2 dark:border-white/20 dark:bg-gray-800 md:border-t-0 md:border-transparent md:bg-transparent md:dark:border-transparent">
-      <form className="stretch mx-2 flex flex-row gap-3 last:mb-2 md:pt-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
+    <div className="input-panel fixed md:absolute bottom-0 left-0 w-full border-t md:border-t-0 dark:border-white/20 md:border-transparent md:dark:border-transparent md:bg-vert-light-gradient bg-white dark:bg-gray-800 md:dark:bg-transparent md:bg-transparent dark:md:bg-vert-dark-gradient py-2">
+      <form className="stretch mx-2 flex flex-row gap-3 md:pt-2 last:mb-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
         <div className="relative flex h-full flex-1 md:flex-col">
           <span className="order-last ml-1 flex justify-center gap-0 md:order-none md:m-auto md:mb-2 md:w-full md:gap-2">
             {isSubmitting ? (
