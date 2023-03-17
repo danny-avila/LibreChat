@@ -56,7 +56,7 @@ export const getIconOfModel = ({ size=30, sender, isCreatedByUser, model, chatGp
     chatgptCustom: `rgb(0, 163, 255${ button ? ', 0.75' : ''})`,
   };
 
-  console.log(sender, isCreatedByUser, model, chatGptLabel, error, )
+  // console.log(sender, isCreatedByUser, model, chatGptLabel, error, )
 
   if (isCreatedByUser) 
     return (
