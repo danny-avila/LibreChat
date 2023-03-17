@@ -5,6 +5,7 @@ import { setNewConvo } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setSubmitState, setSubmission } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
+import { setError } from '~/store/convoSlice';
 
 const useMessageHandler = () => {
   const dispatch = useDispatch();
