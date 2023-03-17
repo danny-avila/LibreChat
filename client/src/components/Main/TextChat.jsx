@@ -317,9 +317,9 @@ export default function TextChat({ messages }) {
   const changeHandler = (e) => {
     const { value } = e.target;
 
-    if (isSubmitting && (value === '' || value === '\n')) {
-      return;
-    }
+    // if (isSubmitting && (value === '' || value === '\n')) {
+    //   return;
+    // }
     dispatch(setText(value));
   };
 
