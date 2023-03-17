@@ -4,13 +4,9 @@ import MultiMessage from './MultiMessage';
 import { useSelector, useDispatch } from 'react-redux';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
-import { setError } from '~/store/convoSlice';
-import { setMessages } from '~/store/messageSlice';
-import { setSubmitState, setSubmission } from '~/store/submitSlice';
-import { setText } from '~/store/textSlice';
 import { setConversation, setLatestMessage } from '../../store/convoSlice';
 import { getIconOfModel } from '../../utils';
-import { useMessageHandler } from '../../utils/handleSubmit'
+import { useMessageHandler } from '../../utils/handleSubmit';
 
 export default function Message({
   message,
@@ -29,15 +25,14 @@ export default function Message({
   const { sender, text, isCreatedByUser, error, submitting } = message;
   const textEditor = useRef(null);
   const convo = useSelector((state) => state.convo);
-  const { initial } = useSelector((state) => state.models);
-  const { error: convoError } = convo;
   const last = !message?.children?.length;
   const edit = message.messageId == currentEditId;
   const { ask } = useMessageHandler();
   const dispatch = useDispatch();
 
   // const notUser = !isCreatedByUser; // sender.toLowerCase() !== 'user';
-  const blinker = submitting && isSubmitting && last && !isCreatedByUser;
+  // const blinker = submitting && isSubmitting && last && !isCreatedByUser;
+  const blinker = submitting && isSubmitting;
   const generateCursor = useCallback(() => {
     if (!blinker) {
       return '';
@@ -50,7 +45,7 @@ export default function Message({
     if (blinker && !abortScroll) {
       scrollToBottom();
     }
-  }, [isSubmitting, text, blinker, scrollToBottom, abortScroll]);
+  }, [isSubmitting, blinker, text, scrollToBottom]);
 
   useEffect(() => {
     if (last) {
@@ -93,7 +88,11 @@ export default function Message({
   const resubmitMessage = () => {
     const text = textEditor.current.innerText;
 
-    ask({ text, parentMessageId: message?.parentMessageId, conversationId: message?.conversationId,});
+    ask({
+      text,
+      parentMessageId: message?.parentMessageId,
+      conversationId: message?.conversationId
+    });
 
     setSiblingIdx(siblingCount - 1);
     enterEdit(true);
