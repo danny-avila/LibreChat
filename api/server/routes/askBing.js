@@ -9,6 +9,7 @@ router.post('/', async (req, res) => {
   const {
     model,
     text,
+    overrideParentMessageId=null,
     parentMessageId,
     conversationId: oldConversationId,
     ...convo
@@ -37,8 +38,10 @@ router.post('/', async (req, res) => {
     ...convo
   });
 
-  await saveMessage(userMessage);
-  await saveConvo(req?.session?.user?.username, { ...userMessage, model, ...convo });
+  if (!overrideParentMessageId) {
+    await saveMessage(userMessage);
+    await saveConvo(req?.session?.user?.username, { ...userMessage, model, ...convo });
+  }
 
   return await ask({
     isNewConversation,
@@ -46,6 +49,7 @@ router.post('/', async (req, res) => {
     model,
     convo,
     preSendRequest: true,
+    overrideParentMessageId,
     req,
     res
   });
@@ -80,6 +84,14 @@ const ask = async ({
 
   try {
     const progressCallback = createOnProgress();
+
+    const abortController = new AbortController();
+    res.on('close', () => {
+      console.log('The client has disconnected.');
+      // 执行其他操作
+      abortController.abort();
+    })
+
     let response = await askBing({
       text,
       onProgress: progressCallback.call(null, model, {
@@ -91,7 +103,8 @@ const ask = async ({
         ...convo,
         parentMessageId: userParentMessageId,
         conversationId
-      }
+      },
+      abortController
     });
 
     console.log('BING RESPONSE', response);
@@ -101,7 +114,8 @@ const ask = async ({
       convo.conversationSignature || response.conversationSignature;
     userMessage.conversationId = response.conversationId || conversationId;
     userMessage.invocationId = response.invocationId;
-    await saveMessage(userMessage);
+    if (!overrideParentMessageId)
+      await saveMessage(userMessage);
 
     // Bing API will not use our conversationId at the first time,
     // so change the placeholder conversationId to the real one.

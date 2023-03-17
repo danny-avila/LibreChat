@@ -10,7 +10,7 @@ const clientOptions = {
   proxy: process.env.PROXY || null,
 };
 
-const browserClient = async ({ text, onProgress, convo }) => {
+const browserClient = async ({ text, onProgress, convo, abortController }) => {
   const { ChatGPTBrowserClient } = await import('@waylaidwanderer/chatgpt-api');
 
   const store = {
@@ -18,7 +18,7 @@ const browserClient = async ({ text, onProgress, convo }) => {
   };
 
   const client = new ChatGPTBrowserClient(clientOptions, store);
-  let options = { onProgress };
+  let options = { onProgress, abortController };
 
   if (!!convo.parentMessageId && !!convo.conversationId) {
     options = { ...options, ...convo };

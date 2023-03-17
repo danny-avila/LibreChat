@@ -8,9 +8,13 @@ import { useSelector } from 'react-redux';
 const Messages = ({ messages, messageTree }) => {
   const [currentEditId, setCurrentEditId] = useState(-1);
   const { conversationId } = useSelector((state) => state.convo);
+  const { model, customModel, chatGptLabel } = useSelector((state) => state.submit);
+  const { models } = useSelector((state) => state.models);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const scrollableRef = useRef(null);
   const messagesEndRef = useRef(null);
+
+  const modelName = models.find(element => element.model==model)?.name
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -61,6 +65,9 @@ const Messages = ({ messages, messageTree }) => {
       {/* <div className="flex-1 overflow-hidden"> */}
       <div className="dark:gpt-dark-gray h-full">
         <div className="dark:gpt-dark-gray flex h-full flex-col items-center text-sm">
+          <div className="flex w-full items-center justify-center gap-1 border-b border-black/10 bg-gray-50 p-3 text-gray-500 dark:border-gray-900/50 dark:bg-gray-700 dark:text-gray-300 text-sm">
+            Model: {modelName} {customModel?`(${customModel})`:null}
+          </div>
           {messageTree.length === 0 ? (
             <Spinner />
           ) : (
