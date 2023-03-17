@@ -267,7 +267,6 @@ export default function TextChat({ messages }) {
     events.stream();
 
     return () => {
-      dispatch(setSubmitState(false));
       events.removeEventListener('message', onMessage);
       const isCancelled = events.readyState <= 1;
       events.close();
