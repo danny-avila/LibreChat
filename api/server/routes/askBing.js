@@ -117,8 +117,8 @@ const ask = async ({
       );
     conversationId = userMessage.conversationId;
 
-    response.text = response.response;
-    delete response.response;
+    response.text = response.response || response.details.spokenText || '**Bing refused to answer.**';
+    // delete response.response;
     // response.id = response.details.messageId;
     response.suggestions =
       response.details.suggestedResponses &&
