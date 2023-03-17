@@ -1,8 +1,10 @@
 import React from 'react';
 import { useSelector } from 'react-redux';
 
-export default function SubmitButton({ submitMessage }) {
-  const { isSubmitting, disabled } = useSelector((state) => state.submit);
+export default function SubmitButton({ submitMessage, disabled }) {
+  const { isSubmitting } = useSelector((state) => state.submit);
+  const { error, latestMessage } = useSelector((state) => state.convo);
+
   const clickHandler = (e) => {
     e.preventDefault();
     submitMessage();
@@ -28,7 +30,7 @@ export default function SubmitButton({ submitMessage }) {
       disabled={disabled}
       className="group absolute bottom-0 right-0 flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500"
     >
-      <div className="m-1 rounded-md p-2 pt-[10px] pb-[10px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
+      <div className="m-1 mr-0 rounded-md p-2 pt-[10px] pb-[10px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
         <svg
           stroke="currentColor"
           fill="none"

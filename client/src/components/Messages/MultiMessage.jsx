@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Message from './Message';
 
 export default function MultiMessage({
@@ -13,6 +13,11 @@ export default function MultiMessage({
   const setSiblingIdxRev = (value) => {
     setSiblingIdx(messageList?.length - value - 1);
   };
+
+  useEffect(() => {
+    // reset siblingIdx when changes, mostly a new message is submitting.
+    setSiblingIdx(0);
+  }, [messageList?.length])
 
   // if (!messageList?.length) return null;
   if (!(messageList && messageList.length)) {

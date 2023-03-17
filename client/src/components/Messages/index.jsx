@@ -1,40 +1,49 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import Spinner from '../svg/Spinner';
 import { CSSTransition } from 'react-transition-group';
 import ScrollToBottom from './ScrollToBottom';
 import MultiMessage from './MultiMessage';
 import { useSelector } from 'react-redux';
 
-const Messages = ({ messages, messageTree }) => {
+export default function Messages({ messages, messageTree }) {
   const [currentEditId, setCurrentEditId] = useState(-1);
   const { conversationId } = useSelector((state) => state.convo);
+  const { model, customModel, chatGptLabel } = useSelector((state) => state.submit);
+  const { models } = useSelector((state) => state.models);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const scrollableRef = useRef(null);
   const messagesEndRef = useRef(null);
 
+  const modelName = models.find((element) => element.model == model)?.name;
+
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      const scrollable = scrollableRef.current;
-      const hasScrollbar = scrollable.scrollHeight > scrollable.clientHeight;
+      const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
+      const diff = Math.abs(scrollHeight - scrollTop);
+      const percent = Math.abs(clientHeight - diff ) / clientHeight;
+      const hasScrollbar = scrollHeight > clientHeight && percent > 0.2;
       setShowScrollButton(hasScrollbar);
     }, 650);
 
+    // Add a listener on the window object
+    window.addEventListener('scroll', handleScroll);
+
     return () => {
       clearTimeout(timeoutId);
+      window.removeEventListener('scroll', handleScroll);
     };
   }, [messages]);
 
-  const scrollToBottom = () => {
+  const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     setShowScrollButton(false);
-  };
+  }, [messagesEndRef]);
 
   const handleScroll = () => {
     const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
     const diff = Math.abs(scrollHeight - scrollTop);
-    const bottom =
-      diff === clientHeight || (diff <= clientHeight + 25 && diff >= clientHeight - 25);
-    if (bottom) {
+    const percent = Math.abs(clientHeight - diff ) / clientHeight;
+    if (percent <= 0.2) {
       setShowScrollButton(false);
     } else {
       setShowScrollButton(true);
@@ -54,13 +63,16 @@ const Messages = ({ messages, messageTree }) => {
 
   return (
     <div
-      className="flex-1 overflow-y-auto "
+      className="flex-1 overflow-y-auto pt-10 md:pt-0"
       ref={scrollableRef}
       onScroll={debouncedHandleScroll}
     >
       {/* <div className="flex-1 overflow-hidden"> */}
       <div className="dark:gpt-dark-gray h-full">
         <div className="dark:gpt-dark-gray flex h-full flex-col items-center text-sm">
+          <div className="flex w-full items-center justify-center gap-1 border-b border-black/10 bg-gray-50 p-3 text-sm text-gray-500 dark:border-gray-900/50 dark:bg-gray-700 dark:text-gray-300">
+            Model: {modelName} {customModel ? `(${customModel})` : null}
+          </div>
           {messageTree.length === 0 ? (
             <Spinner />
           ) : (
@@ -93,6 +105,4 @@ const Messages = ({ messages, messageTree }) => {
       {/* </div> */}
     </div>
   );
-};
-
-export default React.memo(Messages);
+}

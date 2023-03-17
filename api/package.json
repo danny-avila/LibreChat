@@ -24,6 +24,7 @@
     "@waylaidwanderer/chatgpt-api": "^1.28.2",
     "axios": "^1.3.4",
     "cors": "^2.8.5",
+    "crypto": "^1.0.1",
     "dotenv": "^16.0.3",
     "express": "^4.18.2",
     "express-session": "^1.17.3",

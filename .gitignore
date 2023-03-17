@@ -34,6 +34,7 @@ client/public/main.js.LICENSE.txt
 # Deployed apps should consider commenting these lines out:
 # see https://npmjs.org/doc/faq.html#Should-I-check-my-node_modules-folder-into-git
 node_modules/
+meili_data/
 api/node_modules/
 client/node_modules/
 bower_components/
