@@ -5,6 +5,7 @@ import { setNewConvo } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setSubmitState, setSubmission } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
+import { setError } from '~/store/convoSlice';
 
 const useMessageHandler = () => {
   const dispatch = useDispatch();
@@ -40,14 +41,6 @@ const useMessageHandler = () => {
     const currentMsg = { sender: 'User', text, current: true, isCreatedByUser: true, parentMessageId, conversationId, messageId: fakeMessageId };
     const initialResponse = { sender, text: '', parentMessageId: isRegenerate?messageId:fakeMessageId, messageId: (isRegenerate?messageId:fakeMessageId) + '_', submitting: true };
 
-    dispatch(setSubmitState(true));
-    if (isRegenerate) {
-      dispatch(setMessages([...currentMessages, initialResponse]));
-    } else {
-      dispatch(setMessages([...currentMessages, currentMsg, initialResponse]));
-    }
-    dispatch(setText(''));
-
     const submission = {
       convo,
       isCustomModel,
@@ -63,7 +56,16 @@ const useMessageHandler = () => {
       initialResponse,
       sender,
     };
+
     console.log('User Input:', text);
+
+    if (isRegenerate) {
+      dispatch(setMessages([...currentMessages, initialResponse]));
+    } else {
+      dispatch(setMessages([...currentMessages, currentMsg, initialResponse]));
+      dispatch(setText(''));  
+    }
+    dispatch(setSubmitState(true));
     dispatch(setSubmission(submission));
   }
 

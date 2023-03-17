@@ -26,7 +26,7 @@ export default function Landing({ title }) {
   };
 
   return (
-    <div className="flex h-full flex-col items-center overflow-y-auto text-sm dark:bg-gray-800">
+    <div className="flex pt-10 md:pt-0 h-full flex-col items-center overflow-y-auto text-sm dark:bg-gray-800">
       <div className="w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
         <h1 className="mt-6 ml-auto mr-auto mb-10 flex items-center justify-center gap-2 text-center text-4xl font-semibold md:mt-[20vh] sm:mb-16">
           ChatGPT Clone
