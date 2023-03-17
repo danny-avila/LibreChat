@@ -187,9 +187,9 @@ export default function ModelMenu() {
           <Button
             variant="outline"
             // style={{backgroundColor: 'rgb(16, 163, 127)'}}
-            className={`absolute bottom-0.5 items-center mb-[1.75px] md:mb-0 rounded-md border-0 p-1 ml-1 md:ml-0 outline-none ${colorProps.join(
+            className={`absolute top-[0.25px] items-center mb-0 rounded-md border-0 p-1 ml-1 md:ml-0 outline-none ${colorProps.join(
               ' '
-            )} focus:ring-0 focus:ring-offset-0 disabled:bottom-0.5 dark:data-[state=open]:bg-opacity-50 md:bottom-1 md:left-1 md:pl-1 md:disabled:bottom-1`}
+            )} focus:ring-0 focus:ring-offset-0 disabled:top-[0.25px] dark:data-[state=open]:bg-opacity-50 md:top-1 md:left-1 md:pl-1 md:disabled:top-1`}
           >
             {icon}
           </Button>

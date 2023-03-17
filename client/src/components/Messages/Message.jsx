@@ -8,8 +8,9 @@ import { setError } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setSubmitState, setSubmission } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
-import { setConversation } from '../../store/convoSlice';
+import { setConversation, setLatestMessage } from '../../store/convoSlice';
 import { getIconOfModel } from '../../utils';
+import { useMessageHandler } from '../../utils/handleSubmit'
 
 export default function Message({
   message,
@@ -32,6 +33,7 @@ export default function Message({
   const { error: convoError } = convo;
   const last = !message?.children?.length;
   const edit = message.messageId == currentEditId;
+  const { ask } = useMessageHandler();
   const dispatch = useDispatch();
 
   // const notUser = !isCreatedByUser; // sender.toLowerCase() !== 'user';
@@ -51,8 +53,12 @@ export default function Message({
   }, [isSubmitting, text, blinker, scrollToBottom, abortScroll]);
 
   useEffect(() => {
-    if (last) dispatch(setConversation({ parentMessageId: message?.messageId }));
-  }, [last]);
+    if (last) {
+      // TODO: stop using conversation.parentMessageId and remove it.
+      dispatch(setConversation({ parentMessageId: message?.messageId }));
+      dispatch(setLatestMessage({ ...message }));
+    }
+  }, [last, message]);
 
   const enterEdit = (cancel) => setCurrentEditId(cancel ? -1 : message.messageId);
 
@@ -87,55 +93,7 @@ export default function Message({
   const resubmitMessage = () => {
     const text = textEditor.current.innerText;
 
-    if (convoError) {
-      dispatch(setError(false));
-    }
-
-    if (!!isSubmitting || text.trim() === '') {
-      return;
-    }
-
-    // this is not a real messageId, it is used as placeholder before real messageId returned
-    const fakeMessageId = crypto.randomUUID();
-    const isCustomModel = model === 'chatgptCustom' || !initial[model];
-    const currentMsg = {
-      sender: 'User',
-      text: text.trim(),
-      current: true,
-      isCreatedByUser: true,
-      parentMessageId: message?.parentMessageId,
-      conversationId: message?.conversationId,
-      messageId: fakeMessageId
-    };
-    const sender = model === 'chatgptCustom' ? chatGptLabel : model;
-
-    const initialResponse = {
-      sender,
-      text: '',
-      parentMessageId: fakeMessageId,
-      submitting: true
-    };
-
-    dispatch(setSubmitState(true));
-    dispatch(setMessages([...messages, currentMsg, initialResponse]));
-    dispatch(setText(''));
-
-    const submission = {
-      isCustomModel,
-      message: {
-        ...currentMsg,
-        model,
-        chatGptLabel,
-        promptPrefix
-      },
-      messages: messages,
-      currentMsg,
-      initialResponse,
-      sender
-    };
-    console.log('User Input:', currentMsg?.text);
-    // handleSubmit(submission);
-    dispatch(setSubmission(submission));
+    ask({ text, parentMessageId: message?.parentMessageId, conversationId: message?.conversationId,});
 
     setSiblingIdx(siblingCount - 1);
     enterEdit(true);

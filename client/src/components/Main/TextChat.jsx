@@ -7,11 +7,14 @@ import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
 import createPayload from '~/utils/createPayload';
 import resetConvo from '~/utils/resetConvo';
+import RegenerateIcon from '../svg/RegenerateIcon';
+import StopGeneratingIcon from '../svg/StopGeneratingIcon';
 import { useSelector, useDispatch } from 'react-redux';
 import { setConversation, setNewConvo, setError, refreshConversation } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setSubmitState, setSubmission } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
+import { useMessageHandler } from '../../utils/handleSubmit'
 
 export default function TextChat({ messages }) {
   const [errorMessage, setErrorMessage] = useState('');
@@ -24,7 +27,10 @@ export default function TextChat({ messages }) {
   const { isSubmitting, stopStream, submission, disabled, model, chatGptLabel, promptPrefix } =
     useSelector((state) => state.submit);
   const { text } = useSelector((state) => state.text);
-  const { error } = convo;
+  const { error, latestMessage } = convo;
+  const { ask, regenerate, stopGenerating } = useMessageHandler();
+
+  const isNotAppendable = (!isSubmitting && latestMessage?.submitting) || latestMessage?.error;
 
   // auto focus to input, when enter a conversation.
   useEffect(() => {
@@ -32,9 +38,12 @@ export default function TextChat({ messages }) {
   }, [convo?.conversationId,])
 
   const messageHandler = (data, currentState, currentMsg) => {
-    const { messages, _currentMsg, message, sender } = currentState;
+    const { messages, _currentMsg, message, sender, isRegenerate } = currentState;
 
-    dispatch(setMessages([...messages, currentMsg, { sender, text: data, parentMessageId: currentMsg?.messageId, messageId: currentMsg?.messageId + '_', submitting: true }]));
+    if (isRegenerate)
+      dispatch(setMessages([...messages, { sender, text: data, parentMessageId: message?.overrideParentMessageId, messageId: message?.overrideParentMessageId + '_', submitting: true }]));
+    else
+      dispatch(setMessages([...messages, currentMsg, { sender, text: data, parentMessageId: currentMsg?.messageId, messageId: currentMsg?.messageId + '_', submitting: true }]));
   };
 
   const createdHandler = (data, currentState, currentMsg) => {
@@ -42,6 +51,7 @@ export default function TextChat({ messages }) {
     dispatch(
       setConversation({
         conversationId,
+        latestMessage: null
       })
     );
   };
@@ -49,12 +59,17 @@ export default function TextChat({ messages }) {
   const convoHandler = (data, currentState, currentMsg) => {
     const { requestMessage, responseMessage } = data;
     const { conversationId } = requestMessage;
-    const { messages, _currentMsg, message, isCustomModel, sender } =
+    const { messages, _currentMsg, message, isCustomModel, sender, isRegenerate } =
       currentState;
     const { model, chatGptLabel, promptPrefix } = message;
-    dispatch(
-      setMessages([...messages, requestMessage, responseMessage,])
-    );
+    if (isRegenerate)
+      dispatch(
+        setMessages([...messages, responseMessage,])
+      );
+    else
+      dispatch(
+        setMessages([...messages, requestMessage, responseMessage,])
+      );
 
     const isBing = model === 'bingai' || model === 'sydney';
 
@@ -82,7 +97,8 @@ export default function TextChat({ messages }) {
           clientId: null,
           invocationId: null,
           chatGptLabel: model === isCustomModel ? chatGptLabel : null,
-          promptPrefix: model === isCustomModel ? promptPrefix : null
+          promptPrefix: model === isCustomModel ? promptPrefix : null,
+          latestMessage: null
         })
       );
     } else if (
@@ -98,7 +114,8 @@ export default function TextChat({ messages }) {
           conversationSignature,
           clientId,
           conversationId,
-          invocationId
+          invocationId,
+          latestMessage: null
         })
       );
     } else if (model === 'sydney') {
@@ -119,7 +136,8 @@ export default function TextChat({ messages }) {
           conversationSignature,
           clientId,
           conversationId,
-          invocationId
+          invocationId,
+          latestMessage: null
         })
       );
     }
@@ -142,51 +160,8 @@ export default function TextChat({ messages }) {
     dispatch(setError(true));
     return;
   };
-
   const submitMessage = () => {
-    if (error) {
-      dispatch(setError(false));
-    }
-
-    if (!!isSubmitting || text.trim() === '') {
-      return;
-    }
-
-    // this is not a real messageId, it is used as placeholder before real messageId returned
-    const fakeMessageId = crypto.randomUUID();
-    const isCustomModel = model === 'chatgptCustom' || !initial[model];
-    const message = text.trim();
-    const sender = model === 'chatgptCustom' ? chatGptLabel : model;
-    let parentMessageId = convo.parentMessageId || '00000000-0000-0000-0000-000000000000';
-    let currentMessages = messages;
-    if (resetConvo(currentMessages, sender)) {
-      parentMessageId = '00000000-0000-0000-0000-000000000000';
-      dispatch(setNewConvo());
-      currentMessages = [];
-    }
-    const currentMsg = { sender: 'User', text: message, current: true, isCreatedByUser: true, parentMessageId , messageId: fakeMessageId };
-    const initialResponse = { sender, text: '', parentMessageId: fakeMessageId, submitting: true };
-
-    dispatch(setSubmitState(true));
-    dispatch(setMessages([...currentMessages, currentMsg, initialResponse]));
-    dispatch(setText(''));
-
-    const submission = {
-      convo,
-      isCustomModel,
-      message: { 
-        ...currentMsg,
-        model,
-        chatGptLabel,
-        promptPrefix,
-      },
-      messages: currentMessages,
-      currentMsg,
-      initialResponse,
-      sender,
-    };
-    console.log('User Input:', message);
-    dispatch(setSubmission(submission));
+    ask({ text })
   };
 
   useEffect(() => {
@@ -196,7 +171,8 @@ export default function TextChat({ messages }) {
     }
 
     const currentState = submission;
-    let currentMsg = currentState.currentMsg;
+    let currentMsg = {...currentState.message};
+    
     const { server, payload } = createPayload(submission);
     const onMessage = (e) => {
       if (stopStream) {
@@ -247,10 +223,20 @@ export default function TextChat({ messages }) {
     events.stream();
 
     return () => {
+      dispatch(setSubmitState(false));
       events.removeEventListener('message', onMessage);
       events.close();
     };
   }, [submission]);
+
+  const handleRegenerate = () => {
+    if (latestMessage&&!latestMessage?.isCreatedByUser)
+      regenerate(latestMessage)
+  }
+
+  const handleStopGenerating = () => {
+    stopGenerating()
+  }
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -294,23 +280,37 @@ export default function TextChat({ messages }) {
     e.preventDefault();
     dispatch(setError(false));
   };
-
+  isNotAppendable
   return (
-    <div className="md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient absolute bottom-0 left-0 w-full border-t bg-white dark:border-white/20 dark:bg-gray-800 md:border-t-0 md:border-transparent md:!bg-transparent md:dark:border-transparent">
-      <form className="stretch mx-2 flex flex-row gap-3 pt-2 last:mb-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
+    <div className="input-panel absolute bottom-0 left-0 w-full border-t md:border-t-0 dark:border-white/20 md:border-transparent md:dark:border-transparent md:bg-vert-light-gradient bg-white dark:bg-gray-800 md:bg-transparent dark:md:bg-vert-dark-gradient pt-2">
+      <form className="stretch mx-2 flex flex-row gap-3 md:pt-2 last:mb-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
         <div className="relative flex h-full flex-1 md:flex-col">
-          <div className="ml-1 mt-1.5 flex justify-center gap-0 md:m-auto md:mb-2 md:w-full md:gap-2" />
-          {error ? (
-            <Regenerate
-              submitMessage={submitMessage}
-              tryAgain={tryAgain}
-              errorMessage={errorMessage}
-            />
-          ) : (
+            <span className="flex ml-1 md:w-full md:m-auto md:mb-2 gap-0 md:gap-2 justify-center order-last md:order-none">
+              {isSubmitting?
+                <button
+                  onClick={handleStopGenerating}
+                  className="input-panel-button btn btn-neutral flex justify-center gap-2 border-0 md:border"
+                  type="button"
+                >
+                  <StopGeneratingIcon />
+                  <span className="hidden md:block">Stop generating</span>
+                </button>
+                :(latestMessage&&!latestMessage?.isCreatedByUser)?
+                    <button
+                      onClick={handleRegenerate}
+                      className="input-panel-button btn btn-neutral flex justify-center gap-2 border-0 md:border"
+                      type="button"
+                    >
+                      <RegenerateIcon />
+                      <span className="hidden md:block">Regenerate response</span>
+                    </button>
+                  :null
+              }
+            </span>
             <div
-              className={`relative flex w-full flex-grow flex-col rounded-md border border-black/10 ${
+              className={`relative flex flex-grow flex-col rounded-md border border-black/10 ${
                 disabled ? 'bg-gray-100' : 'bg-white'
-              } py-3 shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:border-gray-900/50 ${
+              } py-2 shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:border-gray-900/50 ${
                 disabled ? 'dark:bg-gray-900' : 'dark:bg-gray-700'
               } dark:text-white dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] md:py-3 md:pl-4`}
             >
@@ -327,13 +327,12 @@ export default function TextChat({ messages }) {
                 onChange={changeHandler}
                 onCompositionStart={handleCompositionStart}
                 onCompositionEnd={handleCompositionEnd}
-                placeholder={disabled ? 'Choose another model or customize GPT again' : ''}
-                disabled={disabled}
+                placeholder={disabled ? 'Choose another model or customize GPT again' : isNotAppendable ? 'Can not send new message after an error or unfinished response.' : ''}
+                disabled={disabled || isNotAppendable}
                 className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-12 pr-8 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-8"
               />
-              <SubmitButton submitMessage={submitMessage} />
+              <SubmitButton submitMessage={submitMessage} disabled={disabled || isNotAppendable} />
             </div>
-          )}
         </div>
       </form>
       <Footer />
