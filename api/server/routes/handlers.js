@@ -1,8 +1,6 @@
 const _ = require('lodash');
-const sanitizeHtml = require('sanitize-html');
 const citationRegex = /\[\^\d+?\^]/g;
 const { getCitations, citeText, detectCode } = require('../../app/');
-// const htmlTagRegex = /(<\/?\s*[a-zA-Z]*\s*(?:\s+[a-zA-Z]+\s*=\s*(?:"[^"]*"|'[^']*'))*\s*(?:\/?)>|<\s*[a-zA-Z]+\s*(?:\s+[a-zA-Z]+\s*=\s*(?:"[^"]*"|'[^']*'))*\s*(?:\/?>|<\/?>))/g;
 
 const handleError = (res, message) => {
   res.write(`event: error\ndata: ${JSON.stringify(message)}\n\n`);
@@ -28,14 +26,6 @@ const createOnProgress = () => {
       tokens = tokens.replace(/^\n/, '');
     }
 
-    // const htmlTags = tokens.match(htmlTagRegex);
-    // if (tokens.includes('```') && htmlTags && htmlTags.length > 0) {
-    //   htmlTags.forEach((tag) => {
-    //     const sanitizedTag = sanitizeHtml(tag);
-    //     tokens = tokens.replaceAll(tag, sanitizedTag);
-    //   });
-    // }
-
     if (bing) {
       tokens = citeText(tokens, true);
     }
@@ -54,7 +44,7 @@ const createOnProgress = () => {
 
 const handleText = async (response, bing = false) => {
   let { text } = response;
-  text = await detectCode(text);
+  // text = await detectCode(text);
   response.text = text;
 
   if (bing) {
@@ -65,14 +55,6 @@ const handleText = async (response, bing = false) => {
     }
     text += links?.length > 0 ? `\n<small>${links}</small>` : '';
   }
-
-  // const htmlTags = text.match(htmlTagRegex);
-  // if (text.includes('```') && htmlTags && htmlTags.length > 0) {
-  //   htmlTags.forEach((tag) => {
-  //     const sanitizedTag = sanitizeHtml(tag);
-  //     text = text.replaceAll(tag, sanitizedTag);
-  //   });
-  // }
 
   return text;
 };
