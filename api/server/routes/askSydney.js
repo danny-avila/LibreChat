@@ -111,8 +111,8 @@ const ask = async ({
     response.conversationSignature = convo.conversationSignature
       ? convo.conversationSignature
       : crypto.randomUUID();
-    response.text = response.response;
-    delete response.response;
+    response.text = response.response || response.details.spokenText || '**Bing refused to answer.**';
+    // delete response.response;
     response.suggestions =
       response.details.suggestedResponses &&
       response.details.suggestedResponses.map((s) => s.text);
