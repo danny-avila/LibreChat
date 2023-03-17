@@ -38,7 +38,8 @@ export default function ModelMenu() {
   const { data, isLoading, mutate } = swr(`/api/customGpts`, (res) => {
     const fetchedModels = res.map((modelItem) => ({
       ...modelItem,
-      name: modelItem.chatGptLabel
+      name: modelItem.chatGptLabel,
+      model: 'chatgptCustom'
     }));
 
     dispatch(setModels(fetchedModels));
@@ -100,7 +101,7 @@ export default function ModelMenu() {
     localStorage.setItem('model', JSON.stringify(model));
   }, [model]);
 
-  const filteredModels = models.filter(({model, _id }) => initial[model] || _id.length > 1 );
+  const filteredModels = models.filter(({model, _id }) => initial[model] );
 
   const onChange = (value) => {
     if (!value) {
