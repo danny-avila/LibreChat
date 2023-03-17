@@ -100,10 +100,6 @@ export default function TextChat({ messages }) {
     const { messages, _currentMsg, message, isCustomModel, sender, isRegenerate } =
       currentState;
     const { model, chatGptLabel, promptPrefix } = message;
-<<<<<<< HEAD
-    if (isRegenerate) dispatch(setMessages([...messages, responseMessage]));
-    else dispatch(setMessages([...messages, requestMessage, responseMessage]));
-=======
     if (isRegenerate)
       dispatch(
         setMessages([...messages, responseMessage,])
@@ -113,7 +109,6 @@ export default function TextChat({ messages }) {
         setMessages([...messages, requestMessage, responseMessage,])
       );
     dispatch(setSubmitState(false));
->>>>>>> 92d0d11 (feat: save cancelled flag in message)
 
     const isBing = model === 'bingai' || model === 'sydney';
 
@@ -213,14 +208,10 @@ export default function TextChat({ messages }) {
     }
 
     const currentState = submission;
-<<<<<<< HEAD
-    let currentMsg = { ...currentState.message };
 
-=======
-    let currentMsg = {...currentState.message};
+    let currentMsg = { ...currentState.message };
     let latestResponseText = '';
     
->>>>>>> 92d0d11 (feat: save cancelled flag in message)
     const { server, payload } = createPayload(submission);
     const onMessage = (e) => {
       if (stopStream) {
@@ -383,7 +374,7 @@ export default function TextChat({ messages }) {
               onChange={changeHandler}
               onCompositionStart={handleCompositionStart}
               onCompositionEnd={handleCompositionEnd}
-              placeholder={disabled ? 'Choose another model or customize GPT again' : isNotAppendable ? 'Can not send new message after an error or unfinished response.' : ''}
+              placeholder={disabled ? 'Choose another model or customize GPT again' : isNotAppendable ? 'Try to regenerate the incomplete response.' : ''}
               disabled={disabled || isNotAppendable}
               className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-12 pr-8 leading-6 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-8"
             />
