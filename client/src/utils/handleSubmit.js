@@ -46,9 +46,8 @@ const useMessageHandler = () => {
       dispatch(setMessages([...currentMessages, initialResponse]));
     } else {
       dispatch(setMessages([...currentMessages, currentMsg, initialResponse]));
+      dispatch(setText(''));  
     }
-    dispatch(setText(''));
-
     const submission = {
       convo,
       isCustomModel,
