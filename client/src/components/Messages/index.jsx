@@ -63,7 +63,7 @@ export default function Messages({ messages, messageTree }) {
 
   return (
     <div
-      className="flex-1 overflow-y-auto "
+      className="flex-1 overflow-y-auto pt-10 md:pt-0"
       ref={scrollableRef}
       onScroll={debouncedHandleScroll}
     >
