@@ -35,7 +35,7 @@ export default function TextChat({ messages }) {
   const { error, latestMessage } = convo;
   const { ask, regenerate, stopGenerating } = useMessageHandler();
 
-  const isNotAppendable = (!isSubmitting && latestMessage?.cancelled) || latestMessage?.error;
+  const isNotAppendable = latestMessage?.cancelled || latestMessage?.error;
 
   // auto focus to input, when enter a conversation.
   useEffect(() => {
