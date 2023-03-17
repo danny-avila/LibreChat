@@ -45,7 +45,14 @@ export default function Message({
     if (blinker && !abortScroll) {
       scrollToBottom();
     }
-  }, [isSubmitting, blinker, text, scrollToBottom]);
+
+    return () => {
+      console.log('cleanup, abort scroll & blinker:', abortScroll, blinker);
+      if (abortScroll) {
+        setAbort(false);
+      }
+    };
+  }, [blinker, text, scrollToBottom]);
 
   useEffect(() => {
     if (last) {

@@ -43,6 +43,7 @@ export default function TextChat({ messages }) {
   }, [convo?.conversationId]);
 
   const messageHandler = (data, currentState, currentMsg) => {
+    dispatch(setSubmitState(true));
 
     const { messages, _currentMsg, message, sender, isRegenerate } = currentState;
 
@@ -267,6 +268,10 @@ export default function TextChat({ messages }) {
     if (e.key === 'Enter' && !e.shiftKey) {
       if (!isComposing.current) submitMessage();
     }
+
+    if (isSubmitting) {
+      return;
+    }
   };
 
   const handleKeyUp = (e) => {
@@ -290,9 +295,9 @@ export default function TextChat({ messages }) {
   const changeHandler = (e) => {
     const { value } = e.target;
 
-    if (isSubmitting && (value === '' || value === '\n')) {
-      return;
-    }
+    // if (isSubmitting && (value === '' || value === '\n')) {
+    //   return;
+    // }
     dispatch(setText(value));
   };
 
@@ -358,8 +363,8 @@ export default function TextChat({ messages }) {
               onChange={changeHandler}
               onCompositionStart={handleCompositionStart}
               onCompositionEnd={handleCompositionEnd}
-              placeholder={placeholder()}
-              disabled={disabled || isNotAppendable}
+              // placeholder={placeholder()}
+              // disabled={disabled || isNotAppendable}
               className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-12 pr-8 leading-6 placeholder:text-sm focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-8"
             />
             <SubmitButton
