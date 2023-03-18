@@ -12,7 +12,9 @@ const currentSlice = createSlice({
   reducers: {
     setMessages: (state, action) => {
       state.messages = action.payload;
-      state.messageTree = buildTree(action.payload);
+      const groupAll = action.payload[0]?.searchResult;
+      if (groupAll) console.log('grouping all messages');
+      state.messageTree = buildTree(action.payload, groupAll);
     },
     setEmptyMessage: (state) => {
       state.messages = [

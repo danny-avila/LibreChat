@@ -46,4 +46,13 @@ router.get('/clear', async function (req, res) {
   res.send('cleared');
 });
 
+router.get('/test', async function (req, res) {
+  const { q } = req.query;
+  const messages = (await Message.meiliSearch(q, { attributesToHighlight: ['text'] }, true)).hits.map(message => {
+    const { _formatted, ...rest } = message;
+    return { ...rest, searchResult: true, text: _formatted.text };
+  });
+  res.send(messages);
+});
+
 module.exports = router;

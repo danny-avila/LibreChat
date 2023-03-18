@@ -9,7 +9,8 @@ const validateOptions = function (options) {
 };
 
 const createMeiliMongooseModel = function ({ index, indexName, client, attributesToIndex }) {
-  console.log('attributesToIndex', attributesToIndex);
+  // console.log('attributesToIndex', attributesToIndex);
+  const primaryKey = attributesToIndex[0];
   // MeiliMongooseModel is of type Mongoose.Model
   class MeiliMongooseModel {
     // Clear Meili index
@@ -24,7 +25,7 @@ const createMeiliMongooseModel = function ({ index, indexName, client, attribute
 
     static async resetIndex() {
       await this.clearMeiliIndex();
-      await client.createIndex(indexName, { primaryKey: attributesToIndex[0] });
+      await client.createIndex(indexName, { primaryKey });
     }
     // Clear Meili index
     // Push a mongoDB collection to Meili index
@@ -52,24 +53,24 @@ const createMeiliMongooseModel = function ({ index, indexName, client, attribute
       // Populate hits with content from mongodb
       if (populate) {
         // Find objects into mongodb matching `objectID` from Meili search
+        const query = {};
+        query[primaryKey] = { $in: _.map(data.hits, primaryKey) };
         const hitsFromMongoose = await this.find(
-          {
-            _id: { $in: _.map(data.hits, '_id') }
-          },
+          query,
           _.reduce(
             this.schema.obj,
             function (results, value, key) {
               return { ...results, [key]: 1 };
             },
             { _id: 1 }
-          )
+          ),
         );
 
         // Add additional data from mongodb into Meili search hits
         const populatedHits = data.hits.map(function (hit) {
-          const originalHit = _.find(hitsFromMongoose, {
-            _id: hit._id
-          });
+          const query = {};
+          query[primaryKey] = hit[primaryKey];
+          const originalHit = _.find(hitsFromMongoose, query);
 
           return {
             ...(originalHit ? originalHit.toJSON() : {}),
