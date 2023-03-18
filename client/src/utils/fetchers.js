@@ -13,6 +13,13 @@ const postRequest = async (url, { arg }) => {
   return await axios.post(url, { withCredentials: true, arg });
 };
 
+export const searchFetcher = async (pre, q, pageNumber, callback) => {
+  pre();
+  const { data } = await axios.get(`/api/search?q=${q}&pageNumber=${pageNumber}`);
+  console.log('search data', data);
+  callback(data);
+};
+
 export const swr = (path, successCallback, options) => {
   const _options = { ...options };
 

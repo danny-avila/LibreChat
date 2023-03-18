@@ -6,16 +6,9 @@ import Spinner from '../svg/Spinner';
 import Pages from '../Conversations/Pages';
 import Conversations from '../Conversations';
 import NavLinks from './NavLinks';
-import { swr } from '~/utils/fetchers';
+import { searchFetcher, swr } from '~/utils/fetchers';
 import { useDispatch, useSelector } from 'react-redux';
 import { setConvos, refreshConversation } from '~/store/convoSlice';
-
-const fetcher = async (pre, q, pageNumber, callback) => {
-  pre();
-  const { data } = await axios.get(`/api/search?q=${q}&pageNumber=${pageNumber}`);
-  console.log(data);
-  callback(data);
-};
 
 export default function Nav({ navVisible, setNavVisible }) {
   const dispatch = useDispatch();
@@ -51,7 +44,7 @@ export default function Nav({ navVisible, setNavVisible }) {
     setIsFetching(false);
   };
 
-  const fetch = useCallback(_.partialRight(fetcher.bind(null, () => setIsFetching(true)), onSearchSuccess), [dispatch]);
+  const fetch = useCallback(_.partialRight(searchFetcher.bind(null, () => setIsFetching(true)), onSearchSuccess), [dispatch]);
 
   const clearSearch = () => {
     setPage(1);
@@ -79,7 +72,6 @@ export default function Nav({ navVisible, setNavVisible }) {
       setPage((prev) => prev + 1);
       await mutate();
     } else {
-      // await fetch(query, +pageNumber + 1, onSearchSuccess);
       await fetch(query, +pageNumber + 1);
     }
   };
@@ -91,7 +83,6 @@ export default function Nav({ navVisible, setNavVisible }) {
       setPage((prev) => prev - 1);
       await mutate();
     } else {
-      // await fetch(query, +pageNumber - 1, onSearchSuccess);
       await fetch(query, +pageNumber - 1);
     }
   };
@@ -111,7 +102,7 @@ export default function Nav({ navVisible, setNavVisible }) {
 
       container.scrollTop = Math.min(maxScrollTop, scrollPositionRef.current);
     }
-  }, [data]);
+  }, [data, convos]);
 
   useEffect(() => {
     setNavVisible(false);

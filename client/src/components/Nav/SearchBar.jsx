@@ -3,31 +3,15 @@ import { debounce } from 'lodash';
 import { useDispatch } from 'react-redux';
 import { Search } from 'lucide-react';
 import { setQuery } from '~/store/searchSlice';
-import { setConvos, refreshConversation } from '~/store/convoSlice';
-import axios from 'axios';
 
-// const fetch = async (q, pageNumber, callback) => {
-//   const { data } = await axios.get(`/api/search?q=${q}&pageNumber=${pageNumber}`);
-//   console.log(data);
-//   callback(data);
-// };
-
-export default function SearchBar({ fetch, onSuccess, clearSearch }) {
+export default function SearchBar({ fetch, clearSearch }) {
   const dispatch = useDispatch();
   const [inputValue, setInputValue] = useState('');
-
-  // const onSuccess = (data) => {
-  //   const { conversations, pages, pageNumber } = data;
-  //   dispatch(setConvos({ convos: conversations, searchFetch: true }));
-  //   dispatch(setPage(pageNumber));
-  //   dispatch(setPages(pages));
-  // };
 
   const debouncedChangeHandler = useCallback(
     debounce((q) => {
       dispatch(setQuery(q));
       if (q.length > 0) {
-        // fetch(q, 1, onSuccess);
         fetch(q, 1);
       }
     }, 750),
@@ -46,19 +30,12 @@ export default function SearchBar({ fetch, onSuccess, clearSearch }) {
 
 
   const changeHandler = (e) => {
-    // if (!search) {
-    //   console.log('setting page to 1');
-    //   dispatch(setPage(1));
-    // }
-
     let q = e.target.value;
     setInputValue(q);
     q = q.trim();
 
     if (q === '') {
       dispatch(setQuery(''));
-      // dispatch(setPage(1));
-      // dispatch(refreshConversation());
       clearSearch();
     } else {
       debouncedChangeHandler(q);

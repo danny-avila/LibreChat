@@ -59,7 +59,7 @@ convoSchema.plugin(mongoMeili, {
   host: process.env.MEILI_HOST,
   apiKey: process.env.MEILI_KEY,
   indexName: 'convos', // Will get created automatically if it doesn't exist already
-  primaryKey: 'conversationId',
+  primaryKey: 'conversationId'
 });
 
 const Conversation =
@@ -142,15 +142,40 @@ module.exports = {
         return { conversations: [], pages: 1, pageNumber, pageSize };
       }
 
-      const promises = convoIds.map(convo => {
-        return Conversation.findOne({ user, conversationId: convo.conversationId}).exec();
+      const cache = {};
+      const promises = [];
+
+      convoIds.forEach((convo, i) => {
+        const page = Math.floor(i / pageSize) + 1;
+        if (!cache[page]) {
+          cache[page] = [];
+        }
+
+        const conversation = Conversation.findOne({
+          user,
+          conversationId: convo.conversationId
+        }).exec();
+
+        cache[page].push(conversation);
+        promises.push(conversation);
       });
-      const results = (await Promise.all(promises)).filter(convo => convo);
-      const startIndex = (pageNumber - 1) * pageSize;
-      const convos = results.slice(startIndex, startIndex + pageSize);
+      const results = (await Promise.all(promises)).filter((convo) => convo);
+      for (const key in cache) {
+        const promises = cache[key];
+        cache[key] = (await Promise.all(promises)).filter((convo) => convo);
+      }
+      // const startIndex = (pageNumber - 1) * pageSize;
+      // const convos = results.slice(startIndex, startIndex + pageSize);
       const totalPages = Math.ceil(results.length / pageSize);
-      console.log(results.length, totalPages, convos.length);
-      return { conversations: convos, pages: totalPages, pageNumber, pageSize };
+      cache.pages = totalPages;
+      cache.pageSize = pageSize;
+      return {
+        cache,
+        conversations: cache[pageNumber],
+        pages: totalPages,
+        pageNumber,
+        pageSize
+      };
     } catch (error) {
       console.log(error);
       return { message: 'Error fetching conversations' };
