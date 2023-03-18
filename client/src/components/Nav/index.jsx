@@ -6,7 +6,7 @@ import NavLinks from './NavLinks';
 import useDidMountEffect from '~/hooks/useDidMountEffect';
 import { swr } from '~/utils/fetchers';
 import { useDispatch, useSelector } from 'react-redux';
-import { increasePage, decreasePage, setPage, setConvos, setPages } from '~/store/convoSlice';
+import { increasePage, decreasePage, setPage, setConvos, setPages, setConversation } from '~/store/convoSlice';
 
 export default function Nav({ navVisible, setNavVisible }) {
   const dispatch = useDispatch();
@@ -23,6 +23,10 @@ export default function Nav({ navVisible, setNavVisible }) {
       dispatch(setConvos(conversations));
       dispatch(setPages(pages));
     }
+
+    const convo = conversations.find(element => element.conversationId == conversationId)
+    if (convo) 
+      dispatch(setConversation(convo));
   };
 
   const { data, isLoading, mutate } = swr(`/api/convos?pageNumber=${pageNumber}`, onSuccess, {
