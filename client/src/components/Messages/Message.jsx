@@ -22,7 +22,7 @@ export default function Message({
     (state) => state.submit
   );
   const [abortScroll, setAbort] = useState(false);
-  const { sender, text, isCreatedByUser, error, submitting } = message;
+  const { sender, text, searchResult, isCreatedByUser, error, submitting } = message;
   const textEditor = useRef(null);
   const convo = useSelector((state) => state.convo);
   const last = !message?.children?.length;
@@ -159,7 +159,7 @@ export default function Message({
                 <div className="flex min-h-[20px] flex-grow flex-col items-start gap-4 whitespace-pre-wrap">
                   {/* <div className={`${blinker ? 'result-streaming' : ''} markdown prose dark:prose-invert light w-full break-words`}> */}
                   <div className="markdown prose dark:prose-invert light w-full break-words">
-                    {!isCreatedByUser ? (
+                    {(!isCreatedByUser || searchResult) ? (
                       <TextWrapper
                         text={text}
                         generateCursor={generateCursor}
