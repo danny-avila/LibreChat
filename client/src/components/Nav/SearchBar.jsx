@@ -6,13 +6,13 @@ import { setQuery } from '~/store/searchSlice';
 import { setConvos, refreshConversation } from '~/store/convoSlice';
 import axios from 'axios';
 
-const fetch = async (q, pageNumber, callback) => {
-  const { data } = await axios.get(`/api/search?q=${q}&pageNumber=${pageNumber}`);
-  console.log(data);
-  callback(data);
-};
+// const fetch = async (q, pageNumber, callback) => {
+//   const { data } = await axios.get(`/api/search?q=${q}&pageNumber=${pageNumber}`);
+//   console.log(data);
+//   callback(data);
+// };
 
-export default function SearchBar({ onSuccess, clearSearch }) {
+export default function SearchBar({ fetch, onSuccess, clearSearch }) {
   const dispatch = useDispatch();
   const [inputValue, setInputValue] = useState('');
 
@@ -27,7 +27,8 @@ export default function SearchBar({ onSuccess, clearSearch }) {
     debounce((q) => {
       dispatch(setQuery(q));
       if (q.length > 0) {
-        fetch(q, 1, onSuccess);
+        // fetch(q, 1, onSuccess);
+        fetch(q, 1);
       }
     }, 750),
     [dispatch]
