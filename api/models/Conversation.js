@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const mongoMeili = require('../lib/db/mongoMeili');
 const { getMessages, deleteMessages } = require('./Message');
 
 const convoSchema = mongoose.Schema(
@@ -6,7 +7,9 @@ const convoSchema = mongoose.Schema(
     conversationId: {
       type: String,
       unique: true,
-      required: true
+      required: true,
+      index: true,
+      meiliIndex: true
     },
     parentMessageId: {
       type: String,
@@ -14,7 +17,8 @@ const convoSchema = mongoose.Schema(
     },
     title: {
       type: String,
-      default: 'New Chat'
+      default: 'New Chat',
+      meiliIndex: true
     },
     jailbreakConversationId: {
       type: String,
@@ -50,6 +54,13 @@ const convoSchema = mongoose.Schema(
   },
   { timestamps: true }
 );
+
+convoSchema.plugin(mongoMeili, {
+  host: process.env.MEILI_HOST,
+  apiKey: process.env.MEILI_KEY,
+  indexName: 'convos', // Will get created automatically if it doesn't exist already
+  primaryKey: 'conversationId',
+});
 
 const Conversation =
   mongoose.models.Conversation || mongoose.model('Conversation', convoSchema);

@@ -36,6 +36,7 @@ async function migrateDb() {
         if (message.sender.toLowerCase() === 'user') {
           message.isCreatedByUser = true;
         }
+        
         promises.push(message.save());
       });
       await Promise.all(promises);

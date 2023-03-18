@@ -1,11 +1,12 @@
 const mongoose = require('mongoose');
-const mongoMeili = require('../lib/mongoMeili');
+const mongoMeili = require('../lib/db/mongoMeili');
 
 const messageSchema = mongoose.Schema({
   messageId: {
     type: String,
     unique: true,
     required: true,
+    index: true,
     meiliIndex: true
   },
   conversationId: {
@@ -55,9 +56,10 @@ const messageSchema = mongoose.Schema({
 }, { timestamps: true });
 
 messageSchema.plugin(mongoMeili, {
-  host: 'http://localhost:7700',
-  apiKey: 'MASTER_KEY',
-  indexName: 'messages' // Will get created automatically if it doesn't exist already
+  host: process.env.MEILI_HOST,
+  apiKey: process.env.MEILI_KEY,
+  indexName: 'messages', // Will get created automatically if it doesn't exist already
+  primaryKey: 'messageId',
 });
 
 const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
