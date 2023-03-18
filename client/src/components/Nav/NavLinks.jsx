@@ -6,10 +6,10 @@ import ClearConvos from './ClearConvos';
 import DarkMode from './DarkMode';
 import Logout from './Logout';
 
-export default function NavLinks() {
+export default function NavLinks({ onSearchSuccess, clearSearch }) {
   return (
     <>
-      <SearchBar />
+      <SearchBar onSuccess={onSearchSuccess} clearSearch={clearSearch}/>
       <ClearConvos />
       <DarkMode />
       <Logout />

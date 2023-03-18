@@ -145,10 +145,11 @@ module.exports = {
       const promises = convoIds.map(convo => {
         return Conversation.findOne({ user, conversationId: convo.conversationId}).exec();
       });
-      const results = await Promise.all(promises);
+      const results = (await Promise.all(promises)).filter(convo => convo);
       const startIndex = (pageNumber - 1) * pageSize;
       const convos = results.slice(startIndex, startIndex + pageSize);
       const totalPages = Math.ceil(results.length / pageSize);
+      console.log(results.length, totalPages, convos.length);
       return { conversations: convos, pages: totalPages, pageNumber, pageSize };
     } catch (error) {
       console.log(error);
