@@ -85,12 +85,6 @@ const createMeiliMongooseModel = function ({ index, indexName, client, attribute
     // Push new document to Meili
     async addObjectToMeili() {
       const object = _.pick(this.toJSON(), attributesToIndex);
-      // const title = (await this.getTitle()) || 'New Chat'; // Get title value
-      // const objectWithTitle = {
-      //   ...this.toJSON(),
-      //   title
-      // };
-      // const object = _.pick(objectWithTitle, attributesToIndex); // Pick desired attributes
 
       try {
         // console.log('Adding document to Meili', object);

@@ -136,6 +136,25 @@ module.exports = {
       return { message: 'Error getting conversations' };
     }
   },
+  getConvosQueried: async (user, convoIds, pageNumber = 1, pageSize = 12) => {
+    try {
+      if (!convoIds || convoIds.length === 0) {
+        return { conversations: [], pages: 1, pageNumber, pageSize };
+      }
+
+      const promises = convoIds.map(convo => {
+        return Conversation.findOne({ user, conversationId: convo.conversationId}).exec();
+      });
+      const results = await Promise.all(promises);
+      const startIndex = (pageNumber - 1) * pageSize;
+      const convos = results.slice(startIndex, startIndex + pageSize);
+      const totalPages = Math.ceil(results.length / pageSize);
+      return { conversations: convos, pages: totalPages, pageNumber, pageSize };
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error fetching conversations' };
+    }
+  },
   getConvo,
   getConvoTitle: async (user, conversationId) => {
     try {
