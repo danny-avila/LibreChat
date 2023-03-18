@@ -262,7 +262,13 @@ The sample structure is simple. It provide three basic endpoint:
 
 The only one thing that drive user system work is `req.session.user`. Once it's set, the client will be trusted. Set to `null` if logout.
 
-Please refer to `/api/server/routes/authYoutLogin.js` file. It's very clear and simple to tell you how to implement your user system.
+Please refer to `/api/server/routes/authYourLogin.js` file. It's very clear and simple to tell you how to implement your user system.
+
+Or you can ask chatGPT to write the code for you, here is one example to connect LDAP:
+
+```
+Please write me an express module, that serve the login and logout endpoint as a router. The login and logout uri is '/' and '/logout'. Once loginned, save display name and username in session.user, as {display, username}. Then redirect to '/'. Please write the code using express and other lib, and storage any server configuration in a config variable. I want the user to be connected to my LDAP server.
+```
 
 </details>
 
