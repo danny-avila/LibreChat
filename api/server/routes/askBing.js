@@ -114,8 +114,9 @@ const ask = async ({
       convo.conversationSignature || response.conversationSignature;
     userMessage.conversationId = response.conversationId || conversationId;
     userMessage.invocationId = response.invocationId;
+    userMessage.messageId = response.parentMessageId || userMessageId;
     if (!overrideParentMessageId)
-      await saveMessage(userMessage);
+      await saveMessage({ oldMessageId: userMessageId, ...userMessage });
 
     // Bing API will not use our conversationId at the first time,
     // so change the placeholder conversationId to the real one.

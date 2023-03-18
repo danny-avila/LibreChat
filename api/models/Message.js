@@ -46,9 +46,10 @@ const messageSchema = mongoose.Schema({
 const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
 
 module.exports = {
-  saveMessage: async ({ messageId, conversationId, parentMessageId, sender, text, isCreatedByUser=false, error }) => {
+  saveMessage: async ({ messageId, oldMessageId = messageId, conversationId, parentMessageId, sender, text, isCreatedByUser=false, error }) => {
     try {
-      await Message.findOneAndUpdate({ messageId }, {
+      await Message.findOneAndUpdate({ oldMessageId }, {
+        messageId,
         conversationId,
         parentMessageId,
         sender,

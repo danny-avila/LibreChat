@@ -114,9 +114,10 @@ const ask = async ({
       convo.conversationSignature || response.conversationSignature;
     userMessage.conversationId = response.conversationId || conversationId;
     userMessage.invocationId = response.invocationId;
+    userMessage.messageId = response.parentMessageId || userMessageId;
     // Unlike gpt and bing, Sydney will never accept our given userMessage.messageId, it will generate its own one.
     if (!overrideParentMessageId)
-      await saveMessage(userMessage);
+      await saveMessage({ oldMessageId: userMessageId, ...userMessage });
 
     // Save sydney response
     // response.id = response.messageId;
