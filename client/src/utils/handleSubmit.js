@@ -27,7 +27,7 @@ const useMessageHandler = () => {
     
     // this is not a real messageId, it is used as placeholder before real messageId returned
     text = text.trim();
-    const fakeMessageId = crypto.getRandomValues(new Uint8Array(1))[0] + Date.now();
+    const fakeMessageId = crypto.getRandomValues(new Uint8Array(1))[0].toString() + Date.now();
     const isCustomModel = model === 'chatgptCustom' || !initial[model];
     const sender = model === 'chatgptCustom' ? chatGptLabel : model;
     parentMessageId = parentMessageId || latestMessage?.messageId || '00000000-0000-0000-0000-000000000000';
