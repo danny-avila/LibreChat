@@ -16,9 +16,9 @@ const currentSlice = createSlice({
       const q = action.payload;
       state.query = q;
       
-      if (!q || q === '') {
+      if (q === '') {
         state.search = false;
-      } else {
+      } else if (q?.length > 0 && !state.search) {
         state.search = true;
       }
     },
