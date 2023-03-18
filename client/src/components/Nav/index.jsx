@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import _ from 'lodash';
 import NewChat from './NewChat';
@@ -10,7 +10,8 @@ import { swr } from '~/utils/fetchers';
 import { useDispatch, useSelector } from 'react-redux';
 import { setConvos, refreshConversation } from '~/store/convoSlice';
 
-const fetch = async (q, pageNumber, callback) => {
+const fetcher = async (pre, q, pageNumber, callback) => {
+  pre();
   const { data } = await axios.get(`/api/search?q=${q}&pageNumber=${pageNumber}`);
   console.log(data);
   callback(data);
@@ -19,10 +20,12 @@ const fetch = async (q, pageNumber, callback) => {
 export default function Nav({ navVisible, setNavVisible }) {
   const dispatch = useDispatch();
   const [isHovering, setIsHovering] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
   const [pages, setPages] = useState(1);
   const [pageNumber, setPage] = useState(1);
   const { search, query } = useSelector((state) => state.search);
   const { conversationId, convos, refreshConvoHint } = useSelector((state) => state.convo);
+  
   const onSuccess = (data, searchFetch = false) => {
     if (search) {
       return;
@@ -45,7 +48,10 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
     setPage(res.pageNumber);
     setPages(res.pages);
+    setIsFetching(false);
   };
+
+  const fetch = useCallback(_.partialRight(fetcher.bind(null, () => setIsFetching(true)), onSearchSuccess), [dispatch]);
 
   const clearSearch = () => {
     setPage(1);
@@ -54,10 +60,6 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const { data, isLoading, mutate } = swr(`/api/convos?pageNumber=${pageNumber}`, onSuccess, {
     revalidateOnMount: false,
-    // populateCache: false,
-    // revalidateIfStale: false,
-    // revalidateOnFocus: false,
-    // revalidateOnReconnect : false,
   });
 
   const containerRef = useRef(null);
@@ -77,7 +79,8 @@ export default function Nav({ navVisible, setNavVisible }) {
       setPage((prev) => prev + 1);
       await mutate();
     } else {
-      await fetch(query, +pageNumber + 1, _.partialRight(onSearchSuccess, +pageNumber + 1));
+      // await fetch(query, +pageNumber + 1, onSearchSuccess);
+      await fetch(query, +pageNumber + 1);
     }
   };
 
@@ -88,7 +91,8 @@ export default function Nav({ navVisible, setNavVisible }) {
       setPage((prev) => prev - 1);
       await mutate();
     } else {
-      await fetch(query, +pageNumber - 1, _.partialRight(onSearchSuccess, +pageNumber - 1));
+      // await fetch(query, +pageNumber - 1, onSearchSuccess);
+      await fetch(query, +pageNumber - 1);
     }
   };
 
@@ -145,7 +149,8 @@ export default function Nav({ navVisible, setNavVisible }) {
                 ref={containerRef}
               >
                 <div className={containerClasses}>
-                  {isLoading && (pageNumber === 1 || search) ? (
+                  {/* {(isLoading && pageNumber === 1) ? ( */}
+                  {(isLoading && pageNumber === 1) || (isFetching) ? (
                     <Spinner />
                   ) : (
                     <Conversations
@@ -163,6 +168,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                 </div>
               </div>
               <NavLinks
+                fetch={fetch}
                 onSearchSuccess={onSearchSuccess}
                 clearSearch={clearSearch}
               />
