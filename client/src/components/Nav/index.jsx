@@ -10,7 +10,8 @@ import { increasePage, decreasePage, setPage, setConvos, setPages } from '~/stor
 export default function Nav({ navVisible, setNavVisible }) {
   const dispatch = useDispatch();
   const [isHovering, setIsHovering] = useState(false);
-  const { conversationId, convos, search, pages, pageNumber, refreshConvoHint } = useSelector(
+  const { search, query } = useSelector((state) => state.search);
+  const { conversationId, convos, pages, pageNumber, refreshConvoHint } = useSelector(
     (state) => state.convo
   );
   const onSuccess = (data) => {
@@ -24,8 +25,12 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   };
 
-  const { data, isLoading, mutate } = swr(`/api/${search ? 'search?q=' : `convos?pageNumber=${pageNumber}`}`, onSuccess, {
-    revalidateOnMount: false
+  const { data, isLoading, mutate } = swr(`/api/${search ? `search?q=${query}&pageNumber=${pageNumber}` : `convos?pageNumber=${pageNumber}`}`, onSuccess, {
+    revalidateOnMount: false,
+    revalidateIfStale: !search,
+    revalidateOnFocus: !search,
+    revalidateOnReconnect: !search,
+    populateCache: !search,
   });
 
   const containerRef = useRef(null);
@@ -103,7 +108,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                 ref={containerRef}
               >
                 <div className={containerClasses}>
-                  {isLoading && pageNumber === 1 ? (
+                  {isLoading && (pageNumber === 1 || search) ? (
                     <Spinner />
                   ) : (
                     <Conversations
