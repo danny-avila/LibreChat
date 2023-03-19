@@ -23,6 +23,11 @@
   }
 } */
 
+/* .LazyLoad {
+  opacity: 0;
+  transition: all 1s ease-in-out;
+} */
+
 p > small {
   opacity: 0;
   animation: fadein 3s forwards;

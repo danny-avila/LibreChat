@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import axios from 'axios';
 import _ from 'lodash';
 import NewChat from './NewChat';
 import Spinner from '../svg/Spinner';
@@ -8,7 +7,9 @@ import Conversations from '../Conversations';
 import NavLinks from './NavLinks';
 import { searchFetcher, swr } from '~/utils/fetchers';
 import { useDispatch, useSelector } from 'react-redux';
-import { setConvos, refreshConversation } from '~/store/convoSlice';
+import { setConvos, setNewConvo, refreshConversation } from '~/store/convoSlice';
+import { setMessages } from '~/store/messageSlice';
+import { setDisabled } from '~/store/submitSlice';
 
 export default function Nav({ navVisible, setNavVisible }) {
   const dispatch = useDispatch();
@@ -42,6 +43,10 @@ export default function Nav({ navVisible, setNavVisible }) {
     setPage(res.pageNumber);
     setPages(res.pages);
     setIsFetching(false);
+    if (res.messages) {
+      dispatch(setMessages(res.messages));
+      dispatch(setDisabled(true));
+    }
   };
 
   const fetch = useCallback(_.partialRight(searchFetcher.bind(null, () => setIsFetching(true)), onSearchSuccess), [dispatch]);
@@ -49,6 +54,9 @@ export default function Nav({ navVisible, setNavVisible }) {
   const clearSearch = () => {
     setPage(1);
     dispatch(refreshConversation());
+    dispatch(setNewConvo());
+    dispatch(setMessages([]));
+    dispatch(setDisabled(false));
   };
 
   const { data, isLoading, mutate } = swr(`/api/convos?pageNumber=${pageNumber}`, onSuccess, {
@@ -102,7 +110,7 @@ export default function Nav({ navVisible, setNavVisible }) {
 
       container.scrollTop = Math.min(maxScrollTop, scrollPositionRef.current);
     }
-  }, [data, convos]);
+  }, [data]);
 
   useEffect(() => {
     setNavVisible(false);

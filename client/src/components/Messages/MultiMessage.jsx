@@ -6,7 +6,7 @@ export default function MultiMessage({
   messages,
   scrollToBottom,
   currentEditId,
-  setCurrentEditId
+  setCurrentEditId,
 }) {
   const [siblingIdx, setSiblingIdx] = useState(0);
 
@@ -29,10 +29,11 @@ export default function MultiMessage({
     return null;
   }
 
+  const message = messageList[messageList.length - siblingIdx - 1];
   return (
     <Message
-      key={messageList[messageList.length - siblingIdx - 1].messageId}
-      message={messageList[messageList.length - siblingIdx - 1]}
+      key={message.messageId}
+      message={message}
       messages={messages}
       scrollToBottom={scrollToBottom}
       currentEditId={currentEditId}

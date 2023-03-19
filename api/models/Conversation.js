@@ -144,26 +144,32 @@ module.exports = {
 
       const cache = {};
       const promises = [];
+      // will handle a syncing solution soon
+      const deletedConvoIds = [];
 
-      convoIds.forEach((convo, i) => {
-        const page = Math.floor(i / pageSize) + 1;
-        if (!cache[page]) {
-          cache[page] = [];
+      convoIds.forEach((convo) =>
+        promises.push(
+          Conversation.findOne({
+            user,
+            conversationId: convo.conversationId
+          }).exec()
+        )
+      );
+
+      const results = (await Promise.all(promises)).filter((convo, i) => {
+        if (!convo) {
+          deletedConvoIds.push(convoIds[i].conversationId);
+          return false;
+        } else {
+          const page = Math.floor(i / pageSize) + 1;
+          if (!cache[page]) {
+            cache[page] = [];
+          }
+          cache[page].push(convo);
+          return true;
         }
-
-        const conversation = Conversation.findOne({
-          user,
-          conversationId: convo.conversationId
-        }).exec();
-
-        cache[page].push(conversation);
-        promises.push(conversation);
       });
-      const results = (await Promise.all(promises)).filter((convo) => convo);
-      for (const key in cache) {
-        const promises = cache[key];
-        cache[key] = (await Promise.all(promises)).filter((convo) => convo);
-      }
+
       // const startIndex = (pageNumber - 1) * pageSize;
       // const convos = results.slice(startIndex, startIndex + pageSize);
       const totalPages = Math.ceil(results.length / pageSize);
@@ -171,10 +177,12 @@ module.exports = {
       cache.pageSize = pageSize;
       return {
         cache,
-        conversations: cache[pageNumber],
-        pages: totalPages,
+        conversations: cache[pageNumber] || [],
+        pages: totalPages || 1,
         pageNumber,
-        pageSize
+        pageSize,
+        // will handle a syncing solution soon
+        filter: new Set(deletedConvoIds),
       };
     } catch (error) {
       console.log(error);

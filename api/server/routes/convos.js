@@ -10,6 +10,12 @@ router.get('/', async (req, res) => {
   res.status(200).send(await getConvosByPage(req?.session?.user?.username, pageNumber));
 });
 
+router.get('/:conversationId', async (req, res) => {
+  const { conversationId } = req.params;
+  const convo = await getConvo(req?.session?.user?.username, conversationId);
+  res.status(200).send(convo.toObject());
+});
+
 router.post('/gen_title', async (req, res) => {
   const { conversationId } = req.body.arg;
 

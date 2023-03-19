@@ -20,6 +20,12 @@ export const searchFetcher = async (pre, q, pageNumber, callback) => {
   callback(data);
 };
 
+export const fetchById = async (path, conversationId) => {
+  return await axios.get(`/api/${path}/${conversationId}`);
+  // console.log(`fetch ${path} data`, data);
+  // callback(data);
+};
+
 export const swr = (path, successCallback, options) => {
   const _options = { ...options };
 

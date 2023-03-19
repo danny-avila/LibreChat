@@ -28,12 +28,33 @@ router.get('/', async function (req, res) {
     } else {
       cache.clear();
     }
-    const message = await Message.meiliSearch(q);
-    const title = await Conversation.meiliSearch(q, { attributesToHighlight: ['title'] });
-    const sortedHits = reduceHits(message.hits, title.hits);
+
+    // const message = await Message.meiliSearch(q);
+    const messages = (
+      await Message.meiliSearch(
+        q,
+        {
+          attributesToHighlight: ['text'],
+          highlightPreTag: '**',
+          highlightPostTag: '**'
+        },
+        true
+      )
+    ).hits.map((message) => {
+      const { _formatted, ...rest } = message;
+      return {
+        ...rest,
+        searchResult: true,
+        text: _formatted.text
+      };
+    });
+    const titles = (await Conversation.meiliSearch(q)).hits;
+    const sortedHits = reduceHits(messages, titles);
     const result = await getConvosQueried(user, sortedHits, pageNumber);
     cache.set(q, result.cache);
     delete result.cache;
+    result.messages = messages.filter((message) => !result.filter.has(message.conversationId));
+    // console.log(result, messages.length);
     res.status(200).send(result);
   } catch (error) {
     console.log(error);
@@ -48,7 +69,9 @@ router.get('/clear', async function (req, res) {
 
 router.get('/test', async function (req, res) {
   const { q } = req.query;
-  const messages = (await Message.meiliSearch(q, { attributesToHighlight: ['text'] }, true)).hits.map(message => {
+  const messages = (
+    await Message.meiliSearch(q, { attributesToHighlight: ['text'] }, true)
+  ).hits.map((message) => {
     const { _formatted, ...rest } = message;
     return { ...rest, searchResult: true, text: _formatted.text };
   });
