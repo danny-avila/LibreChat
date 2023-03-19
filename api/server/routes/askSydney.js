@@ -21,7 +21,7 @@ router.post('/', async (req, res) => {
   const conversationId = oldConversationId || crypto.randomUUID();
   const isNewConversation = !oldConversationId;
 
-  const userMessageId = crypto.randomUUID();
+  const userMessageId = convo.messageId;
   const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000';
   let userMessage = {
     messageId: userMessageId,
@@ -34,13 +34,13 @@ router.post('/', async (req, res) => {
 
   console.log('ask log', {
     model,
-    ...userMessage,
-    ...convo
+    ...convo,
+    ...userMessage
   });
 
   if (!overrideParentMessageId) {
     await saveMessage(userMessage);
-    await saveConvo(req?.session?.user?.username, { ...userMessage, model, ...convo });
+    await saveConvo(req?.session?.user?.username, { model, ...convo, ...userMessage });
   }
 
   return await ask({
@@ -100,9 +100,9 @@ const ask = async ({
         parentMessageId: overrideParentMessageId || userMessageId
       }),
       convo: {
+        ...convo,
         parentMessageId: userParentMessageId,
-        conversationId,
-        ...convo
+        conversationId
       },
       abortController
     });
@@ -160,7 +160,7 @@ const ask = async ({
     response.text = await handleText(response, true);
     // Save sydney response & convo, then send
     await saveMessage(response);
-    await saveConvo(req?.session?.user?.username, { ...response, model, chatGptLabel: null, promptPrefix: null, ...convo });
+    await saveConvo(req?.session?.user?.username, { model, chatGptLabel: null, promptPrefix: null, ...convo, ...response });
     
     sendMessage(res, {
       title: await getConvoTitle(req?.session?.user?.username, conversationId),

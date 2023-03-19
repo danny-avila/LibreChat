@@ -34,13 +34,13 @@ router.post('/', async (req, res) => {
 
   console.log('ask log', {
     model,
-    ...userMessage,
-    ...convo
+    ...convo,
+    ...userMessage
   });
 
   if (!overrideParentMessageId) {
     await saveMessage(userMessage);
-    await saveConvo(req?.session?.user?.username, { ...userMessage, model, ...convo });
+    await saveConvo(req?.session?.user?.username, { model, ...convo, ...userMessage });
   }
 
   return await ask({
@@ -148,7 +148,7 @@ const ask = async ({
 
     response.text = await handleText(response, true);
     await saveMessage(response);
-    await saveConvo(req?.session?.user?.username, { ...response, model, chatGptLabel: null, promptPrefix: null, ...convo });
+    await saveConvo(req?.session?.user?.username, { model, chatGptLabel: null, promptPrefix: null, ...convo,  ...response });
 
     sendMessage(res, {
       title: await getConvoTitle(req?.session?.user?.username, conversationId),
