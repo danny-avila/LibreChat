@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import hljs from 'highlight.js';
-import languages from '~/utils/languages';
+import { languages } from '~/utils/languages';
 
 export default function Highlight({language, code}) {
   const [highlightedCode, setHighlightedCode] = useState(code);

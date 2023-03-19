@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Clipboard from '../svg/Clipboard';
 import CheckMark from '../svg/CheckMark';
 
-export default function Embed({ children, language = '', code, matched }) {
+export default function Embed({ children, lang = '', code, matched }) {
   const [buttonText, setButtonText] = useState('Copy code');
   const isClicked = buttonText === 'Copy code';
 
@@ -18,7 +18,7 @@ export default function Embed({ children, language = '', code, matched }) {
     <pre>
       <div className="mb-4 rounded-md bg-black">
         <div className="relative flex items-center rounded-tl-md rounded-tr-md bg-gray-800 px-4 py-2 font-sans text-xs text-gray-200">
-          <span className="">{language === 'javascript' && !matched ? '' : language}</span>
+          <span className="">{lang === 'javascript' && !matched ? '' : lang}</span>
           <button
             className="ml-auto flex gap-2"
             onClick={clickHandler}
