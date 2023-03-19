@@ -49,6 +49,7 @@ const inLineWrap = (parts) => {
 export default function TextWrapper({ text, generateCursor }) {
   let embedTest = false;
   let result = null;
+  console.log('text wrapper', text)
 
   // to match unenclosed code blocks
   if (text.match(/```/g)?.length === 1) {

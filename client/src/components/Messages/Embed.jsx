@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Clipboard from '../svg/Clipboard';
 import CheckMark from '../svg/CheckMark';
 
-export default function Embed({ children, lang = '', code, matched }) {
+const Embed = React.memo(({ children, lang = '', code, matched }) => {
   const [buttonText, setButtonText] = useState('Copy code');
   const isClicked = buttonText === 'Copy code';
 
@@ -32,4 +32,6 @@ export default function Embed({ children, lang = '', code, matched }) {
       </div>
     </pre>
   );
-}
+});
+
+export default Embed;
