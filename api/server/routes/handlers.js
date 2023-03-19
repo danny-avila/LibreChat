@@ -30,7 +30,7 @@ const createOnProgress = () => {
       tokens = citeText(tokens, true);
     }
 
-    sendMessage(res, { text: tokens, message: true, initial: i === 0, ...rest });
+    sendMessage(res, { text: tokens + '█', message: true, initial: i === 0, ...rest });
     i++;
   };
 

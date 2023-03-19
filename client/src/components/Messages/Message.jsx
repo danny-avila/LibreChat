@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import TextWrapper from './TextWrapper';
+import Content from './Content';
 import MultiMessage from './MultiMessage';
 import { useSelector, useDispatch } from 'react-redux';
 import HoverButtons from './HoverButtons';
@@ -131,7 +132,7 @@ export default function Message({
       <div
         {...props}
         onWheel={handleWheel}
-        // onClick={clickSearchResult}
+        onClick={clickSearchResult}
       >
         <div className="relative m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
           <div className="relative flex h-[30px] w-[30px] flex-col items-end text-right text-xs md:text-sm">
@@ -188,14 +189,15 @@ export default function Message({
                 <div className="flex min-h-[20px] flex-grow flex-col items-start gap-4 whitespace-pre-wrap">
                   {/* <div className={`${blinker ? 'result-streaming' : ''} markdown prose dark:prose-invert light w-full break-words`}> */}
                   <div className="markdown prose dark:prose-invert light w-full break-words">
-                    {!isCreatedByUser && !searchResult ? (
+                    {/* {!isCreatedByUser && !searchResult ? (
                       <TextWrapper
                         text={text}
                         generateCursor={generateCursor}
                       />
                     ) : (
                       text
-                    )}
+                    )} */}
+                    <Content content={text} generateCursor={generateCursor}/>
                   </div>
                 </div>
               )}

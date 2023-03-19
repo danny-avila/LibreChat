@@ -315,4 +315,42 @@ const languages = new Set([
  'zephir',
 ]);
 
-module.exports = languages;
+const langSubset = [
+  'python',
+  'javascript',
+  'java',
+  'go',
+  'bash',
+  'c',
+  'cpp',
+  'csharp',
+  'css',
+  'diff',
+  'graphql',
+  'json',
+  'kotlin',
+  'less',
+  'lua',
+  'makefile',
+  'markdown',
+  'objectivec',
+  'perl',
+  'php',
+  'php-template',
+  'plaintext',
+  'python-repl',
+  'r',
+  'ruby',
+  'rust',
+  'scss',
+  'shell',
+  'sql',
+  'swift',
+  'typescript',
+  'vbnet',
+  'wasm',
+  'xml',
+  'yaml',
+];
+
+module.exports = { languages, langSubset };
