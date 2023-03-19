@@ -21,7 +21,7 @@ router.post('/', async (req, res) => {
   const conversationId = oldConversationId || crypto.randomUUID();
   const isNewConversation = !oldConversationId;
 
-  const userMessageId = crypto.randomUUID();
+  const userMessageId = convo.messageId;
   const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000';
   let userMessage = {
     messageId: userMessageId,
@@ -114,7 +114,7 @@ const ask = async ({
       convo.conversationSignature || response.conversationSignature;
     userMessage.conversationId = response.conversationId || conversationId;
     userMessage.invocationId = response.invocationId;
-    userMessage.messageId = response.parentMessageId || userMessageId;
+    userMessage.messageId = response.details.requestId || userMessageId;
     if (!overrideParentMessageId)
       await saveMessage({ oldMessageId: userMessageId, ...userMessage });
 
@@ -141,9 +141,10 @@ const ask = async ({
     response.sender = model;
     // response.final = true;
 
+    response.messageId = response.details.messageId;
     // override the parentMessageId, for the regeneration.
     response.parentMessageId =
-      overrideParentMessageId || response.parentMessageId || userMessageId;
+      overrideParentMessageId || response.details.requestId || userMessageId;
 
     response.text = await handleText(response, true);
     await saveMessage(response);
