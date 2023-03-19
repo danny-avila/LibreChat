@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import Spinner from '../svg/Spinner';
+import { throttle } from 'lodash';
 import { CSSTransition } from 'react-transition-group';
 import ScrollToBottom from './ScrollToBottom';
 import MultiMessage from './MultiMessage';
@@ -34,10 +35,11 @@ export default function Messages({ messages, messageTree }) {
     };
   }, [messages]);
 
-  const scrollToBottom = useCallback(() => {
+  const scrollToBottom = useCallback(throttle(() => {
+    console.log('scrollToBottom');
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     setShowScrollButton(false);
-  }, [messagesEndRef]);
+  }, 750), [messagesEndRef]);
 
   const handleScroll = () => {
     const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
