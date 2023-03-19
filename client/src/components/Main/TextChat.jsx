@@ -17,7 +17,7 @@ import {
   refreshConversation
 } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
-import { setSubmitState, setSubmission } from '~/store/submitSlice';
+import { setSubmitState, toggleCursor } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
 import { useMessageHandler } from '../../utils/handleSubmit';
 
@@ -238,6 +238,7 @@ export default function TextChat({ messages }) {
 
       if (data.final) {
         convoHandler(data, currentState, currentMsg);
+        dispatch(toggleCursor());
         console.log('final', data);
       }
       if (data.created) {
@@ -247,6 +248,7 @@ export default function TextChat({ messages }) {
         let text = data.text || data.response;
         if (data.initial) {
           console.log(data);
+          dispatch(toggleCursor());
         }
         if (data.message) {
           latestResponseText = text;
@@ -268,6 +270,7 @@ export default function TextChat({ messages }) {
     events.onmessage = onMessage;
 
     events.oncancel = (e) => {
+      dispatch(toggleCursor(true));
       cancelHandler(latestResponseText, currentState, currentMsg);
     };
 
@@ -276,7 +279,7 @@ export default function TextChat({ messages }) {
       events.close();
 
       const data = JSON.parse(e.data);
-
+      dispatch(toggleCursor(true));
       errorHandler(data, currentState, currentMsg);
     };
 
@@ -284,6 +287,7 @@ export default function TextChat({ messages }) {
 
     return () => {
       events.removeEventListener('message', onMessage);
+      dispatch(toggleCursor(true));
       const isCancelled = events.readyState <= 1;
       events.close();
       if (isCancelled) {

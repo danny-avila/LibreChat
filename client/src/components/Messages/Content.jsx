@@ -27,10 +27,6 @@ const Content = React.memo(({ content }) => {
         components={{
           code,
           p,
-          text: blinker,
-          // li,
-          // ul,
-          // ol
         }}
       >
         {content}
@@ -62,10 +58,28 @@ const p = React.memo((props) => {
 
 const blinker = ({ node }) => {
   if (node.type === 'text' && node.value === '█') {
-    return <span className="result-streaming">{node.value}</span>
+    return <span className="result-streaming">{node.value}</span>;
   }
-  
+
   return null;
-}
+};
+
+const em = React.memo(({ node, ...props }) => {
+  if (
+    props.children[0] &&
+    typeof props.children[0] === 'string' &&
+    props.children[0].startsWith('^')
+  ) {
+    return <sup>{props.children[0].substring(1)}</sup>;
+  }
+  if (
+    props.children[0] &&
+    typeof props.children[0] === 'string' &&
+    props.children[0].startsWith('~')
+  ) {
+    return <sub>{props.children[0].substring(1)}</sub>;
+  }
+  return <i {...props} />;
+});
 
 export default Content;

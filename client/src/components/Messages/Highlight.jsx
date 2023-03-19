@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import Highlighter from 'react-highlight';
 import hljs from 'highlight.js';
 import { languages } from '~/utils/languages';
 
-export default function Highlight({language, code}) {
+const Highlight = React.memo(({ language, code }) => {
   const [highlightedCode, setHighlightedCode] = useState(code);
-  const lang = languages.has(language) ? language : 'shell';
+  const lang = language ? language : 'javascript';
 
   useEffect(() => {
     setHighlightedCode(hljs.highlight(code, { language: lang }).value);
@@ -12,7 +13,20 @@ export default function Highlight({language, code}) {
 
   return (
     <pre>
-      <code className={`language-${lang}`} dangerouslySetInnerHTML={{__html: highlightedCode}}/>
+      {!highlightedCode ? (
+        // <code className={`hljs !whitespace-pre language-${lang ? lang: 'javascript'}`}>
+        <Highlighter className={`hljs !whitespace-pre language-${lang ? lang : 'javascript'}`}>
+          {code}
+        </Highlighter>
+      ) : (
+        <code
+          className={`hljs language-${lang}`}
+          dangerouslySetInnerHTML={{ __html: highlightedCode }}
+        />
+      )}
     </pre>
   );
-}
+});
+
+export default Highlight;
+
