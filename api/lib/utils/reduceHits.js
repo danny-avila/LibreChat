@@ -36,7 +36,8 @@ function reduceHits(hits, titles = []) {
     }
 
     if (convo.title) {
-      titleMap[convo.conversationId] = convo._formatted.title;
+      // titleMap[convo.conversationId] = convo._formatted.title;
+      titleMap[convo.conversationId] = convo.title;
     }
   }
 

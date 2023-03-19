@@ -4,9 +4,12 @@ import MultiMessage from './MultiMessage';
 import { useSelector, useDispatch } from 'react-redux';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
-import { setConversation, setLatestMessage } from '../../store/convoSlice';
-import { getIconOfModel } from '../../utils';
-import { useMessageHandler } from '../../utils/handleSubmit';
+import { setConversation, setLatestMessage } from '~/store/convoSlice';
+import { setModel, setCustomModel, setCustomGpt, setDisabled } from '~/store/submitSlice';
+import { setMessages } from '~/store/messageSlice';
+import { fetchById } from '~/utils/fetchers';
+import { getIconOfModel } from '~/utils';
+import { useMessageHandler } from '~/utils/handleSubmit';
 
 export default function Message({
   message,
@@ -24,7 +27,7 @@ export default function Message({
   const [abortScroll, setAbort] = useState(false);
   const { sender, text, searchResult, isCreatedByUser, error, submitting } = message;
   const textEditor = useRef(null);
-  const convo = useSelector((state) => state.convo);
+  // const { convos } = useSelector((state) => state.convo);
   const last = !message?.children?.length;
   const edit = message.messageId == currentEditId;
   const { ask } = useMessageHandler();
@@ -74,6 +77,7 @@ export default function Message({
     sender,
     isCreatedByUser,
     model,
+    searchResult,
     chatGptLabel,
     promptPrefix,
     error
@@ -82,6 +86,10 @@ export default function Message({
   if (!isCreatedByUser)
     props.className =
       'w-full border-b border-black/10 bg-gray-50 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-100 dark:bg-[#444654]';
+
+  if (message.bg && searchResult) {
+    props.className = message.bg + ' cursor-pointer';
+  }
 
   // const wrapText = (text) => <TextWrapper text={text} generateCursor={generateCursor}/>;
 
@@ -98,11 +106,32 @@ export default function Message({
     enterEdit(true);
   };
 
+  const clickSearchResult = async () => {
+    if (!searchResult) return;
+    dispatch(setMessages([]))
+    const convoResponse = await fetchById('convos', message.conversationId);
+    const convo = convoResponse.data;
+    if (convo?.chatGptLabel) {
+      dispatch(setModel('chatgptCustom'));
+      dispatch(setCustomModel(convo.chatGptLabel.toLowerCase()));
+    } else {
+      dispatch(setModel(convo.model));
+      dispatch(setCustomModel(null));
+    }
+
+    dispatch(setCustomGpt(convo));
+    dispatch(setConversation(convo));
+    const {data} = await fetchById('messages', message.conversationId);
+    dispatch(setMessages(data))
+    dispatch(setDisabled(false));
+    };
+
   return (
     <>
       <div
         {...props}
         onWheel={handleWheel}
+        // onClick={clickSearchResult}
       >
         <div className="relative m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
           <div className="relative flex h-[30px] w-[30px] flex-col items-end text-right text-xs md:text-sm">
@@ -159,7 +188,7 @@ export default function Message({
                 <div className="flex min-h-[20px] flex-grow flex-col items-start gap-4 whitespace-pre-wrap">
                   {/* <div className={`${blinker ? 'result-streaming' : ''} markdown prose dark:prose-invert light w-full break-words`}> */}
                   <div className="markdown prose dark:prose-invert light w-full break-words">
-                    {(!isCreatedByUser || searchResult) ? (
+                    {!isCreatedByUser && !searchResult ? (
                       <TextWrapper
                         text={text}
                         generateCursor={generateCursor}
@@ -173,7 +202,7 @@ export default function Message({
             </div>
             <HoverButtons
               model={model}
-              visible={!error && isCreatedByUser && !edit}
+              visible={!error && isCreatedByUser && !edit && !searchResult}
               onClick={() => enterEdit()}
             />
             <div className="sibling-switch-container flex justify-between">
@@ -188,13 +217,13 @@ export default function Message({
           </div>
         </div>
       </div>
-      <MultiMessage
-        messageList={message.children}
-        messages={messages}
-        scrollToBottom={scrollToBottom}
-        currentEditId={currentEditId}
-        setCurrentEditId={setCurrentEditId}
-      />
+        <MultiMessage
+          messageList={message.children}
+          messages={messages}
+          scrollToBottom={scrollToBottom}
+          currentEditId={currentEditId}
+          setCurrentEditId={setCurrentEditId}
+        />
     </>
   );
 }

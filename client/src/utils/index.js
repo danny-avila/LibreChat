@@ -46,7 +46,9 @@ export const wrapperRegex = {
   newLineMatch: /^```(\n+)/
 };
 
-export const getIconOfModel = ({ size=30, sender, isCreatedByUser, model, chatGptLabel, error, ...props }) => {
+export const getIconOfModel = ({ size=30, sender, isCreatedByUser, searchResult, model, chatGptLabel, error, ...props }) => {
+  // 'ai' is used as 'model' is not accurate for search results
+  let ai = searchResult ? sender : model;
   const { button } = props;
   const bgColors = {
     chatgpt: `rgb(16, 163, 127${ button ? ', 0.75' : ''})`,
@@ -69,12 +71,12 @@ export const getIconOfModel = ({ size=30, sender, isCreatedByUser, model, chatGp
   else if (!isCreatedByUser) {
     // TODO: use model from convo, rather than submit
     // const { model, chatGptLabel, promptPrefix } = convo;
-    let background = bgColors[model];
-    const isBing = model === 'bingai' || model === 'sydney';
+    let background = bgColors[ai];
+    const isBing = ai === 'bingai' || ai === 'sydney';
   
     return (
       <div
-        title={chatGptLabel || model}
+        title={chatGptLabel || ai}
         style={
           { background: background || 'radial-gradient(circle at 90% 110%, #F0F0FA, #D0E0F9)', width: size, height: size }
         }
