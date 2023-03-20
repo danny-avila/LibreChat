@@ -25,10 +25,12 @@ app.use(session({
   saveUninitialized: true,
 }))
 
-app.get('/', routes.authenticatedOrRedirect, function (req, res) {
-  console.log(path.join(projectPath, 'public', 'index.html'));
-  res.sendFile(path.join(projectPath, 'public', 'index.html'));
-});
+/* chore: potential redirect error here, can only comment out this block; 
+    comment back in if using auth routes i guess */
+// app.get('/', routes.authenticatedOrRedirect, function (req, res) {
+//   console.log(path.join(projectPath, 'public', 'index.html'));
+//   res.sendFile(path.join(projectPath, 'public', 'index.html'));
+// });
 
 app.get('/api/me', function (req, res) {
   if (userSystemEnabled) {
