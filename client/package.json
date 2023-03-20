@@ -49,7 +49,8 @@
     "swr": "^2.0.3",
     "tailwind-merge": "^1.9.1",
     "tailwindcss-animate": "^1.0.5",
-    "url": "^0.11.0"
+    "url": "^0.11.0",
+    "uuidv4": "^6.2.13"
   },
   "devDependencies": {
     "@babel/cli": "^7.20.7",
