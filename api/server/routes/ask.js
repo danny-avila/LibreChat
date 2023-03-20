@@ -17,7 +17,9 @@ router.post('/', async (req, res) => {
     return handleError(res, { text: 'Prompt empty or too short' });
   }
 
+  console.log('model:', model, 'oldConvoId:', oldConversationId);
   const conversationId = oldConversationId || crypto.randomUUID();
+  console.log('conversationId after old:', conversationId);
 
   const userMessageId = crypto.randomUUID();
   const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000';
@@ -36,7 +38,7 @@ router.post('/', async (req, res) => {
     ...convo
   });
 
-  if (!overrideParentMessageId) {
+  if (!overrideParentMessageId && model !== 'chatgptBrowser') {
     await saveMessage(userMessage);
     await saveConvo(req?.session?.user?.username, { ...userMessage, model, ...convo });
   }
@@ -144,16 +146,22 @@ const ask = async ({
     // gptResponse.final = true;
     gptResponse.text = await handleText(gptResponse);
 
+    
     if (convo.chatGptLabel?.length > 0 && model === 'chatgptCustom') {
       gptResponse.chatGptLabel = convo.chatGptLabel;
     }
-
+    
     if (convo.promptPrefix?.length > 0 && model === 'chatgptCustom') {
       gptResponse.promptPrefix = convo.promptPrefix;
     }
 
     // override the parentMessageId, for the regeneration.
     gptResponse.parentMessageId = overrideParentMessageId || userMessageId;
+
+    /* this is a hacky solution to get the browserClient working right, will refactor later */
+    if (model === 'chatgptBrowser' && userParentMessageId.startsWith('000')) {
+      await saveMessage({ ...userMessage, conversationId: gptResponse.conversationId });
+    }
 
     await saveMessage(gptResponse);
     await saveConvo(req?.session?.user?.username, gptResponse);
@@ -171,7 +179,8 @@ const ask = async ({
       await saveConvo(
         req?.session?.user?.username,
         {
-          conversationId,
+          /* again, for sake of browser client, will soon refactor */
+          conversationId: model === 'chatgptBrowser' ? gptResponse.conversationId : conversationId,
           title
         }
       );
