@@ -160,12 +160,12 @@ export default function TextChat({ messages }) {
     } else if (model === 'bingai') {
       console.log('Bing data:', data);
       const { title } = data;
-      const { conversationSignature, clientId, conversationId, invocationId } =
+      const { conversationSignature, clientId, conversationId, invocationId, parentMessageId } =
         responseMessage;
       dispatch(
         setConversation({
           title,
-          parentMessageId: null,
+          parentMessageId,
           conversationSignature,
           clientId,
           conversationId,
