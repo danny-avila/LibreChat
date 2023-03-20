@@ -6,6 +6,7 @@ import { setMessages } from '~/store/messageSlice';
 import { setSubmitState, setSubmission } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
 import { setError } from '~/store/convoSlice';
+import {v4} from 'uuid';
 
 const useMessageHandler = () => {
   const dispatch = useDispatch();
@@ -27,7 +28,7 @@ const useMessageHandler = () => {
     
     // this is not a real messageId, it is used as placeholder before real messageId returned
     text = text.trim();
-    const fakeMessageId = '11111111-1111-1111-1111-111111111111';
+    const fakeMessageId = v4();
     const isCustomModel = model === 'chatgptCustom' || !initial[model];
     const sender = model === 'chatgptCustom' ? chatGptLabel : model;
     parentMessageId = parentMessageId || latestMessage?.messageId || '00000000-0000-0000-0000-000000000000';
