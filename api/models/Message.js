@@ -83,6 +83,23 @@ module.exports = {
       return { message: 'Error saving message' };
     }
   },
+  saveBingMessage: async ({ messageId, oldMessageId = messageId, conversationId, parentMessageId, sender, text, isCreatedByUser=false, error }) => {
+    try {
+      await Message.findOneAndUpdate({ messageId: oldMessageId }, {
+        messageId,
+        conversationId,
+        parentMessageId,
+        sender,
+        text,
+        isCreatedByUser,
+        error
+      }, { upsert: true, new: true });
+      return { messageId, conversationId, parentMessageId, sender, text, isCreatedByUser };
+    } catch (error) {
+      console.error(error);
+      return { message: 'Error saving message' };
+    }
+  },
   deleteMessagesSince: async ({ messageId, conversationId }) => {
     try {
       const message = await Message.findOne({ messageId }).exec()
