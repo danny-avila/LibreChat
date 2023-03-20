@@ -28,7 +28,13 @@ const currentSlice = createSlice({
       state.refreshConvoHint = state.refreshConvoHint + 1;
     },
     setConversation: (state, action) => {
-      return { ...state, ...action.payload };
+      // return { ...state, ...action.payload };
+
+      for (const key in action.payload) {
+        if (Object.hasOwnProperty.call(action.payload, key)) {
+          state[key] = action.payload[key];
+        }
+      }
     },
     setError: (state, action) => {
       state.error = action.payload;
