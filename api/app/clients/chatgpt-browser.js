@@ -24,6 +24,10 @@ const browserClient = async ({ text, onProgress, convo, abortController }) => {
     options = { ...options, ...convo };
   }
 
+  if (convo.parentMessageId.startsWith('0000')) {
+    delete options.conversationId;
+  }
+
   const res = await client.sendMessage(text, options);
   return res;
 };
