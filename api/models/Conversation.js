@@ -190,13 +190,19 @@ module.exports = {
     }
   },
   getConvo,
+  /* chore: this method is not properly error handled */
   getConvoTitle: async (user, conversationId) => {
     try {
       const convo = await getConvo(user, conversationId);
-      return convo.title;
+      /* ChatGPT Browser was triggering error here due to convo being saved later */
+      if (convo && !convo.title) {
+        return null;
+      } else {
+        return convo.title;
+      }
     } catch (error) {
       console.log(error);
-      return { message: 'Error getting conversation title' };
+      return 'Error getting conversation title';
     }
   },
   deleteConvos: async (user, filter) => {
