@@ -9,7 +9,7 @@ import Logout from './Logout';
 export default function NavLinks({ fetch, onSearchSuccess, clearSearch }) {
   return (
     <>
-      <SearchBar fetch={fetch} onSuccess={onSearchSuccess} clearSearch={clearSearch}/>
+      {/* <SearchBar fetch={fetch} onSuccess={onSearchSuccess} clearSearch={clearSearch}/> */}
       <ClearConvos />
       <DarkMode />
       <Logout />
