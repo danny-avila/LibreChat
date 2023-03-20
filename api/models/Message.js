@@ -55,12 +55,12 @@ const messageSchema = mongoose.Schema({
   }
 }, { timestamps: true });
 
-messageSchema.plugin(mongoMeili, {
-  host: process.env.MEILI_HOST,
-  apiKey: process.env.MEILI_KEY,
-  indexName: 'messages', // Will get created automatically if it doesn't exist already
-  primaryKey: 'messageId',
-});
+// messageSchema.plugin(mongoMeili, {
+//   host: process.env.MEILI_HOST,
+//   apiKey: process.env.MEILI_KEY,
+//   indexName: 'messages', // Will get created automatically if it doesn't exist already
+//   primaryKey: 'messageId',
+// });
 
 const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
 

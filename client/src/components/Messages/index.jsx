@@ -39,7 +39,7 @@ export default function Messages({ messages, messageTree }) {
     console.log('scrollToBottom');
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     setShowScrollButton(false);
-  }, 750), [messagesEndRef]);
+  }, 750, { leading: true }), [messagesEndRef]);
 
   const handleScroll = () => {
     const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
