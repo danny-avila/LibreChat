@@ -198,7 +198,8 @@ module.exports = {
       if (convo && !convo.title) {
         return null;
       } else {
-        return convo.title;
+        // TypeError: Cannot read properties of null (reading 'title')
+        return convo?.title || 'New Chat';
       }
     } catch (error) {
       console.log(error);
