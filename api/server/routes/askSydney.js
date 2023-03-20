@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const { titleConvo, askSydney } = require('../../app/');
-const { saveMessage, saveConvo, getConvoTitle } = require('../../models');
+const { saveBingMessage, saveConvo, getConvoTitle } = require('../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 
 router.post('/', async (req, res) => {
@@ -21,7 +21,7 @@ router.post('/', async (req, res) => {
   const conversationId = oldConversationId || crypto.randomUUID();
   const isNewConversation = !oldConversationId;
 
-  const userMessageId = crypto.randomUUID();
+  const userMessageId = convo.messageId;
   const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000';
   let userMessage = {
     messageId: userMessageId,
@@ -34,13 +34,13 @@ router.post('/', async (req, res) => {
 
   console.log('ask log', {
     model,
-    ...userMessage,
-    ...convo
+    ...convo,
+    ...userMessage
   });
 
   if (!overrideParentMessageId) {
-    await saveMessage(userMessage);
-    await saveConvo(req?.session?.user?.username, { ...userMessage, model, ...convo });
+    await saveBingMessage(userMessage);
+    await saveConvo(req?.session?.user?.username, { model, ...convo, ...userMessage });
   }
 
   return await ask({
@@ -100,9 +100,9 @@ const ask = async ({
         parentMessageId: overrideParentMessageId || userMessageId
       }),
       convo: {
+        ...convo,
         parentMessageId: userParentMessageId,
-        conversationId,
-        ...convo
+        conversationId
       },
       abortController
     });
@@ -114,9 +114,10 @@ const ask = async ({
       convo.conversationSignature || response.conversationSignature;
     userMessage.conversationId = response.conversationId || conversationId;
     userMessage.invocationId = response.invocationId;
+    userMessage.messageId = response.parentMessageId || userMessageId;
     // Unlike gpt and bing, Sydney will never accept our given userMessage.messageId, it will generate its own one.
     if (!overrideParentMessageId)
-      await saveMessage(userMessage);
+      await saveBingMessage({ oldMessageId: userMessageId, ...userMessage });
 
     // Save sydney response
     // response.id = response.messageId;
@@ -140,7 +141,7 @@ const ask = async ({
     // Save user message
     userMessage.conversationId = response.conversationId || conversationId;
     if (!overrideParentMessageId)
-      await saveMessage(userMessage);
+      await saveBingMessage(userMessage);
 
     // Bing API will not use our conversationId at the first time,
     // so change the placeholder conversationId to the real one.
@@ -158,8 +159,8 @@ const ask = async ({
 
     response.text = await handleText(response, true);
     // Save sydney response & convo, then send
-    await saveMessage(response);
-    await saveConvo(req?.session?.user?.username, { ...response, model, chatGptLabel: null, promptPrefix: null, ...convo });
+    await saveBingMessage(response);
+    await saveConvo(req?.session?.user?.username, { model, chatGptLabel: null, promptPrefix: null, ...convo, ...response });
     
     sendMessage(res, {
       title: await getConvoTitle(req?.session?.user?.username, conversationId),
@@ -191,7 +192,7 @@ const ask = async ({
       error: true,
       text: error.message
     };
-    await saveMessage(errorMessage);
+    await saveBingMessage(errorMessage);
     handleError(res, errorMessage);
   }
 };
