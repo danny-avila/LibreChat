@@ -69,7 +69,8 @@ module.exports = {
   Message,
   saveMessage: async ({ messageId, conversationId, parentMessageId, sender, text, isCreatedByUser=false, error }) => {
     try {
-      await Message.findOneAndUpdate({ messageId }, {
+      await Message.findOneAndUpdate({ messageId: oldMessageId }, {
+        messageId,
         conversationId,
         parentMessageId,
         sender,

@@ -6,9 +6,9 @@ export default function createPayload({ convo, message }) {
   if (!payload.conversationId)
     if (convo?.conversationId && convo?.parentMessageId) {
       payload = {
-        ...payload,
         conversationId: convo.conversationId,
-        parentMessageId: convo.parentMessageId || '00000000-0000-0000-0000-000000000000'
+        parentMessageId: convo.parentMessageId || '00000000-0000-0000-0000-000000000000',
+        ...payload
       };
     }
 

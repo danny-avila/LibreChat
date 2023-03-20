@@ -47,6 +47,10 @@ export default function Nav({ navVisible, setNavVisible }) {
       dispatch(setMessages(res.messages));
       dispatch(setDisabled(true));
     }
+
+    const convo = conversations.find(element => element.conversationId == conversationId)
+    if (convo) 
+      dispatch(setConversation(convo));
   };
 
   const fetch = useCallback(_.partialRight(searchFetcher.bind(null, () => setIsFetching(true)), onSearchSuccess), [dispatch]);
