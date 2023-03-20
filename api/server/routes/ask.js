@@ -38,10 +38,15 @@ router.post('/', async (req, res) => {
     ...convo
   });
 
-  if (!overrideParentMessageId && model !== 'chatgptBrowser') {
+  // Chore: This creates a loose a stranded initial message for chatgptBrowser
+  
+  if (!overrideParentMessageId) {
     await saveMessage(userMessage);
-    await saveConvo(req?.session?.user?.username, { ...userMessage, model, ...convo });
   }
+  
+if (!overrideParentMessageId && model !== 'chatgptBrowser') { 
+  await saveConvo(req?.session?.user?.username, { ...userMessage, model, ...convo });
+}
 
   return await ask({
     userMessage,
