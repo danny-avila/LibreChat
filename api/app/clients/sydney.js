@@ -2,7 +2,7 @@ require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
 
 const askSydney = async ({ text, onProgress, convo }) => {
-  const { BingAIClient } = (await import('chatgpt-latest'));
+  const { BingAIClient } = (await import('@waylaidwanderer/chatgpt-api'));
 
   const sydneyClient = new BingAIClient({
     // "_U" cookie from bing.com
