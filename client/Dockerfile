@@ -4,7 +4,7 @@ WORKDIR /client
 # copy package.json into the container at /client
 COPY package*.json /client/
 # install dependencies
-RUN npm install
+RUN npm ci
 # Copy the current directory contents into the container at /client
 COPY . /client/
 # Build webpack artifacts
