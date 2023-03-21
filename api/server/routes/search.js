@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { Message } = require('../../models/Message');
 const { Conversation, getConvosQueried } = require('../../models/Conversation');
-const { reduceMessages, reduceHits } = require('../../lib/utils/reduceHits');
+const { reduceHits } = require('../../lib/utils/reduceHits');
 // const { MeiliSearch } = require('meilisearch');
 const cache = new Map();
 
@@ -53,7 +53,7 @@ router.get('/', async function (req, res) {
     const result = await getConvosQueried(user, sortedHits, pageNumber);
     cache.set(q, result.cache);
     delete result.cache;
-    result.messages = messages.filter((message) => !result.filter.has(message.conversationId));
+    result.messages = messages.filter(message => !result.filter.has(message.conversationId));
     // console.log(result, messages.length);
     res.status(200).send(result);
   } catch (error) {
@@ -76,6 +76,10 @@ router.get('/test', async function (req, res) {
     return { ...rest, searchResult: true, text: _formatted.text };
   });
   res.send(messages);
+});
+
+router.get('/enable', async function (req, res) {
+  res.send(!!process.env.SEARCH);
 });
 
 module.exports = router;
