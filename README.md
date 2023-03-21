@@ -182,7 +182,7 @@ Here are my recently completed and planned features:
 - If using MongoDB Atlas, remove `&w=majority` from default connection string.
 
 ### Local
-- **Run npm** install in both the api and client directories
+- **Run npm** ci in both the api and client directories
 - **Provide** all credentials, (API keys, access tokens, and Mongo Connection String) in api/.env [(see .env example)](api/.env.example)
 - **Run** `npm run build` in /client/ dir, `npm start` in /api/ dir
 - **Visit** http://localhost:3080 (default port) & enjoy
