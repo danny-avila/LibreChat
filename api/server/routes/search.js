@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { MeiliSearch } = require('meilisearch');
 const { Message } = require('../../models/Message');
 const { Conversation, getConvosQueried } = require('../../models/Conversation');
 const { reduceHits } = require('../../lib/utils/reduceHits');
@@ -79,7 +80,21 @@ router.get('/test', async function (req, res) {
 });
 
 router.get('/enable', async function (req, res) {
-  res.send(!!process.env.SEARCH);
+  let result = false;
+  const client = new MeiliSearch({
+    host: process.env.MEILI_HOST,
+    apiKey: process.env.MEILI_KEY
+  });
+  
+  try {
+    const { status } = await client.health();
+    console.log(`Meilisearch: ${status}`);
+    result = status === 'available' && !!process.env.SEARCH;
+    return res.send(result);
+  } catch(error) {
+    console.error(error);
+    return res.send(false);
+  }
 });
 
 module.exports = router;
