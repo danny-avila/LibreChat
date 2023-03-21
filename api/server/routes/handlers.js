@@ -1,6 +1,9 @@
 const _ = require('lodash');
 const citationRegex = /\[\^\d+?\^]/g;
-const { getCitations, citeText, detectCode } = require('../../app/');
+const backtick = /(?<!`)[`](?!`)/g;
+// const singleBacktick = /(?<!`)[`](?!`)/;
+const cursorDefault = '<span class="result-streaming">█</span>';
+const { getCitations, citeText } = require('../../app/');
 
 const handleError = (res, message) => {
   res.write(`event: error\ndata: ${JSON.stringify(message)}\n\n`);
@@ -16,11 +19,42 @@ const sendMessage = (res, message) => {
 
 const createOnProgress = () => {
   let i = 0;
+  let code = '';
   let tokens = '';
+  let precode = '';
+  let blockCount = 0;
+  let codeBlock = false;
+  let cursor = cursorDefault;
 
   const progressCallback = async (partial, { res, text, bing = false, ...rest }) => {
-    tokens += partial === text ? '' : partial;
+    let chunk = partial === text ? '' : partial;
+    tokens += chunk;
+    precode += chunk;
     tokens = tokens.replaceAll('[DONE]', '');
+
+    if (codeBlock) {
+      code += chunk;
+    }
+
+    if (precode.includes('```') && codeBlock) {
+      codeBlock = false;
+      cursor = cursorDefault;
+      precode = precode.replace(/```/g, '');
+      code = '';
+    }
+
+    if (precode.includes('```') && code === '') {
+      precode = precode.replace(/```/g, '');
+      codeBlock = true;
+      blockCount++;
+      cursor = blockCount > 1 ? '█\n\n```' : '█\n\n';
+    }
+
+    const backticks = precode.match(backtick);
+    if (backticks && !codeBlock && cursor === cursorDefault) {
+      precode = precode.replace(backtick, '');
+      cursor = '█';
+    }
 
     if (tokens.match(/^\n/)) {
       tokens = tokens.replace(/^\n/, '');
@@ -30,7 +64,7 @@ const createOnProgress = () => {
       tokens = citeText(tokens, true);
     }
 
-    sendMessage(res, { text: tokens + '<span class="result-streaming">█</span>', message: true, initial: i === 0, ...rest });
+    sendMessage(res, { text: tokens + cursor, message: true, initial: i === 0, ...rest });
     i++;
   };
 
