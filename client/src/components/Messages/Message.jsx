@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import Wrapper from './Wrapper';
+import Wrapper from './Content/Wrapper';
 import MultiMessage from './MultiMessage';
 import { useSelector, useDispatch } from 'react-redux';
 import HoverButtons from './HoverButtons';
