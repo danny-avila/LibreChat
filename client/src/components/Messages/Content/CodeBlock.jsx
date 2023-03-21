@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
-import Clipboard from '../svg/Clipboard';
-import CheckMark from '../svg/CheckMark';
+import Clipboard from '~/components/svg/Clipboard';
+import CheckMark from '~/components/svg/CheckMark';
 
 const CodeBlock = ({ lang, codeChildren }) => {
   const codeRef = useRef(null);

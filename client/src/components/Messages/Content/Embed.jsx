@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import Clipboard from '../svg/Clipboard';
-import CheckMark from '../svg/CheckMark';
+import Clipboard from '~/components/svg/Clipboard';
+import CheckMark from '~/components/svg/CheckMark';
 
 const Embed = React.memo(({ children, lang = '', code, matched }) => {
   const [buttonText, setButtonText] = useState('Copy code');
