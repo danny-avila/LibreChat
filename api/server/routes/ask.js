@@ -118,9 +118,9 @@ const ask = async ({
     });
 
     console.log('CLIENT RESPONSE', gptResponse);
+    gptResponse.text = gptResponse.response;
 
     if (!gptResponse.parentMessageId) {
-      gptResponse.text = gptResponse.response;
       // gptResponse.id = gptResponse.messageId;
       gptResponse.parentMessageId = overrideParentMessageId || userMessageId;
       // userMessage.conversationId = conversationId
