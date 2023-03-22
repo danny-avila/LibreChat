@@ -6,6 +6,10 @@ const { MeiliSearch } = require('meilisearch');
 // eslint-disable-next-line no-unused-vars
 async function indexSync(req, res, next) {
   try {
+    if (!process.env.MEILI_HOST || !process.env.MEILI_KEY || !process.env.SEARCH) {
+      throw new Error('Meilisearch not configured, search will be disabled.');
+    }
+
     const client = new MeiliSearch({
       host: process.env.MEILI_HOST,
       apiKey: process.env.MEILI_KEY
