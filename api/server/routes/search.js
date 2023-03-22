@@ -66,12 +66,14 @@ router.get('/', async function (req, res) {
       }
     }
     result.messages = activeMessages;
-    result.cache.messages = activeMessages;
-    cache.set(key, result.cache);
-    delete result.cache;
+    if (result.cache) {
+      result.cache.messages = activeMessages;
+      cache.set(key, result.cache);
+      delete result.cache;
+    }
     delete result.convoMap;
     // for debugging
-    // console.log(result, messages.length);
+    console.log(result, messages.length);
     res.status(200).send(result);
   } catch (error) {
     console.log(error);
