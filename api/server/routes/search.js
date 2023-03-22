@@ -4,6 +4,7 @@ const { MeiliSearch } = require('meilisearch');
 const { Message } = require('../../models/Message');
 const { Conversation, getConvosQueried } = require('../../models/Conversation');
 const { reduceHits } = require('../../lib/utils/reduceHits');
+const { cleanUpPrimaryKeyValue } = require('../../lib/utils/misc');
 const cache = new Map();
 
 router.get('/sync', async function (req, res) {
@@ -52,9 +53,25 @@ router.get('/', async function (req, res) {
     console.log('messages', messages.length, 'titles', titles.length);
     const sortedHits = reduceHits(messages, titles);
     const result = await getConvosQueried(user, sortedHits, pageNumber);
-    cache.set(q, result.cache);
+    cache.set(key, result.cache);
     delete result.cache;
-    result.messages = messages.filter(message => !result.filter.has(message.conversationId));
+    // result.messages = messages.filter(message => { });
+    // !result.filter.has(message.conversationId)
+
+    const activeMessages = [];
+    for (let i = 0; i < messages.length; i++) {
+      let message = messages[i];
+      if (message.conversationId.includes('--')) {
+        message.conversationId = cleanUpPrimaryKeyValue(message.conversationId);
+      }
+      if (result.convoMap[message.conversationId] && !message.error) {
+        message = { ...message, title: result.convoMap[message.conversationId].title };
+        activeMessages.push(message);
+      }
+    }
+    result.messages = activeMessages;
+    delete result.cache;
+    delete result.convoMap;
     // for debugging
     // console.log(result, messages.length);
     res.status(200).send(result);
@@ -89,7 +106,7 @@ router.get('/enable', async function (req, res) {
     });
 
     const { status } = await client.health();
-    console.log(`Meilisearch: ${status}`);
+    // console.log(`Meilisearch: ${status}`);
     result = status === 'available' && !!process.env.SEARCH;
     return res.send(result);
   } catch (error) {

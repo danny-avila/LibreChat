@@ -350,7 +350,7 @@ export default function TextChat({ messages }) {
   const isSearchView = messages?.[0]?.searchResult === true;
   const getPlaceholderText = () => {
     if (isSearchView) {
-      return 'Click a message to open its conversation.'
+      return 'Click a message title to open its conversation.'
     }
 
     if (disabled) {

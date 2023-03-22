@@ -21,31 +21,32 @@ export default function buildTree(messages, groupAll = false) {
   }
 
   // Group all messages into one tree
-  // let parentId = null;
-  // messages.forEach((message, i) => {
-  //   messageMap[message.messageId] = { ...message, bg: i % 2 === 0 ? even : odd, children: [] };
-  //   const currentMessage = messageMap[message.messageId];
-  //   const parentMessage = messageMap[parentId];
-  //   if (parentMessage) parentMessage.children.push(currentMessage);
-  //   else rootMessages.push(currentMessage);
-  //   parentId = message.messageId;
-  // });
-
-  // return rootMessages;
-
-  // Group all messages by conversation
-  // Traverse the messages array and store each element in messageMap.
-  rootMessages = {};
-  let parents = 0;
-  messages.forEach(message => {
-    if (message.conversationId in messageMap) {
-      messageMap[message.conversationId].children.push(message);
-    } else {
-      messageMap[message.conversationId] = { ...message, bg: parents % 2 === 0 ? even : odd, children: [] };
-      rootMessages[message.conversationId] = messageMap[message.conversationId];
-      parents++;
-    }
+  let parentId = null;
+  messages.forEach((message, i) => {
+    messageMap[message.messageId] = { ...message, bg: i % 2 === 0 ? even : odd, children: [] };
+    const currentMessage = messageMap[message.messageId];
+    const parentMessage = messageMap[parentId];
+    if (parentMessage) parentMessage.children.push(currentMessage);
+    else rootMessages.push(currentMessage);
+    parentId = message.messageId;
   });
 
-  return Object.values(rootMessages);
+  return rootMessages;
+
+  // Group all messages by conversation, doesn't look great
+  // Traverse the messages array and store each element in messageMap.
+  // rootMessages = {};
+  // let parents = 0;
+  // messages.forEach(message => {
+  //   if (message.conversationId in messageMap) {
+  //     messageMap[message.conversationId].children.push(message);
+  //   } else {
+  //     messageMap[message.conversationId] = { ...message, bg: parents % 2 === 0 ? even : odd, children: [] };
+  //     rootMessages.push(messageMap[message.conversationId]);
+  //     parents++;
+  //   }
+  // });
+
+  // // return Object.values(rootMessages);
+  // return rootMessages;
 }

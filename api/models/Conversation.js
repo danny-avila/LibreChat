@@ -81,6 +81,7 @@ module.exports = {
       }
 
       const cache = {};
+      const convoMap = {};
       const promises = [];
       // will handle a syncing solution soon
       const deletedConvoIds = [];
@@ -104,6 +105,7 @@ module.exports = {
             cache[page] = [];
           }
           cache[page].push(convo);
+          convoMap[convo.conversationId] = convo;
           return true;
         }
       });
@@ -120,7 +122,8 @@ module.exports = {
         pageNumber,
         pageSize,
         // will handle a syncing solution soon
-        filter: new Set(deletedConvoIds)
+        filter: new Set(deletedConvoIds),
+        convoMap
       };
     } catch (error) {
       console.log(error);

@@ -16,7 +16,7 @@ async function indexSync(req, res, next) {
     });
 
     const { status } = await client.health();
-    console.log(`Meilisearch: ${status}`);
+    // console.log(`Meilisearch: ${status}`);
     const result = status === 'available' && !!process.env.SEARCH;
 
     if (!result) {
