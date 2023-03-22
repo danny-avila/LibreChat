@@ -2,7 +2,7 @@ version: "3.4"
 
 services:
   # client:
-  #   image: react-client
+  #   image: nginx-client
   #   build:
   #     context: .
   #     target: nginx-client
