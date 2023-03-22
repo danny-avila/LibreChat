@@ -4,6 +4,8 @@ import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
+// import supersub from 'remark-supersub'
+import remarkSubSuper from 'remark-sub-super';
 import CodeBlock from './CodeBlock';
 import { langSubset } from '~/utils/languages';
 
@@ -11,7 +13,7 @@ const Content = React.memo(({ content }) => {
   return (
     <>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }], remarkSubSuper]}
         rehypePlugins={[
           [rehypeKatex, { output: 'mathml' }],
           [
@@ -23,10 +25,15 @@ const Content = React.memo(({ content }) => {
             }
           ]
         ]}
+        renderers={{
+          sub: 'sub',
+          sup: 'sup',
+        }}
         linkTarget="_new"
         components={{
           code,
           p,
+          // em,
         }}
       >
         {content}

@@ -4,7 +4,7 @@ const { MeiliSearch } = require('meilisearch');
 const { Message } = require('../../models/Message');
 const { Conversation, getConvosQueried } = require('../../models/Conversation');
 const { reduceHits } = require('../../lib/utils/reduceHits');
-const { cleanUpPrimaryKeyValue } = require('../../lib/utils/misc');
+const { replaceSup, cleanUpPrimaryKeyValue } = require('../../lib/utils/misc');
 const cache = new Map();
 
 router.get('/sync', async function (req, res) {
@@ -46,7 +46,7 @@ router.get('/', async function (req, res) {
       return {
         ...rest,
         searchResult: true,
-        text: _formatted.text
+        text: replaceSup(_formatted.text)
       };
     });
     const titles = (await Conversation.meiliSearch(q)).hits;
