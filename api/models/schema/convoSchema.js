@@ -53,12 +53,14 @@ const convoSchema = mongoose.Schema(
   { timestamps: true }
 );
 
-convoSchema.plugin(mongoMeili, {
-  host: process.env.MEILI_HOST,
-  apiKey: process.env.MEILI_KEY,
-  indexName: 'convos', // Will get created automatically if it doesn't exist already
-  primaryKey: 'conversationId'
-});
+if (process.env.MEILI_HOST && process.env.MEILI_KEY) {
+  convoSchema.plugin(mongoMeili, {
+    host: process.env.MEILI_HOST,
+    apiKey: process.env.MEILI_KEY,
+    indexName: 'convos', // Will get created automatically if it doesn't exist already
+    primaryKey: 'conversationId'
+  });
+}
 
 const Conversation = mongoose.models.Conversation || mongoose.model('Conversation', convoSchema);
 
