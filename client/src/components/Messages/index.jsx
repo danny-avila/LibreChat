@@ -9,7 +9,7 @@ import { useSelector } from 'react-redux';
 export default function Messages({ messages, messageTree }) {
   const [currentEditId, setCurrentEditId] = useState(-1);
   const { conversationId } = useSelector((state) => state.convo);
-  const { model, customModel, chatGptLabel } = useSelector((state) => state.submit);
+  const { model, customModel } = useSelector((state) => state.submit);
   const { models } = useSelector((state) => state.models);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const scrollableRef = useRef(null);
@@ -74,7 +74,7 @@ export default function Messages({ messages, messageTree }) {
           <div className="flex w-full items-center justify-center gap-1 border-b border-black/10 bg-gray-50 p-3 text-sm text-gray-500 dark:border-gray-900/50 dark:bg-gray-700 dark:text-gray-300">
             Model: {modelName} {customModel ? `(${customModel})` : null}
           </div>
-          {(messageTree.length === 0 || messages.length === 0 || !messages) ? (
+          {(messageTree.length === 0 || !messages) ? (
             <Spinner />
           ) : (
             <>
