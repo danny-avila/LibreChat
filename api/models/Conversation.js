@@ -1,69 +1,5 @@
-const mongoose = require('mongoose');
-const mongoMeili = require('../lib/db/mongoMeili');
+const { Conversation } = require('./schema/');
 const { getMessages, deleteMessages } = require('./Message');
-
-const convoSchema = mongoose.Schema(
-  {
-    conversationId: {
-      type: String,
-      unique: true,
-      required: true,
-      index: true,
-      meiliIndex: true
-    },
-    parentMessageId: {
-      type: String,
-      required: true
-    },
-    title: {
-      type: String,
-      default: 'New Chat',
-      meiliIndex: true
-    },
-    jailbreakConversationId: {
-      type: String,
-      default: null
-    },
-    conversationSignature: {
-      type: String,
-      default: null
-    },
-    clientId: {
-      type: String
-    },
-    invocationId: {
-      type: String
-    },
-    chatGptLabel: {
-      type: String,
-      default: null
-    },
-    promptPrefix: {
-      type: String,
-      default: null
-    },
-    model: {
-      type: String,
-      required: true
-    },
-    user: {
-      type: String
-    },
-    suggestions: [{ type: String }],
-    messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }]
-  },
-  { timestamps: true }
-);
-
-// convoSchema.plugin(mongoMeili, {
-//   host: process.env.MEILI_HOST,
-//   apiKey: process.env.MEILI_KEY,
-//   indexName: 'convos', // Will get created automatically if it doesn't exist already
-//   primaryKey: 'conversationId'
-// });
-
-const Conversation =
-  mongoose.models.Conversation || mongoose.model('Conversation', convoSchema);
 
 const getConvo = async (user, conversationId) => {
   try {
@@ -147,7 +83,7 @@ module.exports = {
       // will handle a syncing solution soon
       const deletedConvoIds = [];
 
-      convoIds.forEach((convo) =>
+      convoIds.forEach(convo =>
         promises.push(
           Conversation.findOne({
             user,
@@ -182,7 +118,7 @@ module.exports = {
         pageNumber,
         pageSize,
         // will handle a syncing solution soon
-        filter: new Set(deletedConvoIds),
+        filter: new Set(deletedConvoIds)
       };
     } catch (error) {
       console.log(error);

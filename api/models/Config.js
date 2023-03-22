@@ -49,16 +49,16 @@ const configSchema = mongoose.Schema(
 );
 
 // Instance method
-ConfigSchema.methods.incrementCount = function () {
+configSchema.methods.incrementCount = function () {
   this.startupCounts += 1;
 };
 
 // Static methods
-ConfigSchema.statics.findByTag = async function (tag) {
+configSchema.statics.findByTag = async function (tag) {
   return await this.findOne({ tag });
 };
 
-ConfigSchema.statics.updateByTag = async function (tag, update) {
+configSchema.statics.updateByTag = async function (tag, update) {
   return await this.findOneAndUpdate({ tag }, update, { new: true });
 };
 
