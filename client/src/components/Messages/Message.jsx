@@ -156,7 +156,9 @@ export default function Message({
                 classes={props.titleClass + ' rounded'}
                 subclasses="switch-result pl-2 pb-2"
                 onClick={clickSearchResult}
-              >{`${message.title} | ${message.sender}`}</SubRow>
+              >
+                <strong>{`${message.title} | ${message.sender}`}</strong>
+              </SubRow>
             )}
             <div className="flex flex-grow flex-col gap-3">
               {error ? (

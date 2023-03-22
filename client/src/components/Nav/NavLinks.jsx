@@ -10,8 +10,8 @@ export default function NavLinks({ fetch, onSearchSuccess, clearSearch }) {
   return (
     <>
       { !!searchEnabled && <SearchBar fetch={fetch} onSuccess={onSearchSuccess} clearSearch={clearSearch}/>}
-      <ClearConvos />
       <DarkMode />
+      <ClearConvos />
       <Logout />
     </>
   );

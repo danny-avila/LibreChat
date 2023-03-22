@@ -23,8 +23,8 @@ router.get('/', async function (req, res) {
     if (cache.has(key)) {
       console.log('cache hit', key);
       const cached = cache.get(key);
-      const { pages, pageSize } = cached;
-      res.status(200).send({ conversations: cached[pageNumber], pages, pageNumber, pageSize });
+      const { pages, pageSize, messages } = cached;
+      res.status(200).send({ conversations: cached[pageNumber], pages, pageNumber, pageSize, messages });
       return;
     } else {
       cache.clear();
@@ -53,8 +53,6 @@ router.get('/', async function (req, res) {
     console.log('messages', messages.length, 'titles', titles.length);
     const sortedHits = reduceHits(messages, titles);
     const result = await getConvosQueried(user, sortedHits, pageNumber);
-    cache.set(key, result.cache);
-    delete result.cache;
 
     const activeMessages = [];
     for (let i = 0; i < messages.length; i++) {
@@ -68,6 +66,8 @@ router.get('/', async function (req, res) {
       }
     }
     result.messages = activeMessages;
+    result.cache.messages = activeMessages;
+    cache.set(key, result.cache);
     delete result.cache;
     delete result.convoMap;
     // for debugging
