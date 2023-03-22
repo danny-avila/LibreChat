@@ -193,7 +193,7 @@ module.exports = function mongoMeili(schema, options) {
   schema.post('remove', function (doc) {
     doc.postRemoveHook();
   });
-  schema.post('deleteMany', function (doc) {
+  schema.post('deleteMany', function () {
     // console.log('deleteMany hook', doc);
     if (Object.prototype.hasOwnProperty.call(schema.obj, 'messages')) {
       console.log('Syncing convos...');
