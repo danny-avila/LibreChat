@@ -149,6 +149,7 @@ module.exports = {
   },
   deleteConvos: async (user, filter) => {
     let deleteCount = await Conversation.deleteMany({ ...filter, user }).exec();
+    console.log('deleteCount', deleteCount);
     deleteCount.messages = await deleteMessages(filter);
     return deleteCount;
   }

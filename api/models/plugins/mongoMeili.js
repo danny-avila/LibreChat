@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const { MeiliSearch } = require('meilisearch');
 const { cleanUpPrimaryKeyValue } = require('../../lib/utils/misc');
 const _ = require('lodash');
@@ -191,6 +192,18 @@ module.exports = function mongoMeili(schema, options) {
   });
   schema.post('remove', function (doc) {
     doc.postRemoveHook();
+  });
+  schema.post('deleteMany', function (doc) {
+    // console.log('deleteMany hook', doc);
+    if (Object.prototype.hasOwnProperty.call(schema.obj, 'messages')) {
+      console.log('Syncing convos...');
+      mongoose.model('Conversation').syncWithMeili();
+    } 
+    
+    if (Object.prototype.hasOwnProperty.call(schema.obj, 'messageId')) {
+      console.log('Syncing messages...');
+      mongoose.model('Message').syncWithMeili();
+    }
   });
   schema.post('findOneAndUpdate', function (doc) {
     doc.postSaveHook();
