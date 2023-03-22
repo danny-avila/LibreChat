@@ -50,12 +50,13 @@ router.get('/', async function (req, res) {
       };
     });
     const titles = (await Conversation.meiliSearch(q)).hits;
+    console.log('messages', messages.length, 'titles', titles.length);
     const sortedHits = reduceHits(messages, titles);
     const result = await getConvosQueried(user, sortedHits, pageNumber);
     cache.set(q, result.cache);
     delete result.cache;
-    result.messages = messages.filter((message) => !result.filter.has(message.conversationId));
-    // console.log(result, messages.length);
+    result.messages = messages.filter(message => !result.filter.has(message.conversationId));
+    console.log(result, messages.length);
     res.status(200).send(result);
   } catch (error) {
     console.log(error);
