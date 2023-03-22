@@ -1,4 +1,4 @@
-const { Message } = require('./schema/');
+const Message = require('./schema/messageSchema');
 module.exports = {
   Message,
   saveMessage: async ({ messageId, conversationId, parentMessageId, sender, text, isCreatedByUser=false, error }) => {

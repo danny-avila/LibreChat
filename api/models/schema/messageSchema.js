@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
-module.exports = mongoose.Schema({
+const mongoMeili = require('../plugins/mongoMeili');
+const messageSchema = mongoose.Schema({
   messageId: {
     type: String,
     unique: true,
@@ -52,3 +53,14 @@ module.exports = mongoose.Schema({
     default: false 
   }
 }, { timestamps: true });
+
+messageSchema.plugin(mongoMeili, {
+  host: process.env.MEILI_HOST,
+  apiKey: process.env.MEILI_KEY,
+  indexName: 'messages',
+  primaryKey: 'messageId'
+});
+
+const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
+
+module.exports = Message;
