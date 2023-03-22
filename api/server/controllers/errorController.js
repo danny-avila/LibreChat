@@ -3,11 +3,13 @@ const handleDuplicateKeyError = (err, res) => {
   const field = Object.keys(err.keyValue);
   const code = 409;
   const error = `An document with that ${field} already exists.`;
+  console.log('congrats you hit the duped keys error');
   res.status(code).send({ messages: error, fields: field });
 };
 
 //handle validation errors
 const handleValidationError = (err, res) => {
+  console.log('congrats you hit the validation middleware');
   let errors = Object.values(err.errors).map(el => el.message);
   let fields = Object.values(err.errors).map(el => el.path);
   let code = 400;

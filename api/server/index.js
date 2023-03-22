@@ -81,7 +81,7 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
 
 let messageCount = 0;
 process.on('uncaughtException', (err) => {
-  // console.error('There was an uncaught error:', err.message);
+  console.error('There was an uncaught error:', err.message);
   if (err.message.includes('fetch failed')) {
     if (messageCount === 0) console.error('Meilisearch error, search will be disabled');
     messageCount++;
