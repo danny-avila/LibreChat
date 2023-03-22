@@ -7,7 +7,7 @@ const Wrapper = React.memo(({ text, generateCursor, isCreatedByUser, searchResul
     return (
       <Content
         content={text}
-        generateCursor={generateCursor}
+        isCreatedByUser={isCreatedByUser}
       />
     );
   } else if (!isCreatedByUser) {

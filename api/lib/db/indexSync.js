@@ -43,8 +43,21 @@ async function indexSync(req, res, next) {
       await Conversation.syncWithMeili();
     }
   } catch (err) {
-    console.error(err);
-    // res.status(500).json({ error: 'Server error' });
+    // console.log('in index sync');
+    if (err.message.includes('not found')) {
+      console.log('Creating indices...');
+      setTimeout(async () => {
+        try {
+          await Message.syncWithMeili();
+          await Conversation.syncWithMeili();
+        } catch (err) {
+          console.error('Trouble creating indices, try restarting the server.');
+        }
+      }, 750);
+    } else {
+      console.error(err);
+      // res.status(500).json({ error: 'Server error' });
+    }
   }
 }
 

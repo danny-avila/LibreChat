@@ -4,7 +4,7 @@ const { MeiliSearch } = require('meilisearch');
 const { Message } = require('../../models/Message');
 const { Conversation, getConvosQueried } = require('../../models/Conversation');
 const { reduceHits } = require('../../lib/utils/reduceHits');
-const { replaceSup, cleanUpPrimaryKeyValue } = require('../../lib/utils/misc');
+const { cleanUpPrimaryKeyValue } = require('../../lib/utils/misc');
 const cache = new Map();
 
 router.get('/sync', async function (req, res) {
@@ -46,7 +46,7 @@ router.get('/', async function (req, res) {
       return {
         ...rest,
         searchResult: true,
-        text: replaceSup(_formatted.text)
+        text: _formatted.text
       };
     });
     const titles = (await Conversation.meiliSearch(q)).hits;
@@ -55,8 +55,6 @@ router.get('/', async function (req, res) {
     const result = await getConvosQueried(user, sortedHits, pageNumber);
     cache.set(key, result.cache);
     delete result.cache;
-    // result.messages = messages.filter(message => { });
-    // !result.filter.has(message.conversationId)
 
     const activeMessages = [];
     for (let i = 0; i < messages.length; i++) {
