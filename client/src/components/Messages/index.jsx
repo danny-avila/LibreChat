@@ -36,7 +36,6 @@ export default function Messages({ messages, messageTree }) {
   }, [messages]);
 
   const scrollToBottom = useCallback(throttle(() => {
-    console.log('scrollToBottom');
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     setShowScrollButton(false);
   }, 750, { leading: true }), [messagesEndRef]);

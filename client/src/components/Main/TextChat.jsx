@@ -247,7 +247,6 @@ export default function TextChat({ messages }) {
       } else {
         let text = data.text || data.response;
         if (data.initial) {
-          console.log(data);
           dispatch(toggleCursor());
         }
         if (data.message) {
