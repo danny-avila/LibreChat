@@ -4,12 +4,16 @@ const initialState = {
   searchEnabled: false,
   search: false,
   query: '',
+  inputValue: '',
 };
 
 const currentSlice = createSlice({
   name: 'search',
   initialState,
   reducers: {
+    setInputValue: (state, action) => {
+      state.inputValue = action.payload;
+    },
     setSearchState: (state, action) => {
       state.searchEnabled = action.payload;
     },
@@ -26,6 +30,6 @@ const currentSlice = createSlice({
   }
 });
 
-export const { setSearchState, setQuery } = currentSlice.actions;
+export const { setInputValue, setSearchState, setQuery } = currentSlice.actions;
 
 export default currentSlice.reducer;

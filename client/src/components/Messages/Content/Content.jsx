@@ -53,7 +53,7 @@ const code = React.memo((props) => {
 });
 
 const p = React.memo((props) => {
-  return <p className="whitespace-pre-wrap ">{props?.children}</p>;
+  return <span className="whitespace-pre-wrap mb-2">{props?.children}</span>;
 });
 
 const blinker = ({ node }) => {

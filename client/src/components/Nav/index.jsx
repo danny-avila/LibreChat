@@ -54,8 +54,10 @@ export default function Nav({ navVisible, setNavVisible }) {
   const clearSearch = () => {
     setPage(1);
     dispatch(refreshConversation());
-    dispatch(setNewConvo());
-    dispatch(setMessages([]));
+    if (!conversationId) {
+      dispatch(setNewConvo());
+      dispatch(setMessages([]));
+    }
     dispatch(setDisabled(false));
   };
 
