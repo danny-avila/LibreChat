@@ -1,9 +1,21 @@
 version: "3.4"
 
 services:
+  # client:
+  #   image: react-client
+  #   build:
+  #     context: .
+  #     target: nginx-client
+  #   restart: always
+  #   ports:
+  #     - 3080:80
+  #   volumes:
+  #     - /client/node_modules
+  #   depends_on:
+  #     - api
   api:
     ports:
-      - 3080:3080
+      - 3080:3080               # Change it to 9000:3080 if you want to use nginx
     depends_on:
       - mongodb
     image: node-api
@@ -18,6 +30,7 @@ services:
       - NODE_ENV=production
       - MONGO_URI=mongodb://mongodb:27017/chatgpt-clone
     volumes:
+      - /client/node_modules
       - ./api:/api
       - /api/node_modules
   mongodb:
