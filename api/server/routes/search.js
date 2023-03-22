@@ -54,7 +54,7 @@ router.get('/', async function (req, res) {
     const result = await getConvosQueried(user, sortedHits, pageNumber);
     cache.set(q, result.cache);
     delete result.cache;
-    result.messages = messages.filter(message => !result.filter.has(message.conversationId));
+    result.messages = messages.filter((message) => !result.filter.has(message.conversationId));
     // console.log(result, messages.length);
     res.status(200).send(result);
   } catch (error) {
@@ -81,17 +81,17 @@ router.get('/test', async function (req, res) {
 
 router.get('/enable', async function (req, res) {
   let result = false;
-  const client = new MeiliSearch({
-    host: process.env.MEILI_HOST,
-    apiKey: process.env.MEILI_KEY
-  });
-  
   try {
+    const client = new MeiliSearch({
+      host: process.env.MEILI_HOST,
+      apiKey: process.env.MEILI_KEY
+    });
+
     const { status } = await client.health();
     console.log(`Meilisearch: ${status}`);
     result = status === 'available' && !!process.env.SEARCH;
     return res.send(result);
-  } catch(error) {
+  } catch (error) {
     console.error(error);
     return res.send(false);
   }
