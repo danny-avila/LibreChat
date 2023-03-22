@@ -57,10 +57,10 @@ const messageSchema = mongoose.Schema(
   { timestamps: true }
 );
 
-if (process.env.MEILI_HOST && process.env.MEILI_KEY) {
+if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
   messageSchema.plugin(mongoMeili, {
     host: process.env.MEILI_HOST,
-    apiKey: process.env.MEILI_KEY,
+    apiKey: process.env.MEILI_MASTER_KEY,
     indexName: 'messages',
     primaryKey: 'messageId'
   });

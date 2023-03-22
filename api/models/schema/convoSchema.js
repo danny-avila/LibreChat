@@ -53,10 +53,10 @@ const convoSchema = mongoose.Schema(
   { timestamps: true }
 );
 
-if (process.env.MEILI_HOST && process.env.MEILI_KEY) {
+if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
   convoSchema.plugin(mongoMeili, {
     host: process.env.MEILI_HOST,
-    apiKey: process.env.MEILI_KEY,
+    apiKey: process.env.MEILI_MASTER_KEY,
     indexName: 'convos', // Will get created automatically if it doesn't exist already
     primaryKey: 'conversationId'
   });
