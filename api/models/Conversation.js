@@ -1,4 +1,6 @@
-const { Conversation } = require('./schema/');
+// const { Conversation } = require('./plugins');
+const Conversation = require('./schema/convoSchema');
+const { cleanUpPrimaryKeyValue } = require('../lib/utils/misc');
 const { getMessages, deleteMessages } = require('./Message');
 
 const getConvo = async (user, conversationId) => {
@@ -87,7 +89,7 @@ module.exports = {
         promises.push(
           Conversation.findOne({
             user,
-            conversationId: convo.conversationId
+            conversationId: cleanUpPrimaryKeyValue(convo.conversationId)
           }).exec()
         )
       );
