@@ -4,7 +4,6 @@ const { MeiliSearch } = require('meilisearch');
 const { Message } = require('../../models/Message');
 const { Conversation, getConvosQueried } = require('../../models/Conversation');
 const { reduceHits } = require('../../lib/utils/reduceHits');
-// const { MeiliSearch } = require('meilisearch');
 const cache = new Map();
 
 router.get('/sync', async function (req, res) {
@@ -56,7 +55,8 @@ router.get('/', async function (req, res) {
     cache.set(q, result.cache);
     delete result.cache;
     result.messages = messages.filter(message => !result.filter.has(message.conversationId));
-    console.log(result, messages.length);
+    // for debugging
+    // console.log(result, messages.length);
     res.status(200).send(result);
   } catch (error) {
     console.log(error);
@@ -85,7 +85,7 @@ router.get('/enable', async function (req, res) {
   try {
     const client = new MeiliSearch({
       host: process.env.MEILI_HOST,
-      apiKey: process.env.MEILI_KEY
+      apiKey: process.env.MEILI_MASTER_KEY
     });
 
     const { status } = await client.health();
