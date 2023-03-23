@@ -16,10 +16,11 @@ https://user-images.githubusercontent.com/110412045/223754183-8b7f45ce-6517-4bd5
 
 </details>
 
+<details>
 <summary><strong>Previous Updates</strong></summary>
 <details>
-<details>
-<details>
+
+
 <summary><strong>2023-03-20</strong></summary>
 
 
@@ -41,6 +42,7 @@ On that note, I had to switch the default branch due to some breaking changes th
 Full details and [example here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.0.4). Message search is on the docket
 
 </details>
+<details>
 <summary><strong>2023-03-12</strong></summary>
 
 
@@ -128,7 +130,10 @@ Currently, this project is only functional with the `text-davinci-003` model.
 
 >  This is a work in progress. I'm building this in public. FYI there is still a lot of tech debt to cleanup. You can follow the progress here or on my [Linkedin](https://www.linkedin.com/in/danny-avila).
 
-Here are my recently completed and planned features:
+
+
+<details>
+<summary><strong>Here are my recently completed and planned features:</strong></summary>
 
 - [x] Persistent conversation
 - [x] Rename, delete conversations
@@ -152,6 +157,8 @@ Here are my recently completed and planned features:
 - [ ] Optional use of local storage for credentials
 - [ ] Deploy demo
 
+</details>
+
 ### Features
 
 - Response streaming identical to ChatGPT through server-sent events
@@ -165,10 +172,19 @@ Here are my recently completed and planned features:
 
 ### Tech Stack
 
-- Utilizes [node-chatgpt-api](https://github.com/waylaidwanderer/node-chatgpt-api)
+
+<details>
+<summary><strong>This project uses:</strong></summary>
+
+
+
+- [node-chatgpt-api](https://github.com/waylaidwanderer/node-chatgpt-api)
 - No React boilerplate/toolchain/clone tutorials, created from scratch with react@latest
 - Use of Tailwind CSS and [shadcn/ui](https://github.com/shadcn/ui) components
 - Docker, useSWR, Redux, Express, MongoDB, [Keyv](https://www.npmjs.com/package/keyv)
+</details>
+
+
 
 ## Getting Started
 
@@ -295,9 +311,15 @@ Please write me an express module, that serve the login and logout endpoint as a
 
 
 ### Updating
+
 - As the project is still a work-in-progress, you should pull the latest and run the steps over. Reset your browser cache/clear site data.
 
 ## Use Cases ##
+
+
+
+<details>
+<summary><strong> Why use this project? </strong></summary>
 
   - One stop shop for all conversational AIs, with the added bonus of searching past conversations.
   - Using the official API, you'd have to generate 7.5 million words to expense the same cost as ChatGPT Plus ($20).
@@ -314,6 +336,8 @@ Please write me an express module, that serve the login and logout endpoint as a
   - **ChatGPT Free is down.**
 
     ![use case example](./images/use_case.png "GPT is down! Plus is too expensive!")
+    
+    </details>
 
 
 ## Origin ##
