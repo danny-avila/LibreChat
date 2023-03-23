@@ -3,7 +3,7 @@ import React from 'react';
 import EditIcon from '../svg/EditIcon';
 
 export default function HoverButtons({ visible, onClick, model }) {
-  const isBing = model === 'bingai' || model === 'sydney';
+  const isBing = model === 'bingai';
   const enabled = !isBing;
 
   return (
