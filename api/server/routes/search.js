@@ -50,7 +50,7 @@ router.get('/', async function (req, res) {
       };
     });
     const titles = (await Conversation.meiliSearch(q)).hits;
-    console.log('messages', messages.length, 'titles', titles.length);
+    console.log('message hits:', messages.length, 'convo hits:', titles.length);
     const sortedHits = reduceHits(messages, titles);
     const result = await getConvosQueried(user, sortedHits, pageNumber);
 
@@ -73,7 +73,7 @@ router.get('/', async function (req, res) {
     }
     delete result.convoMap;
     // for debugging
-    console.log(result, messages.length);
+    // console.log(result, messages.length);
     res.status(200).send(result);
   } catch (error) {
     console.log(error);
