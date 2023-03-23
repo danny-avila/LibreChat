@@ -7,6 +7,19 @@ https://user-images.githubusercontent.com/110412045/223754183-8b7f45ce-6517-4bd5
   This project was started early in Feb '23, anticipating the release of the official ChatGPT API from OpenAI, and now uses it. Through this clone, you can avoid ChatGPT Plus in favor of free or pay-per-call APIs. I will soon deploy a demo of this app. Feel free to contribute, clone, or fork. Currently dockerized.
 
 ## Updates
+<details open>
+<summary><strong>2023-03-22</strong></summary>
+
+
+
+**Released [v0.0.6](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.0.6)**, the latest stable release before **Searching messages** goes live tomorrow. See exact updates to date in the tag link. By request, there is now also a **[community discord server](https://discord.gg/NGaa9RPCft)**
+
+</details>
+
+<summary><strong>Previous Updates</strong></summary>
+<details>
+<details>
+<details>
 <summary><strong>2023-03-20</strong></summary>
 
 
@@ -18,9 +31,6 @@ The above features are next and then I will have to focus on building the **test
 On that note, I had to switch the default branch due to some breaking changes that haven't been straight forward to debug, mainly related to node-chat-gpt the main dependency of the project. Thankfully, my working branch, now switched to default as main, is working as expected.
 
 </details>
-
-<details>
-<details>
 <details>
 <summary><strong>2023-03-16</strong></summary>
 
@@ -61,8 +71,6 @@ Due to increased interest in the repo, I've dockerized the app as of this update
 
 Also worth noting, the method to access the Free Version is no longer working, so I've removed it from model selection until further notice.
 </details>
-<summary><strong>Previous Updates</strong></summary>
-
 <details>
 <summary><strong>2023-03-04</strong></summary>
 Custom prompt prefixing and labeling is now supported through the official API. This nets some interesting results when you need ChatGPT for specific uses or entertainment. Select 'CustomGPT' in the model menu to configure this, and you can choose to save the configuration or reference it by conversation. Model selection will change by conversation.
@@ -324,7 +332,12 @@ This means my implementation or the underlying model may not behave exactly the 
   - This works in a similar way to ChatGPT, except I'm pretty sure they have some additional way of retrieving context from earlier messages when needed (which can probably be achieved with embeddings, but I consider that out-of-scope for now).
 
 ## Contributing
-If you'd like to contribute, please create a pull request with a detailed description of your changes.
+
+Contributions and suggestions welcome! Bug reports and fixes are welcome!
+
+For new features, components, or extensions, please open an issue and discuss before sending a PR. 
+
+- Join the [Discord community](https://discord.gg/NGaa9RPCft)
 
 ## License
 This project is licensed under the MIT License.
