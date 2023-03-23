@@ -3,14 +3,14 @@ import TextWrapper from './TextWrapper';
 import Content from './Content';
 
 const Wrapper = React.memo(({ text, generateCursor, isCreatedByUser, searchResult }) => {
-  if (!isCreatedByUser && searchResult) {
+  if (searchResult) {
     return (
       <Content
         content={text}
-        generateCursor={generateCursor}
+        isCreatedByUser={isCreatedByUser}
       />
     );
-  } else if (!isCreatedByUser && !searchResult) {
+  } else if (!isCreatedByUser) {
     return (
       <TextWrapper
         text={text}

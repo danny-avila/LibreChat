@@ -43,7 +43,7 @@ export default function Nav({ navVisible, setNavVisible }) {
     setPage(res.pageNumber);
     setPages(res.pages);
     setIsFetching(false);
-    if (res.messages) {
+    if (res.messages?.length > 0) {
       dispatch(setMessages(res.messages));
       dispatch(setDisabled(true));
     }
@@ -54,8 +54,10 @@ export default function Nav({ navVisible, setNavVisible }) {
   const clearSearch = () => {
     setPage(1);
     dispatch(refreshConversation());
-    dispatch(setNewConvo());
-    dispatch(setMessages([]));
+    if (!conversationId) {
+      dispatch(setNewConvo());
+      dispatch(setMessages([]));
+    }
     dispatch(setDisabled(false));
   };
 

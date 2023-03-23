@@ -1,69 +1,7 @@
-const mongoose = require('mongoose');
-const mongoMeili = require('../lib/db/mongoMeili');
+// const { Conversation } = require('./plugins');
+const Conversation = require('./schema/convoSchema');
+const { cleanUpPrimaryKeyValue } = require('../lib/utils/misc');
 const { getMessages, deleteMessages } = require('./Message');
-
-const convoSchema = mongoose.Schema(
-  {
-    conversationId: {
-      type: String,
-      unique: true,
-      required: true,
-      index: true,
-      meiliIndex: true
-    },
-    parentMessageId: {
-      type: String,
-      required: true
-    },
-    title: {
-      type: String,
-      default: 'New Chat',
-      meiliIndex: true
-    },
-    jailbreakConversationId: {
-      type: String,
-      default: null
-    },
-    conversationSignature: {
-      type: String,
-      default: null
-    },
-    clientId: {
-      type: String
-    },
-    invocationId: {
-      type: String
-    },
-    chatGptLabel: {
-      type: String,
-      default: null
-    },
-    promptPrefix: {
-      type: String,
-      default: null
-    },
-    model: {
-      type: String,
-      required: true
-    },
-    user: {
-      type: String
-    },
-    suggestions: [{ type: String }],
-    messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }]
-  },
-  { timestamps: true }
-);
-
-// convoSchema.plugin(mongoMeili, {
-//   host: process.env.MEILI_HOST,
-//   apiKey: process.env.MEILI_KEY,
-//   indexName: 'convos', // Will get created automatically if it doesn't exist already
-//   primaryKey: 'conversationId'
-// });
-
-const Conversation =
-  mongoose.models.Conversation || mongoose.model('Conversation', convoSchema);
 
 const getConvo = async (user, conversationId) => {
   try {
@@ -143,15 +81,16 @@ module.exports = {
       }
 
       const cache = {};
+      const convoMap = {};
       const promises = [];
       // will handle a syncing solution soon
       const deletedConvoIds = [];
 
-      convoIds.forEach((convo) =>
+      convoIds.forEach(convo =>
         promises.push(
           Conversation.findOne({
             user,
-            conversationId: convo.conversationId
+            conversationId: cleanUpPrimaryKeyValue(convo.conversationId)
           }).exec()
         )
       );
@@ -166,6 +105,7 @@ module.exports = {
             cache[page] = [];
           }
           cache[page].push(convo);
+          convoMap[convo.conversationId] = convo;
           return true;
         }
       });
@@ -183,6 +123,7 @@ module.exports = {
         pageSize,
         // will handle a syncing solution soon
         filter: new Set(deletedConvoIds),
+        convoMap
       };
     } catch (error) {
       console.log(error);
@@ -208,6 +149,7 @@ module.exports = {
   },
   deleteConvos: async (user, filter) => {
     let deleteCount = await Conversation.deleteMany({ ...filter, user }).exec();
+    console.log('deleteCount', deleteCount);
     deleteCount.messages = await deleteMessages(filter);
     return deleteCount;
   }

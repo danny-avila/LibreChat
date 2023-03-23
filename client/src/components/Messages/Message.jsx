@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
+import SubRow from './Content/SubRow';
 import Wrapper from './Content/Wrapper';
 import MultiMessage from './MultiMessage';
-import { useSelector, useDispatch } from 'react-redux';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
 import { setConversation, setLatestMessage } from '~/store/convoSlice';
-import { setModel, setCustomModel, setCustomGpt, toggleCursor, setDisabled } from '~/store/submitSlice';
+import { setModel, setCustomModel, setCustomGpt, setDisabled } from '~/store/submitSlice';
 import { setMessages } from '~/store/messageSlice';
 import { fetchById } from '~/utils/fetchers';
 import { getIconOfModel } from '~/utils';
@@ -21,17 +22,15 @@ export default function Message({
   siblingCount,
   setSiblingIdx
 }) {
-  const { isSubmitting, model, chatGptLabel, cursor, promptPrefix } = useSelector(
-    (state) => state.submit
-  );
+  const { isSubmitting, model, chatGptLabel, cursor, promptPrefix } = useSelector(state => state.submit);
   const [abortScroll, setAbort] = useState(false);
   const { sender, text, searchResult, isCreatedByUser, error, submitting } = message;
   const textEditor = useRef(null);
-  // const { convos } = useSelector((state) => state.convo);
   const last = !message?.children?.length;
   const edit = message.messageId == currentEditId;
   const { ask } = useMessageHandler();
   const dispatch = useDispatch();
+  // const currentConvo = convoMap[message.conversationId];
 
   // const notUser = !isCreatedByUser; // sender.toLowerCase() !== 'user';
   // const blinker = submitting && isSubmitting && last && !isCreatedByUser;
@@ -62,7 +61,7 @@ export default function Message({
     }
   }, [last, message]);
 
-  const enterEdit = (cancel) => setCurrentEditId(cancel ? -1 : message.messageId);
+  const enterEdit = cancel => setCurrentEditId(cancel ? -1 : message.messageId);
 
   const handleWheel = () => {
     if (blinker) {
@@ -92,10 +91,9 @@ export default function Message({
       'w-full border-b border-black/10 bg-gray-50 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-100 dark:bg-[#444654]';
 
   if (message.bg && searchResult) {
-    props.className = message.bg + ' cursor-pointer';
+    props.className = message.bg.split('hover')[0];
+    props.titleClass = message.bg.split(props.className)[1] + ' cursor-pointer';
   }
-
-  // const wrapText = (text) => <TextWrapper text={text} generateCursor={generateCursor}/>;
 
   const resubmitMessage = () => {
     const text = textEditor.current.innerText;
@@ -135,11 +133,11 @@ export default function Message({
       <div
         {...props}
         onWheel={handleWheel}
-        onClick={clickSearchResult}
+        // onClick={clickSearchResult}
       >
         <div className="relative m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
           <div className="relative flex h-[30px] w-[30px] flex-col items-end text-right text-xs md:text-sm">
-            {typeof icon === 'string' && icon.match(/[^\u0000-\u007F]+/) ? (
+            {typeof icon === 'string' && icon.match(/[^\\x00-\\x7F]+/) ? (
               <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>
             ) : (
               icon
@@ -153,6 +151,15 @@ export default function Message({
             </div>
           </div>
           <div className="relative flex w-[calc(100%-50px)] flex-col gap-1 whitespace-pre-wrap md:gap-3 lg:w-[calc(100%-115px)]">
+            {searchResult && (
+              <SubRow
+                classes={props.titleClass + ' rounded'}
+                subclasses="switch-result pl-2 pb-2"
+                onClick={clickSearchResult}
+              >
+                <strong>{`${message.title} | ${message.sender}`}</strong>
+              </SubRow>
+            )}
             <div className="flex flex-grow flex-col gap-3">
               {error ? (
                 <div className="flex flex min-h-[20px] flex-grow flex-col items-start gap-4 gap-2 whitespace-pre-wrap text-red-500">
@@ -207,15 +214,13 @@ export default function Message({
               visible={!error && isCreatedByUser && !edit && !searchResult}
               onClick={() => enterEdit()}
             />
-            <div className="sibling-switch-container flex justify-between">
-              <div className="flex items-center justify-center gap-1 self-center pt-2 text-xs">
-                <SiblingSwitch
-                  siblingIdx={siblingIdx}
-                  siblingCount={siblingCount}
-                  setSiblingIdx={setSiblingIdx}
-                />
-              </div>
-            </div>
+            <SubRow subclasses="switch-container">
+              <SiblingSwitch
+                siblingIdx={siblingIdx}
+                siblingCount={siblingCount}
+                setSiblingIdx={setSiblingIdx}
+              />
+            </SubRow>
           </div>
         </div>
       </div>

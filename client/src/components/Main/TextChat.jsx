@@ -247,7 +247,6 @@ export default function TextChat({ messages }) {
       } else {
         let text = data.text || data.response;
         if (data.initial) {
-          console.log(data);
           dispatch(toggleCursor());
         }
         if (data.message) {
@@ -350,7 +349,7 @@ export default function TextChat({ messages }) {
   const isSearchView = messages?.[0]?.searchResult === true;
   const getPlaceholderText = () => {
     if (isSearchView) {
-      return 'Click a message to open its conversation.'
+      return 'Click a message title to open its conversation.'
     }
 
     if (disabled) {
