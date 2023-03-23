@@ -110,7 +110,7 @@ router.get('/enable', async function (req, res) {
     result = status === 'available' && !!process.env.SEARCH;
     return res.send(result);
   } catch (error) {
-    console.error(error);
+    // console.error(error);
     return res.send(false);
   }
 });
