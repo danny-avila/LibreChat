@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Conversation = mongoose.models.Conversation;
 const Message = mongoose.models.Message;
 const { MeiliSearch } = require('meilisearch');
+let currentTimeout = null;
 
 // eslint-disable-next-line no-unused-vars
 async function indexSync(req, res, next) {
@@ -46,7 +47,7 @@ async function indexSync(req, res, next) {
     // console.log('in index sync');
     if (err.message.includes('not found')) {
       console.log('Creating indices...');
-      setTimeout(async () => {
+      currentTimeout = setTimeout(async () => {
         try {
           await Message.syncWithMeili();
           await Conversation.syncWithMeili();
@@ -60,5 +61,10 @@ async function indexSync(req, res, next) {
     }
   }
 }
+
+process.on('exit', () => {
+  console.log('Clearing sync timeouts before exiting...');
+  clearTimeout(currentTimeout);
+});
 
 module.exports = indexSync;
