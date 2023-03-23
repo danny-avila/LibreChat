@@ -8,6 +8,18 @@ https://user-images.githubusercontent.com/110412045/223754183-8b7f45ce-6517-4bd5
 
 ## Updates
 <details open>
+<summary><strong>2023-03-23</strong></summary>
+
+
+
+**Released [v0.1.0](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.1.0)**, **searching messages/conversations is live!** Up next is more custom parameters for customGpt's. Join the discord server for more immediate assistance and update: **[community discord server](https://discord.gg/NGaa9RPCft)**
+
+</details>
+
+<details>
+<summary><strong>Previous Updates</strong></summary>
+  
+<details>
 <summary><strong>2023-03-22</strong></summary>
 
 
@@ -15,12 +27,7 @@ https://user-images.githubusercontent.com/110412045/223754183-8b7f45ce-6517-4bd5
 **Released [v0.0.6](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.0.6)**, the latest stable release before **Searching messages** goes live tomorrow. See exact updates to date in the tag link. By request, there is now also a **[community discord server](https://discord.gg/NGaa9RPCft)**
 
 </details>
-
 <details>
-<summary><strong>Previous Updates</strong></summary>
-<details>
-
-
 <summary><strong>2023-03-20</strong></summary>
 
 
@@ -165,8 +172,9 @@ Currently, this project is only functional with the `text-davinci-003` model.
 - UI from original ChatGPT, including Dark mode
 - AI model selection (official ChatGPT API, BingAI, ChatGPT Free)
 - Create and Save custom ChatGPTs*
+- **3/23/23** -  Search all messages/conversations - [see details here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.1.0)
 
-^* ChatGPT can be 'customized' by setting a system message or prompt prefix and alternate 'role' to the API request
+^* ChatGPT can be 'customized' by setting a system message or prompt prefix and alternate 'role' to the API request^
 
 [More info here](https://platform.openai.com/docs/guides/chat/instructing-chat-models). Here's an [example from this app.]()
 
