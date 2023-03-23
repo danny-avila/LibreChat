@@ -1,4 +1,6 @@
+const mongoose = require('mongoose');
 const { MeiliSearch } = require('meilisearch');
+const { cleanUpPrimaryKeyValue } = require('../../lib/utils/misc');
 const _ = require('lodash');
 
 const validateOptions = function (options) {
@@ -54,7 +56,9 @@ const createMeiliMongooseModel = function ({ index, indexName, client, attribute
       if (populate) {
         // Find objects into mongodb matching `objectID` from Meili search
         const query = {};
-        query[primaryKey] = { $in: _.map(data.hits, primaryKey) };
+        // query[primaryKey] = { $in: _.map(data.hits, primaryKey) };
+        query[primaryKey] = _.map(data.hits, hit => cleanUpPrimaryKeyValue(hit[primaryKey]));
+        // console.log('query', query);
         const hitsFromMongoose = await this.find(
           query,
           _.reduce(
@@ -86,13 +90,18 @@ const createMeiliMongooseModel = function ({ index, indexName, client, attribute
     // Push new document to Meili
     async addObjectToMeili() {
       const object = _.pick(this.toJSON(), attributesToIndex);
+      // NOTE: MeiliSearch does not allow | in primary key, so we replace it with - for Bing convoIds
+      // object.conversationId = object.conversationId.replace(/\|/g, '-');
+      if (object.conversationId && object.conversationId.includes('|')) {
+        object.conversationId = object.conversationId.replace(/\|/g, '--');
+      }
 
       try {
         // console.log('Adding document to Meili', object);
         await index.addDocuments([object]);
       } catch (error) {
-        console.log('Error adding document to Meili');
-        console.error(error);
+        // console.log('Error adding document to Meili');
+        // console.error(error);
       }
 
       await this.collection.updateMany({ _id: this._id }, { $set: { _meiliIndex: true } });
@@ -100,7 +109,7 @@ const createMeiliMongooseModel = function ({ index, indexName, client, attribute
 
     // Update an existing document in Meili
     async updateObjectToMeili() {
-      const object = pick(this.toJSON(), attributesToIndex);
+      const object = _.pick(this.toJSON(), attributesToIndex);
       await index.updateDocuments([object]);
     }
 
@@ -183,6 +192,18 @@ module.exports = function mongoMeili(schema, options) {
   });
   schema.post('remove', function (doc) {
     doc.postRemoveHook();
+  });
+  schema.post('deleteMany', function () {
+    // console.log('deleteMany hook', doc);
+    if (Object.prototype.hasOwnProperty.call(schema.obj, 'messages')) {
+      console.log('Syncing convos...');
+      mongoose.model('Conversation').syncWithMeili();
+    } 
+    
+    if (Object.prototype.hasOwnProperty.call(schema.obj, 'messageId')) {
+      console.log('Syncing messages...');
+      mongoose.model('Message').syncWithMeili();
+    }
   });
   schema.post('findOneAndUpdate', function (doc) {
     doc.postSaveHook();

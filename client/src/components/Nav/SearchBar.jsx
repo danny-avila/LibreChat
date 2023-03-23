@@ -1,12 +1,13 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { debounce } from 'lodash';
-import { useDispatch } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { Search } from 'lucide-react';
-import { setQuery } from '~/store/searchSlice';
+import { setInputValue, setQuery } from '~/store/searchSlice';
 
 export default function SearchBar({ fetch, clearSearch }) {
   const dispatch = useDispatch();
-  const [inputValue, setInputValue] = useState('');
+  const { inputValue } = useSelector((state) => state.search);
+  // const [inputValue, setInputValue] = useState('');
 
   const debouncedChangeHandler = useCallback(
     debounce((q) => {
@@ -28,10 +29,9 @@ export default function SearchBar({ fetch, clearSearch }) {
      }
   };
 
-
   const changeHandler = (e) => {
     let q = e.target.value;
-    setInputValue(q);
+    dispatch(setInputValue(q));
     q = q.trim();
 
     if (q === '') {

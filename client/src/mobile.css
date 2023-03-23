@@ -22,10 +22,16 @@
 }
 
 @media (min-width: 1024px) {
-  .sibling-switch-container {
+  .switch-container {
     display: none;
   }
 }
+
+
+  .switch-result {
+    display: block !important;
+    visibility: visible;
+  }
 
 @media (max-width: 1024px) {
   /* .sibling-switch {

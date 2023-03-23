@@ -1,9 +1,10 @@
 import React from 'react';
 import { useDispatch } from 'react-redux';
-import { setNewConvo } from '~/store/convoSlice';
+import { setNewConvo, refreshConversation } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
-import { setSubmission } from '~/store/submitSlice';
+import { setSubmission, setDisabled } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
+import { setInputValue, setQuery } from '~/store/searchSlice';
 
 export default function NewChat() {
   const dispatch = useDispatch();
@@ -12,7 +13,11 @@ export default function NewChat() {
     dispatch(setText(''));
     dispatch(setMessages([]));
     dispatch(setNewConvo());
+    dispatch(refreshConversation());
     dispatch(setSubmission({}));
+    dispatch(setDisabled(false));
+    dispatch(setInputValue(''));
+    dispatch(setQuery(''));
   };
 
   return (

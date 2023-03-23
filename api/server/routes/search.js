@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const { MeiliSearch } = require('meilisearch');
 const { Message } = require('../../models/Message');
 const { Conversation, getConvosQueried } = require('../../models/Conversation');
-const { reduceMessages, reduceHits } = require('../../lib/utils/reduceHits');
-// const { MeiliSearch } = require('meilisearch');
+const { reduceHits } = require('../../lib/utils/reduceHits');
+const { cleanUpPrimaryKeyValue } = require('../../lib/utils/misc');
 const cache = new Map();
 
 router.get('/sync', async function (req, res) {
@@ -22,8 +23,8 @@ router.get('/', async function (req, res) {
     if (cache.has(key)) {
       console.log('cache hit', key);
       const cached = cache.get(key);
-      const { pages, pageSize } = cached;
-      res.status(200).send({ conversations: cached[pageNumber], pages, pageNumber, pageSize });
+      const { pages, pageSize, messages } = cached;
+      res.status(200).send({ conversations: cached[pageNumber], pages, pageNumber, pageSize, messages });
       return;
     } else {
       cache.clear();
@@ -49,11 +50,29 @@ router.get('/', async function (req, res) {
       };
     });
     const titles = (await Conversation.meiliSearch(q)).hits;
+    console.log('message hits:', messages.length, 'convo hits:', titles.length);
     const sortedHits = reduceHits(messages, titles);
     const result = await getConvosQueried(user, sortedHits, pageNumber);
-    cache.set(q, result.cache);
-    delete result.cache;
-    result.messages = messages.filter((message) => !result.filter.has(message.conversationId));
+
+    const activeMessages = [];
+    for (let i = 0; i < messages.length; i++) {
+      let message = messages[i];
+      if (message.conversationId.includes('--')) {
+        message.conversationId = cleanUpPrimaryKeyValue(message.conversationId);
+      }
+      if (result.convoMap[message.conversationId] && !message.error) {
+        message = { ...message, title: result.convoMap[message.conversationId].title };
+        activeMessages.push(message);
+      }
+    }
+    result.messages = activeMessages;
+    if (result.cache) {
+      result.cache.messages = activeMessages;
+      cache.set(key, result.cache);
+      delete result.cache;
+    }
+    delete result.convoMap;
+    // for debugging
     // console.log(result, messages.length);
     res.status(200).send(result);
   } catch (error) {
@@ -76,6 +95,24 @@ router.get('/test', async function (req, res) {
     return { ...rest, searchResult: true, text: _formatted.text };
   });
   res.send(messages);
+});
+
+router.get('/enable', async function (req, res) {
+  let result = false;
+  try {
+    const client = new MeiliSearch({
+      host: process.env.MEILI_HOST,
+      apiKey: process.env.MEILI_MASTER_KEY
+    });
+
+    const { status } = await client.health();
+    // console.log(`Meilisearch: ${status}`);
+    result = status === 'available' && !!process.env.SEARCH;
+    return res.send(result);
+  } catch (error) {
+    // console.error(error);
+    return res.send(false);
+  }
 });
 
 module.exports = router;

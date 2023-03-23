@@ -17,14 +17,15 @@ const initialState = {
   refreshConvoHint: 0,
   search: false,
   latestMessage: null,
-  convos: []
+  convos: [],
+  convoMap: {},
 };
 
 const currentSlice = createSlice({
   name: 'convo',
   initialState,
   reducers: {
-    refreshConversation: (state, action) => {
+    refreshConversation: (state) => {
       state.refreshConvoHint = state.refreshConvoHint + 1;
     },
     setConversation: (state, action) => {
@@ -69,6 +70,13 @@ const currentSlice = createSlice({
       } else {
         state.convos = convos.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       }
+
+      // state.convoMap = convos.reduce((acc, curr) => {
+      //   acc[curr.conversationId] = { ...curr };
+      //   delete acc[curr.conversationId].conversationId;
+      //   return acc;
+      // }, {});
+      
     },
     setPages: (state, action) => {
       state.pages = action.payload;

@@ -4,29 +4,33 @@ import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw'
 import CodeBlock from './CodeBlock';
 import { langSubset } from '~/utils/languages';
 
-const Content = React.memo(({ content }) => {
+const Content = React.memo(({ content, isCreatedByUser = false }) => {
+  const rehypePlugins = [
+    [rehypeKatex, { output: 'mathml' }],
+    [
+      rehypeHighlight,
+      {
+        detect: true,
+        ignoreMissing: true,
+        subset: langSubset
+      }
+    ],
+    [rehypeRaw],
+  ]
   return (
     <>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
-        rehypePlugins={[
-          [rehypeKatex, { output: 'mathml' }],
-          [
-            rehypeHighlight,
-            {
-              detect: true,
-              ignoreMissing: true,
-              subset: langSubset
-            }
-          ]
-        ]}
+        rehypePlugins={isCreatedByUser ? rehypePlugins.slice(-1) : rehypePlugins}
         linkTarget="_new"
         components={{
           code,
           p,
+          // em,
         }}
       >
         {content}
@@ -53,33 +57,33 @@ const code = React.memo((props) => {
 });
 
 const p = React.memo((props) => {
-  return <p className="whitespace-pre-wrap ">{props?.children}</p>;
+  return <span className="whitespace-pre-wrap mb-2">{props?.children}</span>;
 });
 
-const blinker = ({ node }) => {
-  if (node.type === 'text' && node.value === '█') {
-    return <span className="result-streaming">{node.value}</span>;
-  }
+// const blinker = ({ node }) => {
+//   if (node.type === 'text' && node.value === '█') {
+//     return <span className="result-streaming">{node.value}</span>;
+//   }
 
-  return null;
-};
+//   return null;
+// };
 
-const em = React.memo(({ node, ...props }) => {
-  if (
-    props.children[0] &&
-    typeof props.children[0] === 'string' &&
-    props.children[0].startsWith('^')
-  ) {
-    return <sup>{props.children[0].substring(1)}</sup>;
-  }
-  if (
-    props.children[0] &&
-    typeof props.children[0] === 'string' &&
-    props.children[0].startsWith('~')
-  ) {
-    return <sub>{props.children[0].substring(1)}</sub>;
-  }
-  return <i {...props} />;
-});
+// const em = React.memo(({ node, ...props }) => {
+//   if (
+//     props.children[0] &&
+//     typeof props.children[0] === 'string' &&
+//     props.children[0].startsWith('^')
+//   ) {
+//     return <sup>{props.children[0].substring(1)}</sup>;
+//   }
+//   if (
+//     props.children[0] &&
+//     typeof props.children[0] === 'string' &&
+//     props.children[0].startsWith('~')
+//   ) {
+//     return <sub>{props.children[0].substring(1)}</sub>;
+//   }
+//   return <i {...props} />;
+// });
 
 export default Content;
