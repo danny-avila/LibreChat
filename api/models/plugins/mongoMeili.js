@@ -100,8 +100,8 @@ const createMeiliMongooseModel = function ({ index, indexName, client, attribute
         // console.log('Adding document to Meili', object);
         await index.addDocuments([object]);
       } catch (error) {
-        console.log('Error adding document to Meili');
-        console.error(error);
+        // console.log('Error adding document to Meili');
+        // console.error(error);
       }
 
       await this.collection.updateMany({ _id: this._id }, { $set: { _meiliIndex: true } });
