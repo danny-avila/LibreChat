@@ -174,6 +174,8 @@ const ask = async ({
       await saveConvo(
         req?.session?.user?.username,
         {
+          ...convo,
+          ...response,
           conversationId,
           title
         }
