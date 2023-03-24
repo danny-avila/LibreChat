@@ -114,10 +114,8 @@ const ask = async ({
       convo.conversationSignature || response.conversationSignature;
     userMessage.conversationId = response.conversationId || conversationId;
     userMessage.invocationId = response.invocationId;
-    userMessage.messageId = response.parentMessageId || userMessageId;
     // Unlike gpt and bing, Sydney will never accept our given userMessage.messageId, it will generate its own one.
-    if (!overrideParentMessageId)
-      await saveBingMessage({ oldMessageId: userMessageId, ...userMessage });
+    userMessage.messageId = response.parentMessageId || userMessageId;
 
     // Save sydney response
     // response.id = response.messageId;
@@ -141,7 +139,7 @@ const ask = async ({
     // Save user message
     userMessage.conversationId = response.conversationId || conversationId;
     if (!overrideParentMessageId)
-      await saveBingMessage(userMessage);
+      await saveBingMessage({ oldMessageId: userMessageId, ...userMessage });
 
     // Bing API will not use our conversationId at the first time,
     // so change the placeholder conversationId to the real one.
@@ -176,6 +174,8 @@ const ask = async ({
       await saveConvo(
         req?.session?.user?.username,
         {
+          ...convo,
+          ...response,
           conversationId,
           title
         }
