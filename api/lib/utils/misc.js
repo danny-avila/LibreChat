@@ -1,6 +1,6 @@
 const cleanUpPrimaryKeyValue = (value) => {
   // For Bing convoId handling
-  return value.replace(/--/g, '-');
+  return value.replace(/--/g, '|');
 };
 
 function replaceSup(text) {
