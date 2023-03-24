@@ -8,8 +8,8 @@ import rehypeRaw from 'rehype-raw'
 import CodeBlock from './CodeBlock';
 import { langSubset } from '~/utils/languages';
 
-const Content = React.memo(({ content, isCreatedByUser = false }) => {
-  const rehypePlugins = [
+const Content = React.memo(({ content, isCreatedByUser = true }) => {
+  let rehypePlugins = [
     [rehypeKatex, { output: 'mathml' }],
     [
       rehypeHighlight,
@@ -20,12 +20,15 @@ const Content = React.memo(({ content, isCreatedByUser = false }) => {
       }
     ],
     [rehypeRaw],
-  ]
+  ];
+
+  rehypePlugins = isCreatedByUser ? rehypePlugins.slice(0, -1) : rehypePlugins;
+
   return (
     <>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
-        rehypePlugins={isCreatedByUser ? rehypePlugins.slice(-1) : rehypePlugins}
+        rehypePlugins={rehypePlugins}
         linkTarget="_new"
         components={{
           code,

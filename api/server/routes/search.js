@@ -15,7 +15,8 @@ router.get('/sync', async function (req, res) {
 
 router.get('/', async function (req, res) {
   try {
-    const user = req?.session?.user?.username;
+    let user = req?.session?.user?.username;
+    user = user ?? null;
     const { q } = req.query;
     const pageNumber = req.query.pageNumber || 1;
     const key = `${user || ''}${q}`;
@@ -50,8 +51,10 @@ router.get('/', async function (req, res) {
       };
     });
     const titles = (await Conversation.meiliSearch(q)).hits;
-    console.log('message hits:', messages.length, 'convo hits:', titles.length);
     const sortedHits = reduceHits(messages, titles);
+    // debugging:
+    // console.log('user:', user, 'message hits:', messages.length, 'convo hits:', titles.length);
+    // console.log('sorted hits:', sortedHits.length);
     const result = await getConvosQueried(user, sortedHits, pageNumber);
 
     const activeMessages = [];

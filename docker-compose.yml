@@ -34,6 +34,8 @@ services:
       - ./api:/api
       - /api/node_modules
   mongodb:
+    ports:
+      - 27018:27017
     image: mongo
     restart: always
     container_name: mongodb
