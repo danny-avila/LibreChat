@@ -14,7 +14,8 @@ export default function Conversations({ conversations, conversationId, moveToTop
                 conversationSignature: convo.conversationSignature,
                 parentMessageId: convo.parentMessageId || null,
                 clientId: convo.clientId,
-                invocationId: convo.invocationId
+                invocationId: convo.invocationId,
+                toneStyle: convo.toneStyle,
               }
             : null;
 

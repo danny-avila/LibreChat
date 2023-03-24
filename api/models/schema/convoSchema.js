@@ -32,6 +32,10 @@ const convoSchema = mongoose.Schema(
     invocationId: {
       type: String
     },
+    toneStyle: {
+      type: String,
+      default: null
+    },
     chatGptLabel: {
       type: String,
       default: null
