@@ -214,12 +214,7 @@ Currently, this project is only functional with the `text-davinci-003` model.
 - If using MongoDB Atlas, remove `&w=majority` from default connection string.
 
 ### Local
-- **Run npm** ci in both the api and client directories
-- **Provide** all credentials, (API keys, access tokens, and Mongo Connection String) in api/.env [(see .env example)](api/.env.example)
-- **Run** `npm run build` in /client/ dir, `npm start` in /api/ dir
-- **Visit** http://localhost:3080 (default port) & enjoy
-
-By default, only local machine can access this server. To share within network or serve as a public server, set `HOST` to `0.0.0.0` in `.env` file
+**[In-depth instructions here!]()** - thank you @fuegovic!
 
 ### Docker
 
