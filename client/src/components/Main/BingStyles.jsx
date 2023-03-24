@@ -18,7 +18,7 @@ export default function BingStyles() {
   }, [isBing, conversationId, model, value, dispatch]);
 
   const show = isBing && (!conversationId || messages?.length === 0);
-  const defaultClasses = 'p-2 rounded-md font-normal bg-white/[.60] text-black';
+  const defaultClasses = 'p-2 rounded-md font-normal bg-white/[.60] dark:bg-gray-700 text-black';
   const defaultSelected = defaultClasses + 'font-medium data-[state=active]:text-white';
 
   const selectedClass = (val) => val + '-tab ' + defaultSelected;
@@ -33,7 +33,7 @@ export default function BingStyles() {
       className={`shadow-md mb-1 bing-styles ${show ? 'show' : ''}`}
       onValueChange={changeHandler}
     >
-      <TabsList className="bg-white/[.60] ">
+      <TabsList className="bg-white/[.60] dark:bg-gray-700">
         <TabsTrigger
           value="creative"
           className={`${value === 'creative' ? selectedClass(value) : defaultClasses}`}
