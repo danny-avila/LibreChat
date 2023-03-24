@@ -1,14 +1,23 @@
-import React, { useState } from 'react';
-// import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/Tabs";
+import React, { useState, useEffect } from 'react';
 import { Tabs, TabsList, TabsTrigger } from '../ui/Tabs.tsx';
-import { useSelector } from 'react-redux';
-// import RowButton from './RowButton';
+import { useDispatch, useSelector } from 'react-redux';
+import { setConversation } from '~/store/convoSlice';
 
 export default function BingStyles() {
+  const dispatch = useDispatch();
   const [value, setValue] = useState('fast');
   const { model } = useSelector((state) => state.submit);
+  const { conversationId } = useSelector((state) => state.convo);
+  const { messages } = useSelector((state) => state.messages);
+  const isBing = model === 'bingai' || model === 'sydney';
 
-  const show = model === 'bingai' || model === 'sydney';
+  useEffect(() => {
+    if (isBing && !conversationId) {
+      dispatch(setConversation({ toneStyle: value }));
+    }
+  }, [isBing, conversationId, model, value, dispatch]);
+
+  const show = isBing && (!conversationId || messages?.length === 0);
   const defaultClasses = 'p-2 rounded-md font-normal bg-white/[.60] text-black';
   const defaultSelected = defaultClasses + 'font-medium data-[state=active]:text-white';
 
@@ -16,9 +25,9 @@ export default function BingStyles() {
 
   const changeHandler = value => {
     setValue(value);
+    dispatch(setConversation({ toneStyle: value }));
   };
   return (
-    // <div className='styles-container w-full'>
     <Tabs
       defaultValue={value}
       className={`shadow-md mb-1 bing-styles ${show ? 'show' : ''}`}
@@ -29,7 +38,6 @@ export default function BingStyles() {
           value="creative"
           className={`${value === 'creative' ? selectedClass(value) : defaultClasses}`}
         >
-          {/* <RowButton text="creative" /> */}
           {'Creative'}
         </TabsTrigger>
         <TabsTrigger
@@ -46,6 +54,5 @@ export default function BingStyles() {
         </TabsTrigger>
       </TabsList>
     </Tabs>
-    // </div>
   );
 }

@@ -22,6 +22,10 @@ const askSydney = async ({ text, onProgress, convo }) => {
     options = { ...options, jailbreakConversationId: convo.jailbreakConversationId, parentMessageId: convo.parentMessageId };
   }
 
+  if (convo.toneStyle) {
+    options.toneStyle = convo.toneStyle;
+  }
+
   console.log('sydney options', options);
 
   const res = await sydneyClient.sendMessage(text, options
