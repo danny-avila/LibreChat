@@ -1,4 +1,5 @@
 const mergeSort = require('./mergeSort');
+const { cleanUpPrimaryKeyValue } = require('./misc');
 
 function reduceMessages(hits) {
   const counts = {};
@@ -29,15 +30,16 @@ function reduceHits(hits, titles = []) {
   const convos = [...hits, ...titles];
 
   for (const convo of convos) {
-    if (!counts[convo.conversationId]) {
-      counts[convo.conversationId] = 1;
+    const currentId = cleanUpPrimaryKeyValue(convo.conversationId);
+    if (!counts[currentId]) {
+      counts[currentId] = 1;
     } else {
-      counts[convo.conversationId]++;
+      counts[currentId]++;
     }
 
     if (convo.title) {
-      // titleMap[convo.conversationId] = convo._formatted.title;
-      titleMap[convo.conversationId] = convo.title;
+      // titleMap[currentId] = convo._formatted.title;
+      titleMap[currentId] = convo.title;
     }
   }
 
