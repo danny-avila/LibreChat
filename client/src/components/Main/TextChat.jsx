@@ -1,18 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
 import { SSE } from '~/utils/sse';
 import SubmitButton from './SubmitButton';
-import Regenerate from './Regenerate';
+// import Regenerate from './Regenerate'; // not used as of Wentao's update
+import BingStyles from './BingStyles';
 import ModelMenu from '../Models/ModelMenu';
 import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
 import createPayload from '~/utils/createPayload';
-import resetConvo from '~/utils/resetConvo';
 import RegenerateIcon from '../svg/RegenerateIcon';
 import StopGeneratingIcon from '../svg/StopGeneratingIcon';
-import { useSelector, useDispatch } from 'react-redux';
 import {
   setConversation,
-  setNewConvo,
   setError,
   refreshConversation
 } from '~/store/convoSlice';
@@ -22,17 +21,14 @@ import { setText } from '~/store/textSlice';
 import { useMessageHandler } from '../../utils/handleSubmit';
 
 export default function TextChat({ messages }) {
-  const [errorMessage, setErrorMessage] = useState('');
   const inputRef = useRef(null);
   const isComposing = useRef(false);
   const dispatch = useDispatch();
-  const { user } = useSelector((state) => state.user);
   const convo = useSelector((state) => state.convo);
-  const { initial } = useSelector((state) => state.models);
-  const { isSubmitting, stopStream, submission, disabled, model, chatGptLabel, promptPrefix } =
+  const { isSubmitting, stopStream, submission, disabled } =
     useSelector((state) => state.submit);
   const { text } = useSelector((state) => state.text);
-  const { error, latestMessage } = convo;
+  const { latestMessage } = convo;
   const { ask, regenerate, stopGenerating } = useMessageHandler();
 
   const isNotAppendable = latestMessage?.cancelled || latestMessage?.error;
@@ -43,7 +39,7 @@ export default function TextChat({ messages }) {
   }, [convo?.conversationId]);
 
   const messageHandler = (data, currentState, currentMsg) => {
-    const { messages, _currentMsg, message, sender, isRegenerate } = currentState;
+    const { messages, message, sender, isRegenerate } = currentState;
 
     if (isRegenerate)
       dispatch(
@@ -75,7 +71,7 @@ export default function TextChat({ messages }) {
   };
 
   const cancelHandler = (data, currentState, currentMsg) => {
-    const { messages, _currentMsg, message, sender, isRegenerate } = currentState;
+    const { messages, message, sender, isRegenerate } = currentState;
 
     if (isRegenerate)
       dispatch(
@@ -116,10 +112,9 @@ export default function TextChat({ messages }) {
     );
   };
 
-  const convoHandler = (data, currentState, currentMsg) => {
+  const convoHandler = (data, currentState) => {
     const { requestMessage, responseMessage } = data;
-    const { conversationId } = requestMessage;
-    const { messages, _currentMsg, message, isCustomModel, sender, isRegenerate } =
+    const { messages, message, isCustomModel, isRegenerate } =
       currentState;
     const { model, chatGptLabel, promptPrefix } = message;
     if (isRegenerate) dispatch(setMessages([...messages, responseMessage]));
@@ -199,14 +194,13 @@ export default function TextChat({ messages }) {
   };
 
   const errorHandler = (data, currentState, currentMsg) => {
-    const { initialResponse, messages, _currentMsg, message } = currentState;
+    const {messages, message } = currentState;
     console.log('Error:', data);
     const errorResponse = {
       ...data,
       error: true,
       parentMessageId: currentMsg?.messageId
     };
-    setErrorMessage(data?.text);
     dispatch(setSubmitState(false));
     dispatch(setMessages([...messages, currentMsg, errorResponse]));
     dispatch(setText(message?.text));
@@ -237,7 +231,7 @@ export default function TextChat({ messages }) {
       const data = JSON.parse(e.data);
 
       if (data.final) {
-        convoHandler(data, currentState, currentMsg);
+        convoHandler(data, currentState);
         dispatch(toggleCursor());
         console.log('final', data);
       }
@@ -268,7 +262,7 @@ export default function TextChat({ messages }) {
 
     events.onmessage = onMessage;
 
-    events.oncancel = (e) => {
+    events.oncancel = () => {
       dispatch(toggleCursor(true));
       cancelHandler(latestResponseText, currentState, currentMsg);
     };
@@ -324,11 +318,11 @@ export default function TextChat({ messages }) {
     }
   };
 
-  const handleCompositionStart = (e) => {
+  const handleCompositionStart = () => {
     isComposing.current = true;
   };
 
-  const handleCompositionEnd = (e) => {
+  const handleCompositionEnd = () => {
     isComposing.current = false;
   };
 
@@ -341,10 +335,10 @@ export default function TextChat({ messages }) {
     dispatch(setText(value));
   };
 
-  const tryAgain = (e) => {
-    e.preventDefault();
-    dispatch(setError(false));
-  };
+  // const tryAgain = (e) => {
+  //   e.preventDefault();
+  //   dispatch(setError(false));
+  // };
 
   const isSearchView = messages?.[0]?.searchResult === true;
   const getPlaceholderText = () => {
@@ -364,10 +358,12 @@ export default function TextChat({ messages }) {
   };
 
   return (
+    <>
     <div className="input-panel md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient fixed bottom-0 left-0 w-full border-t bg-white py-2 dark:border-white/20 dark:bg-gray-800 md:absolute md:border-t-0 md:border-transparent md:bg-transparent md:dark:border-transparent md:dark:bg-transparent">
       <form className="stretch mx-2 flex flex-row gap-3 last:mb-2 md:pt-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
         <div className="relative flex h-full flex-1 md:flex-col">
           <span className="order-last ml-1 flex justify-center gap-0 md:order-none md:m-auto md:mb-2 md:w-full md:gap-2">
+            <BingStyles />
             {isSubmitting && !isSearchView ? (
               <button
                 onClick={handleStopGenerating}
@@ -421,5 +417,6 @@ export default function TextChat({ messages }) {
       </form>
       <Footer />
     </div>
+    </>
   );
 }
