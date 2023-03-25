@@ -1,16 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, forwardRef } from 'react';
 import { Tabs, TabsList, TabsTrigger } from '../ui/Tabs.tsx';
 import { useDispatch, useSelector } from 'react-redux';
 import { setConversation } from '~/store/convoSlice';
 
-export default function BingStyles() {
+function BingStyles(props, ref) {
   const dispatch = useDispatch();
   const [value, setValue] = useState('fast');
   const { model } = useSelector((state) => state.submit);
   const { conversationId } = useSelector((state) => state.convo);
   const { messages } = useSelector((state) => state.messages);
+  
   const isBing = model === 'bingai' || model === 'sydney';
-
   useEffect(() => {
     if (isBing && !conversationId) {
       dispatch(setConversation({ toneStyle: value }));
@@ -32,6 +32,7 @@ export default function BingStyles() {
       defaultValue={value}
       className={`shadow-md mb-1 bing-styles ${show ? 'show' : ''}`}
       onValueChange={changeHandler}
+      ref={ref}
     >
       <TabsList className="bg-white/[.60] dark:bg-gray-700">
         <TabsTrigger
@@ -56,3 +57,5 @@ export default function BingStyles() {
     </Tabs>
   );
 }
+
+export default forwardRef(BingStyles);
