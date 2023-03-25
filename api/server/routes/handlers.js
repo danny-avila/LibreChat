@@ -2,7 +2,7 @@ const _ = require('lodash');
 const citationRegex = /\[\^\d+?\^]/g;
 const backtick = /(?<!`)[`](?!`)/g;
 // const singleBacktick = /(?<!`)[`](?!`)/;
-const cursorDefault = '<span class="result-streaming">█</span>';
+const cursorDefault = '<span className="result-streaming">█</span>';
 const { getCitations, citeText } = require('../../app/');
 
 const handleError = (res, message) => {
