@@ -21,7 +21,7 @@
   "dependencies": {
     "@keyv/mongo": "^2.1.8",
     "@vscode/vscode-languagedetection": "^1.0.22",
-    "@waylaidwanderer/chatgpt-api": "^1.31.6",
+    "@waylaidwanderer/chatgpt-api": "^1.32.8",
     "axios": "^1.3.4",
     "chatgpt-latest": "npm:@waylaidwanderer/chatgpt-api@^1.31.6",
     "cors": "^2.8.5",
