@@ -9,6 +9,7 @@ const initialState = {
   conversationSignature: null,
   clientId: null,
   invocationId: null,
+  toneStyle: null,
   chatGptLabel: null,
   promptPrefix: null,
   convosLoading: false,
@@ -58,6 +59,7 @@ const currentSlice = createSlice({
       state.conversationSignature = null;
       state.clientId = null;
       state.invocationId = null;
+      state.toneStyle = null;
       state.chatGptLabel = null;
       state.promptPrefix = null;
       state.convosLoading = false;

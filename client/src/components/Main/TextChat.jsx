@@ -1,38 +1,30 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
 import { SSE } from '~/utils/sse';
 import SubmitButton from './SubmitButton';
-import Regenerate from './Regenerate';
+// import Regenerate from './Regenerate'; // not used as of Wentao's update
+import BingStyles from './BingStyles';
 import ModelMenu from '../Models/ModelMenu';
 import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
 import createPayload from '~/utils/createPayload';
-import resetConvo from '~/utils/resetConvo';
 import RegenerateIcon from '../svg/RegenerateIcon';
 import StopGeneratingIcon from '../svg/StopGeneratingIcon';
-import { useSelector, useDispatch } from 'react-redux';
-import {
-  setConversation,
-  setNewConvo,
-  setError,
-  refreshConversation
-} from '~/store/convoSlice';
+import { setConversation, setError, refreshConversation } from '~/store/convoSlice';
 import { setMessages } from '~/store/messageSlice';
 import { setSubmitState, toggleCursor } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
 import { useMessageHandler } from '../../utils/handleSubmit';
 
 export default function TextChat({ messages }) {
-  const [errorMessage, setErrorMessage] = useState('');
   const inputRef = useRef(null);
+  const bingStylesRef = useRef(null);
   const isComposing = useRef(false);
   const dispatch = useDispatch();
-  const { user } = useSelector((state) => state.user);
-  const convo = useSelector((state) => state.convo);
-  const { initial } = useSelector((state) => state.models);
-  const { isSubmitting, stopStream, submission, disabled, model, chatGptLabel, promptPrefix } =
-    useSelector((state) => state.submit);
-  const { text } = useSelector((state) => state.text);
-  const { error, latestMessage } = convo;
+  const convo = useSelector(state => state.convo);
+  const { isSubmitting, stopStream, submission, disabled } = useSelector(state => state.submit);
+  const { text } = useSelector(state => state.text);
+  const { latestMessage } = convo;
   const { ask, regenerate, stopGenerating } = useMessageHandler();
 
   const isNotAppendable = latestMessage?.cancelled || latestMessage?.error;
@@ -42,8 +34,24 @@ export default function TextChat({ messages }) {
     inputRef.current?.focus();
   }, [convo?.conversationId]);
 
+  // controls the height of Bing tone style tabs
+  useEffect(() => {
+    if (!inputRef.current) {
+      return; // wait for the ref to be available
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      const newHeight = inputRef.current.clientHeight;
+      if (newHeight >= 24) { // 24 is the default height of the input
+        bingStylesRef.current.style.bottom = 15 + newHeight + 'px';
+      }
+    });
+    resizeObserver.observe(inputRef.current);
+    return () => resizeObserver.disconnect();
+  }, [inputRef]);
+
   const messageHandler = (data, currentState, currentMsg) => {
-    const { messages, _currentMsg, message, sender, isRegenerate } = currentState;
+    const { messages, message, sender, isRegenerate } = currentState;
 
     if (isRegenerate)
       dispatch(
@@ -75,7 +83,7 @@ export default function TextChat({ messages }) {
   };
 
   const cancelHandler = (data, currentState, currentMsg) => {
-    const { messages, _currentMsg, message, sender, isRegenerate } = currentState;
+    const { messages, message, sender, isRegenerate } = currentState;
 
     if (isRegenerate)
       dispatch(
@@ -116,11 +124,9 @@ export default function TextChat({ messages }) {
     );
   };
 
-  const convoHandler = (data, currentState, currentMsg) => {
+  const convoHandler = (data, currentState) => {
     const { requestMessage, responseMessage } = data;
-    const { conversationId } = requestMessage;
-    const { messages, _currentMsg, message, isCustomModel, sender, isRegenerate } =
-      currentState;
+    const { messages, message, isCustomModel, isRegenerate } = currentState;
     const { model, chatGptLabel, promptPrefix } = message;
     if (isRegenerate) dispatch(setMessages([...messages, responseMessage]));
     else dispatch(setMessages([...messages, requestMessage, responseMessage]));
@@ -199,14 +205,13 @@ export default function TextChat({ messages }) {
   };
 
   const errorHandler = (data, currentState, currentMsg) => {
-    const { initialResponse, messages, _currentMsg, message } = currentState;
+    const { messages, message } = currentState;
     console.log('Error:', data);
     const errorResponse = {
       ...data,
       error: true,
       parentMessageId: currentMsg?.messageId
     };
-    setErrorMessage(data?.text);
     dispatch(setSubmitState(false));
     dispatch(setMessages([...messages, currentMsg, errorResponse]));
     dispatch(setText(message?.text));
@@ -229,7 +234,7 @@ export default function TextChat({ messages }) {
     let latestResponseText = '';
 
     const { server, payload } = createPayload(submission);
-    const onMessage = (e) => {
+    const onMessage = e => {
       if (stopStream) {
         return;
       }
@@ -237,7 +242,7 @@ export default function TextChat({ messages }) {
       const data = JSON.parse(e.data);
 
       if (data.final) {
-        convoHandler(data, currentState, currentMsg);
+        convoHandler(data, currentState);
         dispatch(toggleCursor());
         console.log('final', data);
       }
@@ -268,7 +273,7 @@ export default function TextChat({ messages }) {
 
     events.onmessage = onMessage;
 
-    events.oncancel = (e) => {
+    events.oncancel = () => {
       dispatch(toggleCursor(true));
       cancelHandler(latestResponseText, currentState, currentMsg);
     };
@@ -304,7 +309,7 @@ export default function TextChat({ messages }) {
     stopGenerating();
   };
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = e => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
     }
@@ -314,7 +319,11 @@ export default function TextChat({ messages }) {
     }
   };
 
-  const handleKeyUp = (e) => {
+  const handleKeyUp = e => {
+    if (e.keyCode === 8 && e.target.value.trim() === '') {
+      dispatch(setText(e.target.value));
+    }
+
     if (e.key === 'Enter' && e.shiftKey) {
       return console.log('Enter + Shift');
     }
@@ -324,15 +333,15 @@ export default function TextChat({ messages }) {
     }
   };
 
-  const handleCompositionStart = (e) => {
+  const handleCompositionStart = () => {
     isComposing.current = true;
   };
 
-  const handleCompositionEnd = (e) => {
+  const handleCompositionEnd = () => {
     isComposing.current = false;
   };
 
-  const changeHandler = (e) => {
+  const changeHandler = e => {
     const { value } = e.target;
 
     // if (isSubmitting && (value === '' || value === '\n')) {
@@ -341,85 +350,88 @@ export default function TextChat({ messages }) {
     dispatch(setText(value));
   };
 
-  const tryAgain = (e) => {
-    e.preventDefault();
-    dispatch(setError(false));
-  };
+  // const tryAgain = (e) => {
+  //   e.preventDefault();
+  //   dispatch(setError(false));
+  // };
 
   const isSearchView = messages?.[0]?.searchResult === true;
   const getPlaceholderText = () => {
     if (isSearchView) {
-      return 'Click a message title to open its conversation.'
+      return 'Click a message title to open its conversation.';
     }
 
     if (disabled) {
       return 'Choose another model or customize GPT again';
     }
-  
+
     if (isNotAppendable) {
-      return 'Edit your message or Regenerate.'
+      return 'Edit your message or Regenerate.';
     }
-  
+
     return '';
   };
 
   return (
-    <div className="input-panel md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient fixed bottom-0 left-0 w-full border-t bg-white py-2 dark:border-white/20 dark:bg-gray-800 md:absolute md:border-t-0 md:border-transparent md:bg-transparent md:dark:border-transparent md:dark:bg-transparent">
-      <form className="stretch mx-2 flex flex-row gap-3 last:mb-2 md:pt-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
-        <div className="relative flex h-full flex-1 md:flex-col">
-          <span className="order-last ml-1 flex justify-center gap-0 md:order-none md:m-auto md:mb-2 md:w-full md:gap-2">
-            {isSubmitting && !isSearchView ? (
-              <button
-                onClick={handleStopGenerating}
-                className="input-panel-button btn btn-neutral flex justify-center gap-2 border-0 md:border"
-                type="button"
-              >
-                <StopGeneratingIcon />
-                <span className="hidden md:block">Stop generating</span>
-              </button>
-            ) : latestMessage && !latestMessage?.isCreatedByUser && !isSearchView ? (
-              <button
-                onClick={handleRegenerate}
-                className="input-panel-button btn btn-neutral flex justify-center gap-2 border-0 md:border"
-                type="button"
-              >
-                <RegenerateIcon />
-                <span className="hidden md:block">Regenerate response</span>
-              </button>
-            ) : null}
-          </span>
-          <div
-            className={`relative flex flex-grow flex-col rounded-md border border-black/10 ${
-              disabled ? 'bg-gray-100' : 'bg-white'
-            } py-2 shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:border-gray-900/50 ${
-              disabled ? 'dark:bg-gray-900' : 'dark:bg-gray-700'
-            } dark:text-white dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] md:py-3 md:pl-4`}
-          >
-            <ModelMenu />
-            <TextareaAutosize
-              tabIndex="0"
-              autoFocus
-              ref={inputRef}
-              // style={{maxHeight: '200px', height: '24px', overflowY: 'hidden'}}
-              rows="1"
-              value={disabled || isNotAppendable ? '' : text}
-              onKeyUp={handleKeyUp}
-              onKeyDown={handleKeyDown}
-              onChange={changeHandler}
-              onCompositionStart={handleCompositionStart}
-              onCompositionEnd={handleCompositionEnd}
-              placeholder={getPlaceholderText()}
-              disabled={disabled || isNotAppendable}
-              className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-12 pr-8 leading-6 placeholder:text-sm placeholder:text-gray-600 dark:placeholder:text-gray-500 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:pl-8"
-            />
-            <SubmitButton
-              submitMessage={submitMessage}
-              disabled={disabled || isNotAppendable}
-            />
+    <>
+      <div className="input-panel md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient fixed bottom-0 left-0 w-full border-t bg-white py-2 dark:border-white/20 dark:bg-gray-800 md:absolute md:border-t-0 md:border-transparent md:bg-transparent md:dark:border-transparent md:dark:bg-transparent">
+        <form className="stretch mx-2 flex flex-row gap-3 last:mb-2 md:pt-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
+          <div className="relative flex h-full flex-1 md:flex-col">
+            <span className="order-last ml-1 flex justify-center gap-0 md:order-none md:m-auto md:mb-2 md:w-full md:gap-2">
+              <BingStyles ref={bingStylesRef}/>
+              {isSubmitting && !isSearchView ? (
+                <button
+                  onClick={handleStopGenerating}
+                  className="input-panel-button btn btn-neutral flex justify-center gap-2 border-0 md:border"
+                  type="button"
+                >
+                  <StopGeneratingIcon />
+                  <span className="hidden md:block">Stop generating</span>
+                </button>
+              ) : latestMessage && !latestMessage?.isCreatedByUser && !isSearchView ? (
+                <button
+                  onClick={handleRegenerate}
+                  className="input-panel-button btn btn-neutral flex justify-center gap-2 border-0 md:border"
+                  type="button"
+                >
+                  <RegenerateIcon />
+                  <span className="hidden md:block">Regenerate response</span>
+                </button>
+              ) : null}
+            </span>
+            <div
+              className={`relative flex flex-grow flex-col rounded-md border border-black/10 ${
+                disabled ? 'bg-gray-100' : 'bg-white'
+              } py-2 shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:border-gray-900/50 ${
+                disabled ? 'dark:bg-gray-900' : 'dark:bg-gray-700'
+              } dark:text-white dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] md:py-3 md:pl-4`}
+            >
+              <ModelMenu />
+              <TextareaAutosize
+                tabIndex="0"
+                autoFocus
+                ref={inputRef}
+                // style={{maxHeight: '200px', height: '24px', overflowY: 'hidden'}}
+                rows="1"
+                value={disabled || isNotAppendable ? '' : text}
+                onKeyUp={handleKeyUp}
+                onKeyDown={handleKeyDown}
+                onChange={changeHandler}
+                onCompositionStart={handleCompositionStart}
+                onCompositionEnd={handleCompositionEnd}
+                placeholder={getPlaceholderText()}
+                disabled={disabled || isNotAppendable}
+                className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-12 pr-8 leading-6 placeholder:text-sm placeholder:text-gray-600 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder:text-gray-500 md:pl-8"
+              />
+              <SubmitButton
+                submitMessage={submitMessage}
+                disabled={disabled || isNotAppendable}
+              />
+            </div>
           </div>
-        </div>
-      </form>
-      <Footer />
-    </div>
+        </form>
+        <Footer />
+      </div>
+    </>
   );
 }

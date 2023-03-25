@@ -46,7 +46,7 @@ const inLineWrap = (parts) => {
   });
 };
 
-export default function TextWrapper({ text, generateCursor }) {
+function TextWrapper({ text, generateCursor }) {
   let embedTest = false;
   let result = null;
 
@@ -158,3 +158,5 @@ export default function TextWrapper({ text, generateCursor }) {
     </>
   );
 }
+
+export default React.memo(TextWrapper);

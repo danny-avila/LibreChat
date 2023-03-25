@@ -28,6 +28,41 @@
   transition: all 1s ease-in-out;
 } */
 
+.bing-styles {
+position: absolute; 
+left: 0; 
+right: 0; 
+opacity: 0;
+bottom: 39px;
+z-index: 995;
+margin-left: auto; 
+margin-right: auto; 
+width: 308px; /* Need a specific value to work */
+transition: all 0.5s ease-in-out;
+pointer-events: none;
+transform: translateY(-60px);
+}
+
+.bing-styles.show {
+  /* bottom: -20px; */
+  opacity: 1;
+  pointer-events: all;
+  transform: translateY(-20px);
+}
+
+.creative-tab {
+  /* background: linear-gradient(90deg, #904887 10.79%, #8B257E 87.08%); */
+  background: linear-gradient(90deg, #904887 10.79%, #8B257E 87.08%);
+}
+
+.fast-tab {
+  background: linear-gradient(90deg, #2870EA 10.79%, #1B4AEF 87.08%);
+}
+
+.precise-tab {
+  background: linear-gradient(90deg, #006880 10.79%, #005366 87.08%)
+}
+
 p > small {
   opacity: 0;
   animation: fadein 3s forwards;
