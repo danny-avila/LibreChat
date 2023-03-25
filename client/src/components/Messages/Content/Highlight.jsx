@@ -5,7 +5,7 @@ import { languages } from '~/utils/languages';
 
 const Highlight = React.memo(({ language, code }) => {
   const [highlightedCode, setHighlightedCode] = useState(code);
-  const lang = language ? language : 'javascript';
+  const lang = languages.has(language) ? language : 'javascript';
 
   useEffect(() => {
     setHighlightedCode(hljs.highlight(code, { language: lang }).value);
