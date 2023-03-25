@@ -29,6 +29,8 @@ services:
       - HOST=0.0.0.0
       - NODE_ENV=production
       - MONGO_URI=mongodb://mongodb:27017/chatgpt-clone
+      - MEILI_HOST=http://meilisearch:7700
+      - MEILI_HTTP_ADDR=meilisearch:7700
     volumes:
       - /client/node_modules
       - ./api:/api
@@ -48,5 +50,8 @@ services:
       - 7700:7700
     env_file:
       - ./api/.env
+    environment:
+      - MEILI_HOST=http://meilisearch:7700
+      - MEILI_HTTP_ADDR=meilisearch:7700
     volumes:
       - ./meili_data:/meili_data
