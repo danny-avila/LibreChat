@@ -1,4 +1,3 @@
-import { SSE } from './sse';
 import resetConvo from './resetConvo';
 import { useSelector, useDispatch } from 'react-redux';
 import { setNewConvo } from '~/store/convoSlice';
@@ -14,7 +13,6 @@ const useMessageHandler = () => {
   const { initial } = useSelector((state) => state.models);
   const { messages } = useSelector((state) => state.messages);
   const { model, chatGptLabel, promptPrefix, isSubmitting } = useSelector((state) => state.submit);
-  const { text } = useSelector((state) => state.text);
   const { latestMessage, error } = convo;
 
   const ask = ({ text, parentMessageId=null, conversationId=null, messageId=null}, { isRegenerate=false }={}) => {
@@ -76,7 +74,7 @@ const useMessageHandler = () => {
     if (parentMessage && parentMessage.isCreatedByUser)
       ask({ ...parentMessage }, { isRegenerate: true })
     else
-      console.error('Failed to regenerate the message: parentMessage not found or not created by user.', message);
+      console.error('Failed to regenerate the message: parentMessage not found or not created by user.');
   }
 
   const stopGenerating = () => {
@@ -88,78 +86,79 @@ const useMessageHandler = () => {
 
 export { useMessageHandler };
 
-export default function handleSubmit({
-  model,
-  text,
-  convo,
-  messageHandler,
-  convoHandler,
-  errorHandler,
-  chatGptLabel,
-  promptPrefix
-}) {
-  const endpoint = `/api/ask`;
-  let payload = { model, text, chatGptLabel, promptPrefix };
-  if (convo.conversationId && convo.parentMessageId) {
-    payload = {
-      ...payload,
-      conversationId: convo.conversationId,
-      parentMessageId: convo.parentMessageId
-    };
-  }
+// deprecated
+// export default function handleSubmit({
+//   model,
+//   text,
+//   convo,
+//   messageHandler,
+//   convoHandler,
+//   errorHandler,
+//   chatGptLabel,
+//   promptPrefix
+// }) {
+//   const endpoint = `/api/ask`;
+//   let payload = { model, text, chatGptLabel, promptPrefix };
+//   if (convo.conversationId && convo.parentMessageId) {
+//     payload = {
+//       ...payload,
+//       conversationId: convo.conversationId,
+//       parentMessageId: convo.parentMessageId
+//     };
+//   }
 
-  const isBing = model === 'bingai' || model === 'sydney';
-  if (isBing && convo.conversationId) {
+//   const isBing = model === 'bingai' || model === 'sydney';
+//   if (isBing && convo.conversationId) {
 
-    payload = {
-      ...payload,
-      jailbreakConversationId: convo.jailbreakConversationId,
-      conversationId: convo.conversationId,
-      conversationSignature: convo.conversationSignature,
-      clientId: convo.clientId,
-      invocationId: convo.invocationId,
-    };
-  }
+//     payload = {
+//       ...payload,
+//       jailbreakConversationId: convo.jailbreakConversationId,
+//       conversationId: convo.conversationId,
+//       conversationSignature: convo.conversationSignature,
+//       clientId: convo.clientId,
+//       invocationId: convo.invocationId,
+//     };
+//   }
 
-  let server = endpoint;
-  server = model === 'bingai' ? server + '/bing' : server;
-  server = model === 'sydney' ? server + '/sydney' : server;
+//   let server = endpoint;
+//   server = model === 'bingai' ? server + '/bing' : server;
+//   server = model === 'sydney' ? server + '/sydney' : server;
   
-  const events = new SSE(server, {
-    payload: JSON.stringify(payload),
-    headers: { 'Content-Type': 'application/json' }
-  });
+//   const events = new SSE(server, {
+//     payload: JSON.stringify(payload),
+//     headers: { 'Content-Type': 'application/json' }
+//   });
 
-  events.onopen = function () {
-    console.log('connection is opened');
-  };
+//   events.onopen = function () {
+//     console.log('connection is opened');
+//   };
 
-  events.onmessage = function (e) {
-    const data = JSON.parse(e.data);
-    let text = data.text || data.response;
-    if (data.message) {
-      messageHandler(text, events);
-    }
+//   events.onmessage = function (e) {
+//     const data = JSON.parse(e.data);
+//     let text = data.text || data.response;
+//     if (data.message) {
+//       messageHandler(text, events);
+//     }
 
-    if (data.final) {
-      convoHandler(data);
-      console.log('final', data);
-    } else {
-      // console.log('dataStream', data);
-    }
-  };
+//     if (data.final) {
+//       convoHandler(data);
+//       console.log('final', data);
+//     } else {
+//       // console.log('dataStream', data);
+//     }
+//   };
 
-  events.onerror = function (e) {
-    console.log('error in opening conn.');
-    events.close();
-    errorHandler(e);
-  };
+//   events.onerror = function (e) {
+//     console.log('error in opening conn.');
+//     events.close();
+//     errorHandler(e);
+//   };
 
-  events.addEventListener('stop', () => {
-    // Close the SSE stream
-    console.log('stop event received');
-    events.close();
-  });
+//   events.addEventListener('stop', () => {
+//     // Close the SSE stream
+//     console.log('stop event received');
+//     events.close();
+//   });
 
-  events.stream();
-}
+//   events.stream();
+// }

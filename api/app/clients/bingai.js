@@ -2,7 +2,7 @@ require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
 
 const askBing = async ({ text, onProgress, convo }) => {
-  const { BingAIClient } = (await import('@waylaidwanderer/chatgpt-api'));
+  const { BingAIClient } = await import('@waylaidwanderer/chatgpt-api');
 
   const bingAIClient = new BingAIClient({
     // "_U" cookie from bing.com
@@ -11,7 +11,7 @@ const askBing = async ({ text, onProgress, convo }) => {
     // cookies: '',
     debug: false,
     cache: { store: new KeyvFile({ filename: './data/cache.json' }) },
-    proxy: process.env.PROXY || null,
+    proxy: process.env.PROXY || null
   });
 
   let options = { onProgress };
@@ -19,8 +19,15 @@ const askBing = async ({ text, onProgress, convo }) => {
     options = { ...options, ...convo };
   }
 
-  if (options?.jailbreakConversationId == 'false')
-    options.jailbreakConversationId = false
+  if (options?.jailbreakConversationId == 'false') {
+    options.jailbreakConversationId = false;
+  }
+
+  if (convo.toneStyle) {
+    options.toneStyle = convo.toneStyle;
+  }
+
+  console.log('bing options', options);
 
   const res = await bingAIClient.sendMessage(text, options);
 

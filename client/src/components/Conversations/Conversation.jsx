@@ -23,7 +23,6 @@ export default function Conversation({
 }) {
   const [renaming, setRenaming] = useState(false);
   const [titleInput, setTitleInput] = useState(title);
-  const { modelMap } = useSelector((state) => state.models);
   const { stopStream } = useSelector((state) => state.submit);
   const inputRef = useRef(null);
   const dispatch = useDispatch();
@@ -49,7 +48,8 @@ export default function Conversation({
         conversationSignature,
         jailbreakConversationId,
         clientId,
-        invocationId
+        invocationId,
+        toneStyle,
       } = bingData;
       dispatch(
         setConversation({
@@ -59,6 +59,7 @@ export default function Conversation({
           conversationSignature,
           clientId,
           invocationId,
+          toneStyle,
           latestMessage: null
         })
       );
@@ -71,6 +72,7 @@ export default function Conversation({
           conversationSignature: null,
           clientId: null,
           invocationId: null,
+          toneStyle: null,
           latestMessage: null
         })
       );
@@ -84,13 +86,6 @@ export default function Conversation({
       dispatch(setModel(model));
       dispatch(setCustomModel(null));
     }
-
-    // if (modelMap[chatGptLabel.toLowerCase()]) {
-    //   console.log('custom model', chatGptLabel);
-    //   dispatch(setCustomModel(chatGptLabel.toLowerCase()));
-    // } else {
-    //   dispatch(setCustomModel(null));
-    // }
 
     dispatch(setMessages(data));
     dispatch(setCustomGpt(convo));

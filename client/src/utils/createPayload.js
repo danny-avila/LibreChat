@@ -13,6 +13,10 @@ export default function createPayload({ convo, message }) {
     }
 
   const isBing = model === 'bingai' || model === 'sydney';
+  if (isBing && !convo?.conversationId) {
+    payload.toneStyle = convo.toneStyle || 'fast';
+  }
+  
   if (isBing && convo?.conversationId) {
     payload = {
       ...payload,
@@ -20,7 +24,8 @@ export default function createPayload({ convo, message }) {
       conversationId: convo.conversationId,
       conversationSignature: convo.conversationSignature,
       clientId: convo.clientId,
-      invocationId: convo.invocationId
+      invocationId: convo.invocationId,
+      toneStyle: convo.toneStyle,
     };
   }
 
@@ -28,4 +33,4 @@ export default function createPayload({ convo, message }) {
   server = model === 'bingai' ? server + '/bing' : server;
   server = model === 'sydney' ? server + '/sydney' : server;
   return { server, payload };
-};
+}
