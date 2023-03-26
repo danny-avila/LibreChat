@@ -1,11 +1,11 @@
-import React, { useState, useContext } from 'react';
-import { useSelector } from 'react-redux';
-import LogOutIcon from '../svg/LogOutIcon';
-
+import React from "react";
+import LogOutIcon from "../svg/LogOutIcon";
+import { useRecoilValue } from "recoil";
+import store from "~/store";
 
 export default function Logout() {
-  const { user } = useSelector((state) => state.user);
-  
+  const user = useRecoilValue(store.user);
+
   const clickHandler = () => {
     window.location.href = "/auth/logout";
   };
@@ -16,7 +16,7 @@ export default function Logout() {
       onClick={clickHandler}
     >
       <LogOutIcon />
-      {user?.display || user?.username || 'USER'}
+      {user?.display || user?.username || "USER"}
       <small>Log out</small>
     </a>
   );

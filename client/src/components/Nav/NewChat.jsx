@@ -1,18 +1,11 @@
-import React from 'react';
-import { useDispatch } from 'react-redux';
-import { setNewConvo } from '~/store/convoSlice';
-import { setMessages } from '~/store/messageSlice';
-import { setSubmission } from '~/store/submitSlice';
-import { setText } from '~/store/textSlice';
+import React from "react";
+import store from "~/store";
 
 export default function NewChat() {
-  const dispatch = useDispatch();
+  const { newConversation } = store.useConversation();
 
   const clickHandler = () => {
-    dispatch(setText(''));
-    dispatch(setMessages([]));
-    dispatch(setNewConvo());
-    dispatch(setSubmission({}));
+    newConversation();
   };
 
   return (
@@ -32,18 +25,8 @@ export default function NewChat() {
         width="1em"
         xmlns="http://www.w3.org/2000/svg"
       >
-        <line
-          x1="12"
-          y1="5"
-          x2="12"
-          y2="19"
-        />
-        <line
-          x1="5"
-          y1="12"
-          x2="19"
-          y2="12"
-        />
+        <line x1="12" y1="5" x2="12" y2="19" />
+        <line x1="5" y1="12" x2="19" y2="12" />
       </svg>
       New chat
     </a>

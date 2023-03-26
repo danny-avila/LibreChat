@@ -1,41 +1,37 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import TextWrapper from './TextWrapper';
-import MultiMessage from './MultiMessage';
-import { useSelector, useDispatch } from 'react-redux';
-import HoverButtons from './HoverButtons';
-import SiblingSwitch from './SiblingSwitch';
-import { setConversation, setLatestMessage } from '../../store/convoSlice';
-import { getIconOfModel } from '../../utils';
-import { useMessageHandler } from '../../utils/handleSubmit';
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import TextWrapper from "./TextWrapper";
+import MultiMessage from "./MultiMessage";
+import HoverButtons from "./HoverButtons";
+import SiblingSwitch from "./SiblingSwitch";
+import { getIconOfModel } from "../../utils";
+import { useRecoilValue, useSetRecoilState } from "recoil";
+import { useMessageHandler } from "../../utils/handleSubmit";
+
+import store from "~/store";
 
 export default function Message({
+  conversation,
   message,
-  messages,
   scrollToBottom,
   currentEditId,
   setCurrentEditId,
   siblingIdx,
   siblingCount,
-  setSiblingIdx
+  setSiblingIdx,
 }) {
-  const { isSubmitting, model, chatGptLabel, promptPrefix } = useSelector(
-    (state) => state.submit
-  );
+  const isSubmitting = useRecoilValue(store.isSubmitting);
+  const setLatestMessage = useSetRecoilState(store.latestMessage);
+  const { model, chatGptLabel, promptPrefix } = conversation;
   const [abortScroll, setAbort] = useState(false);
   const { sender, text, isCreatedByUser, error, submitting } = message;
   const textEditor = useRef(null);
-  const convo = useSelector((state) => state.convo);
   const last = !message?.children?.length;
   const edit = message.messageId == currentEditId;
   const { ask } = useMessageHandler();
-  const dispatch = useDispatch();
-
-  // const notUser = !isCreatedByUser; // sender.toLowerCase() !== 'user';
-  // const blinker = submitting && isSubmitting && last && !isCreatedByUser;
   const blinker = submitting && isSubmitting;
   const generateCursor = useCallback(() => {
     if (!blinker) {
-      return '';
+      return "";
     }
 
     return <span className="result-streaming">█</span>;
@@ -49,13 +45,12 @@ export default function Message({
 
   useEffect(() => {
     if (last) {
-      // TODO: stop using conversation.parentMessageId and remove it.
-      dispatch(setConversation({ parentMessageId: message?.messageId }));
-      dispatch(setLatestMessage({ ...message }));
+      setLatestMessage({ ...message });
     }
   }, [last, message]);
 
-  const enterEdit = (cancel) => setCurrentEditId(cancel ? -1 : message.messageId);
+  const enterEdit = (cancel) =>
+    setCurrentEditId(cancel ? -1 : message.messageId);
 
   const handleWheel = () => {
     if (blinker) {
@@ -67,7 +62,7 @@ export default function Message({
 
   const props = {
     className:
-      'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 bg-white dark:text-gray-100 group dark:bg-gray-800'
+      "w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 bg-white dark:text-gray-100 group dark:bg-gray-800",
   };
 
   const icon = getIconOfModel({
@@ -76,12 +71,12 @@ export default function Message({
     model,
     chatGptLabel,
     promptPrefix,
-    error
+    error,
   });
 
   if (!isCreatedByUser)
     props.className =
-      'w-full border-b border-black/10 bg-gray-50 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-100 dark:bg-[#444654]';
+      "w-full border-b border-black/10 bg-gray-50 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-100 dark:bg-[#444654]";
 
   // const wrapText = (text) => <TextWrapper text={text} generateCursor={generateCursor}/>;
 
@@ -91,7 +86,7 @@ export default function Message({
     ask({
       text,
       parentMessageId: message?.parentMessageId,
-      conversationId: message?.conversationId
+      conversationId: message?.conversationId,
     });
 
     setSiblingIdx(siblingCount - 1);
@@ -100,14 +95,13 @@ export default function Message({
 
   return (
     <>
-      <div
-        {...props}
-        onWheel={handleWheel}
-      >
+      <div {...props} onWheel={handleWheel}>
         <div className="relative m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
           <div className="relative flex h-[30px] w-[30px] flex-col items-end text-right text-xs md:text-sm">
-            {typeof icon === 'string' && icon.match(/[^\u0000-\u007F]+/) ? (
-              <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>
+            {typeof icon === "string" && icon.match(/[^\u0000-\u007F]+/) ? (
+              <span className=" direction-rtl w-40 overflow-x-scroll">
+                {icon}
+              </span>
             ) : (
               icon
             )}
@@ -189,8 +183,8 @@ export default function Message({
         </div>
       </div>
       <MultiMessage
-        messageList={message.children}
-        messages={messages}
+        conversation={conversation}
+        messagesTree={message.children}
         scrollToBottom={scrollToBottom}
         currentEditId={currentEditId}
         setCurrentEditId={setCurrentEditId}

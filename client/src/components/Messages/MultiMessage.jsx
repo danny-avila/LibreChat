@@ -1,44 +1,44 @@
-import React, { useEffect, useState } from 'react';
-import Message from './Message';
+import React, { useEffect, useState } from "react";
+import Message from "./Message";
 
 export default function MultiMessage({
-  messageList,
-  messages,
+  conversation,
+  messagesTree,
   scrollToBottom,
   currentEditId,
-  setCurrentEditId
+  setCurrentEditId,
 }) {
   const [siblingIdx, setSiblingIdx] = useState(0);
 
   const setSiblingIdxRev = (value) => {
-    setSiblingIdx(messageList?.length - value - 1);
+    setSiblingIdx(messagesTree?.length - value - 1);
   };
 
   useEffect(() => {
     // reset siblingIdx when changes, mostly a new message is submitting.
     setSiblingIdx(0);
-  }, [messageList?.length])
+  }, [messagesTree?.length]);
 
   // if (!messageList?.length) return null;
-  if (!(messageList && messageList.length)) {
+  if (!(messagesTree && messagesTree.length)) {
     return null;
   }
 
-  if (siblingIdx >= messageList?.length) {
+  if (siblingIdx >= messagesTree?.length) {
     setSiblingIdx(0);
     return null;
   }
 
   return (
     <Message
-      key={messageList[messageList.length - siblingIdx - 1].messageId}
-      message={messageList[messageList.length - siblingIdx - 1]}
-      messages={messages}
+      key={messagesTree[messagesTree.length - siblingIdx - 1].messageId}
+      conversation={conversation}
+      message={messagesTree[messagesTree.length - siblingIdx - 1]}
       scrollToBottom={scrollToBottom}
       currentEditId={currentEditId}
       setCurrentEditId={setCurrentEditId}
-      siblingIdx={messageList.length - siblingIdx - 1}
-      siblingCount={messageList.length}
+      siblingIdx={messagesTree.length - siblingIdx - 1}
+      siblingCount={messagesTree.length}
       setSiblingIdx={setSiblingIdxRev}
     />
   );

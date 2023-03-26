@@ -1,12 +1,9 @@
-import React, { useState, useRef } from 'react';
-import TextareaAutosize from 'react-textarea-autosize';
-import { useSelector, useDispatch } from 'react-redux';
-import { setSubmission, setModel, setCustomGpt } from '~/store/submitSlice';
-import { setNewConvo } from '~/store/convoSlice';
-import manualSWR from '~/utils/fetchers';
-import { Button } from '../ui/Button.tsx';
-import { Input } from '../ui/Input.tsx';
-import { Label } from '../ui/Label.tsx';
+import React, { useState, useRef } from "react";
+import TextareaAutosize from "react-textarea-autosize";
+import manualSWR from "~/utils/fetchers";
+import { Button } from "../../ui/Button.tsx";
+import { Input } from "../../ui/Input.tsx";
+import { Label } from "../../ui/Label.tsx";
 
 import {
   DialogClose,
@@ -14,18 +11,21 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle
-} from '../ui/Dialog.tsx';
+  DialogTitle,
+} from "../../ui/Dialog.tsx";
+
+import store from "~/store";
 
 export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
-  const dispatch = useDispatch();
-  const { modelMap, initial } = useSelector((state) => state.models);
-  const [chatGptLabel, setChatGptLabel] = useState('');
-  const [promptPrefix, setPromptPrefix] = useState('');
-  const [saveText, setSaveText] = useState('Save');
+  // const { modelMap, initial } = useSelector((state) => state.models);
+  const { newConversation } = store.useConversation();
+
+  const [chatGptLabel, setChatGptLabel] = useState("");
+  const [promptPrefix, setPromptPrefix] = useState("");
+  const [saveText, setSaveText] = useState("Save");
   const [required, setRequired] = useState(false);
   const inputRef = useRef(null);
-  const updateCustomGpt = manualSWR(`/api/customGpts/`, 'post');
+  const updateCustomGpt = manualSWR(`/api/customGpts/`, "post");
 
   const selectHandler = (e) => {
     if (chatGptLabel.length === 0) {
@@ -34,12 +34,14 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
       inputRef.current.focus();
       return;
     }
-    dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
-    dispatch(setModel('chatgptCustom'));
+
     handleSaveState(chatGptLabel.toLowerCase());
-    // Set new conversation
-    dispatch(setNewConvo());
-    dispatch(setSubmission({}));
+
+    newConversation({
+      model: "chatgptCustom",
+      chatGptLabel,
+      promptPrefix,
+    });
   };
 
   const saveHandler = (e) => {
@@ -56,36 +58,41 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
     updateCustomGpt.trigger({ value, chatGptLabel, promptPrefix });
 
     mutate();
-    setSaveText((prev) => prev + 'd!');
+    setSaveText((prev) => prev + "d!");
     setTimeout(() => {
-      setSaveText('Save');
+      setSaveText("Save");
     }, 2500);
 
-    dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
-    dispatch(setModel('chatgptCustom'));
-    // dispatch(setDisabled(false));
+    // dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
+    newConversation({
+      model: "chatgptCustom",
+      chatGptLabel,
+      promptPrefix,
+    });
   };
 
-  if (
-    chatGptLabel !== 'chatgptCustom' &&
-    modelMap[chatGptLabel.toLowerCase()] &&
-    !initial[chatGptLabel.toLowerCase()] &&
-    saveText === 'Save'
-  ) {
-    setSaveText('Update');
-  } else if (!modelMap[chatGptLabel.toLowerCase()] && saveText === 'Update') {
-    setSaveText('Save');
-  }
+  // if (
+  //   chatGptLabel !== "chatgptCustom" &&
+  //   modelMap[chatGptLabel.toLowerCase()] &&
+  //   !initial[chatGptLabel.toLowerCase()] &&
+  //   saveText === "Save"
+  // ) {
+  //   setSaveText("Update");
+  // } else if (!modelMap[chatGptLabel.toLowerCase()] && saveText === "Update") {
+  //   setSaveText("Save");
+  // }
 
   const requiredProp = required ? { required: true } : {};
 
   return (
     <DialogContent className="shadow-2xl dark:bg-gray-800">
       <DialogHeader>
-        <DialogTitle className="text-gray-800 dark:text-white">Customize ChatGPT</DialogTitle>
+        <DialogTitle className="text-gray-800 dark:text-white">
+          Customize ChatGPT
+        </DialogTitle>
         <DialogDescription className="text-gray-600 dark:text-gray-300">
-          Note: important instructions are often better placed in your message rather than the
-          prefix.{' '}
+          Note: important instructions are often better placed in your message
+          rather than the prefix.{" "}
           <a
             href="https://platform.openai.com/docs/guides/chat/instructing-chat-models"
             target="_blank"
@@ -97,10 +104,7 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
       </DialogHeader>
       <div className="grid gap-4 py-4">
         <div className="grid grid-cols-4 items-center gap-4">
-          <Label
-            htmlFor="chatGptLabel"
-            className="text-right"
-          >
+          <Label htmlFor="chatGptLabel" className="text-right">
             Custom Name
           </Label>
           <Input
@@ -115,10 +119,7 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
           />
         </div>
         <div className="grid grid-cols-4 items-center gap-4">
-          <Label
-            htmlFor="promptPrefix"
-            className="text-right"
-          >
+          <Label htmlFor="promptPrefix" className="text-right">
             Prompt Prefix
           </Label>
           <TextareaAutosize
@@ -131,9 +132,11 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
         </div>
       </div>
       <DialogFooter>
-        <DialogClose className="dark:hover:gray-400 border-gray-700">Cancel</DialogClose>
+        <DialogClose className="dark:hover:gray-400 border-gray-700">
+          Cancel
+        </DialogClose>
         <Button
-          style={{ backgroundColor: 'rgb(16, 163, 127)' }}
+          style={{ backgroundColor: "rgb(16, 163, 127)" }}
           onClick={saveHandler}
           className="inline-flex h-10 items-center justify-center rounded-md border-none py-2 px-4 text-sm font-semibold text-white transition-colors dark:text-gray-200"
         >
@@ -143,7 +146,7 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
           onClick={selectHandler}
           className="inline-flex h-10 items-center justify-center rounded-md border-none bg-gray-900 py-2 px-4 text-sm font-semibold text-white transition-colors hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900"
         >
-          Select
+          Use this model
         </DialogClose>
       </DialogFooter>
     </DialogContent>

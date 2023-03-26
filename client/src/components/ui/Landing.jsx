@@ -1,23 +1,25 @@
-import React, { useState } from 'react';
-import { useDispatch } from 'react-redux';
-import { setText } from '~/store/textSlice';
-import useDocumentTitle from '~/hooks/useDocumentTitle';
-import Templates from '../Prompts/Templates';
-import SunIcon from '../svg/SunIcon';
-import LightningIcon from '../svg/LightningIcon';
-import CautionIcon from '../svg/CautionIcon';
-import ChatIcon from '../svg/ChatIcon';
+import React, { useState } from "react";
+import { useRecoilValue } from "recoil";
+import useDocumentTitle from "~/hooks/useDocumentTitle";
+import Templates from "../Prompts/Templates";
+import SunIcon from "../svg/SunIcon";
+import LightningIcon from "../svg/LightningIcon";
+import CautionIcon from "../svg/CautionIcon";
+import ChatIcon from "../svg/ChatIcon";
 
-export default function Landing({ title }) {
+import store from "~/store";
+
+export default function Landing() {
   const [showingTemplates, setShowingTemplates] = useState(false);
-  const dispatch = useDispatch();
+  const conversation = useRecoilValue(store.conversation);
+  const { title = "New Chat" } = conversation || {};
+
   useDocumentTitle(title);
 
   const clickHandler = (e) => {
     e.preventDefault();
     const { innerText } = e.target;
     const quote = innerText.split('"')[1].trim();
-    dispatch(setText(quote));
   };
 
   const showTemplates = (e) => {
@@ -26,9 +28,9 @@ export default function Landing({ title }) {
   };
 
   return (
-    <div className="flex pt-10 md:pt-0 h-full flex-col items-center overflow-y-auto text-sm dark:bg-gray-800">
+    <div className="flex h-full flex-col items-center overflow-y-auto text-sm dark:bg-gray-800">
       <div className="w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
-        <h1 className="mt-6 ml-auto mr-auto mb-10 flex items-center justify-center gap-2 text-center text-4xl font-semibold md:mt-[20vh] sm:mb-16">
+        <h1 className="mt-6 ml-auto mr-auto mb-10 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-16 md:mt-[20vh]">
           ChatGPT Clone
         </h1>
         <div className="items-start gap-3.5 text-center md:flex">
@@ -48,7 +50,8 @@ export default function Landing({ title }) {
                 onClick={clickHandler}
                 className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
               >
-                &quot;Got any creative ideas for a 10 year old&apos;s birthday?&quot; →
+                &quot;Got any creative ideas for a 10 year old&apos;s
+                birthday?&quot; →
               </button>
               <button
                 onClick={clickHandler}

@@ -1,26 +1,22 @@
-import React from 'react';
-import TrashIcon from '../svg/TrashIcon';
-import { useSWRConfig } from 'swr';
-import manualSWR from '~/utils/fetchers';
-import { useDispatch } from 'react-redux';
-import { setNewConvo, removeAll } from '~/store/convoSlice';
-import { setMessages } from '~/store/messageSlice';
-import { setSubmission } from '~/store/submitSlice';
+import React from "react";
+import TrashIcon from "../svg/TrashIcon";
+import { useSWRConfig } from "swr";
+import manualSWR from "~/utils/fetchers";
+
+import store from "~/store";
 
 export default function ClearConvos() {
-  const dispatch = useDispatch();
+  const { newConversation } = store.useConversation();
+  const { refreshConversations } = store.useConversations();
   const { mutate } = useSWRConfig();
 
-  const { trigger } = manualSWR(`/api/convos/clear`, 'post', () => {
-    dispatch(setMessages([]));
-    dispatch(setNewConvo());
-    dispatch(setSubmission({}));
-    mutate(`/api/convos`);
+  const { trigger } = manualSWR(`/api/convos/clear`, "post", () => {
+    newConversation();
+    refreshConversations();
   });
 
   const clickHandler = () => {
-    console.log('Clearing conversations...');
-    dispatch(removeAll());
+    console.log("Clearing conversations...");
     trigger({});
   };
 

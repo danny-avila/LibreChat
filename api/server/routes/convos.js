@@ -1,42 +1,22 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const { titleConvo } = require('../../app/');
-const { getConvo, saveConvo, getConvoTitle } = require('../../models');
-const { getConvosByPage, deleteConvos, updateConvo } = require('../../models/Conversation');
-const { getMessages } = require('../../models/Message');
+const { titleConvo } = require("../../app/");
+const { getConvo, saveConvo, getConvoTitle } = require("../../models");
+const {
+  getConvosByPage,
+  deleteConvos,
+  updateConvo,
+} = require("../../models/Conversation");
+const { getMessages } = require("../../models/Message");
 
-router.get('/', async (req, res) => {
+router.get("/", async (req, res) => {
   const pageNumber = req.query.pageNumber || 1;
-  res.status(200).send(await getConvosByPage(req?.session?.user?.username, pageNumber));
+  res
+    .status(200)
+    .send(await getConvosByPage(req?.session?.user?.username, pageNumber));
 });
 
-router.post('/gen_title', async (req, res) => {
-  const { conversationId } = req.body.arg;
-
-  const convo = await getConvo(req?.session?.user?.username, conversationId)
-  const firstMessage = (await getMessages({ conversationId }))[0]
-  const secondMessage = (await getMessages({ conversationId }))[1]
-
-  const title = convo.jailbreakConversationId
-    ? await getConvoTitle(req?.session?.user?.username, conversationId)
-    : await titleConvo({
-        model: convo?.model,
-        message: firstMessage?.text,
-        response: JSON.stringify(secondMessage?.text || '')
-      });
-
-  await saveConvo(
-    req?.session?.user?.username,
-    {
-      conversationId,
-      title
-    }
-  )
-
-  res.status(200).send(title);
-});
-
-router.post('/clear', async (req, res) => {
+router.post("/clear", async (req, res) => {
   let filter = {};
   const { conversationId } = req.body.arg;
   if (conversationId) {
@@ -52,7 +32,7 @@ router.post('/clear', async (req, res) => {
   }
 });
 
-router.post('/update', async (req, res) => {
+router.post("/update", async (req, res) => {
   const update = req.body.arg;
 
   try {
@@ -62,6 +42,13 @@ router.post('/update', async (req, res) => {
     console.error(error);
     res.status(500).send(error);
   }
+});
+
+router.get("/:conversationId", async (req, res) => {
+  const { conversationId } = req.params;
+  res
+    .status(200)
+    .send(await getConvo(req?.session?.user?.username, conversationId));
 });
 
 module.exports = router;

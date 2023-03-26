@@ -1,101 +1,63 @@
-import React, { useState, useRef } from 'react';
-import RenameButton from './RenameButton';
-import DeleteButton from './DeleteButton';
-import { useSelector, useDispatch } from 'react-redux';
-import { setConversation } from '~/store/convoSlice';
-import { setSubmission, setStopStream, setCustomGpt, setModel, setCustomModel } from '~/store/submitSlice';
-import { setMessages, setEmptyMessage } from '~/store/messageSlice';
-import { setText } from '~/store/textSlice';
-import manualSWR from '~/utils/fetchers';
-import ConvoIcon from '../svg/ConvoIcon';
-import { refreshConversation } from '../../store/convoSlice';
+import React, { useState, useRef } from "react";
+import { useRecoilState, useResetRecoilState, useSetRecoilState } from "recoil";
 
-export default function Conversation({
-  id,
-  model,
-  parentMessageId,
-  conversationId,
-  title,
-  chatGptLabel = null,
-  promptPrefix = null,
-  bingData,
-  retainView,
-}) {
+import RenameButton from "./RenameButton";
+import DeleteButton from "./DeleteButton";
+import ConvoIcon from "../svg/ConvoIcon";
+import store from "~/store";
+import manualSWR from "~/utils/fetchers";
+
+export default function Conversation({ conversation, retainView }) {
+  const [currentConversation, setCurrentConversation] = useRecoilState(
+    store.conversation
+  );
+  const setMessages = useSetRecoilState(store.messages);
+  const setSubmission = useSetRecoilState(store.submission);
+  const resetLatestMessage = useResetRecoilState(store.latestMessage);
+
+  const { refreshConversations } = store.useConversations();
+
   const [renaming, setRenaming] = useState(false);
   const [titleInput, setTitleInput] = useState(title);
-  const { modelMap } = useSelector((state) => state.models);
-  const { stopStream } = useSelector((state) => state.submit);
+  // const { stopStream } = useSelector((state) => state.submit);
   const inputRef = useRef(null);
-  const dispatch = useDispatch();
-  const { trigger } = manualSWR(`/api/messages/${id}`, 'get');
-  const rename = manualSWR(`/api/convos/update`, 'post');
+
+  const {
+    model,
+    parentMessageId,
+    conversationId,
+    title,
+    chatGptLabel = null,
+    promptPrefix = null,
+    jailbreakConversationId,
+    conversationSignature,
+    clientId,
+    invocationId,
+  } = conversation;
+
+  const rename = manualSWR(`/api/convos/update`, "post");
+  const bingData = conversationSignature
+    ? {
+        jailbreakConversationId: jailbreakConversationId,
+        conversationSignature: conversationSignature,
+        parentMessageId: parentMessageId || null,
+        clientId: clientId,
+        invocationId: invocationId,
+      }
+    : null;
 
   const clickHandler = async () => {
-    if (conversationId === id) {
+    if (currentConversation?.conversationId === conversationId) {
       return;
     }
 
-    if (!stopStream) {
-      dispatch(setStopStream(true));
-      dispatch(setSubmission({}));
-    }
-    dispatch(setEmptyMessage());
+    // stop existing submission
+    setSubmission(null);
 
-    const convo = { title, error: false, conversationId: id, chatGptLabel, promptPrefix };
-
-    if (bingData) {
-      const {
-        parentMessageId,
-        conversationSignature,
-        jailbreakConversationId,
-        clientId,
-        invocationId
-      } = bingData;
-      dispatch(
-        setConversation({
-          ...convo,
-          parentMessageId,
-          jailbreakConversationId,
-          conversationSignature,
-          clientId,
-          invocationId,
-          latestMessage: null
-        })
-      );
-    } else {
-      dispatch(
-        setConversation({
-          ...convo,
-          parentMessageId,
-          jailbreakConversationId: null,
-          conversationSignature: null,
-          clientId: null,
-          invocationId: null,
-          latestMessage: null
-        })
-      );
-    }
-    const data = await trigger();
-
-    if (chatGptLabel) {
-      dispatch(setModel('chatgptCustom'));
-      dispatch(setCustomModel(chatGptLabel.toLowerCase()));
-    } else {
-      dispatch(setModel(model));
-      dispatch(setCustomModel(null));
-    }
-
-    // if (modelMap[chatGptLabel.toLowerCase()]) {
-    //   console.log('custom model', chatGptLabel);
-    //   dispatch(setCustomModel(chatGptLabel.toLowerCase()));
-    // } else {
-    //   dispatch(setCustomModel(null));
-    // }
-
-    dispatch(setMessages(data));
-    dispatch(setCustomGpt(convo));
-    dispatch(setText(''));
-    dispatch(setStopStream(false));
+    // set conversation to the new conversation
+    setCurrentConversation(conversation);
+    setMessages(null);
+    resetLatestMessage();
   };
 
   const renameHandler = (e) => {
@@ -118,33 +80,34 @@ export default function Conversation({
     if (titleInput === title) {
       return;
     }
-    rename.trigger({ conversationId, title: titleInput })
-      .then(() => {
-        dispatch(refreshConversation())
-      });
+    rename.trigger({ conversationId, title: titleInput }).then(() => {
+      refreshConversations();
+      if (conversationId == currentConversation?.conversationId)
+        setCurrentConversation((prevState) => ({
+          ...prevState,
+          title: titleInput,
+        }));
+    });
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       onRename(e);
     }
   };
 
   const aProps = {
     className:
-      'animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-800 py-3 px-3 pr-14 hover:bg-gray-800'
+      "animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-800 py-3 px-3 pr-14 hover:bg-gray-800",
   };
 
-  if (conversationId !== id) {
+  if (currentConversation?.conversationId !== conversationId) {
     aProps.className =
-      'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-[#2A2B32] hover:pr-4';
+      "group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-[#2A2B32] hover:pr-4";
   }
 
   return (
-    <a
-      onClick={() => clickHandler()}
-      {...aProps}
-    >
+    <a onClick={() => clickHandler()} {...aProps}>
       <ConvoIcon />
       <div className="relative max-h-5 flex-1 overflow-hidden text-ellipsis break-all">
         {renaming === true ? (
@@ -161,16 +124,16 @@ export default function Conversation({
           title
         )}
       </div>
-      {conversationId === id ? (
+      {currentConversation?.conversationId === conversationId ? (
         <div className="visible absolute right-1 z-10 flex text-gray-300">
           <RenameButton
-            conversationId={id}
+            conversationId={conversationId}
             renaming={renaming}
             renameHandler={renameHandler}
             onRename={onRename}
           />
           <DeleteButton
-            conversationId={id}
+            conversationId={conversationId}
             renaming={renaming}
             cancelHandler={cancelHandler}
             retainView={retainView}
