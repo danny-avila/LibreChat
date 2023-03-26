@@ -12,10 +12,10 @@ function BingStyles(props, ref) {
 
   const isBing = model === 'bingai' || model === 'sydney';
   useEffect(() => {
-    if (isBing) {
+    if (model === 'bingai' && !conversationId || model === 'sydney') {
       dispatch(setConversation({ toneStyle: value }));
     }
-  }, [isBing, conversationId, model, value, dispatch]);
+  }, [conversationId, model, value, dispatch]);
 
   const show = isBing && ((!conversationId || messages?.length === 0) || props.show);
   const defaultClasses = 'p-2 rounded-md font-normal bg-white/[.60] dark:bg-gray-700 text-black';
