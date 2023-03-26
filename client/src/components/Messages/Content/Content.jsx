@@ -8,7 +8,7 @@ import rehypeRaw from 'rehype-raw'
 import CodeBlock from './CodeBlock';
 import { langSubset } from '~/utils/languages';
 
-const Content = React.memo(({ content, isCreatedByUser = true }) => {
+const Content = React.memo(({ content }) => {
   let rehypePlugins = [
     [rehypeKatex, { output: 'mathml' }],
     [
@@ -22,23 +22,19 @@ const Content = React.memo(({ content, isCreatedByUser = true }) => {
     [rehypeRaw],
   ];
 
-  rehypePlugins = isCreatedByUser ? rehypePlugins.slice(0, -1) : rehypePlugins;
-
   return (
-    <>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
-        rehypePlugins={rehypePlugins}
-        linkTarget="_new"
-        components={{
-          code,
-          p,
-          // em,
-        }}
-      >
-        {content}
-      </ReactMarkdown>
-    </>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+      rehypePlugins={rehypePlugins}
+      linkTarget="_new"
+      components={{
+        code,
+        p,
+        // em,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
   );
 });
 

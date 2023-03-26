@@ -38,14 +38,6 @@ export const languages = [
   'pascal'
 ];
 
-export const wrapperRegex = {
-  codeRegex: /(```[\s\S]*?```)/g,
-  inLineRegex: /(`[^`]+?`)/g,
-  markupRegex: /(`[^`]+?`)/g,
-  languageMatch: /^```(\w+)/,
-  newLineMatch: /^```(\n+)/
-};
-
 export const getIconOfModel = ({ size=30, sender, isCreatedByUser, searchResult, model, chatGptLabel, error, ...props }) => {
   // 'ai' is used as 'model' is not accurate for search results
   let ai = searchResult ? sender : model;
