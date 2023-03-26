@@ -45,6 +45,12 @@ function BingStyles(props, ref) {
           value="fast"
           className={`${value === 'fast' ? selectedClass(value) : defaultClasses}`}
         >
+          {'Fast'}
+        </TabsTrigger>
+        <TabsTrigger
+          value="balanced"
+          className={`${value === 'balanced' ? selectedClass(value) : defaultClasses}`}
+        >
           {'Balanced'}
         </TabsTrigger>
         <TabsTrigger
