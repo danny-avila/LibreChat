@@ -1,4 +1,4 @@
-const citationRegex = /\[\^\d+?\^]/g;
+const citationRegex = /\[\^\d+?\^\]/g;
 
 const citeText = (res, noLinks = false) => {
   let result = res.text || res;
