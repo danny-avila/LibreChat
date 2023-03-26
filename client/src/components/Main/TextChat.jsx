@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { SSE } from '~/utils/sse';
 import SubmitButton from './SubmitButton';
@@ -15,14 +15,16 @@ import { setMessages } from '~/store/messageSlice';
 import { setSubmitState, toggleCursor } from '~/store/submitSlice';
 import { setText } from '~/store/textSlice';
 import { useMessageHandler } from '../../utils/handleSubmit';
+import AdjustToneButton from './AdjustToneButton';
 
 export default function TextChat({ messages }) {
   const inputRef = useRef(null);
   const bingStylesRef = useRef(null);
+  const [showBingToneSetting, setShowBingToneSetting] = useState(false);
   const isComposing = useRef(false);
   const dispatch = useDispatch();
   const convo = useSelector(state => state.convo);
-  const { isSubmitting, stopStream, submission, disabled } = useSelector(state => state.submit);
+  const { isSubmitting, stopStream, submission, disabled, model } = useSelector(state => state.submit);
   const { text } = useSelector(state => state.text);
   const { latestMessage } = convo;
   const { ask, regenerate, stopGenerating } = useMessageHandler();
@@ -372,13 +374,17 @@ export default function TextChat({ messages }) {
     return '';
   };
 
+  const handleBingToneSetting = () => {
+    setShowBingToneSetting((show) => !show)
+  }
+
   return (
     <>
       <div className="input-panel md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient fixed bottom-0 left-0 w-full border-t bg-white py-2 dark:border-white/20 dark:bg-gray-800 md:absolute md:border-t-0 md:border-transparent md:bg-transparent md:dark:border-transparent md:dark:bg-transparent">
         <form className="stretch mx-2 flex flex-row gap-3 last:mb-2 md:pt-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
           <div className="relative flex h-full flex-1 md:flex-col">
             <span className="order-last ml-1 flex justify-center gap-0 md:order-none md:m-auto md:mb-2 md:w-full md:gap-2">
-              <BingStyles ref={bingStylesRef}/>
+              <BingStyles ref={bingStylesRef} show={showBingToneSetting}/>
               {isSubmitting && !isSearchView ? (
                 <button
                   onClick={handleStopGenerating}
@@ -427,6 +433,9 @@ export default function TextChat({ messages }) {
                 submitMessage={submitMessage}
                 disabled={disabled || isNotAppendable}
               />
+              {messages?.length && model === 'sydney' ?
+                <AdjustToneButton onClick={handleBingToneSetting} /> :
+                null}
             </div>
           </div>
         </form>
