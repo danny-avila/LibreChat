@@ -67,26 +67,27 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
     res.send(JSON.stringify({ hasOpenAI, hasChatGpt, hasBing }));
   });
 
+  app.get('/*', routes.authenticatedOrRedirect, function (req, res) {
+    res.sendFile(path.join(projectPath, 'public', 'index.html'));
+  });
+
   app.listen(port, host, () => {
     if (host == '0.0.0.0')
       console.log(
         `Server listening on all interface at port ${port}. Use http://localhost:${port} to access it`
       );
-    else
-      console.log(
-        `Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`
-      );
+    else console.log(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
   });
 })();
 
 let messageCount = 0;
-process.on('uncaughtException', (err) => {
+process.on('uncaughtException', err => {
   if (!err.message.includes('fetch failed')) {
     console.error('There was an uncaught error:', err.message);
   }
-    
+
   if (err.message.includes('fetch failed')) {
-    if (messageCount === 0) { 
+    if (messageCount === 0) {
       console.error('Meilisearch error, search will be disabled');
       messageCount++;
     }
