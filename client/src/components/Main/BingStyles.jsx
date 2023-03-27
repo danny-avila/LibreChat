@@ -9,15 +9,15 @@ function BingStyles(props, ref) {
   const { model } = useSelector((state) => state.submit);
   const { conversationId } = useSelector((state) => state.convo);
   const { messages } = useSelector((state) => state.messages);
-  
+
   const isBing = model === 'bingai' || model === 'sydney';
   useEffect(() => {
-    if (isBing && !conversationId) {
+    if (model === 'bingai' && !conversationId || model === 'sydney') {
       dispatch(setConversation({ toneStyle: value }));
     }
-  }, [isBing, conversationId, model, value, dispatch]);
+  }, [conversationId, model, value, dispatch]);
 
-  const show = isBing && (!conversationId || messages?.length === 0);
+  const show = isBing && ((!conversationId || messages?.length === 0) || props.show);
   const defaultClasses = 'p-2 rounded-md font-normal bg-white/[.60] dark:bg-gray-700 text-black';
   const defaultSelected = defaultClasses + 'font-medium data-[state=active]:text-white';
 
