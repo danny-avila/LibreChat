@@ -6,7 +6,6 @@ const customClient = require('./clients/chatgpt-custom');
 const titleConvo = require('./titleConvo');
 const getCitations = require('../lib/parse/getCitations');
 const citeText = require('../lib/parse/citeText');
-const detectCode = require('../lib/parse/detectCode');
 
 module.exports = {
   askClient,
@@ -17,5 +16,4 @@ module.exports = {
   titleConvo,
   getCitations,
   citeText,
-  detectCode
 };

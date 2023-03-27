@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import SubRow from './Content/SubRow';
-import Wrapper from './Content/Wrapper';
+import Content from './Content/Content';
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
@@ -199,12 +199,17 @@ export default function Message({
                 <div className="flex min-h-[20px] flex-grow flex-col items-start gap-4 whitespace-pre-wrap">
                   {/* <div className={`${blinker ? 'result-streaming' : ''} markdown prose dark:prose-invert light w-full break-words`}> */}
                   <div className="markdown prose dark:prose-invert light w-full break-words">
-                    <Wrapper
-                      text={text}
-                      generateCursor={generateCursor}
-                      isCreatedByUser={isCreatedByUser}
-                      searchResult={searchResult}
-                    />
+                    {!isCreatedByUser ?
+                     <>
+                       <Content
+                         content={text}
+                       />
+                       {generateCursor()}
+                     </> :
+                     <>
+                       {text}
+                     </>
+                    }
                   </div>
                 </div>
               )}
