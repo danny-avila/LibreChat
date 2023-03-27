@@ -188,8 +188,8 @@ blockquote, dd, dl, fieldset, figure, h1, h2, h3, h4, h5, h6, hr, p, pre {
  }
  .prose :where(ol):not(:where([class~=not-prose] *)) {
   list-style-type:decimal;
-  margin-bottom:1.25em;
-  margin-top:1.25em;
+  margin-bottom:0.1em;
+  margin-top:0.1em;
   padding-left:1.625em
  }
  .prose :where(ol[type=A]):not(:where([class~=not-prose] *)) {
@@ -221,8 +221,8 @@ blockquote, dd, dl, fieldset, figure, h1, h2, h3, h4, h5, h6, hr, p, pre {
  }
  .prose :where(ul):not(:where([class~=not-prose] *)) {
   list-style-type:disc;
-  margin-bottom:1.25em;
-  margin-top:1.25em;
+  margin-bottom:0.1em;
+  margin-top:0.1em;
   padding-left:1.625em
  }
  .prose :where(ol>li):not(:where([class~=not-prose] *))::marker {
@@ -454,8 +454,8 @@ blockquote, dd, dl, fieldset, figure, h1, h2, h3, h4, h5, h6, hr, p, pre {
   line-height:1.75
  }
  .prose :where(p):not(:where([class~=not-prose] *)) {
-  margin-bottom:1.25em;
-  margin-top:1.25em
+  margin-bottom:-1em;
+  margin-top:0.3em
  }
  .prose :where(video):not(:where([class~=not-prose] *)) {
   margin-bottom:2em;
