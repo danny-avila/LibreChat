@@ -4,7 +4,7 @@ const router = express.Router();
 const askBing = require('./askBing');
 const askSydney = require('./askSydney');
 const { titleConvo, askClient, browserClient, customClient } = require('../../app/');
-const { getConvo, saveMessage, getConvoTitle, saveConvo } = require('../../models');
+const { getConvo, saveMessage, getConvoTitle, saveConvo, updateConvo } = require('../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 const { getMessages } = require('../../models/Message');
 
@@ -169,7 +169,7 @@ const ask = async ({
     }
 
     await saveMessage(gptResponse);
-    await saveConvo(req?.session?.user?.username, gptResponse);
+    await updateConvo(req?.session?.user?.username, gptResponse);
     sendMessage(res, {
       title: await getConvoTitle(req?.session?.user?.username, conversationId),
       final: true,
@@ -181,7 +181,7 @@ const ask = async ({
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
       const title = await titleConvo({ model, text, response: gptResponse });
 
-      await saveConvo(
+      await updateConvo(
         req?.session?.user?.username,
         {
           /* again, for sake of browser client, will soon refactor */
