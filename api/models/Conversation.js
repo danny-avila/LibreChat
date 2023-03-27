@@ -45,13 +45,9 @@ module.exports = {
   },
   updateConvo: async (user, { conversationId, ...update }) => {
     try {
-      return await Conversation.findOneAndUpdate(
-        { conversationId: conversationId, user },
-        update,
-        {
-          new: true
-        }
-      ).exec();
+      return await Conversation.findOneAndUpdate({ conversationId: conversationId, user }, update, {
+        new: true
+      }).exec();
     } catch (error) {
       console.log(error);
       return { message: 'Error updating conversation' };
@@ -89,7 +85,7 @@ module.exports = {
         promises.push(
           Conversation.findOne({
             user,
-            conversationId: convo.conversationId,
+            conversationId: convo.conversationId
           }).exec()
         )
       );
@@ -143,13 +139,13 @@ module.exports = {
       }
     } catch (error) {
       console.log(error);
-      return 'Error getting conversation title';
+      return { message: 'Error getting conversation title' };
     }
   },
   deleteConvos: async (user, filter) => {
     let deleteCount = await Conversation.deleteMany({ ...filter, user }).exec();
     console.log('deleteCount', deleteCount);
-    deleteCount.messages = await deleteMessages(filter);
+    deleteCount.messages = await deleteMessages({ ...filter, user });
     return deleteCount;
   }
 };
