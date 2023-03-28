@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import Root from './routes/Root';
 import Chat from './routes/Chat';
+import Search from './routes/Search';
 import store from './store';
 import userAuth from './utils/userAuth';
 import { useRecoilState, useSetRecoilState } from 'recoil';
@@ -23,8 +24,12 @@ const router = createBrowserRouter([
         )
       },
       {
-        path: 'chat/:conversationId',
+        path: 'chat/:conversationId?',
         element: <Chat />
+      },
+      {
+        path: 'search/:query?',
+        element: <Search />
       }
     ]
   }

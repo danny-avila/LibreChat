@@ -8,11 +8,9 @@ import TextChat from '../components/Input';
 
 import store from '~/store';
 import manualSWR from '~/utils/fetchers';
-// import TextChat from './components/Main/TextChat';
-
-// {/* <TextChat messages={messages} /> */}
 
 export default function Chat() {
+  const searchQuery = useRecoilValue(store.searchQuery);
   const [conversation, setConversation] = useRecoilState(store.conversation);
   const setMessages = useSetRecoilState(store.messages);
   const messagesTree = useRecoilValue(store.messagesTree);
@@ -28,18 +26,23 @@ export default function Chat() {
   useEffect(() => {
     if (conversation === null) {
       // no current conversation, we need to do something
-      if (conversationId == 'new') {
+      if (conversationId === 'new') {
         // create new
         newConversation();
-      } else {
+      } else if (conversationId) {
         // fetch it from server
         conversationTrigger().then(setConversation);
         setMessages(null);
-        console.log('NEED TO FETCH DATA');
+      } else {
+        navigate(`/chat/new`);
       }
-    } else if (conversation?.conversationId !== conversationId)
+    } else if (conversation?.conversationId === 'search') {
+      // jump to search page
+      navigate(`/search/${searchQuery}`);
+    } else if (conversation?.conversationId !== conversationId) {
       // conversationId (in url) should always follow conversation?.conversationId, unless conversation is null
       navigate(`/chat/${conversation?.conversationId}`);
+    }
   }, [conversation, conversationId]);
 
   // when messagesTree is null (<=> messages is null)
@@ -50,7 +53,12 @@ export default function Chat() {
     }
   }, [conversation?.conversationId]);
 
+  // if not a conversation
+  if (conversation?.conversationId === 'search') return null;
+  // if conversationId not match
   if (conversation?.conversationId !== conversationId) return null;
+  // if conversationId is null
+  if (!conversationId) return null;
 
   return (
     <>

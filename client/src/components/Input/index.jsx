@@ -13,7 +13,7 @@ import { useMessageHandler } from '../../utils/handleSubmit';
 
 import store from '~/store';
 
-export default function TextChat() {
+export default function TextChat({ isSearchView = false }) {
   const inputRef = useRef(null);
   const isComposing = useRef(false);
 
@@ -36,7 +36,7 @@ export default function TextChat() {
 
   // auto focus to input, when enter a conversation.
   useEffect(() => {
-    inputRef.current?.focus();
+    if (conversation?.conversationId !== 'search') inputRef.current?.focus();
     setText('');
   }, [conversation?.conversationId]);
 
@@ -108,7 +108,6 @@ export default function TextChat() {
     setText(value);
   };
 
-  const isSearchView = messages?.[0]?.searchResult === true;
   const getPlaceholderText = () => {
     if (isSearchView) {
       return 'Click a message title to open its conversation.';

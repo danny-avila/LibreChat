@@ -1,13 +1,5 @@
 import models from './models';
-import {
-  atom,
-  selector,
-  useRecoilValue,
-  useSetRecoilState,
-  useResetRecoilState,
-  useRecoilCallback,
-  useRecoilState
-} from 'recoil';
+import { atom, selector, useSetRecoilState, useResetRecoilState, useRecoilCallback } from 'recoil';
 import buildTree from '~/utils/buildTree';
 
 // current conversation, can be null (need to be fetched from server)
@@ -42,9 +34,7 @@ const messages = atom({
 const messagesTree = selector({
   key: 'messagesTree',
   get: ({ get }) => {
-    const _messages = get(messages);
-    const groupAll = _messages?.[0]?.searchResult;
-    return buildTree(_messages, groupAll);
+    return buildTree(get(messages), false);
   }
 });
 
@@ -78,7 +68,6 @@ const useConversation = () => {
       try {
         // try to use current model
         const { _model = null, _chatGptLabel = null, _promptPrefix = null } = prev_conversation || {};
-        console.log(_model, _chatGptLabel, _promptPrefix);
         if (prevModelsFilter[_model]) {
           model = _model;
           chatGptLabel = _chatGptLabel;
@@ -142,7 +131,27 @@ const useConversation = () => {
     );
   };
 
-  return { newConversation, switchToConversation };
+  const searchPlaceholderConversation = ({ model = null, chatGptLabel = null, promptPrefix = null } = {}) => {
+    switchToConversation(
+      {
+        conversationId: 'search',
+        title: 'Search',
+        jailbreakConversationId: null,
+        conversationSignature: null,
+        clientId: null,
+        invocationId: null,
+        model: model,
+        chatGptLabel: chatGptLabel,
+        promptPrefix: promptPrefix,
+        user: null,
+        suggestions: [],
+        toneStyle: null
+      },
+      []
+    );
+  };
+
+  return { newConversation, switchToConversation, searchPlaceholderConversation };
 };
 
 export default {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
+import { useRecoilValue } from 'recoil';
 import Spinner from '../svg/Spinner';
 import { throttle } from 'lodash';
 import { CSSTransition } from 'react-transition-group';
@@ -8,17 +8,24 @@ import MultiMessage from './MultiMessage';
 
 import store from '~/store';
 
-export default function Messages() {
+export default function Messages({ isSearchView = false }) {
   const [currentEditId, setCurrentEditId] = useState(-1);
-  const messagesTree = useRecoilValue(store.messagesTree);
-  const conversation = useRecoilValue(store.conversation) || {};
-  const { conversationId, model, chatGptLabel } = conversation;
-  const models = useRecoilValue(store.models) || [];
   const [showScrollButton, setShowScrollButton] = useState(false);
   const scrollableRef = useRef(null);
   const messagesEndRef = useRef(null);
 
+  const messagesTree = useRecoilValue(store.messagesTree);
+  const searchResultMessagesTree = useRecoilValue(store.searchResultMessagesTree);
+
+  const _messagesTree = isSearchView ? searchResultMessagesTree : messagesTree;
+
+  const conversation = useRecoilValue(store.conversation) || {};
+  const { conversationId, model, chatGptLabel } = conversation;
+
+  const models = useRecoilValue(store.models) || [];
   const modelName = models.find(element => element.model == model)?.name;
+
+  const searchQuery = useRecoilValue(store.searchQuery);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -36,7 +43,7 @@ export default function Messages() {
       clearTimeout(timeoutId);
       window.removeEventListener('scroll', handleScroll);
     };
-  }, [messagesTree]);
+  }, [_messagesTree]);
 
   const scrollToBottom = useCallback(
     throttle(
@@ -81,16 +88,18 @@ export default function Messages() {
       <div className="dark:gpt-dark-gray h-full">
         <div className="dark:gpt-dark-gray flex h-full flex-col items-center text-sm">
           <div className="flex w-full items-center justify-center gap-1 border-b border-black/10 bg-gray-50 p-3 text-sm text-gray-500 dark:border-gray-900/50 dark:bg-gray-700 dark:text-gray-300">
-            Model: {modelName} {chatGptLabel ? `(${chatGptLabel})` : null}
+            {isSearchView
+              ? `Search: ${searchQuery}`
+              : `Model: ${modelName} ${chatGptLabel ? `(${chatGptLabel})` : ''}`}
           </div>
-          {messagesTree === null ? (
+          {_messagesTree === null ? (
             <Spinner />
           ) : (
             <>
               <MultiMessage
                 key={conversationId} // avoid internal state mixture
                 conversation={conversation}
-                messagesTree={messagesTree}
+                messagesTree={_messagesTree}
                 scrollToBottom={scrollToBottom}
                 currentEditId={currentEditId}
                 setCurrentEditId={setCurrentEditId}
