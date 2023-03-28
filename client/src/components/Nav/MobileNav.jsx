@@ -1,33 +1,19 @@
 import React from 'react';
-import { useSelector, useDispatch } from 'react-redux';
-import { setNewConvo } from '~/store/convoSlice';
-import { setMessages } from '~/store/messageSlice';
-import { setSubmission } from '~/store/submitSlice';
-import { setText } from '~/store/textSlice';
+import { useRecoilValue } from 'recoil';
+
+import store from '~/store';
 
 export default function MobileNav({ setNavVisible }) {
-  const dispatch = useDispatch();
-  const { conversationId, convos, title } = useSelector((state) => state.convo);
-
-  const toggleNavVisible = () => {
-    setNavVisible((prev) => {
-      return !prev
-    })
-  }
-
-  const newConvo = () => {
-    dispatch(setText(''));
-    dispatch(setMessages([]));
-    dispatch(setNewConvo());
-    dispatch(setSubmission({}));
-  }
+  const conversation = useRecoilValue(store.conversation);
+  const { newConversation } = store.useConversation();
+  const { title = 'New Chat' } = conversation || {};
 
   return (
     <div className="fixed top-0 left-0 right-0 z-10 flex items-center border-b border-white/20 bg-gray-800 pl-1 pt-1 text-gray-200 sm:pl-3 md:hidden">
       <button
         type="button"
         className="-ml-0.5 -mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-md hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white dark:hover:text-white"
-        onClick={toggleNavVisible}
+        onClick={() => setNavVisible(prev => !prev)}
       >
         <span className="sr-only">Open sidebar</span>
         <svg
@@ -66,7 +52,7 @@ export default function MobileNav({ setNavVisible }) {
       <button
         type="button"
         className="px-3"
-        onClick={newConvo}
+        onClick={() => newConversation()}
       >
         <svg
           stroke="currentColor"

@@ -1,99 +1,125 @@
 import React, { useState, useRef } from 'react';
+import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
+
 import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
-import { useSelector, useDispatch } from 'react-redux';
-import { setConversation } from '~/store/convoSlice';
-import { setSubmission, setStopStream, setCustomGpt, setModel, setCustomModel } from '~/store/submitSlice';
-import { setMessages, setEmptyMessage } from '~/store/messageSlice';
-import { setText } from '~/store/textSlice';
-import manualSWR from '~/utils/fetchers';
 import ConvoIcon from '../svg/ConvoIcon';
-import { refreshConversation } from '../../store/convoSlice';
+import manualSWR from '~/utils/fetchers';
 
-export default function Conversation({
-  id,
-  model,
-  parentMessageId,
-  conversationId,
-  title,
-  chatGptLabel = null,
-  promptPrefix = null,
-  bingData,
-  retainView,
-}) {
+import store from '~/store';
+
+export default function Conversation({ conversation, retainView }) {
+  const [currentConversation, setCurrentConversation] = useRecoilState(store.conversation);
+  const setMessages = useSetRecoilState(store.messages);
+  const setSubmission = useSetRecoilState(store.submission);
+  const resetLatestMessage = useResetRecoilState(store.latestMessage);
+
+  const { refreshConversations } = store.useConversations();
+
   const [renaming, setRenaming] = useState(false);
   const [titleInput, setTitleInput] = useState(title);
-  const { stopStream } = useSelector((state) => state.submit);
   const inputRef = useRef(null);
-  const dispatch = useDispatch();
-  const { trigger } = manualSWR(`/api/messages/${id}`, 'get');
+
+  const {
+    model,
+    parentMessageId,
+    conversationId,
+    title,
+    chatGptLabel = null,
+    promptPrefix = null,
+    jailbreakConversationId,
+    conversationSignature,
+    clientId,
+    invocationId,
+    toneStyle
+  } = conversation;
+
   const rename = manualSWR(`/api/convos/update`, 'post');
 
+  const bingData = conversationSignature
+    ? {
+        jailbreakConversationId: jailbreakConversationId,
+        conversationSignature: conversationSignature,
+        parentMessageId: parentMessageId || null,
+        clientId: clientId,
+        invocationId: invocationId,
+        toneStyle: toneStyle
+      }
+    : null;
+
   const clickHandler = async () => {
-    if (conversationId === id) {
+    if (currentConversation?.conversationId === conversationId) {
       return;
     }
 
-    if (!stopStream) {
-      dispatch(setStopStream(true));
-      dispatch(setSubmission({}));
-    }
-    dispatch(setEmptyMessage());
+    // stop existing submission
+    setSubmission(null);
 
-    const convo = { title, error: false, conversationId: id, chatGptLabel, promptPrefix };
+    // set conversation to the new conversation
+    setCurrentConversation(conversation);
+    setMessages(null);
+    resetLatestMessage();
 
-    if (bingData) {
-      const {
-        parentMessageId,
-        conversationSignature,
-        jailbreakConversationId,
-        clientId,
-        invocationId,
-        toneStyle,
-      } = bingData;
-      dispatch(
-        setConversation({
-          ...convo,
-          parentMessageId,
-          jailbreakConversationId,
-          conversationSignature,
-          clientId,
-          invocationId,
-          toneStyle,
-          latestMessage: null
-        })
-      );
-    } else {
-      dispatch(
-        setConversation({
-          ...convo,
-          parentMessageId,
-          jailbreakConversationId: null,
-          conversationSignature: null,
-          clientId: null,
-          invocationId: null,
-          toneStyle: null,
-          latestMessage: null
-        })
-      );
-    }
-    const data = await trigger();
+    // if (!stopStream) {
+    //   dispatch(setStopStream(true));
+    //   dispatch(setSubmission({}));
+    // }
+    // dispatch(setEmptyMessage());
 
-    if (chatGptLabel) {
-      dispatch(setModel('chatgptCustom'));
-      dispatch(setCustomModel(chatGptLabel.toLowerCase()));
-    } else {
-      dispatch(setModel(model));
-      dispatch(setCustomModel(null));
-    }
+    // const convo = { title, error: false, conversationId: id, chatGptLabel, promptPrefix };
 
-    dispatch(setMessages(data));
-    dispatch(setCustomGpt(convo));
-    dispatch(setText(''));
-    dispatch(setStopStream(false));
+    // if (bingData) {
+    //   const {
+    //     parentMessageId,
+    //     conversationSignature,
+    //     jailbreakConversationId,
+    //     clientId,
+    //     invocationId,
+    //     toneStyle
+    //   } = bingData;
+    //   dispatch(
+    //     setConversation({
+    //       ...convo,
+    //       parentMessageId,
+    //       jailbreakConversationId,
+    //       conversationSignature,
+    //       clientId,
+    //       invocationId,
+    //       toneStyle,
+    //       latestMessage: null
+    //     })
+    //   );
+    // } else {
+    //   dispatch(
+    //     setConversation({
+    //       ...convo,
+    //       parentMessageId,
+    //       jailbreakConversationId: null,
+    //       conversationSignature: null,
+    //       clientId: null,
+    //       invocationId: null,
+    //       toneStyle: null,
+    //       latestMessage: null
+    //     })
+    //   );
+    // }
+    // const data = await trigger();
+
+    // if (chatGptLabel) {
+    //   dispatch(setModel('chatgptCustom'));
+    //   dispatch(setCustomModel(chatGptLabel.toLowerCase()));
+    // } else {
+    //   dispatch(setModel(model));
+    //   dispatch(setCustomModel(null));
+    // }
+
+    // dispatch(setMessages(data));
+    // dispatch(setCustomGpt(convo));
+    // dispatch(setText(''));
+    // dispatch(setStopStream(false));
   };
 
-  const renameHandler = (e) => {
+  const renameHandler = e => {
     e.preventDefault();
     setTitleInput(title);
     setRenaming(true);
@@ -102,24 +128,28 @@ export default function Conversation({
     }, 25);
   };
 
-  const cancelHandler = (e) => {
+  const cancelHandler = e => {
     e.preventDefault();
     setRenaming(false);
   };
 
-  const onRename = (e) => {
+  const onRename = e => {
     e.preventDefault();
     setRenaming(false);
     if (titleInput === title) {
       return;
     }
-    rename.trigger({ conversationId, title: titleInput })
-      .then(() => {
-        dispatch(refreshConversation())
-      });
+    rename.trigger({ conversationId, title: titleInput }).then(() => {
+      refreshConversations();
+      if (conversationId == currentConversation?.conversationId)
+        setCurrentConversation(prevState => ({
+          ...prevState,
+          title: titleInput
+        }));
+    });
   };
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = e => {
     if (e.key === 'Enter') {
       onRename(e);
     }
@@ -130,7 +160,7 @@ export default function Conversation({
       'animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-800 py-3 px-3 pr-14 hover:bg-gray-800'
   };
 
-  if (conversationId !== id) {
+  if (currentConversation?.conversationId !== conversationId) {
     aProps.className =
       'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-[#2A2B32] hover:pr-4';
   }
@@ -148,7 +178,7 @@ export default function Conversation({
             type="text"
             className="m-0 mr-0 w-full border border-blue-500 bg-transparent p-0 text-sm leading-tight outline-none"
             value={titleInput}
-            onChange={(e) => setTitleInput(e.target.value)}
+            onChange={e => setTitleInput(e.target.value)}
             onBlur={onRename}
             onKeyDown={handleKeyDown}
           />
@@ -156,16 +186,16 @@ export default function Conversation({
           title
         )}
       </div>
-      {conversationId === id ? (
+      {currentConversation?.conversationId === conversationId ? (
         <div className="visible absolute right-1 z-10 flex text-gray-300">
           <RenameButton
-            conversationId={id}
+            conversationId={conversationId}
             renaming={renaming}
             renameHandler={renameHandler}
             onRename={onRename}
           />
           <DeleteButton
-            conversationId={id}
+            conversationId={conversationId}
             renaming={renaming}
             cancelHandler={cancelHandler}
             retainView={retainView}

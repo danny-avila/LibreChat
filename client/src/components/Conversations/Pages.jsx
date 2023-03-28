@@ -1,12 +1,12 @@
 import React from 'react';
 
 export default function Pages({ pageNumber, pages, nextPage, previousPage }) {
-  const clickHandler = (func) => async (e) => {
+  const clickHandler = func => async e => {
     e.preventDefault();
     await func();
   };
 
-  return (
+  return pageNumber == 1 && pages == 1 ? null : (
     <div className="m-auto mt-4 mb-2 flex items-center justify-center gap-2">
       <button
         onClick={clickHandler(previousPage)}

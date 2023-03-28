@@ -2,24 +2,19 @@ import React from 'react';
 import TrashIcon from '../svg/TrashIcon';
 import CrossIcon from '../svg/CrossIcon';
 import manualSWR from '~/utils/fetchers';
-import { useDispatch } from 'react-redux';
-import { setNewConvo, removeConvo } from '~/store/convoSlice';
-import { setMessages } from '~/store/messageSlice';
-import { setSubmission } from '~/store/submitSlice';
+import { useRecoilValue } from 'recoil';
+
+import store from '~/store';
 
 export default function DeleteButton({ conversationId, renaming, cancelHandler, retainView }) {
-  const dispatch = useDispatch();
-  const { trigger } = manualSWR(
-    `/api/convos/clear`,
-    'post',
-    () => {
-      dispatch(setMessages([]));
-      dispatch(removeConvo(conversationId));
-      dispatch(setNewConvo());
-      dispatch(setSubmission({}));
-      retainView();
-    }
-  );
+  const currentConversation = useRecoilValue(store.conversation) || {};
+  const { newConversation } = store.useConversation();
+  const { refreshConversations } = store.useConversations();
+  const { trigger } = manualSWR(`/api/convos/clear`, 'post', () => {
+    if (currentConversation?.conversationId == conversationId) newConversation();
+    refreshConversations();
+    retainView();
+  });
 
   const clickHandler = () => trigger({ conversationId });
   const handler = renaming ? cancelHandler : clickHandler;
@@ -29,7 +24,7 @@ export default function DeleteButton({ conversationId, renaming, cancelHandler, 
       className="p-1 hover:text-white"
       onClick={handler}
     >
-      { renaming ? <CrossIcon/> : <TrashIcon />}
+      {renaming ? <CrossIcon /> : <TrashIcon />}
     </button>
   );
 }
