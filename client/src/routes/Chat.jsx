@@ -68,7 +68,7 @@ export default function Chat() {
 
   return (
     <>
-      {conversationId == 'new' ? <Landing /> : <Messages />}
+      {conversationId === 'new' && !!messagesTree?.length ? <Landing /> : <Messages />}
       <TextChat />
     </>
   );
