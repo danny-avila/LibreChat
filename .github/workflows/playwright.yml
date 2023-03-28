@@ -15,7 +15,9 @@ jobs:
       with:
         node-version: 18
     - name: Install dependencies
-      run: npm ci
+      run: |
+        npm config set registry=https://registry.npmjs.org/
+        npm ci
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
     - name: Run Playwright tests
