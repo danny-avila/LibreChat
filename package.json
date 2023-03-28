@@ -20,6 +20,7 @@
   "homepage": "https://github.com/danny-avila/chatgpt-clone#readme",
   "devDependencies": {
     "@playwright/test": "^1.32.1",
-    "cross-env": "^7.0.3"
+    "cross-env": "^7.0.3",
+    "playwright": "^1.32.1"
   }
 }
