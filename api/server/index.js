@@ -29,7 +29,8 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
     session({
       secret: 'chatgpt-clone-random-secrect',
       resave: false,
-      saveUninitialized: true
+      saveUninitialized: true,
+      cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 } // 7 days
     })
   );
 

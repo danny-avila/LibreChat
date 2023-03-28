@@ -131,7 +131,7 @@ const useConversation = () => {
     );
   };
 
-  const searchPlaceholderConversation = ({ model = null, chatGptLabel = null, promptPrefix = null } = {}) => {
+  const searchPlaceholderConversation = () => {
     switchToConversation(
       {
         conversationId: 'search',
@@ -140,9 +140,9 @@ const useConversation = () => {
         conversationSignature: null,
         clientId: null,
         invocationId: null,
-        model: model,
-        chatGptLabel: chatGptLabel,
-        promptPrefix: promptPrefix,
+        model: null,
+        chatGptLabel: null,
+        promptPrefix: null,
         user: null,
         suggestions: [],
         toneStyle: null
