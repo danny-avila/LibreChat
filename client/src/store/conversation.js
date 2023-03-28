@@ -42,7 +42,9 @@ const messages = atom({
 const messagesTree = selector({
   key: 'messagesTree',
   get: ({ get }) => {
-    return buildTree(get(messages));
+    const _messages = get(messages);
+    const groupAll = _messages?.[0]?.searchResult;
+    return buildTree(_messages, groupAll);
   }
 });
 

@@ -1,19 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
-// import { SSE } from '~/utils/sse';
 import SubmitButton from './SubmitButton';
-// import AdjustToneButton from './AdjustToneButton';
-// import BingStyles from './BingStyles';
+import AdjustToneButton from './AdjustToneButton';
+import BingStyles from './BingStyles';
 import ModelMenu from './Models/ModelMenu';
 import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
 import createPayload from '~/utils/createPayload';
 import RegenerateIcon from '../svg/RegenerateIcon';
 import StopGeneratingIcon from '../svg/StopGeneratingIcon';
-// import { setConversation, setError, refreshConversation } from '~/store/convoSlice';
-// import { setMessages } from '~/store/messageSlice';
-// import { setSubmitState, toggleCursor } from '~/store/submitSlice';
-// import { setText } from '~/store/textSlice';
 import { useMessageHandler } from '../../utils/handleSubmit';
 
 import store from '~/store';
@@ -62,257 +57,10 @@ export default function TextChat() {
     return () => resizeObserver.disconnect();
   }, [inputRef]);
 
-  // const messageHandler = (data, currentState, currentMsg) => {
-  //   const { messages, message, sender, isRegenerate } = currentState;
-
-  //   if (isRegenerate)
-  //     dispatch(
-  //       setMessages([
-  //         ...messages,
-  //         {
-  //           sender,
-  //           text: data,
-  //           parentMessageId: message?.overrideParentMessageId,
-  //           messageId: message?.overrideParentMessageId + '_',
-  //           submitting: true
-  //         }
-  //       ])
-  //     );
-  //   else
-  //     dispatch(
-  //       setMessages([
-  //         ...messages,
-  //         currentMsg,
-  //         {
-  //           sender,
-  //           text: data,
-  //           parentMessageId: currentMsg?.messageId,
-  //           messageId: currentMsg?.messageId + '_',
-  //           submitting: true
-  //         }
-  //       ])
-  //     );
-  // };
-
-  // const cancelHandler = (data, currentState, currentMsg) => {
-  //   const { messages, message, sender, isRegenerate } = currentState;
-
-  //   if (isRegenerate)
-  //     dispatch(
-  //       setMessages([
-  //         ...messages,
-  //         {
-  //           sender,
-  //           text: data,
-  //           parentMessageId: message?.overrideParentMessageId,
-  //           messageId: message?.overrideParentMessageId + '_',
-  //           cancelled: true
-  //         }
-  //       ])
-  //     );
-  //   else
-  //     dispatch(
-  //       setMessages([
-  //         ...messages,
-  //         currentMsg,
-  //         {
-  //           sender,
-  //           text: data,
-  //           parentMessageId: currentMsg?.messageId,
-  //           messageId: currentMsg?.messageId + '_',
-  //           cancelled: true
-  //         }
-  //       ])
-  //     );
-  // };
-
-  // const createdHandler = (data, currentState, currentMsg) => {
-  //   const { conversationId } = currentMsg;
-  //   dispatch(
-  //     setConversation({
-  //       conversationId,
-  //       latestMessage: null
-  //     })
-  //   );
-  // };
-
-  // const convoHandler = (data, currentState) => {
-  //   const { requestMessage, responseMessage } = data;
-  //   const { messages, message, isCustomModel, isRegenerate } = currentState;
-  //   const { model, chatGptLabel, promptPrefix } = message;
-  //   if (isRegenerate) dispatch(setMessages([...messages, responseMessage]));
-  //   else dispatch(setMessages([...messages, requestMessage, responseMessage]));
-  //   dispatch(setSubmitState(false));
-
-  //   const isBing = model === 'bingai' || model === 'sydney';
-
-  //   // refresh title
-  //   if (requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
-  //     setTimeout(() => {
-  //       dispatch(refreshConversation());
-  //     }, 2000);
-
-  //     // in case it takes too long.
-  //     setTimeout(() => {
-  //       dispatch(refreshConversation());
-  //     }, 5000);
-  //   }
-
-  //   if (!isBing && convo.conversationId === null && convo.parentMessageId === null) {
-  //     const { title } = data;
-  //     const { conversationId, messageId } = responseMessage;
-  //     dispatch(
-  //       setConversation({
-  //         title,
-  //         conversationId,
-  //         parentMessageId: messageId,
-  //         jailbreakConversationId: null,
-  //         conversationSignature: null,
-  //         clientId: null,
-  //         invocationId: null,
-  //         chatGptLabel: model === isCustomModel ? chatGptLabel : null,
-  //         promptPrefix: model === isCustomModel ? promptPrefix : null,
-  //         latestMessage: null
-  //       })
-  //     );
-  //   } else if (model === 'bingai') {
-  //     console.log('Bing data:', data);
-  //     const { title } = data;
-  //     const { conversationSignature, clientId, conversationId, invocationId, parentMessageId } =
-  //       responseMessage;
-  //     dispatch(
-  //       setConversation({
-  //         title,
-  //         parentMessageId,
-  //         conversationSignature,
-  //         clientId,
-  //         conversationId,
-  //         invocationId,
-  //         latestMessage: null
-  //       })
-  //     );
-  //   } else if (model === 'sydney') {
-  //     const { title } = data;
-  //     const {
-  //       jailbreakConversationId,
-  //       parentMessageId,
-  //       conversationSignature,
-  //       clientId,
-  //       conversationId,
-  //       invocationId
-  //     } = responseMessage;
-  //     dispatch(
-  //       setConversation({
-  //         title,
-  //         jailbreakConversationId,
-  //         parentMessageId,
-  //         conversationSignature,
-  //         clientId,
-  //         conversationId,
-  //         invocationId,
-  //         latestMessage: null
-  //       })
-  //     );
-  //   }
-  // };
-
-  // const errorHandler = (data, currentState, currentMsg) => {
-  //   const { messages, message } = currentState;
-  //   console.log('Error:', data);
-  //   const errorResponse = {
-  //     ...data,
-  //     error: true,
-  //     parentMessageId: currentMsg?.messageId
-  //   };
-  //   dispatch(setSubmitState(false));
-  //   dispatch(setMessages([...messages, currentMsg, errorResponse]));
-  //   dispatch(setText(message?.text));
-  //   dispatch(setError(true));
-  //   return;
-  // };
   const submitMessage = () => {
     ask({ text });
     setText('');
   };
-
-  // useEffect(() => {
-  //   inputRef.current?.focus();
-  //   if (Object.keys(submission).length === 0) {
-  //     return;
-  //   }
-
-  //   const currentState = submission;
-
-  //   let currentMsg = { ...currentState.message };
-  //   let latestResponseText = '';
-
-  //   const { server, payload } = createPayload(submission);
-  //   const onMessage = e => {
-  //     if (stopStream) {
-  //       return;
-  //     }
-
-  //     const data = JSON.parse(e.data);
-
-  //     if (data.final) {
-  //       convoHandler(data, currentState);
-  //       dispatch(toggleCursor());
-  //       console.log('final', data);
-  //     }
-  //     if (data.created) {
-  //       currentMsg = data.message;
-  //       createdHandler(data, currentState, currentMsg);
-  //     } else {
-  //       let text = data.text || data.response;
-  //       if (data.initial) {
-  //         dispatch(toggleCursor());
-  //       }
-  //       if (data.message) {
-  //         latestResponseText = text;
-  //         messageHandler(text, currentState, currentMsg);
-  //       }
-  //       // console.log('dataStream', data);
-  //     }
-  //   };
-
-  //   const events = new SSE(server, {
-  //     payload: JSON.stringify(payload),
-  //     headers: { 'Content-Type': 'application/json' }
-  //   });
-
-  //   events.onopen = function () {
-  //     console.log('connection is opened');
-  //   };
-
-  //   events.onmessage = onMessage;
-
-  //   events.oncancel = () => {
-  //     dispatch(toggleCursor(true));
-  //     cancelHandler(latestResponseText, currentState, currentMsg);
-  //   };
-
-  //   events.onerror = function (e) {
-  //     console.log('error in opening conn.');
-  //     events.close();
-
-  //     const data = JSON.parse(e.data);
-  //     dispatch(toggleCursor(true));
-  //     errorHandler(data, currentState, currentMsg);
-  //   };
-
-  //   events.stream();
-
-  //   return () => {
-  //     events.removeEventListener('message', onMessage);
-  //     dispatch(toggleCursor(true));
-  //     const isCancelled = events.readyState <= 1;
-  //     events.close();
-  //     if (isCancelled) {
-  //       const e = new Event('cancel');
-  //       events.dispatchEvent(e);
-  //     }
-  //   };
-  // }, [submission]);
 
   const handleRegenerate = () => {
     if (latestMessage && !latestMessage?.isCreatedByUser) regenerate(latestMessage);
@@ -389,10 +137,10 @@ export default function TextChat() {
         <form className="stretch mx-2 flex flex-row gap-3 last:mb-2 md:pt-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
           <div className="relative flex h-full flex-1 md:flex-col">
             <span className="order-last ml-1 flex justify-center gap-0 md:order-none md:m-auto md:mb-2 md:w-full md:gap-2">
-              {/* <BingStyles
+              <BingStyles
                 ref={bingStylesRef}
                 show={showBingToneSetting}
-              /> */}
+              />
               {isSubmitting ? (
                 <button
                   onClick={handleStopGenerating}
@@ -441,9 +189,9 @@ export default function TextChat() {
                 submitMessage={submitMessage}
                 disabled={disabled || isNotAppendable}
               />
-              {/* {messages?.length && model === 'sydney' ? (
+              {messages?.length && conversation?.model === 'sydney' ? (
                 <AdjustToneButton onClick={handleBingToneSetting} />
-              ) : null} */}
+              ) : null}
             </div>
           </div>
         </form>

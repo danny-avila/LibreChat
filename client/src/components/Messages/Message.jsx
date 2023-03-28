@@ -83,7 +83,7 @@ export default function Message({
 
   if (message.bg && searchResult) {
     props.className = message.bg.split('hover')[0];
-    props.titleClass = message.bg.split(props.className)[1] + ' cursor-pointer';
+    props.titleclass = message.bg.split(props.className)[1] + ' cursor-pointer';
   }
 
   const resubmitMessage = () => {
@@ -144,7 +144,7 @@ export default function Message({
           <div className="relative flex w-[calc(100%-50px)] flex-col gap-1 whitespace-pre-wrap md:gap-3 lg:w-[calc(100%-115px)]">
             {searchResult && (
               <SubRow
-                classes={props.titleClass + ' rounded'}
+                classes={props.titleclass + ' rounded'}
                 subclasses="switch-result pl-2 pb-2"
                 onClick={clickSearchResult}
               >
