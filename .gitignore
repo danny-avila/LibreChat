@@ -46,7 +46,6 @@ bower_components/
 .flooignore
 
 # Environment
-package-lock.json
 .env
 cache.json
 api/data/
