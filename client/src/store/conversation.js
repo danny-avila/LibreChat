@@ -1,5 +1,13 @@
 import models from './models';
-import { atom, selector, useRecoilValue, useSetRecoilState, useResetRecoilState } from 'recoil';
+import {
+  atom,
+  selector,
+  useRecoilValue,
+  useSetRecoilState,
+  useResetRecoilState,
+  useRecoilCallback,
+  useRecoilState
+} from 'recoil';
 import buildTree from '~/utils/buildTree';
 
 // current conversation, can be null (need to be fetched from server)
@@ -44,19 +52,45 @@ const latestMessage = atom({
 });
 
 const useConversation = () => {
-  const modelsFilter = useRecoilValue(models.modelsFilter);
   const setConversation = useSetRecoilState(conversation);
   const setMessages = useSetRecoilState(messages);
   const resetLatestMessage = useResetRecoilState(latestMessage);
 
-  const newConversation = ({ model = null, chatGptLabel = null, promptPrefix = null } = {}) => {
+  const switchToConversation = useRecoilCallback(
+    ({ snapshot }) =>
+      async (_conversation, messages = null) => {
+        const prevConversation = await snapshot.getPromise(conversation);
+        const prevModelsFilter = await snapshot.getPromise(models.modelsFilter);
+        _switchToConversation(_conversation, messages, { prevModelsFilter, prevConversation });
+      },
+    []
+  );
+
+  const _switchToConversation = (
+    conversation,
+    messages = null,
+    { prevModelsFilter = {}, prev_conversation = {} }
+  ) => {
+    let { model = null, chatGptLabel = null, promptPrefix = null } = conversation;
     const getDefaultModel = () => {
+      try {
+        // try to use current model
+        const { _model = null, _chatGptLabel = null, _promptPrefix = null } = prev_conversation || {};
+        console.log(_model, _chatGptLabel, _promptPrefix);
+        if (prevModelsFilter[_model]) {
+          model = _model;
+          chatGptLabel = _chatGptLabel;
+          promptPrefix = _promptPrefix;
+          return;
+        }
+      } catch (error) {}
+
       try {
         // try to read latest selected model from local storage
         const lastSelected = JSON.parse(localStorage.getItem('model'));
         const { model: _model, chatGptLabel: _chatGptLabel, promptPrefix: _promptPrefix } = lastSelected;
 
-        if (modelsFilter[_model]) {
+        if (prevModelsFilter[_model]) {
           model = _model;
           chatGptLabel = _chatGptLabel;
           promptPrefix = _promptPrefix;
@@ -65,9 +99,9 @@ const useConversation = () => {
       } catch (error) {}
 
       // if anything happens, reset to default model
-      if (modelsFilter?.chatgpt) model = 'chatgpt';
-      else if (modelsFilter?.bingai) model = 'bingai';
-      else if (modelsFilter?.chatgptBrowser) model = 'chatgptBrowser';
+      if (prevModelsFilter?.chatgpt) model = 'chatgpt';
+      else if (prevModelsFilter?.bingai) model = 'bingai';
+      else if (prevModelsFilter?.chatgptBrowser) model = 'chatgptBrowser';
       chatGptLabel = null;
       promptPrefix = null;
     };
@@ -77,24 +111,36 @@ const useConversation = () => {
       getDefaultModel();
 
     setConversation({
-      conversationId: 'new',
-      title: 'New Chat',
-      jailbreakConversationId: null,
-      conversationSignature: null,
-      clientId: null,
-      invocationId: null,
+      ...conversation,
       model: model,
       chatGptLabel: chatGptLabel,
-      promptPrefix: promptPrefix,
-      user: null,
-      suggestions: [],
-      toneStyle: null
+      promptPrefix: promptPrefix
     });
-    setMessages([]);
+    setMessages(messages);
     resetLatestMessage();
   };
 
-  return { newConversation };
+  const newConversation = ({ model = null, chatGptLabel = null, promptPrefix = null } = {}) => {
+    switchToConversation(
+      {
+        conversationId: 'new',
+        title: 'New Chat',
+        jailbreakConversationId: null,
+        conversationSignature: null,
+        clientId: null,
+        invocationId: null,
+        model: model,
+        chatGptLabel: chatGptLabel,
+        promptPrefix: promptPrefix,
+        user: null,
+        suggestions: [],
+        toneStyle: null
+      },
+      []
+    );
+  };
+
+  return { newConversation, switchToConversation };
 };
 
 export default {

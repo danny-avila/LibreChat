@@ -1,13 +1,13 @@
-import React, { useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { useRecoilState, useRecoilValue, useSetRecoilState } from "recoil";
+import React, { useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 
-import Landing from "../components/ui/Landing";
-import Messages from "../components/Messages";
-import TextChat from "../components/Input";
+import Landing from '../components/ui/Landing';
+import Messages from '../components/Messages';
+import TextChat from '../components/Input';
 
-import store from "~/store";
-import manualSWR from "~/utils/fetchers";
+import store from '~/store';
+import manualSWR from '~/utils/fetchers';
 // import TextChat from './components/Main/TextChat';
 
 // {/* <TextChat messages={messages} /> */}
@@ -20,28 +20,22 @@ export default function Chat() {
   const { conversationId } = useParams();
   const navigate = useNavigate();
 
-  const { trigger: messagesTrigger } = manualSWR(
-    `/api/messages/${conversation?.conversationId}`,
-    "get"
-  );
+  const { trigger: messagesTrigger } = manualSWR(`/api/messages/${conversation?.conversationId}`, 'get');
 
-  const { trigger: conversationTrigger } = manualSWR(
-    `/api/convos/${conversationId}`,
-    "get"
-  );
+  const { trigger: conversationTrigger } = manualSWR(`/api/convos/${conversationId}`, 'get');
 
   // when conversation changed or conversationId (in url) changed
   useEffect(() => {
     if (conversation === null) {
       // no current conversation, we need to do something
-      if (conversationId == "new") {
+      if (conversationId == 'new') {
         // create new
         newConversation();
       } else {
         // fetch it from server
         conversationTrigger().then(setConversation);
         setMessages(null);
-        console.log("NEED TO FETCH DATA");
+        console.log('NEED TO FETCH DATA');
       }
     } else if (conversation?.conversationId !== conversationId)
       // conversationId (in url) should always follow conversation?.conversationId, unless conversation is null
@@ -60,7 +54,7 @@ export default function Chat() {
 
   return (
     <>
-      {conversationId == "new" ? <Landing /> : <Messages />}
+      {conversationId == 'new' ? <Landing /> : <Messages />}
       <TextChat />
     </>
   );

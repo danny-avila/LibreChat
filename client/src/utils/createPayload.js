@@ -1,31 +1,50 @@
-export default function createPayload({ convo, message }) {
-  const endpoint = `/api/ask`;
-  let payload = { ...message };
-  const { model } = message;
+export default function createPayload(submission) {
+  const { conversation, messages, message, initialResponse, isRegenerate = false } = submission;
 
-  if (!payload.conversationId)
-    if (convo?.conversationId && convo?.parentMessageId) {
-      payload = {
-        ...payload,
-        conversationId: convo.conversationId,
-        parentMessageId: convo.parentMessageId || '00000000-0000-0000-0000-000000000000'
-      };
+  const endpoint = `/api/ask`;
+  const {
+    model,
+    chatGptLabel,
+    promptPrefix,
+    jailbreakConversationId,
+    conversationId,
+    conversationSignature,
+    clientId,
+    invocationId,
+    toneStyle
+  } = conversation;
+
+  let payload = {
+    ...message,
+    ...{
+      model,
+      chatGptLabel,
+      promptPrefix,
+      conversationId
     }
+  };
+
+  // if (!payload.conversationId)
+  //   if (convo?.conversationId && convo?.parentMessageId) {
+  //     payload = {
+  //       ...payload,
+  //       conversationId: convo.conversationId,
+  //       parentMessageId: convo.parentMessageId || '00000000-0000-0000-0000-000000000000'
+  //     };
+  //   }
 
   const isBing = model === 'bingai' || model === 'sydney';
-  if (isBing && !convo?.conversationId) {
-    payload.toneStyle = convo.toneStyle || 'fast';
+  if (isBing && !conversationId) {
+    payload.toneStyle = toneStyle || 'fast';
   }
-  
-  if (isBing && convo?.conversationId) {
+
+  if (isBing && conversationId) {
     payload = {
       ...payload,
-      jailbreakConversationId: convo.jailbreakConversationId,
-      conversationId: convo.conversationId,
-      conversationSignature: convo.conversationSignature,
-      clientId: convo.clientId,
-      invocationId: convo.invocationId,
-      toneStyle: convo.toneStyle,
+      jailbreakConversationId,
+      conversationSignature,
+      clientId,
+      invocationId
     };
   }
 
