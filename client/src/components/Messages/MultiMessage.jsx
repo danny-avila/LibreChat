@@ -6,7 +6,8 @@ export default function MultiMessage({
   messagesTree,
   scrollToBottom,
   currentEditId,
-  setCurrentEditId
+  setCurrentEditId,
+  isSearchView
 }) {
   const [siblingIdx, setSiblingIdx] = useState(0);
 
@@ -30,6 +31,26 @@ export default function MultiMessage({
   }
 
   const message = messagesTree[messagesTree.length - siblingIdx - 1];
+  if (isSearchView)
+    return (
+      <>
+        {messagesTree
+          ? messagesTree.map(message => (
+              <Message
+                key={message.messageId}
+                conversation={conversation}
+                message={message}
+                scrollToBottom={scrollToBottom}
+                currentEditId={currentEditId}
+                setCurrentEditId={null}
+                siblingIdx={1}
+                siblingCount={1}
+                setSiblingIdx={null}
+              />
+            ))
+          : null}
+      </>
+    );
   return (
     <Message
       key={message.messageId}

@@ -25,7 +25,17 @@ export default function Message({
   const setLatestMessage = useSetRecoilState(store.latestMessage);
   const { model, chatGptLabel, promptPrefix } = conversation;
   const [abortScroll, setAbort] = useState(false);
-  const { sender, text, searchResult, isCreatedByUser, error, submitting } = message;
+  const {
+    sender,
+    text,
+    searchResult,
+    isCreatedByUser,
+    error,
+    submitting,
+    model: messageModel,
+    chatGptLabel: messageChatGptLabel,
+    searchResult: isSearchResult
+  } = message;
   const textEditor = useRef(null);
   const last = !message?.children?.length;
   const edit = message.messageId == currentEditId;
@@ -70,9 +80,9 @@ export default function Message({
   const icon = getIconOfModel({
     sender,
     isCreatedByUser,
-    model,
+    model: isSearchResult ? messageModel : model,
     searchResult,
-    chatGptLabel,
+    chatGptLabel: isSearchResult ? messageChatGptLabel : chatGptLabel,
     promptPrefix,
     error
   });
