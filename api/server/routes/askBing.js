@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const { titleConvo, askBing } = require('../../app/');
-const { saveBingMessage, getConvoTitle, saveConvo, updateConvo } = require('../../models');
+const { saveBingMessage, getConvoTitle, saveConvo } = require('../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 
 router.post('/', async (req, res) => {
@@ -123,7 +123,7 @@ const ask = async ({
     // Attition: the api will also create new conversationId while using invalid userMessage.parentMessageId,
     // but in this situation, don't change the conversationId, but create new convo.
     if (conversationId != userMessage.conversationId && isNewConversation)
-      await updateConvo(
+      await saveConvo(
         req?.session?.user?.username,
         {
           conversationId: conversationId,
@@ -148,7 +148,7 @@ const ask = async ({
 
     response.text = await handleText(response, true);
     await saveBingMessage(response);
-    await updateConvo(req?.session?.user?.username, { model, chatGptLabel: null, promptPrefix: null, ...convo,  ...response });
+    await saveConvo(req?.session?.user?.username, { model, chatGptLabel: null, promptPrefix: null, ...convo,  ...response });
 
     sendMessage(res, {
       title: await getConvoTitle(req?.session?.user?.username, conversationId),
@@ -161,9 +161,11 @@ const ask = async ({
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
       const title = await titleConvo({ model, text, response });
 
-      await updateConvo(
+      await saveConvo(
         req?.session?.user?.username,
         {
+          ...convo,
+          ...response,
           conversationId,
           title
         }
