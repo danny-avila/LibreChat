@@ -69,7 +69,7 @@ const useMessageHandler = () => {
     // construct the placeholder response message
     const initialResponse = {
       sender: chatGptLabel || model,
-      text: '',
+      text: '<span className="result-streaming">█</span>',
       parentMessageId: isRegenerate ? messageId : fakeMessageId,
       messageId: (isRegenerate ? messageId : fakeMessageId) + '_',
       conversationId,
