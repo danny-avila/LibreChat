@@ -5,14 +5,15 @@ on:
   pull_request:
     branches: [ main, master ]
 jobs:
-  test:
+  tests_e2e:
+    name: Run end-to-end tests
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-node@v3
       with:
-        node-version: 16
+        node-version: 18
     - name: Install dependencies
       run: npm ci
     - name: Install Playwright Browsers
