@@ -21,7 +21,7 @@ export default function DeleteButton({ conversationId, renaming, cancelHandler, 
     }
   );
 
-  const clickHandler = () => trigger({ conversationId });
+  const clickHandler = () => trigger({ conversationId, source: 'button' });
   const handler = renaming ? cancelHandler : clickHandler;
 
   return (
