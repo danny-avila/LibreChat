@@ -1,26 +1,30 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { debounce } from 'lodash';
 import { Search } from 'lucide-react';
-import { useSetRecoilState } from 'recoil';
+import { useRecoilState } from 'recoil';
 
 import store from '~/store';
 
 export default function SearchBar({ fetch, clearSearch }) {
   // const dispatch = useDispatch();
   const [inputValue, setInputValue] = useState('');
-  const setSearchQuery = useSetRecoilState(store.searchQuery);
+  const [searchQuery, setSearchQuery] = useRecoilState(store.searchQuery);
 
   // const [inputValue, setInputValue] = useState('');
 
   const debouncedChangeHandler = useCallback(
     debounce(q => {
       setSearchQuery(q);
-      if (q.length > 0) {
-        fetch(q, 1);
-      }
     }, 750),
     [setSearchQuery]
   );
+
+  useEffect(() => {
+    if (searchQuery.length > 0) {
+      fetch(searchQuery, 1);
+      setInputValue(searchQuery);
+    }
+  }, [searchQuery]);
 
   const handleKeyUp = e => {
     const { value } = e.target;

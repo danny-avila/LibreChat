@@ -27,12 +27,12 @@ export default function Nav({ navVisible, setNavVisible }) {
   const searchQuery = useRecoilValue(store.searchQuery);
   const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
   const isSearching = useRecoilValue(store.isSearching);
-  const { newConversation } = store.useConversation();
+  const { newConversation, searchPlaceholderConversation } = store.useConversation();
 
   // current conversation
   const conversation = useRecoilValue(store.conversation);
   const { conversationId } = conversation || {};
-  const setMessages = useSetRecoilState(store.messages);
+  const setSearchResultMessages = useSetRecoilState(store.searchResultMessages);
 
   // refreshConversationsHint is used for other components to ask refresh of Nav
   const refreshConversationsHint = useRecoilValue(store.refreshConversationsHint);
@@ -66,10 +66,8 @@ export default function Nav({ navVisible, setNavVisible }) {
     setPageNumber(res.pageNumber);
     setPages(res.pages);
     setIsFetching(false);
-    if (res.messages?.length > 0) {
-      setMessages(res.messages);
-      // dispatch(setDisabled(true));
-    }
+    searchPlaceholderConversation();
+    setSearchResultMessages(res.messages);
   };
 
   // TODO: dont need this

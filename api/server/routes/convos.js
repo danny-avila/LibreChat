@@ -13,7 +13,9 @@ router.get('/', async (req, res) => {
 router.get('/:conversationId', async (req, res) => {
   const { conversationId } = req.params;
   const convo = await getConvo(req?.session?.user?.username, conversationId);
-  res.status(200).send(convo.toObject());
+
+  if (convo) res.status(200).send(convo.toObject());
+  else res.status(404).end();
 });
 
 router.post('/clear', async (req, res) => {
