@@ -94,6 +94,10 @@ export default function Messages({ isSearchView = false }) {
           </div>
           {_messagesTree === null ? (
             <Spinner />
+          ) : _messagesTree?.length == 0 && isSearchView ? (
+            <div className="flex w-full items-center justify-center gap-1 bg-gray-50 p-3 text-sm text-gray-500 dark:border-gray-900/50 dark:bg-gray-800 dark:text-gray-300">
+              Nothing found
+            </div>
           ) : (
             <>
               <MultiMessage

@@ -101,23 +101,10 @@ export default function Message({
 
   const clickSearchResult = async () => {
     if (!searchResult) return;
-    // dispatch(setMessages([]));
     const convoResponse = await fetchById('convos', message.conversationId);
     const convo = convoResponse.data;
-    // if (convo?.chatGptLabel) {
-    //   // dispatch(setModel('chatgptCustom'));
-    //   // dispatch(setCustomModel(convo.chatGptLabel.toLowerCase()));
-    // } else {
-    //   // dispatch(setModel(convo.model));
-    //   // dispatch(setCustomModel(null));
-    // }
 
-    // dispatch(setCustomGpt(convo));
     switchToConversation(convo);
-    // dispatch(setConversation(convo));
-    // const { data } = await fetchById('messages', message.conversationId);
-    // dispatch(setMessages(data));
-    // dispatch(setDisabled(false));
   };
 
   return (
