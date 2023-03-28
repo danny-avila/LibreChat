@@ -25,13 +25,11 @@ const titleConvo = async ({ model, text, response }) => {
       {
         role: 'system',
         content:
-          'You are a title-generator with one job: giving a conversation, detect the language and titling the conversation provided by a user in title case, using the same language.'
+          "You are a title-generator with one job: giving a conversation, detect the language and titling the conversation provided by a user, using the same language. The requirement are: 1. If possible, generate in 5 words or less, 2. Using title case, 3. must give the title using the language as the user said. 4. Don't refer to the participants of the conversation. 5. Do not include punctuation or quotation marks. 6. Your response should be in title case, exclusively containing the title. 7. don't say anything except the title."
       },
       {
         role: 'user',
-        content: `In 5 words or less, summarize the conversation below with a title in title case using the language the user writes in. Don't refer to the participants of the conversation nor the language. Do not include punctuation or quotation marks. Your response should be in title case, exclusively containing the title. Conversation:\n\nUser: "${text}"\n\n${model}: "${JSON.stringify(
-          response?.text
-        )}"\n\nTitle: `
+        content: `User:\n "${text}"\n\n${model}: \n"${JSON.stringify(response?.text)}"\n\n`
       }
     ],
     temperature: 0,
