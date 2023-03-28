@@ -1,20 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useSelector, useDispatch } from 'react-redux';
+import { useRecoilValue, useSetRecoilState, useResetRecoilState } from 'recoil';
 import SubRow from './Content/SubRow';
 import Content from './Content/Content';
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
-import { setConversation, setLatestMessage } from '~/store/convoSlice';
-import { setModel, setCustomModel, setCustomGpt, setDisabled } from '~/store/submitSlice';
-import { setMessages } from '~/store/messageSlice';
 import { fetchById } from '~/utils/fetchers';
 import { getIconOfModel } from '~/utils';
 import { useMessageHandler } from '~/utils/handleSubmit';
 
+import store from '~/store';
+
 export default function Message({
+  conversation,
   message,
-  messages,
   scrollToBottom,
   currentEditId,
   setCurrentEditId,
@@ -22,30 +21,24 @@ export default function Message({
   siblingCount,
   setSiblingIdx
 }) {
-  const { isSubmitting, model, chatGptLabel, cursor, promptPrefix } = useSelector(state => state.submit);
+  const isSubmitting = useRecoilValue(store.isSubmitting);
+  const setLatestMessage = useSetRecoilState(store.latestMessage);
+  const { model, chatGptLabel, promptPrefix } = conversation;
   const [abortScroll, setAbort] = useState(false);
   const { sender, text, searchResult, isCreatedByUser, error, submitting } = message;
   const textEditor = useRef(null);
   const last = !message?.children?.length;
   const edit = message.messageId == currentEditId;
   const { ask } = useMessageHandler();
-  const dispatch = useDispatch();
-  // const currentConvo = convoMap[message.conversationId];
-
-  // const notUser = !isCreatedByUser; // sender.toLowerCase() !== 'user';
-  // const blinker = submitting && isSubmitting && last && !isCreatedByUser;
+  const { switchToConversation } = store.useConversation();
   const blinker = submitting && isSubmitting;
   const generateCursor = useCallback(() => {
     if (!blinker) {
       return '';
     }
 
-    if (!cursor) {
-      return '';
-    }
-
     return <span className="result-streaming">█</span>;
-  }, [blinker, cursor]);
+  }, [blinker]);
 
   useEffect(() => {
     if (blinker && !abortScroll) {
@@ -55,9 +48,7 @@ export default function Message({
 
   useEffect(() => {
     if (last) {
-      // TODO: stop using conversation.parentMessageId and remove it.
-      dispatch(setConversation({ parentMessageId: message?.messageId }));
-      dispatch(setLatestMessage({ ...message }));
+      setLatestMessage({ ...message });
     }
   }, [last, message]);
 
@@ -110,22 +101,23 @@ export default function Message({
 
   const clickSearchResult = async () => {
     if (!searchResult) return;
-    dispatch(setMessages([]));
+    // dispatch(setMessages([]));
     const convoResponse = await fetchById('convos', message.conversationId);
     const convo = convoResponse.data;
-    if (convo?.chatGptLabel) {
-      dispatch(setModel('chatgptCustom'));
-      dispatch(setCustomModel(convo.chatGptLabel.toLowerCase()));
-    } else {
-      dispatch(setModel(convo.model));
-      dispatch(setCustomModel(null));
-    }
+    // if (convo?.chatGptLabel) {
+    //   // dispatch(setModel('chatgptCustom'));
+    //   // dispatch(setCustomModel(convo.chatGptLabel.toLowerCase()));
+    // } else {
+    //   // dispatch(setModel(convo.model));
+    //   // dispatch(setCustomModel(null));
+    // }
 
-    dispatch(setCustomGpt(convo));
-    dispatch(setConversation(convo));
-    const { data } = await fetchById('messages', message.conversationId);
-    dispatch(setMessages(data));
-    dispatch(setDisabled(false));
+    // dispatch(setCustomGpt(convo));
+    switchToConversation(convo);
+    // dispatch(setConversation(convo));
+    // const { data } = await fetchById('messages', message.conversationId);
+    // dispatch(setMessages(data));
+    // dispatch(setDisabled(false));
   };
 
   return (
@@ -133,7 +125,6 @@ export default function Message({
       <div
         {...props}
         onWheel={handleWheel}
-        // onClick={clickSearchResult}
       >
         <div className="relative m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
           <div className="relative flex h-[30px] w-[30px] flex-col items-end text-right text-xs md:text-sm">
@@ -199,17 +190,13 @@ export default function Message({
                 <div className="flex min-h-[20px] flex-grow flex-col items-start gap-4 whitespace-pre-wrap">
                   {/* <div className={`${blinker ? 'result-streaming' : ''} markdown prose dark:prose-invert light w-full break-words`}> */}
                   <div className="markdown prose dark:prose-invert light w-full break-words">
-                    {!isCreatedByUser ?
-                     <>
-                       <Content
-                         content={text}
-                       />
-                       {generateCursor()}
-                     </> :
-                     <>
-                       {text}
-                     </>
-                    }
+                    {!isCreatedByUser ? (
+                      <>
+                        <Content content={text} />
+                      </>
+                    ) : (
+                      <>{text}</>
+                    )}
                   </div>
                 </div>
               )}
@@ -230,8 +217,8 @@ export default function Message({
         </div>
       </div>
       <MultiMessage
-        messageList={message.children}
-        messages={messages}
+        conversation={conversation}
+        messagesTree={message.children}
         scrollToBottom={scrollToBottom}
         currentEditId={currentEditId}
         setCurrentEditId={setCurrentEditId}

@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
-import { useRecoilState, useResetRecoilState, useSetRecoilState } from "recoil";
-import { SSE } from "~/utils/sse";
-import { useMessageHandler } from "../../utils/handleSubmit";
-import createPayload from "~/utils/createPayload";
+import React, { useEffect, useRef, useState } from 'react';
+import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
+import { SSE } from '~/utils/sse';
+import { useMessageHandler } from '../../utils/handleSubmit';
+import createPayload from '~/utils/createPayload';
 
-import store from "~/store";
+import store from '~/store';
 
 export default function MessageHandler({ messages }) {
   const [submission, setSubmission] = useRecoilState(store.submission);
@@ -16,12 +16,7 @@ export default function MessageHandler({ messages }) {
   const { refreshConversations } = store.useConversations();
 
   const messageHandler = (data, submission) => {
-    const {
-      messages,
-      message,
-      initialResponse,
-      isRegenerate = false,
-    } = submission;
+    const { messages, message, initialResponse, isRegenerate = false } = submission;
 
     if (isRegenerate)
       setMessages([
@@ -30,9 +25,9 @@ export default function MessageHandler({ messages }) {
           ...initialResponse,
           text: data,
           parentMessageId: message?.overrideParentMessageId,
-          messageId: message?.overrideParentMessageId + "_",
-          submitting: true,
-        },
+          messageId: message?.overrideParentMessageId + '_',
+          submitting: true
+        }
       ]);
     else
       setMessages([
@@ -42,19 +37,14 @@ export default function MessageHandler({ messages }) {
           ...initialResponse,
           text: data,
           parentMessageId: message?.messageId,
-          messageId: message?.messageId + "_",
-          submitting: true,
-        },
+          messageId: message?.messageId + '_',
+          submitting: true
+        }
       ]);
   };
 
   const cancelHandler = (data, submission) => {
-    const {
-      messages,
-      message,
-      initialResponse,
-      isRegenerate = false,
-    } = submission;
+    const { messages, message, initialResponse, isRegenerate = false } = submission;
 
     if (isRegenerate)
       setMessages([
@@ -63,9 +53,9 @@ export default function MessageHandler({ messages }) {
           ...initialResponse,
           text: data,
           parentMessageId: message?.overrideParentMessageId,
-          messageId: message?.overrideParentMessageId + "_",
-          cancelled: true,
-        },
+          messageId: message?.overrideParentMessageId + '_',
+          cancelled: true
+        }
       ]);
     else
       setMessages([
@@ -75,19 +65,14 @@ export default function MessageHandler({ messages }) {
           ...initialResponse,
           text: data,
           parentMessageId: message?.messageId,
-          messageId: message?.messageId + "_",
-          cancelled: true,
-        },
+          messageId: message?.messageId + '_',
+          cancelled: true
+        }
       ]);
   };
 
   const createdHandler = (data, submission) => {
-    const {
-      messages,
-      message,
-      initialResponse,
-      isRegenerate = false,
-    } = submission;
+    const { messages, message, initialResponse, isRegenerate = false } = submission;
 
     if (isRegenerate)
       setMessages([
@@ -95,9 +80,9 @@ export default function MessageHandler({ messages }) {
         {
           ...initialResponse,
           parentMessageId: message?.overrideParentMessageId,
-          messageId: message?.overrideParentMessageId + "_",
-          submitting: true,
-        },
+          messageId: message?.overrideParentMessageId + '_',
+          submitting: true
+        }
       ]);
     else
       setMessages([
@@ -106,27 +91,21 @@ export default function MessageHandler({ messages }) {
         {
           ...initialResponse,
           parentMessageId: message?.messageId,
-          messageId: message?.messageId + "_",
-          submitting: true,
-        },
+          messageId: message?.messageId + '_',
+          submitting: true
+        }
       ]);
 
     const { conversationId } = message;
-    setConversation((prevState) => ({
+    setConversation(prevState => ({
       ...prevState,
-      conversationId,
+      conversationId
     }));
     resetLatestMessage();
   };
 
   const finalHandler = (data, submission) => {
-    const {
-      conversation,
-      messages,
-      message,
-      initialResponse,
-      isRegenerate = false,
-    } = submission;
+    const { conversation, messages, message, initialResponse, isRegenerate = false } = submission;
 
     const { requestMessage, responseMessage } = data;
     const { conversationId } = requestMessage;
@@ -137,9 +116,7 @@ export default function MessageHandler({ messages }) {
     setIsSubmitting(false);
 
     // refresh title
-    if (
-      requestMessage.parentMessageId == "00000000-0000-0000-0000-000000000000"
-    ) {
+    if (requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
       setTimeout(() => {
         refreshConversations();
       }, 2000);
@@ -151,12 +128,12 @@ export default function MessageHandler({ messages }) {
     }
 
     const { model, chatGptLabel, promptPrefix } = conversation;
-    const isBing = model === "bingai" || model === "sydney";
+    const isBing = model === 'bingai' || model === 'sydney';
 
     if (!isBing) {
       const { title } = data;
       const { conversationId } = responseMessage;
-      setConversation((prevState) => ({
+      setConversation(prevState => ({
         ...prevState,
         title,
         conversationId,
@@ -166,13 +143,12 @@ export default function MessageHandler({ messages }) {
         invocationId: null,
         chatGptLabel,
         promptPrefix,
-        latestMessage: null,
+        latestMessage: null
       }));
-    } else if (model === "bingai") {
+    } else if (model === 'bingai') {
       const { title } = data;
-      const { conversationSignature, clientId, conversationId, invocationId } =
-        responseMessage;
-      setConversation((prevState) => ({
+      const { conversationSignature, clientId, conversationId, invocationId } = responseMessage;
+      setConversation(prevState => ({
         ...prevState,
         title,
         conversationId,
@@ -182,9 +158,9 @@ export default function MessageHandler({ messages }) {
         invocationId,
         chatGptLabel,
         promptPrefix,
-        latestMessage: null,
+        latestMessage: null
       }));
-    } else if (model === "sydney") {
+    } else if (model === 'sydney') {
       const { title } = data;
       const {
         jailbreakConversationId,
@@ -192,9 +168,9 @@ export default function MessageHandler({ messages }) {
         conversationSignature,
         clientId,
         conversationId,
-        invocationId,
+        invocationId
       } = responseMessage;
-      setConversation((prevState) => ({
+      setConversation(prevState => ({
         ...prevState,
         title,
         conversationId,
@@ -204,25 +180,19 @@ export default function MessageHandler({ messages }) {
         invocationId,
         chatGptLabel,
         promptPrefix,
-        latestMessage: null,
+        latestMessage: null
       }));
     }
   };
 
   const errorHandler = (data, submission) => {
-    const {
-      conversation,
-      messages,
-      message,
-      initialResponse,
-      isRegenerate = false,
-    } = submission;
+    const { conversation, messages, message, initialResponse, isRegenerate = false } = submission;
 
-    console.log("Error:", data);
+    console.log('Error:', data);
     const errorResponse = {
       ...data,
       error: true,
-      parentMessageId: message?.messageId,
+      parentMessageId: message?.messageId
     };
     setIsSubmitting(false);
     setMessages([...messages, message, errorResponse]);
@@ -240,16 +210,16 @@ export default function MessageHandler({ messages }) {
 
     const events = new SSE(server, {
       payload: JSON.stringify(payload),
-      headers: { "Content-Type": "application/json" },
+      headers: { 'Content-Type': 'application/json' }
     });
 
-    let latestResponseText = "";
-    events.onmessage = (e) => {
+    let latestResponseText = '';
+    events.onmessage = e => {
       const data = JSON.parse(e.data);
 
       if (data.final) {
         finalHandler(data, { ...submission, message });
-        console.log("final", data);
+        console.log('final', data);
       }
       if (data.created) {
         message = {
@@ -257,10 +227,10 @@ export default function MessageHandler({ messages }) {
           model: message?.model,
           chatGptLabel: message?.chatGptLabel,
           promptPrefix: message?.promptPrefix,
-          overrideParentMessageId: message?.overrideParentMessageId,
+          overrideParentMessageId: message?.overrideParentMessageId
         };
         createdHandler(data, { ...submission, message });
-        console.log("created", message);
+        console.log('created', message);
       } else {
         let text = data.text || data.response;
         if (data.initial) console.log(data);
@@ -273,13 +243,12 @@ export default function MessageHandler({ messages }) {
       }
     };
 
-    events.onopen = () => console.log("connection is opened");
+    events.onopen = () => console.log('connection is opened');
 
-    events.oncancel = (e) =>
-      cancelHandler(latestResponseText, { ...submission, message });
+    events.oncancel = e => cancelHandler(latestResponseText, { ...submission, message });
 
     events.onerror = function (e) {
-      console.log("error in opening conn.");
+      console.log('error in opening conn.');
       events.close();
 
       const data = JSON.parse(e.data);
@@ -294,7 +263,7 @@ export default function MessageHandler({ messages }) {
       const isCancelled = events.readyState <= 1;
       events.close();
       if (isCancelled) {
-        const e = new Event("cancel");
+        const e = new Event('cancel');
         events.dispatchEvent(e);
       }
       setIsSubmitting(false);

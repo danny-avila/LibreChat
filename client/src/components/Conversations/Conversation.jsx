@@ -15,6 +15,7 @@ export default function Conversation({ conversation, retainView }) {
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
 
   const { refreshConversations } = store.useConversations();
+  const { switchToConversation } = store.useConversation();
 
   const [renaming, setRenaming] = useState(false);
   const [titleInput, setTitleInput] = useState(title);
@@ -56,9 +57,7 @@ export default function Conversation({ conversation, retainView }) {
     setSubmission(null);
 
     // set conversation to the new conversation
-    setCurrentConversation(conversation);
-    setMessages(null);
-    resetLatestMessage();
+    switchToConversation(conversation);
 
     // if (!stopStream) {
     //   dispatch(setStopStream(true));

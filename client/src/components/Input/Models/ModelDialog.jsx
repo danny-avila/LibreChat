@@ -1,12 +1,9 @@
 import React, { useState, useRef } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { useSelector, useDispatch } from 'react-redux';
-import { setSubmission, setModel, setCustomGpt } from '~/store/submitSlice';
-import { setNewConvo } from '~/store/convoSlice';
 import manualSWR from '~/utils/fetchers';
-import { Button } from '../ui/Button.tsx';
-import { Input } from '../ui/Input.tsx';
-import { Label } from '../ui/Label.tsx';
+import { Button } from '../../ui/Button.tsx';
+import { Input } from '../../ui/Input.tsx';
+import { Label } from '../../ui/Label.tsx';
 
 import {
   DialogClose,
@@ -15,11 +12,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle
-} from '../ui/Dialog.tsx';
+} from '../../ui/Dialog.tsx';
+
+import store from '~/store';
 
 export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
-  const dispatch = useDispatch();
-  const { modelMap, initial } = useSelector((state) => state.models);
+  const { newConversation } = store.useConversation();
+
   const [chatGptLabel, setChatGptLabel] = useState('');
   const [promptPrefix, setPromptPrefix] = useState('');
   const [saveText, setSaveText] = useState('Save');
@@ -27,22 +26,25 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
   const inputRef = useRef(null);
   const updateCustomGpt = manualSWR(`/api/customGpts/`, 'post');
 
-  const selectHandler = (e) => {
+  const selectHandler = e => {
     if (chatGptLabel.length === 0) {
       e.preventDefault();
       setRequired(true);
       inputRef.current.focus();
       return;
     }
-    dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
-    dispatch(setModel('chatgptCustom'));
+
     handleSaveState(chatGptLabel.toLowerCase());
+
     // Set new conversation
-    dispatch(setNewConvo());
-    dispatch(setSubmission({}));
+    newConversation({
+      model: 'chatgptCustom',
+      chatGptLabel,
+      promptPrefix
+    });
   };
 
-  const saveHandler = (e) => {
+  const saveHandler = e => {
     e.preventDefault();
     setModelSave(true);
     const value = chatGptLabel.toLowerCase();
@@ -56,26 +58,30 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
     updateCustomGpt.trigger({ value, chatGptLabel, promptPrefix });
 
     mutate();
-    setSaveText((prev) => prev + 'd!');
+    setSaveText(prev => prev + 'd!');
     setTimeout(() => {
       setSaveText('Save');
     }, 2500);
 
-    dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
-    dispatch(setModel('chatgptCustom'));
-    // dispatch(setDisabled(false));
+    // dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
+    newConversation({
+      model: 'chatgptCustom',
+      chatGptLabel,
+      promptPrefix
+    });
   };
 
-  if (
-    chatGptLabel !== 'chatgptCustom' &&
-    modelMap[chatGptLabel.toLowerCase()] &&
-    !initial[chatGptLabel.toLowerCase()] &&
-    saveText === 'Save'
-  ) {
-    setSaveText('Update');
-  } else if (!modelMap[chatGptLabel.toLowerCase()] && saveText === 'Update') {
-    setSaveText('Save');
-  }
+  // Commented by wtlyu
+  // if (
+  //   chatGptLabel !== 'chatgptCustom' &&
+  //   modelMap[chatGptLabel.toLowerCase()] &&
+  //   !initial[chatGptLabel.toLowerCase()] &&
+  //   saveText === 'Save'
+  // ) {
+  //   setSaveText('Update');
+  // } else if (!modelMap[chatGptLabel.toLowerCase()] && saveText === 'Update') {
+  //   setSaveText('Save');
+  // }
 
   const requiredProp = required ? { required: true } : {};
 
@@ -84,8 +90,7 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
       <DialogHeader>
         <DialogTitle className="text-gray-800 dark:text-white">Customize ChatGPT</DialogTitle>
         <DialogDescription className="text-gray-600 dark:text-gray-300">
-          Note: important instructions are often better placed in your message rather than the
-          prefix.{' '}
+          Note: important instructions are often better placed in your message rather than the prefix.{' '}
           <a
             href="https://platform.openai.com/docs/guides/chat/instructing-chat-models"
             target="_blank"
@@ -107,7 +112,7 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
             id="chatGptLabel"
             value={chatGptLabel}
             ref={inputRef}
-            onChange={(e) => setChatGptLabel(e.target.value)}
+            onChange={e => setChatGptLabel(e.target.value)}
             placeholder="Set a custom name for ChatGPT"
             className=" col-span-3 shadow-[0_0_10px_rgba(0,0,0,0.10)] outline-none placeholder:text-gray-400 invalid:border-red-400 invalid:text-red-600 invalid:placeholder-red-600 invalid:placeholder-opacity-70 invalid:ring-opacity-10 focus:ring-0 focus:invalid:border-red-400 focus:invalid:ring-red-300 dark:border-none dark:bg-gray-700
               dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:invalid:border-red-600 dark:invalid:text-red-300 dark:invalid:placeholder-opacity-80 dark:focus:border-none  dark:focus:border-transparent dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0 dark:focus:invalid:ring-red-600 dark:focus:invalid:ring-opacity-50"
@@ -124,7 +129,7 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
           <TextareaAutosize
             id="promptPrefix"
             value={promptPrefix}
-            onChange={(e) => setPromptPrefix(e.target.value)}
+            onChange={e => setPromptPrefix(e.target.value)}
             placeholder="Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
             className="col-span-3 flex h-20 w-full resize-none rounded-md border border-gray-300 bg-transparent py-2 px-3 text-sm shadow-[0_0_10px_rgba(0,0,0,0.10)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-none dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-none dark:focus:border-transparent dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0"
           />

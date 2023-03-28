@@ -1,11 +1,7 @@
 import React from 'react';
-import { useSelector } from 'react-redux';
 
-export default function SubmitButton({ submitMessage, disabled }) {
-  const { isSubmitting } = useSelector((state) => state.submit);
-  const { error, latestMessage } = useSelector((state) => state.convo);
-
-  const clickHandler = (e) => {
+export default function SubmitButton({ submitMessage, disabled, isSubmitting }) {
+  const clickHandler = e => {
     e.preventDefault();
     submitMessage();
   };
