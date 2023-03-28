@@ -31,7 +31,13 @@ export default function Chat() {
         newConversation();
       } else if (conversationId) {
         // fetch it from server
-        conversationTrigger().then(setConversation);
+        conversationTrigger()
+          .then(setConversation)
+          .catch(error => {
+            console.error('failed to fetch the conversation');
+            console.error(error);
+            newConversation();
+          });
         setMessages(null);
       } else {
         navigate(`/chat/new`);
