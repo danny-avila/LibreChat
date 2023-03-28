@@ -107,6 +107,7 @@ export default function Messages({ isSearchView = false }) {
                 scrollToBottom={scrollToBottom}
                 currentEditId={currentEditId}
                 setCurrentEditId={setCurrentEditId}
+                isSearchView={isSearchView}
               />
               <CSSTransition
                 in={showScrollButton}

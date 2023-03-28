@@ -42,7 +42,7 @@ router.get('/', async function (req, res) {
         },
         true
       )
-    ).hits.map((message) => {
+    ).hits.map(message => {
       const { _formatted, ...rest } = message;
       return {
         ...rest,
@@ -64,7 +64,9 @@ router.get('/', async function (req, res) {
         message.conversationId = cleanUpPrimaryKeyValue(message.conversationId);
       }
       if (result.convoMap[message.conversationId] && !message.error) {
-        message = { ...message, title: result.convoMap[message.conversationId].title };
+        const convo = result.convoMap[message.conversationId];
+        const { title, chatGptLabel, model } = convo;
+        message = { ...message, ...{ title, chatGptLabel, model } };
         activeMessages.push(message);
       }
     }
@@ -91,12 +93,12 @@ router.get('/clear', async function (req, res) {
 
 router.get('/test', async function (req, res) {
   const { q } = req.query;
-  const messages = (
-    await Message.meiliSearch(q, { attributesToHighlight: ['text'] }, true)
-  ).hits.map((message) => {
-    const { _formatted, ...rest } = message;
-    return { ...rest, searchResult: true, text: _formatted.text };
-  });
+  const messages = (await Message.meiliSearch(q, { attributesToHighlight: ['text'] }, true)).hits.map(
+    message => {
+      const { _formatted, ...rest } = message;
+      return { ...rest, searchResult: true, text: _formatted.text };
+    }
+  );
   res.send(messages);
 });
 
