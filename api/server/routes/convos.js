@@ -41,9 +41,15 @@ router.post('/gen_title', async (req, res) => {
 
 router.post('/clear', async (req, res) => {
   let filter = {};
-  const { conversationId } = req.body.arg;
+  const { conversationId, source } = req.body.arg;
   if (conversationId) {
     filter = { conversationId };
+  }
+
+  console.log('source:', source);
+
+  if (source === 'button' && !conversationId) {
+    return res.status(200).send('No conversationId provided');
   }
 
   try {
