@@ -43,9 +43,15 @@ module.exports = {
       return { message: 'Error saving conversation' };
     }
   },
-  updateConvo: async (user, { conversationId, ...update }) => {
+  updateConvo: async (user, { conversationId, oldConvoId, ...update }) => {
     try {
-      return await Conversation.findOneAndUpdate({ conversationId: conversationId, user }, update, {
+      let convoId = conversationId;
+      if (oldConvoId) {
+        convoId = oldConvoId;
+        update.conversationId = conversationId;
+      }
+
+      return await Conversation.findOneAndUpdate({ conversationId: convoId, user }, update, {
         new: true
       }).exec();
     } catch (error) {
