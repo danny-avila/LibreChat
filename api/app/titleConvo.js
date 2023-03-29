@@ -23,7 +23,7 @@ const titleConvo = async ({ model, text, response }) => {
       role: 'system',
       content:
         // `You are a title-generator with one job: giving a conversation, detect the language and titling the conversation provided by a user, using the same language. The requirement are: 1. If possible, generate in 5 words or less, 2. Using title case, 3. must give the title using the language as the user said. 4. Don't refer to the participants of the conversation. 5. Do not include punctuation or quotation marks. 6. Your response should be in title case, exclusively containing the title. 7. don't say anything except the title.
-        `Detect user language and write in the same language an extremely concise title for this conversation, which you must accurately detect. Write in the detected language. Title in 5 Words or Less. No Punctuation/Quotation. All words should be capitalized and complete only the title in User Language only.
+        `Detect user language and write in the same language an extremely concise title for this conversation, which you must accurately detect. Write in the detected language. Title in 5 Words or Less. No Punctuation/Quotation. All first letters of every word should be capitalized and complete only the title in User Language only.
 
 ||>User:
 "${text}"
@@ -38,7 +38,7 @@ const titleConvo = async ({ model, text, response }) => {
     // }
   ];
 
-  console.log('MESSAGES', messages[0]);
+  // console.log('Title Prompt', messages[0]);
 
   const request = {
     model: 'gpt-3.5-turbo',

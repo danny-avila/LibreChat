@@ -31,6 +31,8 @@ const browserClient = async ({ text, onProgress, convo, abortController }) => {
     options = { ...options, ...convo };
   }
 
+  console.log('gptBrowser options', options, clientOptions);
+
   /* will error if given a convoId at the start */
   if (convo.parentMessageId.startsWith('0000')) {
     delete options.conversationId;
