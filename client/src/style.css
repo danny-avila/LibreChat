@@ -37,7 +37,7 @@ bottom: 39px;
 z-index: 995;
 margin-left: auto; 
 margin-right: auto; 
-width: 408px; /* Need a specific value to work */
+width: 308px; /* Need a specific value to work */
 transition: all 0.5s ease-in-out;
 pointer-events: none;
 transform: translateY(-60px);
