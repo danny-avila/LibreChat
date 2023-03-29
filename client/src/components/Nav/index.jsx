@@ -6,67 +6,119 @@ import Pages from '../Conversations/Pages';
 import Conversations from '../Conversations';
 import NavLinks from './NavLinks';
 import { searchFetcher, swr } from '~/utils/fetchers';
-import { useDispatch, useSelector } from 'react-redux';
-import { setConvos, setNewConvo, refreshConversation } from '~/store/convoSlice';
-import { setMessages } from '~/store/messageSlice';
-import { setDisabled } from '~/store/submitSlice';
+import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
+
+import store from '~/store';
 
 export default function Nav({ navVisible, setNavVisible }) {
-  const dispatch = useDispatch();
   const [isHovering, setIsHovering] = useState(false);
-  const [isFetching, setIsFetching] = useState(false);
+
+  const containerRef = useRef(null);
+  const scrollPositionRef = useRef(null);
+
+  // const dispatch = useDispatch();
+  const [conversations, setConversations] = useState([]);
+  // current page
+  const [pageNumber, setPageNumber] = useState(1);
+  // total pages
   const [pages, setPages] = useState(1);
-  const [pageNumber, setPage] = useState(1);
-  const { search, query } = useSelector((state) => state.search);
-  const { conversationId, convos, refreshConvoHint } = useSelector((state) => state.convo);
-  
+
+  // search
+  const searchQuery = useRecoilValue(store.searchQuery);
+  const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
+  const isSearching = useRecoilValue(store.isSearching);
+  const { newConversation, searchPlaceholderConversation } = store.useConversation();
+
+  // current conversation
+  const conversation = useRecoilValue(store.conversation);
+  const { conversationId } = conversation || {};
+  const setSearchResultMessages = useSetRecoilState(store.searchResultMessages);
+
+  // refreshConversationsHint is used for other components to ask refresh of Nav
+  const refreshConversationsHint = useRecoilValue(store.refreshConversationsHint);
+
+  const { refreshConversations } = store.useConversations();
+
+  const [isFetching, setIsFetching] = useState(false);
+
   const onSuccess = (data, searchFetch = false) => {
-    if (search) {
+    if (isSearching) {
       return;
     }
 
-    const { conversations, pages } = data;
+    let { conversations, pages } = data;
     if (pageNumber > pages) {
-      setPage(pages);
+      setPageNumber(pages);
     } else {
-      dispatch(setConvos({ convos: conversations, searchFetch }));
+      if (!searchFetch)
+        conversations = conversations.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      setConversations(conversations);
       setPages(pages);
     }
   };
 
   const onSearchSuccess = (data, expectedPage) => {
     const res = data;
-    dispatch(setConvos({ convos: res.conversations, searchFetch: true }));
+    setConversations(res.conversations);
     if (expectedPage) {
-      setPage(expectedPage);
+      setPageNumber(expectedPage);
     }
-    setPage(res.pageNumber);
+    setPageNumber(res.pageNumber);
     setPages(res.pages);
     setIsFetching(false);
-    if (res.messages?.length > 0) {
-      dispatch(setMessages(res.messages));
-      dispatch(setDisabled(true));
-    }
+    searchPlaceholderConversation();
+    setSearchResultMessages(res.messages);
   };
 
-  const fetch = useCallback(_.partialRight(searchFetcher.bind(null, () => setIsFetching(true)), onSearchSuccess), [dispatch]);
+  // TODO: dont need this
+  const fetch = useCallback(
+    _.partialRight(
+      searchFetcher.bind(null, () => setIsFetching(true)),
+      onSearchSuccess
+    ),
+    [setIsFetching]
+  );
 
   const clearSearch = () => {
-    setPage(1);
-    dispatch(refreshConversation());
-    if (!conversationId) {
-      dispatch(setNewConvo());
-      dispatch(setMessages([]));
+    setPageNumber(1);
+    refreshConversations();
+    if (conversationId == 'search') {
+      newConversation();
     }
-    dispatch(setDisabled(false));
+    // dispatch(setDisabled(false));
   };
 
   const { data, isLoading, mutate } = swr(`/api/convos?pageNumber=${pageNumber}`, onSuccess, {
-    revalidateOnMount: false,
+    revalidateOnMount: false
   });
 
-  const containerRef = useRef(null);
-  const scrollPositionRef = useRef(null);
+  const nextPage = async () => {
+    moveToTop();
+
+    if (!isSearching) {
+      setPageNumber(prev => prev + 1);
+      await mutate();
+    } else {
+      await fetch(searchQuery, +pageNumber + 1);
+    }
+  };
+
+  const previousPage = async () => {
+    moveToTop();
+
+    if (!isSearching) {
+      setPageNumber(prev => prev - 1);
+      await mutate();
+    } else {
+      await fetch(searchQuery, +pageNumber - 1);
+    }
+  };
+
+  useEffect(() => {
+    if (!isSearching) {
+      mutate();
+    }
+  }, [pageNumber, conversationId, refreshConversationsHint]);
 
   const moveToTop = () => {
     const container = containerRef.current;
@@ -75,35 +127,7 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   };
 
-  const nextPage = async () => {
-    moveToTop();
-
-    if (!search) {
-      setPage((prev) => prev + 1);
-      await mutate();
-    } else {
-      await fetch(query, +pageNumber + 1);
-    }
-  };
-
-  const previousPage = async () => {
-    moveToTop();
-
-    if (!search) {
-      setPage((prev) => prev - 1);
-      await mutate();
-    } else {
-      await fetch(query, +pageNumber - 1);
-    }
-  };
-
-  useEffect(() => {
-    if (!search) {
-      mutate();
-    }
-  }, [pageNumber, conversationId, refreshConvoHint]);
-
-  useEffect(() => {
+  const moveTo = () => {
     const container = containerRef.current;
 
     if (container && scrollPositionRef.current !== null) {
@@ -112,17 +136,19 @@ export default function Nav({ navVisible, setNavVisible }) {
 
       container.scrollTop = Math.min(maxScrollTop, scrollPositionRef.current);
     }
-  }, [data]);
+  };
+
+  const toggleNavVisible = () => {
+    setNavVisible(prev => !prev);
+  };
+
+  // useEffect(() => {
+  //   moveTo();
+  // }, [data]);
 
   useEffect(() => {
     setNavVisible(false);
   }, [conversationId]);
-
-  const toggleNavVisible = () => {
-    setNavVisible((prev) => {
-      return !prev;
-    });
-  };
 
   const containerClasses =
     isLoading && pageNumber === 1
@@ -151,11 +177,11 @@ export default function Nav({ navVisible, setNavVisible }) {
               >
                 <div className={containerClasses}>
                   {/* {(isLoading && pageNumber === 1) ? ( */}
-                  {(isLoading && pageNumber === 1) || (isFetching) ? (
+                  {(isLoading && pageNumber === 1) || isFetching ? (
                     <Spinner />
                   ) : (
                     <Conversations
-                      conversations={convos}
+                      conversations={conversations}
                       conversationId={conversationId}
                       moveToTop={moveToTop}
                     />
@@ -172,6 +198,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                 fetch={fetch}
                 onSearchSuccess={onSearchSuccess}
                 clearSearch={clearSearch}
+                isSearchEnabled={isSearchEnabled}
               />
             </nav>
           </div>

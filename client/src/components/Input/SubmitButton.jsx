@@ -1,11 +1,7 @@
 import React from 'react';
-import { useSelector } from 'react-redux';
 
-export default function SubmitButton({ submitMessage, disabled }) {
-  const { isSubmitting } = useSelector((state) => state.submit);
-  const { error, latestMessage } = useSelector((state) => state.convo);
-
-  const clickHandler = (e) => {
+export default function SubmitButton({ submitMessage, disabled, isSubmitting }) {
+  const clickHandler = e => {
     e.preventDefault();
     submitMessage();
   };
@@ -13,13 +9,23 @@ export default function SubmitButton({ submitMessage, disabled }) {
   if (isSubmitting) {
     return (
       <button
-        className="absolute bottom-0 right-1 h-[100%] w-[30px] rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:hover:bg-transparent dark:hover:bg-gray-900 dark:hover:text-gray-400 dark:disabled:hover:bg-transparent md:right-2"
+        className="absolute bottom-0 right-1 h-[100%] w-[40px] rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:hover:bg-transparent dark:hover:bg-gray-900 dark:hover:text-gray-400 dark:disabled:hover:bg-transparent md:right-2"
         disabled
       >
         <div className="text-2xl">
-          <span>·</span>
-          <span className="blink">·</span>
-          <span className="blink2">·</span>
+          <span style={{ maxWidth: 5.5, display: 'inline-grid' }}>·</span>
+          <span
+            className="blink"
+            style={{ maxWidth: 5.5, display: 'inline-grid' }}
+          >
+            ·
+          </span>
+          <span
+            className="blink2"
+            style={{ maxWidth: 5.5, display: 'inline-grid' }}
+          >
+            ·
+          </span>
         </div>
       </button>
     );

@@ -1,23 +1,13 @@
 import React from 'react';
-import { useDispatch } from 'react-redux';
-import { setNewConvo, refreshConversation } from '~/store/convoSlice';
-import { setMessages } from '~/store/messageSlice';
-import { setSubmission, setDisabled } from '~/store/submitSlice';
-import { setText } from '~/store/textSlice';
-import { setInputValue, setQuery } from '~/store/searchSlice';
+import store from '~/store';
 
 export default function NewChat() {
-  const dispatch = useDispatch();
+  const { newConversation } = store.useConversation();
 
   const clickHandler = () => {
-    dispatch(setText(''));
-    dispatch(setMessages([]));
-    dispatch(setNewConvo());
-    dispatch(refreshConversation());
-    dispatch(setSubmission({}));
-    dispatch(setDisabled(false));
-    dispatch(setInputValue(''));
-    dispatch(setQuery(''));
+    // dispatch(setInputValue(''));
+    // dispatch(setQuery(''));
+    newConversation();
   };
 
   return (

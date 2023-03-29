@@ -1,12 +1,9 @@
 import React, { useState, useRef } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { useSelector, useDispatch } from 'react-redux';
-import { setSubmission, setModel, setCustomGpt } from '~/store/submitSlice';
-import { setNewConvo } from '~/store/convoSlice';
 import manualSWR from '~/utils/fetchers';
-import { Button } from '../ui/Button.tsx';
-import { Input } from '../ui/Input.tsx';
-import { Label } from '../ui/Label.tsx';
+import { Button } from '../../ui/Button.tsx';
+import { Input } from '../../ui/Input.tsx';
+import { Label } from '../../ui/Label.tsx';
 
 import {
   DialogClose,
@@ -15,11 +12,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle
-} from '../ui/Dialog.tsx';
+} from '../../ui/Dialog.tsx';
+
+import store from '~/store';
 
 export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
-  const dispatch = useDispatch();
-  const { modelMap, initial } = useSelector(state => state.models);
+  const { newConversation } = store.useConversation();
+
   const [chatGptLabel, setChatGptLabel] = useState('');
   const [promptPrefix, setPromptPrefix] = useState('');
   const [saveText, setSaveText] = useState('Save');
@@ -34,12 +33,15 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
       inputRef.current.focus();
       return;
     }
-    dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
-    dispatch(setModel('chatgptCustom'));
+
     handleSaveState(chatGptLabel.toLowerCase());
+
     // Set new conversation
-    dispatch(setNewConvo());
-    dispatch(setSubmission({}));
+    newConversation({
+      model: 'chatgptCustom',
+      chatGptLabel,
+      promptPrefix
+    });
   };
 
   const saveHandler = e => {
@@ -61,21 +63,25 @@ export default function ModelDialog({ mutate, setModelSave, handleSaveState }) {
       setSaveText('Save');
     }, 2500);
 
-    dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
-    dispatch(setModel('chatgptCustom'));
-    // dispatch(setDisabled(false));
+    // dispatch(setCustomGpt({ chatGptLabel, promptPrefix }));
+    newConversation({
+      model: 'chatgptCustom',
+      chatGptLabel,
+      promptPrefix
+    });
   };
 
-  if (
-    chatGptLabel !== 'chatgptCustom' &&
-    modelMap[chatGptLabel.toLowerCase()] &&
-    !initial[chatGptLabel.toLowerCase()] &&
-    saveText === 'Save'
-  ) {
-    setSaveText('Update');
-  } else if (!modelMap[chatGptLabel.toLowerCase()] && saveText === 'Update') {
-    setSaveText('Save');
-  }
+  // Commented by wtlyu
+  // if (
+  //   chatGptLabel !== 'chatgptCustom' &&
+  //   modelMap[chatGptLabel.toLowerCase()] &&
+  //   !initial[chatGptLabel.toLowerCase()] &&
+  //   saveText === 'Save'
+  // ) {
+  //   setSaveText('Update');
+  // } else if (!modelMap[chatGptLabel.toLowerCase()] && saveText === 'Update') {
+  //   setSaveText('Save');
+  // }
 
   const requiredProp = required ? { required: true } : {};
 
