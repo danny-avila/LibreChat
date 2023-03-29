@@ -149,9 +149,10 @@ module.exports = {
     }
   },
   deleteConvos: async (user, filter) => {
-    let deleteCount = await Conversation.deleteMany({ ...filter, user }).exec();
-    console.log('deleteCount', deleteCount);
-    deleteCount.messages = await deleteMessages({ ...filter, user });
+    let toRemove = await Conversation.find({...filter, user}).select('conversationId')
+    const ids = toRemove.map(instance => instance.conversationId);
+    let deleteCount = await Conversation.deleteMany({...filter, user}).exec();
+    deleteCount.messages = await deleteMessages({conversationId: {$in: ids}});
     return deleteCount;
   }
 };
