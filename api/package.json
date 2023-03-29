@@ -1,6 +1,6 @@
 {
   "name": "chatgpt-clone",
-  "version": "1.0.0",
+  "version": "0.2.0",
   "description": "",
   "main": "server/index.js",
   "scripts": {
@@ -22,7 +22,6 @@
     "@keyv/mongo": "^2.1.8",
     "@waylaidwanderer/chatgpt-api": "^1.33.1",
     "axios": "^1.3.4",
-    "chatgpt-latest": "npm:@waylaidwanderer/chatgpt-api@^1.31.6",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
     "dotenv": "^16.0.3",
