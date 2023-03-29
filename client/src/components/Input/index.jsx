@@ -6,7 +6,6 @@ import BingStyles from './BingStyles';
 import ModelMenu from './Models/ModelMenu';
 import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
-import createPayload from '~/utils/createPayload';
 import RegenerateIcon from '../svg/RegenerateIcon';
 import StopGeneratingIcon from '../svg/StopGeneratingIcon';
 import { useMessageHandler } from '../../utils/handleSubmit';
@@ -20,13 +19,14 @@ export default function TextChat({ isSearchView = false }) {
   const conversation = useRecoilValue(store.conversation);
   const latestMessage = useRecoilValue(store.latestMessage);
   const messages = useRecoilValue(store.messages);
+  const [text, setText] = useRecoilState(store.text);
+  // const [text, setText] = useState('');
 
   const isSubmitting = useRecoilValue(store.isSubmitting);
 
   // TODO: do we need this?
   const disabled = false;
 
-  const [text, setText] = useState('');
   const { ask, regenerate, stopGenerating } = useMessageHandler();
 
   const bingStylesRef = useRef(null);
