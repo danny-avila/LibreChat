@@ -20,8 +20,8 @@ function BingStyles(props, ref) {
   }, [conversationId, model, value]);
 
   const show = isBing && (!conversationId || messages?.length === 0 || props.show);
-  const defaultClasses = 'p-2 rounded-md font-normal bg-white/[.60] dark:bg-gray-700 text-black';
-  const defaultSelected = defaultClasses + 'font-medium data-[state=active]:text-white';
+  const defaultClasses = 'p-2 rounded-md min-w-[75px] font-normal bg-white/[.60] dark:bg-gray-700 text-black text-xs';
+  const defaultSelected = defaultClasses + 'font-medium data-[state=active]:text-white text-xs';
 
   const selectedClass = val => val + '-tab ' + defaultSelected;
 
