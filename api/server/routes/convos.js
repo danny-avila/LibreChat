@@ -13,30 +13,9 @@ router.get('/', async (req, res) => {
 router.get('/:conversationId', async (req, res) => {
   const { conversationId } = req.params;
   const convo = await getConvo(req?.session?.user?.username, conversationId);
-  res.status(200).send(convo.toObject());
-});
 
-router.post('/gen_title', async (req, res) => {
-  const { conversationId } = req.body.arg;
-
-  const convo = await getConvo(req?.session?.user?.username, conversationId);
-  const firstMessage = (await getMessages({ conversationId }))[0];
-  const secondMessage = (await getMessages({ conversationId }))[1];
-
-  const title = convo.jailbreakConversationId
-    ? await getConvoTitle(req?.session?.user?.username, conversationId)
-    : await titleConvo({
-      model: convo?.model,
-      message: firstMessage?.text,
-      response: JSON.stringify(secondMessage?.text || '')
-    });
-
-  await saveConvo(req?.session?.user?.username, {
-    conversationId,
-    title
-  });
-
-  res.status(200).send(title);
+  if (convo) res.status(200).send(convo.toObject());
+  else res.status(404).end();
 });
 
 router.post('/clear', async (req, res) => {

@@ -1,164 +1,123 @@
-import resetConvo from './resetConvo';
-import { useSelector, useDispatch } from 'react-redux';
-import { setNewConvo } from '~/store/convoSlice';
-import { setMessages } from '~/store/messageSlice';
-import { setSubmitState, setSubmission } from '~/store/submitSlice';
-import { setText } from '~/store/textSlice';
-import { setError } from '~/store/convoSlice';
-import {v4} from 'uuid';
+// import resetConvo from './resetConvo';
+// import { useSelector, useDispatch } from 'react-redux';
+// import { setNewConvo } from '~/store/convoSlice';
+// import { setMessages } from '~/store/messageSlice';
+// import { setSubmitState, setSubmission } from '~/store/submitSlice';
+// import { setText } from '~/store/textSlice';
+// import { setError } from '~/store/convoSlice';
+import { v4 } from 'uuid';
+import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
+
+import store from '~/store';
 
 const useMessageHandler = () => {
-  const dispatch = useDispatch();
-  const convo = useSelector((state) => state.convo);
-  const { initial } = useSelector((state) => state.models);
-  const { messages } = useSelector((state) => state.messages);
-  const { model, chatGptLabel, promptPrefix, isSubmitting } = useSelector((state) => state.submit);
-  const { latestMessage, error } = convo;
+  // const dispatch = useDispatch();
+  // const convo = useSelector((state) => state.convo);
+  // const { initial } = useSelector((state) => state.models);
+  // const { messages } = useSelector((state) => state.messages);
+  // const { model, chatGptLabel, promptPrefix, isSubmitting } = useSelector((state) => state.submit);
+  // const { latestMessage, error } = convo;
 
-  const ask = ({ text, parentMessageId=null, conversationId=null, messageId=null}, { isRegenerate=false }={}) => {
-    if (error) {
-      dispatch(setError(false));
-    }
+  const [currentConversation, setCurrentConversation] = useRecoilState(store.conversation) || {};
+  const setSubmission = useSetRecoilState(store.submission);
+  const isSubmitting = useRecoilValue(store.isSubmitting);
 
+  const latestMessage = useRecoilValue(store.latestMessage);
+  const { error } = currentConversation;
+
+  const [messages, setMessages] = useRecoilState(store.messages);
+
+  const ask = (
+    { text, parentMessageId = null, conversationId = null, messageId = null },
+    { isRegenerate = false } = {}
+  ) => {
     if (!!isSubmitting || text === '') {
       return;
     }
-    
+
+    // determine the model to be used
+    const { model = null, chatGptLabel = null, promptPrefix = null } = currentConversation;
+
+    // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
     text = text.trim();
     const fakeMessageId = v4();
-    const isCustomModel = model === 'chatgptCustom' || !initial[model];
-    const sender = model === 'chatgptCustom' ? chatGptLabel : model;
+    // const isCustomModel = model === 'chatgptCustom' || !initial[model];
+    // const sender = model === 'chatgptCustom' ? chatGptLabel : model;
     parentMessageId = parentMessageId || latestMessage?.messageId || '00000000-0000-0000-0000-000000000000';
     let currentMessages = messages;
-    if (resetConvo(currentMessages, sender)) {
-      parentMessageId = '00000000-0000-0000-0000-000000000000';
-      conversationId = null;
-      dispatch(setNewConvo());
-      currentMessages = [];
+    conversationId = conversationId || currentConversation?.conversationId;
+    if (conversationId == 'search') {
+      console.error('cannot send any message under search view!');
+      return;
     }
-    const currentMsg = { sender: 'User', text, current: true, isCreatedByUser: true, parentMessageId, conversationId, messageId: fakeMessageId };
-    const initialResponse = { sender, text: '', parentMessageId: isRegenerate?messageId:fakeMessageId, messageId: (isRegenerate?messageId:fakeMessageId) + '_', submitting: true };
+    if (conversationId == 'new') {
+      parentMessageId = '00000000-0000-0000-0000-000000000000';
+      currentMessages = [];
+      conversationId = null;
+    }
+    const currentMsg = {
+      sender: 'User',
+      text,
+      current: true,
+      isCreatedByUser: true,
+      parentMessageId,
+      conversationId,
+      messageId: fakeMessageId
+    };
+
+    // construct the placeholder response message
+    const initialResponse = {
+      sender: chatGptLabel || model,
+      text: '<span className="result-streaming">█</span>',
+      parentMessageId: isRegenerate ? messageId : fakeMessageId,
+      messageId: (isRegenerate ? messageId : fakeMessageId) + '_',
+      conversationId,
+      submitting: true
+    };
 
     const submission = {
-      convo,
-      isCustomModel,
-      message: { 
+      conversation: {
+        ...currentConversation,
+        conversationId,
+        model,
+        chatGptLabel,
+        promptPrefix
+      },
+      message: {
         ...currentMsg,
         model,
         chatGptLabel,
         promptPrefix,
-        overrideParentMessageId: isRegenerate?messageId:null
+        overrideParentMessageId: isRegenerate ? messageId : null
       },
       messages: currentMessages,
       isRegenerate,
-      initialResponse,
-      sender,
+      initialResponse
     };
 
     console.log('User Input:', text);
 
     if (isRegenerate) {
-      dispatch(setMessages([...currentMessages, initialResponse]));
+      setMessages([...currentMessages, initialResponse]);
     } else {
-      dispatch(setMessages([...currentMessages, currentMsg, initialResponse]));
-      dispatch(setText(''));  
+      setMessages([...currentMessages, currentMsg, initialResponse]);
     }
-    dispatch(setSubmitState(true));
-    dispatch(setSubmission(submission));
-  }
+    setSubmission(submission);
+  };
 
   const regenerate = ({ parentMessageId }) => {
     const parentMessage = messages?.find(element => element.messageId == parentMessageId);
 
-    if (parentMessage && parentMessage.isCreatedByUser)
-      ask({ ...parentMessage }, { isRegenerate: true })
-    else
-      console.error('Failed to regenerate the message: parentMessage not found or not created by user.');
-  }
+    if (parentMessage && parentMessage.isCreatedByUser) ask({ ...parentMessage }, { isRegenerate: true });
+    else console.error('Failed to regenerate the message: parentMessage not found or not created by user.');
+  };
 
   const stopGenerating = () => {
-    dispatch(setSubmission({}));
-  }
+    setSubmission(null);
+  };
 
-  return { ask, regenerate, stopGenerating }
-}
+  return { ask, regenerate, stopGenerating };
+};
 
 export { useMessageHandler };
-
-// deprecated
-// export default function handleSubmit({
-//   model,
-//   text,
-//   convo,
-//   messageHandler,
-//   convoHandler,
-//   errorHandler,
-//   chatGptLabel,
-//   promptPrefix
-// }) {
-//   const endpoint = `/api/ask`;
-//   let payload = { model, text, chatGptLabel, promptPrefix };
-//   if (convo.conversationId && convo.parentMessageId) {
-//     payload = {
-//       ...payload,
-//       conversationId: convo.conversationId,
-//       parentMessageId: convo.parentMessageId
-//     };
-//   }
-
-//   const isBing = model === 'bingai' || model === 'sydney';
-//   if (isBing && convo.conversationId) {
-
-//     payload = {
-//       ...payload,
-//       jailbreakConversationId: convo.jailbreakConversationId,
-//       conversationId: convo.conversationId,
-//       conversationSignature: convo.conversationSignature,
-//       clientId: convo.clientId,
-//       invocationId: convo.invocationId,
-//     };
-//   }
-
-//   let server = endpoint;
-//   server = model === 'bingai' ? server + '/bing' : server;
-//   server = model === 'sydney' ? server + '/sydney' : server;
-  
-//   const events = new SSE(server, {
-//     payload: JSON.stringify(payload),
-//     headers: { 'Content-Type': 'application/json' }
-//   });
-
-//   events.onopen = function () {
-//     console.log('connection is opened');
-//   };
-
-//   events.onmessage = function (e) {
-//     const data = JSON.parse(e.data);
-//     let text = data.text || data.response;
-//     if (data.message) {
-//       messageHandler(text, events);
-//     }
-
-//     if (data.final) {
-//       convoHandler(data);
-//       console.log('final', data);
-//     } else {
-//       // console.log('dataStream', data);
-//     }
-//   };
-
-//   events.onerror = function (e) {
-//     console.log('error in opening conn.');
-//     events.close();
-//     errorHandler(e);
-//   };
-
-//   events.addEventListener('stop', () => {
-//     // Close the SSE stream
-//     console.log('stop event received');
-//     events.close();
-//   });
-
-//   events.stream();
-// }

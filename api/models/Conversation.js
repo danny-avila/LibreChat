@@ -43,15 +43,17 @@ module.exports = {
       return { message: 'Error saving conversation' };
     }
   },
-  updateConvo: async (user, { conversationId, ...update }) => {
+  updateConvo: async (user, { conversationId, oldConvoId, ...update }) => {
     try {
-      return await Conversation.findOneAndUpdate(
-        { conversationId: conversationId, user },
-        update,
-        {
-          new: true
-        }
-      ).exec();
+      let convoId = conversationId;
+      if (oldConvoId) {
+        convoId = oldConvoId;
+        update.conversationId = conversationId;
+      }
+
+      return await Conversation.findOneAndUpdate({ conversationId: convoId, user }, update, {
+        new: true
+      }).exec();
     } catch (error) {
       console.log(error);
       return { message: 'Error updating conversation' };
@@ -89,7 +91,7 @@ module.exports = {
         promises.push(
           Conversation.findOne({
             user,
-            conversationId: convo.conversationId,
+            conversationId: convo.conversationId
           }).exec()
         )
       );
@@ -143,13 +145,14 @@ module.exports = {
       }
     } catch (error) {
       console.log(error);
-      return 'Error getting conversation title';
+      return { message: 'Error getting conversation title' };
     }
   },
   deleteConvos: async (user, filter) => {
-    let deleteCount = await Conversation.deleteMany({ ...filter, user }).exec();
-    console.log('deleteCount', deleteCount);
-    deleteCount.messages = await deleteMessages(filter);
+    let toRemove = await Conversation.find({...filter, user}).select('conversationId')
+    const ids = toRemove.map(instance => instance.conversationId);
+    let deleteCount = await Conversation.deleteMany({...filter, user}).exec();
+    deleteCount.messages = await deleteMessages({conversationId: {$in: ids}});
     return deleteCount;
   }
 };

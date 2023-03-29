@@ -38,40 +38,55 @@ export const languages = [
   'pascal'
 ];
 
-export const getIconOfModel = ({ size=30, sender, isCreatedByUser, searchResult, model, chatGptLabel, error, ...props }) => {
-  // 'ai' is used as 'model' is not accurate for search results
-  let ai = searchResult ? sender : model;
+export const getIconOfModel = ({
+  size = 30,
+  sender,
+  isCreatedByUser,
+  searchResult,
+  model,
+  chatGptLabel,
+  error,
+  ...props
+}) => {
   const { button } = props;
   const bgColors = {
-    chatgpt: `rgb(16, 163, 127${ button ? ', 0.75' : ''})`,
-    chatgptBrowser: `rgb(25, 207, 207${ button ? ', 0.75' : ''})`,
+    chatgpt: `rgb(16, 163, 127${button ? ', 0.75' : ''})`,
+    chatgptBrowser: `rgb(25, 207, 207${button ? ', 0.75' : ''})`,
     bingai: 'transparent',
     sydney: 'radial-gradient(circle at 90% 110%, #F0F0FA, #D0E0F9)',
-    chatgptCustom: `rgb(0, 163, 255${ button ? ', 0.75' : ''})`,
+    chatgptCustom: `rgb(0, 163, 255${button ? ', 0.75' : ''})`
   };
 
-  if (isCreatedByUser) 
+  if (isCreatedByUser)
     return (
       <div
-        title='User'
-        style={{ background: 'radial-gradient(circle at 90% 110%, rgb(1 43 128), rgb(17, 139, 161))', color: 'white', fontSize: 12, width: size, height: size }}
+        title="User"
+        style={{
+          background: 'radial-gradient(circle at 90% 110%, rgb(1 43 128), rgb(17, 139, 161))',
+          color: 'white',
+          fontSize: 12,
+          width: size,
+          height: size
+        }}
         className={`relative flex items-center justify-center rounded-sm text-white ` + props?.className}
       >
         User
       </div>
-    )
+    );
   else if (!isCreatedByUser) {
     // TODO: use model from convo, rather than submit
     // const { model, chatGptLabel, promptPrefix } = convo;
-    let background = bgColors[ai];
-    const isBing = ai === 'bingai' || ai === 'sydney';
-  
+    let background = bgColors[model];
+    const isBing = model === 'bingai' || model === 'sydney';
+
     return (
       <div
-        title={chatGptLabel || ai}
-        style={
-          { background: background || 'radial-gradient(circle at 90% 110%, #F0F0FA, #D0E0F9)', width: size, height: size }
-        }
+        title={chatGptLabel || model}
+        style={{
+          background: background || 'radial-gradient(circle at 90% 110%, #F0F0FA, #D0E0F9)',
+          width: size,
+          height: size
+        }}
         className={`relative flex items-center justify-center rounded-sm text-white ` + props?.className}
       >
         {isBing ? <BingIcon size={size * 0.7} /> : <GPTIcon size={size * 0.7} />}
@@ -85,11 +100,17 @@ export const getIconOfModel = ({ size=30, sender, isCreatedByUser, searchResult,
   } else
     return (
       <div
-        title='User'
-        style={{ background: 'radial-gradient(circle at 90% 110%, rgb(1 43 128), rgb(17, 139, 161))', color: 'white', fontSize: 12, width: size, height: size }}
+        title="User"
+        style={{
+          background: 'radial-gradient(circle at 90% 110%, rgb(1 43 128), rgb(17, 139, 161))',
+          color: 'white',
+          fontSize: 12,
+          width: size,
+          height: size
+        }}
         className={`relative flex items-center justify-center rounded-sm p-1 text-white ` + props?.className}
       >
         {chatGptLabel}
       </div>
-    )
-}
+    );
+};

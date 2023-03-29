@@ -1,41 +1,48 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { debounce } from 'lodash';
-import { useSelector, useDispatch } from 'react-redux';
 import { Search } from 'lucide-react';
-import { setInputValue, setQuery } from '~/store/searchSlice';
+import { useRecoilState } from 'recoil';
+
+import store from '~/store';
 
 export default function SearchBar({ fetch, clearSearch }) {
-  const dispatch = useDispatch();
-  const { inputValue } = useSelector((state) => state.search);
+  // const dispatch = useDispatch();
+  const [inputValue, setInputValue] = useState('');
+  const [searchQuery, setSearchQuery] = useRecoilState(store.searchQuery);
+
   // const [inputValue, setInputValue] = useState('');
 
   const debouncedChangeHandler = useCallback(
-    debounce((q) => {
-      dispatch(setQuery(q));
-      if (q.length > 0) {
-        fetch(q, 1);
-      }
+    debounce(q => {
+      setSearchQuery(q);
     }, 750),
-    [dispatch]
+    [setSearchQuery]
   );
 
-  const handleKeyUp = (e) => {
+  useEffect(() => {
+    if (searchQuery.length > 0) {
+      fetch(searchQuery, 1);
+      setInputValue(searchQuery);
+    }
+  }, [searchQuery]);
+
+  const handleKeyUp = e => {
     const { value } = e.target;
-    if (e.keyCode === 8 && value === '') { 
+    if (e.keyCode === 8 && value === '') {
       // Value after clearing input: ""
       console.log(`Value after clearing input: "${value}"`);
-      dispatch(setQuery(''));
+      setSearchQuery('');
       clearSearch();
-     }
+    }
   };
 
-  const changeHandler = (e) => {
+  const changeHandler = e => {
     let q = e.target.value;
-    dispatch(setInputValue(q));
+    setInputValue(q);
     q = q.trim();
 
     if (q === '') {
-      dispatch(setQuery(''));
+      setSearchQuery('');
       clearSearch();
     } else {
       debouncedChangeHandler(q);

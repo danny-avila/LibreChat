@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
+const set = new Set(['gpt-4', 'text-davinci-003', 'gpt-3.5-turbo', 'gpt-3.5-turbo-0301']);
 
 const clientOptions = {
   modelOptions: {
@@ -8,6 +9,10 @@ const clientOptions = {
   proxy: process.env.PROXY || null,
   debug: false
 };
+
+if (set.has(process.env.DEFAULT_API_GPT)) {
+  clientOptions.modelOptions.model = process.env.DEFAULT_API_GPT;
+}
 
 const askClient = async ({ text, onProgress, convo, abortController }) => {
   const ChatGPTClient = (await import('@waylaidwanderer/chatgpt-api')).default;
