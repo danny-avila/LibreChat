@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import Templates from '../Prompts/Templates';
 import SunIcon from '../svg/SunIcon';
@@ -11,6 +11,7 @@ import store from '~/store';
 
 export default function Landing() {
   const [showingTemplates, setShowingTemplates] = useState(false);
+  const setText = useSetRecoilState(store.text);
   const conversation = useRecoilValue(store.conversation);
   const { title = 'New Chat' } = conversation || {};
 
@@ -20,7 +21,7 @@ export default function Landing() {
     e.preventDefault();
     const { innerText } = e.target;
     const quote = innerText.split('"')[1].trim();
-    // dispatch(setText(quote));
+    setText(quote);
   };
 
   const showTemplates = e => {

@@ -1,17 +1,10 @@
-import React from "react";
-import {
-  RecoilRoot,
-  atom,
-  selector,
-  useRecoilState,
-  useRecoilValue,
-} from "recoil";
+import { atom } from 'recoil';
 
 const user = atom({
-  key: "user",
-  default: null,
+  key: 'user',
+  default: null
 });
 
 export default {
-  user,
+  user
 };
