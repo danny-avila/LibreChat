@@ -142,9 +142,9 @@ export default function Nav({ navVisible, setNavVisible }) {
     setNavVisible(prev => !prev);
   };
 
-  useEffect(() => {
-    moveTo();
-  }, [data]);
+  // useEffect(() => {
+  //   moveTo();
+  // }, [data]);
 
   useEffect(() => {
     setNavVisible(false);
