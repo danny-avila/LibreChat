@@ -1,13 +1,14 @@
 const mongoose = require('mongoose');
-const { Conversation, } = require('../../models/Conversation');
-const { getMessages, } = require('../../models/');
+const { Conversation } = require('../../models/Conversation');
+const { getMessages } = require('../../models/');
 
-async function migrateDb() {
+const migrateToStrictFollowParentMessageIdChain = async () => {
   try {
-    const conversations = await Conversation.find({ model: null }).exec();
+    const conversations = await Conversation.find({ endpoint: null, model: null }).exec();
 
-    if (!conversations || conversations.length === 0)
-      return { message: '[Migrate] No conversations to migrate' };
+    if (!conversations || conversations.length === 0) return { noNeed: true };
+
+    console.log('Migration: To strict follow the parentMessageId chain.');
 
     for (let convo of conversations) {
       const messages = await getMessages({
@@ -36,7 +37,7 @@ async function migrateDb() {
         if (message.sender.toLowerCase() === 'user') {
           message.isCreatedByUser = true;
         }
-        
+
         promises.push(message.save());
       });
       await Promise.all(promises);
@@ -57,7 +58,58 @@ async function migrateDb() {
     console.log(error);
     return { message: '[Migrate] Error migrating conversations' };
   }
-}
+};
 
+const migrateToSupportBetterCustomization = async () => {
+  try {
+    const conversations = await Conversation.find({ endpoint: null }).exec();
+
+    if (!conversations || conversations.length === 0) return { noNeed: true };
+
+    console.log('Migration: To support better customization.');
+
+    const promises = [];
+    for (let convo of conversations) {
+      const originalModel = convo?.model;
+
+      if (originalModel === 'chatgpt') {
+        convo.endpoint = 'openAI';
+        convo.model = 'gpt-3.5-turbo';
+      } else if (originalModel === 'chatgptCustom') {
+        convo.endpoint = 'openAI';
+        convo.model = 'gpt-3.5-turbo';
+      } else if (originalModel === 'bingai') {
+        convo.endpoint = 'bingAI';
+        convo.model = null;
+        convo.jailbreak = false;
+      } else if (originalModel === 'sydney') {
+        convo.endpoint = 'bingAI';
+        convo.model = null;
+        convo.jailbreak = true;
+      } else if (originalModel === 'chatgptBrowser') {
+        convo.endpoint = 'chatGPTBrowser';
+        convo.model = 'text-davinci-002-render-sha';
+        convo.jailbreak = true;
+      }
+
+      promises.push(convo.save());
+    }
+
+    await Promise.all(promises);
+  } catch (error) {
+    console.log(error);
+    return { message: '[Migrate] Error migrating conversations' };
+  }
+};
+
+async function migrateDb() {
+  let ret = [];
+  ret[0] = await migrateToStrictFollowParentMessageIdChain();
+  ret[1] = await migrateToSupportBetterCustomization();
+
+  const isMigrated = !!ret.find(element => !element?.noNeed);
+
+  if (!isMigrated) console.log('[Migrate] Nothing to migrate');
+}
 
 module.exports = migrateDb;

@@ -18,6 +18,54 @@ const convoSchema = mongoose.Schema(
       default: 'New Chat',
       meiliIndex: true
     },
+    user: {
+      type: String,
+      default: null
+    },
+    messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
+    // endpoint: [azureOpenAI, openAI, bingAI, chatGPTBrowser]
+    endpoint: {
+      type: String,
+      default: null,
+      required: true
+    },
+    // for azureOpenAI, openAI, chatGPTBrowser only
+    model: {
+      type: String,
+      default: null,
+      required: false
+    },
+    // for azureOpenAI, openAI only
+    chatGptLabel: {
+      type: String,
+      default: null,
+      required: false
+    },
+    promptPrefix: {
+      type: String,
+      default: null,
+      required: false
+    },
+    temperature: {
+      type: Number,
+      default: 0.8,
+      required: false
+    },
+    top_p: {
+      type: Number,
+      default: 1,
+      required: false
+    },
+    presence_penalty: {
+      type: Number,
+      default: 1,
+      required: false
+    },
+    // for bingai only
+    jailbreak: {
+      type: Boolean,
+      default: false
+    },
     jailbreakConversationId: {
       type: String,
       default: null
@@ -27,32 +75,18 @@ const convoSchema = mongoose.Schema(
       default: null
     },
     clientId: {
-      type: String
+      type: String,
+      default: null
     },
     invocationId: {
-      type: String
+      type: String,
+      default: null
     },
     toneStyle: {
       type: String,
       default: null
     },
-    chatGptLabel: {
-      type: String,
-      default: null
-    },
-    promptPrefix: {
-      type: String,
-      default: null
-    },
-    model: {
-      type: String,
-      required: true
-    },
-    user: {
-      type: String
-    },
-    suggestions: [{ type: String }],
-    messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }]
+    suggestions: [{ type: String }]
   },
   { timestamps: true }
 );
