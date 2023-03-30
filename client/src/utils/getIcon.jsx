@@ -27,10 +27,7 @@ const getIcon = props => {
   else if (!isCreatedByUser) {
     const { endpoint, error } = props;
 
-    let icon = <GPTIcon size={size * 0.7} />;
-    let bg = 'grey';
-    let name = 'UNKNOWN';
-
+    let icon, bg, name;
     if (endpoint === 'azureOpenAI') {
       const { chatGptLabel } = props;
 
@@ -59,6 +56,10 @@ const getIcon = props => {
       icon = <GPTIcon size={size * 0.7} />;
       bg = `grey`;
       name = 'N/A';
+    } else {
+      icon = <GPTIcon size={size * 0.7} />;
+      bg = `grey`;
+      name = 'UNKNOWN';
     }
 
     return (

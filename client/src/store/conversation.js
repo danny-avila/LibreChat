@@ -79,7 +79,7 @@ const useConversation = () => {
     if (endpoint === null)
       // get the default model
       conversation = getDefaultConversation({ conversation, availableEndpoints, prevConversation });
-
+    console.log(conversation);
     setConversation(conversation);
     setMessages(messages);
     resetLatestMessage();

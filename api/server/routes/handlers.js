@@ -68,9 +68,8 @@ const createOnProgress = () => {
     i++;
   };
 
-  const onProgress = (model, opts) => {
-    const bingModels = new Set(['bingai', 'sydney']);
-    return _.partialRight(progressCallback, { ...opts, bing: bingModels.has(model) });
+  const onProgress = opts => {
+    return _.partialRight(progressCallback, opts);
   };
 
   return onProgress;

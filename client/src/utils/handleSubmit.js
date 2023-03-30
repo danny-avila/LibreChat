@@ -1,29 +1,14 @@
-// import resetConvo from './resetConvo';
-// import { useSelector, useDispatch } from 'react-redux';
-// import { setNewConvo } from '~/store/convoSlice';
-// import { setMessages } from '~/store/messageSlice';
-// import { setSubmitState, setSubmission } from '~/store/submitSlice';
-// import { setText } from '~/store/textSlice';
-// import { setError } from '~/store/convoSlice';
 import { v4 } from 'uuid';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 
 import store from '~/store';
 
 const useMessageHandler = () => {
-  // const dispatch = useDispatch();
-  // const convo = useSelector((state) => state.convo);
-  // const { initial } = useSelector((state) => state.models);
-  // const { messages } = useSelector((state) => state.messages);
-  // const { model, chatGptLabel, promptPrefix, isSubmitting } = useSelector((state) => state.submit);
-  // const { latestMessage, error } = convo;
-
-  const [currentConversation, setCurrentConversation] = useRecoilState(store.conversation) || {};
+  const currentConversation = useRecoilValue(store.conversation) || {};
   const setSubmission = useSetRecoilState(store.submission);
   const isSubmitting = useRecoilValue(store.isSubmitting);
 
   const latestMessage = useRecoilValue(store.latestMessage);
-  const { error } = currentConversation;
 
   const [messages, setMessages] = useRecoilState(store.messages);
 
@@ -36,16 +21,53 @@ const useMessageHandler = () => {
     }
 
     // determine the model to be used
-    const { model = null, chatGptLabel = null, promptPrefix = null } = currentConversation;
+    const { endpoint } = currentConversation;
+    let endpointOption = {};
+    let responseSender = '';
+    if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
+      endpointOption = {
+        endpoint,
+        model: currentConversation?.model || 'gpt-3.5-turbo',
+        chatGptLabel: currentConversation?.chatGptLabel || null,
+        promptPrefix: currentConversation?.promptPrefix || null,
+        temperature: currentConversation?.temperature || 0.8,
+        top_p: currentConversation?.top_p || 1,
+        presence_penalty: currentConversation?.presence_penalty || 1
+      };
+      responseSender = endpointOption.chatGptLabel || 'ChatGPT';
+    } else if (endpoint === 'bingAI') {
+      endpointOption = {
+        endpoint,
+        jailbreak: currentConversation?.jailbreak || false,
+        jailbreakConversationId: currentConversation?.jailbreakConversationId || null,
+        conversationSignature: currentConversation?.conversationSignature || null,
+        clientId: currentConversation?.clientId || null,
+        invocationId: currentConversation?.invocationId || null,
+        toneStyle: currentConversation?.toneStyle || 'fast',
+        suggestions: currentConversation?.suggestions || []
+      };
+      responseSender = endpointOption.jailbreak ? 'Sydney' : 'BingAI';
+    } else if (endpoint === 'chatGPTBrowser') {
+      endpointOption = {
+        endpoint,
+        model: currentConversation?.model || 'text-davinci-002-render-sha'
+      };
+      responseSender = 'ChatGPT';
+    } else if (endpoint === null) {
+      console.error('No endpoint available');
+      return;
+    } else {
+      console.error(`Unknown endpoint ${endpoint}`);
+      return;
+    }
+
+    let currentMessages = messages;
 
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
     text = text.trim();
     const fakeMessageId = v4();
-    // const isCustomModel = model === 'chatgptCustom' || !initial[model];
-    // const sender = model === 'chatgptCustom' ? chatGptLabel : model;
     parentMessageId = parentMessageId || latestMessage?.messageId || '00000000-0000-0000-0000-000000000000';
-    let currentMessages = messages;
     conversationId = conversationId || currentConversation?.conversationId;
     if (conversationId == 'search') {
       console.error('cannot send any message under search view!');
@@ -68,7 +90,7 @@ const useMessageHandler = () => {
 
     // construct the placeholder response message
     const initialResponse = {
-      sender: chatGptLabel || model,
+      sender: responseSender,
       text: '<span className="result-streaming">█</span>',
       parentMessageId: isRegenerate ? messageId : fakeMessageId,
       messageId: (isRegenerate ? messageId : fakeMessageId) + '_',
@@ -79,16 +101,11 @@ const useMessageHandler = () => {
     const submission = {
       conversation: {
         ...currentConversation,
-        conversationId,
-        model,
-        chatGptLabel,
-        promptPrefix
+        conversationId
       },
+      endpointOption,
       message: {
         ...currentMsg,
-        model,
-        chatGptLabel,
-        promptPrefix,
         overrideParentMessageId: isRegenerate ? messageId : null
       },
       messages: currentMessages,
