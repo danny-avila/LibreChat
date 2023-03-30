@@ -3,7 +3,7 @@ import { useRecoilValue, useRecoilState } from 'recoil';
 import SubmitButton from './SubmitButton';
 import AdjustToneButton from './AdjustToneButton';
 import BingStyles from './BingStyles';
-import ModelMenu from './Models/ModelMenu';
+// import ModelMenu from './Models/ModelMenu';
 import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
 import RegenerateIcon from '../svg/RegenerateIcon';
@@ -167,7 +167,7 @@ export default function TextChat({ isSearchView = false }) {
                 disabled ? 'dark:bg-gray-900' : 'dark:bg-gray-700'
               } dark:text-white dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] md:py-3 md:pl-4`}
             >
-              <ModelMenu />
+              {/* <ModelMenu /> */}
               <TextareaAutosize
                 tabIndex="0"
                 autoFocus

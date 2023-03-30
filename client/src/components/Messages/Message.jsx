@@ -6,7 +6,7 @@ import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
 import { fetchById } from '~/utils/fetchers';
-import { getIconOfModel } from '~/utils';
+import { getIconOfAi } from '~/utils';
 import { useMessageHandler } from '~/utils/handleSubmit';
 
 import store from '~/store';
@@ -23,32 +23,15 @@ export default function Message({
 }) {
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const setLatestMessage = useSetRecoilState(store.latestMessage);
-  const { model, chatGptLabel, promptPrefix } = conversation;
+  // const { model, chatGptLabel, promptPrefix } = conversation;
   const [abortScroll, setAbort] = useState(false);
-  const {
-    sender,
-    text,
-    searchResult,
-    isCreatedByUser,
-    error,
-    submitting,
-    model: messageModel,
-    chatGptLabel: messageChatGptLabel,
-    searchResult: isSearchResult
-  } = message;
+  const { text, searchResult, isCreatedByUser, error, submitting } = message;
   const textEditor = useRef(null);
   const last = !message?.children?.length;
   const edit = message.messageId == currentEditId;
   const { ask } = useMessageHandler();
   const { switchToConversation } = store.useConversation();
   const blinker = submitting && isSubmitting;
-  const generateCursor = useCallback(() => {
-    if (!blinker) {
-      return '';
-    }
-
-    return <span className="result-streaming">█</span>;
-  }, [blinker]);
 
   useEffect(() => {
     if (blinker && !abortScroll) {
@@ -77,14 +60,9 @@ export default function Message({
       'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 bg-white dark:text-gray-100 group dark:bg-gray-800'
   };
 
-  const icon = getIconOfModel({
-    sender,
-    isCreatedByUser,
-    model: isSearchResult ? messageModel : model,
-    searchResult,
-    chatGptLabel: isSearchResult ? messageChatGptLabel : chatGptLabel,
-    promptPrefix,
-    error
+  const icon = getIconOfAi({
+    ...conversation,
+    ...message
   });
 
   if (!isCreatedByUser)
@@ -199,7 +177,7 @@ export default function Message({
               )}
             </div>
             <HoverButtons
-              model={model}
+              endpoint={conversation?.endpoint}
               visible={!error && isCreatedByUser && !edit && !searchResult}
               onClick={() => enterEdit()}
             />

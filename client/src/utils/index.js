@@ -38,7 +38,7 @@ export const languages = [
   'pascal'
 ];
 
-export const getIconOfModel = ({
+export const getIconOfAi = ({
   size = 30,
   sender,
   isCreatedByUser,

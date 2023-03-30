@@ -20,10 +20,10 @@ export default function Messages({ isSearchView = false }) {
   const _messagesTree = isSearchView ? searchResultMessagesTree : messagesTree;
 
   const conversation = useRecoilValue(store.conversation) || {};
-  const { conversationId, model, chatGptLabel, toneStyle } = conversation;
+  const { conversationId, endpoint } = conversation;
 
-  const models = useRecoilValue(store.models) || [];
-  const modelName = models.find(element => element.model == model)?.name;
+  // const models = useRecoilValue(store.models) || [];
+  // const modelName = models.find(element => element.model == model)?.name;
 
   const searchQuery = useRecoilValue(store.searchQuery);
 
@@ -82,9 +82,22 @@ export default function Messages({ isSearchView = false }) {
   const getConversationTitle = () => {
     if (isSearchView) return `Search: ${searchQuery}`;
     else {
-      let _title = `Model: ${modelName}`;
-      if (chatGptLabel) _title += ` of ${chatGptLabel}`;
-      if (toneStyle) _title += ` (${toneStyle})`;
+      let _title = `${endpoint}`;
+
+      if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
+        const { chatGptLabel, model } = conversation;
+        if (model) _title += `: ${model}`;
+        if (chatGptLabel) _title += ` as ${chatGptLabel}`;
+      } else if (endpoint === 'bingAI') {
+        const { jailbreak, toneStyle } = conversation;
+        if (toneStyle) _title += `: ${toneStyle}`;
+        if (jailbreak) _title += ` as Sydney`;
+      } else if (endpoint === 'chatGPTBrowser') {
+        const { model } = conversation;
+        if (model) _title += `: ${model}`;
+      } else if (endpoint === null) {
+        null;
+      }
       return _title;
     }
   };
