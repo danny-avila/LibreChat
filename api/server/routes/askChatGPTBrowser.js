@@ -42,7 +42,12 @@ router.post('/', async (req, res) => {
 
   if (!overrideParentMessageId) {
     await saveMessage(userMessage);
-    await saveConvo(req?.session?.user?.username, { ...userMessage, ...endpointOption, conversationId });
+    await saveConvo(req?.session?.user?.username, {
+      ...userMessage,
+      ...endpointOption,
+      conversationId,
+      endpoint
+    });
   }
 
   return await ask({

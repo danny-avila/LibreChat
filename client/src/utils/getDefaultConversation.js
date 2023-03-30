@@ -16,11 +16,11 @@ const buildDefaultConversation = ({ conversation, endpoint, lastConversationSetu
       endpoint,
       jailbreak: lastConversationSetup?.jailbreak || false,
       jailbreakConversationId: lastConversationSetup?.jailbreakConversationId || null,
-      conversationSignature: lastConversationSetup?.conversationSignature || null,
-      clientId: lastConversationSetup?.clientId || null,
-      invocationId: lastConversationSetup?.invocationId || null,
+      conversationSignature: null,
+      clientId: null,
+      invocationId: 1,
       toneStyle: lastConversationSetup?.toneStyle || 'fast',
-      suggestions: lastConversationSetup?.suggestions || []
+      suggestions: []
     };
   } else if (endpoint === 'chatGPTBrowser') {
     conversation = {
@@ -44,11 +44,27 @@ const buildDefaultConversation = ({ conversation, endpoint, lastConversationSetu
   return conversation;
 };
 
-const getDefaultConversation = ({ conversation, prevConversation, availableEndpoints }) => {
+const getDefaultConversation = ({ conversation, prevConversation, endpointsFilter, targetEndpoint }) => {
+  if (targetEndpoint) {
+    // try to use current model
+    const endpoint = targetEndpoint;
+    if (endpointsFilter?.[endpoint]) {
+      conversation = buildDefaultConversation({
+        conversation,
+        endpoint,
+        lastConversationSetup: {}
+      });
+      return conversation;
+    } else {
+      console.log(endpoint);
+      console.warn(`Illegal target endpoint ${targetEndpoint} ${endpointsFilter}`);
+    }
+  }
+
   try {
     // try to use current model
     const { endpoint = null } = prevConversation || {};
-    if (endpoint in availableEndpoints) {
+    if (endpointsFilter?.[endpoint]) {
       conversation = buildDefaultConversation({
         conversation,
         endpoint,
@@ -63,14 +79,15 @@ const getDefaultConversation = ({ conversation, prevConversation, availableEndpo
     const lastConversationSetup = JSON.parse(localStorage.getItem('lastConversationSetup'));
     const { endpoint = null } = lastConversationSetup;
 
-    if (endpoint in availableEndpoints) {
+    if (endpointsFilter?.[endpoint]) {
       conversation = buildDefaultConversation({ conversation, endpoint, lastConversationSetup });
       return conversation;
     }
   } catch (error) {}
 
   // if anything happens, reset to default model
-  const endpoint = availableEndpoints?.[0];
+
+  const endpoint = ['openAI', 'azureOpenAI', 'bingAI', 'chatGPTBrowser'].find(e => endpointsFilter?.[e]);
   if (endpoint) {
     conversation = buildDefaultConversation({ conversation, endpoint });
     return conversation;

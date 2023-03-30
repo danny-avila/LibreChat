@@ -24,7 +24,7 @@ import getDefaultConversation from '~/utils/getDefaultConversation';
 //   jailbreakConversationId: null,
 //   conversationSignature: null,
 //   clientId: null,
-//   invocationId: null,
+//   invocationId: 1,
 //   toneStyle: null,
 //   suggestions: []
 // };
@@ -61,10 +61,13 @@ const useConversation = () => {
 
   const switchToConversation = useRecoilCallback(
     ({ snapshot }) =>
-      async (_conversation, messages = null) => {
+      async (_conversation, messages = null, targetEndpoint = null) => {
         const prevConversation = await snapshot.getPromise(conversation);
-        const availableEndpoints = await snapshot.getPromise(endpoints.availableEndpoints);
-        _switchToConversation(_conversation, messages, { availableEndpoints, prevConversation });
+        const endpointsFilter = await snapshot.getPromise(endpoints.endpointsFilter);
+        _switchToConversation(_conversation, messages, targetEndpoint, {
+          endpointsFilter,
+          prevConversation
+        });
       },
     []
   );
@@ -72,27 +75,34 @@ const useConversation = () => {
   const _switchToConversation = (
     conversation,
     messages = null,
-    { availableEndpoints = [], prevConversation = {} }
+    targetEndpoint = null,
+    { endpointsFilter = {}, prevConversation = {} }
   ) => {
     let { endpoint = null } = conversation;
 
     if (endpoint === null)
       // get the default model
-      conversation = getDefaultConversation({ conversation, availableEndpoints, prevConversation });
-    console.log(conversation);
+      conversation = getDefaultConversation({
+        conversation,
+        endpointsFilter,
+        prevConversation,
+        targetEndpoint
+      });
+
     setConversation(conversation);
     setMessages(messages);
     resetLatestMessage();
   };
 
-  const newConversation = (template = {}) => {
+  const newConversation = (template = {}, targetEndpoint = null) => {
     switchToConversation(
       {
         conversationId: 'new',
         title: 'New Chat',
         ...template
       },
-      []
+      [],
+      targetEndpoint
     );
   };
 

@@ -42,7 +42,7 @@ const useMessageHandler = () => {
         jailbreakConversationId: currentConversation?.jailbreakConversationId || null,
         conversationSignature: currentConversation?.conversationSignature || null,
         clientId: currentConversation?.clientId || null,
-        invocationId: currentConversation?.invocationId || null,
+        invocationId: currentConversation?.invocationId || 1,
         toneStyle: currentConversation?.toneStyle || 'fast',
         suggestions: currentConversation?.suggestions || []
       };
