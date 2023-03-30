@@ -70,7 +70,7 @@ export const useUpdateCustomGptMutation = (): UseMutationResult<
 };
 
 export const useGetCustomGptsQuery = (): QueryObserverResult<
-  t.TCustomPrompt[],
+  t.TCustomGpt[],
   unknown
 > => {
   return useQuery([QueryKeys.getCustomGpts], () => dataService.getCustomGpts(), {
