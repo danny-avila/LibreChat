@@ -62,7 +62,7 @@ module.exports = {
      * resolve the one with the extension listed first in the array and skip the rest.
      * This is what enables users to leave off the extension when importing
      */
-    extensions: ['.js', '.jsx', '.json'],
+    extensions: ['.tsx', '.ts', '.js', '.jsx', '.json'],
     fallback: {
       url: require.resolve('url/'),
       fs: false,
@@ -101,11 +101,11 @@ module.exports = {
         use: ['source-map-loader'],
       },
       {
-        test: /\.tsx?$/,
+        test: /\.(ts|tsx)?$/,
         use: 'ts-loader',
         exclude: /node_modules/,
       },
     ]
-  }
+  },
   // plugins: [new HtmlWebpackPlugin()],
 };
