@@ -32,12 +32,14 @@ const askBing = async ({
     jailbreakConversationId: jailbreakConversationId || jailbreak,
     parentMessageId,
     conversationId,
-    conversationSignature,
-    clientId,
-    invocationId,
     toneStyle,
     onProgress
   };
+
+  if (conversationSignature) options.conversationSignature = conversationSignature;
+  if (conversationSignature) options.clientId = clientId;
+  if (conversationSignature) options.invocationId = invocationId;
+  if (conversationSignature) options.toneStyle = toneStyle;
 
   if (options?.jailbreakConversationId == 'false') {
     options.jailbreakConversationId = false;

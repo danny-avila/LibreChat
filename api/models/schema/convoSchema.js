@@ -79,8 +79,8 @@ const convoSchema = mongoose.Schema(
       default: null
     },
     invocationId: {
-      type: String,
-      default: null
+      type: Number,
+      default: 1
     },
     toneStyle: {
       type: String,

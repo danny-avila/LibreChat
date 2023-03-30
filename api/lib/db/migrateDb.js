@@ -90,6 +90,9 @@ const migrateToSupportBetterCustomization = async () => {
         convo.endpoint = 'chatGPTBrowser';
         convo.model = 'text-davinci-002-render-sha';
         convo.jailbreak = true;
+      } else {
+        convo.endpoint = 'openAI';
+        convo.model = 'gpt-3.5-turbo';
       }
 
       promises.push(convo.save());
