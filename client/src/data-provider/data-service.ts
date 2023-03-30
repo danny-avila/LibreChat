@@ -53,6 +53,14 @@ export function getModels(): Promise<t.TCustomGpt[]> {
   return request.get(endpoints.getModels());
 }
 
+export function getSearchEnabled(): Promise<boolean> {
+  return request.get(endpoints.searchEnabled());
+}
+
+export function getSearchResults(q: string, pageNumber: string): Promise<t.TSearchResults> {
+  return request.get(endpoints.search(q, pageNumber));
+}
+
 type TSearchFetcherProps = {
   pre: () => void,
   q: string,

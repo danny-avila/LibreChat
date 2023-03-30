@@ -54,3 +54,7 @@ export const generateTitle = () => {
 export const search = (q: string, pageNumber: string) => {
   return `/api/search?q=${q}&pageNumber=${pageNumber}`;
 }
+
+export const searchEnabled = () => {
+  return `/api/search/enable`;
+}

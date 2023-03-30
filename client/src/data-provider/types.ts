@@ -19,24 +19,69 @@ export type TMessage = {
   cancelled?: boolean
 };
 
+export type TMessageTreeNode = {}
+
+export type TSearchMessage = {}
+
+export type TSearchMessageTreeNode = {}
+
+export type TMessageToAsk = {}
+
+
+export enum EModelEndpoint {
+  azureOpenAI = 'azureOpenAI', 
+  openAI = 'openAI',
+  bingAI = 'bingAI',
+  chatGPTBrowser = 'chatGPTBrowser'
+}
+
 export type TConversation = {
-  conversationId: string,
-  parentMessageId: string,
-  title: string,
-  jailbreakConversationId: string | null,
-  conversationSignature: string | null,
-  clientId: string,
-  invocationId: string | null,
-  chatGptLabel: string | null,
-  promptPrefix: string | null,
-  model: string,
-  user: string | null,
-  suggestions: string[],
-  messages: TMessage[],
-  createdAt: string,
-  updatedAt: string,
-  toneStyle: string
-};
+  conversationId: string;
+  title: string;
+  user: string | null;
+  endpoint: EModelEndpoint;
+  model: string; // for azureOpenAI, openAI, chatGPTBrowser only, eg. gpt-3.5-turbo
+  // for azureOpenAI, openAI only
+  chatGptLabel?: string;
+  promptPrefix?: string;
+  temperature?: number;
+  top_p?: number;
+  presence_penalty?: number;
+  // for bingAI only
+  jailbreak?: boolean;
+  jailbreakConversationId?: string;
+  conversationSignature?: string;
+  clientId?: string;
+  invocationId?: string;
+  toneStyle?: string;
+  suggestions?: string[];
+  messages?: TMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+
+//   conversationId: 'new',
+//   title: 'New Chat',
+//   user: null,
+//   // endpoint: [azureOpenAI, openAI, bingAI, chatGPTBrowser]
+//   endpoint: 'azureOpenAI',
+//   // for azureOpenAI, openAI, chatGPTBrowser only
+//   model: 'gpt-3.5-turbo',
+//   // for azureOpenAI, openAI only
+//   chatGptLabel: null,
+//   promptPrefix: null,
+//   temperature: 0.8,
+//   top_p: 1,
+//   presence_penalty: 1,
+//   // for bingAI only
+//   jailbreak: false,
+//   jailbreakConversationId: null,
+//   conversationSignature: null,
+//   clientId: null,
+//   invocationId: null,
+//   toneStyle: null,
+//   suggestions: []
 
 export type TPrompt = {
   title: string,
@@ -154,3 +199,5 @@ export type TClearConversationsRequest = {};
 export type TClearConversationsResponse = {};
 
 export type TGetCustomGptsResponse = {};
+
+export type TSearchResults = {};
