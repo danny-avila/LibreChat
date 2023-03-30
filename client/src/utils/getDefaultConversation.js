@@ -19,7 +19,7 @@ const buildDefaultConversation = ({ conversation, endpoint, lastConversationSetu
       conversationSignature: lastConversationSetup?.conversationSignature || null,
       clientId: lastConversationSetup?.clientId || null,
       invocationId: lastConversationSetup?.invocationId || null,
-      toneStyle: lastConversationSetup?.toneStyle || null,
+      toneStyle: lastConversationSetup?.toneStyle || 'fast',
       suggestions: lastConversationSetup?.suggestions || []
     };
   } else if (endpoint === 'chatGPTBrowser') {
@@ -32,6 +32,12 @@ const buildDefaultConversation = ({ conversation, endpoint, lastConversationSetu
     conversation = {
       ...conversation,
       endpoint
+    };
+  } else {
+    console.error(`Unknown endpoint ${endpoint}`);
+    conversation = {
+      ...conversation,
+      endpoint: null
     };
   }
 

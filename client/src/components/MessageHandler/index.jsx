@@ -1,14 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
+import { useEffect } from 'react';
+import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import { SSE } from '~/utils/sse';
-import { useMessageHandler } from '../../utils/handleSubmit';
 import createPayload from '~/utils/createPayload';
 
 import store from '~/store';
 
-export default function MessageHandler({ messages }) {
-  const [submission, setSubmission] = useRecoilState(store.submission);
-  const [isSubmitting, setIsSubmitting] = useRecoilState(store.isSubmitting);
+export default function MessageHandler() {
+  const submission = useRecoilValue(store.submission);
+  const setIsSubmitting = useSetRecoilState(store.isSubmitting);
   const setMessages = useSetRecoilState(store.messages);
   const setConversation = useSetRecoilState(store.conversation);
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
@@ -105,10 +104,9 @@ export default function MessageHandler({ messages }) {
   };
 
   const finalHandler = (data, submission) => {
-    const { conversation, messages, message, initialResponse, isRegenerate = false } = submission;
+    const { messages, isRegenerate = false } = submission;
 
-    const { requestMessage, responseMessage } = data;
-    const { conversationId } = requestMessage;
+    const { requestMessage, responseMessage, conversation } = data;
 
     // update the messages
     if (isRegenerate) setMessages([...messages, responseMessage]);
@@ -127,66 +125,14 @@ export default function MessageHandler({ messages }) {
       }, 5000);
     }
 
-    const { model, chatGptLabel, promptPrefix } = conversation;
-    const isBing = model === 'bingai' || model === 'sydney';
-
-    if (!isBing) {
-      const { title } = data;
-      const { conversationId } = responseMessage;
-      setConversation(prevState => ({
-        ...prevState,
-        title,
-        conversationId,
-        jailbreakConversationId: null,
-        conversationSignature: null,
-        clientId: null,
-        invocationId: null,
-        chatGptLabel,
-        promptPrefix,
-        latestMessage: null
-      }));
-    } else if (model === 'bingai') {
-      const { title } = data;
-      const { conversationSignature, clientId, conversationId, invocationId } = responseMessage;
-      setConversation(prevState => ({
-        ...prevState,
-        title,
-        conversationId,
-        jailbreakConversationId: null,
-        conversationSignature,
-        clientId,
-        invocationId,
-        chatGptLabel,
-        promptPrefix,
-        latestMessage: null
-      }));
-    } else if (model === 'sydney') {
-      const { title } = data;
-      const {
-        jailbreakConversationId,
-        parentMessageId,
-        conversationSignature,
-        clientId,
-        conversationId,
-        invocationId
-      } = responseMessage;
-      setConversation(prevState => ({
-        ...prevState,
-        title,
-        conversationId,
-        jailbreakConversationId,
-        conversationSignature,
-        clientId,
-        invocationId,
-        chatGptLabel,
-        promptPrefix,
-        latestMessage: null
-      }));
-    }
+    setConversation(prevState => ({
+      ...prevState,
+      ...conversation
+    }));
   };
 
   const errorHandler = (data, submission) => {
-    const { conversation, messages, message, initialResponse, isRegenerate = false } = submission;
+    const { messages, message } = submission;
 
     console.log('Error:', data);
     const errorResponse = {
@@ -203,7 +149,6 @@ export default function MessageHandler({ messages }) {
     if (submission === null) return;
     if (Object.keys(submission).length === 0) return;
 
-    const { messages, initialResponse, isRegenerate = false } = submission;
     let { message } = submission;
 
     const { server, payload } = createPayload(submission);
@@ -224,9 +169,6 @@ export default function MessageHandler({ messages }) {
       if (data.created) {
         message = {
           ...data.message,
-          model: message?.model,
-          chatGptLabel: message?.chatGptLabel,
-          promptPrefix: message?.promptPrefix,
           overrideParentMessageId: message?.overrideParentMessageId
         };
         createdHandler(data, { ...submission, message });
@@ -245,7 +187,7 @@ export default function MessageHandler({ messages }) {
 
     events.onopen = () => console.log('connection is opened');
 
-    events.oncancel = e => cancelHandler(latestResponseText, { ...submission, message });
+    events.oncancel = () => cancelHandler(latestResponseText, { ...submission, message });
 
     events.onerror = function (e) {
       console.log('error in opening conn.');

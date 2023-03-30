@@ -60,12 +60,13 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use('/api/prompts', routes.authenticatedOr401, routes.prompts);
   app.use('/auth', routes.auth);
 
-  app.get('/api/models', function (req, res) {
-    const hasOpenAI = !!process.env.OPENAI_KEY;
-    const hasChatGpt = !!process.env.CHATGPT_TOKEN;
-    const hasBing = !!process.env.BING_TOKEN;
+  app.get('/api/endpoints', function (req, res) {
+    const azureOpenAI = !!process.env.AZURE_OPENAI_KEY;
+    const openAI = !!process.env.OPENAI_KEY;
+    const bingAI = !!process.env.BING_TOKEN;
+    const chatGPTBrowser = !!process.env.CHATGPT_TOKEN;
 
-    res.send(JSON.stringify({ hasOpenAI, hasChatGpt, hasBing }));
+    res.send(JSON.stringify({ azureOpenAI, openAI, bingAI, chatGPTBrowser }));
   });
 
   app.get('/*', routes.authenticatedOrRedirect, function (req, res) {

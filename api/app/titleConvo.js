@@ -16,7 +16,7 @@ const proxyEnvToAxiosProxy = proxyString => {
   return proxyConfig;
 };
 
-const titleConvo = async ({ model, text, response }) => {
+const titleConvo = async ({ endpoint, text, response }) => {
   let title = 'New Chat';
   const messages = [
     {

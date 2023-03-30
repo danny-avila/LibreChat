@@ -38,7 +38,7 @@ const router = createBrowserRouter([
 const App = () => {
   const [user, setUser] = useRecoilState(store.user);
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
-  const setModelsFilter = useSetRecoilState(store.modelsFilter);
+  const setEndpointsFilter = useSetRecoilState(store.endpointsFilter);
 
   useEffect(() => {
     // fetch if seatch enabled
@@ -58,19 +58,12 @@ const App = () => {
 
     // fetch models
     axios
-      .get('/api/models', {
+      .get('/api/endpoints', {
         timeout: 1000,
         withCredentials: true
       })
       .then(({ data }) => {
-        const filter = {
-          chatgpt: data?.hasOpenAI,
-          chatgptCustom: data?.hasOpenAI,
-          bingai: data?.hasBing,
-          sydney: data?.hasBing,
-          chatgptBrowser: data?.hasChatGpt
-        };
-        setModelsFilter(filter);
+        setEndpointsFilter(data);
       })
       .catch(error => {
         console.error(error);

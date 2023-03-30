@@ -97,6 +97,8 @@ export default function Messages({ isSearchView = false }) {
         if (model) _title += `: ${model}`;
       } else if (endpoint === null) {
         null;
+      } else {
+        null;
       }
       return _title;
     }
