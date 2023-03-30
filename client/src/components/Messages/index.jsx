@@ -20,7 +20,7 @@ export default function Messages({ isSearchView = false }) {
   const _messagesTree = isSearchView ? searchResultMessagesTree : messagesTree;
 
   const conversation = useRecoilValue(store.conversation) || {};
-  const { conversationId, model, chatGptLabel } = conversation;
+  const { conversationId, model, chatGptLabel, toneStyle } = conversation;
 
   const models = useRecoilValue(store.models) || [];
   const modelName = models.find(element => element.model == model)?.name;
@@ -79,18 +79,26 @@ export default function Messages({ isSearchView = false }) {
     scrollToBottom();
   };
 
+  const getConversationTitle = () => {
+    if (isSearchView) return `Search: ${searchQuery}`;
+    else {
+      let _title = `Model: ${modelName}`;
+      if (chatGptLabel) _title += ` of ${chatGptLabel}`;
+      if (toneStyle) _title += ` (${toneStyle})`;
+      return _title;
+    }
+  };
+
   return (
     <div
-      className="flex-1 overflow-y-auto pt-10 md:pt-0"
+      className="flex-1 overflow-y-auto pt-0"
       ref={scrollableRef}
       onScroll={debouncedHandleScroll}
     >
       <div className="dark:gpt-dark-gray h-full">
         <div className="dark:gpt-dark-gray flex h-full flex-col items-center text-sm">
           <div className="flex w-full items-center justify-center gap-1 border-b border-black/10 bg-gray-50 p-3 text-sm text-gray-500 dark:border-gray-900/50 dark:bg-gray-700 dark:text-gray-300">
-            {isSearchView
-              ? `Search: ${searchQuery}`
-              : `Model: ${modelName} ${chatGptLabel ? `(${chatGptLabel})` : ''}`}
+            {getConversationTitle()}
           </div>
           {_messagesTree === null ? (
             <Spinner />
