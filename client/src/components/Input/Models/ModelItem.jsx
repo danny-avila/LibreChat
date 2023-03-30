@@ -6,7 +6,7 @@ import { DialogTrigger } from '../../ui/Dialog.tsx';
 import RenameButton from '../../Conversations/RenameButton';
 import TrashIcon from '../../svg/TrashIcon';
 import manualSWR from '~/utils/fetchers';
-import { getIconOfModel } from '~/utils';
+import getIcon from '~/utils/getIcon';
 
 import store from '~/store';
 
@@ -31,7 +31,7 @@ export default function ModelItem({ model: _model, value, onSelect }) {
     setCustomGPTModels(fetchedModels);
   });
 
-  const icon = getIconOfModel({
+  const icon = getIcon({
     size: 20,
     sender: chatGptLabel || model,
     isCreatedByUser: false,
