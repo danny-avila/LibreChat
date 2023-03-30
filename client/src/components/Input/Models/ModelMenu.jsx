@@ -4,7 +4,7 @@ import axios from 'axios';
 import ModelDialog from './ModelDialog';
 import MenuItems from './MenuItems';
 import { swr } from '~/utils/fetchers';
-import { getIconOfModel } from '~/utils';
+import getIcon from '~/utils/getIcon';
 
 import { Button } from '../../ui/Button.tsx';
 import {
@@ -145,7 +145,7 @@ export default function ModelMenu() {
   ];
 
   const colorProps = model === 'chatgpt' ? chatgptColorProps : defaultColorProps;
-  const icon = getIconOfModel({
+  const icon = getIcon({
     size: 32,
     sender: chatGptLabel || model,
     isCreatedByUser: false,

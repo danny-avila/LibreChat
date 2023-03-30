@@ -6,7 +6,7 @@ import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
 import { fetchById } from '~/utils/fetchers';
-import { getIconOfAi } from '~/utils';
+import getIcon from '~/utils/getIcon';
 import { useMessageHandler } from '~/utils/handleSubmit';
 
 import store from '~/store';
@@ -60,7 +60,7 @@ export default function Message({
       'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 bg-white dark:text-gray-100 group dark:bg-gray-800'
   };
 
-  const icon = getIconOfAi({
+  const icon = getIcon({
     ...conversation,
     ...message
   });
