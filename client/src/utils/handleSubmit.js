@@ -43,8 +43,7 @@ const useMessageHandler = () => {
         conversationSignature: currentConversation?.conversationSignature || null,
         clientId: currentConversation?.clientId || null,
         invocationId: currentConversation?.invocationId || 1,
-        toneStyle: currentConversation?.toneStyle || 'fast',
-        suggestions: currentConversation?.suggestions || []
+        toneStyle: currentConversation?.toneStyle || 'fast'
       };
       responseSender = endpointOption.jailbreak ? 'Sydney' : 'BingAI';
     } else if (endpoint === 'chatGPTBrowser') {

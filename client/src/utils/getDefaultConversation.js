@@ -19,8 +19,7 @@ const buildDefaultConversation = ({ conversation, endpoint, lastConversationSetu
       conversationSignature: null,
       clientId: null,
       invocationId: 1,
-      toneStyle: lastConversationSetup?.toneStyle || 'fast',
-      suggestions: []
+      toneStyle: lastConversationSetup?.toneStyle || 'fast'
     };
   } else if (endpoint === 'chatGPTBrowser') {
     conversation = {
