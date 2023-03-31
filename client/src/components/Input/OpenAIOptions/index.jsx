@@ -2,6 +2,7 @@ import React, { useState, useEffect, forwardRef } from 'react';
 import { Tabs, TabsList, TabsTrigger } from '../../ui/Tabs.tsx';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import { Button } from '../../ui/Button.tsx';
+import Settings from './Settings.jsx';
 
 import store from '~/store';
 
@@ -38,11 +39,12 @@ function OpenAIOptions({ conversation = {} }) {
       <div
         className={
           cardStyle +
-          ' p-b-[40px] absolute left-4 right-4 bottom-[40px] flex h-[220px] flex-col rounded-md bg-white'
+          ' p-b-[40px] absolute left-4 right-4 bottom-[40px] flex h-[300px] flex-col rounded-md bg-white'
         }
       >
-        <div>title</div>
-        <div>content</div>
+        <div>hi there</div>
+        {/* <div>content</div> */}
+        <Settings />
       </div>
     </>
   );
