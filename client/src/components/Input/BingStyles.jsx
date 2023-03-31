@@ -25,7 +25,7 @@ function BingStyles(props, ref) {
 
   return (
     <Tabs
-      defaultValue={toneStyle}
+      value={toneStyle}
       className={`bing-styles mb-1 shadow-md ${show ? 'show' : ''}`}
       onValueChange={changeHandler}
       ref={ref}

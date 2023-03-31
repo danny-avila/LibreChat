@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import SubmitButton from './SubmitButton';
 import AdjustToneButton from './AdjustToneButton';
+import OpenAIOptions from './OpenAIOptions';
 import BingStyles from './BingStyles';
 import EndpointMenu from './Endpoints/EndpointMenu';
 import Footer from './Footer';
@@ -135,15 +136,11 @@ export default function TextChat({ isSearchView = false }) {
       <div className="input-panel md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient fixed bottom-0 left-0 w-full border-t bg-white py-2 dark:border-white/20 dark:bg-gray-800 md:absolute md:border-t-0 md:border-transparent md:bg-transparent md:dark:border-transparent md:dark:bg-transparent">
         <form className="stretch mx-2 flex flex-row gap-3 last:mb-2 md:pt-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
           <div className="relative flex h-full flex-1 md:flex-col">
-            <span className="order-last ml-1 flex justify-center gap-0 md:order-none md:m-auto md:mb-2 md:w-full md:gap-2">
-              <BingStyles
-                ref={bingStylesRef}
-                show={showBingToneSetting}
-              />
+            <span className="order-last ml-1 flex flex-col items-center justify-center gap-0 md:order-none md:m-auto md:mb-2 md:w-full md:gap-2">
               {isSubmitting ? (
                 <button
                   onClick={handleStopGenerating}
-                  className="input-panel-button btn btn-neutral flex justify-center gap-2 border-0 md:border"
+                  className="input-panel-button btn btn-neutral flex w-fit justify-center gap-2 border-0 md:border"
                   type="button"
                 >
                   <StopGeneratingIcon />
@@ -152,13 +149,18 @@ export default function TextChat({ isSearchView = false }) {
               ) : latestMessage && !latestMessage?.isCreatedByUser ? (
                 <button
                   onClick={handleRegenerate}
-                  className="input-panel-button btn btn-neutral flex justify-center gap-2 border-0 md:border"
+                  className="input-panel-button btn btn-neutral flex w-fit justify-center gap-2 border-0 md:border"
                   type="button"
                 >
                   <RegenerateIcon />
                   <span className="hidden md:block">Regenerate response</span>
                 </button>
               ) : null}
+              <OpenAIOptions conversation={conversation} />
+              <BingStyles
+                ref={bingStylesRef}
+                show={showBingToneSetting}
+              />
             </span>
             <div
               className={`relative flex flex-grow flex-col rounded-md border border-black/10 ${

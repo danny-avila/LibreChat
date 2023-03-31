@@ -18,7 +18,7 @@ export default function ModelItem({ endpoint, value, onSelect }) {
     >
       {icon}
       {endpoint}
-      {endpoint in ['azureOpenAI', 'openAI'] && <sup>$</sup>}
+      {!!['azureOpenAI', 'openAI'].find(e => e === endpoint) && <sup>$</sup>}
     </DropdownMenuRadioItem>
   );
 }
