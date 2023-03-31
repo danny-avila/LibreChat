@@ -1,6 +1,7 @@
 import React, { useState, useEffect, forwardRef } from 'react';
 import { Tabs, TabsList, TabsTrigger } from '../ui/Tabs.tsx';
 import { useRecoilValue, useRecoilState } from 'recoil';
+import { cn } from '../../utils';
 
 import store from '~/store';
 
@@ -14,7 +15,7 @@ function BingStyles(props, ref) {
   const show = isBing && (!conversationId || messages?.length === 0 || props.show);
   const defaultClasses =
     'p-2 rounded-md min-w-[75px] font-normal bg-white/[.60] dark:bg-gray-700 text-black text-xs';
-  const defaultSelected = defaultClasses + 'font-medium data-[state=active]:text-white text-xs';
+  const defaultSelected = cn(defaultClasses, 'font-medium data-[state=active]:text-white text-xs text-white');
 
   const selectedClass = val => val + '-tab ' + defaultSelected;
 
