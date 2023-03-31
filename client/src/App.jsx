@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import Root from './routes/Root';
 import Chat from './routes/Chat';
@@ -6,8 +6,12 @@ import Search from './routes/Search';
 import store from './store';
 import userAuth from './utils/userAuth';
 import { useRecoilState, useSetRecoilState } from 'recoil';
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
 
 import axios from 'axios';
+
+const queryClient = new QueryClient();
 
 const router = createBrowserRouter([
   {
@@ -81,9 +85,9 @@ const App = () => {
 
   if (user)
     return (
-      <div>
+      <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
-      </div>
+      </QueryClientProvider>
     );
   else return <div className="flex h-screen"></div>;
 };

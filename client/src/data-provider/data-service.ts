@@ -23,7 +23,7 @@ export function clearAllConversations() {
   return request.post(endpoints.deleteConversation());
 }
 
-export function getMessages(id: string): Promise<t.TMessage[]> {
+export function getMessagesByConvoId(id: string): Promise<t.TMessage[]> {
   return request.get(endpoints.getMessages(id));
 }
 

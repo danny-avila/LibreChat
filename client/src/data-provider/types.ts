@@ -60,29 +60,6 @@ export type TConversation = {
   updatedAt: string;
 }
 
-
-//   conversationId: 'new',
-//   title: 'New Chat',
-//   user: null,
-//   // endpoint: [azureOpenAI, openAI, bingAI, chatGPTBrowser]
-//   endpoint: 'azureOpenAI',
-//   // for azureOpenAI, openAI, chatGPTBrowser only
-//   model: 'gpt-3.5-turbo',
-//   // for azureOpenAI, openAI only
-//   chatGptLabel: null,
-//   promptPrefix: null,
-//   temperature: 0.8,
-//   top_p: 1,
-//   presence_penalty: 1,
-//   // for bingAI only
-//   jailbreak: false,
-//   jailbreakConversationId: null,
-//   conversationSignature: null,
-//   clientId: null,
-//   invocationId: null,
-//   toneStyle: null,
-//   suggestions: []
-
 export type TPrompt = {
   title: string,
   prompt: string,

@@ -5,8 +5,9 @@ import Spinner from '../svg/Spinner';
 import Pages from '../Conversations/Pages';
 import Conversations from '../Conversations';
 import NavLinks from './NavLinks';
-import { searchFetcher, swr } from '~/utils/fetchers';
-import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
+import { searchFetcher } from '~/utils/fetchers';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useGetConversationsQuery } from '~/data-provider';
 
 import store from '~/store';
 
@@ -22,6 +23,9 @@ export default function Nav({ navVisible, setNavVisible }) {
   const [pageNumber, setPageNumber] = useState(1);
   // total pages
   const [pages, setPages] = useState(1);
+  
+  // data provider 
+  const getConversationsQuery = useGetConversationsQuery(pageNumber);
 
   // search
   const searchQuery = useRecoilValue(store.searchQuery);
@@ -34,28 +38,9 @@ export default function Nav({ navVisible, setNavVisible }) {
   const { conversationId } = conversation || {};
   const setSearchResultMessages = useSetRecoilState(store.searchResultMessages);
 
-  // refreshConversationsHint is used for other components to ask refresh of Nav
-  const refreshConversationsHint = useRecoilValue(store.refreshConversationsHint);
-
   const { refreshConversations } = store.useConversations();
 
   const [isFetching, setIsFetching] = useState(false);
-
-  const onSuccess = (data, searchFetch = false) => {
-    if (isSearching) {
-      return;
-    }
-
-    let { conversations, pages } = data;
-    if (pageNumber > pages) {
-      setPageNumber(pages);
-    } else {
-      if (!searchFetch)
-        conversations = conversations.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      setConversations(conversations);
-      setPages(pages);
-    }
-  };
 
   const onSearchSuccess = (data, expectedPage) => {
     const res = data;
@@ -85,19 +70,14 @@ export default function Nav({ navVisible, setNavVisible }) {
     if (conversationId == 'search') {
       newConversation();
     }
-    // dispatch(setDisabled(false));
   };
-
-  const { data, isLoading, mutate } = swr(`/api/convos?pageNumber=${pageNumber}`, onSuccess, {
-    revalidateOnMount: false
-  });
 
   const nextPage = async () => {
     moveToTop();
 
     if (!isSearching) {
       setPageNumber(prev => prev + 1);
-      await mutate();
+      await getConversationsQuery.refetch()
     } else {
       await fetch(searchQuery, +pageNumber + 1);
     }
@@ -108,17 +88,29 @@ export default function Nav({ navVisible, setNavVisible }) {
 
     if (!isSearching) {
       setPageNumber(prev => prev - 1);
-      await mutate();
+      await getConversationsQuery.refetch()
     } else {
       await fetch(searchQuery, +pageNumber - 1);
     }
   };
 
   useEffect(() => {
-    if (!isSearching) {
-      mutate();
+    if (getConversationsQuery.data) {
+      if (isSearching) {
+        return;
+      }
+      let { conversations, pages } = getConversationsQuery.data;
+      if (pageNumber > pages) {
+        setPageNumber(pages);
+      } else {
+        if (!isSearching) {
+          conversations = conversations.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        }
+        setConversations(conversations);
+        setPages(pages);
+      }
     }
-  }, [pageNumber, conversationId, refreshConversationsHint]);
+  }, [getConversationsQuery.isSuccess, getConversationsQuery.data, isSearching, pageNumber]);
 
   const moveToTop = () => {
     const container = containerRef.current;
@@ -151,7 +143,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   }, [conversationId]);
 
   const containerClasses =
-    isLoading && pageNumber === 1
+    getConversationsQuery.isLoading && pageNumber === 1
       ? 'flex flex-col gap-2 text-gray-100 text-sm h-full justify-center items-center'
       : 'flex flex-col gap-2 text-gray-100 text-sm';
 
@@ -177,7 +169,7 @@ export default function Nav({ navVisible, setNavVisible }) {
               >
                 <div className={containerClasses}>
                   {/* {(isLoading && pageNumber === 1) ? ( */}
-                  {(isLoading && pageNumber === 1) || isFetching ? (
+                  {(getConversationsQuery.isLoading && pageNumber === 1) || isFetching ? (
                     <Spinner />
                   ) : (
                     <Conversations

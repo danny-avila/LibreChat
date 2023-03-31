@@ -16,17 +16,20 @@ export enum QueryKeys {
   getOpenAIModels = "getOpenAIModels",
   getModels = "getModels",
   getCustomGpts = "getCustomGpts",
+  getSearchEnabled = "getSearchEnabled",
 }
 
 export const useGetMessagesByConvoId = (
-  id: string
-): QueryObserverResult<t.TGetMessagesResponse, unknown> => {
-  return useQuery([QueryKeys.getMessagesByConvoId, id], () =>
-    dataService.getMessages(id), 
+  id: string, 
+  config?: UseQueryOptions<t.TMessage[]>
+): QueryObserverResult<t.TMessage[]> => {
+  return useQuery<t.TMessage[]>([QueryKeys.getMessagesByConvoId, id], () =>
+    dataService.getMessagesByConvoId(id), 
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
+      ...config,
     }
   );
 };
@@ -121,6 +124,16 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
 export const useGetConversationsQuery = (pageNumber: string): QueryObserverResult<t.TGetConversationsResponse> => {
   return useQuery([QueryKeys.getConversations, pageNumber], () =>
     dataService.getConversations(pageNumber), {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+    }
+  );
+}
+
+export const useGetSearchEnabledQuery = (): QueryObserverResult<boolean> => {
+  return useQuery([QueryKeys.getSearchEnabled], () =>
+    dataService.getSearchEnabled(), {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
