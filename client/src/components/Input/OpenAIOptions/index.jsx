@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useRecoilState } from 'recoil';
 import ModelSelect from './ModelSelect';
 import { Button } from '../../ui/Button.tsx';
 
 import store from '~/store';
 
-function OpenAIOptions({ conversation = {} }) {
-  const { endpoint } = conversation;
+function OpenAIOptions() {
   const [advancedMode, setAdvancedMode] = useState(false);
-  const setConversation = useSetRecoilState(store.conversation);
+  const [conversation, setConversation] = useRecoilState(store.conversation) || {};
+  const { endpoint } = conversation;
 
   const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
 

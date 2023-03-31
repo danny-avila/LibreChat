@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRecoilValue, useSetRecoilState, useResetRecoilState } from 'recoil';
+import copy from 'copy-to-clipboard';
 import SubRow from './Content/SubRow';
 import Content from './Content/Content';
 import MultiMessage from './MultiMessage';
@@ -29,7 +30,7 @@ export default function Message({
   const textEditor = useRef(null);
   const last = !message?.children?.length;
   const edit = message.messageId == currentEditId;
-  const { ask } = useMessageHandler();
+  const { ask, regenerate } = useMessageHandler();
   const { switchToConversation } = store.useConversation();
   const blinker = submitting && isSubmitting;
 
@@ -85,6 +86,14 @@ export default function Message({
 
     setSiblingIdx(siblingCount - 1);
     enterEdit(true);
+  };
+
+  const regenerateMessage = () => {
+    if (!isSubmitting && !message?.isCreatedByUser) regenerate(message);
+  };
+
+  const copyToClipboard = () => {
+    copy(message?.text);
   };
 
   const clickSearchResult = async () => {
@@ -177,9 +186,13 @@ export default function Message({
               )}
             </div>
             <HoverButtons
-              endpoint={conversation?.endpoint}
-              visible={!error && isCreatedByUser && !edit && !searchResult}
-              onClick={() => enterEdit()}
+              isEditting={edit}
+              isSubmitting={isSubmitting}
+              message={message}
+              conversation={conversation}
+              enterEdit={() => enterEdit()}
+              regenerate={() => regenerateMessage()}
+              copyToClipboard={() => copyToClipboard()}
             />
             <SubRow subclasses="switch-container">
               <SiblingSwitch
