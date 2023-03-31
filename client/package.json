@@ -23,6 +23,7 @@
     "@radix-ui/react-dialog": "^1.0.2",
     "@radix-ui/react-dropdown-menu": "^2.0.2",
     "@radix-ui/react-label": "^2.0.0",
+    "@radix-ui/react-slider": "^1.1.1",
     "@radix-ui/react-tabs": "^1.0.3",
     "@types/jest": "^29.5.0",
     "@types/node": "^18.15.10",
