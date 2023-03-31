@@ -28,6 +28,31 @@
   transition: all 1s ease-in-out;
 } */
 
+.openAIOptions-simple-container {
+  pointer-events: none;
+  opacity: 0;
+  transition: all 0.5s ease-in-out;
+}
+
+.openAIOptions-simple-container.show {
+  pointer-events: fill;
+  opacity: 1;
+}
+
+.openAIOptions-advanced-container {
+  pointer-events: none;
+  opacity: 0;
+  transition: all 0.2s ease-in-out;
+  transform: scaleY(0);
+  transform-origin: bottom center;
+}
+
+.openAIOptions-advanced-container.show {
+  pointer-events: fill;
+  opacity: 1;
+  transform: scaleY(1)
+}
+
 .bing-styles {
 position: absolute; 
 left: 0; 
