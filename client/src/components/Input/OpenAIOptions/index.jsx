@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { Settings2 } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import ModelSelect from './ModelSelect';
 import { Button } from '../../ui/Button.tsx';
 import Settings from './Settings.jsx';
+import { cn } from '~/utils/';
 
 import store from '~/store';
 
@@ -67,20 +69,20 @@ function OpenAIOptions() {
           model={model}
           onChange={setModel}
           type="button"
-          className={
-            cardStyle +
-            ' flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 data-[state=open]:bg-slate-50 dark:hover:bg-gray-600 dark:data-[state=open]:bg-gray-600'
-          }
+          className={cn(
+            cardStyle,
+            ' z-50 flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 data-[state=open]:bg-slate-50 dark:hover:bg-gray-600 dark:data-[state=open]:bg-gray-600'
+          )}
         />
         <Button
           type="button"
-          className={
-            cardStyle +
-            ' flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 dark:hover:bg-gray-600'
-          }
+          className={cn(
+            cardStyle,
+            ' min-w-4 z-50 flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 dark:hover:bg-gray-600'
+          )}
           onClick={triggerAdvancedMode}
         >
-          <span className="w-full text-center text-xs font-medium font-normal">More</span>
+          <Settings2 className="w-4" />
         </Button>
       </div>
       <div
@@ -105,7 +107,9 @@ function OpenAIOptions() {
               Switch to simple mode
             </Button>
           </div>
-          <div className="h-[375px] p-5"><Settings/></div>
+          <div className="h-[375px] p-5">
+            <Settings />
+          </div>
         </div>
       </div>
     </>
