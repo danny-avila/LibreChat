@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useRecoilState } from 'recoil';
 import ModelSelect from './ModelSelect';
 import { Button } from '../../ui/Button.tsx';
 import Settings from './Settings.jsx';
 
 import store from '~/store';
 
-function OpenAIOptions({ conversation = {} }) {
-  const { endpoint } = conversation;
+function OpenAIOptions() {
   const [advancedMode, setAdvancedMode] = useState(false);
-  const setConversation = useSetRecoilState(store.conversation);
+  const [conversation, setConversation] = useRecoilState(store.conversation) || {};
+  const { endpoint, conversationId } = conversation;
 
   const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
 
@@ -48,6 +48,7 @@ function OpenAIOptions({ conversation = {} }) {
   }, [conversation, advancedMode]);
 
   if (endpoint !== 'openAI') return null;
+  if (conversationId !== 'new') return null;
 
   const { model } = conversation;
 
@@ -84,22 +85,28 @@ function OpenAIOptions({ conversation = {} }) {
       </div>
       <div
         className={
-          cardStyle +
-          ' p-b-[40px] openAIOptions-advanced-container absolute left-4 right-4 bottom-[40px] flex flex-col overflow-hidden rounded-md bg-slate-100 bg-white px-0' +
+          ' openAIOptions-advanced-container absolute bottom-[-10px] flex w-full flex-col items-center justify-center px-4' +
           (advancedMode ? ' show' : '')
         }
       >
-        <div className="flex w-full items-center justify-between bg-slate-100 px-4 py-2 dark:bg-white/10">
-          <span className="text-xs font-medium font-normal">Advanced settings for OpenAI endpoint</span>
-          <Button
-            type="button"
-            className="h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white"
-            onClick={switchToSimpleMode}
-          >
-            Switch to simple mode
-          </Button>
+        <div
+          className={
+            cardStyle +
+            ' flex w-full flex-col overflow-hidden rounded-md border bg-slate-200 px-0 pb-[10px] dark:border-white/10 lg:w-[736px]'
+          }
+        >
+          <div className="flex w-full items-center justify-between bg-slate-100 px-4 py-2 dark:bg-gray-800/60">
+            <span className="text-xs font-medium font-normal">Advanced settings for OpenAI endpoint</span>
+            <Button
+              type="button"
+              className="h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white"
+              onClick={switchToSimpleMode}
+            >
+              Switch to simple mode
+            </Button>
+          </div>
+          <div className="h-[375px] p-5"><Settings/></div>
         </div>
-        <div className="h-[375px] p-5"><Settings/></div>
       </div>
     </>
   );

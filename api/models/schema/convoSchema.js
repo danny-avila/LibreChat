@@ -9,10 +9,6 @@ const convoSchema = mongoose.Schema(
       index: true,
       meiliIndex: true
     },
-    parentMessageId: {
-      type: String,
-      required: true
-    },
     title: {
       type: String,
       default: 'New Chat',
