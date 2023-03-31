@@ -28,7 +28,7 @@ const MessageHeader = ({ isSearchView = false }) => {
     options.push(['top_p', conversation?.top_p]);
     options.push(['presence_penalty', conversation?.presence_penalty]);
   } else if (endpoint === 'bingAI') {
-    options.push(['jailbreak', conversation?.jailbreak]);
+    options.push(['jailbreak', !!conversation?.jailbreak]);
     options.push(['toneStyle', conversation?.toneStyle]);
   } else if (endpoint === 'chatGPTBrowser') {
     options.push(['model', conversation?.model]);
