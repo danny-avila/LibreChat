@@ -1,6 +1,6 @@
-import React, { useState, useEffect, forwardRef } from 'react';
-import { Tabs, TabsList, TabsTrigger } from '../../ui/Tabs.tsx';
-import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
+import React, { useEffect, useState } from 'react';
+import { useSetRecoilState } from 'recoil';
+import ModelSelect from './ModelSelect';
 import { Button } from '../../ui/Button.tsx';
 
 import store from '~/store';
@@ -13,7 +13,6 @@ function OpenAIOptions({ conversation = {} }) {
   const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
 
   const switchToSimpleMode = () => {
-    setAdvancedMode(false);
     setConversation(prevState => ({
       ...prevState,
       chatGptLabel: null,
@@ -22,7 +21,30 @@ function OpenAIOptions({ conversation = {} }) {
       top_p: 1,
       presence_penalty: 1
     }));
+    setAdvancedMode(false);
   };
+
+  const setModel = newModel => {
+    setConversation(prevState => ({
+      ...prevState,
+      model: newModel
+    }));
+  };
+
+  useEffect(() => {
+    const { endpoint, chatGptLabel, promptPrefix, temperature, top_p, presence_penalty } = conversation;
+
+    if (endpoint !== 'openAI') return;
+
+    const mustInAdvancedMode =
+      chatGptLabel !== null ||
+      promptPrefix !== null ||
+      temperature !== 0.8 ||
+      top_p !== 1 ||
+      presence_penalty !== 1;
+
+    if (mustInAdvancedMode && !advancedMode) setAdvancedMode(true);
+  }, [conversation, advancedMode]);
 
   if (endpoint !== 'openAI') return null;
 
@@ -39,15 +61,15 @@ function OpenAIOptions({ conversation = {} }) {
           (!advancedMode ? ' show' : '')
         }
       >
-        <Button
+        <ModelSelect
+          model={model}
+          onChange={setModel}
           type="button"
           className={
             cardStyle +
-            ' flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 dark:hover:bg-gray-600'
+            ' flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 data-[state=open]:bg-slate-50 dark:hover:bg-gray-600 dark:data-[state=open]:bg-gray-600'
           }
-        >
-          <span className="w-full text-center text-xs font-medium font-normal">Model: {model}</span>
-        </Button>
+        />
         <Button
           type="button"
           className={
@@ -62,7 +84,7 @@ function OpenAIOptions({ conversation = {} }) {
       <div
         className={
           cardStyle +
-          ' p-b-[40px] openAIOptions-advanced-container absolute left-4 right-4 bottom-[40px] flex flex-col overflow-hidden rounded-md bg-white px-0' +
+          ' p-b-[40px] openAIOptions-advanced-container absolute left-4 right-4 bottom-[40px] flex flex-col overflow-hidden rounded-md bg-slate-100 bg-white px-0' +
           (advancedMode ? ' show' : '')
         }
       >
