@@ -52,7 +52,7 @@ export default function NewConversationMenu() {
     setMenuOpen(false);
 
     if (!newEndpoint) return;
-    else if (newEndpoint === endpoint) return;
+    // else if (newEndpoint === endpoint) return;
     else {
       newConversation({}, { endpoint: newEndpoint });
     }
