@@ -4,10 +4,7 @@ import { Input } from '~/components/ui/Input.tsx';
 import { Label } from '~/components/ui/Label.tsx';
 import { Slider } from '~/components/ui/Slider.tsx';
 import OptionHover from './OptionHover';
-import {
-  HoverCard,
-  HoverCardTrigger,
-} from '~/components/ui/HoverCard.tsx';
+import { HoverCard, HoverCardTrigger } from '~/components/ui/HoverCard.tsx';
 import { cn } from '~/utils/';
 const defaultTextProps =
   'rounded-md border border-gray-300 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.10)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-none dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-none dark:focus:border-transparent dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
@@ -28,11 +25,11 @@ function Settings() {
 
   return (
     <>
-      <div className="grid gap-4 py-4 px-5">
+      <div className="grid gap-4 py-4 md:px-14 lg:px-20">
         <div className="grid grid-cols-4 items-center gap-4">
           <Label
             htmlFor="chatGptLabel"
-            className="text-right"
+            className="text-right text-sm"
           >
             Custom Name
           </Label>
@@ -42,14 +39,13 @@ function Settings() {
             ref={inputRef}
             onChange={e => setChatGptLabel(e.target.value)}
             placeholder="Set a custom name for ChatGPT"
-            className=" col-span-3 shadow-[0_0_10px_rgba(0,0,0,0.10)] outline-none placeholder:text-gray-400 dark:bg-gray-700
-              dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)]"
+            className={cn(defaultTextProps, 'col-span-3 flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:ring-0 focus:ring-offset-0 focus:ring-opacity-0 focus:outline-none')}
           />
         </div>
         <div className="grid grid-cols-4 items-center gap-4">
           <Label
             htmlFor="promptPrefix"
-            className="text-right"
+            className="text-right text-sm"
           >
             Prompt Prefix
           </Label>
@@ -112,7 +108,6 @@ function Settings() {
             />
           </HoverCard>
         </div>
-
         <div className="grid grid-cols-2 items-center gap-5">
           <Slider
             value={[temperature]}
