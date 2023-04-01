@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
-import { SSE } from '~/utils/sse';
+import { SSE } from '~/utils/sse.mjs';
 import { useMessageHandler } from '../../utils/handleSubmit';
 import createPayload from '~/utils/createPayload';
 
