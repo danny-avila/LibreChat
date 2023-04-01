@@ -12,7 +12,7 @@ const defaultTextProps =
 const optionText =
   'p-0 shadow-none text-right pr-1 h-8 border-transparent focus:ring-[#10a37f] focus:ring-offset-0 focus:ring-opacity-100';
 
-function Settings() {
+function Settings({ isOpen }) {
   const [chatGptLabel, setChatGptLabel] = useState('');
   const [promptPrefix, setPromptPrefix] = useState('');
   const [temperature, setTemperature] = useState(1);

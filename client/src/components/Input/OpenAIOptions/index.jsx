@@ -82,7 +82,7 @@ function OpenAIOptions() {
           )}
           onClick={triggerAdvancedMode}
         >
-          <Settings2 className="w-4 text-gray-600" />
+          <Settings2 className="w-4 text-gray-600 dark:text-white" />
         </Button>
       </div>
       <div
@@ -108,7 +108,7 @@ function OpenAIOptions() {
             </Button>
           </div>
           <div className="h-[375px] p-5">
-            <Settings />
+            <Settings isOpen={advancedMode}/>
           </div>
         </div>
       </div>
