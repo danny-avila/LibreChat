@@ -6,6 +6,7 @@ import user from './user';
 import text from './text';
 import submission from './submission';
 import search from './search';
+import preset from './preset';
 
 export default {
   ...conversation,
@@ -15,5 +16,6 @@ export default {
   ...user,
   text,
   ...submission,
-  ...search
+  ...search,
+  ...preset
 };

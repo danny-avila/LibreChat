@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from './Button.tsx';
+import { Button } from '../ui/Button.tsx';
 import SwitchIcon from '../svg/SwitchIcon';
 import SaveIcon from '../svg/SaveIcon';
 

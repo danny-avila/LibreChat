@@ -1,22 +1,27 @@
 import React from 'react';
-import CheckMark from '../../svg/CheckMark';
+import CheckMark from '../svg/CheckMark';
 import { Listbox } from '@headlessui/react';
 import { useRecoilValue } from 'recoil';
 import { cn } from '~/utils/';
 import store from '~/store';
 
-function ModelDropDown({ model, setModel, endpoint }) {
+function ModelDropDown({ model, setModel, endpoint, containerClassName, className }) {
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
 
   return (
-    <div className="flex items-center justify-center gap-2">
+    <div className={cn('flex items-center justify-center gap-2', containerClassName)}>
       <div className="relative w-full">
         <Listbox
           value={model}
           onChange={setModel}
         >
-          <Listbox.Button className="relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:border-green-600 focus:outline-none focus:ring-1 focus:ring-green-600 dark:border-white/20 dark:bg-gray-800 sm:text-sm">
+          <Listbox.Button
+            className={cn(
+              'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:border-green-600 focus:outline-none focus:ring-1 focus:ring-green-600 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
+              className || ''
+            )}
+          >
             <Listbox.Label
               className="block text-xs text-gray-700 dark:text-gray-500"
               id="headlessui-listbox-label-:r1:"
@@ -25,7 +30,9 @@ function ModelDropDown({ model, setModel, endpoint }) {
               Model
             </Listbox.Label>
             <span className="inline-flex w-full truncate">
-              <span className="flex h-6 items-center gap-1 truncate text-sm">{model}</span>
+              <span className="flex h-6 items-center gap-1 truncate text-sm text-black dark:text-white">
+                {model}
+              </span>
             </span>
             <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
               <svg

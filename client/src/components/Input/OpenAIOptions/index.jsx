@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import ModelSelect from './ModelSelect';
-import EndpointOptionsPopover from '../../ui/EndpointOptionsPopover';
-import DialogTemplate from '../../ui/DialogTemplate';
+import ModelSelect from '../../ui/ModelSelect';
+import EndpointOptionsPopover from '../../Endpoints/EndpointOptionsPopover';
+import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
 import { Button } from '../../ui/Button.tsx';
-import { Dialog, DialogTrigger } from '../../ui/Dialog.tsx';
-import Settings from './Settings.jsx';
+import Settings from '../../Endpoints/OpenAI/Settings.jsx';
 import { cn } from '~/utils/';
 
 import store from '~/store';
@@ -125,18 +124,11 @@ function OpenAIOptions() {
         saveAsPreset={saveAsPreset}
         switchToSimpleMode={switchToSimpleMode}
       />
-      <Dialog
+      <SaveAsPresetDialog
         open={saveAsDialogShow}
         onOpenChange={setSaveAsDialogShow}
-      >
-        <DialogTemplate
-          title="title"
-          description="desc"
-          main="tttt"
-          buttons={null}
-          selection={{}}
-        />
-      </Dialog>
+        conversation={conversation}
+      />
     </>
   );
 }

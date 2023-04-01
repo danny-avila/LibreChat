@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Button } from '../../ui/Button.tsx';
+import { Button } from './Button.tsx';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   DropdownMenuRadioItem
-} from '../../ui/DropdownMenu.tsx';
+} from './DropdownMenu.tsx';
 
 const ModelSelect = ({ model, onChange, availableModels, ...props }) => {
   const [menuOpen, setMenuOpen] = useState(false);
