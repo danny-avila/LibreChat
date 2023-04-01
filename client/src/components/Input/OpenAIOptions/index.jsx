@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import ModelSelect from './ModelSelect';
+import ModelDropDown from './ModelDropDown';
 import EndpointOptionsPopover from '../../ui/EndpointOptionsPopover';
 import DialogTemplate from '../../ui/DialogTemplate';
 import { Button } from '../../ui/Button.tsx';
@@ -79,7 +80,7 @@ function OpenAIOptions() {
           (!advancedMode ? ' show' : '')
         }
       >
-        <ModelSelect
+        {/* <ModelSelect
           model={model}
           availableModels={availableModels}
           onChange={setOption('model')}
@@ -88,12 +89,20 @@ function OpenAIOptions() {
             cardStyle,
             ' z-50 flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 data-[state=open]:bg-slate-50 dark:hover:bg-gray-600 dark:data-[state=open]:bg-gray-600'
           )}
+        /> */}
+        <ModelDropDown
+          model={model}
+          setModel={setOption('model')}
+          endpoint="openAI"
+          showAbove={true}
+          showLabel={false}
+          className="z-50 flex h-[40px] w-48 min-w-48 items-center justify-center px-4 hover:bg-slate-50 data-[state=open]:bg-slate-50 dark:bg-gray-700 dark:hover:bg-gray-600 dark:data-[state=open]:bg-gray-600"
         />
         <Button
           type="button"
           className={cn(
             cardStyle,
-            ' min-w-4 z-50 flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-600'
+            'min-w-4 z-50 flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-600'
           )}
           onClick={triggerAdvancedMode}
         >
