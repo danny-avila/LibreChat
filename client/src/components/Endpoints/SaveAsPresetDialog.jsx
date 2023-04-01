@@ -44,24 +44,26 @@ const SaveAsPresetDialog = ({ open, onOpenChange, conversation }) => {
     >
       <DialogTemplate
         title="Save As Preset"
-        main=<div className="grid w-full items-center gap-2">
-          <Label
-            htmlFor="chatGptLabel"
-            className="text-left text-sm font-medium"
-          >
-            Preset Name
-          </Label>
-          <Input
-            id="chatGptLabel"
-            value={title || ''}
-            onChange={e => setTitle(e.target.value || '')}
-            placeholder="Set a custom name, in case you can find this preset"
-            className={cn(
-              defaultTextProps,
-              'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
-            )}
-          />
-        </div>
+        main={
+          <div className="grid w-full items-center gap-2">
+            <Label
+              htmlFor="chatGptLabel"
+              className="text-left text-sm font-medium"
+            >
+              Preset Name
+            </Label>
+            <Input
+              id="chatGptLabel"
+              value={title || ''}
+              onChange={e => setTitle(e.target.value || '')}
+              placeholder="Set a custom name, in case you can find this preset"
+              className={cn(
+                defaultTextProps,
+                'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+              )}
+            />
+          </div>
+        }
         selection={{
           selectHandler: submitPreset,
           selectClasses: 'bg-green-600 hover:bg-green-700 dark:hover:bg-green-800 text-white',
