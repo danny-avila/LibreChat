@@ -85,7 +85,7 @@ function OpenAIOptions() {
           type="button"
           className={cn(
             cardStyle,
-            ' min-w-4 z-50 flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 dark:hover:bg-gray-600'
+            ' min-w-4 z-50 flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-600'
           )}
           onClick={triggerAdvancedMode}
         >
