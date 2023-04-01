@@ -218,12 +218,12 @@ function Settings() {
             value={[presP]}
             onValueChange={value => setPresP(value)}
             max={2}
-            min={0}
+            min={-2}
             step={0.01}
             className="w-full opacity-0"
           />
           <Slider
-            value={[0]}
+            value={[presP]}
             onValueChange={value => setPresP(value)}
             max={2}
             min={-2}
