@@ -1,12 +1,23 @@
 import { atom, selector } from 'recoil';
 
-const endpointsFilter = atom({
-  key: 'endpointsFilter',
+const endpointsConfig = atom({
+  key: 'endpointsConfig',
   default: {
-    azureOpenAI: false,
-    openAI: false,
-    bingAI: false,
-    chatGPTBrowser: false
+    azureOpenAI: null,
+    openAI: null,
+    bingAI: null,
+    chatGPTBrowser: null
+  }
+});
+
+const endpointsFilter = selector({
+  key: 'endpointsFilter',
+  get: ({ get }) => {
+    const config = get(endpointsConfig) || {};
+
+    let filter = {};
+    for (const key of Object.keys(config)) filter[key] = !!config[key];
+    return filter;
   }
 });
 
@@ -21,6 +32,7 @@ const availableEndpoints = selector({
 // const modelAvailable
 
 export default {
+  endpointsConfig,
   endpointsFilter,
   availableEndpoints
 };
