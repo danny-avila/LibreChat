@@ -39,7 +39,7 @@
   opacity: 1;
 }
 
-.openAIOptions-advanced-container {
+.endpointOptionsPopover-container {
   pointer-events: none;
   opacity: 0;
   transition: all 0.2s ease-in-out;
@@ -47,32 +47,10 @@
   transform-origin: bottom center;
 }
 
-.openAIOptions-advanced-container.show {
+.endpointOptionsPopover-container.show {
   pointer-events: fill;
   opacity: 1;
   transform: scaleY(1)
-}
-
-.bing-styles {
-position: absolute; 
-left: 0; 
-right: 0; 
-opacity: 0;
-bottom: 39px;
-z-index: 995;
-margin-left: auto; 
-margin-right: auto; 
-width: 308px; /* Need a specific value to work */
-transition: all 0.5s ease-in-out;
-pointer-events: none;
-transform: translateY(-60px);
-}
-
-.bing-styles.show {
-  /* bottom: -20px; */
-  opacity: 1;
-  pointer-events: all;
-  transform: translateY(-20px);
 }
 
 .creative-tab {
