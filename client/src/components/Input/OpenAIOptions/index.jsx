@@ -82,7 +82,7 @@ function OpenAIOptions() {
           )}
           onClick={triggerAdvancedMode}
         >
-          <Settings2 className="w-4" />
+          <Settings2 className="w-4 text-gray-600" />
         </Button>
       </div>
       <div
