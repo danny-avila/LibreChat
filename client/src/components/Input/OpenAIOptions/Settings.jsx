@@ -31,33 +31,16 @@ function Settings(props) {
     setPresP
   } = props;
 
-  //   temperature
-  // top_p
-  // presence_penalty
-  // frequency_penalty
-  // chatGptLabel
-  // promptPrefix
-  // const endpointsConfig = useRecoilValue(store.endpointsConfig);
-
-  // const availableModels = endpointsConfig?.['openAI']?.['availableModels'] || [];
-
-  // const [model, setModel] = useState('text-davinci-003');
-  // const [chatGptLabel, setChatGptLabel] = useState('');
-  // const [promptPrefix, setPromptPrefix] = useState('');
-  // const [temperature, setTemperature] = useState(1);
-  // // const [maxTokens, setMaxTokens] = useState(2048);
-  // const [topP, setTopP] = useState(1);
-  // const [freqP, setFreqP] = useState(0);
-  // const [presP, setPresP] = useState(0);
-  // const textareaRef = useRef(null);
-  // const inputRef = useRef(null);
-
   return (
     <>
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
-          <ModelDropDown model={model} setModel={setModel} endpoint="openAI"/>
+            <ModelDropDown
+              model={model}
+              setModel={setModel}
+              endpoint="openAI"
+            />
             {/* <Label
               htmlFor="model"
               className="text-left text-sm font-medium"
