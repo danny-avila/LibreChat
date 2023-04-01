@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
-// import ModelDialog from './ModelDialog';
+import EditPresetDialog from '../../Endpoints/EditPresetDialog';
 import EndpointItems from './EndpointItems';
-import { swr } from '~/utils/fetchers';
+import PresetItems from './PresetItems';
 import getIcon from '~/utils/getIcon';
 
 import { Button } from '../../ui/Button.tsx';
@@ -18,29 +18,21 @@ import { Dialog } from '../../ui/Dialog.tsx';
 
 import store from '~/store';
 
-export default function EndpointMenu() {
+export default function NewConversationMenu() {
   // const [modelSave, setModelSave] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [presetModelVisible, setPresetModelVisible] = useState(false);
+  const [preset, setPreset] = useState(false);
 
   // const models = useRecoilValue(store.models);
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
   // const setCustomGPTModels = useSetRecoilState(store.customGPTModels);
+  const presets = useRecoilValue(store.presets);
 
   const conversation = useRecoilValue(store.conversation) || {};
   const { endpoint, conversationId } = conversation;
   // const { model, promptPrefix, chatGptLabel, conversationId } = conversation;
   const { newConversation } = store.useConversation();
-
-  // fetch the list of saved chatgptCustom
-  // const { data, isLoading, mutate } = swr(`/api/customGpts`, res => {
-  //   const fetchedModels = res.map(modelItem => ({
-  //     ...modelItem,
-  //     name: modelItem.chatGptLabel,
-  //     model: 'chatgptCustom'
-  //   }));
-
-  //   setCustomGPTModels(fetchedModels);
-  // });
 
   // update the default model when availableModels changes
   // typically, availableModels changes => modelsFilter or customGPTModels changes
@@ -56,81 +48,31 @@ export default function EndpointMenu() {
   }, [conversation]);
 
   // set the current model
-  const onChange = (newEndpoint, value = null) => {
+  const onSelectEndpoint = newEndpoint => {
     setMenuOpen(false);
 
     if (!newEndpoint) return;
     else if (newEndpoint === endpoint) return;
     else {
-      newConversation({}, newEndpoint);
+      newConversation({}, { endpoint: newEndpoint });
     }
-    // } else if (newModel === model && value === chatGptLabel) {
-    //   // bypass if not changed
-    //   return;
-    // } else if (newModel === 'chatgptCustom' && value === null) {
-    //   // return;
-    // } else if (newModel !== 'chatgptCustom') {
-    //   newConversation({
-    //     model: newModel,
-    //     chatGptLabel: null,
-    //     promptPrefix: null
-    //   });
-    // } else if (newModel === 'chatgptCustom') {
-    //   const targetModel = models.find(element => element.value == value);
-    //   if (targetModel) {
-    //     const chatGptLabel = targetModel?.chatGptLabel;
-    //     const promptPrefix = targetModel?.promptPrefix;
-    //     newConversation({
-    //       model: newModel,
-    //       chatGptLabel,
-    //       promptPrefix
-    //     });
-    //   }
-    // }
   };
 
-  // const onOpenChange = open => {
-  //   mutate();
-  //   if (!open) {
-  //     setModelSave(false);
-  //   }
-  // };
+  // set the current model
+  const onSelectPreset = newPreset => {
+    setMenuOpen(false);
+    if (!newPreset) return;
+    // else if (newEndpoint === endpoint) return;
+    else {
+      newConversation({}, newPreset);
+    }
+  };
 
-  // const handleSaveState = value => {
-  //   if (!modelSave) {
-  //     return;
-  //   }
+  const onChangePreset = preset => {
+    setPresetModelVisible(true);
+    setPreset(preset);
+  };
 
-  //   setCustomGPTModels(value);
-  //   setModelSave(false);
-  // };
-
-  // const defaultColorProps = [
-  //   'text-gray-500',
-  //   'hover:bg-gray-100',
-  //   'hover:bg-opacity-20',
-  //   'disabled:hover:bg-transparent',
-  //   'dark:data-[state=open]:bg-gray-800',
-  //   'dark:hover:bg-opacity-20',
-  //   'dark:hover:bg-gray-900',
-  //   'dark:hover:text-gray-400',
-  //   'dark:disabled:hover:bg-transparent'
-  // ];
-
-  // const chatgptColorProps = [
-  //   'text-green-700',
-  //   'data-[state=open]:bg-green-100',
-  //   'dark:text-emerald-300',
-  //   'hover:bg-green-100',
-  //   'disabled:hover:bg-transparent',
-  //   'dark:data-[state=open]:bg-green-900',
-  //   'dark:hover:bg-opacity-50',
-  //   'dark:hover:bg-green-900',
-  //   'dark:hover:text-gray-100',
-  //   'dark:disabled:hover:bg-transparent'
-  // ];
-
-  // const colorProps = model === 'chatgpt' ? chatgptColorProps : defaultColorProps;
   const icon = getIcon({
     size: 32,
     ...conversation,
@@ -157,32 +99,51 @@ export default function EndpointMenu() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
-          className="w-56 dark:bg-gray-700"
+          className="min-w-56 dark:bg-gray-700"
           onCloseAutoFocus={event => event.preventDefault()}
         >
-          <DropdownMenuLabel className="dark:text-gray-300">Select an AI Endpoint</DropdownMenuLabel>
+          <DropdownMenuLabel className="dark:text-gray-300">Select an Endpoint</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
             value={endpoint}
-            onValueChange={onChange}
+            onValueChange={onSelectEndpoint}
             className="overflow-y-auto"
           >
             {availableEndpoints.length ? (
               <EndpointItems
                 endpoints={availableEndpoints}
-                onSelect={onChange}
+                onSelect={onSelectEndpoint}
               />
             ) : (
               <DropdownMenuLabel className="dark:text-gray-300">No endpoint available.</DropdownMenuLabel>
             )}
           </DropdownMenuRadioGroup>
+
+          <div className="mt-6 w-full" />
+
+          <DropdownMenuLabel className="dark:text-gray-300">Select a Preset</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuRadioGroup
+            onValueChange={onSelectPreset}
+            className="overflow-y-auto"
+          >
+            {presets.length ? (
+              <PresetItems
+                presets={presets}
+                onSelect={onSelectPreset}
+                onChangePreset={onChangePreset}
+              />
+            ) : (
+              <DropdownMenuLabel className="dark:text-gray-300">No preset yet.</DropdownMenuLabel>
+            )}
+          </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
-      {/* <ModelDialog
-        mutate={mutate}
-        setModelSave={setModelSave}
-        handleSaveState={handleSaveState}
-      /> */}
+      <EditPresetDialog
+        open={presetModelVisible}
+        onOpenChange={setPresetModelVisible}
+        preset={preset}
+      />
     </Dialog>
   );
 }

@@ -27,7 +27,6 @@ import getDefaultConversation from '~/utils/getDefaultConversation';
 //   clientId: null,
 //   invocationId: 1,
 //   toneStyle: null,
-//   suggestions: []
 // };
 
 const conversation = atom({
@@ -62,10 +61,10 @@ const useConversation = () => {
 
   const switchToConversation = useRecoilCallback(
     ({ snapshot }) =>
-      async (_conversation, messages = null, targetEndpoint = null) => {
+      async (_conversation, messages = null, preset = null) => {
         const prevConversation = await snapshot.getPromise(conversation);
         const endpointsFilter = await snapshot.getPromise(endpoints.endpointsFilter);
-        _switchToConversation(_conversation, messages, targetEndpoint, {
+        _switchToConversation(_conversation, messages, preset, {
           endpointsFilter,
           prevConversation
         });
@@ -76,7 +75,7 @@ const useConversation = () => {
   const _switchToConversation = (
     conversation,
     messages = null,
-    targetEndpoint = null,
+    preset = null,
     { endpointsFilter = {}, prevConversation = {} }
   ) => {
     let { endpoint = null } = conversation;
@@ -87,7 +86,7 @@ const useConversation = () => {
         conversation,
         endpointsFilter,
         prevConversation,
-        targetEndpoint
+        preset
       });
 
     setConversation(conversation);
@@ -95,7 +94,7 @@ const useConversation = () => {
     resetLatestMessage();
   };
 
-  const newConversation = (template = {}, targetEndpoint = null) => {
+  const newConversation = (template = {}, preset) => {
     switchToConversation(
       {
         conversationId: 'new',
@@ -103,7 +102,7 @@ const useConversation = () => {
         ...template
       },
       [],
-      targetEndpoint
+      preset
     );
   };
 

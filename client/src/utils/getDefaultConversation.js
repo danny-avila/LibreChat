@@ -44,7 +44,9 @@ const buildDefaultConversation = ({ conversation, endpoint, lastConversationSetu
   return conversation;
 };
 
-const getDefaultConversation = ({ conversation, prevConversation, endpointsFilter, targetEndpoint }) => {
+const getDefaultConversation = ({ conversation, prevConversation, endpointsFilter, preset }) => {
+  const { endpoint: targetEndpoint } = preset || {};
+
   if (targetEndpoint) {
     // try to use current model
     const endpoint = targetEndpoint;
@@ -52,7 +54,7 @@ const getDefaultConversation = ({ conversation, prevConversation, endpointsFilte
       conversation = buildDefaultConversation({
         conversation,
         endpoint,
-        lastConversationSetup: {}
+        lastConversationSetup: preset
       });
       return conversation;
     } else {

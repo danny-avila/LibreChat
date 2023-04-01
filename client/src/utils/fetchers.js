@@ -3,14 +3,19 @@ import axios from 'axios';
 import useSWR from 'swr';
 import useSWRMutation from 'swr/mutation';
 
-const fetcher = (url) => fetch(url, { credentials: 'include' }).then((res) => res.json());
+const fetcher = url => fetch(url, { credentials: 'include' }).then(res => res.json());
 const axiosFetcher = async (url, params) => {
   console.log(params, 'params');
   return axios.get(url, params);
 };
 
-const postRequest = async (url, { arg }) => {
-  return await axios.post(url, { withCredentials: true, arg });
+export const postRequest = async (url, { arg }) => {
+  return await axios({
+    method: 'post',
+    url: url,
+    withCredentials: true,
+    data: { arg }
+  });
 };
 
 export const searchFetcher = async (pre, q, pageNumber, callback) => {
