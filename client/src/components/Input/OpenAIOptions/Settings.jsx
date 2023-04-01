@@ -79,13 +79,13 @@ function Settings(props) {
               htmlFor="chatGptLabel"
               className="text-left text-sm font-medium"
             >
-              Custom Name
+              Custom Name <small className="opacity-40">(default: blank)</small>
             </Label>
             <Input
               id="chatGptLabel"
-              value={chatGptLabel}
+              value={chatGptLabel || ''}
               // ref={inputRef}
-              onChange={e => setChatGptLabel(e.target.value)}
+              onChange={e => setChatGptLabel(e.target.value || null)}
               placeholder="Set a custom name for ChatGPT"
               className={cn(
                 defaultTextProps,
@@ -98,12 +98,12 @@ function Settings(props) {
               htmlFor="promptPrefix"
               className="text-left text-sm font-medium"
             >
-              Prompt Prefix
+              Prompt Prefix <small className="opacity-40">(default: blank)</small>
             </Label>
             <TextareaAutosize
               id="promptPrefix"
-              value={promptPrefix}
-              onChange={e => setPromptPrefix(e.target.value)}
+              value={promptPrefix || ''}
+              onChange={e => setPromptPrefix(e.target.value || null)}
               placeholder="Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
               className={cn(
                 defaultTextProps,
@@ -129,7 +129,7 @@ function Settings(props) {
                   htmlFor="chatGptLabel"
                   className="text-left text-sm font-medium"
                 >
-                  Temperature
+                  Temperature <small className="opacity-40">(default: 1)</small>
                 </Label>
                 <Input
                   id="temp-int"
@@ -143,7 +143,7 @@ function Settings(props) {
               </div>
               <Slider
                 value={[temperature]}
-                onValueChange={value => setTemperature(value)}
+                onValueChange={value => setTemperature(value[0])}
                 max={2}
                 min={0}
                 step={0.01}
@@ -177,7 +177,7 @@ function Settings(props) {
               </div>
               <Slider
                 value={[maxTokens]}
-                onValueChange={value => setMaxTokens(value)}
+                onValueChange={value => setMaxTokens(value[0])}
                 max={2048} // should be dynamic to the currently selected model
                 min={1}
                 step={1}
@@ -197,7 +197,7 @@ function Settings(props) {
                   htmlFor="chatGptLabel"
                   className="text-left text-sm font-medium"
                 >
-                  Top P
+                  Top P <small className="opacity-40">(default: 1)</small>
                 </Label>
                 <Input
                   id="top-p-int"
@@ -211,7 +211,7 @@ function Settings(props) {
               </div>
               <Slider
                 value={[topP]}
-                onValueChange={value => setTopP(value)}
+                onValueChange={value => setTopP(value[0])}
                 max={1}
                 min={0}
                 step={0.01}
@@ -231,7 +231,7 @@ function Settings(props) {
                   htmlFor="chatGptLabel"
                   className="text-left text-sm font-medium"
                 >
-                  Frequency Penalty
+                  Frequency Penalty <small className="opacity-40">(default: 0)</small>
                 </Label>
                 <Input
                   id="freq-penalty-int"
@@ -245,7 +245,7 @@ function Settings(props) {
               </div>
               <Slider
                 value={[freqP]}
-                onValueChange={value => setFreqP(value)}
+                onValueChange={value => setFreqP(value[0])}
                 max={2}
                 min={-2}
                 step={0.01}
@@ -265,7 +265,7 @@ function Settings(props) {
                   htmlFor="chatGptLabel"
                   className="text-left text-sm font-medium"
                 >
-                  Presence Penalty
+                  Presence Penalty <small className="opacity-40">(default: 0)</small>
                 </Label>
                 <Input
                   id="pres-penalty-int"
@@ -279,7 +279,7 @@ function Settings(props) {
               </div>
               <Slider
                 value={[presP]}
-                onValueChange={value => setPresP(value)}
+                onValueChange={value => setPresP(value[0])}
                 max={2}
                 min={-2}
                 step={0.01}
