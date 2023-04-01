@@ -52,5 +52,5 @@ api/data/
 owner.yml
 archive
 .vscode/settings.json
-
+.DS_Store
 src/style - official.css

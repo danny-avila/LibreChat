@@ -34,7 +34,22 @@ export const useGetMessagesByConvoId = (
   );
 };
 
-export const useUpdateConvoMutation = (
+export const useGetConversationByIdQuery = (
+  id: string, 
+  config?: UseQueryOptions<t.TConversation> 
+  ): QueryObserverResult<t.TConversation> => {
+  return useQuery<t.TConversation>([QueryKeys.getConversationById, id], () =>
+    dataService.getConversationById(id), 
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config
+    }
+  );
+}
+
+export const useUpdateConversationMutation = (
   id: string
 ): UseMutationResult<
   t.TUpdateConversationResponse,

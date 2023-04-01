@@ -168,7 +168,6 @@ export default function Nav({ navVisible, setNavVisible }) {
                 ref={containerRef}
               >
                 <div className={containerClasses}>
-                  {/* {(isLoading && pageNumber === 1) ? ( */}
                   {(getConversationsQuery.isLoading && pageNumber === 1) || isFetching ? (
                     <Spinner />
                   ) : (

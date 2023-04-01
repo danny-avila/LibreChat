@@ -27,7 +27,7 @@ export function getMessagesByConvoId(id: string): Promise<t.TMessage[]> {
   return request.get(endpoints.getMessages(id));
 }
 
-export function getConversationById(id: string): Promise<t.TGetConversationResponse> {
+export function getConversationById(id: string): Promise<t.TConversation> {
   return request.get(endpoints.getConversationById(id));
 }
 
