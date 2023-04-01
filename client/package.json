@@ -2,9 +2,11 @@
   "name": "chatgpt-clone",
   "version": "0.2.0",
   "description": "",
-  "main": "index.js",
+  "type": "module",
   "scripts": {
-    "build": "webpack",
+    "build": "vite build",
+    "dev": "vite",
+    "preview-prod": "vite preview",
     "build-dev": "Webpack . --watch"
   },
   "repository": {
