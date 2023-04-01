@@ -10,10 +10,8 @@ import {
   DropdownMenuRadioItem
 } from '../../ui/DropdownMenu.tsx';
 
-const ModelSelect = ({ model, onChange, models, ...props }) => {
+const ModelSelect = ({ model, onChange, availableModels, ...props }) => {
   const [menuOpen, setMenuOpen] = useState(false);
-
-  models = ['gpt-4', 'text-davinci-003', 'gpt-3.5-turbo', 'gpt-3.5-turbo-0301'];
 
   return (
     <DropdownMenu
@@ -36,7 +34,7 @@ const ModelSelect = ({ model, onChange, models, ...props }) => {
           onValueChange={onChange}
           className="overflow-y-auto"
         >
-          {models.map(model => (
+          {availableModels.map(model => (
             <DropdownMenuRadioItem
               key={model}
               value={model}

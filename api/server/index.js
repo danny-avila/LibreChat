@@ -62,7 +62,9 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
 
   app.get('/api/endpoints', function (req, res) {
     const azureOpenAI = !!process.env.AZURE_OPENAI_KEY;
-    const openAI = !!process.env.OPENAI_KEY;
+    const openAI = process.env.OPENAI_KEY
+      ? { availableModels: ['gpt-4', 'text-davinci-003', 'gpt-3.5-turbo', 'gpt-3.5-turbo-0301'] }
+      : false;
     const bingAI = !!process.env.BING_TOKEN;
     const chatGPTBrowser = !!process.env.CHATGPT_TOKEN;
 

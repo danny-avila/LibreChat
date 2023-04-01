@@ -38,7 +38,7 @@ const router = createBrowserRouter([
 const App = () => {
   const [user, setUser] = useRecoilState(store.user);
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
-  const setEndpointsFilter = useSetRecoilState(store.endpointsFilter);
+  const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
 
   useEffect(() => {
     // fetch if seatch enabled
@@ -63,7 +63,7 @@ const App = () => {
         withCredentials: true
       })
       .then(({ data }) => {
-        setEndpointsFilter(data);
+        setEndpointsConfig(data);
       })
       .catch(error => {
         console.error(error);
