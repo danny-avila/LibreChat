@@ -16,25 +16,14 @@ export default defineConfig({
     }
   },
   plugins: [react()],
+  publicDir: "./public",
   build: {
     sourcemap: true,
-    outDir: "./public",
+    outDir: "./dist",
   },
   resolve: {
     alias: {
       "~": path.join(__dirname, "src/"),
     },
   },
-  define: {
-    // global: {},
-    // process: {
-    //   env: {
-    //     VITE_APP_API: process?.env.VITE_APP_API || 'production',
-    //   },
-    // },
-  },
 });
-
-// module.exports = {
-//   plugins: [require("tailwindcss")],
-// };
