@@ -16,10 +16,11 @@ export default function Conversation({ conversation, retainView }) {
   const { switchToConversation } = store.useConversation();
 
   const [renaming, setRenaming] = useState(false);
-  const [titleInput, setTitleInput] = useState(title);
   const inputRef = useRef(null);
 
   const { conversationId, title } = conversation;
+
+  const [titleInput, setTitleInput] = useState(title);
 
   const rename = manualSWR(`/api/convos/update`, 'post');
 

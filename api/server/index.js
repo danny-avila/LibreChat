@@ -23,7 +23,7 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use(errorController);
   app.use(cors());
   app.use(express.json());
-  app.use(express.static(path.join(projectPath, 'public')));
+  app.use(express.static(path.join(projectPath, 'dist')));
   app.set('trust proxy', 1); // trust first proxy
   app.use(
     session({
@@ -73,7 +73,7 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   });
 
   app.get('/*', routes.authenticatedOrRedirect, function (req, res) {
-    res.sendFile(path.join(projectPath, 'public', 'index.html'));
+    res.sendFile(path.join(projectPath, 'dist', 'index.html'));
   });
 
   app.listen(port, host, () => {

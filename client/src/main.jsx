@@ -4,10 +4,10 @@ import { createRoot } from 'react-dom/client';
 // import { store } from './src/store';
 import { RecoilRoot } from 'recoil';
 
-import { ThemeProvider } from './src/hooks/ThemeContext';
-import App from './src/App';
-import './src/style.css';
-import './src/mobile.css';
+import { ThemeProvider } from './hooks/ThemeContext';
+import App from './App';
+import './style.css';
+import './mobile.css';
 
 const container = document.getElementById('root');
 const root = createRoot(container);

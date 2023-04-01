@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
-import { SSE } from '~/utils/sse';
+import { SSE } from '~/utils/sse.mjs';
 import createPayload from '~/utils/createPayload';
 
 import store from '~/store';
