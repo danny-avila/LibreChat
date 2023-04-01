@@ -86,8 +86,7 @@ const convoSchema = mongoose.Schema(
     toneStyle: {
       type: String,
       default: null
-    },
-    suggestions: [{ type: String }]
+    }
   },
   { timestamps: true }
 );
