@@ -5,7 +5,7 @@ import AdjustToneButton from './AdjustToneButton';
 import OpenAIOptions from './OpenAIOptions';
 import BingAIOptions from './BingAIOptions';
 // import BingStyles from './BingStyles';
-import EndpointMenu from './Endpoints/EndpointMenu';
+import EndpointMenu from './Endpoints/NewConversationMenu';
 import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useMessageHandler } from '../../utils/handleSubmit';

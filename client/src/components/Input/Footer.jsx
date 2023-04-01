@@ -2,7 +2,7 @@ import React from 'react';
 
 export default function Footer() {
   return (
-    <div className="hidden md:block px-3 pt-2 pb-1 text-center text-xs text-black/50 dark:text-white/50 md:px-4 md:pt-3 md:pb-4">
+    <div className="hidden px-3 pt-2 pb-1 text-center text-xs text-black/50 dark:text-white/50 md:block md:px-4 md:pt-3 md:pb-4">
       <a
         href="https://github.com/danny-avila/chatgpt-clone"
         target="_blank"
@@ -11,8 +11,8 @@ export default function Footer() {
       >
         ChatGPT Clone
       </a>
-      . Serves and searches all conversations reliably. All AI convos under one house. Pay per
-      call and not per month (cents compared to dollars).
+      . Serves and searches all conversations reliably. All AI convos under one house. Pay per call and not
+      per month (cents compared to dollars).
     </div>
   );
 }

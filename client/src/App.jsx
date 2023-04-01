@@ -39,6 +39,7 @@ const App = () => {
   const [user, setUser] = useRecoilState(store.user);
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
   const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
+  const setPresets = useSetRecoilState(store.presets);
 
   useEffect(() => {
     // fetch if seatch enabled
@@ -64,6 +65,21 @@ const App = () => {
       })
       .then(({ data }) => {
         setEndpointsConfig(data);
+      })
+      .catch(error => {
+        console.error(error);
+        console.log('Not login!');
+        window.location.href = '/auth/login';
+      });
+
+    // fetch presets
+    axios
+      .get('/api/presets', {
+        timeout: 1000,
+        withCredentials: true
+      })
+      .then(({ data }) => {
+        setPresets(data);
       })
       .catch(error => {
         console.error(error);
