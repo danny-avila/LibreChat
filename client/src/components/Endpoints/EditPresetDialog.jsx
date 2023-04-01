@@ -78,49 +78,51 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset }) => {
       <DialogTemplate
         title="Edit Preset"
         className="max-w-full sm:max-w-4xl"
-        main=<div className="flex w-full flex-col items-center gap-2">
-          <div className="grid w-full gap-6 sm:grid-cols-2">
-            <div className="col-span-1 flex flex-col items-start justify-start gap-2">
-              <Label
-                htmlFor="chatGptLabel"
-                className="text-left text-sm font-medium"
-              >
-                Preset Name
-              </Label>
-              <Input
-                id="chatGptLabel"
-                value={preset?.title || ''}
-                onChange={e => setOption('title')(e.target.value || '')}
-                placeholder="Set a custom name, in case you can find this preset"
-                className={cn(
-                  defaultTextProps,
-                  'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
-                )}
-              />
+        main={
+          <div className="flex w-full flex-col items-center gap-2">
+            <div className="grid w-full gap-6 sm:grid-cols-2">
+              <div className="col-span-1 flex flex-col items-start justify-start gap-2">
+                <Label
+                  htmlFor="chatGptLabel"
+                  className="text-left text-sm font-medium"
+                >
+                  Preset Name
+                </Label>
+                <Input
+                  id="chatGptLabel"
+                  value={preset?.title || ''}
+                  onChange={e => setOption('title')(e.target.value || '')}
+                  placeholder="Set a custom name, in case you can find this preset"
+                  className={cn(
+                    defaultTextProps,
+                    'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                  )}
+                />
+              </div>
+              <div className="col-span-1 flex flex-col items-start justify-start gap-2">
+                <Label
+                  htmlFor="endpoint"
+                  className="text-left text-sm font-medium"
+                >
+                  Endpoint
+                </Label>
+                <Dropdown
+                  id="endpoint"
+                  value={preset?.endpoint || ''}
+                  onChange={setOption('endpoint')}
+                  options={availableEndpoints}
+                  className={cn(
+                    defaultTextProps,
+                    'flex h-10 max-h-10 w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                  )}
+                  containerClassName="flex w-full resize-none"
+                />
+              </div>
             </div>
-            <div className="col-span-1 flex flex-col items-start justify-start gap-2">
-              <Label
-                htmlFor="endpoint"
-                className="text-left text-sm font-medium"
-              >
-                Endpoint
-              </Label>
-              <Dropdown
-                id="endpoint"
-                value={preset?.endpoint || ''}
-                onChange={setOption('endpoint')}
-                options={availableEndpoints}
-                className={cn(
-                  defaultTextProps,
-                  'flex h-10 max-h-10 w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
-                )}
-                containerClassName="flex w-full resize-none"
-              />
-            </div>
+            <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
+            <div className="w-full p-0">{renderSettings()}</div>
           </div>
-          <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
-          <div className="w-full p-0">{renderSettings()}</div>
-        </div>
+        }
         selection={{
           selectHandler: submitPreset,
           selectClasses: 'bg-green-600 hover:bg-green-700 dark:hover:bg-green-800 text-white',
