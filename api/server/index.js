@@ -57,6 +57,7 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use('/api/messages', routes.authenticatedOr401, routes.messages);
   app.use('/api/convos', routes.authenticatedOr401, routes.convos);
   app.use('/api/customGpts', routes.authenticatedOr401, routes.customGpts);
+  app.use('/api/presets', routes.authenticatedOr401, routes.presets);
   app.use('/api/prompts', routes.authenticatedOr401, routes.prompts);
   app.use('/auth', routes.auth);
 
