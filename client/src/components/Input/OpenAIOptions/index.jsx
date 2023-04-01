@@ -2,7 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import ModelSelect from './ModelSelect';
+import EndpointOptionsPopover from '../../ui/EndpointOptionsPopover';
+import DialogTemplate from '../../ui/DialogTemplate';
 import { Button } from '../../ui/Button.tsx';
+import { Dialog, DialogTrigger } from '../../ui/Dialog.tsx';
 import Settings from './Settings.jsx';
 import { cn } from '~/utils/';
 
@@ -10,6 +13,7 @@ import store from '~/store';
 
 function OpenAIOptions() {
   const [advancedMode, setAdvancedMode] = useState(false);
+  const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const availableModels = endpointsConfig?.['openAI']?.['availableModels'] || [];
@@ -49,6 +53,10 @@ function OpenAIOptions() {
       frequency_penalty: 0
     }));
     setAdvancedMode(false);
+  };
+
+  const saveAsPreset = () => {
+    setSaveAsDialogShow(true);
   };
 
   const setOption = param => newValue => {
@@ -92,28 +100,8 @@ function OpenAIOptions() {
           <Settings2 className="w-4 text-gray-600 dark:text-white" />
         </Button>
       </div>
-      <div
-        className={
-          ' openAIOptions-advanced-container absolute bottom-[-10px] flex w-full flex-col items-center justify-center md:px-4' +
-          (advancedMode ? ' show' : '')
-        }
-      >
-        <div
-          className={
-            cardStyle +
-            ' flex w-full flex-col overflow-hidden rounded-md border bg-slate-200 px-0 pb-[10px] dark:border-white/10 lg:w-[736px]'
-          }
-        >
-          <div className="flex w-full items-center justify-between bg-slate-100 px-4 py-2 dark:bg-gray-800/60">
-            <span className="text-xs font-medium font-normal">Advanced settings for OpenAI endpoint</span>
-            <Button
-              type="button"
-              className="h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white"
-              onClick={switchToSimpleMode}
-            >
-              Switch to simple mode
-            </Button>
-          </div>
+      <EndpointOptionsPopover
+        content={
           <div className="px-4 py-4">
             <Settings
               model={model}
@@ -132,8 +120,23 @@ function OpenAIOptions() {
               setPresP={setOption('frequency_penalty')}
             />
           </div>
-        </div>
-      </div>
+        }
+        visible={advancedMode}
+        saveAsPreset={saveAsPreset}
+        switchToSimpleMode={switchToSimpleMode}
+      />
+      <Dialog
+        open={saveAsDialogShow}
+        onOpenChange={setSaveAsDialogShow}
+      >
+        <DialogTemplate
+          title="title"
+          description="desc"
+          main="tttt"
+          buttons={null}
+          selection={{}}
+        />
+      </Dialog>
     </>
   );
 }
