@@ -6,7 +6,7 @@ import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw'
 import CodeBlock from './CodeBlock';
-import { langSubset } from '~/utils/languages';
+import { langSubset } from '~/utils/languages.mjs';
 
 const Content = React.memo(({ content }) => {
   let rehypePlugins = [

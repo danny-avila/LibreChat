@@ -211,8 +211,9 @@ var SSE = function (url, options) {
   };
 };
 
+export { SSE };
 // Export our SSE module for npm.js
-if (typeof exports !== 'undefined') {
-  // exports.SSE = SSE;
-  module.exports = { SSE };
-}
+// if (typeof exports !== 'undefined') {
+//   // exports.SSE = SSE;
+//   module.exports = { SSE };
+// }

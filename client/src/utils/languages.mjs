@@ -353,4 +353,4 @@ const langSubset = [
   'yaml',
 ];
 
-module.exports = { languages, langSubset };
+export { languages, langSubset };
