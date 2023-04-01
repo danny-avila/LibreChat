@@ -19,7 +19,7 @@ function BingAIOptions() {
   const { toneStyle } = conversation;
 
   const cardStyle =
-    'shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white';
+    'transition-colors shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 hover:border-black/10 focus:border-black/10 dark:border-black/10 dark:hover:border-black/10 dark:focus:border-black/10 border dark:bg-gray-700 text-black dark:text-white';
   const defaultClasses =
     'p-2 rounded-md min-w-[75px] font-normal bg-white/[.60] dark:bg-gray-700 text-black text-xs';
   const defaultSelected = cn(defaultClasses, 'font-medium data-[state=active]:text-white text-xs text-white');

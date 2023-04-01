@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import ModelSelect from '../../ui/ModelSelect';
+import ModelDropDown from '../../ui/ModelDropDown';
 import EndpointOptionsPopover from '../../Endpoints/EndpointOptionsPopover';
 import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
 import { Button } from '../../ui/Button.tsx';
@@ -13,9 +14,6 @@ import store from '~/store';
 function OpenAIOptions() {
   const [advancedMode, setAdvancedMode] = useState(false);
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
-
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
-  const availableModels = endpointsConfig?.['openAI']?.['availableModels'] || [];
 
   const [conversation, setConversation] = useRecoilState(store.conversation) || {};
   const { endpoint, conversationId } = conversation;
@@ -68,7 +66,7 @@ function OpenAIOptions() {
   };
 
   const cardStyle =
-    'shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white';
+    'transition-colors shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 hover:border-black/10 focus:border-black/10 dark:border-black/10 dark:hover:border-black/10 dark:focus:border-black/10 border dark:bg-gray-700 text-black dark:text-white';
 
   return (
     <>
@@ -78,7 +76,7 @@ function OpenAIOptions() {
           (!advancedMode ? ' show' : '')
         }
       >
-        <ModelSelect
+        {/* <ModelSelect
           model={model}
           availableModels={availableModels}
           onChange={setOption('model')}
@@ -87,12 +85,23 @@ function OpenAIOptions() {
             cardStyle,
             ' z-50 flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 data-[state=open]:bg-slate-50 dark:hover:bg-gray-600 dark:data-[state=open]:bg-gray-600'
           )}
+        /> */}
+        <ModelDropDown
+          model={model}
+          setModel={setOption('model')}
+          endpoint="openAI"
+          showAbove={true}
+          showLabel={false}
+          className={cn(
+            cardStyle,
+            'min-w-48 z-50 flex h-[40px] w-48 items-center justify-center px-4 ring-0 hover:cursor-pointer hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 data-[state=open]:bg-slate-50 dark:bg-gray-700 dark:hover:bg-gray-600 dark:data-[state=open]:bg-gray-600'
+          )}
         />
         <Button
           type="button"
           className={cn(
             cardStyle,
-            ' min-w-4 z-50 flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-600'
+            'min-w-4 z-50 flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-600'
           )}
           onClick={triggerAdvancedMode}
         >
