@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Settings2 } from 'lucide-react';
-import { useRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import ModelSelect from './ModelSelect';
 import { Button } from '../../ui/Button.tsx';
 import Settings from './Settings.jsx';
@@ -11,7 +11,29 @@ import store from '~/store';
 function OpenAIOptions() {
   const [advancedMode, setAdvancedMode] = useState(false);
   const [conversation, setConversation] = useRecoilState(store.conversation) || {};
+  const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const { endpoint, conversationId } = conversation;
+
+  useEffect(() => {
+    const { endpoint, chatGptLabel, promptPrefix, temperature, top_p, presence_penalty } = conversation;
+
+    if (endpoint !== 'openAI') return;
+
+    const mustInAdvancedMode =
+      chatGptLabel !== null ||
+      promptPrefix !== null ||
+      temperature !== 0.8 ||
+      top_p !== 1 ||
+      presence_penalty !== 1;
+
+    if (mustInAdvancedMode && !advancedMode) setAdvancedMode(true);
+  }, [conversation, advancedMode]);
+
+  if (endpoint !== 'openAI') return null;
+  if (conversationId !== 'new') return null;
+
+  const { model } = conversation;
+  const availableModels = endpointsConfig?.['openAI']?.['availableModels'] || [];
 
   const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
 
@@ -34,26 +56,6 @@ function OpenAIOptions() {
     }));
   };
 
-  useEffect(() => {
-    const { endpoint, chatGptLabel, promptPrefix, temperature, top_p, presence_penalty } = conversation;
-
-    if (endpoint !== 'openAI') return;
-
-    const mustInAdvancedMode =
-      chatGptLabel !== null ||
-      promptPrefix !== null ||
-      temperature !== 0.8 ||
-      top_p !== 1 ||
-      presence_penalty !== 1;
-
-    if (mustInAdvancedMode && !advancedMode) setAdvancedMode(true);
-  }, [conversation, advancedMode]);
-
-  if (endpoint !== 'openAI') return null;
-  if (conversationId !== 'new') return null;
-
-  const { model } = conversation;
-
   const cardStyle =
     'shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white';
 
@@ -67,6 +69,7 @@ function OpenAIOptions() {
       >
         <ModelSelect
           model={model}
+          availableModels={availableModels}
           onChange={setModel}
           type="button"
           className={cn(
@@ -107,8 +110,8 @@ function OpenAIOptions() {
               Switch to simple mode
             </Button>
           </div>
-          <div className="h-[375px] p-5">
-            <Settings isOpen={advancedMode}/>
+          <div className="px-4 py-4">
+            <Settings isOpen={advancedMode} />
           </div>
         </div>
       </div>
