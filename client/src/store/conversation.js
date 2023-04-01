@@ -16,9 +16,10 @@ import getDefaultConversation from '~/utils/getDefaultConversation';
 //   // for azureOpenAI, openAI only
 //   chatGptLabel: null,
 //   promptPrefix: null,
-//   temperature: 0.8,
+//   temperature: 1,
 //   top_p: 1,
-//   presence_penalty: 1,
+//   presence_penalty: 0,
+//   frequency_penalty: 0,
 //   // for bingAI only
 //   jailbreak: false,
 //   jailbreakConversationId: null,

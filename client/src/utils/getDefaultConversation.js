@@ -6,9 +6,10 @@ const buildDefaultConversation = ({ conversation, endpoint, lastConversationSetu
       model: lastConversationSetup?.model || 'gpt-3.5-turbo',
       chatGptLabel: lastConversationSetup?.chatGptLabel || null,
       promptPrefix: lastConversationSetup?.promptPrefix || null,
-      temperature: lastConversationSetup?.temperature || 0.8,
+      temperature: lastConversationSetup?.temperature || 1,
       top_p: lastConversationSetup?.top_p || 1,
-      presence_penalty: lastConversationSetup?.presence_penalty || 1
+      presence_penalty: lastConversationSetup?.presence_penalty || 0,
+      frequency_penalty: lastConversationSetup?.frequency_penalty || 0
     };
   } else if (endpoint === 'bingAI') {
     conversation = {

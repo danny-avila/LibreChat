@@ -34,9 +34,10 @@ router.post('/', async (req, res) => {
     model: req.body?.model || 'gpt-3.5-turbo',
     chatGptLabel: req.body?.chatGptLabel || null,
     promptPrefix: req.body?.promptPrefix || null,
-    temperature: req.body?.temperature || 0.8,
+    temperature: req.body?.temperature || 1,
     top_p: req.body?.top_p || 1,
-    presence_penalty: req.body?.presence_penalty || 1
+    presence_penalty: req.body?.presence_penalty || 0,
+    frequency_penalty: req.body?.frequency_penalty || 0
   };
 
   console.log('ask log', {
