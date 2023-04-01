@@ -1,5 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
+import ModelDropDown from './ModelDropDown';
 import { Input } from '~/components/ui/Input.tsx';
 import { Label } from '~/components/ui/Label.tsx';
 import { Slider } from '~/components/ui/Slider.tsx';
@@ -56,7 +57,8 @@ function Settings(props) {
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
-            <Label
+          <ModelDropDown model={model} setModel={setModel} endpoint="openAI"/>
+            {/* <Label
               htmlFor="model"
               className="text-left text-sm font-medium"
             >
@@ -72,7 +74,7 @@ function Settings(props) {
                 defaultTextProps,
                 'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
               )}
-            />
+            /> */}
           </div>
           <div className="grid w-full items-center gap-2">
             <Label
