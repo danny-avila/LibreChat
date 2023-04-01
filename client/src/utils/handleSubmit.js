@@ -30,9 +30,10 @@ const useMessageHandler = () => {
         model: currentConversation?.model || 'gpt-3.5-turbo',
         chatGptLabel: currentConversation?.chatGptLabel || null,
         promptPrefix: currentConversation?.promptPrefix || null,
-        temperature: currentConversation?.temperature || 0.8,
+        temperature: currentConversation?.temperature || 1,
         top_p: currentConversation?.top_p || 1,
-        presence_penalty: currentConversation?.presence_penalty || 1
+        presence_penalty: currentConversation?.presence_penalty || 0,
+        frequency_penalty: currentConversation?.frequency_penalty || 0
       };
       responseSender = endpointOption.chatGptLabel || 'ChatGPT';
     } else if (endpoint === 'bingAI') {

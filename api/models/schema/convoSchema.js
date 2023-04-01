@@ -44,7 +44,7 @@ const convoSchema = mongoose.Schema(
     },
     temperature: {
       type: Number,
-      default: 0.8,
+      default: 1,
       required: false
     },
     top_p: {
@@ -54,7 +54,12 @@ const convoSchema = mongoose.Schema(
     },
     presence_penalty: {
       type: Number,
-      default: 1,
+      default: 0,
+      required: false
+    },
+    frequency_penalty: {
+      type: Number,
+      default: 0,
       required: false
     },
     // for bingai only

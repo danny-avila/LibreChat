@@ -12,25 +12,48 @@ const defaultTextProps =
 const optionText =
   'p-0 shadow-none text-right pr-1 h-8 border-transparent focus:ring-[#10a37f] focus:ring-offset-0 focus:ring-opacity-100 hover:bg-gray-800/10 dark:hover:bg-white/10 focus:bg-gray-800/10 dark:focus:bg-white/10 transition-colors';
 
-function Settings({ isOpen }) {
+function Settings(props) {
+  const {
+    model,
+    setModel,
+    chatGptLabel,
+    setChatGptLabel,
+    promptPrefix,
+    setPromptPrefix,
+    temperature,
+    setTemperature,
+    topP,
+    setTopP,
+    freqP,
+    setFreqP,
+    presP,
+    setPresP
+  } = props;
+
+  //   temperature
+  // top_p
+  // presence_penalty
+  // frequency_penalty
+  // chatGptLabel
+  // promptPrefix
   // const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   // const availableModels = endpointsConfig?.['openAI']?.['availableModels'] || [];
 
-  const [model, setModel] = useState('text-davinci-003');
-  const [chatGptLabel, setChatGptLabel] = useState('');
-  const [promptPrefix, setPromptPrefix] = useState('');
-  const [temperature, setTemperature] = useState(1);
-  const [maxTokens, setMaxTokens] = useState(2048);
-  const [topP, setTopP] = useState(1);
-  const [freqP, setFreqP] = useState(0);
-  const [presP, setPresP] = useState(0);
+  // const [model, setModel] = useState('text-davinci-003');
+  // const [chatGptLabel, setChatGptLabel] = useState('');
+  // const [promptPrefix, setPromptPrefix] = useState('');
+  // const [temperature, setTemperature] = useState(1);
+  // // const [maxTokens, setMaxTokens] = useState(2048);
+  // const [topP, setTopP] = useState(1);
+  // const [freqP, setFreqP] = useState(0);
+  // const [presP, setPresP] = useState(0);
   // const textareaRef = useRef(null);
   // const inputRef = useRef(null);
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
             <Label
@@ -133,7 +156,7 @@ function Settings({ isOpen }) {
             />
           </HoverCard>
 
-          <HoverCard>
+          {/* <HoverCard>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label
@@ -165,7 +188,7 @@ function Settings({ isOpen }) {
               type="max"
               side="left"
             />
-          </HoverCard>
+          </HoverCard> */}
 
           <HoverCard>
             <HoverCardTrigger className="grid w-full items-center gap-2">

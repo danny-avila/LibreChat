@@ -12,6 +12,7 @@ const askClient = async ({
   temperature,
   top_p,
   presence_penalty,
+  frequency_penalty,
   onProgress,
   abortController
 }) => {
@@ -25,7 +26,8 @@ const askClient = async ({
       model: model,
       temperature,
       top_p,
-      presence_penalty
+      presence_penalty,
+      frequency_penalty
     },
     chatGptLabel,
     promptPrefix,

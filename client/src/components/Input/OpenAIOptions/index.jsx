@@ -10,30 +10,31 @@ import store from '~/store';
 
 function OpenAIOptions() {
   const [advancedMode, setAdvancedMode] = useState(false);
-  const [conversation, setConversation] = useRecoilState(store.conversation) || {};
+
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
+  const availableModels = endpointsConfig?.['openAI']?.['availableModels'] || [];
+
+  const [conversation, setConversation] = useRecoilState(store.conversation) || {};
   const { endpoint, conversationId } = conversation;
+  const { model, chatGptLabel, promptPrefix, temperature, top_p, presence_penalty, frequency_penalty } =
+    conversation;
 
   useEffect(() => {
-    const { endpoint, chatGptLabel, promptPrefix, temperature, top_p, presence_penalty } = conversation;
-
     if (endpoint !== 'openAI') return;
 
     const mustInAdvancedMode =
       chatGptLabel !== null ||
       promptPrefix !== null ||
-      temperature !== 0.8 ||
+      temperature !== 1 ||
       top_p !== 1 ||
-      presence_penalty !== 1;
+      presence_penalty !== 0 ||
+      frequency_penalty !== 0;
 
     if (mustInAdvancedMode && !advancedMode) setAdvancedMode(true);
   }, [conversation, advancedMode]);
 
   if (endpoint !== 'openAI') return null;
   if (conversationId !== 'new') return null;
-
-  const { model } = conversation;
-  const availableModels = endpointsConfig?.['openAI']?.['availableModels'] || [];
 
   const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
 
@@ -42,17 +43,20 @@ function OpenAIOptions() {
       ...prevState,
       chatGptLabel: null,
       promptPrefix: null,
-      temperature: 0.8,
+      temperature: 1,
       top_p: 1,
-      presence_penalty: 1
+      presence_penalty: 0,
+      frequency_penalty: 0
     }));
     setAdvancedMode(false);
   };
 
-  const setModel = newModel => {
+  const setOption = param => newValue => {
+    let update = {};
+    update[param] = newValue;
     setConversation(prevState => ({
       ...prevState,
-      model: newModel
+      ...update
     }));
   };
 
@@ -70,7 +74,7 @@ function OpenAIOptions() {
         <ModelSelect
           model={model}
           availableModels={availableModels}
-          onChange={setModel}
+          onChange={setOption('model')}
           type="button"
           className={cn(
             cardStyle,
@@ -90,7 +94,7 @@ function OpenAIOptions() {
       </div>
       <div
         className={
-          ' openAIOptions-advanced-container absolute bottom-[-10px] flex w-full flex-col items-center justify-center px-4' +
+          ' openAIOptions-advanced-container absolute bottom-[-10px] flex w-full flex-col items-center justify-center md:px-4' +
           (advancedMode ? ' show' : '')
         }
       >
@@ -111,7 +115,22 @@ function OpenAIOptions() {
             </Button>
           </div>
           <div className="px-4 py-4">
-            <Settings isOpen={advancedMode} />
+            <Settings
+              model={model}
+              setModel={setOption('model')}
+              chatGptLabel={chatGptLabel}
+              setChatGptLabel={setOption('chatGptLabel')}
+              promptPrefix={promptPrefix}
+              setPromptPrefix={setOption('promptPrefix')}
+              temperature={temperature}
+              setTemperature={setOption('temperature')}
+              topP={top_p}
+              setTopP={setOption('top_p')}
+              freqP={presence_penalty}
+              setFreqP={setOption('presence_penalty')}
+              presP={frequency_penalty}
+              setPresP={setOption('frequency_penalty')}
+            />
           </div>
         </div>
       </div>
