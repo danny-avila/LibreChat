@@ -4,14 +4,8 @@ import Root from './routes/Root';
 import Chat from './routes/Chat';
 import Search from './routes/Search';
 import store from './store';
-import userAuth from './utils/userAuth';
 import { useRecoilState, useSetRecoilState } from 'recoil';
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-
-
-import axios from 'axios';
-
-const queryClient = new QueryClient();
+import { useGetSearchEnabledQuery, useGetUserQuery, useGetModelsQuery} from '~/data-provider';
 
 const router = createBrowserRouter([
   {
@@ -44,50 +38,48 @@ const App = () => {
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
   const setModelsFilter = useSetRecoilState(store.modelsFilter);
 
+  const searchEnabledQuery = useGetSearchEnabledQuery();
+  const userQuery = useGetUserQuery();
+  const modelsQuery = useGetModelsQuery();
+
   useEffect(() => {
-    // fetch if seatch enabled
-    axios
-      .get('/api/search/enable', {
-        timeout: 1000,
-        withCredentials: true
-      })
-      .then(res => {
-        setIsSearchEnabled(res.data);
-      });
+    if (searchEnabledQuery.error) {
+      console.error("Failed to get search enabled", searchEnabledQuery.error);
+    }
+    if (searchEnabledQuery.data) {
+      setIsSearchEnabled(searchEnabledQuery.data);
+    }
+  }, [searchEnabledQuery.data, setIsSearchEnabled, searchEnabledQuery.error]);
 
-    // fetch user
-    userAuth()
-      .then(user => setUser(user))
-      .catch(err => console.log(err));
+  useEffect(() => {
+    if (userQuery.error) {
+      console.error("Failed to get user", userQuery.error);
+    }
+    if (userQuery.data) {
+      setUser(userQuery.data);
+    }
+  }, [userQuery.data, setUser, userQuery.error]);
 
-    // fetch models
-    axios
-      .get('/api/models', {
-        timeout: 1000,
-        withCredentials: true
-      })
-      .then(({ data }) => {
-        const filter = {
-          chatgpt: data?.hasOpenAI,
-          chatgptCustom: data?.hasOpenAI,
-          bingai: data?.hasBing,
-          sydney: data?.hasBing,
-          chatgptBrowser: data?.hasChatGpt
-        };
-        setModelsFilter(filter);
-      })
-      .catch(error => {
-        console.error(error);
-        console.log('Not login!');
-        window.location.href = '/auth/login';
-      });
-  }, []);
+  useEffect(() => {
+    const { data, error } = modelsQuery;
+    if (error) {
+      console.error("Failed to get models", error);
+    }
+    if (data) {
+      const filter = {
+        chatgpt: data?.hasOpenAI,
+        chatgptCustom: data?.hasOpenAI,
+        bingai: data?.hasBing,
+        sydney: data?.hasBing,
+        chatgptBrowser: data?.hasChatGpt
+      };
+      setModelsFilter(filter);
+    }
+  }, [modelsQuery.data, setModelsFilter, modelsQuery.error, modelsQuery]);
 
   if (user)
     return (
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
+      <RouterProvider router={router} />
     );
   else return <div className="flex h-screen"></div>;
 };

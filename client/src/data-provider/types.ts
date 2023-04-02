@@ -86,7 +86,10 @@ export type TModel = {
   promptPrefix?: string
 };
 
-export type TUser = {};
+export type TUser = {
+  username: string,
+  display: string
+};
 
 export type TGetConversationsResponse = {
   conversations: TConversation[],

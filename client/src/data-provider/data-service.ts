@@ -49,7 +49,7 @@ export function deleteCustomGpt(payload: t.TDeleteCustomGptRequest): Promise<t.T
   return request.post(endpoints.deleteCustomGpt(), payload);
 }
 
-export function getModels(): Promise<t.TCustomGpt[]> {
+export function getModels(): Promise<t.TGetModelsResponse> {
   return request.get(endpoints.getModels());
 }
 
@@ -59,6 +59,10 @@ export function getSearchEnabled(): Promise<boolean> {
 
 export function getSearchResults(q: string, pageNumber: string): Promise<t.TSearchResults> {
   return request.get(endpoints.search(q, pageNumber));
+}
+
+export function getUser(): Promise<t.TUser> {
+  return request.get(endpoints.user());
 }
 
 type TSearchFetcherProps = {

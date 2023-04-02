@@ -24,6 +24,7 @@ module.exports = {
       "react"
   ],
   "rules": {
+      "no-debugger":"off",    
       'react/prop-types': ['off'],
       'react/display-name': ['off'],
   }

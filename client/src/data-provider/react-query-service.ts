@@ -10,20 +10,28 @@ import * as t from "./types";
 import * as dataService from "./data-service";
 
 export enum QueryKeys {
-  getMessagesByConvoId = "getMessages",
-  getConversations = "getConversations",
-  getConversationById = "getConversationById",
-  getOpenAIModels = "getOpenAIModels",
-  getModels = "getModels",
-  getCustomGpts = "getCustomGpts",
-  getSearchEnabled = "getSearchEnabled",
+  messages = "messsages",
+  allConversations = "allConversations",
+  conversation = "conversation",
+  models = "models",
+  customGpts = "customGpts",
+  searchEnabled = "searchEnabled",
+  user = "user",
 }
+
+export const useGetUserQuery = (): QueryObserverResult<t.TUser> => {
+  return useQuery<t.TUser>([QueryKeys.user], () => dataService.getUser(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  });
+};
 
 export const useGetMessagesByConvoId = (
   id: string, 
   config?: UseQueryOptions<t.TMessage[]>
 ): QueryObserverResult<t.TMessage[]> => {
-  return useQuery<t.TMessage[]>([QueryKeys.getMessagesByConvoId, id], () =>
+  return useQuery<t.TMessage[]>([QueryKeys.messages, id], () =>
     dataService.getMessagesByConvoId(id), 
     {
       refetchOnWindowFocus: false,
@@ -38,12 +46,13 @@ export const useGetConversationByIdQuery = (
   id: string, 
   config?: UseQueryOptions<t.TConversation> 
   ): QueryObserverResult<t.TConversation> => {
-  return useQuery<t.TConversation>([QueryKeys.getConversationById, id], () =>
+  return useQuery<t.TConversation>([QueryKeys.conversation, id], () =>
     dataService.getConversationById(id), 
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
+      enabled: false,
       ...config
     }
   );
@@ -63,11 +72,16 @@ export const useUpdateConversationMutation = (
       dataService.updateConversation(payload),
     {
       onSuccess: () => {
-        queryClient.invalidateQueries([QueryKeys.getConversationById, id]);
+        queryClient.invalidateQueries([QueryKeys.conversation, id]);
       },
     }
   );
 };
+
+// export const useDeleteConversationMutation = (
+//   id: string
+// ): UseMutationResult<
+
 
 export const useUpdateCustomGptMutation = (): UseMutationResult<
   t.TUpdateCustomGptResponse,
@@ -81,7 +95,7 @@ export const useUpdateCustomGptMutation = (): UseMutationResult<
       dataService.updateCustomGpt(payload),
     {
       onSuccess: () => {
-        queryClient.invalidateQueries([QueryKeys.getCustomGpts]);
+        queryClient.invalidateQueries([QueryKeys.customGpts]);
       },
     }
   );
@@ -91,7 +105,7 @@ export const useGetCustomGptsQuery = (): QueryObserverResult<
   t.TCustomGpt[],
   unknown
 > => {
-  return useQuery([QueryKeys.getCustomGpts], () => dataService.getCustomGpts(), {
+  return useQuery([QueryKeys.customGpts], () => dataService.getCustomGpts(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -110,7 +124,7 @@ export const useDeleteCustomGptMutation = (): UseMutationResult<
       dataService.deleteCustomGpt(payload),
     {
       onSuccess: () => {
-        queryClient.invalidateQueries([QueryKeys.getCustomGpts]);
+        queryClient.invalidateQueries([QueryKeys.customGpts]);
       },
     }
   );
@@ -120,7 +134,7 @@ export const useGetModelsQuery = (): QueryObserverResult<
   t.TGetModelsResponse,
   unknown
 > => {
-  return useQuery([QueryKeys.getModels], () => dataService.getModels(), {
+  return useQuery([QueryKeys.models], () => dataService.getModels(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -131,13 +145,13 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
   const queryClient = useQueryClient();
   return useMutation(() => dataService.clearAllConversations(), {
     onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.getConversations]);
+      queryClient.invalidateQueries([QueryKeys.allConversations]);
     },
   });
 };
 
 export const useGetConversationsQuery = (pageNumber: string): QueryObserverResult<t.TGetConversationsResponse> => {
-  return useQuery([QueryKeys.getConversations, pageNumber], () =>
+  return useQuery([QueryKeys.allConversations, pageNumber], () =>
     dataService.getConversations(pageNumber), {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
@@ -146,12 +160,13 @@ export const useGetConversationsQuery = (pageNumber: string): QueryObserverResul
   );
 }
 
-export const useGetSearchEnabledQuery = (): QueryObserverResult<boolean> => {
-  return useQuery([QueryKeys.getSearchEnabled], () =>
+export const useGetSearchEnabledQuery = (config?: UseQueryOptions<boolean>): QueryObserverResult<boolean> => {
+  return useQuery<boolean>([QueryKeys.searchEnabled], () =>
     dataService.getSearchEnabled(), {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
+      ...config,
     }
   );
 }
