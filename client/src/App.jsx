@@ -1,15 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import Root from './routes/Root';
 import Chat from './routes/Chat';
 import Search from './routes/Search';
 import store from './store';
-import userAuth from './utils/userAuth';
 import { useRecoilState, useSetRecoilState } from 'recoil';
-
 import { ScreenshotProvider } from './utils/screenshotContext.jsx';
-
-import axios from 'axios';
+import { useGetSearchEnabledQuery, useGetUserQuery, useGetModelsQuery, useGetEndpointsQuery, useGetPresetsQuery} from '~/data-provider';
 
 const router = createBrowserRouter([
   {
@@ -43,58 +40,64 @@ const App = () => {
   const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
   const setPresets = useSetRecoilState(store.presets);
 
+  const searchEnabledQuery = useGetSearchEnabledQuery();
+  const userQuery = useGetUserQuery();
+  const modelsQuery = useGetModelsQuery();
+  const endpointsQuery = useGetEndpointsQuery();
+  const presetsQuery = useGetPresetsQuery();
+
+  if(endpointsQuery.data) {
+    setEndpointsConfig(endpointsQuery.data);
+  } else if(endpointsQuery.isError) {
+    console.error("Failed to get endpoints", endpointsQuery.error);
+    window.location.href = '/auth/login';
+  }
+
+  if(presetsQuery.data) {
+    setPresets(presetsQuery.data);
+  } else if(presetsQuery.isError) {
+    console.error("Failed to get presets", presetsQuery.error);
+    window.location.href = '/auth/login';
+  }
+
   useEffect(() => {
-    // fetch if seatch enabled
-    axios
-      .get('/api/search/enable', {
-        timeout: 1000,
-        withCredentials: true
-      })
-      .then(res => {
-        setIsSearchEnabled(res.data);
-      });
+    if (searchEnabledQuery.error) {
+      console.error("Failed to get search enabled", searchEnabledQuery.error);
+    }
+    if (searchEnabledQuery.data) {
+      setIsSearchEnabled(searchEnabledQuery.data);
+    }
+  }, [searchEnabledQuery.data, setIsSearchEnabled, searchEnabledQuery.error]);
 
-    // fetch user
-    userAuth()
-      .then(user => setUser(user))
-      .catch(err => console.log(err));
+  useEffect(() => {
+    if (userQuery.error) {
+      console.error("Failed to get user", userQuery.error);
+    }
+    if (userQuery.data) {
+      setUser(userQuery.data);
+    }
+  }, [userQuery.data, setUser, userQuery.error]);
 
-    // fetch models
-    axios
-      .get('/api/endpoints', {
-        timeout: 1000,
-        withCredentials: true
-      })
-      .then(({ data }) => {
-        setEndpointsConfig(data);
-      })
-      .catch(error => {
-        console.error(error);
-        console.log('Not login!');
-        window.location.href = '/auth/login';
-      });
-
-    // fetch presets
-    axios
-      .get('/api/presets', {
-        timeout: 1000,
-        withCredentials: true
-      })
-      .then(({ data }) => {
-        setPresets(data);
-      })
-      .catch(error => {
-        console.error(error);
-        console.log('Not login!');
-        window.location.href = '/auth/login';
-      });
-  }, []);
+  useEffect(() => {
+    const { data, error } = modelsQuery;
+    if (error) {
+      console.error("Failed to get models", error);
+    }
+    if (data) {
+      const filter = {
+        chatgpt: data?.hasOpenAI,
+        chatgptCustom: data?.hasOpenAI,
+        bingai: data?.hasBing,
+        sydney: data?.hasBing,
+        chatgptBrowser: data?.hasChatGpt
+      };
+      setModelsFilter(filter);
+    }
+  }, [modelsQuery.data, setModelsFilter, modelsQuery.error, modelsQuery]);
 
   if (user)
     return (
-      <div>
-        <RouterProvider router={router} />
-      </div>
+      <RouterProvider router={router} />
     );
   else return <div className="flex h-screen"></div>;
 };
