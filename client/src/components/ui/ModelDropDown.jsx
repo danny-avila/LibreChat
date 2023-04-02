@@ -43,15 +43,6 @@ function ModelDropDown({
                   </Listbox.Label>
                 )}
                 <span className="inline-flex w-full truncate">
-                  {/* {!showLabel && (
-                  <Listbox.Label
-                    className="text-xs text-gray-700 dark:text-gray-500 mr-3"
-                    id="headlessui-listbox-label-:r1:"
-                    data-headlessui-state=""
-                  >
-                    Model
-                  </Listbox.Label>
-                )} */}
                   <span
                     className={cn(
                       'flex h-6 items-center gap-1 truncate text-sm text-gray-900 dark:text-white',
@@ -59,8 +50,7 @@ function ModelDropDown({
                     )}
                   >
                     {!showLabel && <span className="text-xs text-gray-700 dark:text-gray-500">Model:</span>}
-                    {`${!showLabel ? '' : ''} ${model}`}
-                    {/* {`${!showLabel ? 'Model: ' : ''} ${model}`} */}
+                    {model}
                   </span>
                 </span>
                 <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
