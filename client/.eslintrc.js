@@ -26,5 +26,6 @@ module.exports = {
   "rules": {
       'react/prop-types': ['off'],
       'react/display-name': ['off'],
+      "no-debugger":"off",
   }
 }
