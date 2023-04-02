@@ -50,7 +50,7 @@ const useMessageHandler = () => {
     } else if (endpoint === 'chatGPTBrowser') {
       endpointOption = {
         endpoint,
-        model: currentConversation?.model || 'text-davinci-002-render-sha'
+        model: currentConversation?.model || 'Default (GPT-3.5)'
       };
       responseSender = 'ChatGPT';
     } else if (endpoint === null) {

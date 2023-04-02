@@ -26,7 +26,7 @@ const buildDefaultConversation = ({ conversation, endpoint, lastConversationSetu
     conversation = {
       ...conversation,
       endpoint,
-      model: lastConversationSetup?.model || 'text-davinci-002-render-sha'
+      model: lastConversationSetup?.model || 'Default (GPT-3.5)'
     };
   } else if (endpoint === null) {
     conversation = {

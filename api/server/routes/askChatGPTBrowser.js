@@ -50,6 +50,7 @@ router.post('/', async (req, res) => {
     });
   }
 
+  // eslint-disable-next-line no-use-before-define
   return await ask({
     userMessage,
     endpointOption,

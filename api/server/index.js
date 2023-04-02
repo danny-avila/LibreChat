@@ -67,7 +67,9 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
       ? { availableModels: ['gpt-4', 'text-davinci-003', 'gpt-3.5-turbo', 'gpt-3.5-turbo-0301'] }
       : false;
     const bingAI = !!process.env.BING_TOKEN;
-    const chatGPTBrowser = !!process.env.CHATGPT_TOKEN;
+    const chatGPTBrowser = process.env.OPENAI_KEY
+      ? { availableModels: ['Default (GPT-3.5)', 'Legacy (GPT-3.5)', 'GPT-4'] }
+      : false;
 
     res.send(JSON.stringify({ azureOpenAI, openAI, bingAI, chatGPTBrowser }));
   });
@@ -86,7 +88,7 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
 })();
 
 let messageCount = 0;
-process.on('uncaughtException', err => {
+process.on('uncaughtException', (err) => {
   if (!err.message.includes('fetch failed')) {
     console.error('There was an uncaught error:', err.message);
   }

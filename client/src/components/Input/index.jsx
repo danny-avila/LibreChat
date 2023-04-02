@@ -3,6 +3,7 @@ import { useRecoilValue, useRecoilState } from 'recoil';
 import SubmitButton from './SubmitButton';
 import AdjustToneButton from './AdjustToneButton';
 import OpenAIOptions from './OpenAIOptions';
+import ChatGPTOptions from './ChatGPTOptions';
 import BingAIOptions from './BingAIOptions';
 // import BingStyles from './BingStyles';
 import EndpointMenu from './Endpoints/NewConversationMenu';
@@ -132,6 +133,7 @@ export default function TextChat({ isSearchView = false }) {
         <div className="relative py-2 md:mb-[-16px] md:py-4 lg:mb-[-32px]">
           <span className="ml-1 flex flex-col items-center justify-center gap-0 md:order-none md:m-auto md:w-full md:gap-2">
             <OpenAIOptions />
+            <ChatGPTOptions />
             <BingAIOptions />
           </span>
         </div>

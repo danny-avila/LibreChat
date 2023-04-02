@@ -1,11 +1,11 @@
 require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
-// const set = new Set([
-//   'gpt-4',
-//   'text-davinci-002-render',
-//   'text-davinci-002-render-paid',
-//   'text-davinci-002-render-sha'
-// ]);
+
+const modelMap = new Map([
+  ['Default (GPT-3.5)', 'text-davinci-002-render-sha'],
+  ['Legacy (GPT-3.5)', 'text-davinci-002-render-paid'],
+  ['GPT-4', 'gpt-4']
+]);
 
 const browserClient = async ({
   text,
@@ -25,7 +25,7 @@ const browserClient = async ({
     reverseProxyUrl: 'https://bypass.duti.tech/api/conversation',
     // Access token from https://chat.openai.com/api/auth/session
     accessToken: process.env.CHATGPT_TOKEN,
-    model,
+    model: modelMap.get(model),
     // debug: true
     proxy: process.env.PROXY || null
   };
@@ -37,7 +37,7 @@ const browserClient = async ({
     options = { ...options, parentMessageId, conversationId };
   }
 
-  // console.log('gptBrowser options', options, clientOptions);
+  console.log('gptBrowser clientOptions', clientOptions);
 
   if (parentMessageId === '00000000-0000-0000-0000-000000000000') {
     delete options.conversationId;
