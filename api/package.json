@@ -20,7 +20,7 @@
   "homepage": "https://github.com/danny-avila/chatgpt-clone#readme",
   "dependencies": {
     "@keyv/mongo": "^2.1.8",
-    "@waylaidwanderer/chatgpt-api": "^1.33.1",
+    "@waylaidwanderer/chatgpt-api": "^1.33.2",
     "axios": "^1.3.4",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
