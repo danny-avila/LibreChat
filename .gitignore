@@ -46,11 +46,14 @@ bower_components/
 .flooignore
 
 # Environment
+.npmrc
 .env
 cache.json
 api/data/
 owner.yml
 archive
 .vscode/settings.json
-
 src/style - official.css
+/e2e/specs/.test-results/
+/e2e/playwright-report/
+/playwright/.cache/
