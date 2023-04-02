@@ -18,7 +18,7 @@ RUN npm ci
 # Copy the current directory contents into the container at /api
 COPY /api/ /api/
 # Copy the client side code
-COPY --from=react-client /client/public /client/public
+COPY --from=react-client /client/dist /client/dist
 # Make port 3080 available to the world outside this container
 EXPOSE 3080
 # Expose the server to 0.0.0.0
