@@ -30,7 +30,7 @@ const buildPresetByConversation = ({ title, conversation, ...others }) => {
   } else if (endpoint === 'chatGPTBrowser') {
     preset = {
       endpoint,
-      model: conversation?.model || 'text-davinci-002-render-sha',
+      model: conversation?.model || 'Default (GPT-3.5)',
       title,
       ...others
     };
