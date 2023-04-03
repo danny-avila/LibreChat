@@ -19,7 +19,7 @@ import store from '~/store';
 // A preset dialog to show readonly preset values.
 const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) => {
   //   const [title, setTitle] = useState('My Preset');
-  const [preset, setPreset] = useState({});
+  const [preset, setPreset] = useState(_preset);
 
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
 

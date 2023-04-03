@@ -11,7 +11,7 @@ import cleanupPreset from '~/utils/cleanupPreset';
 import store from '~/store';
 
 const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
-  const [title, setTitle] = useState('My Preset');
+  const [title, setTitle] = useState(preset?.title || 'My Preset');
   const setPresets = useSetRecoilState(store.presets);
 
   const defaultTextProps =
@@ -34,7 +34,7 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
   };
 
   useEffect(() => {
-    setTitle('My Preset');
+    setTitle(preset?.title || 'My Preset');
   }, [open]);
 
   return (
