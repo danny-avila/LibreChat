@@ -29,12 +29,8 @@ export default function HoverButtons({
 
   // for now, once branching is supported, regerate will be enabled
   const regenerateEnabled =
-    !message?.error &&
-    !message?.isCreatedByUser &&
-    !message?.searchResult &&
-    !isEditting &&
-    !isSubmitting &&
-    branchingSupported;
+    // !message?.error &&
+    !message?.isCreatedByUser && !message?.searchResult && !isEditting && !isSubmitting && branchingSupported;
 
   return (
     <div className="visible mt-2 flex justify-center gap-3 self-end text-gray-400 md:gap-4 lg:absolute lg:top-0 lg:right-0 lg:mt-0 lg:translate-x-full lg:gap-1 lg:self-center lg:pl-2">
