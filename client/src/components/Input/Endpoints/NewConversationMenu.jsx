@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useRecoilValue, useRecoilState } from 'recoil';
 import EditPresetDialog from '../../Endpoints/EditPresetDialog';
 import EndpointItems from './EndpointItems';
 import PresetItems from './PresetItems';
 import getIcon from '~/utils/getIcon';
+import manualSWR from '~/utils/fetchers';
 
 import { Button } from '../../ui/Button.tsx';
 import {
@@ -27,12 +28,17 @@ export default function NewConversationMenu() {
   // const models = useRecoilValue(store.models);
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
   // const setCustomGPTModels = useSetRecoilState(store.customGPTModels);
-  const presets = useRecoilValue(store.presets);
+  const [presets, setPresets] = useRecoilState(store.presets);
 
   const conversation = useRecoilValue(store.conversation) || {};
   const { endpoint, conversationId } = conversation;
   // const { model, promptPrefix, chatGptLabel, conversationId } = conversation;
   const { newConversation } = store.useConversation();
+
+  const { trigger: clearPresetsTrigger } = manualSWR(`/api/presets/delete`, 'post', data => {
+    console.log(data);
+    setPresets(data);
+  });
 
   // update the default model when availableModels changes
   // typically, availableModels changes => modelsFilter or customGPTModels changes
@@ -73,6 +79,10 @@ export default function NewConversationMenu() {
     setPreset(preset);
   };
 
+  const clearPreset = () => {
+    clearPresetsTrigger({});
+  };
+
   const icon = getIcon({
     size: 32,
     ...conversation,
@@ -99,7 +109,7 @@ export default function NewConversationMenu() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
-          className="min-w-56 dark:bg-gray-700"
+          className="min-w-[300px] dark:bg-gray-700"
           onCloseAutoFocus={event => event.preventDefault()}
         >
           <DropdownMenuLabel className="dark:text-gray-300">Select an Endpoint</DropdownMenuLabel>
@@ -121,7 +131,17 @@ export default function NewConversationMenu() {
 
           <div className="mt-6 w-full" />
 
-          <DropdownMenuLabel className="dark:text-gray-300">Select a Preset</DropdownMenuLabel>
+          <DropdownMenuLabel className="flex items-center dark:text-gray-300">
+            <span>Select a Preset</span>
+            <div className="flex-1" />
+            <Button
+              type="button"
+              className="h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-red-700 hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-gray-800 dark:hover:text-red-400"
+              onClick={clearPreset}
+            >
+              Clear All
+            </Button>
+          </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
             onValueChange={onSelectPreset}

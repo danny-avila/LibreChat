@@ -8,7 +8,10 @@ import { Input } from '../ui/Input.tsx';
 import { Label } from '../ui/Label.tsx';
 import Dropdown from '../ui/Dropdown';
 import { cn } from '~/utils/';
+import cleanupPreset from '~/utils/cleanupPreset';
+
 import OpenAISettings from './OpenAI/Settings';
+import BingAISettings from './BingAI/Settings.jsx';
 
 import store from '~/store';
 
@@ -50,39 +53,29 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset }) => {
           setPresP={setOption('frequency_penalty')}
         />
       );
+    else if (endpoint === 'bingAI')
+      return (
+        <BingAISettings
+          readonly={true}
+          context={preset?.context}
+          setContext={setOption('context')}
+          systemMessage={preset?.systemMessage}
+          setSystemMessage={setOption('systemMessage')}
+          jailbreak={preset?.jailbreak}
+          setJailbreak={setOption('jailbreak')}
+        />
+      );
     else return null;
   };
 
   const defaultTextProps =
     'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
 
-  // in order not to use wrong data from other endpoint
-  const clearPreset = () => {
-    if (preset?.endpoint === 'openAI')
-      return {
-        title: preset?.title,
-        endpoint: preset?.endpoint,
-        model: preset?.model,
-        chatGptLabel: preset?.chatGptLabel,
-        promptPrefix: preset?.promptPrefix,
-        temperature: preset?.temperature,
-        top_p: preset?.top_p,
-        presence_penalty: preset?.presence_penalty,
-        frequency_penalty: preset?.frequency_penalty
-      };
-    else
-      return {
-        title: preset?.title,
-        endpoint: preset?.endpoint
-      };
-    // TODO: else
-  };
-
   const submitPreset = () => {
     axios({
       method: 'post',
       url: '/api/presets',
-      data: clearPreset(),
+      data: cleanupPreset(preset),
       withCredentials: true
     }).then(res => {
       setPresets(res?.data);
@@ -91,7 +84,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset }) => {
 
   const exportPreset = () => {
     exportFromJSON({
-      data: clearPreset(),
+      data: cleanupPreset(preset),
       fileName: `${preset?.title}.json`,
       exportType: exportFromJSON.types.json
     });
@@ -168,7 +161,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset }) => {
           <>
             <DialogButton
               onClick={exportPreset}
-              className="dark:hover:gray-400 bg-red border-gray-700"
+              className="dark:hover:gray-400 border-gray-700"
             >
               Export
             </DialogButton>

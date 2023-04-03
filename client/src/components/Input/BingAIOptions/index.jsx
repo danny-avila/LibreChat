@@ -131,7 +131,7 @@ function BingAIOptions() {
       <SaveAsPresetDialog
         open={saveAsDialogShow}
         onOpenChange={setSaveAsDialogShow}
-        conversation={conversation}
+        preset={conversation}
       />
     </>
   );
