@@ -77,7 +77,7 @@ const ask = async ({
   req,
   res
 }) => {
-  const { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
+  let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
 
   const client = askClient;
 
@@ -107,23 +107,22 @@ const ask = async ({
     gptResponse.text = gptResponse.response;
     console.log('CLIENT RESPONSE', gptResponse);
 
-    if (!gptResponse.parentMessageId) {
-      gptResponse.parentMessageId = overrideParentMessageId || userMessageId;
+    if (gptResponse.parentMessageId) {
+      // If gptResponse has parentMessageId, the fake userMessage.messageId should be updated to the real one.
+      if (!overrideParentMessageId) {
+        const oldUserMessageId = userMessageId;
+        userMessageId = gptResponse.parentMessageId;
+        userMessage.messageId = userMessageId;
+        await saveMessage({ ...userMessage, messageId: oldUserMessageId, newMessageId: userMessageId });
+      }
+    } else {
       delete gptResponse.response;
     }
 
+    gptResponse.parentMessageId = overrideParentMessageId || userMessageId;
     gptResponse.sender = endpointOption?.chatGptLabel || 'ChatGPT';
     // gptResponse.model = model;
     gptResponse.text = await handleText(gptResponse);
-    // if (convo.chatGptLabel?.length > 0 && model === 'chatgptCustom') {
-    //   gptResponse.chatGptLabel = convo.chatGptLabel;
-    // }
-
-    // if (convo.promptPrefix?.length > 0 && model === 'chatgptCustom') {
-    //   gptResponse.promptPrefix = convo.promptPrefix;
-    // }
-
-    gptResponse.parentMessageId = overrideParentMessageId || userMessageId;
 
     await saveMessage(gptResponse);
     await updateConvo(req?.session?.user?.username, {
