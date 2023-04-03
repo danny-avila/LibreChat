@@ -111,23 +111,31 @@ const ask = async ({
 
     console.log('BING RESPONSE', response);
 
-    userMessage.conversationSignature =
-      endpointOption.conversationSignature || response.conversationSignature;
-    userMessage.conversationId = response.conversationId || conversationId;
-    userMessage.invocationId = endpointOption.invocationId;
-    userMessage.messageId = response.details.requestId || userMessageId;
-    if (!overrideParentMessageId) await saveBingMessage({ oldMessageId: userMessageId, ...userMessage });
-
+    // STEP1 update the convosation
     // Bing API will not use our conversationId at the first time,
     // so change the placeholder conversationId to the real one.
     // Attition: the api will also create new conversationId while using invalid userMessage.parentMessageId,
     // but in this situation, don't change the conversationId, but create new convo.
-    if (conversationId != userMessage.conversationId && isNewConversation)
+    if (conversationId != response.conversationId && isNewConversation)
       await saveConvo(req?.session?.user?.username, {
         conversationId: conversationId,
-        newConversationId: userMessage.conversationId
+        newConversationId: response.conversationId || conversationId
       });
-    conversationId = userMessage.conversationId;
+    conversationId = response.conversationId || conversationId;
+
+    // STEP2 update the user message
+    userMessage.conversationSignature =
+      endpointOption.conversationSignature || response.conversationSignature;
+    userMessage.conversationId = conversationId;
+    userMessage.invocationId = endpointOption.invocationId;
+    userMessage.messageId = response.details.requestId || userMessageId;
+
+    // If response has parentMessageId, the fake userMessage.messageId should be updated to the real one.
+    if (!overrideParentMessageId) {
+      const oldUserMessageId = userMessageId;
+      userMessageId = response.details.requestId;
+      await saveBingMessage({ ...userMessage, messageId: oldUserMessageId, newMessageId: userMessageId });
+    }
 
     response.text = response.response || response.details.spokenText || '**Bing refused to answer.**';
     // delete response.response;

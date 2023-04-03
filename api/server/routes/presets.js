@@ -29,10 +29,13 @@ router.post('/', async (req, res) => {
 });
 
 router.post('/delete', async (req, res) => {
-  const { arg } = req.body;
+  let filter = {};
+  const { presetId } = req.body.arg || {};
+
+  if (presetId) filter = { presetId };
 
   try {
-    await deletePresets(req?.session?.user?.username, arg);
+    await deletePresets(req?.session?.user?.username, filter);
 
     const presets = (await getPresets(req?.session?.user?.username)).map(preset => {
       return preset.toObject();
