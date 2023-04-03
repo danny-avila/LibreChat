@@ -10,8 +10,16 @@ import {
 } from './Dialog.tsx';
 import { cn } from '~/utils/';
 
-export default function DialogTemplate({ title, description, main, buttons, selection, className }) {
-  const { selectHandler, selectClasses, selectText } = selection;
+export default function DialogTemplate({
+  title,
+  description,
+  main,
+  buttons,
+  leftButtons,
+  selection,
+  className
+}) {
+  const { selectHandler, selectClasses, selectText } = selection || {};
 
   const defaultSelect =
     'bg-gray-900 text-white transition-colors hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900';
@@ -43,16 +51,21 @@ export default function DialogTemplate({ title, description, main, buttons, sele
       </div> */}
       {main ? main : null}
       <DialogFooter>
-        <DialogClose className="dark:hover:gray-400 border-gray-700">Cancel</DialogClose>
-        {buttons ? buttons : null}
-        <DialogClose
-          onClick={selectHandler}
-          className={`${
-            selectClasses || defaultSelect
-          } inline-flex h-10 items-center justify-center rounded-md border-none py-2 px-4 text-sm font-semibold`}
-        >
-          {selectText}
-        </DialogClose>
+        <div>{leftButtons ? leftButtons : null}</div>
+        <div>
+          <DialogClose className="dark:hover:gray-400 border-gray-700">Cancel</DialogClose>
+          {buttons ? buttons : null}
+          {selection ? (
+            <DialogClose
+              onClick={selectHandler}
+              className={`${
+                selectClasses || defaultSelect
+              } inline-flex h-10 items-center justify-center rounded-md border-none py-2 px-4 text-sm font-semibold`}
+            >
+              {selectText}
+            </DialogClose>
+          ) : null}
+        </div>
       </DialogFooter>
     </DialogContent>
   );
