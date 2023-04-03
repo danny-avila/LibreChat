@@ -61,30 +61,20 @@ export default function Conversation({ conversation, retainView }) {
     if (titleInput === title) {
       return;
     }
-    updateConvoMutation.mutate({ arg: { conversationId, title: titleInput }});
-    
-    // rename.trigger({ conversationId, title: titleInput }).then(() => {
-    //   refreshConversations();
-    //   if (conversationId == currentConversation?.conversationId)
-    //     setCurrentConversation(prevState => ({
-    //       ...prevState,
-    //       title: titleInput
-    //     }));
-    // });
+    updateConvoMutation.mutate({ conversationId, title: titleInput });
   };
 
   useEffect(() => {   
-  if (updateConvoMutation.isSuccess) {
-    // debugger;
-    refreshConversations();
-    if (conversationId == currentConversation?.conversationId)
-
-      setCurrentConversation(prevState => ({
-        ...prevState,
-        title: titleInput
-      }));
-  }
-}, [updateConvoMutation.isSuccess]);
+    if (updateConvoMutation.isSuccess) {
+      refreshConversations();
+      if (conversationId == currentConversation?.conversationId) {
+        setCurrentConversation(prevState => ({
+          ...prevState,
+          title: titleInput
+        }));
+      }
+    }
+  }, [updateConvoMutation.isSuccess]);
 
   const handleKeyDown = e => {
     if (e.key === 'Enter') {
