@@ -52,7 +52,7 @@ export default function DialogTemplate({
       {main ? main : null}
       <DialogFooter>
         <div>{leftButtons ? leftButtons : null}</div>
-        <div>
+        <div className="flex gap-2">
           <DialogClose className="dark:hover:gray-400 border-gray-700">Cancel</DialogClose>
           {buttons ? buttons : null}
           {selection ? (

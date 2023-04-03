@@ -16,7 +16,7 @@ const optionText =
 
 function Settings(props) {
   // const [showSystemMessage, setShowSystemMessage] = React.useState(false);
-  const { context, setContext, systemMessage, setSystemMessage, jailbreak, setJailbreak } = props;
+  const { readonly, context, setContext, systemMessage, setSystemMessage, jailbreak, setJailbreak } = props;
   const showSystemMessage = jailbreak;
 
   return (
@@ -32,6 +32,7 @@ function Settings(props) {
             </Label>
             <TextareaAutosize
               id="context"
+              disabled={readonly}
               value={context || ''}
               onChange={e => setContext(e.target.value || null)}
               placeholder="Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
@@ -47,6 +48,7 @@ function Settings(props) {
             <div className="flex items-center space-x-3">
               <Checkbox
                 id="jailbreak"
+                disabled={readonly}
                 checked={jailbreak}
                 className="dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 focus:ring-opacity-20 dark:focus:ring-opacity-50 dark:focus:ring-offset-0 dark:focus:ring-gray-600"
                 // onCheckedChange={setJailbreak}
@@ -79,6 +81,7 @@ function Settings(props) {
                 </Label> */}
                 <TextareaAutosize
                   id="systemMessage"
+                  disabled={readonly}
                   value={systemMessage || ''}
                   onChange={e => setSystemMessage(e.target.value || null)}
                   placeholder="Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"

@@ -6,11 +6,11 @@ import { Dialog } from '../ui/Dialog.tsx';
 import { Input } from '../ui/Input.tsx';
 import { Label } from '../ui/Label.tsx';
 import { cn } from '~/utils/';
-import buildPresetByConversation from '~/utils/buildPresetByConversation';
+import cleanupPreset from '~/utils/cleanupPreset';
 
 import store from '~/store';
 
-const SaveAsPresetDialog = ({ open, onOpenChange, conversation }) => {
+const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
   const [title, setTitle] = useState('My Preset');
   const setPresets = useSetRecoilState(store.presets);
 
@@ -18,15 +18,15 @@ const SaveAsPresetDialog = ({ open, onOpenChange, conversation }) => {
     'rounded-md border border-gray-300 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.10)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-400 dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
 
   const submitPreset = () => {
-    const preset = buildPresetByConversation({
-      title,
-      conversation
+    const _preset = cleanupPreset({
+      ...preset,
+      title
     });
 
     axios({
       method: 'post',
       url: '/api/presets',
-      data: preset,
+      data: _preset,
       withCredentials: true
     }).then(res => {
       setPresets(res?.data);

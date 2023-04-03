@@ -7,6 +7,7 @@ import store from '~/store';
 
 function ModelDropDown({
   model,
+  disabled,
   setModel,
   endpoint,
   showAbove = false,
@@ -23,6 +24,7 @@ function ModelDropDown({
         <Listbox
           value={model}
           onChange={setModel}
+          disabled={disabled}
         >
           {({ open }) => (
             <>

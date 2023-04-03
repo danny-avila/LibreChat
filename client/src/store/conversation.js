@@ -22,6 +22,8 @@ import getDefaultConversation from '~/utils/getDefaultConversation';
 //   frequency_penalty: 0,
 //   // for bingAI only
 //   jailbreak: false,
+//   context: null,
+//   systemMessage: null,
 //   jailbreakConversationId: null,
 //   conversationSignature: null,
 //   clientId: null,

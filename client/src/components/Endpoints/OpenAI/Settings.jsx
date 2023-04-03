@@ -4,6 +4,7 @@ import ModelDropDown from '../../ui/ModelDropDown';
 import { Input } from '~/components/ui/Input.tsx';
 import { Label } from '~/components/ui/Label.tsx';
 import { Slider } from '~/components/ui/Slider.tsx';
+import { InputNumber } from '../../ui/InputNumber';
 import OptionHover from './OptionHover';
 import { HoverCard, HoverCardTrigger } from '~/components/ui/HoverCard.tsx';
 import { cn } from '~/utils/';
@@ -15,6 +16,7 @@ const optionText =
 
 function Settings(props) {
   const {
+    readonly,
     model,
     setModel,
     chatGptLabel,
@@ -38,6 +40,7 @@ function Settings(props) {
           <div className="grid w-full items-center gap-2">
             <ModelDropDown
               model={model}
+              disabled={readonly}
               setModel={setModel}
               endpoint="openAI"
               className={cn(
@@ -73,6 +76,7 @@ function Settings(props) {
             </Label>
             <Input
               id="chatGptLabel"
+              disabled={readonly}
               value={chatGptLabel || ''}
               // ref={inputRef}
               onChange={e => setChatGptLabel(e.target.value || null)}
@@ -92,6 +96,7 @@ function Settings(props) {
             </Label>
             <TextareaAutosize
               id="promptPrefix"
+              disabled={readonly}
               value={promptPrefix || ''}
               onChange={e => setPromptPrefix(e.target.value || null)}
               placeholder="Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
@@ -123,6 +128,7 @@ function Settings(props) {
                 </Label>
                 <Input
                   id="temp-int"
+                  disabled
                   value={temperature}
                   onChange={e => setTemperature(e.target.value)}
                   className={cn(
@@ -132,6 +138,7 @@ function Settings(props) {
                 />
               </div>
               <Slider
+                disabled={readonly}
                 value={[temperature]}
                 onValueChange={value => setTemperature(value[0])}
                 max={2}
@@ -157,6 +164,7 @@ function Settings(props) {
                 </Label>
                 <Input
                   id="max-tokens-int"
+                  disabled
                   value={maxTokens}
                   onChange={e => setMaxTokens(e.target.value)}
                   className={cn(
@@ -166,6 +174,7 @@ function Settings(props) {
                 />
               </div>
               <Slider
+              disabled={readonly}
                 value={[maxTokens]}
                 onValueChange={value => setMaxTokens(value[0])}
                 max={2048} // should be dynamic to the currently selected model
@@ -191,6 +200,7 @@ function Settings(props) {
                 </Label>
                 <Input
                   id="top-p-int"
+                  disabled
                   value={topP}
                   onChange={e => setTopP(e.target.value)}
                   className={cn(
@@ -200,6 +210,7 @@ function Settings(props) {
                 />
               </div>
               <Slider
+                disabled={readonly}
                 value={[topP]}
                 onValueChange={value => setTopP(value[0])}
                 max={1}
@@ -225,6 +236,7 @@ function Settings(props) {
                 </Label>
                 <Input
                   id="freq-penalty-int"
+                  disabled
                   value={freqP}
                   onChange={e => setFreqP(e.target.value)}
                   className={cn(
@@ -234,6 +246,7 @@ function Settings(props) {
                 />
               </div>
               <Slider
+                disabled={readonly}
                 value={[freqP]}
                 onValueChange={value => setFreqP(value[0])}
                 max={2}
@@ -259,6 +272,7 @@ function Settings(props) {
                 </Label>
                 <Input
                   id="pres-penalty-int"
+                  disabled
                   value={presP}
                   onChange={e => setPresP(e.target.value)}
                   className={cn(
@@ -268,6 +282,7 @@ function Settings(props) {
                 />
               </div>
               <Slider
+                disabled={readonly}
                 value={[presP]}
                 onValueChange={value => setPresP(value[0])}
                 max={2}
@@ -281,158 +296,6 @@ function Settings(props) {
               side="left"
             />
           </HoverCard>
-          {/* <div className="flex justify-around">
-          <HoverCard>
-            <HoverCardTrigger className="group/temp mr-4 flex w-full items-center justify-end gap-4">
-              <Label
-                htmlFor="temperature"
-                className="mr-2 text-right"
-              >
-                Temperature
-              </Label>
-              <Input
-                id="temp-int"
-                value={temperature}
-                onChange={e => setTemperature(e.target.value)}
-                className={cn(defaultTextProps, cn(optionText, 'w-10 group-hover/temp:border-gray-200'))}
-              />
-            </HoverCardTrigger>
-            <OptionHover
-              type="temp"
-              side="right"
-            />
-          </HoverCard>
-          <HoverCard>
-            <HoverCardTrigger className="group/max mr-4 flex w-full items-center justify-end gap-4">
-              <Label
-                htmlFor="max-tokens"
-                className="mr-2 w-full text-right"
-              >
-                Max tokens
-              </Label>
-              <Input
-                id="max-tokens-int"
-                value={maxTokens}
-                onChange={e => setMaxTokens(e.target.value)}
-                className={cn(defaultTextProps, cn(optionText, 'w-11 group-hover/max:border-gray-200'))}
-              />
-            </HoverCardTrigger>
-            <OptionHover
-              type="max"
-              side="left"
-            />
-          </HoverCard>
-        </div>
-        <div className="grid grid-cols-2 items-center gap-5">
-          <Slider
-            value={[maxTokens]}
-            onValueChange={value => setMaxTokens(value)}
-            max={2048} // should be dynamic to the currently selected model
-            min={1}
-            step={1}
-            className="w-full"
-          />
-        </div>
-        <div className="flex justify-around">
-          <HoverCard>
-            <HoverCardTrigger className="group/top mr-4 flex w-full items-center justify-end gap-4">
-              <Label
-                htmlFor="top-p"
-                className="mr-2 text-right"
-              >
-                Top P
-              </Label>
-              <Input
-                id="top-p-int"
-                value={topP}
-                onChange={e => setTopP(e.target.value)}
-                className={cn(defaultTextProps, cn(optionText, 'w-10 group-hover/top:border-gray-200'))}
-              />
-              <OptionHover
-                type="top-p"
-                side="right"
-              />
-            </HoverCardTrigger>
-          </HoverCard>
-          <HoverCard>
-            <HoverCardTrigger className="group/freq mr-4 flex w-full items-center justify-end gap-4">
-              <Label
-                htmlFor="freq-penalty"
-                className="mr-2 w-full text-right"
-              >
-                Frequency Penalty
-              </Label>
-              <Input
-                id="freq-penalty-int"
-                value={freqP}
-                onChange={e => setFreqP(e.target.value)}
-                className={cn(defaultTextProps, cn(optionText, 'w-10 group-hover/freq:border-gray-200'))}
-              />
-            </HoverCardTrigger>
-            <OptionHover
-              type="freq"
-              side="left"
-            />
-          </HoverCard>
-        </div>
-        <div className="grid grid-cols-2 items-center gap-5">
-          <Slider
-            value={[topP]}
-            onValueChange={value => setTopP(value)}
-            max={1}
-            min={0}
-            step={0.01}
-            className="w-full"
-          />
-          <Slider
-            value={[freqP]}
-            onValueChange={value => setFreqP(value)}
-            max={2}
-            min={-2}
-            step={0.01}
-            className="w-full"
-          />
-        </div>
-        <div className="flex justify-end">
-          <HoverCard>
-            <HoverCardTrigger className="group/pres mr-4 flex items-center justify-end gap-4">
-              <Label
-                htmlFor="pres-penalty"
-                className="mr-2 text-right"
-              >
-                Presence Penalty
-              </Label>
-              <Input
-                id="pres-penalty-int"
-                value={presP}
-                onChange={e => setPresP(e.target.value)}
-                className={cn(defaultTextProps, cn(optionText, 'w-10 group-hover/pres:border-gray-200'))}
-              />
-            </HoverCardTrigger>
-            <OptionHover
-              type="pres"
-              side="left"
-            />
-          </HoverCard>
-        </div>
-        <div className="grid grid-cols-2 items-center gap-5">
-          <Slider
-            value={[presP]}
-            onValueChange={value => setPresP(value)}
-            max={2}
-            min={-2}
-            step={0.01}
-            className="w-full opacity-0"
-          />
-          <Slider
-            value={[presP]}
-            onValueChange={value => setPresP(value)}
-            max={2}
-            min={-2}
-            step={0.01}
-            className="w-full"
-          />
-        </div> */}
         </div>
       </div>
     </>

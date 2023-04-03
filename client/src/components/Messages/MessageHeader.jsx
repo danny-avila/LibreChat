@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useRecoilValue } from 'recoil';
+import EndpointOptionsDialog from '../Endpoints/EndpointOptionsDialog';
+import { Button } from '../ui/Button.tsx';
 
 import store from '~/store';
 
@@ -14,6 +16,7 @@ const clipPromptPrefix = str => {
 };
 
 const MessageHeader = ({ isSearchView = false }) => {
+  const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
   const [extended, setExtended] = useState(false);
   const conversation = useRecoilValue(store.conversation);
   const searchQuery = useRecoilValue(store.searchQuery);
@@ -64,30 +67,39 @@ const MessageHeader = ({ isSearchView = false }) => {
   };
 
   return (
-    <div
-      className={
-        'dark:text-gray-450 w-full gap-1 border-b border-black/10 bg-gray-50 text-sm text-gray-500 transition-all hover:bg-gray-100 dark:border-gray-900/50 dark:bg-gray-700 dark:hover:bg-gray-600' +
-        (extended ? ' max-h-[500px]' : ' max-h-[45px]')
-      }
-      onClick={triggerExtend}
-    >
-      <div className="d-block flex w-full items-center justify-center p-3">{getConversationTitle()}</div>
+    <>
+      <div
+        className={
+          'dark:text-gray-450 w-full gap-1 border-b border-black/10 bg-gray-50 text-sm text-gray-500 transition-all hover:bg-gray-100 dark:border-gray-900/50 dark:bg-gray-700 dark:hover:bg-gray-600' +
+          (extended ? ' max-h-[500px]' : ' max-h-[45px]')
+        }
+        onClick={triggerExtend}
+      >
+        <div className="d-block flex w-full items-center justify-center p-3">{getConversationTitle()}</div>
 
-      {extended ? (
-        <div className="d-block relative w-full border-t border-black/10 p-3 dark:border-gray-900/50 ">
-          <div className="relative m-auto flex flex-wrap items-center justify-start md:max-w-2xl lg:max-w-2xl xl:max-w-3xl">
-            {options.map(([key, value]) => (
-              <div
-                key={key}
-                className="w-1/2 xl:w-1/3"
-              >
-                <strong>{key}:</strong> {value || 'null'}
-              </div>
-            ))}
+        {extended ? (
+          <div className="d-block relative w-full border-t border-black/10 p-3 dark:border-gray-900/50 ">
+            <div className="relative m-auto flex flex-wrap items-center justify-start md:max-w-2xl lg:max-w-2xl xl:max-w-3xl">
+              {options.map(([key, value]) => (
+                <div
+                  key={key}
+                  className="w-1/2 xl:w-1/3"
+                >
+                  <strong>{key}:</strong> {value || 'null'}
+                </div>
+              ))}
+            </div>
+            <Button onClick={() => setSaveAsDialogShow(true)}>View</Button>
           </div>
-        </div>
-      ) : null}
-    </div>
+        ) : null}
+      </div>
+
+      <EndpointOptionsDialog
+        open={saveAsDialogShow}
+        onOpenChange={setSaveAsDialogShow}
+        preset={conversation}
+      />
+    </>
   );
 };
 
