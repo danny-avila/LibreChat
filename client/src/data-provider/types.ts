@@ -158,8 +158,8 @@ export type TUpdateConversationResponse = {
 };
 
 export type TDeleteConversationRequest = {
-  conversationId: string,
-  source: string
+  conversationId?: string,
+  source?: string
 }
 
 export type TDeleteConversationResponse = {

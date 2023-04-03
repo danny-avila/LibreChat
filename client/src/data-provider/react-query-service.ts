@@ -61,11 +61,7 @@ export const useGetConversationByIdQuery = (
 export const useUpdateConversationMutation = (
   id: string
 ): UseMutationResult<
-  t.TUpdateConversationResponse,
-  unknown,
-  t.TUpdateConversationRequest,
-  unknown
-> => {
+  t.TUpdateConversationResponse> => {
   const queryClient = useQueryClient();
   return useMutation(
     (payload: t.TUpdateConversationRequest) =>
@@ -80,8 +76,8 @@ export const useUpdateConversationMutation = (
 };
 
 export const useDeleteConversationMutation = (
-  id: string
-): UseMutationResult<t.TDeleteConversationResponse, unknown, t.TDeleteConversationRequest, unknown> => {
+  id?: string
+): UseMutationResult<t.TDeleteConversationResponse> => {
   const queryClient = useQueryClient();
   return useMutation(
     (payload: t.TDeleteConversationRequest) =>
@@ -95,12 +91,7 @@ export const useDeleteConversationMutation = (
   );
 };
 
-export const useUpdateCustomGptMutation = (): UseMutationResult<
-  t.TUpdateCustomGptResponse,
-  unknown,
-  t.TUpdateCustomGptRequest,
-  unknown
-> => {
+export const useUpdateCustomGptMutation = (): UseMutationResult<t.TUpdateCustomGptResponse> => {
   const queryClient = useQueryClient();
   return useMutation(
     (payload: t.TUpdateCustomGptRequest) =>
@@ -124,12 +115,7 @@ export const useGetCustomGptsQuery = (): QueryObserverResult<
   });
 };
 
-export const useDeleteCustomGptMutation = (): UseMutationResult<
-  t.TDeleteCustomGptResponse,
-  unknown,
-  t.TDeleteCustomGptRequest,
-  unknown
-> => {
+export const useDeleteCustomGptMutation = (): UseMutationResult<t.TDeleteCustomGptResponse> => {
   const queryClient = useQueryClient();
   return useMutation(
     (payload: t.TDeleteCustomGptRequest) =>
@@ -142,10 +128,7 @@ export const useDeleteCustomGptMutation = (): UseMutationResult<
   );
 };
 
-export const useGetModelsQuery = (): QueryObserverResult<
-  t.TGetModelsResponse,
-  unknown
-> => {
+export const useGetModelsQuery = (): QueryObserverResult<t.TGetModelsResponse> => {
   return useQuery([QueryKeys.models], () => dataService.getModels(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
