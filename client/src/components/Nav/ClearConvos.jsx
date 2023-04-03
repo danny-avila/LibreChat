@@ -1,26 +1,26 @@
-import React from 'react';
+import { useEffect } from 'react';
 import store from '~/store';
 import TrashIcon from '../svg/TrashIcon';
-import { useSWRConfig } from 'swr';
-import manualSWR from '~/utils/fetchers';
 import { Dialog, DialogTrigger } from '../ui/Dialog.tsx';
 import DialogTemplate from '../ui/DialogTemplate';
+import { useDeleteConversationMutation } from '~/data-provider';
 
 export default function ClearConvos() {
   const { newConversation } = store.useConversation();
   const { refreshConversations } = store.useConversations();
-  const { mutate } = useSWRConfig();
-
-  const { trigger } = manualSWR(`/api/convos/clear`, 'post', () => {
-    newConversation();
-    refreshConversations();
-    mutate(`/api/convos`);
-  });
+  const clearConvosMutation = useDeleteConversationMutation();
 
   const clickHandler = () => {
     console.log('Clearing conversations...');
-    trigger({});
+    clearConvosMutation.mutate({});
   };
+
+  useEffect(() => {
+    if (clearConvosMutation.isSuccess) {
+      newConversation();
+      refreshConversations();
+    }
+  }, [clearConvosMutation.isSuccess]);
 
   return (
     <Dialog>
