@@ -4,7 +4,7 @@ import ModelDropDown from '../../ui/ModelDropDown';
 import { Input } from '~/components/ui/Input.tsx';
 import { Label } from '~/components/ui/Label.tsx';
 import { Slider } from '~/components/ui/Slider.tsx';
-import { InputNumber } from '../../ui/InputNumber';
+// import { InputNumber } from '../../ui/InputNumber';
 import OptionHover from './OptionHover';
 import { HoverCard, HoverCardTrigger } from '~/components/ui/HoverCard.tsx';
 import { cn } from '~/utils/';
