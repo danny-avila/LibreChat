@@ -8,6 +8,8 @@ import {
 } from "@tanstack/react-query";
 import * as t from "./types";
 import * as dataService from "./data-service";
+import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
+import store from '~/store';
 
 export enum QueryKeys {
   messages = "messsages",
@@ -66,13 +68,17 @@ export const useUpdateConversationMutation = (
   t.TUpdateConversationRequest,
   unknown
 > => {
+  const [conversation, setConversation] = useRecoilState(store.conversation);
   const queryClient = useQueryClient();
   return useMutation(
     (payload: t.TUpdateConversationRequest) =>
       dataService.updateConversation(payload),
     {
-      onSuccess: () => {
+      onSuccess: (res) => {
+        console.log('res', res);
+        setConversation(res);
         queryClient.invalidateQueries([QueryKeys.conversation, id]);
+        queryClient.invalidateQueries([QueryKeys.allConversations, id]);
       },
     }
   );
