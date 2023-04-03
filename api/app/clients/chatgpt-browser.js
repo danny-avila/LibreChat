@@ -21,8 +21,8 @@ const browserClient = async ({
   };
 
   const clientOptions = {
-    // Warning: This will expose your access token to a third party. Consider the risks before using this.
-    reverseProxyUrl: 'https://bypass.churchless.tech/api/conversation',
+  // Warning: This will expose your access token to a third party. Consider the risks before using this.
+    reverseProxyUrl: process.env.CHATGPT_REVERSE_PROXY || 'https://bypass.churchless.tech/api/conversation',
     // Access token from https://chat.openai.com/api/auth/session
     accessToken: process.env.CHATGPT_TOKEN,
     model: modelMap.get(model),
