@@ -186,10 +186,6 @@ export type TDeleteCustomGptRequest = {
 
 export type TDeleteCustomGptResponse = {};
 
-export type TClearConversationsRequest = {};
-
-export type TClearConversationsResponse = {};
-
 export type TGetCustomGptsResponse = {};
 
 export type TSearchResults = {};

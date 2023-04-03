@@ -37,7 +37,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const conversation = useRecoilValue(store.conversation);
   const { conversationId } = conversation || {};
   const setSearchResultMessages = useSetRecoilState(store.searchResultMessages);
-
+  const refreshConversationsHint = useRecoilValue(store.refreshConversationsHint);
   const { refreshConversations } = store.useConversations();
 
   const [isFetching, setIsFetching] = useState(false);
@@ -111,6 +111,12 @@ export default function Nav({ navVisible, setNavVisible }) {
       }
     }
   }, [getConversationsQuery.isSuccess, getConversationsQuery.data, isSearching, pageNumber]);
+
+  useEffect(() => {
+    if (!isSearching) {
+      getConversationsQuery.refetch();
+    }
+  }, [pageNumber, conversationId, refreshConversationsHint]);
 
   const moveToTop = () => {
     const container = containerRef.current;

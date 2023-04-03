@@ -52,7 +52,6 @@ export const useGetConversationByIdQuery = (
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
-      enabled: false,
       ...config
     }
   );
@@ -148,7 +147,7 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
 export const useGetConversationsQuery = (pageNumber: string): QueryObserverResult<t.TGetConversationsResponse> => {
   return useQuery([QueryKeys.allConversations, pageNumber], () =>
     dataService.getConversations(pageNumber), {
-      refetchOnWindowFocus: false,
+      // refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
     }

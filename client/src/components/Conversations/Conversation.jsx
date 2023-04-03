@@ -4,7 +4,6 @@ import { useUpdateConversationMutation } from '~/data-provider';
 import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
 import ConvoIcon from '../svg/ConvoIcon';
-import manualSWR from '~/utils/fetchers';
 
 import store from '~/store';
 

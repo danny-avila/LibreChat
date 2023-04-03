@@ -2,10 +2,6 @@ import * as t from './types';
 import request from './request';
 import * as endpoints from './endpoints';
 
-export function getOpenAIModels(): Promise<t.TOpenAIModels> {
-  return request.get(endpoints.openAiModels());
-}
-
 export function postAICompletion(payload: t.TAICompletionRequest) {
   return request.post(endpoints.getAICompletion(), payload);
 }
@@ -17,10 +13,6 @@ export function getConversations(pageNumber: string): Promise<t.TGetConversation
 export function deleteConversation(payload: t.TDeleteConversationRequest) {
   //todo: this should be a DELETE request
   return request.post(endpoints.deleteConversation(), payload);
-}
-
-export function clearAllConversations() {
-  return request.post(endpoints.deleteConversation());
 }
 
 export function getMessagesByConvoId(id: string): Promise<t.TMessage[]> {
