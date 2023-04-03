@@ -8,7 +8,6 @@ import {
 } from "@tanstack/react-query";
 import * as t from "./types";
 import * as dataService from "./data-service";
-import store from '~/store';
 
 export enum QueryKeys {
   messages = "messsages",
@@ -74,16 +73,27 @@ export const useUpdateConversationMutation = (
     {
       onSuccess: () => {
         queryClient.invalidateQueries([QueryKeys.conversation, id]);
-        queryClient.invalidateQueries([QueryKeys.allConversations, id]);
+        queryClient.invalidateQueries([QueryKeys.allConversations]);
       },
     }
   );
 };
 
-// export const useDeleteConversationMutation = (
-//   id: string
-// ): UseMutationResult<
-
+export const useDeleteConversationMutation = (
+  id: string
+): UseMutationResult<t.TDeleteConversationResponse, unknown, t.TDeleteConversationRequest, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TDeleteConversationRequest) =>
+      dataService.deleteConversation(payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.conversation, id]);
+        queryClient.invalidateQueries([QueryKeys.allConversations]);
+      },
+    }
+  );
+};
 
 export const useUpdateCustomGptMutation = (): UseMutationResult<
   t.TUpdateCustomGptResponse,

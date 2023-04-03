@@ -1,13 +1,13 @@
 import axios, { AxiosRequestConfig } from "axios";
 
 async function _get<T>(url: string, options?: AxiosRequestConfig): Promise<T> {
-  const response = await axios.get(url, { withCredentials: true, ...options});
+  const response = await axios.get(url, {...options});
   return response.data;
 }
 
-async function _post(url: string, data?: any) {
-  const response = await axios.post(url, JSON.stringify(data), {
-    withCredentials: true,
+async function _post(url: string, arg?: any) {
+  const modifiedData = {arg, withCredentials: true}
+  const response = await axios.post(url, modifiedData, {
     headers: { "Content-Type": "application/json" },
   });
   return response.data;
@@ -19,7 +19,6 @@ async function _postMultiPart(
   options?: AxiosRequestConfig
 ) {
   const response = await axios.post(url, formData, {
-    withCredentials: true,
     ...options,
     headers: { "Content-Type": "multipart/form-data" },
   });
@@ -28,14 +27,13 @@ async function _postMultiPart(
 
 async function _put(url: string, data?: any) {
   const response = await axios.put(url, JSON.stringify(data), {
-    withCredentials: true,
     headers: { "Content-Type": "application/json" },
   });
   return response.data;
 }
 
 async function _delete<T>(url: string): Promise<T> {
-  const response = await axios.delete(url, { withCredentials: true });
+  const response = await axios.delete(url);
   return response.data;
 }
 
@@ -43,13 +41,12 @@ async function _deleteWithOptions<T>(
   url: string,
   options?: AxiosRequestConfig
 ): Promise<T> {
-  const response = await axios.delete(url, { withCredentials: true, ...options});
+  const response = await axios.delete(url, {...options});
   return response.data;
 }
 
 async function _patch(url: string, data?: any) {
   const response = await axios.patch(url, JSON.stringify(data), {
-    withCredentials: true,
     headers: { "Content-Type": "application/json" },
   });
   return response.data;

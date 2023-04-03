@@ -106,10 +106,6 @@ export type TGetMessagesResponse = {
   data: TMessage[]
 };
 
-export type TDeleteConversationRequest = {
-  conversationId: string
-};
-
 export type TAICompletionRequest = {
   chatGptLabel?: string,
   conversationId: string,
@@ -150,13 +146,29 @@ export type TConversationUpdate = {
   conversationId: string,
   title?: string
 };
+
 export type TUpdateConversationRequest = {
-  arg: {},
+  conversationId: string,
+  title: string,
   withCredentials?: boolean
 };
 
 export type TUpdateConversationResponse = {
   data: TConversation
+};
+
+export type TDeleteConversationRequest = {
+  conversationId: string,
+  source: string
+}
+
+export type TDeleteConversationResponse = {
+  acknowledged: boolean,
+  deletedCount: number,
+  messages: {
+    acknowledged: boolean,
+    deletedCount: number
+  }
 };
 
 export type TUpdateCustomGptRequest = {
