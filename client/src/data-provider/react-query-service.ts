@@ -57,6 +57,23 @@ export const useGetConversationByIdQuery = (
   );
 }
 
+//This isn't ideal because its just a query and we're using mutation, but it was the only way
+//to make it work with how the Chat component is structured
+export const useGetConversationByIdMutation = (
+  id: string,
+  callback: (data: t.TConversation) => void
+): UseMutationResult<t.TConversation> => {
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.getConversationById(id),
+    {
+      onSuccess: (res: t.TConversation) => {
+        callback(res);
+       queryClient.invalidateQueries([QueryKeys.conversation, id]);
+      },
+    }   
+  );
+};
+
 export const useUpdateConversationMutation = (
   id: string
 ): UseMutationResult<

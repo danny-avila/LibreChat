@@ -1,6 +1,3 @@
-export const openAiModels = () => {
-  return `/api/open-ai-models`;
-};
 
 export const getModels = () => {
   return `/api/models`;

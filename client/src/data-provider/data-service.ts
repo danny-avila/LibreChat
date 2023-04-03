@@ -2,10 +2,6 @@ import * as t from './types';
 import request from './request';
 import * as endpoints from './endpoints';
 
-export function postAICompletion(payload: t.TAICompletionRequest) {
-  return request.post(endpoints.getAICompletion(), payload);
-}
-
 export function getConversations(pageNumber: string): Promise<t.TGetConversationsResponse> {
   return request.get(endpoints.getConversations(pageNumber));
 }

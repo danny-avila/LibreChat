@@ -1,9 +1,9 @@
 export type TMessage = {
   messageId: string,
   conversationId: string,
-  conversationSignature: string | null,
+  // conversationSignature: string | null,
   clientId: string,
-  invocationId: string,
+  // invocationId: string,
   parentMessageId: string,
   sender: string,
   text: string,
@@ -11,12 +11,12 @@ export type TMessage = {
   error: boolean,
   createdAt: string,
   updatedAt: string,
-  searchResult: string[],
-  submitting: boolean,
-  children?: any[] | undefined,
-  bgColor?: string,
-  model?: string,
-  cancelled?: boolean
+  // searchResult: string[],
+  // submitting: boolean,
+  // children?: any[] | undefined,
+  // bgColor?: string,
+  // model?: string,
+  // cancelled?: boolean
 };
 
 export type TMessageTreeNode = {}
