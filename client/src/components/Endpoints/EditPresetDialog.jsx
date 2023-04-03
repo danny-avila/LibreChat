@@ -17,7 +17,7 @@ import store from '~/store';
 
 const EditPresetDialog = ({ open, onOpenChange, preset: _preset }) => {
   //   const [title, setTitle] = useState('My Preset');
-  const [preset, setPreset] = useState({});
+  const [preset, setPreset] = useState(_preset);
   const setPresets = useSetRecoilState(store.presets);
 
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
