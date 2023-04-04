@@ -77,7 +77,7 @@ function Settings(props) {
               disabled={readonly}
               value={context || ''}
               onChange={e => setContext(e.target.value || null)}
-              placeholder="Bing can use up to 7k tokens for 'context', text that it can reference per 1 conversation. The specific limit is not known but may run into errors exceeding 7k tokens"
+              placeholder="Bing can use up to 7k tokens for 'context', which it can reference for the conversation. The specific limit is not known but may run into errors exceeding 7k tokens"
               className={cn(
                 defaultTextProps,
                 'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2'
@@ -126,10 +126,10 @@ function Settings(props) {
                   disabled={readonly}
                   value={systemMessage || ''}
                   onChange={e => setSystemMessage(e.target.value || null)}
-                  placeholder="WARNING: Misuse of this feature can get you BANNED from using Bing! Click on 'System Message' for full instructions and the default message if omitted, which is the 'Sydney' preset that is considered safe."
+                  placeholder="WARNING: Misuse of this feature can get you BANNED from using Bing! Click on 'System Message' for full instructions and the default message if omitted, which is the 'Sydney' preset that is considered safe. Leave blank for the default message."
                   className={cn(
                     defaultTextProps,
-                    'flex max-h-[300px] min-h-[148px] w-full resize-none px-3 py-2 '
+                    'flex max-h-[300px] min-h-[148px] w-full resize-none px-3 py-2 placeholder:text-red-400'
                   )}
                 />
               </>

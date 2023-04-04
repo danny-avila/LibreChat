@@ -55,6 +55,14 @@ module.exports = {
     type: String,
     default: null
   },
+  context: {
+    type: String,
+    default: null
+  },
+  systemMessage: {
+    type: String,
+    default: null
+  },
   clientId: {
     type: String,
     default: null

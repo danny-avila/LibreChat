@@ -7,6 +7,8 @@ const askBing = async ({
   conversationId,
   jailbreak,
   jailbreakConversationId,
+  context,
+  systemMessage,
   conversationSignature,
   clientId,
   invocationId,
@@ -30,8 +32,10 @@ const askBing = async ({
 
   let options = {
     jailbreakConversationId: jailbreakConversationId || jailbreak,
+    context,
+    systemMessage,
     parentMessageId,
-    conversationId,
+    conversationId: jailbreakConversationId ? jailbreakConversationId : conversationId,
     toneStyle,
     onProgress
   };

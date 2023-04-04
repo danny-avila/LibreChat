@@ -20,6 +20,8 @@ const cleanupPreset = _preset => {
       endpoint,
       presetId: _preset?.presetId || null,
       jailbreak: _preset?.jailbreak || false,
+      context: _preset?.context || null,
+      systemMessage: _preset?.systemMessage || null,
       jailbreakpresetId: _preset?._jailbreakpresetId || null,
       presetSignature: null,
       clientId: null,
