@@ -15,7 +15,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '../../ui/DropdownMenu.tsx';
-import { Dialog } from '../../ui/Dialog.tsx';
+import { Dialog, DialogTrigger } from '../../ui/Dialog.tsx';
+import DialogTemplate from '../../ui/DialogTemplate';
 
 import store from '~/store';
 
@@ -134,13 +135,26 @@ export default function NewConversationMenu() {
           <DropdownMenuLabel className="flex items-center dark:text-gray-300">
             <span>Select a Preset</span>
             <div className="flex-1" />
-            <Button
-              type="button"
-              className="h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-red-700 hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-gray-800 dark:hover:text-red-400"
-              onClick={clearPreset}
-            >
-              Clear All
-            </Button>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button
+                  type="button"
+                  className="h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-red-700 hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-gray-800 dark:hover:text-red-400"
+                  // onClick={clearPreset}
+                >
+                  Clear All
+                </Button>
+              </DialogTrigger>
+              <DialogTemplate
+                title="Clear presets"
+                description="Are you sure you want to clear all presets? This is irreversible."
+                selection={{
+                  selectHandler: clearPreset,
+                  selectClasses: 'bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
+                  selectText: 'Clear'
+                }}
+              />
+            </Dialog>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
