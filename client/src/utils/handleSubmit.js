@@ -40,13 +40,13 @@ const useMessageHandler = () => {
       endpointOption = {
         endpoint,
         jailbreak: currentConversation?.jailbreak || false,
-        jailbreakConversationId: currentConversation?.jailbreakConversationId || null,
-        conversationSignature: currentConversation?.conversationSignature || null,
         systemMessage: currentConversation?.systemMessage || null,
         context: currentConversation?.context || null,
+        toneStyle: currentConversation?.toneStyle || 'fast',
+        jailbreakConversationId: currentConversation?.jailbreakConversationId || null,
+        conversationSignature: currentConversation?.conversationSignature || null,
         clientId: currentConversation?.clientId || null,
-        invocationId: currentConversation?.invocationId || 1,
-        toneStyle: currentConversation?.toneStyle || 'fast'
+        invocationId: currentConversation?.invocationId || 1
       };
       responseSender = endpointOption.jailbreak ? 'Sydney' : 'BingAI';
     } else if (endpoint === 'chatGPTBrowser') {
