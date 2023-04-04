@@ -1,7 +1,7 @@
 import React from 'react';
 import { useRecoilValue } from 'recoil';
 import TextareaAutosize from 'react-textarea-autosize';
-import SelectDropDown from '../../ui/SelectDropDown';
+import SelectDropdown from '../../ui/SelectDropdown';
 import { Input } from '~/components/ui/Input.tsx';
 import { Label } from '~/components/ui/Label.tsx';
 import { Slider } from '~/components/ui/Slider.tsx';
@@ -37,8 +37,8 @@ function Settings(props) {
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
-            <SelectDropDown
-              model={model}
+            <SelectDropdown
+              value={model}
               setValue={setModel}
               availableValues={models}
               disabled={readonly}

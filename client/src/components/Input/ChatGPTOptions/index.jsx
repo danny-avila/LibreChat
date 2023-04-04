@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import SelectDropDown from '../../ui/SelectDropDown.jsx';
+import SelectDropdown from '../../ui/SelectDropdown.jsx';
 import { cn } from '~/utils/';
 
 import store from '~/store';
@@ -35,7 +35,7 @@ function ChatGPTOptions() {
 
   return (
     <div className="openAIOptions-simple-container show flex w-full items-center justify-center gap-2">
-      <SelectDropDown
+      <SelectDropdown
         value={model}
         setValue={setOption('model')}
         availableValues={models}
