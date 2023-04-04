@@ -56,7 +56,10 @@ export default function PresetItem({ preset = {}, value, onSelect, onChangePrese
       <div className="flex w-4 flex-1" />
       <button
         className="invisible m-0 rounded-md text-gray-400 hover:text-gray-700 group-hover:visible dark:text-gray-400 dark:hover:text-gray-200        "
-        onClick={() => onChangePreset(preset)}
+        onClick={e => {
+          e.preventDefault();
+          onChangePreset(preset);
+        }}
       >
         <EditIcon />
       </button>
