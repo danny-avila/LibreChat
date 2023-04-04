@@ -114,13 +114,13 @@ function BingAIOptions() {
       </div>
       <EndpointOptionsPopover
         content={
-          <div className="px-4 py-4">
+          <div className="px-4 py-4 z-50">
             <Settings
               context={context}
               systemMessage={systemMessage}
-              setContext={setOption('context')}
-              setSystemMessage={setOption('systemMessage')}
-              setJailbreak={setOption('jailbreak')}
+              jailbreak={jailbreak}
+              toneStyle={toneStyle}
+              setOption={setOption}
             />
           </div>
         }
