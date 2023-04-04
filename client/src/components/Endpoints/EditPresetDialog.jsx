@@ -20,14 +20,15 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
   const setPresets = useSetRecoilState(store.presets);
 
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
-
   const setOption = param => newValue => {
     let update = {};
     update[param] = newValue;
-    setPreset(prevState => ({
-      ...prevState,
-      ...update
-    }));
+    setPreset(prevState =>
+      cleanupPreset({
+        ...prevState,
+        ...update
+      })
+    );
   };
 
   const defaultTextProps =
