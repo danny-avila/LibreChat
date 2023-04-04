@@ -21,7 +21,7 @@ function BingAIOptions() {
   if (conversationId !== 'new') return null;
 
   const changeHandler = value => {
-    setConversation(prevState => ({ ...prevState, toneStyle: value }));
+    setConversation(prevState => ({ ...prevState, toneStyle: value.toLowerCase() }));
   };
 
   const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
@@ -120,6 +120,7 @@ function BingAIOptions() {
               systemMessage={systemMessage}
               jailbreak={jailbreak}
               toneStyle={toneStyle}
+              setToneStyle={changeHandler}
               setOption={setOption}
             />
           </div>

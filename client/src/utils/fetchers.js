@@ -18,6 +18,15 @@ export const postRequest = async (url, { arg }) => {
   });
 };
 
+export const axiosPost = async ({ url, arg, callback }) => {
+  try {
+    const response = await axios.post(url, { arg }, { withCredentials: true });
+    callback(response.data);
+  } catch (error) {
+    console.error('An error occurred while making the axios post request:', error);
+  }
+};
+
 export const searchFetcher = async (pre, q, pageNumber, callback) => {
   pre();
   const { data } = await axios.get(`/api/search?q=${q}&pageNumber=${pageNumber}`);

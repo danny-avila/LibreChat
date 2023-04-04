@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { Input } from '~/components/ui/Input.tsx';
 import { Label } from '~/components/ui/Label.tsx';
 import { Checkbox } from '~/components/ui/Checkbox.tsx';
 import Dropdown from '~/components/ui/Dropdown';
+import { axiosPost } from '~/utils/fetchers.js';
 import { cn } from '~/utils/';
+import debounce from 'lodash/debounce';
 // import ModelDropDown from '../../ui/ModelDropDown';
 // import { Slider } from '~/components/ui/Slider.tsx';
 // import OptionHover from './OptionHover';
@@ -16,11 +18,37 @@ const optionText =
   'p-0 shadow-none text-right pr-1 h-8 border-transparent focus:ring-[#10a37f] focus:ring-offset-0 focus:ring-opacity-100 hover:bg-gray-800/10 dark:hover:bg-white/10 focus:bg-gray-800/10 dark:focus:bg-white/10 transition-colors';
 
 function Settings(props) {
-  const { readonly, context, systemMessage, jailbreak, toneStyle, setOption } = props;
+  const { readonly, context, systemMessage, jailbreak, toneStyle, setOption, setToneStyle } = props;
+  const [tokenCount, setTokenCount] = useState(0);
   const showSystemMessage = jailbreak;
   const setContext = setOption('context');
   const setSystemMessage = setOption('systemMessage');
   const setJailbreak = setOption('jailbreak');
+
+  // useEffect to update token count
+  
+  useEffect(() => {
+    if (!context) return;
+
+    if (context.trim() === '') {
+      setTokenCount(0);
+      return;
+    }
+
+    const debouncedPost = debounce(axiosPost, 500);
+    const handleTextChange = context => {
+      debouncedPost({
+        url: '/api/tokenizer',
+        arg: { text: context},
+        callback: data => {
+          setTokenCount(data.count);
+        }
+      });
+    };
+
+    handleTextChange(context);
+    return () => debouncedPost.cancel(); 
+  }, [context]);
 
   // console.log('data', data);
 
@@ -31,9 +59,9 @@ function Settings(props) {
           <div className="grid w-full items-center gap-2">
             <Dropdown
               id="toneStyle-dropdown"
-              value={toneStyle}
-              onChange={setOption('toneStyle')}
-              options={['creative', 'fast', 'balanced', 'precise']}
+              value={`${toneStyle.charAt(0).toUpperCase()}${toneStyle.slice(1)}`}
+              onChange={setToneStyle}
+              options={['Creative', 'Fast', 'Balanced', 'Precise']}
               className={cn(
                 defaultTextProps,
                 'flex h-10 max-h-10 w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
@@ -58,7 +86,7 @@ function Settings(props) {
               )}
             />
             <small className="mb-5 text-black dark:text-white">
-              {'Token count: 1200 (work in progress)'}
+              {`Token count: ${tokenCount}`}
             </small>
           </div>
         </div>
@@ -70,11 +98,7 @@ function Settings(props) {
                 disabled={readonly}
                 checked={jailbreak}
                 className="focus:ring-opacity-20 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:focus:ring-gray-600 dark:focus:ring-opacity-50 dark:focus:ring-offset-0"
-                // onCheckedChange={setJailbreak}
-                onCheckedChange={checked => {
-                  setJailbreak(checked);
-                  // setShowSystemMessage(checked);
-                }}
+                onCheckedChange={setJailbreak}
               />
               <label
                 htmlFor="jailbreak"
@@ -99,12 +123,6 @@ function Settings(props) {
             </div>
             {showSystemMessage && (
               <>
-                {/* <Label
-                  htmlFor="systemMessage"
-                  className="text-left text-sm font-medium"
-                >
-                  System Message <small className="opacity-40">(default: blank)</small>
-                </Label> */}
                 <TextareaAutosize
                   id="systemMessage"
                   disabled={readonly}
