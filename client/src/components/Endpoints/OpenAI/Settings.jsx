@@ -15,23 +15,15 @@ const optionText =
   'p-0 shadow-none text-right pr-1 h-8 border-transparent focus:ring-[#10a37f] focus:ring-offset-0 focus:ring-opacity-100 hover:bg-gray-800/10 dark:hover:bg-white/10 focus:bg-gray-800/10 dark:focus:bg-white/10 transition-colors';
 
 function Settings(props) {
-  const {
-    readonly,
-    model,
-    setModel,
-    chatGptLabel,
-    setChatGptLabel,
-    promptPrefix,
-    setPromptPrefix,
-    temperature,
-    setTemperature,
-    topP,
-    setTopP,
-    freqP,
-    setFreqP,
-    presP,
-    setPresP
-  } = props;
+  const { readonly, model, chatGptLabel, promptPrefix, temperature, topP, freqP, presP, setOption } = props;
+
+  const setModel = setOption('model');
+  const setChatGptLabel = setOption('chatGptLabel');
+  const setPromptPrefix = setOption('promptPrefix');
+  const setTemperature = setOption('temperature');
+  const setTopP = setOption('top_p');
+  const setFreqP = setOption('presence_penalty');
+  const setPresP = setOption('frequency_penalty');
 
   return (
     <>

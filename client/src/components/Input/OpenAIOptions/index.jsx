@@ -113,19 +113,13 @@ function OpenAIOptions() {
           <div className="px-4 py-4">
             <Settings
               model={model}
-              setModel={setOption('model')}
               chatGptLabel={chatGptLabel}
-              setChatGptLabel={setOption('chatGptLabel')}
               promptPrefix={promptPrefix}
-              setPromptPrefix={setOption('promptPrefix')}
               temperature={temperature}
-              setTemperature={setOption('temperature')}
               topP={top_p}
-              setTopP={setOption('top_p')}
               freqP={presence_penalty}
-              setFreqP={setOption('presence_penalty')}
               presP={frequency_penalty}
-              setPresP={setOption('frequency_penalty')}
+              setOption={setOption}
             />
           </div>
         }

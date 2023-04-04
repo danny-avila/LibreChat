@@ -10,12 +10,11 @@ import Dropdown from '../ui/Dropdown';
 import { cn } from '~/utils/';
 import cleanupPreset from '~/utils/cleanupPreset';
 
-import OpenAISettings from './OpenAI/Settings';
-import BingAISettings from './BingAI/Settings.jsx';
+import Settings from './Settings';
 
 import store from '~/store';
 
-const EditPresetDialog = ({ open, onOpenChange, preset: _preset }) => {
+const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
   //   const [title, setTitle] = useState('My Preset');
   const [preset, setPreset] = useState(_preset);
   const setPresets = useSetRecoilState(store.presets);
@@ -29,43 +28,6 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset }) => {
       ...prevState,
       ...update
     }));
-  };
-
-  const renderSettings = () => {
-    const { endpoint } = preset || {};
-
-    if (endpoint === 'openAI')
-      return (
-        <OpenAISettings
-          model={preset?.model}
-          setModel={setOption('model')}
-          chatGptLabel={preset?.chatGptLabel}
-          setChatGptLabel={setOption('chatGptLabel')}
-          promptPrefix={preset?.promptPrefix}
-          setPromptPrefix={setOption('promptPrefix')}
-          temperature={preset?.temperature}
-          setTemperature={setOption('temperature')}
-          topP={preset?.top_p}
-          setTopP={setOption('top_p')}
-          freqP={preset?.presence_penalty}
-          setFreqP={setOption('presence_penalty')}
-          presP={preset?.frequency_penalty}
-          setPresP={setOption('frequency_penalty')}
-        />
-      );
-    else if (endpoint === 'bingAI')
-      return (
-        <BingAISettings
-          readonly={true}
-          context={preset?.context}
-          setContext={setOption('context')}
-          systemMessage={preset?.systemMessage}
-          setSystemMessage={setOption('systemMessage')}
-          jailbreak={preset?.jailbreak}
-          setJailbreak={setOption('jailbreak')}
-        />
-      );
-    else return null;
   };
 
   const defaultTextProps =
@@ -100,7 +62,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset }) => {
       onOpenChange={onOpenChange}
     >
       <DialogTemplate
-        title="Edit Preset"
+        title={`${title || 'Edit Preset'} - ${preset?.title}`}
         className="max-w-full sm:max-w-4xl"
         main={
           <div className="flex w-full flex-col items-center gap-2">
@@ -144,7 +106,12 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset }) => {
               </div>
             </div>
             <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
-            <div className="w-full p-0">{renderSettings()}</div>
+            <div className="w-full p-0">
+              <Settings
+                preset={preset}
+                setOption={setOption}
+              />
+            </div>
           </div>
         }
         buttons={

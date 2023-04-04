@@ -57,7 +57,9 @@ function Settings(props) {
                 'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2'
               )}
             />
-            <small className='mb-5'>{'Token count: 1200 (work in progress)'}</small>
+            <small className="mb-5 text-black dark:text-white">
+              {'Token count: 1200 (work in progress)'}
+            </small>
           </div>
         </div>
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
