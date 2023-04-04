@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button } from '../ui/Button.tsx';
-import SwitchIcon from '../svg/SwitchIcon';
+import CrossIcon from '../svg/CrossIcon';
 // import SaveIcon from '../svg/SaveIcon';
 import { Save } from 'lucide-react';
 
@@ -37,8 +37,8 @@ function EndpointOptionsPopover({ content, visible, saveAsPreset, switchToSimple
               className="h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white"
               onClick={switchToSimpleMode}
             >
-              <SwitchIcon className="mr-1" />
-              Switch to simple mode
+              <CrossIcon className="mr-1" />
+              {/* Switch to simple mode */}
             </Button>
           </div>
           <div>{content}</div>
