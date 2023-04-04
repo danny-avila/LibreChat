@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
-import { useRecoilState } from 'recoil';
-import ModelDropDown from '../../ui/ModelDropDown.jsx';
+import { useRecoilState, useRecoilValue } from 'recoil';
+import SelectDropDown from '../../ui/SelectDropDown.jsx';
 import { cn } from '~/utils/';
 
 import store from '~/store';
@@ -10,13 +10,16 @@ function ChatGPTOptions() {
   const { endpoint, conversationId } = conversation;
   const { model } = conversation;
 
-  console.log('ChatGPTOptions', endpoint, model);
+  const endpointsConfig = useRecoilValue(store.endpointsConfig);
+
   useEffect(() => {
     if (endpoint !== 'chatGPTBrowser') return;
   }, [conversation]);
 
   if (endpoint !== 'chatGPTBrowser') return null;
   if (conversationId !== 'new') return null;
+
+  const models = endpointsConfig?.['chatGPTBrowser']?.['availableModels'] || [];
 
   const setOption = param => newValue => {
     let update = {};
@@ -31,11 +34,11 @@ function ChatGPTOptions() {
     'transition-colors shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 hover:border-black/10 focus:border-black/10 dark:border-black/10 dark:hover:border-black/10 dark:focus:border-black/10 border dark:bg-gray-700 text-black dark:text-white';
 
   return (
-    <div className="openAIOptions-simple-container flex w-full items-center justify-center gap-2 show">
-      <ModelDropDown
-        model={model}
-        setModel={setOption('model')}
-        endpoint="chatGPTBrowser"
+    <div className="openAIOptions-simple-container show flex w-full items-center justify-center gap-2">
+      <SelectDropDown
+        value={model}
+        setValue={setOption('model')}
+        availableValues={models}
         showAbove={true}
         showLabel={false}
         className={cn(

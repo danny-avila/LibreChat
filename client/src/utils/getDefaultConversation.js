@@ -16,13 +16,13 @@ const buildDefaultConversation = ({ conversation, endpoint, lastConversationSetu
       ...conversation,
       endpoint,
       jailbreak: lastConversationSetup?.jailbreak || false,
-      systemMessage: lastConversationSetup?.systemMessage || null,
       context: lastConversationSetup?.context || null,
+      systemMessage: lastConversationSetup?.systemMessage || null,
+      toneStyle: lastConversationSetup?.toneStyle || 'fast',
       jailbreakConversationId: lastConversationSetup?.jailbreakConversationId || null,
       conversationSignature: null,
       clientId: null,
-      invocationId: 1,
-      toneStyle: lastConversationSetup?.toneStyle || 'fast'
+      invocationId: 1
     };
   } else if (endpoint === 'chatGPTBrowser') {
     conversation = {

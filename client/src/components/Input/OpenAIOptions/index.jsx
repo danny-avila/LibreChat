@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import ModelSelect from '../../ui/ModelSelect';
-import ModelDropDown from '../../ui/ModelDropDown';
+import SelectDropDown from '../../ui/SelectDropDown';
 import EndpointOptionsPopover from '../../Endpoints/EndpointOptionsPopover';
 import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
 import { Button } from '../../ui/Button.tsx';
@@ -20,6 +19,8 @@ function OpenAIOptions() {
   const { model, chatGptLabel, promptPrefix, temperature, top_p, presence_penalty, frequency_penalty } =
     conversation;
 
+  const endpointsConfig = useRecoilValue(store.endpointsConfig);
+
   useEffect(() => {
     if (endpoint !== 'openAI') return;
 
@@ -36,6 +37,8 @@ function OpenAIOptions() {
 
   if (endpoint !== 'openAI') return null;
   if (conversationId !== 'new') return null;
+
+  const models = endpointsConfig?.['openAI']?.['availableModels'] || [];
 
   const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
 
@@ -86,10 +89,10 @@ function OpenAIOptions() {
             ' z-50 flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 data-[state=open]:bg-slate-50 dark:hover:bg-gray-600 dark:data-[state=open]:bg-gray-600'
           )}
         /> */}
-        <ModelDropDown
-          model={model}
-          setModel={setOption('model')}
-          endpoint="openAI"
+        <SelectDropDown
+          value={model}
+          setValue={setOption('model')}
+          availableValues={models}
           showAbove={true}
           showLabel={false}
           className={cn(

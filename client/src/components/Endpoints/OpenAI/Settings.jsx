@@ -1,6 +1,7 @@
 import React from 'react';
+import { useRecoilValue } from 'recoil';
 import TextareaAutosize from 'react-textarea-autosize';
-import ModelDropDown from '../../ui/ModelDropDown';
+import SelectDropDown from '../../ui/SelectDropDown';
 import { Input } from '~/components/ui/Input.tsx';
 import { Label } from '~/components/ui/Label.tsx';
 import { Slider } from '~/components/ui/Slider.tsx';
@@ -14,8 +15,12 @@ const defaultTextProps =
 const optionText =
   'p-0 shadow-none text-right pr-1 h-8 border-transparent focus:ring-[#10a37f] focus:ring-offset-0 focus:ring-opacity-100 hover:bg-gray-800/10 dark:hover:bg-white/10 focus:bg-gray-800/10 dark:focus:bg-white/10 transition-colors';
 
+import store from '~/store';
+
 function Settings(props) {
   const { readonly, model, chatGptLabel, promptPrefix, temperature, topP, freqP, presP, setOption } = props;
+
+  const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   const setModel = setOption('model');
   const setChatGptLabel = setOption('chatGptLabel');
@@ -25,16 +30,18 @@ function Settings(props) {
   const setFreqP = setOption('presence_penalty');
   const setPresP = setOption('frequency_penalty');
 
+  const models = endpointsConfig?.['openAI']?.['availableModels'] || [];
+
   return (
     <>
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
-            <ModelDropDown
+            <SelectDropDown
               model={model}
+              setValue={setModel}
+              availableValues={models}
               disabled={readonly}
-              setModel={setModel}
-              endpoint="openAI"
               className={cn(
                 defaultTextProps,
                 'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
