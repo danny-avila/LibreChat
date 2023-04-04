@@ -1,6 +1,7 @@
 Working as of latest update
 ### Use the default message as a template for writing your own system message and follow the guidelines
-### Also, see [here for a great outline](https://www.make-safe-ai.com/is-bing-chat-safe/Prompts_Instructions.md)
+
+Also, see [here for the original system instructions for Bing AI](https://www.make-safe-ai.com/is-bing-chat-safe/Prompts_Instructions.md), which serves as a great outline for the style of message you should go for.
 
 ### Default System Message 
 
