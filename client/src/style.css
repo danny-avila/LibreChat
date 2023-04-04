@@ -28,6 +28,10 @@
   transition: all 1s ease-in-out;
 } */
 
+.overflow-y-auto {
+  overflow-y: overlay;
+}
+
 .openAIOptions-simple-container {
   pointer-events: none;
   opacity: 0;
