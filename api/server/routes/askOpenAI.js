@@ -133,7 +133,7 @@ const ask = async ({
     userMessage.conversationId = conversationId;
     userMessage.messageId = responseMessage.parentMessageId;
 
-    // If gptResponse has parentMessageId, the fake userMessage.messageId should be updated to the real one.
+    // If response has parentMessageId, the fake userMessage.messageId should be updated to the real one.
     if (!overrideParentMessageId) {
       const oldUserMessageId = userMessageId;
       await saveMessage({ ...userMessage, messageId: oldUserMessageId, newMessageId: userMessage.messageId });
@@ -150,7 +150,7 @@ const ask = async ({
     res.end();
 
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
-      const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: gptResponse });
+      const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response });
       await updateConvo(req?.session?.user?.username, {
         conversationId: conversationId,
         title
