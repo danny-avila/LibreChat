@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import SelectDropDown from '../../ui/SelectDropDown';
+import SelectDropdown from '../../ui/SelectDropdown';
 import EndpointOptionsPopover from '../../Endpoints/EndpointOptionsPopover';
 import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
 import { Button } from '../../ui/Button.tsx';
@@ -89,7 +89,7 @@ function OpenAIOptions() {
             ' z-50 flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 data-[state=open]:bg-slate-50 dark:hover:bg-gray-600 dark:data-[state=open]:bg-gray-600'
           )}
         /> */}
-        <SelectDropDown
+        <SelectDropdown
           value={model}
           setValue={setOption('model')}
           availableValues={models}

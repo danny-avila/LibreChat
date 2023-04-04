@@ -3,7 +3,7 @@ import TextareaAutosize from 'react-textarea-autosize';
 import { Input } from '~/components/ui/Input.tsx';
 import { Label } from '~/components/ui/Label.tsx';
 import { Checkbox } from '~/components/ui/Checkbox.tsx';
-import Dropdown from '~/components/ui/Dropdown';
+import SelectDropdown from '../../ui/SelectDropdown';
 import { axiosPost } from '~/utils/fetchers.js';
 import { cn } from '~/utils/';
 import debounce from 'lodash/debounce';
@@ -56,17 +56,27 @@ function Settings(props) {
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
-            <Dropdown
+            <Label
+              htmlFor="toneStyle-dropdown"
+              className="text-left text-sm font-medium"
+            >
+              Tone Style <small className="opacity-40">(default: fast)</small>
+            </Label>
+            <SelectDropdown
               id="toneStyle-dropdown"
+              title={null}
               value={`${toneStyle.charAt(0).toUpperCase()}${toneStyle.slice(1)}`}
-              onChange={setToneStyle}
-              options={['Creative', 'Fast', 'Balanced', 'Precise']}
+              setValue={setToneStyle}
+              availableValues={['Creative', 'Fast', 'Balanced', 'Precise']}
+              disabled={readonly}
               className={cn(
                 defaultTextProps,
-                'flex h-10 max-h-10 w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
               )}
               containerClassName="flex w-full resize-none"
             />
+          </div>
+          <div className="grid w-full items-center gap-2">
             <Label
               htmlFor="context"
               className="text-left text-sm font-medium"
@@ -89,7 +99,13 @@ function Settings(props) {
         </div>
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
-            <div className="flex items-center space-x-3">
+            <Label
+              htmlFor="jailbreak"
+              className="text-left text-sm font-medium"
+            >
+              Enable Sydney <small className="opacity-40">(default: false)</small>
+            </Label>
+            <div className="flex h-[40px] w-full items-center space-x-3">
               <Checkbox
                 id="jailbreak"
                 disabled={readonly}
@@ -101,11 +117,15 @@ function Settings(props) {
                 htmlFor="jailbreak"
                 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
               >
-                Jailbreak
+                Jailbreak <small>To enable Sydney</small>
               </label>
+            </div>
+          </div>
+          {showSystemMessage && (
+            <div className="grid w-full items-center gap-2">
               <Label
                 htmlFor="systemMessage"
-                className="mr-0 w-full text-right text-sm font-medium"
+                className="text-left text-sm font-medium"
                 style={{ opacity: showSystemMessage ? '1' : '0' }}
               >
                 <a
@@ -115,25 +135,22 @@ function Settings(props) {
                 >
                   System Message
                 </a>{' '}
-                <small className="opacity-40">(default: Sydney)</small>
+                <small className="opacity-40 dark:text-gray-50">(default: blank)</small>
               </Label>
+
+              <TextareaAutosize
+                id="systemMessage"
+                disabled={readonly}
+                value={systemMessage || ''}
+                onChange={e => setSystemMessage(e.target.value || null)}
+                placeholder="WARNING: Misuse of this feature can get you BANNED from using Bing! Click on 'System Message' for full instructions and the default message if omitted, which is the 'Sydney' preset that is considered safe."
+                className={cn(
+                  defaultTextProps,
+                  'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 placeholder:text-red-400'
+                )}
+              />
             </div>
-            {showSystemMessage && (
-              <>
-                <TextareaAutosize
-                  id="systemMessage"
-                  disabled={readonly}
-                  value={systemMessage || ''}
-                  onChange={e => setSystemMessage(e.target.value || null)}
-                  placeholder="WARNING: Misuse of this feature can get you BANNED from using Bing! Click on 'System Message' for full instructions and the default message if omitted, which is the 'Sydney' preset that is considered safe. Leave blank for the default message."
-                  className={cn(
-                    defaultTextProps,
-                    'flex max-h-[300px] min-h-[148px] w-full resize-none px-3 py-2 placeholder:text-red-400'
-                  )}
-                />
-              </>
-            )}
-          </div>
+          )}
           {/* <HoverCard>
             <HoverCardTrigger className="grid w-full items-center gap-2"> 
             </HoverCardTrigger>
