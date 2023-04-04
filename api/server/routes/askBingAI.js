@@ -35,6 +35,8 @@ router.post('/', async (req, res) => {
   const endpointOption = {
     jailbreak: req.body?.jailbreak || false,
     jailbreakConversationId: req.body?.jailbreakConversationId || null,
+    systemMessage: req.body?.systemMessage || null,
+    context: req.body?.context || null,
     conversationSignature: req.body?.conversationSignature || null,
     clientId: req.body?.clientId || null,
     invocationId: req.body?.invocationId || null,
@@ -58,6 +60,7 @@ router.post('/', async (req, res) => {
     });
   }
 
+  // eslint-disable-next-line no-use-before-define
   return await ask({
     isNewConversation,
     userMessage,

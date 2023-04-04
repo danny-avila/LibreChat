@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import { cn } from '~/utils';
 import { Button } from '../../ui/Button.tsx';
@@ -15,7 +15,15 @@ function BingAIOptions() {
   const [advancedMode, setAdvancedMode] = useState(false);
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
   const { endpoint, conversationId } = conversation;
-  const { context, systemMessage, jailbreak } = conversation;
+  const { toneStyle, context, systemMessage, jailbreak } = conversation;
+
+  useEffect(() => {
+    if (endpoint !== 'bingAI') return;
+
+    const mustInAdvancedMode = context !== null || systemMessage !== null;
+
+    if (mustInAdvancedMode && !advancedMode) setAdvancedMode(true);
+  }, [conversation, advancedMode]);
 
   if (endpoint !== 'bingAI') return null;
   if (conversationId !== 'new') return null;
@@ -48,8 +56,6 @@ function BingAIOptions() {
       ...update
     }));
   };
-
-  const { toneStyle } = conversation;
 
   const cardStyle =
     'transition-colors shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 hover:border-black/10 focus:border-black/10 dark:border-black/10 dark:hover:border-black/10 dark:focus:border-black/10 border dark:bg-gray-700 text-black dark:text-white';
@@ -114,7 +120,7 @@ function BingAIOptions() {
       </div>
       <EndpointOptionsPopover
         content={
-          <div className="px-4 py-4 z-50">
+          <div className="z-50 px-4 py-4">
             <Settings
               context={context}
               systemMessage={systemMessage}

@@ -24,6 +24,7 @@ const Settings = ({ preset, ...props }) => {
     else if (endpoint === 'bingAI')
       return (
         <BingAISettings
+          toneStyle={preset?.toneStyle}
           context={preset?.context}
           systemMessage={preset?.systemMessage}
           jailbreak={preset?.jailbreak}

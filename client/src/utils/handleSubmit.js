@@ -42,6 +42,8 @@ const useMessageHandler = () => {
         jailbreak: currentConversation?.jailbreak || false,
         jailbreakConversationId: currentConversation?.jailbreakConversationId || null,
         conversationSignature: currentConversation?.conversationSignature || null,
+        systemMessage: currentConversation?.systemMessage || null,
+        context: currentConversation?.context || null,
         clientId: currentConversation?.clientId || null,
         invocationId: currentConversation?.invocationId || 1,
         toneStyle: currentConversation?.toneStyle || 'fast'
