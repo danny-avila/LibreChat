@@ -30,23 +30,38 @@ const askBing = async ({
     proxy: process.env.PROXY || null
   });
 
-  let options = {
-    jailbreakConversationId: jailbreakConversationId || jailbreak,
-    context,
-    systemMessage,
-    parentMessageId,
-    conversationId: jailbreakConversationId ? jailbreakConversationId : conversationId,
-    toneStyle,
-    onProgress
-  };
+  let options = {};
 
-  if (conversationSignature) options.conversationSignature = conversationSignature;
-  if (conversationSignature) options.clientId = clientId;
-  if (conversationSignature) options.invocationId = invocationId;
-  if (conversationSignature) options.toneStyle = toneStyle;
+  if (jailbreakConversationId == 'false') {
+    jailbreakConversationId = false;
+  }
 
-  if (options?.jailbreakConversationId == 'false') {
-    options.jailbreakConversationId = false;
+  if (jailbreak)
+    options = {
+      jailbreakConversationId: jailbreakConversationId || jailbreak,
+      context,
+      systemMessage,
+      parentMessageId,
+      toneStyle,
+      onProgress
+    };
+  else {
+    options = {
+      conversationId,
+      context,
+      systemMessage,
+      parentMessageId,
+      toneStyle,
+      onProgress
+    };
+
+    // don't give those parameters for new conversation
+    // for new conversation, conversationSignature always is null
+    if (conversationSignature) {
+      options.conversationSignature = conversationSignature;
+      options.clientId = clientId;
+      options.invocationId = invocationId;
+    }
   }
 
   console.log('bing options', options);

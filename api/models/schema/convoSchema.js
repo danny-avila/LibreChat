@@ -20,7 +20,24 @@ const convoSchema = mongoose.Schema(
       default: null
     },
     messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
-    ...conversationPreset
+    ...conversationPreset,
+    // for bingAI only
+    jailbreakConversationId: {
+      type: String,
+      default: null
+    },
+    conversationSignature: {
+      type: String,
+      default: null
+    },
+    clientId: {
+      type: String,
+      default: null
+    },
+    invocationId: {
+      type: Number,
+      default: 1
+    }
   },
   { timestamps: true }
 );
