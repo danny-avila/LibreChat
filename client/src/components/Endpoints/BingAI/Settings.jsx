@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { Input } from '~/components/ui/Input.tsx';
 import { Label } from '~/components/ui/Label.tsx';
 import { Checkbox } from '~/components/ui/Checkbox.tsx';
+import Dropdown from '~/components/ui/Dropdown';
 import { cn } from '~/utils/';
 // import ModelDropDown from '../../ui/ModelDropDown';
 // import { Slider } from '~/components/ui/Slider.tsx';
@@ -15,15 +16,30 @@ const optionText =
   'p-0 shadow-none text-right pr-1 h-8 border-transparent focus:ring-[#10a37f] focus:ring-offset-0 focus:ring-opacity-100 hover:bg-gray-800/10 dark:hover:bg-white/10 focus:bg-gray-800/10 dark:focus:bg-white/10 transition-colors';
 
 function Settings(props) {
-  // const [showSystemMessage, setShowSystemMessage] = React.useState(false);
-  const { readonly, context, setContext, systemMessage, setSystemMessage, jailbreak, setJailbreak } = props;
+  const { readonly, context, systemMessage, jailbreak, toneStyle, setOption } = props;
   const showSystemMessage = jailbreak;
+  const setContext = setOption('context');
+  const setSystemMessage = setOption('systemMessage');
+  const setJailbreak = setOption('jailbreak');
+
+  // console.log('data', data);
 
   return (
     <>
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
+            <Dropdown
+              id="toneStyle-dropdown"
+              value={toneStyle}
+              onChange={setOption('toneStyle')}
+              options={['creative', 'fast', 'balanced', 'precise']}
+              className={cn(
+                defaultTextProps,
+                'flex h-10 max-h-10 w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+              )}
+              containerClassName="flex w-full resize-none"
+            />
             <Label
               htmlFor="context"
               className="text-left text-sm font-medium"
@@ -35,12 +51,13 @@ function Settings(props) {
               disabled={readonly}
               value={context || ''}
               onChange={e => setContext(e.target.value || null)}
-              placeholder="Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
+              placeholder="Bing can use up to 7k tokens for 'context', text that it can reference per 1 conversation. The specific limit is not known but may run into errors exceeding 7k tokens"
               className={cn(
                 defaultTextProps,
-                'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 '
+                'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2'
               )}
             />
+            <small className='mb-5'>{'Token count: 1200 (work in progress)'}</small>
           </div>
         </div>
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
@@ -50,7 +67,7 @@ function Settings(props) {
                 id="jailbreak"
                 disabled={readonly}
                 checked={jailbreak}
-                className="dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 focus:ring-opacity-20 dark:focus:ring-opacity-50 dark:focus:ring-offset-0 dark:focus:ring-gray-600"
+                className="focus:ring-opacity-20 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:focus:ring-gray-600 dark:focus:ring-opacity-50 dark:focus:ring-offset-0"
                 // onCheckedChange={setJailbreak}
                 onCheckedChange={checked => {
                   setJailbreak(checked);
@@ -65,10 +82,17 @@ function Settings(props) {
               </label>
               <Label
                 htmlFor="systemMessage"
-                className="text-right text-sm font-medium mr-0 w-full"
+                className="mr-0 w-full text-right text-sm font-medium"
                 style={{ opacity: showSystemMessage ? '1' : '0' }}
               >
-                System Message <small className="opacity-40">(default: Sydney)</small>
+                <a
+                  href="https://github.com/danny-avila/chatgpt-clone/blob/main/client/defaultSystemMessage.md"
+                  target="_blank"
+                  className="text-blue-500 transition-colors duration-200 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-500"
+                >
+                  System Message
+                </a>{' '}
+                <small className="opacity-40">(default: Sydney)</small>
               </Label>
             </div>
             {showSystemMessage && (
@@ -84,10 +108,10 @@ function Settings(props) {
                   disabled={readonly}
                   value={systemMessage || ''}
                   onChange={e => setSystemMessage(e.target.value || null)}
-                  placeholder="Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
+                  placeholder="WARNING: Misuse of this feature can get you BANNED from using Bing! Click on 'System Message' for full instructions and the default message if omitted, which is the 'Sydney' preset that is considered safe."
                   className={cn(
                     defaultTextProps,
-                    'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 '
+                    'flex max-h-[300px] min-h-[148px] w-full resize-none px-3 py-2 '
                   )}
                 />
               </>

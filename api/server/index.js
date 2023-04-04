@@ -59,6 +59,7 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use('/api/customGpts', routes.authenticatedOr401, routes.customGpts);
   app.use('/api/presets', routes.authenticatedOr401, routes.presets);
   app.use('/api/prompts', routes.authenticatedOr401, routes.prompts);
+  app.use('/api/tokenizer', routes.authenticatedOr401, routes.tokenizer);
   app.use('/auth', routes.auth);
 
   app.get('/api/endpoints', function (req, res) {
