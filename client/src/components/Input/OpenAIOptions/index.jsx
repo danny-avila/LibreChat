@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import SelectDropdown from '../../ui/SelectDropdown';
@@ -21,19 +21,19 @@ function OpenAIOptions() {
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
-  useEffect(() => {
-    if (endpoint !== 'openAI') return;
+  // useEffect(() => {
+  //   if (endpoint !== 'openAI') return;
 
-    const mustInAdvancedMode =
-      chatGptLabel !== null ||
-      promptPrefix !== null ||
-      temperature !== 1 ||
-      top_p !== 1 ||
-      presence_penalty !== 0 ||
-      frequency_penalty !== 0;
+  //   const mustInAdvancedMode =
+  //     chatGptLabel !== null ||
+  //     promptPrefix !== null ||
+  //     temperature !== 1 ||
+  //     top_p !== 1 ||
+  //     presence_penalty !== 0 ||
+  //     frequency_penalty !== 0;
 
-    if (mustInAdvancedMode && !advancedMode) setAdvancedMode(true);
-  }, [conversation, advancedMode]);
+  //   if (mustInAdvancedMode && !advancedMode) setAdvancedMode(true);
+  // }, [conversation, advancedMode]);
 
   if (endpoint !== 'openAI') return null;
   if (conversationId !== 'new') return null;
@@ -43,15 +43,15 @@ function OpenAIOptions() {
   const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
 
   const switchToSimpleMode = () => {
-    setConversation(prevState => ({
-      ...prevState,
-      chatGptLabel: null,
-      promptPrefix: null,
-      temperature: 1,
-      top_p: 1,
-      presence_penalty: 0,
-      frequency_penalty: 0
-    }));
+    // setConversation(prevState => ({
+    //   ...prevState,
+    //   chatGptLabel: null,
+    //   promptPrefix: null,
+    //   temperature: 1,
+    //   top_p: 1,
+    //   presence_penalty: 0,
+    //   frequency_penalty: 0
+    // }));
     setAdvancedMode(false);
   };
 
@@ -75,7 +75,7 @@ function OpenAIOptions() {
     <>
       <div
         className={
-          'openAIOptions-simple-container flex w-full items-center justify-center gap-2' +
+          'openAIOptions-simple-container flex w-auto items-center justify-center gap-2' +
           (!advancedMode ? ' show' : '')
         }
       >

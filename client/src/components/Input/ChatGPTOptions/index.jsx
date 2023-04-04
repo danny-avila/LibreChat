@@ -12,9 +12,9 @@ function ChatGPTOptions() {
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
-  useEffect(() => {
-    if (endpoint !== 'chatGPTBrowser') return;
-  }, [conversation]);
+  // useEffect(() => {
+  //   if (endpoint !== 'chatGPTBrowser') return;
+  // }, [conversation]);
 
   if (endpoint !== 'chatGPTBrowser') return null;
   if (conversationId !== 'new') return null;
@@ -34,7 +34,7 @@ function ChatGPTOptions() {
     'transition-colors shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 hover:border-black/10 focus:border-black/10 dark:border-black/10 dark:hover:border-black/10 dark:focus:border-black/10 border dark:bg-gray-700 text-black dark:text-white';
 
   return (
-    <div className="openAIOptions-simple-container show flex w-full items-center justify-center gap-2">
+    <div className="openAIOptions-simple-container show flex w-auto items-center justify-center gap-2">
       <SelectDropdown
         value={model}
         setValue={setOption('model')}

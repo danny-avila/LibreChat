@@ -50,7 +50,7 @@ const getDefaultConversation = ({ conversation, prevConversation, endpointsFilte
   const { endpoint: targetEndpoint } = preset || {};
 
   if (targetEndpoint) {
-    // try to use current model
+    // try to use preset
     const endpoint = targetEndpoint;
     if (endpointsFilter?.[endpoint]) {
       conversation = buildDefaultConversation({
@@ -65,18 +65,18 @@ const getDefaultConversation = ({ conversation, prevConversation, endpointsFilte
     }
   }
 
-  try {
-    // try to use current model
-    const { endpoint = null } = prevConversation || {};
-    if (endpointsFilter?.[endpoint]) {
-      conversation = buildDefaultConversation({
-        conversation,
-        endpoint,
-        lastConversationSetup: prevConversation
-      });
-      return conversation;
-    }
-  } catch (error) {}
+  // try {
+  //   // try to use current model
+  //   const { endpoint = null } = prevConversation || {};
+  //   if (endpointsFilter?.[endpoint]) {
+  //     conversation = buildDefaultConversation({
+  //       conversation,
+  //       endpoint,
+  //       lastConversationSetup: prevConversation
+  //     });
+  //     return conversation;
+  //   }
+  // } catch (error) {}
 
   try {
     // try to read latest selected model from local storage
@@ -84,7 +84,7 @@ const getDefaultConversation = ({ conversation, prevConversation, endpointsFilte
     const { endpoint = null } = lastConversationSetup;
 
     if (endpointsFilter?.[endpoint]) {
-      conversation = buildDefaultConversation({ conversation, endpoint, lastConversationSetup });
+      conversation = buildDefaultConversation({ conversation, endpoint });
       return conversation;
     }
   } catch (error) {}
