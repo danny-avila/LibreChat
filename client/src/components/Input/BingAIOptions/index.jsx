@@ -18,13 +18,13 @@ function BingAIOptions() {
   const { endpoint, conversationId } = conversation;
   const { toneStyle, context, systemMessage, jailbreak } = conversation;
 
-  useEffect(() => {
-    if (endpoint !== 'bingAI') return;
+  // useEffect(() => {
+  //   if (endpoint !== 'bingAI') return;
 
-    const mustInAdvancedMode = context !== null || systemMessage !== null;
+  //   const mustInAdvancedMode = context !== null || systemMessage !== null;
 
-    if (mustInAdvancedMode && !advancedMode) setAdvancedMode(true);
-  }, [conversation, advancedMode]);
+  //   if (mustInAdvancedMode && !advancedMode) setAdvancedMode(true);
+  // }, [conversation, advancedMode]);
 
   if (endpoint !== 'bingAI') return null;
   if (conversationId !== 'new') return null;
@@ -32,11 +32,11 @@ function BingAIOptions() {
   const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
 
   const switchToSimpleMode = () => {
-    setConversation(prevState => ({
-      ...prevState,
-      context: null,
-      systemMessage: null
-    }));
+    // setConversation(prevState => ({
+    //   ...prevState,
+    //   context: null,
+    //   systemMessage: null
+    // }));
     setAdvancedMode(false);
   };
 
@@ -64,7 +64,7 @@ function BingAIOptions() {
     <>
       <div
         className={
-          'openAIOptions-simple-container flex w-full items-center justify-center gap-2' +
+          'openAIOptions-simple-container flex w-auto items-center justify-center gap-2' +
           (!advancedMode ? ' show' : '')
         }
       >
