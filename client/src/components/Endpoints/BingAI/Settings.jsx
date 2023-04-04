@@ -18,15 +18,16 @@ const optionText =
   'p-0 shadow-none text-right pr-1 h-8 border-transparent focus:ring-[#10a37f] focus:ring-offset-0 focus:ring-opacity-100 hover:bg-gray-800/10 dark:hover:bg-white/10 focus:bg-gray-800/10 dark:focus:bg-white/10 transition-colors';
 
 function Settings(props) {
-  const { readonly, context, systemMessage, jailbreak, toneStyle, setOption, setToneStyle } = props;
+  const { readonly, context, systemMessage, jailbreak, toneStyle, setOption } = props;
   const [tokenCount, setTokenCount] = useState(0);
   const showSystemMessage = jailbreak;
   const setContext = setOption('context');
   const setSystemMessage = setOption('systemMessage');
   const setJailbreak = setOption('jailbreak');
+  const setToneStyle = value => setOption('toneStyle')(value.toLowerCase());
 
   // useEffect to update token count
-  
+
   useEffect(() => {
     if (!context || context.trim() === '') {
       setTokenCount(0);
@@ -37,7 +38,7 @@ function Settings(props) {
     const handleTextChange = context => {
       debouncedPost({
         url: '/api/tokenizer',
-        arg: { text: context},
+        arg: { text: context },
         callback: data => {
           setTokenCount(data.count);
         }
@@ -45,7 +46,7 @@ function Settings(props) {
     };
 
     handleTextChange(context);
-    return () => debouncedPost.cancel(); 
+    return () => debouncedPost.cancel();
   }, [context]);
 
   // console.log('data', data);
@@ -83,9 +84,7 @@ function Settings(props) {
                 'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2'
               )}
             />
-            <small className="mb-5 text-black dark:text-white">
-              {`Token count: ${tokenCount}`}
-            </small>
+            <small className="mb-5 text-black dark:text-white">{`Token count: ${tokenCount}`}</small>
           </div>
         </div>
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">

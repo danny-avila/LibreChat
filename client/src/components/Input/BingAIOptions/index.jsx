@@ -28,10 +28,6 @@ function BingAIOptions() {
   if (endpoint !== 'bingAI') return null;
   if (conversationId !== 'new') return null;
 
-  const changeHandler = value => {
-    setConversation(prevState => ({ ...prevState, toneStyle: value.toLowerCase() }));
-  };
-
   const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
 
   const switchToSimpleMode = () => {
@@ -78,7 +74,7 @@ function BingAIOptions() {
             cardStyle +
             ' z-50 flex h-[40px] items-center justify-center px-0 hover:bg-slate-50 dark:hover:bg-gray-600'
           }
-          onValueChange={changeHandler}
+          onValueChange={value => setOption('toneStyle')(value.toLowerCase())}
         >
           <TabsList className="bg-white/[.60] dark:bg-gray-700">
             <TabsTrigger
@@ -126,7 +122,6 @@ function BingAIOptions() {
               systemMessage={systemMessage}
               jailbreak={jailbreak}
               toneStyle={toneStyle}
-              setToneStyle={changeHandler}
               setOption={setOption}
             />
           </div>
