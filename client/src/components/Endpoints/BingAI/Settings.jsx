@@ -28,14 +28,12 @@ function Settings(props) {
   // useEffect to update token count
   
   useEffect(() => {
-    if (!context) return;
-
-    if (context.trim() === '') {
+    if (!context || context.trim() === '') {
       setTokenCount(0);
       return;
     }
 
-    const debouncedPost = debounce(axiosPost, 500);
+    const debouncedPost = debounce(axiosPost, 250);
     const handleTextChange = context => {
       debouncedPost({
         url: '/api/tokenizer',
