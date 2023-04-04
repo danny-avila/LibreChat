@@ -22,10 +22,6 @@ const cleanupPreset = _preset => {
       jailbreak: _preset?.jailbreak || false,
       context: _preset?.context || null,
       systemMessage: _preset?.systemMessage || null,
-      jailbreakpresetId: _preset?._jailbreakpresetId || null,
-      presetSignature: null,
-      clientId: null,
-      invocationId: 1,
       toneStyle: _preset?.toneStyle || 'fast',
       title: _preset?.title || 'New Preset'
     };
