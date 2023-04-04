@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const { titleConvo, askBing } = require('../../app');
-const { saveBingMessage, getConvoTitle, saveConvo, getConvo } = require('../../models');
+const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 
 router.post('/', async (req, res) => {
@@ -32,17 +32,25 @@ router.post('/', async (req, res) => {
   };
 
   // build endpoint option
-  const endpointOption = {
-    jailbreak: req.body?.jailbreak || false,
-    jailbreakConversationId: req.body?.jailbreakConversationId || null,
-    systemMessage: req.body?.systemMessage || null,
-    context: req.body?.context || null,
-    conversationSignature: req.body?.conversationSignature || null,
-    clientId: req.body?.clientId || null,
-    invocationId: req.body?.invocationId || null,
-    toneStyle: req.body?.toneStyle || 'fast',
-    suggestions: req.body?.suggestions || []
-  };
+  let endpointOption = {};
+  if (req.body?.jailbreak)
+    endpointOption = {
+      jailbreak: req.body?.jailbreak || false,
+      jailbreakConversationId: req.body?.jailbreakConversationId || null,
+      systemMessage: req.body?.systemMessage || null,
+      context: req.body?.context || null,
+      toneStyle: req.body?.toneStyle || 'fast'
+    };
+  else
+    endpointOption = {
+      jailbreak: req.body?.jailbreak || false,
+      systemMessage: req.body?.systemMessage || null,
+      context: req.body?.context || null,
+      conversationSignature: req.body?.conversationSignature || null,
+      clientId: req.body?.clientId || null,
+      invocationId: req.body?.invocationId || null,
+      toneStyle: req.body?.toneStyle || 'fast'
+    };
 
   console.log('ask log', {
     userMessage,
@@ -51,7 +59,7 @@ router.post('/', async (req, res) => {
   });
 
   if (!overrideParentMessageId) {
-    await saveBingMessage(userMessage);
+    await saveMessage(userMessage);
     await saveConvo(req?.session?.user?.username, {
       ...userMessage,
       ...endpointOption,
@@ -114,57 +122,81 @@ const ask = async ({
 
     console.log('BING RESPONSE', response);
 
-    // STEP1 update the convosation
+    // STEP1 generate response message
+    response.text = response.response || response.details.spokenText || '**Bing refused to answer.**';
+
+    let responseMessage = {
+      text: await handleText(response, true),
+      suggestions:
+        response.details.suggestedResponses && response.details.suggestedResponses.map(s => s.text),
+      jailbreak: endpointOption?.jailbreak
+    };
+    // // response.text = await handleText(response, true);
+    // response.suggestions =
+    //   response.details.suggestedResponses && response.details.suggestedResponses.map(s => s.text);
+
+    if (endpointOption?.jailbreak) {
+      responseMessage.conversationId = response.jailbreakConversationId;
+      responseMessage.messageId = response.messageId || response.details.messageId;
+      responseMessage.parentMessageId = overrideParentMessageId || response.parentMessageId || userMessageId;
+      responseMessage.sender = 'Sydney';
+    } else {
+      responseMessage.conversationId = response.conversationId;
+      responseMessage.messageId = response.messageId || response.details.messageId;
+      response.parentMessageId =
+        overrideParentMessageId || response.parentMessageId || response.details.requestId || userMessageId;
+      responseMessage.sender = 'BingAI';
+    }
+
+    await saveMessage(responseMessage);
+
+    // STEP2 update the convosation.
+
+    // First update conversationId if needed
+    // Note!
     // Bing API will not use our conversationId at the first time,
     // so change the placeholder conversationId to the real one.
     // Attition: the api will also create new conversationId while using invalid userMessage.parentMessageId,
     // but in this situation, don't change the conversationId, but create new convo.
-    if (conversationId != response.conversationId && isNewConversation)
-      await saveConvo(req?.session?.user?.username, {
-        conversationId: conversationId,
-        newConversationId: response.conversationId || conversationId
-      });
-    conversationId = response.conversationId || conversationId;
 
-    // STEP2 update the user message
-    userMessage.conversationSignature =
-      endpointOption.conversationSignature || response.conversationSignature;
+    let conversationUpdate = { conversationId, endpoint: 'bingAI' };
+    if (conversationId != responseMessage.conversationId && isNewConversation)
+      conversationUpdate = {
+        ...conversationUpdate,
+        conversationId: conversationId,
+        newConversationId: responseMessage.conversationId || conversationId
+      };
+    conversationId = responseMessage.conversationId || conversationId;
+
+    if (endpointOption?.jailbreak) {
+      conversationUpdate.jailbreak = true;
+      conversationUpdate.jailbreakConversationId = response.jailbreakConversationId;
+    } else {
+      conversationUpdate.jailbreak = false;
+      conversationUpdate.conversationSignature = response.conversationSignature;
+      conversationUpdate.clientId = response.clientId;
+      conversationUpdate.invocationId = response.invocationId;
+    }
+
+    await saveConvo(req?.session?.user?.username, conversationUpdate);
+
+    // STEP3 update the user message
     userMessage.conversationId = conversationId;
-    userMessage.invocationId = endpointOption.invocationId;
-    userMessage.messageId = response.details.requestId || userMessageId;
+    userMessage.messageId = responseMessage.parentMessageId;
 
     // If response has parentMessageId, the fake userMessage.messageId should be updated to the real one.
     if (!overrideParentMessageId) {
       const oldUserMessageId = userMessageId;
-      userMessageId = response.details.requestId;
-      await saveBingMessage({ ...userMessage, messageId: oldUserMessageId, newMessageId: userMessageId });
+      await saveMessage({ ...userMessage, messageId: oldUserMessageId, newMessageId: userMessage.messageId });
     }
-
-    response.text = response.response || response.details.spokenText || '**Bing refused to answer.**';
-    // delete response.response;
-    // response.id = response.details.messageId;
-    response.suggestions =
-      response.details.suggestedResponses && response.details.suggestedResponses.map(s => s.text);
-    response.sender = endpointOption?.jailbreak ? 'Sydney' : 'BingAI';
-    // response.final = true;
-
-    response.messageId = response.details.messageId;
-    // override the parentMessageId, for the regeneration.
-    response.parentMessageId = overrideParentMessageId || response.details.requestId || userMessageId;
-
-    response.text = await handleText(response, true);
-    await saveBingMessage(response);
-    await saveConvo(req?.session?.user?.username, {
-      ...endpointOption,
-      ...response
-    });
+    userMessageId = userMessage.messageId;
 
     sendMessage(res, {
       title: await getConvoTitle(req?.session?.user?.username, conversationId),
       final: true,
       conversation: await getConvo(req?.session?.user?.username, conversationId),
       requestMessage: userMessage,
-      responseMessage: response
+      responseMessage: responseMessage
     });
     res.end();
 

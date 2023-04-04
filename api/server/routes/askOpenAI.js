@@ -95,47 +95,57 @@ const ask = async ({
     const progressCallback = createOnProgress();
     const abortController = new AbortController();
     res.on('close', () => abortController.abort());
-    let gptResponse = await client({
+    let response = await client({
       text,
       parentMessageId: userParentMessageId,
       conversationId,
       ...endpointOption,
-      onProgress: progressCallback.call(null, { res, text }),
+      onProgress: progressCallback.call(null, {
+        res,
+        text,
+        parentMessageId: overrideParentMessageId || userMessageId
+      }),
       abortController
     });
 
-    gptResponse.text = gptResponse.response;
-    console.log('CLIENT RESPONSE', gptResponse);
+    console.log('CLIENT RESPONSE', response);
 
-    if (gptResponse.parentMessageId) {
-      // If gptResponse has parentMessageId, the fake userMessage.messageId should be updated to the real one.
-      if (!overrideParentMessageId) {
-        const oldUserMessageId = userMessageId;
-        userMessageId = gptResponse.parentMessageId;
-        userMessage.messageId = userMessageId;
-        await saveMessage({ ...userMessage, messageId: oldUserMessageId, newMessageId: userMessageId });
-      }
-    } else {
-      delete gptResponse.response;
+    // STEP1 generate response message
+    response.text = response.response || '**ChatGPT refused to answer.**';
+
+    let responseMessage = {
+      conversationId: response.conversationId,
+      messageId: response.messageId,
+      parentMessageId: overrideParentMessageId || userMessageId,
+      text: await handleText(response),
+      sender: endpointOption?.chatGptLabel || 'ChatGPT'
+    };
+
+    await saveMessage(responseMessage);
+
+    // STEP2 update the conversation
+    conversationId = responseMessage.conversationId || conversationId;
+    // it seems openAI will not change the conversationId.
+    // let conversationUpdate = { conversationId, endpoint: 'openAI' };
+    // await saveConvo(req?.session?.user?.username, conversationUpdate);
+
+    // STEP3 update the user message
+    userMessage.conversationId = conversationId;
+    userMessage.messageId = responseMessage.parentMessageId;
+
+    // If gptResponse has parentMessageId, the fake userMessage.messageId should be updated to the real one.
+    if (!overrideParentMessageId) {
+      const oldUserMessageId = userMessageId;
+      await saveMessage({ ...userMessage, messageId: oldUserMessageId, newMessageId: userMessage.messageId });
     }
-
-    gptResponse.parentMessageId = overrideParentMessageId || userMessageId;
-    gptResponse.sender = endpointOption?.chatGptLabel || 'ChatGPT';
-    // gptResponse.model = model;
-    gptResponse.text = await handleText(gptResponse);
-
-    await saveMessage(gptResponse);
-    await updateConvo(req?.session?.user?.username, {
-      ...gptResponse,
-      oldConvoId: conversationId
-    });
+    userMessageId = userMessage.messageId;
 
     sendMessage(res, {
       title: await getConvoTitle(req?.session?.user?.username, conversationId),
       final: true,
       conversation: await getConvo(req?.session?.user?.username, conversationId),
       requestMessage: userMessage,
-      responseMessage: gptResponse
+      responseMessage: responseMessage
     });
     res.end();
 
@@ -147,6 +157,7 @@ const ask = async ({
       });
     }
   } catch (error) {
+    console.error(error);
     const errorMessage = {
       messageId: crypto.randomUUID(),
       sender: endpointOption?.chatGptLabel || 'ChatGPT',

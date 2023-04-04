@@ -47,14 +47,6 @@ module.exports = {
     type: Boolean,
     default: false
   },
-  jailbreakConversationId: {
-    type: String,
-    default: null
-  },
-  conversationSignature: {
-    type: String,
-    default: null
-  },
   context: {
     type: String,
     default: null
@@ -62,14 +54,6 @@ module.exports = {
   systemMessage: {
     type: String,
     default: null
-  },
-  clientId: {
-    type: String,
-    default: null
-  },
-  invocationId: {
-    type: Number,
-    default: 1
   },
   toneStyle: {
     type: String,
