@@ -3,23 +3,24 @@ import { useSetRecoilState } from 'recoil';
 import { FileUp } from 'lucide-react';
 import store from '~/store';
 import axios from 'axios';
+import cleanupPreset from '~/utils/cleanupPreset.js';
 
-async function fetchPresets(callback) {
-  try {
-    const response = await axios.get('/api/presets', {
-      timeout: 1000,
-      withCredentials: true
-    });
+// async function fetchPresets(callback) {
+//   try {
+//     const response = await axios.get('/api/presets', {
+//       timeout: 1000,
+//       withCredentials: true
+//     });
 
-    callback(response.data);
-  } catch (error) {
-    console.error(error);
-    console.log('[FileUpload] Error fetching presets');
-  }
-}
+//     callback(response.data);
+//   } catch (error) {
+//     console.error(error);
+//     console.log('[FileUpload] Error fetching presets');
+//   }
+// }
 
 const FileUpload = ({ onFileSelected }) => {
-  const setPresets = useSetRecoilState(store.presets);
+  // const setPresets = useSetRecoilState(store.presets);
 
   const handleFileChange = event => {
     const file = event.target.files[0];
@@ -28,7 +29,7 @@ const FileUpload = ({ onFileSelected }) => {
     const reader = new FileReader();
     reader.onload = e => {
       const jsonData = JSON.parse(e.target.result);
-      onFileSelected(jsonData, () => fetchPresets(setPresets));
+      onFileSelected({ ...cleanupPreset(jsonData), presetId: null });
     };
     reader.readAsText(file);
   };
@@ -42,6 +43,7 @@ const FileUpload = ({ onFileSelected }) => {
       <span className="ml-1 flex text-xs ">Import</span>
       <input
         id="file-upload"
+        value=""
         type="file"
         className="hidden "
         accept=".json"

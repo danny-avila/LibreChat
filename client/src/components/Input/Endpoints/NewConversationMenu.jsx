@@ -42,6 +42,10 @@ export default function NewConversationMenu() {
     setPresets(data);
   });
 
+  const importPreset = jsonData => {
+    handleFileSelected(jsonData).then(setPresets);
+  };
+
   // update the default model when availableModels changes
   // typically, availableModels changes => modelsFilter or customGPTModels changes
   useEffect(() => {
@@ -136,7 +140,7 @@ export default function NewConversationMenu() {
           <DropdownMenuLabel className="flex items-center dark:text-gray-300">
             <span>Select a Preset</span>
             <div className="flex-1" />
-            <FileUpload onFileSelected={handleFileSelected} />
+            <FileUpload onFileSelected={importPreset} />
             <Dialog>
               <DialogTrigger asChild>
                 <Button

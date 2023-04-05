@@ -73,21 +73,23 @@ export function useManualSWR({ path, params, type, onSuccess }) {
   return useSWRMutation(path, fetchFunction, options);
 }
 
-export const handleFileSelected = async (jsonData, callback) => {
+export const handleFileSelected = async jsonData => {
   try {
-    const response = await fetch('/api/presets', {
+    const response = await axios({
+      url: '/api/presets',
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json'
       },
-      body: JSON.stringify(jsonData),
+      withCredentials: true,
+      data: JSON.stringify(jsonData)
     });
 
-    if (!response.ok) {
-      throw new Error(`Error: ${response.statusText}`);
-    }
-
-    callback();
+    // if (!response.ok) {
+    //   throw new Error(`Error: ${response.statusText}`);
+    // }
+    console.log(response);
+    return response.data;
   } catch (error) {
     console.error('Error uploading the preset:', error);
   }
