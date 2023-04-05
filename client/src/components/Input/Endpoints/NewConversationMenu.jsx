@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import EditPresetDialog from '../../Endpoints/EditPresetDialog';
 import EndpointItems from './EndpointItems';
 import PresetItems from './PresetItems';
 import FileUpload from './FileUpload';
 import getIcon from '~/utils/getIcon';
-import manualSWR, { handleFileSelected } from '~/utils/fetchers';
-
+import { useDeleteAllPresetsMutation } from '~/data-provider';
 import { Button } from '../../ui/Button.tsx';
 import {
   DropdownMenu,
@@ -22,14 +21,11 @@ import DialogTemplate from '../../ui/DialogTemplate';
 import store from '~/store';
 
 export default function NewConversationMenu() {
-  // const [modelSave, setModelSave] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [presetModelVisible, setPresetModelVisible] = useState(false);
   const [preset, setPreset] = useState(false);
 
-  // const models = useRecoilValue(store.models);
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
-  // const setCustomGPTModels = useSetRecoilState(store.customGPTModels);
   const [presets, setPresets] = useRecoilState(store.presets);
 
   const conversation = useRecoilValue(store.conversation) || {};
@@ -37,10 +33,7 @@ export default function NewConversationMenu() {
   // const { model, promptPrefix, chatGptLabel, conversationId } = conversation;
   const { newConversation } = store.useConversation();
 
-  const { trigger: clearPresetsTrigger } = manualSWR(`/api/presets/delete`, 'post', res => {
-    console.log(res);
-    setPresets(res.data);
-  });
+  const deletePresetsMutation = useDeleteAllPresetsMutation();
 
   const importPreset = jsonData => {
     handleFileSelected(jsonData).then(setPresets);
@@ -87,7 +80,7 @@ export default function NewConversationMenu() {
   };
 
   const clearPreset = () => {
-    clearPresetsTrigger({});
+    deletePresetsMutation.mutate();
   };
 
   const icon = getIcon({
