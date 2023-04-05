@@ -148,6 +148,7 @@ function Settings(props) {
                 disabled={readonly}
                 value={[temperature]}
                 onValueChange={value => setTemperature(value[0])}
+                doubleClickHandler={() => setTemperature(1)}
                 max={2}
                 min={0}
                 step={0.01}
@@ -227,6 +228,7 @@ function Settings(props) {
                 disabled={readonly}
                 value={[topP]}
                 onValueChange={value => setTopP(value[0])}
+                doubleClickHandler={() => setTopP(1)}
                 max={1}
                 min={0}
                 step={0.01}
@@ -270,6 +272,7 @@ function Settings(props) {
                 disabled={readonly}
                 value={[freqP]}
                 onValueChange={value => setFreqP(value[0])}
+                doubleClickHandler={() => setFreqP(0)}
                 max={2}
                 min={-2}
                 step={0.01}
@@ -313,6 +316,7 @@ function Settings(props) {
                 disabled={readonly}
                 value={[presP]}
                 onValueChange={value => setPresP(value[0])}
+                doubleClickHandler={() => setPresP(0)}
                 max={2}
                 min={-2}
                 step={0.01}
