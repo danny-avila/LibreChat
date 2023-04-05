@@ -1,5 +1,12 @@
 import endpoints from './endpoints';
-import { atom, selector, useSetRecoilState, useResetRecoilState, useRecoilCallback } from 'recoil';
+import {
+  atom,
+  selector,
+  atomFamily,
+  useSetRecoilState,
+  useResetRecoilState,
+  useRecoilCallback
+} from 'recoil';
 import buildTree from '~/utils/buildTree';
 import getDefaultConversation from '~/utils/getDefaultConversation';
 import submission from './submission.js';
@@ -55,6 +62,11 @@ const messagesTree = selector({
 const latestMessage = atom({
   key: 'latestMessage',
   default: null
+});
+
+const messagesSiblingIdxFamily = atomFamily({
+  key: 'messagesSiblingIdx',
+  default: 0
 });
 
 const useConversation = () => {
@@ -129,5 +141,6 @@ export default {
   messages,
   messagesTree,
   latestMessage,
+  messagesSiblingIdxFamily,
   useConversation
 };

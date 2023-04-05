@@ -97,6 +97,7 @@ export default function Messages({ isSearchView = false }) {
             <>
               <MultiMessage
                 key={conversationId} // avoid internal state mixture
+                messageId={conversationId}
                 conversation={conversation}
                 messagesTree={_messagesTree}
                 scrollToBottom={scrollToBottom}
