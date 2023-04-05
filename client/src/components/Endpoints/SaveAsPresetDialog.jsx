@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useSetRecoilState, useRecoilValue } from 'recoil';
 import axios from 'axios';
 import DialogTemplate from '../ui/DialogTemplate';
 import { Dialog } from '../ui/Dialog.tsx';
@@ -13,14 +13,18 @@ import store from '~/store';
 const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
   const [title, setTitle] = useState(preset?.title || 'My Preset');
   const setPresets = useSetRecoilState(store.presets);
+  const endpointsFilter = useRecoilValue(store.endpointsFilter);
 
   const defaultTextProps =
     'rounded-md border border-gray-300 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.10)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-400 dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
 
   const submitPreset = () => {
     const _preset = cleanupPreset({
-      ...preset,
-      title
+      preset: {
+        ...preset,
+        title
+      },
+      endpointsFilter
     });
 
     axios({

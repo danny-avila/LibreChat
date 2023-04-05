@@ -22,7 +22,7 @@ const askBing = async ({
 
   const bingAIClient = new BingAIClient({
     // "_U" cookie from bing.com
-    userToken: process.env.BING_TOKEN,
+    userToken: process.env.BINGAI_TOKEN,
     // If the above doesn't work, provide all your cookies as a string instead
     // cookies: '',
     debug: false,

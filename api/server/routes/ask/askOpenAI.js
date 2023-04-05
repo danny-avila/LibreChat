@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
+const { getOpenAIModels } = require('../endpoints');
 const { titleConvo, askClient } = require('../../../app/');
 const { saveMessage, getConvoTitle, saveConvo, updateConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
@@ -39,6 +40,10 @@ router.post('/', async (req, res) => {
     presence_penalty: req.body?.presence_penalty || 0,
     frequency_penalty: req.body?.frequency_penalty || 0
   };
+
+  const availableModels = getOpenAIModels();
+  if (availableModels.find(model => model === endpointOption.model) === undefined)
+    return handleError(res, { text: 'Illegal request: model' });
 
   console.log('ask log', {
     userMessage,
@@ -150,7 +155,7 @@ const ask = async ({
     res.end();
 
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
-      const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response });
+      const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: responseMessage });
       await updateConvo(req?.session?.user?.username, {
         conversationId: conversationId,
         title

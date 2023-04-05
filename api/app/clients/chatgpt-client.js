@@ -22,6 +22,9 @@ const askClient = async ({
   };
 
   const clientOptions = {
+    // Warning: This will expose your access token to a third party. Consider the risks before using this.
+    reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
+
     modelOptions: {
       model: model,
       temperature,
@@ -29,6 +32,7 @@ const askClient = async ({
       presence_penalty,
       frequency_penalty
     },
+
     chatGptLabel,
     promptPrefix,
     proxy: process.env.PROXY || null,

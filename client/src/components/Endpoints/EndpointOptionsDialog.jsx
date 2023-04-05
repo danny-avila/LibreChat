@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useRecoilValue } from 'recoil';
 import exportFromJSON from 'export-from-json';
 import DialogTemplate from '../ui/DialogTemplate.jsx';
 import { Dialog, DialogButton } from '../ui/Dialog.tsx';
@@ -7,12 +8,15 @@ import cleanupPreset from '~/utils/cleanupPreset';
 
 import Settings from './Settings';
 
+import store from '~/store';
+
 // A preset dialog to show readonly preset values.
 const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) => {
   //   const [title, setTitle] = useState('My Preset');
   const [preset, setPreset] = useState(_preset);
 
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
+  const endpointsFilter = useRecoilValue(store.endpointsFilter);
 
   const setOption = param => newValue => {
     let update = {};
@@ -29,7 +33,7 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
 
   const exportPreset = () => {
     exportFromJSON({
-      data: cleanupPreset(preset),
+      data: cleanupPreset({ preset, endpointsFilter }),
       fileName: `${preset?.title}.json`,
       exportType: exportFromJSON.types.json
     });

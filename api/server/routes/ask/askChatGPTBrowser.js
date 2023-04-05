@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
+const { getChatGPTBrowserModels } = require('../endpoints');
 const { titleConvo, browserClient } = require('../../../app/');
 const { saveMessage, getConvoTitle, saveConvo, updateConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
@@ -18,6 +19,7 @@ router.post('/', async (req, res) => {
 
   // build user message
   const conversationId = oldConversationId || crypto.randomUUID();
+  const isNewConversation = !oldConversationId;
   const userMessageId = crypto.randomUUID();
   const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000';
   const userMessage = {
@@ -33,6 +35,10 @@ router.post('/', async (req, res) => {
   const endpointOption = {
     model: req.body?.model || 'text-davinci-002-render-sha'
   };
+
+  const availableModels = getChatGPTBrowserModels();
+  if (availableModels.find(model => model === endpointOption.model) === undefined)
+    return handleError(res, { text: 'Illegal request: model' });
 
   console.log('ask log', {
     userMessage,
@@ -52,6 +58,7 @@ router.post('/', async (req, res) => {
 
   // eslint-disable-next-line no-use-before-define
   return await ask({
+    isNewConversation,
     userMessage,
     endpointOption,
     conversationId,
@@ -63,6 +70,7 @@ router.post('/', async (req, res) => {
 });
 
 const ask = async ({
+  isNewConversation,
   userMessage,
   endpointOption,
   conversationId,
@@ -71,9 +79,7 @@ const ask = async ({
   req,
   res
 }) => {
-  const { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
-
-  const client = browserClient;
+  let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
 
   res.writeHead(200, {
     Connection: 'keep-alive',
@@ -89,7 +95,7 @@ const ask = async ({
     const progressCallback = createOnProgress();
     const abortController = new AbortController();
     res.on('close', () => abortController.abort());
-    let gptResponse = await client({
+    let response = await browserClient({
       text,
       parentMessageId: userParentMessageId,
       conversationId,
@@ -98,50 +104,60 @@ const ask = async ({
       abortController
     });
 
-    gptResponse.text = gptResponse.response;
-    console.log('CLIENT RESPONSE', gptResponse);
+    console.log('CLIENT RESPONSE', response);
 
-    if (!gptResponse.parentMessageId) {
-      gptResponse.parentMessageId = overrideParentMessageId || userMessageId;
-      delete gptResponse.response;
+    // STEP1 generate response message
+    response.text = response.response || '**ChatGPT refused to answer.**';
+
+    let responseMessage = {
+      conversationId: response.conversationId,
+      messageId: response.messageId,
+      parentMessageId: overrideParentMessageId || response.parentMessageId || userMessageId,
+      text: await handleText(response),
+      sender: endpointOption?.chatGptLabel || 'ChatGPT'
+    };
+
+    await saveMessage(responseMessage);
+
+    // STEP2 update the conversation
+    conversationId = responseMessage.conversationId || conversationId;
+
+    // First update conversationId if needed
+    let conversationUpdate = { conversationId, endpoint: 'chatGPTBrowser' };
+    if (conversationId != responseMessage.conversationId && isNewConversation)
+      conversationUpdate = {
+        ...conversationUpdate,
+        conversationId: conversationId,
+        newConversationId: responseMessage.conversationId || conversationId
+      };
+    conversationId = responseMessage.conversationId || conversationId;
+
+    await saveConvo(req?.session?.user?.username, conversationUpdate);
+
+    // STEP3 update the user message
+    userMessage.conversationId = conversationId;
+    userMessage.messageId = responseMessage.parentMessageId;
+
+    // If response has parentMessageId, the fake userMessage.messageId should be updated to the real one.
+    if (!overrideParentMessageId) {
+      const oldUserMessageId = userMessageId;
+      await saveMessage({ ...userMessage, messageId: oldUserMessageId, newMessageId: userMessage.messageId });
     }
-
-    gptResponse.sender = 'ChatGPT';
-    // gptResponse.model = model;
-    gptResponse.text = await handleText(gptResponse);
-    // if (convo.chatGptLabel?.length > 0 && model === 'chatgptCustom') {
-    //   gptResponse.chatGptLabel = convo.chatGptLabel;
-    // }
-
-    // if (convo.promptPrefix?.length > 0 && model === 'chatgptCustom') {
-    //   gptResponse.promptPrefix = convo.promptPrefix;
-    // }
-
-    gptResponse.parentMessageId = overrideParentMessageId || userMessageId;
-
-    if (userParentMessageId.startsWith('000')) {
-      await saveMessage({ ...userMessage, conversationId: gptResponse.conversationId });
-    }
-
-    await saveMessage(gptResponse);
-    await updateConvo(req?.session?.user?.username, {
-      ...gptResponse,
-      oldConvoId: conversationId
-    });
+    userMessageId = userMessage.messageId;
 
     sendMessage(res, {
       title: await getConvoTitle(req?.session?.user?.username, conversationId),
       final: true,
       conversation: await getConvo(req?.session?.user?.username, conversationId),
       requestMessage: userMessage,
-      responseMessage: gptResponse
+      responseMessage: responseMessage
     });
     res.end();
 
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
-      const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: gptResponse });
+      const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: responseMessage });
       await updateConvo(req?.session?.user?.username, {
-        conversationId: gptResponse.conversationId,
+        conversationId: conversationId,
         title
       });
     }

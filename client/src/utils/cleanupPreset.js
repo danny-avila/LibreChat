@@ -1,4 +1,4 @@
-const cleanupPreset = _preset => {
+const cleanupPreset = ({ preset: _preset, endpointsFilter = {} }) => {
   const { endpoint } = _preset;
 
   let preset = {};
@@ -6,7 +6,7 @@ const cleanupPreset = _preset => {
     preset = {
       endpoint,
       presetId: _preset?.presetId ?? null,
-      model: _preset?.model ?? 'gpt-3.5-turbo',
+      model: _preset?.model ?? endpointsFilter[endpoint]?.availableModels?.[0] ?? 'gpt-3.5-turbo',
       chatGptLabel: _preset?.chatGptLabel ?? null,
       promptPrefix: _preset?.promptPrefix ?? null,
       temperature: _preset?.temperature ?? 1,
@@ -25,11 +25,12 @@ const cleanupPreset = _preset => {
       toneStyle: _preset?.toneStyle ?? 'fast',
       title: _preset?.title ?? 'New Preset'
     };
-  } else if (endpoint === 'chatGPTBrowser') {
+  } else if (endpoint === 'chatGPT') {
     preset = {
       endpoint,
       presetId: _preset?.presetId ?? null,
-      model: _preset?.model ?? 'Default (GPT-3.5)',
+      model:
+        _preset?.model ?? endpointsFilter[endpoint]?.availableModels?.[0] ?? 'text-davinci-002-render-sha',
       title: _preset?.title ?? 'New Preset'
     };
   } else if (endpoint === null) {

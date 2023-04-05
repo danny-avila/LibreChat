@@ -7,6 +7,7 @@ const useMessageHandler = () => {
   const currentConversation = useRecoilValue(store.conversation) || {};
   const setSubmission = useSetRecoilState(store.submission);
   const isSubmitting = useRecoilValue(store.isSubmitting);
+  const endpointsFilter = useRecoilValue(store.endpointsFilter);
 
   const latestMessage = useRecoilValue(store.latestMessage);
 
@@ -27,7 +28,8 @@ const useMessageHandler = () => {
     if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
       endpointOption = {
         endpoint,
-        model: currentConversation?.model ?? 'gpt-3.5-turbo',
+        model:
+          currentConversation?.model ?? endpointsFilter[endpoint]?.availableModels?.[0] ?? 'gpt-3.5-turbo',
         chatGptLabel: currentConversation?.chatGptLabel ?? null,
         promptPrefix: currentConversation?.promptPrefix ?? null,
         temperature: currentConversation?.temperature ?? 1,
@@ -52,7 +54,10 @@ const useMessageHandler = () => {
     } else if (endpoint === 'chatGPTBrowser') {
       endpointOption = {
         endpoint,
-        model: currentConversation?.model ?? 'Default (GPT-3.5)'
+        model:
+          currentConversation?.model ??
+          endpointsFilter[endpoint]?.availableModels?.[0] ??
+          'text-davinci-002-render-sha'
       };
       responseSender = 'ChatGPT';
     } else if (endpoint === null) {
