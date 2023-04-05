@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { useRecoilState } from 'recoil';
 import Message from './Message';
 
+import store from '~/store';
+
 export default function MultiMessage({
+  messageId,
   conversation,
   messagesTree,
   scrollToBottom,
@@ -9,7 +13,9 @@ export default function MultiMessage({
   setCurrentEditId,
   isSearchView
 }) {
-  const [siblingIdx, setSiblingIdx] = useState(0);
+  // const [siblingIdx, setSiblingIdx] = useState(0);
+
+  const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
 
   const setSiblingIdxRev = value => {
     setSiblingIdx(messagesTree?.length - value - 1);
