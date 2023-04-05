@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const mongoMeili = require('../plugins/mongoMeili');
+const conversationPreset = require('./conversationPreset');
 const convoSchema = mongoose.Schema(
   {
     conversationId: {
@@ -9,15 +10,18 @@ const convoSchema = mongoose.Schema(
       index: true,
       meiliIndex: true
     },
-    parentMessageId: {
-      type: String,
-      required: true
-    },
     title: {
       type: String,
       default: 'New Chat',
       meiliIndex: true
     },
+    user: {
+      type: String,
+      default: null
+    },
+    messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
+    ...conversationPreset,
+    // for bingAI only
     jailbreakConversationId: {
       type: String,
       default: null
@@ -27,32 +31,13 @@ const convoSchema = mongoose.Schema(
       default: null
     },
     clientId: {
-      type: String
+      type: String,
+      default: null
     },
     invocationId: {
-      type: String
-    },
-    toneStyle: {
-      type: String,
-      default: null
-    },
-    chatGptLabel: {
-      type: String,
-      default: null
-    },
-    promptPrefix: {
-      type: String,
-      default: null
-    },
-    model: {
-      type: String,
-      required: true
-    },
-    user: {
-      type: String
-    },
-    suggestions: [{ type: String }],
-    messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }]
+      type: Number,
+      default: 1
+    }
   },
   { timestamps: true }
 );

@@ -1,55 +1,22 @@
 export default function createPayload(submission) {
-  const { conversation, messages, message, initialResponse, isRegenerate = false } = submission;
+  const { conversation, message, endpointOption } = submission;
+  const { conversationId } = conversation;
+  const { endpoint } = endpointOption;
 
-  const endpoint = `/api/ask`;
-  const {
-    model,
-    chatGptLabel,
-    promptPrefix,
-    jailbreakConversationId,
-    conversationId,
-    conversationSignature,
-    clientId,
-    invocationId,
-    toneStyle
-  } = conversation;
+  const endpointUrlMap = {
+    azureOpenAI: '/api/ask/azureOpenAI',
+    openAI: '/api/ask/openAI',
+    bingAI: '/api/ask/bingAI',
+    chatGPTBrowser: '/api/ask/chatGPTBrowser'
+  };
+
+  const server = endpointUrlMap[endpoint];
 
   let payload = {
     ...message,
-    ...{
-      model,
-      chatGptLabel,
-      promptPrefix,
-      conversationId
-    }
+    ...endpointOption,
+    conversationId
   };
 
-  // if (!payload.conversationId)
-  //   if (convo?.conversationId && convo?.parentMessageId) {
-  //     payload = {
-  //       ...payload,
-  //       conversationId: convo.conversationId,
-  //       parentMessageId: convo.parentMessageId || '00000000-0000-0000-0000-000000000000'
-  //     };
-  //   }
-
-  const isBing = model === 'bingai' || model === 'sydney';
-  if (isBing && !conversationId) {
-    payload.toneStyle = toneStyle || 'fast';
-  }
-
-  if (isBing && conversationId) {
-    payload = {
-      ...payload,
-      jailbreakConversationId,
-      conversationSignature,
-      clientId,
-      invocationId
-    };
-  }
-
-  let server = endpoint;
-  server = model === 'bingai' ? server + '/bing' : server;
-  server = model === 'sydney' ? server + '/sydney' : server;
   return { server, payload };
 }

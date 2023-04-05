@@ -28,26 +28,47 @@
   transition: all 1s ease-in-out;
 } */
 
-.bing-styles {
-position: absolute; 
-left: 0; 
-right: 0; 
-opacity: 0;
-bottom: 39px;
-z-index: 995;
-margin-left: auto; 
-margin-right: auto; 
-width: 308px; /* Need a specific value to work */
-transition: all 0.5s ease-in-out;
-pointer-events: none;
-transform: translateY(-60px);
+.overflow-y-auto {
+  overflow-y: overlay;
 }
 
-.bing-styles.show {
-  /* bottom: -20px; */
+.overflow-x-auto {
+  overflow-x: overlay;
+}
+
+.reset-rc-number-input input {
+  width: 100%;
+  border: none !important;
+  background: transparent;
+}
+
+.reset-rc-number-input-text-right input {
+  text-align: right;
+}
+
+.openAIOptions-simple-container {
+  pointer-events: none;
+  opacity: 0;
+  transition: all 0.5s ease-in-out;
+}
+
+.openAIOptions-simple-container.show {
+  pointer-events: fill;
   opacity: 1;
-  pointer-events: all;
-  transform: translateY(-20px);
+}
+
+.endpointOptionsPopover-container {
+  pointer-events: none;
+  opacity: 0;
+  transition: all 0.2s ease-in-out;
+  transform: scaleY(0);
+  transform-origin: bottom center;
+}
+
+.endpointOptionsPopover-container.show {
+  pointer-events: fill;
+  opacity: 1;
+  transform: scaleY(1)
 }
 
 .creative-tab {

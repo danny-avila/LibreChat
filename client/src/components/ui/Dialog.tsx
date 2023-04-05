@@ -1,5 +1,6 @@
 import * as React from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
+import { Button } from '../ui/Button';
 import { X } from "lucide-react"
 
 import { cn } from "../../utils"
@@ -53,7 +54,7 @@ const DialogContent = React.forwardRef<
     >
       {children}
       <DialogPrimitive.Close className="absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-slate-100 dark:focus:ring-slate-400 dark:focus:ring-offset-slate-900 dark:data-[state=open]:bg-slate-800">
-        <X className="h-4 w-4" />
+        <X className="h-4 w-4 text-black dark:text-white" />
         <span className="sr-only">Close</span>
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
@@ -81,7 +82,7 @@ const DialogFooter = ({
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
+      "flex flex-col-reverse sm:flex-row sm:justify-between sm:space-x-2",
       className
     )}
     {...props}
@@ -132,6 +133,22 @@ const DialogClose = React.forwardRef<
 ))
 DialogClose.displayName = DialogPrimitive.Title.displayName
 
+const DialogButton = React.forwardRef<
+  React.ElementRef<typeof Button>,
+  React.ComponentPropsWithoutRef<typeof Button>
+>(({ className, ...props }, ref) => (
+  <Button
+    ref={ref}
+    variant="outline"
+    className={cn(
+      "mt-2 inline-flex h-10 items-center justify-center rounded-md border border-slate-200 bg-transparent py-2 px-4 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-700 dark:focus:ring-slate-400 dark:focus:ring-offset-slate-900 sm:mt-0",
+      className
+    )}
+    {...props}
+  />
+))
+DialogButton.displayName = DialogPrimitive.Title.displayName
+
 export {
   Dialog,
   DialogTrigger,
@@ -141,4 +158,5 @@ export {
   DialogTitle,
   DialogDescription,
   DialogClose,
+  DialogButton,
 }

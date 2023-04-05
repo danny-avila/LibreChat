@@ -27,11 +27,6 @@ module.exports = {
       if (!update.jailbreakConversationId) {
         update.jailbreakConversationId = null;
       }
-      if (update.model !== 'chatgptCustom' && update.chatGptLabel && update.promptPrefix) {
-        console.log('Validation error: resetting chatgptCustom fields', update);
-        update.chatGptLabel = null;
-        update.promptPrefix = null;
-      }
 
       return await Conversation.findOneAndUpdate(
         { conversationId: conversationId, user },
@@ -149,10 +144,10 @@ module.exports = {
     }
   },
   deleteConvos: async (user, filter) => {
-    let toRemove = await Conversation.find({...filter, user}).select('conversationId')
+    let toRemove = await Conversation.find({ ...filter, user }).select('conversationId');
     const ids = toRemove.map(instance => instance.conversationId);
-    let deleteCount = await Conversation.deleteMany({...filter, user}).exec();
-    deleteCount.messages = await deleteMessages({conversationId: {$in: ids}});
+    let deleteCount = await Conversation.deleteMany({ ...filter, user }).exec();
+    deleteCount.messages = await deleteMessages({ conversationId: { $in: ids } });
     return deleteCount;
   }
 };

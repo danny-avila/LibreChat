@@ -45,7 +45,7 @@ const authenticatedOrRedirect = (req, res, next) => {
     if (user) {
       next();
     } else {
-      res.redirect('/auth/login').end();
+      res.redirect('/auth/login');
     }
   } else next();
 };

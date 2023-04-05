@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRecoilValue, useSetRecoilState, useResetRecoilState } from 'recoil';
+import copy from 'copy-to-clipboard';
 import SubRow from './Content/SubRow';
 import Content from './Content/Content';
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
 import { fetchById } from '~/utils/fetchers';
-import { getIconOfModel } from '~/utils';
+import getIcon from '~/utils/getIcon';
 import { useMessageHandler } from '~/utils/handleSubmit';
 
 import store from '~/store';
@@ -23,32 +24,15 @@ export default function Message({
 }) {
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const setLatestMessage = useSetRecoilState(store.latestMessage);
-  const { model, chatGptLabel, promptPrefix } = conversation;
+  // const { model, chatGptLabel, promptPrefix } = conversation;
   const [abortScroll, setAbort] = useState(false);
-  const {
-    sender,
-    text,
-    searchResult,
-    isCreatedByUser,
-    error,
-    submitting,
-    model: messageModel,
-    chatGptLabel: messageChatGptLabel,
-    searchResult: isSearchResult
-  } = message;
+  const { text, searchResult, isCreatedByUser, error, submitting } = message;
   const textEditor = useRef(null);
   const last = !message?.children?.length;
   const edit = message.messageId == currentEditId;
-  const { ask } = useMessageHandler();
+  const { ask, regenerate } = useMessageHandler();
   const { switchToConversation } = store.useConversation();
   const blinker = submitting && isSubmitting;
-  const generateCursor = useCallback(() => {
-    if (!blinker) {
-      return '';
-    }
-
-    return <span className="result-streaming">█</span>;
-  }, [blinker]);
 
   useEffect(() => {
     if (blinker && !abortScroll) {
@@ -77,14 +61,9 @@ export default function Message({
       'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 bg-white dark:text-gray-100 group dark:bg-gray-800'
   };
 
-  const icon = getIconOfModel({
-    sender,
-    isCreatedByUser,
-    model: isSearchResult ? messageModel : model,
-    searchResult,
-    chatGptLabel: isSearchResult ? messageChatGptLabel : chatGptLabel,
-    promptPrefix,
-    error
+  const icon = getIcon({
+    ...conversation,
+    ...message
   });
 
   if (!isCreatedByUser)
@@ -107,6 +86,14 @@ export default function Message({
 
     setSiblingIdx(siblingCount - 1);
     enterEdit(true);
+  };
+
+  const regenerateMessage = () => {
+    if (!isSubmitting && !message?.isCreatedByUser) regenerate(message);
+  };
+
+  const copyToClipboard = () => {
+    copy(message?.text);
   };
 
   const clickSearchResult = async () => {
@@ -199,9 +186,13 @@ export default function Message({
               )}
             </div>
             <HoverButtons
-              model={model}
-              visible={!error && isCreatedByUser && !edit && !searchResult}
-              onClick={() => enterEdit()}
+              isEditting={edit}
+              isSubmitting={isSubmitting}
+              message={message}
+              conversation={conversation}
+              enterEdit={() => enterEdit()}
+              regenerate={() => regenerateMessage()}
+              copyToClipboard={() => copyToClipboard()}
             />
             <SubRow subclasses="switch-container">
               <SiblingSwitch
