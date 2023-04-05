@@ -49,7 +49,7 @@ const MessageHeader = ({ isSearchView = false }) => {
   return (
     <>
       <div
-        className="dark:text-gray-450 w-full cursor-pointer gap-1 border-b border-black/10 bg-gray-50 text-sm text-gray-500 transition-all hover:bg-gray-100 dark:border-gray-900/50 dark:bg-gray-700 dark:hover:bg-gray-600"
+        className="dark:text-gray-450 w-full cursor-pointer gap-1 border-b border-black/10 bg-gray-50 text-sm text-gray-500 transition-all hover:bg-gray-100 hover:bg-opacity-30 dark:border-gray-900/50 dark:bg-gray-700 dark:hover:bg-gray-600 dark:hover:bg-opacity-100"
         onClick={() => setSaveAsDialogShow(true)}
       >
         <div className="d-block flex w-full items-center justify-center p-3">{getConversationTitle()}</div>
