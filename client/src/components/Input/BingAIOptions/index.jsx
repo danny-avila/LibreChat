@@ -64,7 +64,7 @@ function BingAIOptions() {
     <>
       <div
         className={
-          'openAIOptions-simple-container flex w-auto items-center justify-center gap-2' +
+          'openAIOptions-simple-container flex w-full flex-wrap items-center justify-center gap-2' +
           (!advancedMode ? ' show' : '')
         }
       >
@@ -77,7 +77,7 @@ function BingAIOptions() {
           showLabel={false}
           className={cn(
             cardStyle,
-            'min-w-36 z-50 flex h-[40px] w-36 items-center justify-center px-4 ring-0 hover:cursor-pointer hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 data-[state=open]:bg-slate-50 dark:bg-gray-700 dark:hover:bg-gray-600 dark:data-[state=open]:bg-gray-600'
+            'min-w-36 z-50 flex h-[40px] w-36 flex-none items-center justify-center px-4 ring-0 hover:cursor-pointer hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 data-[state=open]:bg-slate-50 dark:bg-gray-700 dark:hover:bg-gray-600 dark:data-[state=open]:bg-gray-600'
           )}
         />
 
@@ -85,7 +85,7 @@ function BingAIOptions() {
           value={toneStyle}
           className={
             cardStyle +
-            ' z-50 flex h-[40px] items-center justify-center px-0 hover:bg-slate-50 dark:hover:bg-gray-600'
+            ' z-50 flex h-[40px] flex-none items-center justify-center px-0 hover:bg-slate-50 dark:hover:bg-gray-600'
           }
           onValueChange={value => setOption('toneStyle')(value.toLowerCase())}
         >
@@ -120,7 +120,7 @@ function BingAIOptions() {
           type="button"
           className={cn(
             cardStyle,
-            'min-w-4 z-50 flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-600'
+            'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-4 hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-600'
           )}
           onClick={triggerAdvancedMode}
         >
