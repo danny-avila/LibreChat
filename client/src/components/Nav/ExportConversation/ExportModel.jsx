@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import exportFromJSON from 'export-from-json';
+import download from 'downloadjs';
 import DialogTemplate from '~/components/ui/DialogTemplate.jsx';
 import { Dialog, DialogClose, DialogButton } from '~/components/ui/Dialog.tsx';
 import { Input } from '~/components/ui/Input.tsx';
@@ -8,11 +9,14 @@ import { Label } from '~/components/ui/Label.tsx';
 import { Checkbox } from '~/components/ui/Checkbox.tsx';
 import Dropdown from '~/components/ui/Dropdown';
 import { cn } from '~/utils/';
+import { useScreenshot } from '~/utils/screenshotContext';
 
 import store from '~/store';
 import cleanupPreset from '~/utils/cleanupPreset.js';
 
 export default function ExportModel({ open, onOpenChange }) {
+  const { captureScreenshot } = useScreenshot();
+
   const [filename, setFileName] = useState('');
   const [type, setType] = useState('');
 
@@ -32,7 +36,7 @@ export default function ExportModel({ open, onOpenChange }) {
     []
   );
 
-  const typeOptions = ['text', 'markdown', 'csv', 'json']; //, 'screenshot', 'webpage'];
+  const typeOptions = ['text', 'markdown', 'csv', 'json', 'screenshot']; //,, 'webpage'];
 
   useEffect(() => {
     setFileName(
@@ -103,6 +107,11 @@ export default function ExportModel({ open, onOpenChange }) {
       for (const child of children) ret = ret.concat(child);
       return ret;
     }
+  };
+
+  const exportScreenshot = async () => {
+    const data = await captureScreenshot();
+    download(data, `${filename}.png`, 'image/png');
   };
 
   const exportCSV = async () => {
@@ -256,6 +265,7 @@ export default function ExportModel({ open, onOpenChange }) {
     else if (type == 'text') exportText();
     else if (type == 'markdown') exportMarkdown();
     else if (type == 'csv') exportCSV();
+    else if (type == 'screenshot') exportScreenshot();
   };
 
   const defaultTextProps =
@@ -311,7 +321,7 @@ export default function ExportModel({ open, onOpenChange }) {
               </div>
             </div>
             <div className="grid w-full gap-6 sm:grid-cols-2">
-              {type !== 'csv' ? (
+              {type !== 'csv' && type !== 'screenshot' ? (
                 <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                   <div className="grid w-full items-center gap-2">
                     <Label
@@ -337,29 +347,31 @@ export default function ExportModel({ open, onOpenChange }) {
                   </div>
                 </div>
               ) : null}
-              <div className="grid w-full items-center gap-2">
-                <Label
-                  htmlFor="exportBranches"
-                  className="text-left text-sm font-medium"
-                >
-                  Export all message branches
-                </Label>
-                <div className="flex h-[40px] w-full items-center space-x-3">
-                  <Checkbox
-                    id="exportBranches"
-                    disabled={!exportBranchesSupport}
-                    checked={exportBranches}
-                    className="focus:ring-opacity-20 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:focus:ring-gray-600 dark:focus:ring-opacity-50 dark:focus:ring-offset-0"
-                    onCheckedChange={setExportBranches}
-                  />
-                  <label
+              {type !== 'screenshot' ? (
+                <div className="grid w-full items-center gap-2">
+                  <Label
                     htmlFor="exportBranches"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+                    className="text-left text-sm font-medium"
                   >
-                    {exportBranchesSupport ? 'Enabled' : 'Not Supported'}
-                  </label>
+                    Export all message branches
+                  </Label>
+                  <div className="flex h-[40px] w-full items-center space-x-3">
+                    <Checkbox
+                      id="exportBranches"
+                      disabled={!exportBranchesSupport}
+                      checked={exportBranches}
+                      className="focus:ring-opacity-20 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:focus:ring-gray-600 dark:focus:ring-opacity-50 dark:focus:ring-offset-0"
+                      onCheckedChange={setExportBranches}
+                    />
+                    <label
+                      htmlFor="exportBranches"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+                    >
+                      {exportBranchesSupport ? 'Enabled' : 'Not Supported'}
+                    </label>
+                  </div>
                 </div>
-              </div>
+              ) : null}
               {type === 'json' ? (
                 <div className="grid w-full items-center gap-2">
                   <Label

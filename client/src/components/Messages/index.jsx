@@ -6,6 +6,7 @@ import { CSSTransition } from 'react-transition-group';
 import ScrollToBottom from './ScrollToBottom';
 import MultiMessage from './MultiMessage';
 import MessageHeader from './MessageHeader';
+import { useScreenshot } from '~/utils/screenshotContext.jsx';
 
 import store from '~/store';
 
@@ -22,6 +23,8 @@ export default function Messages({ isSearchView = false }) {
 
   const conversation = useRecoilValue(store.conversation) || {};
   const { conversationId } = conversation;
+
+  const { screenshotTargetRef } = useScreenshot();
 
   // const models = useRecoilValue(store.models) || [];
   // const modelName = models.find(element => element.model == model)?.name;
@@ -84,8 +87,11 @@ export default function Messages({ isSearchView = false }) {
       ref={scrollableRef}
       onScroll={debouncedHandleScroll}
     >
-      <div className="dark:gpt-dark-gray h-full">
-        <div className="dark:gpt-dark-gray flex h-full flex-col items-center text-sm">
+      <div
+        className="dark:gpt-dark-gray h-auto"
+        ref={screenshotTargetRef}
+      >
+        <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
           <MessageHeader isSearchView={isSearchView} />
           {_messagesTree === null ? (
             <Spinner />
