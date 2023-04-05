@@ -37,9 +37,9 @@ export default function NewConversationMenu() {
   // const { model, promptPrefix, chatGptLabel, conversationId } = conversation;
   const { newConversation } = store.useConversation();
 
-  const { trigger: clearPresetsTrigger } = manualSWR(`/api/presets/delete`, 'post', data => {
-    console.log(data);
-    setPresets(data);
+  const { trigger: clearPresetsTrigger } = manualSWR(`/api/presets/delete`, 'post', res => {
+    console.log(res);
+    setPresets(res.data);
   });
 
   const importPreset = jsonData => {
@@ -172,6 +172,7 @@ export default function NewConversationMenu() {
                 presets={presets}
                 onSelect={onSelectPreset}
                 onChangePreset={onChangePreset}
+                onDeletePreset={clearPresetsTrigger}
               />
             ) : (
               <DropdownMenuLabel className="dark:text-gray-300">No preset yet.</DropdownMenuLabel>

@@ -5,20 +5,6 @@ import { useRecoilValue } from 'recoil';
 
 import store from '~/store';
 
-// async function fetchPresets(callback) {
-//   try {
-//     const response = await axios.get('/api/presets', {
-//       timeout: 1000,
-//       withCredentials: true
-//     });
-
-//     callback(response.data);
-//   } catch (error) {
-//     console.error(error);
-//     console.log('[FileUpload] Error fetching presets');
-//   }
-// }
-
 const FileUpload = ({ onFileSelected }) => {
   // const setPresets = useSetRecoilState(store.presets);
   const endpointsFilter = useRecoilValue(store.endpointsFilter);
