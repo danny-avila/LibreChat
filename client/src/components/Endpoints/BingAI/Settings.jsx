@@ -151,7 +151,7 @@ function Settings(props) {
               />
             </div>
           )}
-          {/* <HoverCard>
+          {/* <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2"> 
             </HoverCardTrigger>
             <OptionHover
