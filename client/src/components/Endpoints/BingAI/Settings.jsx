@@ -3,7 +3,7 @@ import TextareaAutosize from 'react-textarea-autosize';
 import { Input } from '~/components/ui/Input.tsx';
 import { Label } from '~/components/ui/Label.tsx';
 import { Checkbox } from '~/components/ui/Checkbox.tsx';
-import SelectDropdown from '../../ui/SelectDropdown';
+import SelectDropdown from '../../ui/SelectDropDown';
 import { axiosPost } from '~/utils/fetchers.js';
 import { cn } from '~/utils/';
 import debounce from 'lodash/debounce';

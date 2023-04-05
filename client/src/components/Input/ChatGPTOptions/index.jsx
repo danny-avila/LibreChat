@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import SelectDropdown from '../../ui/SelectDropdown.jsx';
+import SelectDropdown from '../../ui/SelectDropDown.jsx';
 import { cn } from '~/utils/';
 
 import store from '~/store';
