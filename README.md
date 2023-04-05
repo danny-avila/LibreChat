@@ -31,6 +31,18 @@
 
 ## Updates
 <details open>
+<summary><strong>2023-04-05</strong></summary>
+
+
+
+**Released [v0.3.0](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.3.0)**, Introducing more customization for both OpenAI & BingAI conversations! This is one of the biggest updates yet and will make integrating future LLM's a lot easier, providing a lot of customization features as well, including sharing presets! Please feel free to share them in the **[community discord server](https://discord.gg/NGaa9RPCft)**
+
+</details>
+
+<details>
+<summary><strong>Previous Updates</strong></summary>
+  
+<details>
 <summary><strong>2023-03-23</strong></summary>
 
 
@@ -39,8 +51,6 @@
 
 </details>
 
-<details>
-<summary><strong>Previous Updates</strong></summary>
   
 <details>
 <summary><strong>2023-03-22</strong></summary>
