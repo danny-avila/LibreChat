@@ -1,7 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import SubmitButton from './SubmitButton';
-import AdjustToneButton from './AdjustToneButton';
 import OpenAIOptions from './OpenAIOptions';
 import ChatGPTOptions from './ChatGPTOptions';
 import BingAIOptions from './BingAIOptions';
@@ -19,7 +18,6 @@ export default function TextChat({ isSearchView = false }) {
 
   const conversation = useRecoilValue(store.conversation);
   const latestMessage = useRecoilValue(store.latestMessage);
-  const messages = useRecoilValue(store.messages);
   const [text, setText] = useRecoilState(store.text);
   // const [text, setText] = useState('');
 
@@ -38,7 +36,7 @@ export default function TextChat({ isSearchView = false }) {
   // auto focus to input, when enter a conversation.
   useEffect(() => {
     if (conversation?.conversationId !== 'search') inputRef.current?.focus();
-    setText('');
+    // setText('');
   }, [conversation?.conversationId]);
 
   // // controls the height of Bing tone style tabs
