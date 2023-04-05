@@ -20,7 +20,7 @@ import store from '~/store';
 
 function Settings(props) {
   const { readonly, model, chatGptLabel, promptPrefix, temperature, topP, freqP, presP, setOption } = props;
-  console.log(props);
+
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   const setModel = setOption('model');
@@ -295,7 +295,7 @@ function Settings(props) {
                   id="pres-penalty-int"
                   disabled={readonly}
                   value={presP}
-                  onChange={e => setPresP(e.target.value)}
+                  onChange={value => setPresP(value)}
                   max={2}
                   min={-2}
                   step={0.01}

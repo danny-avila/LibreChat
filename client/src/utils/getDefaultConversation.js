@@ -3,23 +3,23 @@ const buildDefaultConversation = ({ conversation, endpoint, lastConversationSetu
     conversation = {
       ...conversation,
       endpoint,
-      model: lastConversationSetup?.model || 'gpt-3.5-turbo',
-      chatGptLabel: lastConversationSetup?.chatGptLabel || null,
-      promptPrefix: lastConversationSetup?.promptPrefix || null,
-      temperature: lastConversationSetup?.temperature || 1,
-      top_p: lastConversationSetup?.top_p || 1,
-      presence_penalty: lastConversationSetup?.presence_penalty || 0,
-      frequency_penalty: lastConversationSetup?.frequency_penalty || 0
+      model: lastConversationSetup?.model ?? 'gpt-3.5-turbo',
+      chatGptLabel: lastConversationSetup?.chatGptLabel ?? null,
+      promptPrefix: lastConversationSetup?.promptPrefix ?? null,
+      temperature: lastConversationSetup?.temperature ?? 1,
+      top_p: lastConversationSetup?.top_p ?? 1,
+      presence_penalty: lastConversationSetup?.presence_penalty ?? 0,
+      frequency_penalty: lastConversationSetup?.frequency_penalty ?? 0
     };
   } else if (endpoint === 'bingAI') {
     conversation = {
       ...conversation,
       endpoint,
-      jailbreak: lastConversationSetup?.jailbreak || false,
-      context: lastConversationSetup?.context || null,
-      systemMessage: lastConversationSetup?.systemMessage || null,
-      toneStyle: lastConversationSetup?.toneStyle || 'fast',
-      jailbreakConversationId: lastConversationSetup?.jailbreakConversationId || null,
+      jailbreak: lastConversationSetup?.jailbreak ?? false,
+      context: lastConversationSetup?.context ?? null,
+      systemMessage: lastConversationSetup?.systemMessage ?? null,
+      toneStyle: lastConversationSetup?.toneStyle ?? 'fast',
+      jailbreakConversationId: lastConversationSetup?.jailbreakConversationId ?? null,
       conversationSignature: null,
       clientId: null,
       invocationId: 1
@@ -28,7 +28,7 @@ const buildDefaultConversation = ({ conversation, endpoint, lastConversationSetu
     conversation = {
       ...conversation,
       endpoint,
-      model: lastConversationSetup?.model || 'Default (GPT-3.5)'
+      model: lastConversationSetup?.model ?? 'Default (GPT-3.5)'
     };
   } else if (endpoint === null) {
     conversation = {
