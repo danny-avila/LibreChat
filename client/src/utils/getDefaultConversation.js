@@ -1,9 +1,15 @@
-const buildDefaultConversation = ({ conversation, endpoint, lastConversationSetup = {} }) => {
+const buildDefaultConversation = ({
+  conversation,
+  endpoint,
+  endpointsFilter = {},
+  lastConversationSetup = {}
+}) => {
   if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
     conversation = {
       ...conversation,
       endpoint,
-      model: lastConversationSetup?.model ?? 'gpt-3.5-turbo',
+      model:
+        lastConversationSetup?.model ?? endpointsFilter[endpoint]?.availableModels?.[0] ?? 'gpt-3.5-turbo',
       chatGptLabel: lastConversationSetup?.chatGptLabel ?? null,
       promptPrefix: lastConversationSetup?.promptPrefix ?? null,
       temperature: lastConversationSetup?.temperature ?? 1,
@@ -28,7 +34,10 @@ const buildDefaultConversation = ({ conversation, endpoint, lastConversationSetu
     conversation = {
       ...conversation,
       endpoint,
-      model: lastConversationSetup?.model ?? 'Default (GPT-3.5)'
+      model:
+        lastConversationSetup?.model ??
+        endpointsFilter[endpoint]?.availableModels?.[0] ??
+        'text-davinci-002-render-sha'
     };
   } else if (endpoint === null) {
     conversation = {
@@ -56,7 +65,8 @@ const getDefaultConversation = ({ conversation, prevConversation, endpointsFilte
       conversation = buildDefaultConversation({
         conversation,
         endpoint,
-        lastConversationSetup: preset
+        lastConversationSetup: preset,
+        endpointsFilter
       });
       return conversation;
     } else {
@@ -72,7 +82,8 @@ const getDefaultConversation = ({ conversation, prevConversation, endpointsFilte
   //     conversation = buildDefaultConversation({
   //       conversation,
   //       endpoint,
-  //       lastConversationSetup: prevConversation
+  //       lastConversationSetup: prevConversation,
+  //       endpointsFilter
   //     });
   //     return conversation;
   //   }
@@ -84,7 +95,7 @@ const getDefaultConversation = ({ conversation, prevConversation, endpointsFilte
     const { endpoint = null } = lastConversationSetup;
 
     if (endpointsFilter?.[endpoint]) {
-      conversation = buildDefaultConversation({ conversation, endpoint });
+      conversation = buildDefaultConversation({ conversation, endpoint, endpointsFilter });
       return conversation;
     }
   } catch (error) {}
@@ -93,10 +104,10 @@ const getDefaultConversation = ({ conversation, prevConversation, endpointsFilte
 
   const endpoint = ['openAI', 'azureOpenAI', 'bingAI', 'chatGPTBrowser'].find(e => endpointsFilter?.[e]);
   if (endpoint) {
-    conversation = buildDefaultConversation({ conversation, endpoint });
+    conversation = buildDefaultConversation({ conversation, endpoint, endpointsFilter });
     return conversation;
   } else {
-    conversation = buildDefaultConversation({ conversation, endpoint: null });
+    conversation = buildDefaultConversation({ conversation, endpoint: null, endpointsFilter });
     return conversation;
   }
 };

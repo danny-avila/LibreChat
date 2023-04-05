@@ -1,9 +1,9 @@
 import React from 'react';
-import { useSetRecoilState } from 'recoil';
 import { FileUp } from 'lucide-react';
-import store from '~/store';
-import axios from 'axios';
 import cleanupPreset from '~/utils/cleanupPreset.js';
+import { useRecoilValue } from 'recoil';
+
+import store from '~/store';
 
 // async function fetchPresets(callback) {
 //   try {
@@ -21,6 +21,7 @@ import cleanupPreset from '~/utils/cleanupPreset.js';
 
 const FileUpload = ({ onFileSelected }) => {
   // const setPresets = useSetRecoilState(store.presets);
+  const endpointsFilter = useRecoilValue(store.endpointsFilter);
 
   const handleFileChange = event => {
     const file = event.target.files[0];
@@ -29,7 +30,7 @@ const FileUpload = ({ onFileSelected }) => {
     const reader = new FileReader();
     reader.onload = e => {
       const jsonData = JSON.parse(e.target.result);
-      onFileSelected({ ...cleanupPreset(jsonData), presetId: null });
+      onFileSelected({ ...cleanupPreset({ preset: jsonData, endpointsFilter }), presetId: null });
     };
     reader.readAsText(file);
   };

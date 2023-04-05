@@ -6,7 +6,7 @@ const prompts = require('./prompts');
 const search = require('./search');
 const tokenizer = require('./tokenizer');
 const me = require('./me');
-const endpoints = require('./endpoints');
+const { router: endpoints } = require('./endpoints');
 const { router: auth, authenticatedOr401, authenticatedOrRedirect } = require('./auth');
 
 module.exports = {
