@@ -1,5 +1,4 @@
-import endpoints from './endpoints';
-import { atom, selector, useSetRecoilState, useResetRecoilState, useRecoilCallback } from 'recoil';
+import { atom } from 'recoil';
 
 // preset structure is as same defination as conversation
 // sample structure
@@ -20,11 +19,9 @@ import { atom, selector, useSetRecoilState, useResetRecoilState, useRecoilCallba
 //   frequency_penalty: 0,
 //   // for bingAI only
 //   jailbreak: false,
-//   jailbreakConversationId: null,
-//   conversationSignature: null,
-//   clientId: null,
-//   invocationId: 1,
 //   toneStyle: null,
+//   context: null,
+//   systemMessage: null,
 // };
 
 // an array of saved presets.

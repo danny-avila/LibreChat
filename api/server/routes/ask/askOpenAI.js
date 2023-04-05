@@ -1,28 +1,26 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { titleConvo, askBing } = require('../../app');
-const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../models');
+const { titleConvo, askClient } = require('../../../app/');
+const { saveMessage, getConvoTitle, saveConvo, updateConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 
 router.post('/', async (req, res) => {
   const {
     endpoint,
     text,
-    messageId,
     overrideParentMessageId = null,
     parentMessageId,
     conversationId: oldConversationId
   } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
-  if (endpoint !== 'bingAI') return handleError(res, { text: 'Illegal request' });
+  if (endpoint !== 'openAI') return handleError(res, { text: 'Illegal request' });
 
   // build user message
   const conversationId = oldConversationId || crypto.randomUUID();
-  const isNewConversation = !oldConversationId;
-  const userMessageId = messageId;
+  const userMessageId = crypto.randomUUID();
   const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000';
-  let userMessage = {
+  const userMessage = {
     messageId: userMessageId,
     sender: 'User',
     text,
@@ -32,25 +30,15 @@ router.post('/', async (req, res) => {
   };
 
   // build endpoint option
-  let endpointOption = {};
-  if (req.body?.jailbreak)
-    endpointOption = {
-      jailbreak: req.body?.jailbreak || false,
-      jailbreakConversationId: req.body?.jailbreakConversationId || null,
-      systemMessage: req.body?.systemMessage || null,
-      context: req.body?.context || null,
-      toneStyle: req.body?.toneStyle || 'fast'
-    };
-  else
-    endpointOption = {
-      jailbreak: req.body?.jailbreak || false,
-      systemMessage: req.body?.systemMessage || null,
-      context: req.body?.context || null,
-      conversationSignature: req.body?.conversationSignature || null,
-      clientId: req.body?.clientId || null,
-      invocationId: req.body?.invocationId || null,
-      toneStyle: req.body?.toneStyle || 'fast'
-    };
+  const endpointOption = {
+    model: req.body?.model || 'gpt-3.5-turbo',
+    chatGptLabel: req.body?.chatGptLabel || null,
+    promptPrefix: req.body?.promptPrefix || null,
+    temperature: req.body?.temperature || 1,
+    top_p: req.body?.top_p || 1,
+    presence_penalty: req.body?.presence_penalty || 0,
+    frequency_penalty: req.body?.frequency_penalty || 0
+  };
 
   console.log('ask log', {
     userMessage,
@@ -70,7 +58,6 @@ router.post('/', async (req, res) => {
 
   // eslint-disable-next-line no-use-before-define
   return await ask({
-    isNewConversation,
     userMessage,
     endpointOption,
     conversationId,
@@ -82,7 +69,6 @@ router.post('/', async (req, res) => {
 });
 
 const ask = async ({
-  isNewConversation,
   userMessage,
   endpointOption,
   conversationId,
@@ -92,6 +78,8 @@ const ask = async ({
   res
 }) => {
   let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
+
+  const client = askClient;
 
   res.writeHead(200, {
     Connection: 'keep-alive',
@@ -107,7 +95,7 @@ const ask = async ({
     const progressCallback = createOnProgress();
     const abortController = new AbortController();
     res.on('close', () => abortController.abort());
-    let response = await askBing({
+    let response = await client({
       text,
       parentMessageId: userParentMessageId,
       conversationId,
@@ -120,65 +108,26 @@ const ask = async ({
       abortController
     });
 
-    console.log('BING RESPONSE', response);
+    console.log('CLIENT RESPONSE', response);
 
     // STEP1 generate response message
-    response.text = response.response || response.details.spokenText || '**Bing refused to answer.**';
+    response.text = response.response || '**ChatGPT refused to answer.**';
 
     let responseMessage = {
-      text: await handleText(response, true),
-      suggestions:
-        response.details.suggestedResponses && response.details.suggestedResponses.map(s => s.text),
-      jailbreak: endpointOption?.jailbreak
+      conversationId: response.conversationId,
+      messageId: response.messageId,
+      parentMessageId: overrideParentMessageId || userMessageId,
+      text: await handleText(response),
+      sender: endpointOption?.chatGptLabel || 'ChatGPT'
     };
-    // // response.text = await handleText(response, true);
-    // response.suggestions =
-    //   response.details.suggestedResponses && response.details.suggestedResponses.map(s => s.text);
-
-    if (endpointOption?.jailbreak) {
-      responseMessage.conversationId = response.jailbreakConversationId;
-      responseMessage.messageId = response.messageId || response.details.messageId;
-      responseMessage.parentMessageId = overrideParentMessageId || response.parentMessageId || userMessageId;
-      responseMessage.sender = 'Sydney';
-    } else {
-      responseMessage.conversationId = response.conversationId;
-      responseMessage.messageId = response.messageId || response.details.messageId;
-      response.parentMessageId =
-        overrideParentMessageId || response.parentMessageId || response.details.requestId || userMessageId;
-      responseMessage.sender = 'BingAI';
-    }
 
     await saveMessage(responseMessage);
 
-    // STEP2 update the convosation.
-
-    // First update conversationId if needed
-    // Note!
-    // Bing API will not use our conversationId at the first time,
-    // so change the placeholder conversationId to the real one.
-    // Attition: the api will also create new conversationId while using invalid userMessage.parentMessageId,
-    // but in this situation, don't change the conversationId, but create new convo.
-
-    let conversationUpdate = { conversationId, endpoint: 'bingAI' };
-    if (conversationId != responseMessage.conversationId && isNewConversation)
-      conversationUpdate = {
-        ...conversationUpdate,
-        conversationId: conversationId,
-        newConversationId: responseMessage.conversationId || conversationId
-      };
+    // STEP2 update the conversation
     conversationId = responseMessage.conversationId || conversationId;
-
-    if (endpointOption?.jailbreak) {
-      conversationUpdate.jailbreak = true;
-      conversationUpdate.jailbreakConversationId = response.jailbreakConversationId;
-    } else {
-      conversationUpdate.jailbreak = false;
-      conversationUpdate.conversationSignature = response.conversationSignature;
-      conversationUpdate.clientId = response.clientId;
-      conversationUpdate.invocationId = response.invocationId;
-    }
-
-    await saveConvo(req?.session?.user?.username, conversationUpdate);
+    // it seems openAI will not change the conversationId.
+    // let conversationUpdate = { conversationId, endpoint: 'openAI' };
+    // await saveConvo(req?.session?.user?.username, conversationUpdate);
 
     // STEP3 update the user message
     userMessage.conversationId = conversationId;
@@ -202,23 +151,22 @@ const ask = async ({
 
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
       const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response });
-
-      await saveConvo(req?.session?.user?.username, {
+      await updateConvo(req?.session?.user?.username, {
         conversationId: conversationId,
         title
       });
     }
   } catch (error) {
-    console.log(error);
+    console.error(error);
     const errorMessage = {
       messageId: crypto.randomUUID(),
-      sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
+      sender: endpointOption?.chatGptLabel || 'ChatGPT',
       conversationId,
       parentMessageId: overrideParentMessageId || userMessageId,
       error: true,
       text: error.message
     };
-    await saveBingMessage(errorMessage);
+    await saveMessage(errorMessage);
     handleError(res, errorMessage);
   }
 };

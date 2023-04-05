@@ -10,7 +10,6 @@ const errorController = require('./controllers/errorController');
 
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
-const userSystemEnabled = process.env.ENABLE_USER_SYSTEM || false;
 const projectPath = path.join(__dirname, '..', '..', 'client');
 
 (async () => {
@@ -34,6 +33,8 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
     })
   );
 
+  // ROUTES
+
   /* chore: potential redirect error here, can only comment out this block; 
     comment back in if using auth routes i guess */
   // app.get('/', routes.authenticatedOrRedirect, function (req, res) {
@@ -41,40 +42,21 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   //   res.sendFile(path.join(projectPath, 'public', 'index.html'));
   // });
 
-  app.get('/api/me', function (req, res) {
-    if (userSystemEnabled) {
-      const user = req?.session?.user;
-
-      if (user) res.send(JSON.stringify({ username: user?.username, display: user?.display }));
-      else res.send(JSON.stringify(null));
-    } else {
-      res.send(JSON.stringify({ username: 'anonymous_user', display: 'Anonymous User' }));
-    }
-  });
-
+  // api endpoint
   app.use('/api/search', routes.authenticatedOr401, routes.search);
   app.use('/api/ask', routes.authenticatedOr401, routes.ask);
   app.use('/api/messages', routes.authenticatedOr401, routes.messages);
   app.use('/api/convos', routes.authenticatedOr401, routes.convos);
-  app.use('/api/customGpts', routes.authenticatedOr401, routes.customGpts);
   app.use('/api/presets', routes.authenticatedOr401, routes.presets);
   app.use('/api/prompts', routes.authenticatedOr401, routes.prompts);
   app.use('/api/tokenizer', routes.authenticatedOr401, routes.tokenizer);
+  app.use('/api/endpoints', routes.authenticatedOr401, routes.endpoints);
+
+  // user system
   app.use('/auth', routes.auth);
+  app.use('/api/me', routes.me);
 
-  app.get('/api/endpoints', function (req, res) {
-    const azureOpenAI = !!process.env.AZURE_OPENAI_KEY;
-    const openAI = process.env.OPENAI_KEY
-      ? { availableModels: ['gpt-4', 'text-davinci-003', 'gpt-3.5-turbo', 'gpt-3.5-turbo-0301'] }
-      : false;
-    const bingAI = !!process.env.BING_TOKEN;
-    const chatGPTBrowser = process.env.OPENAI_KEY
-      ? { availableModels: ['Default (GPT-3.5)', 'Legacy (GPT-3.5)', 'GPT-4'] }
-      : false;
-
-    res.send(JSON.stringify({ azureOpenAI, openAI, bingAI, chatGPTBrowser }));
-  });
-
+  // static files
   app.get('/*', routes.authenticatedOrRedirect, function (req, res) {
     res.sendFile(path.join(projectPath, 'dist', 'index.html'));
   });
@@ -89,7 +71,7 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
 })();
 
 let messageCount = 0;
-process.on('uncaughtException', (err) => {
+process.on('uncaughtException', err => {
   if (!err.message.includes('fetch failed')) {
     console.error('There was an uncaught error:', err.message);
   }
