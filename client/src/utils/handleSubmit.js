@@ -27,32 +27,32 @@ const useMessageHandler = () => {
     if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
       endpointOption = {
         endpoint,
-        model: currentConversation?.model || 'gpt-3.5-turbo',
-        chatGptLabel: currentConversation?.chatGptLabel || null,
-        promptPrefix: currentConversation?.promptPrefix || null,
-        temperature: currentConversation?.temperature || 1,
-        top_p: currentConversation?.top_p || 1,
-        presence_penalty: currentConversation?.presence_penalty || 0,
-        frequency_penalty: currentConversation?.frequency_penalty || 0
+        model: currentConversation?.model ?? 'gpt-3.5-turbo',
+        chatGptLabel: currentConversation?.chatGptLabel ?? null,
+        promptPrefix: currentConversation?.promptPrefix ?? null,
+        temperature: currentConversation?.temperature ?? 1,
+        top_p: currentConversation?.top_p ?? 1,
+        presence_penalty: currentConversation?.presence_penalty ?? 0,
+        frequency_penalty: currentConversation?.frequency_penalty ?? 0
       };
-      responseSender = endpointOption.chatGptLabel || 'ChatGPT';
+      responseSender = endpointOption.chatGptLabel ?? 'ChatGPT';
     } else if (endpoint === 'bingAI') {
       endpointOption = {
         endpoint,
-        jailbreak: currentConversation?.jailbreak || false,
-        systemMessage: currentConversation?.systemMessage || null,
-        context: currentConversation?.context || null,
-        toneStyle: currentConversation?.toneStyle || 'fast',
-        jailbreakConversationId: currentConversation?.jailbreakConversationId || null,
-        conversationSignature: currentConversation?.conversationSignature || null,
-        clientId: currentConversation?.clientId || null,
-        invocationId: currentConversation?.invocationId || 1
+        jailbreak: currentConversation?.jailbreak ?? false,
+        systemMessage: currentConversation?.systemMessage ?? null,
+        context: currentConversation?.context ?? null,
+        toneStyle: currentConversation?.toneStyle ?? 'fast',
+        jailbreakConversationId: currentConversation?.jailbreakConversationId ?? null,
+        conversationSignature: currentConversation?.conversationSignature ?? null,
+        clientId: currentConversation?.clientId ?? null,
+        invocationId: currentConversation?.invocationId ?? 1
       };
       responseSender = endpointOption.jailbreak ? 'Sydney' : 'BingAI';
     } else if (endpoint === 'chatGPTBrowser') {
       endpointOption = {
         endpoint,
-        model: currentConversation?.model || 'Default (GPT-3.5)'
+        model: currentConversation?.model ?? 'Default (GPT-3.5)'
       };
       responseSender = 'ChatGPT';
     } else if (endpoint === null) {
