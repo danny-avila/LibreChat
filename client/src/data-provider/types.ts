@@ -38,11 +38,15 @@ export enum EModelEndpoint {
 export type TConversation = {
   conversationId: string;
   title: string;
-  user: string | null;
+  user?: string;
   endpoint: EModelEndpoint;
-  model: string; // for azureOpenAI, openAI, chatGPTBrowser only, eg. gpt-3.5-turbo
+  suggestions?: string[];
+  messages?: TMessage[];
+  createdAt: string;
+  updatedAt: string;
   // for azureOpenAI, openAI only
   chatGptLabel?: string;
+  model?: string;
   promptPrefix?: string;
   temperature?: number;
   top_p?: number;
@@ -51,40 +55,36 @@ export type TConversation = {
   jailbreak?: boolean;
   jailbreakConversationId?: string;
   conversationSignature?: string;
+  parentMessageId?: string;
   clientId?: string;
   invocationId?: string;
   toneStyle?: string;
-  suggestions?: string[];
-  messages?: TMessage[];
-  createdAt: string;
-  updatedAt: string;
 }
 
-export type TPrompt = {
+export type TPreset = {
   title: string,
-  prompt: string,
-  category: string,
-  createdAt: string,
-  updatedAt: string
-};
-
-export type TCustomGpt = {
-  chatGptLabel: string,
-  promptPrefix: string,
-  value: string,
-  createdAt: string,
-  updatedAt: string,
-  _id: string
-};
-
-export type TModel = {
-  _id: string,
-  name: string,
-  value: string,
-  model: string,
+  endpoint: EModelEndpoint,
+  conversationSignature?: string,
+  createdAt?: string,
+  updatedAt?: string,
+  presetId?: string,
+  user?: string,
+  // for azureOpenAI, openAI only
   chatGptLabel?: string,
-  promptPrefix?: string
-};
+  frequence_penalty?: number,
+  model?: string,
+  presence_penalty?: number,
+  promptPrefix?: string,
+  temperature?: number,
+  top_p?: number,
+  //for BingAI
+  clientId?: string,
+  invocationId?: number,
+  jailbreak?: boolean,
+  jailbreakPresetId?: string,
+  presetSignature?: string,
+  toneStyle?: string,
+}
 
 export type TUser = {
   username: string,
@@ -98,59 +98,9 @@ export type TGetConversationsResponse = {
   pages: string | number
 };
 
-export type TGetConversationResponse = {
-  data: TConversation
-};
-
-export type TGetMessagesResponse = {
-  data: TMessage[]
-};
-
-export type TAICompletionRequest = {
-  chatGptLabel?: string,
-  conversationId: string,
-  current: boolean,
-  isCreatedByUser: boolean,
-  model: string,
-  messageId: string,
-  parentMessageId: string,
-  overrideParentMessageId?: boolean,
-  promptPrefix?: string,
-  sender: string,
-  text: string
-};
-
-export type TGetModelsResponse = {
-  hasOpenAI: boolean,
-  hasChatGpt: boolean,
-  hasBing: boolean
-};
-
-export type TOpenAIModel = {
-  object: string,
-  id: string,
-  ready: boolean,
-  owner: string,
-  created: string | null,
-  permissions: string[] | null
-};
-
-export type TOpenAIModels = {
-  models: {
-    object: string,
-    data: TOpenAIModel[]
-  }
-};
-
-export type TConversationUpdate = {
-  conversationId: string,
-  title?: string
-};
-
 export type TUpdateConversationRequest = {
   conversationId: string,
   title: string,
-  withCredentials?: boolean
 };
 
 export type TUpdateConversationResponse = {
@@ -171,21 +121,22 @@ export type TDeleteConversationResponse = {
   }
 };
 
-export type TUpdateCustomGptRequest = {
-  value: string,
-  chatGptLabel: string,
-  promptPrefix?: string,
-  prevLabel?: string
+export type TSearchResponse = {
+  conversations: TConversation[],
+  messages: TMessage[],
+  pageNumber: string,
+  pageSize: string | number,
+  pages: string | number
+  filter: {}
 };
 
-export type TUpdateCustomGptResponse = {};
-
-export type TDeleteCustomGptRequest = {
-  id: string
+export type TEndpoints = {
+  azureOpenAI: boolean,
+  bingAI: boolean,
+  ChatGptBrowser: {
+    availableModels: []
+  }
+  OpenAI: {
+    availableModels: []
+  }
 };
-
-export type TDeleteCustomGptResponse = {};
-
-export type TGetCustomGptsResponse = {};
-
-export type TSearchResults = {};
