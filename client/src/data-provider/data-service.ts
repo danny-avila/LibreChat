@@ -1,44 +1,48 @@
 import * as t from './types';
 import request from './request';
-import * as endpoints from './endpoints';
+import * as endpoints from './api-endpoints';
 
 export function getConversations(pageNumber: string): Promise<t.TGetConversationsResponse> {
-  return request.get(endpoints.getConversations(pageNumber));
+  return request.get(endpoints.conversations(pageNumber));
 }
 
 export function deleteConversation(payload: t.TDeleteConversationRequest) {
   //todo: this should be a DELETE request
-  return request.post(endpoints.deleteConversation(), payload);
+  return request.post(endpoints.deleteConversation(), {arg: payload});
+}
+
+export function clearAllConversations(): Promise<unknown> {
+  return request.post(endpoints.deleteConversation(), {arg: {}});
 }
 
 export function getMessagesByConvoId(id: string): Promise<t.TMessage[]> {
-  return request.get(endpoints.getMessages(id));
+  return request.get(endpoints.messages(id));
 }
 
 export function getConversationById(id: string): Promise<t.TConversation> {
-  return request.get(endpoints.getConversationById(id));
+  return request.get(endpoints.conversationById(id));
 }
 
 export function updateConversation(
   payload: t.TUpdateConversationRequest
 ): Promise<t.TUpdateConversationResponse> {
-  return request.post(endpoints.updateConversation(), payload);
+  return request.post(endpoints.updateConversation(), {arg: payload});
 }
 
-export function updateCustomGpt(payload: t.TUpdateCustomGptRequest) {
-  return request.post(endpoints.customGpts(), payload);
+export function getPresets(): Promise<t.TPreset[]> {
+  return request.get(endpoints.presets());
 }
 
-export function getCustomGpts(): Promise<t.TGetCustomGptsResponse> {
-  return request.get(endpoints.customGpts());
+export function createPreset(payload: t.TPreset): Promise<t.TPreset[]> {
+  return request.post(endpoints.presets(), payload);
 }
 
-export function deleteCustomGpt(payload: t.TDeleteCustomGptRequest): Promise<t.TDeleteCustomGptResponse> {
-  return request.post(endpoints.deleteCustomGpt(), payload);
+export function updatePreset(payload: t.TPreset): Promise<t.TPreset[]> {
+  return request.post(endpoints.presets(), payload);
 }
 
-export function getModels(): Promise<t.TGetModelsResponse> {
-  return request.get(endpoints.getModels());
+export function deletePresets(): Promise<unknown> {
+  return request.post(endpoints.deletePresets(), {arg: {}});
 }
 
 export function getSearchEnabled(): Promise<boolean> {
@@ -60,6 +64,12 @@ type TSearchFetcherProps = {
   callback: (data: any) => void
 };
 
+export const searchConversations = async({ q, pageNumber, callback }: TSearchFetcherProps) => {
+  return request.get(endpoints.search(q, pageNumber)).then(({ data }) => {
+    callback(data);
+  });
+}
+
 export const searchFetcher = async ({ pre, q, pageNumber, callback }: TSearchFetcherProps) => {
   pre();
   //@ts-ignore
@@ -67,3 +77,7 @@ export const searchFetcher = async ({ pre, q, pageNumber, callback }: TSearchFet
   console.log('search data', data);
   callback(data);
 };
+
+export const getAIEndpoints = () => {
+  return request.get(endpoints.aiEndpoints());
+}
