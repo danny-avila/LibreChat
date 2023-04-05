@@ -32,6 +32,20 @@
   overflow-y: overlay;
 }
 
+.overflow-x-auto {
+  overflow-x: overlay;
+}
+
+.reset-rc-number-input input {
+  width: 100%;
+  border: none !important;
+  background: transparent;
+}
+
+.reset-rc-number-input-text-right input {
+  text-align: right;
+}
+
 .openAIOptions-simple-container {
   pointer-events: none;
   opacity: 0;

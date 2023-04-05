@@ -25,7 +25,7 @@ const cleanupPreset = ({ preset: _preset, endpointsFilter = {} }) => {
       toneStyle: _preset?.toneStyle ?? 'fast',
       title: _preset?.title ?? 'New Preset'
     };
-  } else if (endpoint === 'chatGPT') {
+  } else if (endpoint === 'chatGPTBrowser') {
     preset = {
       endpoint,
       presetId: _preset?.presetId ?? null,
