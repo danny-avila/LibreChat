@@ -24,6 +24,16 @@
   <video src="https://user-images.githubusercontent.com/110412045/223754183-8b7f45ce-6517-4bd5-9b39-c624745bf399.mp4" width=400/>
 </div>
 
+
+### Features
+
+- Response streaming identical to ChatGPT through server-sent events
+- UI from original ChatGPT, including Dark mode
+- AI model selection (through 3 endpoints: OpenAI API, BingAI, and ChatGPT Browser)
+- Create, Save, & Share custom presets for OpenAI and BingAI endpoints - [More info on customization here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.3.0)
+- Edit and Resubmit messages just like the official site (with conversation branching)
+- Search all messages/conversations - [More info here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.1.0)
+
 ## Sponsors
 
   Sponsored by <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a> & <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a>
@@ -143,10 +153,10 @@ Currently, this project is only functional with the `text-davinci-003` model.
 # Table of Contents
 - [ChatGPT Clone](#chatgpt-clone)
   - [All AI Conversations under One Roof.](#all-ai-conversations-under-one-roof)
+  - [Features](#features)
   - [Updates](#updates)
 - [Table of Contents](#table-of-contents)
   - [Roadmap](#roadmap)
-    - [Features](#features)
     - [Tech Stack](#tech-stack)
   - [Getting Started](#getting-started)
     - [Prerequisites](#prerequisites)
@@ -198,19 +208,6 @@ Currently, this project is only functional with the `text-davinci-003` model.
 - [ ] Deploy demo
 
 </details>
-
-### Features
-
-- Response streaming identical to ChatGPT through server-sent events
-- UI from original ChatGPT, including Dark mode
-- AI model selection (official ChatGPT API, BingAI, ChatGPT Free)
-- Create and Save custom ChatGPTs*
-- Edit and Resubmit messages just like the official site (with conversation branching)
-- Search all messages/conversations - [see details here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.1.0)
-
-^* ChatGPT can be 'customized' by setting a system message or prompt prefix and alternate 'role' to the API request^
-
-[More info here](https://platform.openai.com/docs/guides/chat/instructing-chat-models). Here's an [example from this app.]()
 
 ### Tech Stack
 
