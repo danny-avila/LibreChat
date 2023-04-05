@@ -1,13 +1,12 @@
 import axios, { AxiosRequestConfig } from "axios";
 
 async function _get<T>(url: string, options?: AxiosRequestConfig): Promise<T> {
-  const response = await axios.get(url, {...options});
+  const response = await axios.get(url, { withCredentials: true, ...options});
   return response.data;
 }
 
-async function _post(url: string, arg?: any) {
-  const modifiedData = {arg, withCredentials: true}
-  const response = await axios.post(url, modifiedData, {
+async function _post(url: string, data?: any) {
+  const response = await axios.post(url, JSON.stringify(data), {
     headers: { "Content-Type": "application/json" },
   });
   return response.data;

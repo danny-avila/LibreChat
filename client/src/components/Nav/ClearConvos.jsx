@@ -3,16 +3,16 @@ import store from '~/store';
 import TrashIcon from '../svg/TrashIcon';
 import { Dialog, DialogTrigger } from '../ui/Dialog.tsx';
 import DialogTemplate from '../ui/DialogTemplate';
-import { useDeleteConversationMutation } from '~/data-provider';
+import { useClearConversationsMutation } from '~/data-provider';
 
 export default function ClearConvos() {
   const { newConversation } = store.useConversation();
   const { refreshConversations } = store.useConversations();
-  const clearConvosMutation = useDeleteConversationMutation();
+  const clearConvosMutation = useClearConversationsMutation();
 
   const clickHandler = () => {
     console.log('Clearing conversations...');
-    clearConvosMutation.mutate({});
+    clearConvosMutation.mutate();
   };
 
   useEffect(() => {

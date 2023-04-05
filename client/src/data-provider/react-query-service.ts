@@ -13,10 +13,11 @@ export enum QueryKeys {
   messages = "messsages",
   allConversations = "allConversations",
   conversation = "conversation",
-  models = "models",
-  customGpts = "customGpts",
   searchEnabled = "searchEnabled",
   user = "user",
+  endpoints = "endpoints",
+  presets = "presets",
+  searchResults = "searchResults",
 }
 
 export const useGetUserQuery = (): QueryObserverResult<t.TUser> => {
@@ -107,51 +108,6 @@ export const useDeleteConversationMutation = (
   );
 };
 
-export const useUpdateCustomGptMutation = (): UseMutationResult<t.TUpdateCustomGptResponse> => {
-  const queryClient = useQueryClient();
-  return useMutation(
-    (payload: t.TUpdateCustomGptRequest) =>
-      dataService.updateCustomGpt(payload),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries([QueryKeys.customGpts]);
-      },
-    }
-  );
-};
-
-export const useGetCustomGptsQuery = (): QueryObserverResult<
-  t.TCustomGpt[],
-  unknown
-> => {
-  return useQuery([QueryKeys.customGpts], () => dataService.getCustomGpts(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-  });
-};
-
-export const useDeleteCustomGptMutation = (): UseMutationResult<t.TDeleteCustomGptResponse> => {
-  const queryClient = useQueryClient();
-  return useMutation(
-    (payload: t.TDeleteCustomGptRequest) =>
-      dataService.deleteCustomGpt(payload),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries([QueryKeys.customGpts]);
-      },
-    }
-  );
-};
-
-export const useGetModelsQuery = (): QueryObserverResult<t.TGetModelsResponse> => {
-  return useQuery([QueryKeys.models], () => dataService.getModels(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-  });
-};
-
 export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
   const queryClient = useQueryClient();
   return useMutation(() => dataService.clearAllConversations(), {
@@ -161,7 +117,7 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
   });
 };
 
-export const useGetConversationsQuery = (pageNumber: string): QueryObserverResult<t.TGetConversationsResponse> => {
+export const useGetConversationsQuery = (pageNumber: string): QueryObserverResult<t.Conversation[]> => {
   return useQuery([QueryKeys.allConversations, pageNumber], () =>
     dataService.getConversations(pageNumber), {
       // refetchOnWindowFocus: false,
@@ -178,6 +134,70 @@ export const useGetSearchEnabledQuery = (config?: UseQueryOptions<boolean>): Que
       refetchOnReconnect: false,
       refetchOnMount: false,
       ...config,
+    }
+  );
+}
+
+export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpoints> => {
+  return useQuery([QueryKeys.endpoints], () =>
+    dataService.getAIEndpoints(), {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+    }
+  );
+}
+
+export const useCreatePresetMutation = (): UseMutationResult<t.Preset[]> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TCreatePresetRequest) =>
+      dataService.createPreset(payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.presets]);
+      },
+    }
+  );
+};
+
+export const useUpdatePresetMutation = (): UseMutationResult<t.TPreset[]> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TUpdatePresetRequest) =>
+      dataService.updatePreset(payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.presets]);
+      },
+    }
+  );
+};
+
+export const useGetPresetsQuery = (): QueryObserverResult<t.TPreset[], unknown> => {
+  return useQuery([QueryKeys.presets], () => dataService.getPresets(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  });
+};
+
+export const useDeleteAllPresetsMutation = (): UseMutationResult<unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.deletePresets(), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.presets]);
+    },
+  });
+}
+
+export const useSearchFetcher = (query: string, pageNumber: string, callback: () => void, config?: UseQueryOptions<t.TSearchResponse>): QueryObserverResult<t.TSearchResponse> => {
+  return useQuery<t.TSearchResponse>([QueryKeys.searchResults, pageNumber, query], () =>
+    dataService.searchConversations(query, pageNumber, callback), {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config
     }
   );
 }
