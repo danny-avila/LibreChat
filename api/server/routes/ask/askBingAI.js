@@ -143,7 +143,7 @@ const ask = async ({
     } else {
       responseMessage.conversationId = response.conversationId;
       responseMessage.messageId = response.messageId || response.details.messageId;
-      response.parentMessageId =
+      responseMessage.parentMessageId =
         overrideParentMessageId || response.parentMessageId || response.details.requestId || userMessageId;
       responseMessage.sender = 'BingAI';
     }
@@ -201,7 +201,7 @@ const ask = async ({
     res.end();
 
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
-      const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response });
+      const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: responseMessage });
 
       await saveConvo(req?.session?.user?.username, {
         conversationId: conversationId,
@@ -218,7 +218,7 @@ const ask = async ({
       error: true,
       text: error.message
     };
-    await saveBingMessage(errorMessage);
+    await saveMessage(errorMessage);
     handleError(res, errorMessage);
   }
 };
