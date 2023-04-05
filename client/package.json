@@ -40,8 +40,10 @@
     "clsx": "^1.2.1",
     "copy-to-clipboard": "^3.3.3",
     "crypto-browserify": "^3.12.0",
+    "downloadjs": "^1.4.7",
     "esbuild": "0.17.15",
     "export-from-json": "^1.7.2",
+    "html2canvas": "^1.4.1",
     "lodash": "^4.17.21",
     "lucide-react": "^0.113.0",
     "rc-input-number": "^7.4.2",
@@ -65,6 +67,7 @@
     "tailwindcss-animate": "^1.0.5",
     "tailwindcss-radix": "^2.8.0",
     "url": "^0.11.0",
+    "use-react-screenshot": "^3.0.0",
     "uuidv4": "^6.2.13"
   },
   "devDependencies": {
