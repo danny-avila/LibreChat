@@ -43,6 +43,7 @@
     "export-from-json": "^1.7.2",
     "lodash": "^4.17.21",
     "lucide-react": "^0.113.0",
+    "rc-input-number": "^7.4.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-lazy-load": "^4.0.1",

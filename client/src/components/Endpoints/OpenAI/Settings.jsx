@@ -5,6 +5,7 @@ import SelectDropdown from '../../ui/SelectDropdown';
 import { Input } from '~/components/ui/Input.tsx';
 import { Label } from '~/components/ui/Label.tsx';
 import { Slider } from '~/components/ui/Slider.tsx';
+import { InputNumber } from '~/components/ui/InputNumber.tsx';
 // import { InputNumber } from '../../ui/InputNumber';
 import OptionHover from './OptionHover';
 import { HoverCard, HoverCardTrigger } from '~/components/ui/HoverCard.tsx';
@@ -19,7 +20,7 @@ import store from '~/store';
 
 function Settings(props) {
   const { readonly, model, chatGptLabel, promptPrefix, temperature, topP, freqP, presP, setOption } = props;
-
+  console.log(props);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   const setModel = setOption('model');
@@ -120,19 +121,26 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label
-                  htmlFor="chatGptLabel"
+                  htmlFor="temp-int"
                   className="text-left text-sm font-medium"
                 >
                   Temperature <small className="opacity-40">(default: 1)</small>
                 </Label>
-                <Input
+                <InputNumber
                   id="temp-int"
-                  disabled
+                  disabled={readonly}
                   value={temperature}
-                  onChange={e => setTemperature(e.target.value)}
+                  onChange={value => setTemperature(value)}
+                  max={2}
+                  min={0}
+                  step={0.01}
+                  controls={false}
                   className={cn(
                     defaultTextProps,
-                    cn(optionText, 'h-auto w-12 border-0 group-hover/temp:border-gray-200')
+                    cn(
+                      optionText,
+                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
+                    )
                   )}
                 />
               </div>
@@ -192,19 +200,26 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label
-                  htmlFor="chatGptLabel"
+                  htmlFor="top-p-int"
                   className="text-left text-sm font-medium"
                 >
                   Top P <small className="opacity-40">(default: 1)</small>
                 </Label>
-                <Input
+                <InputNumber
                   id="top-p-int"
-                  disabled
+                  disabled={readonly}
                   value={topP}
-                  onChange={e => setTopP(e.target.value)}
+                  onChange={value => setTopP(value)}
+                  max={1}
+                  min={0}
+                  step={0.01}
+                  controls={false}
                   className={cn(
                     defaultTextProps,
-                    cn(optionText, 'h-auto w-12 border-0 group-hover/temp:border-gray-200')
+                    cn(
+                      optionText,
+                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
+                    )
                   )}
                 />
               </div>
@@ -228,19 +243,26 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label
-                  htmlFor="chatGptLabel"
+                  htmlFor="freq-penalty-int"
                   className="text-left text-sm font-medium"
                 >
                   Frequency Penalty <small className="opacity-40">(default: 0)</small>
                 </Label>
-                <Input
+                <InputNumber
                   id="freq-penalty-int"
-                  disabled
+                  disabled={readonly}
                   value={freqP}
-                  onChange={e => setFreqP(e.target.value)}
+                  onChange={value => setFreqP(value)}
+                  max={2}
+                  min={-2}
+                  step={0.01}
+                  controls={false}
                   className={cn(
                     defaultTextProps,
-                    cn(optionText, 'h-auto w-12 border-0 group-hover/temp:border-gray-200')
+                    cn(
+                      optionText,
+                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
+                    )
                   )}
                 />
               </div>
@@ -264,19 +286,26 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label
-                  htmlFor="chatGptLabel"
+                  htmlFor="pres-penalty-int"
                   className="text-left text-sm font-medium"
                 >
                   Presence Penalty <small className="opacity-40">(default: 0)</small>
                 </Label>
-                <Input
+                <InputNumber
                   id="pres-penalty-int"
-                  disabled
+                  disabled={readonly}
                   value={presP}
                   onChange={e => setPresP(e.target.value)}
+                  max={2}
+                  min={-2}
+                  step={0.01}
+                  controls={false}
                   className={cn(
                     defaultTextProps,
-                    cn(optionText, 'h-auto w-12 border-0 group-hover/temp:border-gray-200')
+                    cn(
+                      optionText,
+                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
+                    )
                   )}
                 />
               </div>
