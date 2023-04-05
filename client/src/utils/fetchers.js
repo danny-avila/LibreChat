@@ -72,3 +72,23 @@ export function useManualSWR({ path, params, type, onSuccess }) {
   const fetchFunction = type === 'get' ? _.partialRight(axiosFetcher, params) : postRequest;
   return useSWRMutation(path, fetchFunction, options);
 }
+
+export const handleFileSelected = async (jsonData, callback) => {
+  try {
+    const response = await fetch('/api/presets', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(jsonData),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Error: ${response.statusText}`);
+    }
+
+    callback();
+  } catch (error) {
+    console.error('Error uploading the preset:', error);
+  }
+};

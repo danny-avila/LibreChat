@@ -3,8 +3,9 @@ import { useRecoilValue, useRecoilState } from 'recoil';
 import EditPresetDialog from '../../Endpoints/EditPresetDialog';
 import EndpointItems from './EndpointItems';
 import PresetItems from './PresetItems';
+import FileUpload from './FileUpload';
 import getIcon from '~/utils/getIcon';
-import manualSWR from '~/utils/fetchers';
+import manualSWR, { handleFileSelected } from '~/utils/fetchers';
 
 import { Button } from '../../ui/Button.tsx';
 import {
@@ -135,6 +136,7 @@ export default function NewConversationMenu() {
           <DropdownMenuLabel className="flex items-center dark:text-gray-300">
             <span>Select a Preset</span>
             <div className="flex-1" />
+            <FileUpload onFileSelected={handleFileSelected} />
             <Dialog>
               <DialogTrigger asChild>
                 <Button
