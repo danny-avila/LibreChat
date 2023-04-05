@@ -5,4 +5,4 @@ const text = atom({
   default: ''
 });
 
-export default text;
+export default { text };

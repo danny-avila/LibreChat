@@ -3,7 +3,7 @@ const citationRegex = /\[\^\d+?\^]/g;
 const backtick = /(?<!`)[`](?!`)/g;
 // const singleBacktick = /(?<!`)[`](?!`)/;
 const cursorDefault = '<span className="result-streaming">█</span>';
-const { getCitations, citeText } = require('../../app/');
+const { getCitations, citeText } = require('../../../app');
 
 const handleError = (res, message) => {
   res.write(`event: error\ndata: ${JSON.stringify(message)}\n\n`);

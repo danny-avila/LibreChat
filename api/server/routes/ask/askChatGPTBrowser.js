@@ -1,8 +1,8 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { titleConvo, browserClient } = require('../../app/');
-const { saveMessage, getConvoTitle, saveConvo, updateConvo, getConvo } = require('../../models');
+const { titleConvo, browserClient } = require('../../../app/');
+const { saveMessage, getConvoTitle, saveConvo, updateConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 
 router.post('/', async (req, res) => {
