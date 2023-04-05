@@ -23,8 +23,6 @@ export default function Conversation({ conversation, retainView }) {
 
   const [titleInput, setTitleInput] = useState(title);
 
-   const rename = manualSWR(`/api/convos/update`, 'post');
-
   const clickHandler = async () => {
     if (currentConversation?.conversationId === conversationId) {
       return;

@@ -6,7 +6,7 @@ import Search from './routes/Search';
 import store from './store';
 import { useRecoilState, useSetRecoilState } from 'recoil';
 import { ScreenshotProvider } from './utils/screenshotContext.jsx';
-import { useGetSearchEnabledQuery, useGetUserQuery, useGetModelsQuery, useGetEndpointsQuery, useGetPresetsQuery} from '~/data-provider';
+import { useGetSearchEnabledQuery, useGetUserQuery, useGetEndpointsQuery, useGetPresetsQuery} from '~/data-provider';
 
 const router = createBrowserRouter([
   {
@@ -42,7 +42,6 @@ const App = () => {
 
   const searchEnabledQuery = useGetSearchEnabledQuery();
   const userQuery = useGetUserQuery();
-  const modelsQuery = useGetModelsQuery();
   const endpointsQuery = useGetEndpointsQuery();
   const presetsQuery = useGetPresetsQuery();
 
@@ -78,22 +77,6 @@ const App = () => {
     }
   }, [userQuery.data, setUser, userQuery.error]);
 
-  useEffect(() => {
-    const { data, error } = modelsQuery;
-    if (error) {
-      console.error("Failed to get models", error);
-    }
-    if (data) {
-      const filter = {
-        chatgpt: data?.hasOpenAI,
-        chatgptCustom: data?.hasOpenAI,
-        bingai: data?.hasBing,
-        sydney: data?.hasBing,
-        chatgptBrowser: data?.hasChatGpt
-      };
-      setModelsFilter(filter);
-    }
-  }, [modelsQuery.data, setModelsFilter, modelsQuery.error, modelsQuery]);
 
   if (user)
     return (
