@@ -120,7 +120,6 @@ const ask = async ({
     await saveMessage(responseMessage);
 
     // STEP2 update the conversation
-    conversationId = responseMessage.conversationId || conversationId;
 
     // First update conversationId if needed
     let conversationUpdate = { conversationId, endpoint: 'chatGPTBrowser' };
