@@ -5,6 +5,7 @@ import { throttle } from 'lodash';
 import { CSSTransition } from 'react-transition-group';
 import ScrollToBottom from './ScrollToBottom';
 import MultiMessage from './MultiMessage';
+import MessageHeader from './MessageHeader';
 
 import store from '~/store';
 
@@ -20,12 +21,10 @@ export default function Messages({ isSearchView = false }) {
   const _messagesTree = isSearchView ? searchResultMessagesTree : messagesTree;
 
   const conversation = useRecoilValue(store.conversation) || {};
-  const { conversationId, model, chatGptLabel } = conversation;
+  const { conversationId } = conversation;
 
-  const models = useRecoilValue(store.models) || [];
-  const modelName = models.find(element => element.model == model)?.name;
-
-  const searchQuery = useRecoilValue(store.searchQuery);
+  // const models = useRecoilValue(store.models) || [];
+  // const modelName = models.find(element => element.model == model)?.name;
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -81,17 +80,13 @@ export default function Messages({ isSearchView = false }) {
 
   return (
     <div
-      className="flex-1 overflow-y-auto pt-10 md:pt-0"
+      className="flex-1 overflow-y-auto pt-0"
       ref={scrollableRef}
       onScroll={debouncedHandleScroll}
     >
       <div className="dark:gpt-dark-gray h-full">
         <div className="dark:gpt-dark-gray flex h-full flex-col items-center text-sm">
-          <div className="flex w-full items-center justify-center gap-1 border-b border-black/10 bg-gray-50 p-3 text-sm text-gray-500 dark:border-gray-900/50 dark:bg-gray-700 dark:text-gray-300">
-            {isSearchView
-              ? `Search: ${searchQuery}`
-              : `Model: ${modelName} ${chatGptLabel ? `(${chatGptLabel})` : ''}`}
-          </div>
+          <MessageHeader isSearchView={isSearchView} />
           {_messagesTree === null ? (
             <Spinner />
           ) : _messagesTree?.length == 0 && isSearchView ? (

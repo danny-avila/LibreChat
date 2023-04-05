@@ -3,14 +3,28 @@ import axios from 'axios';
 import useSWR from 'swr';
 import useSWRMutation from 'swr/mutation';
 
-const fetcher = (url) => fetch(url, { credentials: 'include' }).then((res) => res.json());
+const fetcher = url => fetch(url, { credentials: 'include' }).then(res => res.json());
 const axiosFetcher = async (url, params) => {
   console.log(params, 'params');
   return axios.get(url, params);
 };
 
-const postRequest = async (url, { arg }) => {
-  return await axios.post(url, { withCredentials: true, arg });
+export const postRequest = async (url, { arg }) => {
+  return await axios({
+    method: 'post',
+    url: url,
+    withCredentials: true,
+    data: { arg }
+  });
+};
+
+export const axiosPost = async ({ url, arg, callback }) => {
+  try {
+    const response = await axios.post(url, { arg }, { withCredentials: true });
+    callback(response.data);
+  } catch (error) {
+    console.error('An error occurred while making the axios post request:', error);
+  }
 };
 
 export const searchFetcher = async (pre, q, pageNumber, callback) => {
@@ -58,3 +72,25 @@ export function useManualSWR({ path, params, type, onSuccess }) {
   const fetchFunction = type === 'get' ? _.partialRight(axiosFetcher, params) : postRequest;
   return useSWRMutation(path, fetchFunction, options);
 }
+
+export const handleFileSelected = async jsonData => {
+  try {
+    const response = await axios({
+      url: '/api/presets',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      withCredentials: true,
+      data: JSON.stringify(jsonData)
+    });
+
+    // if (!response.ok) {
+    //   throw new Error(`Error: ${response.statusText}`);
+    // }
+    console.log(response);
+    return response.data;
+  } catch (error) {
+    console.error('Error uploading the preset:', error);
+  }
+};

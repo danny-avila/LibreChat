@@ -38,7 +38,8 @@ const router = createBrowserRouter([
 const App = () => {
   const [user, setUser] = useRecoilState(store.user);
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
-  const setModelsFilter = useSetRecoilState(store.modelsFilter);
+  const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
+  const setPresets = useSetRecoilState(store.presets);
 
   useEffect(() => {
     // fetch if seatch enabled
@@ -58,19 +59,27 @@ const App = () => {
 
     // fetch models
     axios
-      .get('/api/models', {
+      .get('/api/endpoints', {
         timeout: 1000,
         withCredentials: true
       })
       .then(({ data }) => {
-        const filter = {
-          chatgpt: data?.hasOpenAI,
-          chatgptCustom: data?.hasOpenAI,
-          bingai: data?.hasBing,
-          sydney: data?.hasBing,
-          chatgptBrowser: data?.hasChatGpt
-        };
-        setModelsFilter(filter);
+        setEndpointsConfig(data);
+      })
+      .catch(error => {
+        console.error(error);
+        console.log('Not login!');
+        window.location.href = '/auth/login';
+      });
+
+    // fetch presets
+    axios
+      .get('/api/presets', {
+        timeout: 1000,
+        withCredentials: true
+      })
+      .then(({ data }) => {
+        setPresets(data);
       })
       .catch(error => {
         console.error(error);

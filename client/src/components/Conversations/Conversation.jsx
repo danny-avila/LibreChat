@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
+import { useRecoilState, useSetRecoilState } from 'recoil';
 
 import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
@@ -10,9 +10,7 @@ import store from '~/store';
 
 export default function Conversation({ conversation, retainView }) {
   const [currentConversation, setCurrentConversation] = useRecoilState(store.conversation);
-  const setMessages = useSetRecoilState(store.messages);
   const setSubmission = useSetRecoilState(store.submission);
-  const resetLatestMessage = useResetRecoilState(store.latestMessage);
 
   const { refreshConversations } = store.useConversations();
   const { switchToConversation } = store.useConversation();
@@ -20,34 +18,11 @@ export default function Conversation({ conversation, retainView }) {
   const [renaming, setRenaming] = useState(false);
   const inputRef = useRef(null);
 
-  const {
-    model,
-    parentMessageId,
-    conversationId,
-    title,
-    chatGptLabel = null,
-    promptPrefix = null,
-    jailbreakConversationId,
-    conversationSignature,
-    clientId,
-    invocationId,
-    toneStyle
-  } = conversation;
+  const { conversationId, title } = conversation;
 
   const [titleInput, setTitleInput] = useState(title);
 
   const rename = manualSWR(`/api/convos/update`, 'post');
-
-  const bingData = conversationSignature
-    ? {
-        jailbreakConversationId: jailbreakConversationId,
-        conversationSignature: conversationSignature,
-        parentMessageId: parentMessageId || null,
-        clientId: clientId,
-        invocationId: invocationId,
-        toneStyle: toneStyle
-      }
-    : null;
 
   const clickHandler = async () => {
     if (currentConversation?.conversationId === conversationId) {
@@ -59,64 +34,6 @@ export default function Conversation({ conversation, retainView }) {
 
     // set conversation to the new conversation
     switchToConversation(conversation);
-
-    // if (!stopStream) {
-    //   dispatch(setStopStream(true));
-    //   dispatch(setSubmission({}));
-    // }
-    // dispatch(setEmptyMessage());
-
-    // const convo = { title, error: false, conversationId: id, chatGptLabel, promptPrefix };
-
-    // if (bingData) {
-    //   const {
-    //     parentMessageId,
-    //     conversationSignature,
-    //     jailbreakConversationId,
-    //     clientId,
-    //     invocationId,
-    //     toneStyle
-    //   } = bingData;
-    //   dispatch(
-    //     setConversation({
-    //       ...convo,
-    //       parentMessageId,
-    //       jailbreakConversationId,
-    //       conversationSignature,
-    //       clientId,
-    //       invocationId,
-    //       toneStyle,
-    //       latestMessage: null
-    //     })
-    //   );
-    // } else {
-    //   dispatch(
-    //     setConversation({
-    //       ...convo,
-    //       parentMessageId,
-    //       jailbreakConversationId: null,
-    //       conversationSignature: null,
-    //       clientId: null,
-    //       invocationId: null,
-    //       toneStyle: null,
-    //       latestMessage: null
-    //     })
-    //   );
-    // }
-    // const data = await trigger();
-
-    // if (chatGptLabel) {
-    //   dispatch(setModel('chatgptCustom'));
-    //   dispatch(setCustomModel(chatGptLabel.toLowerCase()));
-    // } else {
-    //   dispatch(setModel(model));
-    //   dispatch(setCustomModel(null));
-    // }
-
-    // dispatch(setMessages(data));
-    // dispatch(setCustomGpt(convo));
-    // dispatch(setText(''));
-    // dispatch(setStopStream(false));
   };
 
   const renameHandler = e => {
