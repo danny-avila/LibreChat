@@ -117,7 +117,7 @@ function Settings(props) {
           </div>
         </div>
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
-          <HoverCard>
+          <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label
@@ -160,7 +160,7 @@ function Settings(props) {
             />
           </HoverCard>
 
-          {/* <HoverCard>
+          {/* <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label
@@ -196,7 +196,7 @@ function Settings(props) {
             />
           </HoverCard> */}
 
-          <HoverCard>
+          <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label
@@ -239,7 +239,7 @@ function Settings(props) {
             />
           </HoverCard>
 
-          <HoverCard>
+          <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label
@@ -282,7 +282,7 @@ function Settings(props) {
             />
           </HoverCard>
 
-          <HoverCard>
+          <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label
