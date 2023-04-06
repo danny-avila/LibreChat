@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
+import filenamify from 'filenamify';
 import axios from 'axios';
 import exportFromJSON from 'export-from-json';
 import DialogTemplate from '../ui/DialogTemplate';
@@ -51,9 +52,10 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
   };
 
   const exportPreset = () => {
+    const fileName = filenamify(preset?.title || 'preset');
     exportFromJSON({
       data: cleanupPreset({ preset, endpointsFilter }),
-      fileName: `${preset?.title}.json`,
+      fileName,
       exportType: exportFromJSON.types.json
     });
   };
