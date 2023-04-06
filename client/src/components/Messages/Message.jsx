@@ -125,7 +125,7 @@ export default function Message({
               />
             </div>
           </div>
-          <div className="relative flex w-[calc(100%-50px)] flex-col gap-1 whitespace-pre-wrap md:gap-3 lg:w-[calc(100%-115px)]">
+          <div className="relative flex w-[calc(100%-50px)] flex-col gap-1  md:gap-3 lg:w-[calc(100%-115px)]">
             {searchResult && (
               <SubRow
                 classes={props.titleclass + ' rounded'}
@@ -137,13 +137,13 @@ export default function Message({
             )}
             <div className="flex flex-grow flex-col gap-3">
               {error ? (
-                <div className="flex flex min-h-[20px] flex-grow flex-col items-start gap-4 gap-2 whitespace-pre-wrap text-red-500">
+                <div className="flex flex min-h-[20px] flex-grow flex-col items-start gap-4 gap-2  text-red-500">
                   <div className="rounded-md border border-red-500 bg-red-500/10 py-2 px-3 text-sm text-gray-600 dark:text-gray-100">
                     {`An error occurred. Please try again in a few moments.\n\nError message: ${text}`}
                   </div>
                 </div>
               ) : edit ? (
-                <div className="flex min-h-[20px] flex-grow flex-col items-start gap-4 whitespace-pre-wrap">
+                <div className="flex min-h-[20px] flex-grow flex-col items-start gap-4 ">
                   {/* <div className={`${blinker ? 'result-streaming' : ''} markdown prose dark:prose-invert light w-full break-words`}> */}
 
                   <div
@@ -171,7 +171,7 @@ export default function Message({
                   </div>
                 </div>
               ) : (
-                <div className="flex min-h-[20px] flex-grow flex-col items-start gap-4 whitespace-pre-wrap">
+                <div className="flex min-h-[20px] flex-grow flex-col items-start gap-4 ">
                   {/* <div className={`${blinker ? 'result-streaming' : ''} markdown prose dark:prose-invert light w-full break-words`}> */}
                   <div className="markdown prose dark:prose-invert light w-full break-words">
                     {!isCreatedByUser ? (
