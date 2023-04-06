@@ -20,7 +20,7 @@ export default defineConfig({
   ],
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
-    baseURL: 'http:/localhost:3080',
+    baseURL: 'http://localhost:3080',
     video: 'on-first-retry',
     trace: 'retain-on-failure',
     headless: true,
