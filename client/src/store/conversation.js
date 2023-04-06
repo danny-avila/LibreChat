@@ -2,6 +2,7 @@ import endpoints from './endpoints';
 import { atom, selector, useSetRecoilState, useResetRecoilState, useRecoilCallback } from 'recoil';
 import buildTree from '~/utils/buildTree';
 import getDefaultConversation from '~/utils/getDefaultConversation';
+import submission from './submission.js';
 
 // current conversation, can be null (need to be fetched from server)
 // sample structure
@@ -59,6 +60,7 @@ const latestMessage = atom({
 const useConversation = () => {
   const setConversation = useSetRecoilState(conversation);
   const setMessages = useSetRecoilState(messages);
+  const setSubmission = useSetRecoilState(submission.submission);
   const resetLatestMessage = useResetRecoilState(latestMessage);
 
   const switchToConversation = useRecoilCallback(
@@ -93,6 +95,7 @@ const useConversation = () => {
 
     setConversation(conversation);
     setMessages(messages);
+    setSubmission({});
     resetLatestMessage();
   };
 

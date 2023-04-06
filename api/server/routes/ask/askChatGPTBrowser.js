@@ -33,7 +33,7 @@ router.post('/', async (req, res) => {
 
   // build endpoint option
   const endpointOption = {
-    model: req.body?.model || 'text-davinci-002-render-sha'
+    model: req.body?.model ?? 'text-davinci-002-render-sha'
   };
 
   const availableModels = getChatGPTBrowserModels();
@@ -106,13 +106,17 @@ const ask = async ({
 
     console.log('CLIENT RESPONSE', response);
 
+    const newConversationId = response.conversationId || conversationId;
+    const newUserMassageId = response.parentMessageId || userMessageId;
+    const newResponseMessageId = response.messageId;
+
     // STEP1 generate response message
     response.text = response.response || '**ChatGPT refused to answer.**';
 
     let responseMessage = {
-      conversationId: response.conversationId,
-      messageId: response.messageId,
-      parentMessageId: overrideParentMessageId || response.parentMessageId || userMessageId,
+      conversationId: newConversationId,
+      messageId: newResponseMessageId,
+      parentMessageId: overrideParentMessageId || newUserMassageId,
       text: await handleText(response),
       sender: endpointOption?.chatGptLabel || 'ChatGPT'
     };
@@ -122,27 +126,34 @@ const ask = async ({
     // STEP2 update the conversation
 
     // First update conversationId if needed
-    let conversationUpdate = { conversationId, endpoint: 'chatGPTBrowser' };
-    if (conversationId != responseMessage.conversationId && isNewConversation)
-      conversationUpdate = {
-        ...conversationUpdate,
-        conversationId: conversationId,
-        newConversationId: responseMessage.conversationId || conversationId
-      };
-    conversationId = responseMessage.conversationId || conversationId;
+    let conversationUpdate = { conversationId: newConversationId, endpoint: 'chatGPTBrowser' };
+    if (conversationId != newConversationId)
+      if (isNewConversation) {
+        // change the conversationId to new one
+        conversationUpdate = {
+          ...conversationUpdate,
+          conversationId: conversationId,
+          newConversationId: newConversationId
+        };
+      } else {
+        // create new conversation
+        conversationUpdate = {
+          ...conversationUpdate,
+          ...endpointOption
+        };
+      }
 
     await saveConvo(req?.session?.user?.username, conversationUpdate);
+    conversationId = newConversationId;
 
     // STEP3 update the user message
-    userMessage.conversationId = conversationId;
-    userMessage.messageId = responseMessage.parentMessageId;
+    userMessage.conversationId = newConversationId;
+    userMessage.messageId = newUserMassageId;
 
     // If response has parentMessageId, the fake userMessage.messageId should be updated to the real one.
-    if (!overrideParentMessageId) {
-      const oldUserMessageId = userMessageId;
-      await saveMessage({ ...userMessage, messageId: oldUserMessageId, newMessageId: userMessage.messageId });
-    }
-    userMessageId = userMessage.messageId;
+    if (!overrideParentMessageId)
+      await saveMessage({ ...userMessage, messageId: userMessageId, newMessageId: newUserMassageId });
+    userMessageId = newUserMassageId;
 
     sendMessage(res, {
       title: await getConvoTitle(req?.session?.user?.username, conversationId),
