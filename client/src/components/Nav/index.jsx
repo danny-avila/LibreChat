@@ -1,14 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import _ from 'lodash';
+import { useState, useEffect, useRef } from 'react';
 import NewChat from './NewChat';
 import Spinner from '../svg/Spinner';
 import Pages from '../Conversations/Pages';
 import Conversations from '../Conversations';
 import NavLinks from './NavLinks';
-import { searchFetcher } from '~/utils/fetchers';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { useGetConversationsQuery } from '~/data-provider';
-
+import { useGetConversationsQuery, useSearchQuery } from '~/data-provider';
+import useDebounce from '~/hooks/useDebounce';
 import store from '~/store';
 
 export default function Nav({ navVisible, setNavVisible }) {
@@ -17,7 +15,6 @@ export default function Nav({ navVisible, setNavVisible }) {
   const containerRef = useRef(null);
   const scrollPositionRef = useRef(null);
 
-  // const dispatch = useDispatch();
   const [conversations, setConversations] = useState([]);
   // current page
   const [pageNumber, setPageNumber] = useState(1);
@@ -43,6 +40,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const [isFetching, setIsFetching] = useState(false);
 
   const onSearchSuccess = (data, expectedPage) => {
+    console.log('onSearchSuccess', data, expectedPage)
     const res = data;
     setConversations(res.conversations);
     if (expectedPage) {
@@ -55,14 +53,22 @@ export default function Nav({ navVisible, setNavVisible }) {
     setSearchResultMessages(res.messages);
   };
 
-  // TODO: dont need this
-  const fetch = useCallback(
-    _.partialRight(
-      searchFetcher.bind(null, () => setIsFetching(true)),
-      onSearchSuccess
-    ),
-    [setIsFetching]
-  );
+  const debouncedSearchTerm = useDebounce(searchQuery, 750);
+  const searchQueryFn = useSearchQuery(debouncedSearchTerm, 1, { 
+    enabled: !!debouncedSearchTerm && 
+    debouncedSearchTerm.length > 0 &&
+    isSearchEnabled && 
+    isSearching,
+  });
+
+  useEffect(() => {
+    if (searchQueryFn.isInitialLoading) {
+      setIsFetching(true);
+    }
+    else if (searchQueryFn.data) {
+      onSearchSuccess(searchQueryFn.data);
+    }
+  }, [searchQueryFn.data, searchQueryFn.isInitialLoading])
 
   const clearSearch = () => {
     setPageNumber(1);
@@ -178,8 +184,6 @@ export default function Nav({ navVisible, setNavVisible }) {
                 </div>
               </div>
               <NavLinks
-                fetch={fetch}
-                onSearchSuccess={onSearchSuccess}
                 clearSearch={clearSearch}
                 isSearchEnabled={isSearchEnabled}
               />

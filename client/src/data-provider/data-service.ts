@@ -49,34 +49,13 @@ export function getSearchEnabled(): Promise<boolean> {
   return request.get(endpoints.searchEnabled());
 }
 
-export function getSearchResults(q: string, pageNumber: string): Promise<t.TSearchResults> {
-  return request.get(endpoints.search(q, pageNumber));
-}
-
 export function getUser(): Promise<t.TUser> {
   return request.get(endpoints.user());
 }
 
-type TSearchFetcherProps = {
-  pre: () => void,
-  q: string,
-  pageNumber: string,
-  callback: (data: any) => void
-};
-
-export const searchConversations = async({ q, pageNumber, callback }: TSearchFetcherProps) => {
-  return request.get(endpoints.search(q, pageNumber)).then(({ data }) => {
-    callback(data);
-  });
+export const searchConversations = async(q: string, pageNumber: string): Promise<t.TSearchResults> => {
+  return request.get(endpoints.search(q, pageNumber));
 }
-
-export const searchFetcher = async ({ pre, q, pageNumber, callback }: TSearchFetcherProps) => {
-  pre();
-  //@ts-ignore
-  const { data } = await request.get(endpoints.search(q, pageNumber));
-  console.log('search data', data);
-  callback(data);
-};
 
 export const getAIEndpoints = () => {
   return request.get(endpoints.aiEndpoints());

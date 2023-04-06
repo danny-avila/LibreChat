@@ -3,7 +3,7 @@ import TextareaAutosize from 'react-textarea-autosize';
 import { Input } from '~/components/ui/Input.tsx';
 import { Label } from '~/components/ui/Label.tsx';
 import { Checkbox } from '~/components/ui/Checkbox.tsx';
-import SelectDropdown from '../../ui/SelectDropDown';
+import SelectDropDown from '../../ui/SelectDropDown';
 import { axiosPost } from '~/utils/fetchers.js';
 import { cn } from '~/utils/';
 import debounce from 'lodash/debounce';
@@ -62,7 +62,7 @@ function Settings(props) {
             >
               Tone Style <small className="opacity-40">(default: fast)</small>
             </Label>
-            <SelectDropdown
+            <SelectDropDown
               id="toneStyle-dropdown"
               title={null}
               value={`${toneStyle.charAt(0).toUpperCase()}${toneStyle.slice(1)}`}
