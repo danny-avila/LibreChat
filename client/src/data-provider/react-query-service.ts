@@ -18,6 +18,7 @@ export enum QueryKeys {
   endpoints = "endpoints",
   presets = "presets",
   searchResults = "searchResults",
+  tokenCount = "tokenCount",
 }
 
 export const useGetUserQuery = (): QueryObserverResult<t.TUser> => {
@@ -199,13 +200,25 @@ export const useSearchQuery = (
   pageNumber: string, 
   config?: UseQueryOptions<t.TSearchResults>
   ): QueryObserverResult<t.TSearchResults> => {
-  console.log('useSearchFetcher', searchQuery, pageNumber)
   return useQuery<t.TSearchResults>([QueryKeys.searchResults, pageNumber, searchQuery], () =>
     dataService.searchConversations(searchQuery, pageNumber), {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
       ...config
+    }
+  );
+}
+
+export const useUpdateTokenCountMutation = (): UseMutationResult<t.TUpdateTokenCountResponse, unknown, string, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (text: string) =>
+      dataService.updateTokenCount(text),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.tokenCount]);
+      },
     }
   );
 }

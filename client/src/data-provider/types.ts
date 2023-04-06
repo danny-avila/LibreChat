@@ -140,3 +140,7 @@ export type TEndpoints = {
     availableModels: []
   }
 };
+
+export type TUpdateTokenCountResponse = {
+  count: number,
+};

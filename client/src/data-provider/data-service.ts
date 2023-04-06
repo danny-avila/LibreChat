@@ -60,3 +60,7 @@ export const searchConversations = async(q: string, pageNumber: string): Promise
 export const getAIEndpoints = () => {
   return request.get(endpoints.aiEndpoints());
 }
+
+export const updateTokenCount = (text: string) => { 
+  return request.post(endpoints.tokenizer(), {arg: {text}});
+}
