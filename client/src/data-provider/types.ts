@@ -1,9 +1,7 @@
 export type TMessage = {
   messageId: string,
   conversationId: string,
-  // conversationSignature: string | null,
   clientId: string,
-  // invocationId: string,
   parentMessageId: string,
   sender: string,
   text: string,
@@ -11,27 +9,40 @@ export type TMessage = {
   error: boolean,
   createdAt: string,
   updatedAt: string,
-  // searchResult: string[],
-  // submitting: boolean,
-  // children?: any[] | undefined,
-  // bgColor?: string,
-  // model?: string,
-  // cancelled?: boolean
 };
 
-export type TMessageTreeNode = {}
-
-export type TSearchMessage = {}
-
-export type TSearchMessageTreeNode = {}
-
-export type TMessageToAsk = {}
+export type TSubmission = {
+  clientId?: string;
+  context?: string;
+  conversationId?: string;
+  conversationSignature?: string;
+  current: boolean;
+  endpoint: EModelEndpoint;
+  invocationId: number;
+  isCreatedByUser: boolean;
+  jailbreak: boolean;
+  jailbreakConversationId?: string;
+  messageId: string;
+  overrideParentMessageId?: string | boolean;
+  parentMessageId?: string;
+  sender: string;
+  systemMessage?: string;
+  text: string;
+  toneStyle?: string;
+  model?: string;
+  promptPrefix?: string;
+  temperature?: number;
+  top_p?: number;
+  presence_penalty?: number;
+  frequence_penalty?: number;
+}
 
 
 export enum EModelEndpoint {
   azureOpenAI = 'azureOpenAI', 
   openAI = 'openAI',
   bingAI = 'bingAI',
+  chatGPT = 'chatGPT',
   chatGPTBrowser = 'chatGPTBrowser'
 }
 
@@ -144,3 +155,9 @@ export type TEndpoints = {
 export type TUpdateTokenCountResponse = {
   count: number,
 };
+
+export type TMessageTreeNode = {}
+
+export type TSearchMessage = {}
+
+export type TSearchMessageTreeNode = {}
