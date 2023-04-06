@@ -49,7 +49,8 @@ export default function NewConversationMenu() {
   // update the default model when availableModels changes
   // typically, availableModels changes => modelsFilter or customGPTModels changes
   useEffect(() => {
-    if (conversationId == 'new') {
+    const isInvalidConversation = !availableEndpoints.find(e => e === endpoint);
+    if (conversationId == 'new' && isInvalidConversation) {
       newConversation();
     }
   }, [availableEndpoints]);
