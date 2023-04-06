@@ -88,7 +88,7 @@ export default function Messages({ isSearchView = false }) {
       onScroll={debouncedHandleScroll}
     >
       <div
-        className="dark:gpt-dark-gray h-auto"
+        className="dark:gpt-dark-gray mb-32 h-auto md:mb-48"
         ref={screenshotTargetRef}
       >
         <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
@@ -123,7 +123,7 @@ export default function Messages({ isSearchView = false }) {
             </>
           )}
           <div
-            className="dark:gpt-dark-gray group h-32 w-full flex-shrink-0 dark:border-gray-900/50 md:h-48"
+            className="dark:gpt-dark-gray group h-0 w-full flex-shrink-0 dark:border-gray-900/50"
             ref={messagesEndRef}
           />
         </div>
