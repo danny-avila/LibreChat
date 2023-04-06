@@ -59,24 +59,18 @@ const App = () => {
     window.location.href = '/auth/login';
   }
 
-  useEffect(() => {
-    if (searchEnabledQuery.error) {
-      console.error("Failed to get search enabled", searchEnabledQuery.error);
-    }
-    if (searchEnabledQuery.data) {
-      setIsSearchEnabled(searchEnabledQuery.data);
-    }
-  }, [searchEnabledQuery.data, setIsSearchEnabled, searchEnabledQuery.error]);
+  if (searchEnabledQuery.data) {
+    setIsSearchEnabled(searchEnabledQuery.data);
+  } else if(searchEnabledQuery.isError) {
+    console.error("Failed to get search enabled", searchEnabledQuery.error);
+  }
 
-  useEffect(() => {
-    if (userQuery.error) {
-      console.error("Failed to get user", userQuery.error);
-    }
-    if (userQuery.data) {
-      setUser(userQuery.data);
-    }
-  }, [userQuery.data, setUser, userQuery.error]);
-
+  if (userQuery.data) {
+    setUser(userQuery.data);
+  } else if(userQuery.isError) {
+    console.error("Failed to get user", userQuery.error);
+    window.location.href = '/auth/login';
+  }
 
   if (user)
     return (
