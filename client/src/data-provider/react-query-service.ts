@@ -120,7 +120,6 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
 export const useGetConversationsQuery = (pageNumber: string): QueryObserverResult<t.Conversation[]> => {
   return useQuery([QueryKeys.allConversations, pageNumber], () =>
     dataService.getConversations(pageNumber), {
-      // refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
     }
@@ -191,9 +190,14 @@ export const useDeleteAllPresetsMutation = (): UseMutationResult<unknown> => {
   });
 }
 
-export const useSearchFetcher = (query: string, pageNumber: string, callback: () => void, config?: UseQueryOptions<t.TSearchResponse>): QueryObserverResult<t.TSearchResponse> => {
-  return useQuery<t.TSearchResponse>([QueryKeys.searchResults, pageNumber, query], () =>
-    dataService.searchConversations(query, pageNumber, callback), {
+export const useSearchQuery = (
+  searchQuery: string, 
+  pageNumber: string, 
+  config?: UseQueryOptions<t.TSearchResults>
+  ): QueryObserverResult<t.TSearchResults> => {
+  console.log('useSearchFetcher', searchQuery, pageNumber)
+  return useQuery<t.TSearchResponse>([QueryKeys.searchResults, pageNumber, searchQuery], () =>
+    dataService.searchConversations(searchQuery, pageNumber), {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,

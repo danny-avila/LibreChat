@@ -3,7 +3,7 @@ import CheckMark from '../svg/CheckMark.jsx';
 import { Listbox, Transition } from '@headlessui/react';
 import { cn } from '~/utils/';
 
-function SelectDropdown({
+function SelectDropDown({
   title = 'Model',
   value,
   disabled,
@@ -111,4 +111,4 @@ function SelectDropdown({
   );
 }
 
-export default SelectDropdown;
+export default SelectDropDown;

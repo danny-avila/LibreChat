@@ -121,7 +121,7 @@ export type TDeleteConversationResponse = {
   }
 };
 
-export type TSearchResponse = {
+export type TSearchResults = {
   conversations: TConversation[],
   messages: TMessage[],
   pageNumber: string,

@@ -4,7 +4,7 @@ import { cn } from '~/utils';
 import { Button } from '../../ui/Button.tsx';
 import { Settings2 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '../../ui/Tabs.tsx';
-import SelectDropdown from '../../ui/SelectDropDown';
+import SelectDropDown from '../../ui/SelectDropDown';
 import Settings from '../../Endpoints/BingAI/Settings.jsx';
 import EndpointOptionsPopover from '../../Endpoints/EndpointOptionsPopover';
 import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
@@ -68,7 +68,7 @@ function BingAIOptions() {
           (!advancedMode ? ' show' : '')
         }
       >
-        <SelectDropdown
+        <SelectDropDown
           title="Mode"
           value={jailbreak ? 'Sydney' : 'BingAI'}
           setValue={value => setOption('jailbreak')(value === 'Sydney')}
