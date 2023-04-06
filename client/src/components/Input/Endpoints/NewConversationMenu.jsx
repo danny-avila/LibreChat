@@ -5,7 +5,7 @@ import EndpointItems from './EndpointItems';
 import PresetItems from './PresetItems';
 import FileUpload from './FileUpload';
 import getIcon from '~/utils/getIcon';
-import { useDeletePresetMutation } from '~/data-provider';
+import { useDeletePresetMutation, useCreatePresetMutation } from '~/data-provider';
 import { Button } from '../../ui/Button.tsx';
 import {
   DropdownMenu,
@@ -30,13 +30,20 @@ export default function NewConversationMenu() {
 
   const conversation = useRecoilValue(store.conversation) || {};
   const { endpoint, conversationId } = conversation;
-  // const { model, promptPrefix, chatGptLabel, conversationId } = conversation;
   const { newConversation } = store.useConversation();
 
   const deletePresetsMutation = useDeletePresetMutation();
+  const createPresetMutation = useCreatePresetMutation();
 
   const importPreset = jsonData => {
-    handleFileSelected(jsonData).then(setPresets);
+    createPresetMutation.mutate({...jsonData}, {
+      onSuccess: (data) => {
+        setPresets(data);
+      },
+      onError: (error) => {
+        console.error('Error uploading the preset:', error);
+      }
+    })
   };
 
   // update the default model when availableModels changes
@@ -58,7 +65,6 @@ export default function NewConversationMenu() {
     setMenuOpen(false);
 
     if (!newEndpoint) return;
-    // else if (newEndpoint === endpoint) return;
     else {
       newConversation({}, { endpoint: newEndpoint });
     }
@@ -68,7 +74,6 @@ export default function NewConversationMenu() {
   const onSelectPreset = newPreset => {
     setMenuOpen(false);
     if (!newPreset) return;
-    // else if (newEndpoint === endpoint) return;
     else {
       newConversation({}, newPreset);
     }
