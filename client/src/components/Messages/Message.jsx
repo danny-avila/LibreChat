@@ -205,6 +205,7 @@ export default function Message({
         </div>
       </div>
       <MultiMessage
+        messageId={message.messageId}
         conversation={conversation}
         messagesTree={message.children}
         scrollToBottom={scrollToBottom}

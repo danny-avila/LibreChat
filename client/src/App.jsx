@@ -7,6 +7,8 @@ import store from './store';
 import userAuth from './utils/userAuth';
 import { useRecoilState, useSetRecoilState } from 'recoil';
 
+import { ScreenshotProvider } from './utils/screenshotContext.jsx';
+
 import axios from 'axios';
 
 const router = createBrowserRouter([
@@ -97,4 +99,8 @@ const App = () => {
   else return <div className="flex h-screen"></div>;
 };
 
-export default App;
+export default () => (
+  <ScreenshotProvider>
+    <App />
+  </ScreenshotProvider>
+);
