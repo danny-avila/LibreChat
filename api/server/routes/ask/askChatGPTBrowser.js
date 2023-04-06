@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const { getChatGPTBrowserModels } = require('../endpoints');
-const { titleConvo, browserClient } = require('../../../app/');
+const { browserClient } = require('../../../app/');
 const { saveMessage, getConvoTitle, saveConvo, updateConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 
