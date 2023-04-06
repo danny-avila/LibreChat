@@ -5,7 +5,7 @@ import EndpointItems from './EndpointItems';
 import PresetItems from './PresetItems';
 import FileUpload from './FileUpload';
 import getIcon from '~/utils/getIcon';
-import { useDeleteAllPresetsMutation } from '~/data-provider';
+import { useDeletePresetMutation } from '~/data-provider';
 import { Button } from '../../ui/Button.tsx';
 import {
   DropdownMenu,
@@ -33,7 +33,7 @@ export default function NewConversationMenu() {
   // const { model, promptPrefix, chatGptLabel, conversationId } = conversation;
   const { newConversation } = store.useConversation();
 
-  const deletePresetsMutation = useDeleteAllPresetsMutation();
+  const deletePresetsMutation = useDeletePresetMutation();
 
   const importPreset = jsonData => {
     handleFileSelected(jsonData).then(setPresets);
@@ -79,8 +79,12 @@ export default function NewConversationMenu() {
     setPreset(preset);
   };
 
-  const clearPreset = () => {
-    deletePresetsMutation.mutate();
+  const clearAllPresets = () => {
+    deletePresetsMutation.mutate({arg: {}});
+  };
+
+  const onDeletePreset = preset => {
+    deletePresetsMutation.mutate({arg: preset});
   };
 
   const icon = getIcon({
@@ -92,9 +96,7 @@ export default function NewConversationMenu() {
   });
 
   return (
-    <Dialog
-    // onOpenChange={onOpenChange}
-    >
+    <Dialog>
       <DropdownMenu
         open={menuOpen}
         onOpenChange={setMenuOpen}
@@ -102,7 +104,6 @@ export default function NewConversationMenu() {
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
-            // style={{backgroundColor: 'rgb(16, 163, 127)'}}
             className={`absolute top-[0.25px] mb-0 ml-1 items-center rounded-md border-0 p-1 outline-none focus:ring-0 focus:ring-offset-0 disabled:top-[0.25px] dark:data-[state=open]:bg-opacity-50 md:top-1 md:left-1 md:ml-0 md:pl-1 md:disabled:top-1`}
           >
             {icon}
@@ -140,7 +141,6 @@ export default function NewConversationMenu() {
                 <Button
                   type="button"
                   className="h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-red-700 hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-gray-800 dark:hover:text-red-400"
-                  // onClick={clearPreset}
                 >
                   Clear All
                 </Button>
@@ -149,7 +149,7 @@ export default function NewConversationMenu() {
                 title="Clear presets"
                 description="Are you sure you want to clear all presets? This is irreversible."
                 selection={{
-                  selectHandler: clearPreset,
+                  selectHandler: clearAllPresets,
                   selectClasses: 'bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
                   selectText: 'Clear'
                 }}
@@ -166,7 +166,7 @@ export default function NewConversationMenu() {
                 presets={presets}
                 onSelect={onSelectPreset}
                 onChangePreset={onChangePreset}
-                onDeletePreset={clearPresetsTrigger}
+                onDeletePreset={onDeletePreset}
               />
             ) : (
               <DropdownMenuLabel className="dark:text-gray-300">No preset yet.</DropdownMenuLabel>

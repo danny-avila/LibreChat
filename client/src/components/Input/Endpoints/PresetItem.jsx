@@ -45,15 +45,6 @@ export default function PresetItem({ preset = {}, value, onSelect, onChangePrese
       {icon}
       {preset?.title}
       <small className="ml-2">({getPresetTitle()})</small>
-
-      {/* <RenameButton
-        twcss={`ml-auto mr-2 ${buttonClass.className}`}
-        onRename={onRename}
-        renaming={renaming}
-        onMouseOver={handleMouseOver}
-        onMouseOut={handleMouseOut}
-        renameHandler={renameHandler}
-      /> */}
       <div className="flex w-4 flex-1" />
       <button
         className="invisible m-0 p-2 mr-1 rounded-md text-gray-400 hover:text-gray-700 group-hover:visible dark:text-gray-400 dark:hover:text-gray-200        "

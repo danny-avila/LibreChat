@@ -77,8 +77,7 @@ export const useGetConversationByIdMutation = (
 
 export const useUpdateConversationMutation = (
   id: string
-): UseMutationResult<
-  t.TUpdateConversationResponse> => {
+): UseMutationResult<t.TUpdateConversationResponse, unknown, t.TUpdateConversationRequest, unknown> => {
   const queryClient = useQueryClient();
   return useMutation(
     (payload: t.TUpdateConversationRequest) =>
@@ -92,9 +91,10 @@ export const useUpdateConversationMutation = (
   );
 };
 
+
 export const useDeleteConversationMutation = (
   id?: string
-): UseMutationResult<t.TDeleteConversationResponse> => {
+): UseMutationResult<t.TDeleteConversationResponse, unknown, t.TDeleteConversationRequest, unknown> => {
   const queryClient = useQueryClient();
   return useMutation(
     (payload: t.TDeleteConversationRequest) =>
@@ -117,7 +117,7 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
   });
 };
 
-export const useGetConversationsQuery = (pageNumber: string): QueryObserverResult<t.Conversation[]> => {
+export const useGetConversationsQuery = (pageNumber: string): QueryObserverResult<t.TConversation[]> => {
   return useQuery([QueryKeys.allConversations, pageNumber], () =>
     dataService.getConversations(pageNumber), {
       refetchOnReconnect: false,
@@ -147,10 +147,10 @@ export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpoints> => {
   );
 }
 
-export const useCreatePresetMutation = (): UseMutationResult<t.Preset[]> => {
+export const useCreatePresetMutation = (): UseMutationResult<t.TPreset[], unknown, t.TPreset, unknown> => {
   const queryClient = useQueryClient();
   return useMutation(
-    (payload: t.TCreatePresetRequest) =>
+    (payload: t.TPreset) =>
       dataService.createPreset(payload),
     {
       onSuccess: () => {
@@ -160,10 +160,10 @@ export const useCreatePresetMutation = (): UseMutationResult<t.Preset[]> => {
   );
 };
 
-export const useUpdatePresetMutation = (): UseMutationResult<t.TPreset[]> => {
+export const useUpdatePresetMutation = (): UseMutationResult<t.TPreset[], unknown, t.TPreset, unknown> => {
   const queryClient = useQueryClient();
   return useMutation(
-    (payload: t.TUpdatePresetRequest) =>
+    (payload: t.TPreset) =>
       dataService.updatePreset(payload),
     {
       onSuccess: () => {
@@ -181,13 +181,17 @@ export const useGetPresetsQuery = (): QueryObserverResult<t.TPreset[], unknown> 
   });
 };
 
-export const useDeleteAllPresetsMutation = (): UseMutationResult<unknown> => {
+export const useDeletePresetMutation = (): UseMutationResult<t.TPreset[], unknown, t.TPreset | {}, unknown> => {
   const queryClient = useQueryClient();
-  return useMutation(() => dataService.deletePresets(), {
-    onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.presets]);
-    },
-  });
+  return useMutation(
+    (payload: t.TPreset | {}) => 
+      dataService.deletePreset(payload), 
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.presets]);
+      },
+    }
+  );
 }
 
 export const useSearchQuery = (
@@ -196,7 +200,7 @@ export const useSearchQuery = (
   config?: UseQueryOptions<t.TSearchResults>
   ): QueryObserverResult<t.TSearchResults> => {
   console.log('useSearchFetcher', searchQuery, pageNumber)
-  return useQuery<t.TSearchResponse>([QueryKeys.searchResults, pageNumber, searchQuery], () =>
+  return useQuery<t.TSearchResults>([QueryKeys.searchResults, pageNumber, searchQuery], () =>
     dataService.searchConversations(searchQuery, pageNumber), {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
