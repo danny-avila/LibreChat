@@ -45,12 +45,6 @@ jobs:
       working-directory: ./client
       run: npm ci
 
-    - name: Start API server
-      working-directory: ./api
-      run: |
-        npm run start &
-        sleep 10 # Wait for the server to start
-
     - name: Build Client
       working-directory: ./client
       run: npm run build
@@ -60,6 +54,12 @@ jobs:
 
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
+
+    - name: Start API server
+      working-directory: ./api
+      run: |
+        npm run start &
+        sleep 10 # Wait for the server to start
 
     - name: Run Playwright tests
       run: npx playwright test
