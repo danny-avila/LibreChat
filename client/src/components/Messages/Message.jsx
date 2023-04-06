@@ -9,6 +9,7 @@ import SiblingSwitch from './SiblingSwitch';
 import getIcon from '~/utils/getIcon';
 import { useMessageHandler } from '~/utils/handleSubmit';
 import { getConversationById } from '~/data-provider';
+import { cn } from '~/utils/';
 import store from '~/store';
 
 export default function Message({
@@ -136,8 +137,8 @@ export default function Message({
             )}
             <div className="flex flex-grow flex-col gap-3">
               {error ? (
-                <div className="flex min-h-[20px] flex-grow flex-col items-start gap-4 gap-2  text-red-500">
-                  <div className="rounded-md border border-red-500 bg-red-500/10 py-2 px-3 text-sm text-gray-600 dark:text-gray-100">
+                <div className="flex flex min-h-[20px] flex-grow flex-col items-start gap-2 gap-4  text-red-500">
+                  <div className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-100">
                     {`An error occurred. Please try again in a few moments.\n\nError message: ${text}`}
                   </div>
                 </div>
@@ -170,7 +171,12 @@ export default function Message({
                   </div>
                 </div>
               ) : (
-                <div className="flex min-h-[20px] flex-grow flex-col items-start gap-4 ">
+                <div
+                  className={cn(
+                    'flex min-h-[20px] flex-grow flex-col items-start gap-4 ',
+                    isCreatedByUser ? 'whitespace-pre-wrap' : ''
+                  )}
+                >
                   {/* <div className={`${blinker ? 'result-streaming' : ''} markdown prose dark:prose-invert light w-full break-words`}> */}
                   <div className="markdown prose dark:prose-invert light w-full break-words">
                     {!isCreatedByUser ? (
