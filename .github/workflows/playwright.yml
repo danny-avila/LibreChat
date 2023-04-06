@@ -14,10 +14,27 @@ jobs:
     - uses: actions/setup-node@v3
       with:
         node-version: 18
-        
+        cache: 'npm'
+
+    - name: Cache API dependencies
+      uses: actions/cache@v2
+      with:
+        path: ./api/node_modules
+        key: api-${{ runner.os }}-node-${{ hashFiles('./api/package-lock.json') }}
+        restore-keys: |
+          api-${{ runner.os }}-node-
+
     - name: Install API dependencies
       working-directory: ./api
       run: npm ci
+
+    - name: Cache Client dependencies
+      uses: actions/cache@v2
+      with:
+        path: ./client/node_modules
+        key: client-${{ runner.os }}-node-${{ hashFiles('./client/package-lock.json') }}
+        restore-keys: |
+          client-${{ runner.os }}-node-
 
     - name: Install Client dependencies
       working-directory: ./client
