@@ -3,9 +3,10 @@ import TextareaAutosize from 'react-textarea-autosize';
 import { Label } from '~/components/ui/Label.tsx';
 import { Checkbox } from '~/components/ui/Checkbox.tsx';
 import SelectDropDown from '../../ui/SelectDropDown';
-import { axiosPost } from '~/utils/fetchers.js';
 import { cn } from '~/utils/';
-import debounce from 'lodash/debounce';
+import useDebounce from '~/hooks/useDebounce';
+import { useUpdateTokenCountMutation } from '~/data-provider';
+
 const defaultTextProps =
   'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
 
@@ -17,28 +18,26 @@ function Settings(props) {
   const setSystemMessage = setOption('systemMessage');
   const setJailbreak = setOption('jailbreak');
   const setToneStyle = value => setOption('toneStyle')(value.toLowerCase());
+  const debouncedContext = useDebounce(context, 250);
+  const updateTokenCountMutation = useUpdateTokenCountMutation();
 
-  // useEffect to update token count
-  useEffect(() => {
-    if (!context || context.trim() === '') {
+  useEffect(() => { 
+    if (!debouncedContext || debouncedContext.trim() === '') {
       setTokenCount(0);
       return;
     }
 
-    const debouncedPost = debounce(axiosPost, 250);
     const handleTextChange = context => {
-      debouncedPost({
-        url: '/api/tokenizer',
-        arg: { text: context },
-        callback: data => {
+      updateTokenCountMutation.mutate({ text: context }, {
+        onSuccess: data => {
           setTokenCount(data.count);
         }
       });
     };
 
-    handleTextChange(context);
-    return () => debouncedPost.cancel();
-  }, [context]);
+    handleTextChange(debouncedContext);
+  }, [debouncedContext]);
+
 
   return (
     <>
