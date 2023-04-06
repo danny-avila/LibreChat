@@ -19,6 +19,7 @@ router.post('/', async (req, res) => {
 
   // build user message
   const conversationId = oldConversationId || crypto.randomUUID();
+  const isNewConversation = !oldConversationId;
   const userMessageId = crypto.randomUUID();
   const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000';
   const userMessage = {
@@ -32,13 +33,13 @@ router.post('/', async (req, res) => {
 
   // build endpoint option
   const endpointOption = {
-    model: req.body?.model || 'gpt-3.5-turbo',
-    chatGptLabel: req.body?.chatGptLabel || null,
-    promptPrefix: req.body?.promptPrefix || null,
-    temperature: req.body?.temperature || 1,
-    top_p: req.body?.top_p || 1,
-    presence_penalty: req.body?.presence_penalty || 0,
-    frequency_penalty: req.body?.frequency_penalty || 0
+    model: req.body?.model ?? 'gpt-3.5-turbo',
+    chatGptLabel: req.body?.chatGptLabel ?? null,
+    promptPrefix: req.body?.promptPrefix ?? null,
+    temperature: req.body?.temperature ?? 1,
+    top_p: req.body?.top_p ?? 1,
+    presence_penalty: req.body?.presence_penalty ?? 0,
+    frequency_penalty: req.body?.frequency_penalty ?? 0
   };
 
   const availableModels = getOpenAIModels();
@@ -63,6 +64,7 @@ router.post('/', async (req, res) => {
 
   // eslint-disable-next-line no-use-before-define
   return await ask({
+    isNewConversation,
     userMessage,
     endpointOption,
     conversationId,
@@ -74,6 +76,7 @@ router.post('/', async (req, res) => {
 });
 
 const ask = async ({
+  isNewConversation,
   userMessage,
   endpointOption,
   conversationId,
@@ -83,8 +86,6 @@ const ask = async ({
   res
 }) => {
   let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
-
-  const client = askClient;
 
   res.writeHead(200, {
     Connection: 'keep-alive',
@@ -100,7 +101,7 @@ const ask = async ({
     const progressCallback = createOnProgress();
     const abortController = new AbortController();
     res.on('close', () => abortController.abort());
-    let response = await client({
+    let response = await askClient({
       text,
       parentMessageId: userParentMessageId,
       conversationId,
@@ -115,13 +116,17 @@ const ask = async ({
 
     console.log('CLIENT RESPONSE', response);
 
+    const newConversationId = response.conversationId || conversationId;
+    const newUserMassageId = response.parentMessageId || userMessageId;
+    const newResponseMessageId = response.messageId;
+
     // STEP1 generate response message
     response.text = response.response || '**ChatGPT refused to answer.**';
 
     let responseMessage = {
-      conversationId: response.conversationId,
-      messageId: response.messageId,
-      parentMessageId: overrideParentMessageId || userMessageId,
+      conversationId: newConversationId,
+      messageId: newResponseMessageId,
+      parentMessageId: overrideParentMessageId || newUserMassageId,
       text: await handleText(response),
       sender: endpointOption?.chatGptLabel || 'ChatGPT'
     };
@@ -129,21 +134,34 @@ const ask = async ({
     await saveMessage(responseMessage);
 
     // STEP2 update the conversation
-    conversationId = responseMessage.conversationId || conversationId;
-    // it seems openAI will not change the conversationId.
-    // let conversationUpdate = { conversationId, endpoint: 'openAI' };
-    // await saveConvo(req?.session?.user?.username, conversationUpdate);
+    let conversationUpdate = { conversationId: newConversationId, endpoint: 'openAI' };
+    if (conversationId != newConversationId)
+      if (isNewConversation) {
+        // change the conversationId to new one
+        conversationUpdate = {
+          ...conversationUpdate,
+          conversationId: conversationId,
+          newConversationId: newConversationId
+        };
+      } else {
+        // create new conversation
+        conversationUpdate = {
+          ...conversationUpdate,
+          ...endpointOption
+        };
+      }
+
+    await saveConvo(req?.session?.user?.username, conversationUpdate);
+    conversationId = newConversationId;
 
     // STEP3 update the user message
-    userMessage.conversationId = conversationId;
-    userMessage.messageId = responseMessage.parentMessageId;
+    userMessage.conversationId = newConversationId;
+    userMessage.messageId = newUserMassageId;
 
     // If response has parentMessageId, the fake userMessage.messageId should be updated to the real one.
-    if (!overrideParentMessageId) {
-      const oldUserMessageId = userMessageId;
-      await saveMessage({ ...userMessage, messageId: oldUserMessageId, newMessageId: userMessage.messageId });
-    }
-    userMessageId = userMessage.messageId;
+    if (!overrideParentMessageId)
+      await saveMessage({ ...userMessage, messageId: userMessageId, newMessageId: newUserMassageId });
+    userMessageId = newUserMassageId;
 
     sendMessage(res, {
       title: await getConvoTitle(req?.session?.user?.username, conversationId),
