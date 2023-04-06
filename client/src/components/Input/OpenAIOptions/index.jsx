@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import SelectDropDown from '../../ui/SelectDropDown';
@@ -21,20 +21,6 @@ function OpenAIOptions() {
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
-  // useEffect(() => {
-  //   if (endpoint !== 'openAI') return;
-
-  //   const mustInAdvancedMode =
-  //     chatGptLabel !== null ||
-  //     promptPrefix !== null ||
-  //     temperature !== 1 ||
-  //     top_p !== 1 ||
-  //     presence_penalty !== 0 ||
-  //     frequency_penalty !== 0;
-
-  //   if (mustInAdvancedMode && !advancedMode) setAdvancedMode(true);
-  // }, [conversation, advancedMode]);
-
   if (endpoint !== 'openAI') return null;
   if (conversationId !== 'new') return null;
 
@@ -43,15 +29,6 @@ function OpenAIOptions() {
   const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
 
   const switchToSimpleMode = () => {
-    // setConversation(prevState => ({
-    //   ...prevState,
-    //   chatGptLabel: null,
-    //   promptPrefix: null,
-    //   temperature: 1,
-    //   top_p: 1,
-    //   presence_penalty: 0,
-    //   frequency_penalty: 0
-    // }));
     setAdvancedMode(false);
   };
 
@@ -79,16 +56,6 @@ function OpenAIOptions() {
           (!advancedMode ? ' show' : '')
         }
       >
-        {/* <ModelSelect
-          model={model}
-          availableModels={availableModels}
-          onChange={setOption('model')}
-          type="button"
-          className={cn(
-            cardStyle,
-            ' z-50 flex h-[40px] items-center justify-center px-4 hover:bg-slate-50 data-[state=open]:bg-slate-50 dark:hover:bg-gray-600 dark:data-[state=open]:bg-gray-600'
-          )}
-        /> */}
         <SelectDropDown
           value={model}
           setValue={setOption('model')}

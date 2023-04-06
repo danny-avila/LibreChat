@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useRecoilValue, useRecoilState } from 'recoil';
+import { useState } from 'react';
+import { useRecoilState } from 'recoil';
 import { cn } from '~/utils';
 import { Button } from '../../ui/Button.tsx';
 import { Settings2 } from 'lucide-react';
@@ -18,25 +18,12 @@ function BingAIOptions() {
   const { endpoint, conversationId } = conversation;
   const { toneStyle, context, systemMessage, jailbreak } = conversation;
 
-  // useEffect(() => {
-  //   if (endpoint !== 'bingAI') return;
-
-  //   const mustInAdvancedMode = context !== null || systemMessage !== null;
-
-  //   if (mustInAdvancedMode && !advancedMode) setAdvancedMode(true);
-  // }, [conversation, advancedMode]);
-
   if (endpoint !== 'bingAI') return null;
   if (conversationId !== 'new') return null;
 
   const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
 
   const switchToSimpleMode = () => {
-    // setConversation(prevState => ({
-    //   ...prevState,
-    //   context: null,
-    //   systemMessage: null
-    // }));
     setAdvancedMode(false);
   };
 

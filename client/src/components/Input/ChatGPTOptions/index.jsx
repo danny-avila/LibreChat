@@ -12,20 +12,10 @@ function ChatGPTOptions() {
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
-  // useEffect(() => {
-  //   if (endpoint !== 'chatGPTBrowser') return;
-  // }, [conversation]);
-
   if (endpoint !== 'chatGPTBrowser') return null;
   if (conversationId !== 'new') return null;
 
   const models = endpointsConfig?.['chatGPTBrowser']?.['availableModels'] || [];
-
-  // const modelMap = new Map([
-  //   ['Default (GPT-3.5)', 'text-davinci-002-render-sha'],
-  //   ['Legacy (GPT-3.5)', 'text-davinci-002-render-paid'],
-  //   ['GPT-4', 'gpt-4']
-  // ]);
 
   const setOption = param => newValue => {
     let update = {};
