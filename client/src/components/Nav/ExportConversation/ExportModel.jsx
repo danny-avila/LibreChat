@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
+import filenamify from 'filenamify';
 import exportFromJSON from 'export-from-json';
 import download from 'downloadjs';
 import DialogTemplate from '~/components/ui/DialogTemplate.jsx';
@@ -40,9 +41,7 @@ export default function ExportModel({ open, onOpenChange }) {
 
   useEffect(() => {
     setFileName(
-      String(conversation?.title)
-        .replace(/[^a-z0-9]/gi, '_')
-        .toLowerCase() || 'file'
+      filenamify(String(conversation?.title || 'file'))
     );
     setType('text');
     setIncludeOptions(true);
@@ -292,7 +291,7 @@ export default function ExportModel({ open, onOpenChange }) {
                 <Input
                   id="filename"
                   value={filename}
-                  onChange={e => setFileName(e.target.value || '')}
+                  onChange={e => setFileName(filenamify(e.target.value || ''))}
                   placeholder="Set the filename"
                   className={cn(
                     defaultTextProps,
