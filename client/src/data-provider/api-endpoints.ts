@@ -22,14 +22,6 @@ export const deleteConversation = () => {
   return `/api/convos/clear`;
 };
 
-export const prompts = () => {
-  return `/api/prompts`;
-};
-
-export const generateTitle = () => {
-  return `/api/convos/gen_title`;
-};
-
 export const search = (q: string, pageNumber: string) => {
   return `/api/search?q=${q}&pageNumber=${pageNumber}`;
 }
