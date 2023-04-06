@@ -32,6 +32,9 @@ export default function Conversation({ conversation, retainView }) {
     // stop existing submission
     setSubmission(null);
 
+    // set document title
+    document.title = title;
+
     // set conversation to the new conversation
     switchToConversation(conversation);
   };
