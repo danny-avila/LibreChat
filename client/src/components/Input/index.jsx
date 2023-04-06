@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import SubmitButton from './SubmitButton';
 import OpenAIOptions from './OpenAIOptions';
@@ -6,6 +6,7 @@ import ChatGPTOptions from './ChatGPTOptions';
 import BingAIOptions from './BingAIOptions';
 // import BingStyles from './BingStyles';
 import NewConversationMenu from './NewConversationMenu';
+import AdjustToneButton from './AdjustToneButton';
 import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useMessageHandler } from '../../utils/handleSubmit';
@@ -29,7 +30,7 @@ export default function TextChat({ isSearchView = false }) {
   const { ask, stopGenerating } = useMessageHandler();
 
   // const bingStylesRef = useRef(null);
-  // const [showBingToneSetting, setShowBingToneSetting] = useState(false);
+  const [showBingToneSetting, setShowBingToneSetting] = useState(false);
 
   const isNotAppendable = latestMessage?.cancelled || latestMessage?.error;
 
@@ -49,7 +50,7 @@ export default function TextChat({ isSearchView = false }) {
   //     const newHeight = inputRef.current.clientHeight;
   //     if (newHeight >= 24) {
   //       // 24 is the default height of the input
-  //       // bingStylesRef.current.style.bottom = 15 + newHeight + 'px';
+  //       bingStylesRef.current.style.bottom = 15 + newHeight + 'px';
   //     }
   //   });
   //   resizeObserver.observe(inputRef.current);
@@ -119,9 +120,9 @@ export default function TextChat({ isSearchView = false }) {
     return '';
   };
 
-  // const handleBingToneSetting = () => {
-  //   setShowBingToneSetting(show => !show);
-  // };
+  const handleBingToneSetting = () => {
+    setShowBingToneSetting(show => !show);
+  };
 
   if (isSearchView) return <></>;
 
@@ -132,7 +133,7 @@ export default function TextChat({ isSearchView = false }) {
           <span className="flex w-full flex-col items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
             <OpenAIOptions />
             <ChatGPTOptions />
-            <BingAIOptions />
+            <BingAIOptions show={showBingToneSetting} />
           </span>
         </div>
         <div className="input-panel md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient relative w-full border-t bg-white py-2 dark:border-white/20 dark:bg-gray-800 md:border-t-0 md:border-transparent md:bg-transparent md:dark:border-transparent md:dark:bg-transparent">
@@ -168,9 +169,9 @@ export default function TextChat({ isSearchView = false }) {
                   disabled={disabled || isNotAppendable}
                   isSubmitting={isSubmitting}
                 />
-                {/* {messages?.length && conversation?.model === 'sydney' ? (
+                {latestMessage && conversation?.jailbreak && conversation.endpoint === 'bingAI' ? (
                   <AdjustToneButton onClick={handleBingToneSetting} />
-                ) : null} */}
+                ) : null}
               </div>
             </div>
           </form>
