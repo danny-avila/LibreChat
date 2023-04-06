@@ -1,15 +1,14 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useRecoilValue, useSetRecoilState, useResetRecoilState } from 'recoil';
+import { useState, useEffect, useRef } from 'react';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import copy from 'copy-to-clipboard';
 import SubRow from './Content/SubRow';
 import Content from './Content/Content';
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
-import { fetchById } from '~/utils/fetchers';
 import getIcon from '~/utils/getIcon';
 import { useMessageHandler } from '~/utils/handleSubmit';
-
+import { getConversationById } from '~/data-provider';
 import store from '~/store';
 
 export default function Message({
@@ -22,11 +21,10 @@ export default function Message({
   siblingCount,
   setSiblingIdx
 }) {
+  const { text, searchResult, isCreatedByUser, error, submitting } = message;
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const setLatestMessage = useSetRecoilState(store.latestMessage);
-  // const { model, chatGptLabel, promptPrefix } = conversation;
   const [abortScroll, setAbort] = useState(false);
-  const { text, searchResult, isCreatedByUser, error, submitting } = message;
   const textEditor = useRef(null);
   const last = !message?.children?.length;
   const edit = message.messageId == currentEditId;
@@ -98,7 +96,8 @@ export default function Message({
 
   const clickSearchResult = async () => {
     if (!searchResult) return;
-    const convoResponse = await fetchById('convos', message.conversationId);
+    //we don't need react-query for this so we call the data service directly
+    const convoResponse = await getConversationById(message.conversationId);
     const convo = convoResponse.data;
 
     switchToConversation(convo);
@@ -137,7 +136,7 @@ export default function Message({
             )}
             <div className="flex flex-grow flex-col gap-3">
               {error ? (
-                <div className="flex flex min-h-[20px] flex-grow flex-col items-start gap-4 gap-2  text-red-500">
+                <div className="flex min-h-[20px] flex-grow flex-col items-start gap-4 gap-2  text-red-500">
                   <div className="rounded-md border border-red-500 bg-red-500/10 py-2 px-3 text-sm text-gray-600 dark:text-gray-100">
                     {`An error occurred. Please try again in a few moments.\n\nError message: ${text}`}
                   </div>
