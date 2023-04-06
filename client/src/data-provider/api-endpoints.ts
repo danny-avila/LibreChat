@@ -42,10 +42,14 @@ export const presets = () => {
   return `/api/presets`;
 }
 
-export const deletePresets = () => {
+export const deletePreset = () => {
   return `/api/presets/delete`;
 }
 
 export const aiEndpoints = () => {
   return `/api/endpoints`;
+}
+
+export const tokenizer = () => {
+  return `/api/tokenizer`;
 }

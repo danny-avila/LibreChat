@@ -62,6 +62,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   });
 
   useEffect(() => {
+    //we use isInitialLoading here instead of isLoading because query is disabled by default
     if (searchQueryFn.isInitialLoading) {
       setIsFetching(true);
     }

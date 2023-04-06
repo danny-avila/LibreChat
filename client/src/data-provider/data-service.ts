@@ -41,8 +41,8 @@ export function updatePreset(payload: t.TPreset): Promise<t.TPreset[]> {
   return request.post(endpoints.presets(), payload);
 }
 
-export function deletePresets(): Promise<unknown> {
-  return request.post(endpoints.deletePresets(), {arg: {}});
+export function deletePreset(arg: t.TPreset | {}): Promise<t.TPreset[]> {
+  return request.post(endpoints.deletePreset(), arg);
 }
 
 export function getSearchEnabled(): Promise<boolean> {
