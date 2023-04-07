@@ -39,27 +39,25 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const [isFetching, setIsFetching] = useState(false);
 
-  const onSearchSuccess = (data, expectedPage) => {
-    console.log('onSearchSuccess', data, expectedPage)
-    const res = data;
-    setConversations(res.conversations);
-    if (expectedPage) {
-      setPageNumber(expectedPage);
-    }
-    setPageNumber(res.pageNumber);
-    setPages(res.pages);
-    setIsFetching(false);
-    searchPlaceholderConversation();
-    setSearchResultMessages(res.messages);
-  };
-
   const debouncedSearchTerm = useDebounce(searchQuery, 750);
-  const searchQueryFn = useSearchQuery(debouncedSearchTerm, 1, { 
+  const searchQueryFn = useSearchQuery(debouncedSearchTerm, pageNumber, { 
     enabled: !!debouncedSearchTerm && 
     debouncedSearchTerm.length > 0 &&
     isSearchEnabled && 
     isSearching,
   });
+
+  const onSearchSuccess = (data, expectedPage) => {
+    const res = data;
+    setConversations(res.conversations);
+    if (expectedPage) {
+      setPageNumber(expectedPage);
+    }
+    setPages(res.pages);
+    setIsFetching(false);
+    searchPlaceholderConversation();
+    setSearchResultMessages(res.messages);
+  };
 
   useEffect(() => {
     //we use isInitialLoading here instead of isLoading because query is disabled by default
@@ -81,24 +79,12 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const nextPage = async () => {
     moveToTop();
-
-    if (!isSearching) {
-      setPageNumber(prev => prev + 1);
-      await getConversationsQuery.refetch()
-    } else {
-      await fetch(searchQuery, +pageNumber + 1);
-    }
+    setPageNumber(pageNumber + 1);
   };
 
   const previousPage = async () => {
     moveToTop();
-
-    if (!isSearching) {
-      setPageNumber(prev => prev - 1);
-      await getConversationsQuery.refetch()
-    } else {
-      await fetch(searchQuery, +pageNumber - 1);
-    }
+    setPageNumber(pageNumber - 1);
   };
 
   useEffect(() => {
