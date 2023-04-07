@@ -68,7 +68,6 @@
     "tailwindcss-animate": "^1.0.5",
     "tailwindcss-radix": "^2.8.0",
     "url": "^0.11.0",
-    "use-react-screenshot": "github:danny-avila/use-react-screenshot#master",
     "uuidv4": "^6.2.13"
   },
   "devDependencies": {
