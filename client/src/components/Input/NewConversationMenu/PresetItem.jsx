@@ -1,7 +1,7 @@
 import React from 'react';
 import { DropdownMenuRadioItem } from '../../ui/DropdownMenu.tsx';
-import EditIcon from '../../svg/EditIcon';
-import TrashIcon from '../../svg/TrashIcon';
+import EditIcon from '../../svg/EditIcon.jsx';
+import TrashIcon from '../../svg/TrashIcon.jsx';
 import getIcon from '~/utils/getIcon';
 
 export default function PresetItem({ preset = {}, value, onSelect, onChangePreset, onDeletePreset }) {
@@ -56,7 +56,7 @@ export default function PresetItem({ preset = {}, value, onSelect, onChangePrese
       /> */}
       <div className="flex w-4 flex-1" />
       <button
-        className="invisible m-0 p-2 mr-1 rounded-md text-gray-400 hover:text-gray-700 group-hover:visible dark:text-gray-400 dark:hover:text-gray-200        "
+        className="invisible m-0 mr-1 rounded-md p-2 text-gray-400 hover:text-gray-700 group-hover:visible dark:text-gray-400 dark:hover:text-gray-200        "
         onClick={e => {
           e.preventDefault();
           onChangePreset(preset);

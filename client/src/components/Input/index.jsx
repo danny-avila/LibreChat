@@ -5,7 +5,7 @@ import OpenAIOptions from './OpenAIOptions';
 import ChatGPTOptions from './ChatGPTOptions';
 import BingAIOptions from './BingAIOptions';
 // import BingStyles from './BingStyles';
-import NewConversationMenu from './Endpoints/NewConversationMenu';
+import NewConversationMenu from './NewConversationMenu';
 import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useMessageHandler } from '../../utils/handleSubmit';
@@ -139,7 +139,7 @@ export default function TextChat({ isSearchView = false }) {
           <form className="stretch mx-2 flex flex-row gap-3 last:mb-2 md:pt-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
             <div className="relative flex h-full flex-1 md:flex-col">
               <div
-                className={`relative flex flex-grow flex-col rounded-md border border-black/10 ${
+                className={`relative flex flex-grow flex-row rounded-md border border-black/10 ${
                   disabled ? 'bg-gray-100' : 'bg-white'
                 } py-2 shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:border-gray-900/50 ${
                   disabled ? 'dark:bg-gray-900' : 'dark:bg-gray-700'
@@ -160,7 +160,7 @@ export default function TextChat({ isSearchView = false }) {
                   onCompositionEnd={handleCompositionEnd}
                   placeholder={getPlaceholderText()}
                   disabled={disabled || isNotAppendable}
-                  className="m-0 h-auto max-h-52 resize-none overflow-auto border-0 bg-transparent p-0 pl-12 pr-8 leading-6 placeholder:text-sm placeholder:text-gray-600 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder:text-gray-500 md:pl-8"
+                  className="m-0 flex h-auto max-h-52 flex-1 resize-none overflow-auto border-0 bg-transparent p-0 pl-2 pr-12 leading-6 placeholder:text-sm placeholder:text-gray-600 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder:text-gray-500 md:pl-2"
                 />
                 <SubmitButton
                   submitMessage={submitMessage}
