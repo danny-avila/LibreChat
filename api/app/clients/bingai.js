@@ -27,6 +27,7 @@ const askBing = async ({
     // cookies: '',
     debug: false,
     cache: store,
+    host: process.env.BINGAI_HOST || null,
     proxy: process.env.PROXY || null
   });
 
