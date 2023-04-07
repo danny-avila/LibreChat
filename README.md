@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://discord.gg/sDfH4MwDWJ">
+  <a href="https://discord.gg/NGaa9RPCft">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://user-images.githubusercontent.com/110412045/228325485-9d3e618f-a980-44fe-89e9-d6d39164680e.png">
       <img src="https://user-images.githubusercontent.com/110412045/228325485-9d3e618f-a980-44fe-89e9-d6d39164680e.png" height="128">
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a aria-label="Join the community on Discord" href="https://discord.gg/sDfH4MwDWJ">
+  <a aria-label="Join the community on Discord" href="https://discord.gg/NGaa9RPCft">
     <img alt="" src="https://img.shields.io/badge/Join%20the%20community-blueviolet.svg?style=for-the-badge&logo=DISCORD&labelColor=000000&logoWidth=20">
   </a>
   <a aria-label="Sponsors" href="#sponsors">
