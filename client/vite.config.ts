@@ -32,12 +32,7 @@ export default defineConfig({
             return "vendor";
           }
         },
-        sourcemapIgnoreList: (relativeSourcePath) => {
-          const normalizedPath = path.normalize(relativeSourcePath);
-          return normalizedPath.includes("node_modules");
-        },
       },
-      cache: false,
     },
   },
   resolve: {
