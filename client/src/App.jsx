@@ -7,6 +7,7 @@ import store from './store';
 import { useRecoilState, useSetRecoilState } from 'recoil';
 import { ScreenshotProvider } from './utils/screenshotContext.jsx';
 import { useGetSearchEnabledQuery, useGetUserQuery, useGetEndpointsQuery, useGetPresetsQuery} from '~/data-provider';
+import {ReactQueryDevtools} from '@tanstack/react-query-devtools';
 
 const router = createBrowserRouter([
   {
@@ -82,7 +83,10 @@ const App = () => {
 
   if (user)
     return (
-      <RouterProvider router={router} />
+      <>
+        <RouterProvider router={router} />
+        <ReactQueryDevtools initialIsOpen={false} />
+      </>
     );
   else return <div className="flex h-screen"></div>;
 };
