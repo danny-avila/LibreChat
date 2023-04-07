@@ -23,7 +23,6 @@ export default function ExportModel({ open, onOpenChange }) {
 
   const [includeOptions, setIncludeOptions] = useState(true);
   const [exportBranches, setExportBranches] = useState(false);
-  const [exportBranchesSupport, setExportBranchesSupport] = useState(false);
   const [recursive, setRecursive] = useState(true);
 
   const conversation = useRecoilValue(store.conversation) || {};
@@ -37,29 +36,33 @@ export default function ExportModel({ open, onOpenChange }) {
     []
   );
 
-  const typeOptions = ['text', 'markdown', 'csv', 'json', 'screenshot']; //,, 'webpage'];
+  const typeOptions = [
+    { value: 'text', display: 'text (.txt)' },
+    { value: 'markdown', display: 'markdown (.md)' },
+    { value: 'csv', display: 'csv (.csv)' },
+    { value: 'json', display: 'json (.json)' },
+    { value: 'screenshot', display: 'screenshot (.png)' }
+  ]; //,, 'webpage'];
 
   useEffect(() => {
-    setFileName(
-      filenamify(String(conversation?.title || 'file'))
-    );
+    setFileName(filenamify(String(conversation?.title || 'file')));
     setType('text');
     setIncludeOptions(true);
     setExportBranches(false);
-    setExportBranchesSupport(false);
     setRecursive(true);
   }, [open]);
 
   const _setType = newType => {
-    if (newType === 'json' || newType === 'csv' || newType === 'webpage') {
-      setExportBranches(true);
-      setExportBranchesSupport(true);
-    } else {
-      setExportBranches(false);
-      setExportBranchesSupport(false);
-    }
+    const exportBranchesSupport = newType === 'json' || newType === 'csv' || newType === 'webpage';
+    const exportOptionsSupport = newType !== 'csv' && newType !== 'screenshot';
+
+    setExportBranches(exportBranchesSupport);
+    setIncludeOptions(exportOptionsSupport);
     setType(newType);
   };
+
+  const exportBranchesSupport = type === 'json' || type === 'csv' || type === 'webpage';
+  const exportOptionsSupport = type !== 'csv' && type !== 'screenshot';
 
   // return an object or an array based on branches and recursive option
   // messageId is used to get siblindIdx from recoil snapshot
@@ -320,57 +323,54 @@ export default function ExportModel({ open, onOpenChange }) {
               </div>
             </div>
             <div className="grid w-full gap-6 sm:grid-cols-2">
-              {type !== 'csv' && type !== 'screenshot' ? (
-                <div className="col-span-1 flex flex-col items-start justify-start gap-2">
-                  <div className="grid w-full items-center gap-2">
-                    <Label
-                      htmlFor="includeOptions"
-                      className="text-left text-sm font-medium"
-                    >
-                      Include endpoint options
-                    </Label>
-                    <div className="flex h-[40px] w-full items-center space-x-3">
-                      <Checkbox
-                        id="includeOptions"
-                        checked={includeOptions}
-                        className="focus:ring-opacity-20 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:focus:ring-gray-600 dark:focus:ring-opacity-50 dark:focus:ring-offset-0"
-                        onCheckedChange={setIncludeOptions}
-                      />
-                      <label
-                        htmlFor="includeOptions"
-                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
-                      >
-                        Enabled
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-              {type !== 'screenshot' ? (
+              <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <div className="grid w-full items-center gap-2">
                   <Label
-                    htmlFor="exportBranches"
+                    htmlFor="includeOptions"
                     className="text-left text-sm font-medium"
                   >
-                    Export all message branches
+                    Include endpoint options
                   </Label>
                   <div className="flex h-[40px] w-full items-center space-x-3">
                     <Checkbox
-                      id="exportBranches"
-                      disabled={!exportBranchesSupport}
-                      checked={exportBranches}
+                      id="includeOptions"
+                      disabled={!exportOptionsSupport}
+                      checked={includeOptions}
                       className="focus:ring-opacity-20 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:focus:ring-gray-600 dark:focus:ring-opacity-50 dark:focus:ring-offset-0"
-                      onCheckedChange={setExportBranches}
+                      onCheckedChange={setIncludeOptions}
                     />
                     <label
-                      htmlFor="exportBranches"
+                      htmlFor="includeOptions"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                     >
-                      {exportBranchesSupport ? 'Enabled' : 'Not Supported'}
+                      {exportOptionsSupport ? 'Enabled' : 'Not Supported'}
                     </label>
                   </div>
                 </div>
-              ) : null}
+              </div>
+              <div className="grid w-full items-center gap-2">
+                <Label
+                  htmlFor="exportBranches"
+                  className="text-left text-sm font-medium"
+                >
+                  Export all message branches
+                </Label>
+                <div className="flex h-[40px] w-full items-center space-x-3">
+                  <Checkbox
+                    id="exportBranches"
+                    disabled={!exportBranchesSupport}
+                    checked={exportBranches}
+                    className="focus:ring-opacity-20 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:focus:ring-gray-600 dark:focus:ring-opacity-50 dark:focus:ring-offset-0"
+                    onCheckedChange={setExportBranches}
+                  />
+                  <label
+                    htmlFor="exportBranches"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+                  >
+                    {exportBranchesSupport ? 'Enabled' : 'Not Supported'}
+                  </label>
+                </div>
+              </div>
               {type === 'json' ? (
                 <div className="grid w-full items-center gap-2">
                   <Label
