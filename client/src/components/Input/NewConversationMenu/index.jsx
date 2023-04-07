@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
-import EditPresetDialog from '../../Endpoints/EditPresetDialog';
-import EndpointItems from './EndpointItems';
-import PresetItems from './PresetItems';
-import FileUpload from './FileUpload';
+import EditPresetDialog from '../../Endpoints/EditPresetDialog.jsx';
+import EndpointItems from './EndpointItems.jsx';
+import PresetItems from './PresetItems.jsx';
+import FileUpload from './FileUpload.jsx';
 import getIcon from '~/utils/getIcon';
 import manualSWR, { handleFileSelected } from '~/utils/fetchers';
 
@@ -17,7 +17,7 @@ import {
   DropdownMenuTrigger
 } from '../../ui/DropdownMenu.tsx';
 import { Dialog, DialogTrigger } from '../../ui/Dialog.tsx';
-import DialogTemplate from '../../ui/DialogTemplate';
+import DialogTemplate from '../../ui/DialogTemplate.jsx';
 
 import store from '~/store';
 
@@ -110,9 +110,12 @@ export default function NewConversationMenu() {
           <Button
             variant="outline"
             // style={{backgroundColor: 'rgb(16, 163, 127)'}}
-            className={`absolute top-[0.25px] mb-0 ml-1 items-center rounded-md border-0 p-1 outline-none focus:ring-0 focus:ring-offset-0 disabled:top-[0.25px] dark:data-[state=open]:bg-opacity-50 md:top-1 md:left-1 md:ml-0 md:pl-1 md:disabled:top-1`}
+            className={`group relative mt-[-8px] mb-[-12px] ml-0 items-center rounded-md border-0 p-1 outline-none focus:ring-0 focus:ring-offset-0 dark:data-[state=open]:bg-opacity-50 md:left-1 md:ml-[-12px] md:pl-1`}
           >
             {icon}
+            <span className="max-w-0 overflow-hidden whitespace-nowrap px-0 text-slate-600 transition-all group-hover:max-w-[80px] group-hover:px-2 group-data-[state=open]:max-w-[80px] group-data-[state=open]:px-2 dark:text-slate-300">
+              New Topic
+            </span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
