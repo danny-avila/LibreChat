@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const { titleConvo, askBing } = require('../../../app');
-const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
+const { saveMessage, getConvoTitle, saveConvo, updateConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 
 router.post('/', async (req, res) => {
@@ -202,7 +202,7 @@ const ask = async ({
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
       const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: responseMessage });
 
-      await saveConvo(req?.session?.user?.username, {
+      await updateConvo(req?.session?.user?.username, {
         conversationId: conversationId,
         title
       });
