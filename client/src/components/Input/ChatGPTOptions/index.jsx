@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import SelectDropdown from '../../ui/SelectDropDown.jsx';
+import SelectDropDown from '../../ui/SelectDropDown';
 import { cn } from '~/utils/';
 
 import store from '~/store';
@@ -12,20 +12,10 @@ function ChatGPTOptions() {
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
-  // useEffect(() => {
-  //   if (endpoint !== 'chatGPTBrowser') return;
-  // }, [conversation]);
-
   if (endpoint !== 'chatGPTBrowser') return null;
   if (conversationId !== 'new') return null;
 
   const models = endpointsConfig?.['chatGPTBrowser']?.['availableModels'] || [];
-
-  // const modelMap = new Map([
-  //   ['Default (GPT-3.5)', 'text-davinci-002-render-sha'],
-  //   ['Legacy (GPT-3.5)', 'text-davinci-002-render-paid'],
-  //   ['GPT-4', 'gpt-4']
-  // ]);
 
   const setOption = param => newValue => {
     let update = {};
@@ -41,7 +31,7 @@ function ChatGPTOptions() {
 
   return (
     <div className="openAIOptions-simple-container show flex w-full flex-wrap items-center justify-center gap-2">
-      <SelectDropdown
+      <SelectDropDown
         value={model}
         setValue={setOption('model')}
         availableValues={models}

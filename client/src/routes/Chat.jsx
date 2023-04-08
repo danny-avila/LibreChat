@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 
@@ -7,7 +7,7 @@ import Messages from '../components/Messages';
 import TextChat from '../components/Input';
 
 import store from '~/store';
-import manualSWR from '~/utils/fetchers';
+import { useGetMessagesByConvoId, useGetConversationByIdMutation } from '~/data-provider';
 
 export default function Chat() {
   const searchQuery = useRecoilValue(store.searchQuery);
@@ -18,9 +18,9 @@ export default function Chat() {
   const { conversationId } = useParams();
   const navigate = useNavigate();
 
-  const { trigger: messagesTrigger } = manualSWR(`/api/messages/${conversation?.conversationId}`, 'get');
-
-  const { trigger: conversationTrigger } = manualSWR(`/api/convos/${conversationId}`, 'get');
+  //disabled by default, we only enable it when messagesTree is null
+  const messagesQuery = useGetMessagesByConvoId(conversationId, { enabled: false });
+  const getConversationMutation = useGetConversationByIdMutation(conversationId, setConversation);
 
   // when conversation changed or conversationId (in url) changed
   useEffect(() => {
@@ -31,13 +31,7 @@ export default function Chat() {
         newConversation();
       } else if (conversationId) {
         // fetch it from server
-        conversationTrigger()
-          .then(setConversation)
-          .catch(error => {
-            console.error('failed to fetch the conversation');
-            console.error(error);
-            newConversation();
-          });
+        getConversationMutation.mutate();
         setMessages(null);
       } else {
         navigate(`/chat/new`);
@@ -51,13 +45,30 @@ export default function Chat() {
     }
   }, [conversation, conversationId]);
 
-  // when messagesTree is null (<=> messages is null)
-  // we need to fetch message list from server
   useEffect(() => {
-    if (messagesTree === null) {
-      messagesTrigger().then(setMessages);
+    if(getConversationMutation.isError) {
+      console.error('failed to fetch the conversation');
+      console.error(getConversationMutation.error);
+      newConversation();
     }
-  }, [conversation?.conversationId]);
+  }, [getConversationMutation.isError, newConversation]);
+
+
+  useEffect(() => {
+    if (messagesTree === null && conversation?.conversationId) {
+      messagesQuery.refetch(conversation?.conversationId);
+    }
+  }, [conversation?.conversationId, messagesQuery, messagesTree]);
+  
+  useEffect(() => {
+    if (messagesQuery.data) {
+      setMessages(messagesQuery.data);
+    } else if(messagesQuery.isError) {
+      console.error('failed to fetch the messages');
+      console.error(messagesQuery.error);
+      setMessages(null);
+    }
+  }, [messagesQuery.data, messagesQuery.isError, setMessages]);
 
   // if not a conversation
   if (conversation?.conversationId === 'search') return null;

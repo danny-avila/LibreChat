@@ -1,15 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import Root from './routes/Root';
 import Chat from './routes/Chat';
 import Search from './routes/Search';
 import store from './store';
-import userAuth from './utils/userAuth';
 import { useRecoilState, useSetRecoilState } from 'recoil';
-
 import { ScreenshotProvider } from './utils/screenshotContext.jsx';
-
-import axios from 'axios';
+import { useGetSearchEnabledQuery, useGetUserQuery, useGetEndpointsQuery, useGetPresetsQuery} from '~/data-provider';
+import {ReactQueryDevtools} from '@tanstack/react-query-devtools';
 
 const router = createBrowserRouter([
   {
@@ -43,58 +41,52 @@ const App = () => {
   const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
   const setPresets = useSetRecoilState(store.presets);
 
+  const searchEnabledQuery = useGetSearchEnabledQuery();
+  const userQuery = useGetUserQuery();
+  const endpointsQuery = useGetEndpointsQuery();
+  const presetsQuery = useGetPresetsQuery();
+
   useEffect(() => {
-    // fetch if seatch enabled
-    axios
-      .get('/api/search/enable', {
-        timeout: 1000,
-        withCredentials: true
-      })
-      .then(res => {
-        setIsSearchEnabled(res.data);
-      });
+    if(endpointsQuery.data) {
+      setEndpointsConfig(endpointsQuery.data);
+    } else if(endpointsQuery.isError) {
+      console.error("Failed to get endpoints", endpointsQuery.error);
+      window.location.href = '/auth/login';
+    }
+  }, [endpointsQuery.data, endpointsQuery.isError]);
 
-    // fetch user
-    userAuth()
-      .then(user => setUser(user))
-      .catch(err => console.log(err));
+  useEffect(() => {
+    if(presetsQuery.data) {
+      setPresets(presetsQuery.data);
+    } else if(presetsQuery.isError) {
+      console.error("Failed to get presets", presetsQuery.error);
+      window.location.href = '/auth/login';
+    }
+  }, [presetsQuery.data, presetsQuery.isError]);
 
-    // fetch models
-    axios
-      .get('/api/endpoints', {
-        timeout: 1000,
-        withCredentials: true
-      })
-      .then(({ data }) => {
-        setEndpointsConfig(data);
-      })
-      .catch(error => {
-        console.error(error);
-        console.log('Not login!');
-        window.location.href = '/auth/login';
-      });
+  useEffect(() => {
+    if (searchEnabledQuery.data) {
+      setIsSearchEnabled(searchEnabledQuery.data);
+    } else if(searchEnabledQuery.isError) {
+      console.error("Failed to get search enabled", searchEnabledQuery.error);
+    }
+  }, [searchEnabledQuery.data, searchEnabledQuery.isError]);
 
-    // fetch presets
-    axios
-      .get('/api/presets', {
-        timeout: 1000,
-        withCredentials: true
-      })
-      .then(({ data }) => {
-        setPresets(data);
-      })
-      .catch(error => {
-        console.error(error);
-        console.log('Not login!');
-        window.location.href = '/auth/login';
-      });
-  }, []);
+  useEffect(() => {
+    if (userQuery.data) {
+      setUser(userQuery.data);
+    } else if(userQuery.isError) {
+      console.error("Failed to get user", userQuery.error);
+      window.location.href = '/auth/login';
+    }
+  }, [userQuery.data, userQuery.isError]);
 
   if (user)
     return (
-      <div>
+      <>
         <RouterProvider router={router} />
-      </div>
+        <ReactQueryDevtools initialIsOpen={false} />
+      </>
     );
   else return <div className="flex h-screen"></div>;
 };

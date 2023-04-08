@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { useRecoilValue, useRecoilState } from 'recoil';
+import { useState } from 'react';
+import { useRecoilState } from 'recoil';
 import { cn } from '~/utils';
 import { Button } from '../../ui/Button.tsx';
 import { Settings2 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '../../ui/Tabs.tsx';
-import SelectDropdown from '../../ui/SelectDropDown';
+import SelectDropDown from '../../ui/SelectDropDown';
 import Settings from '../../Endpoints/BingAI/Settings.jsx';
 import EndpointOptionsPopover from '../../Endpoints/EndpointOptionsPopover';
 import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
@@ -18,25 +18,12 @@ function BingAIOptions() {
   const { endpoint, conversationId } = conversation;
   const { toneStyle, context, systemMessage, jailbreak } = conversation;
 
-  // useEffect(() => {
-  //   if (endpoint !== 'bingAI') return;
-
-  //   const mustInAdvancedMode = context !== null || systemMessage !== null;
-
-  //   if (mustInAdvancedMode && !advancedMode) setAdvancedMode(true);
-  // }, [conversation, advancedMode]);
-
   if (endpoint !== 'bingAI') return null;
   if (conversationId !== 'new') return null;
 
   const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
 
   const switchToSimpleMode = () => {
-    // setConversation(prevState => ({
-    //   ...prevState,
-    //   context: null,
-    //   systemMessage: null
-    // }));
     setAdvancedMode(false);
   };
 
@@ -68,7 +55,7 @@ function BingAIOptions() {
           (!advancedMode ? ' show' : '')
         }
       >
-        <SelectDropdown
+        <SelectDropDown
           title="Mode"
           value={jailbreak ? 'Sydney' : 'BingAI'}
           setValue={value => setOption('jailbreak')(value === 'Sydney')}
