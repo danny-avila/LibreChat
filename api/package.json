@@ -32,6 +32,7 @@
     "html": "^1.0.0",
     "keyv": "^4.5.2",
     "keyv-file": "^0.2.0",
+    "langchain": "^0.0.50",
     "lodash": "^4.17.21",
     "meilisearch": "^0.31.1",
     "mongoose": "^6.9.0",
