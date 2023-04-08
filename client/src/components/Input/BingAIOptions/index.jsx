@@ -11,7 +11,7 @@ import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
 
 import store from '~/store';
 
-function BingAIOptions() {
+function BingAIOptions({ show }) {
   const [conversation, setConversation] = useRecoilState(store.conversation) || {};
   const [advancedMode, setAdvancedMode] = useState(false);
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
@@ -19,7 +19,7 @@ function BingAIOptions() {
   const { toneStyle, context, systemMessage, jailbreak } = conversation;
 
   if (endpoint !== 'bingAI') return null;
-  if (conversationId !== 'new') return null;
+  if (conversationId !== 'new' && !show) return null;
 
   const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
 
@@ -64,7 +64,8 @@ function BingAIOptions() {
           showLabel={false}
           className={cn(
             cardStyle,
-            'min-w-36 z-50 flex h-[40px] w-36 flex-none items-center justify-center px-4 ring-0 hover:cursor-pointer hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 data-[state=open]:bg-slate-50 dark:bg-gray-700 dark:hover:bg-gray-600 dark:data-[state=open]:bg-gray-600'
+            'min-w-36 z-50 flex h-[40px] w-36 flex-none items-center justify-center px-4 ring-0 hover:cursor-pointer hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 data-[state=open]:bg-slate-50 dark:bg-gray-700 dark:hover:bg-gray-600 dark:data-[state=open]:bg-gray-600',
+            show ? 'hidden' : null
           )}
         />
 
@@ -107,7 +108,8 @@ function BingAIOptions() {
           type="button"
           className={cn(
             cardStyle,
-            'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-4 hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-600'
+            'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-4 hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-600',
+            show ? 'hidden' : null
           )}
           onClick={triggerAdvancedMode}
         >
