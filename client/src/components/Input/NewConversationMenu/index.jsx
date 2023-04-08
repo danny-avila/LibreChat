@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
-import EditPresetDialog from '../../Endpoints/EditPresetDialog';
-import EndpointItems from './EndpointItems';
-import PresetItems from './PresetItems';
-import FileUpload from './FileUpload';
+import EditPresetDialog from '../../Endpoints/EditPresetDialog.jsx';
+import EndpointItems from './EndpointItems.jsx';
+import PresetItems from './PresetItems.jsx';
+import FileUpload from './FileUpload.jsx';
 import getIcon from '~/utils/getIcon';
-import { useDeletePresetMutation, useCreatePresetMutation } from '~/data-provider';
+import manualSWR, { handleFileSelected } from '~/utils/fetchers';
+
 import { Button } from '../../ui/Button.tsx';
 import {
   DropdownMenu,
@@ -16,34 +17,33 @@ import {
   DropdownMenuTrigger
 } from '../../ui/DropdownMenu.tsx';
 import { Dialog, DialogTrigger } from '../../ui/Dialog.tsx';
-import DialogTemplate from '../../ui/DialogTemplate';
+import DialogTemplate from '../../ui/DialogTemplate.jsx';
 
 import store from '~/store';
 
 export default function NewConversationMenu() {
+  // const [modelSave, setModelSave] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [presetModelVisible, setPresetModelVisible] = useState(false);
   const [preset, setPreset] = useState(false);
 
+  // const models = useRecoilValue(store.models);
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
+  // const setCustomGPTModels = useSetRecoilState(store.customGPTModels);
   const [presets, setPresets] = useRecoilState(store.presets);
 
   const conversation = useRecoilValue(store.conversation) || {};
   const { endpoint, conversationId } = conversation;
+  // const { model, promptPrefix, chatGptLabel, conversationId } = conversation;
   const { newConversation } = store.useConversation();
 
-  const deletePresetsMutation = useDeletePresetMutation();
-  const createPresetMutation = useCreatePresetMutation();
+  const { trigger: clearPresetsTrigger } = manualSWR(`/api/presets/delete`, 'post', res => {
+    console.log(res);
+    setPresets(res.data);
+  });
 
   const importPreset = jsonData => {
-    createPresetMutation.mutate({...jsonData}, {
-      onSuccess: (data) => {
-        setPresets(data);
-      },
-      onError: (error) => {
-        console.error('Error uploading the preset:', error);
-      }
-    })
+    handleFileSelected(jsonData).then(setPresets);
   };
 
   // update the default model when availableModels changes
@@ -65,6 +65,7 @@ export default function NewConversationMenu() {
     setMenuOpen(false);
 
     if (!newEndpoint) return;
+    // else if (newEndpoint === endpoint) return;
     else {
       newConversation({}, { endpoint: newEndpoint });
     }
@@ -74,6 +75,7 @@ export default function NewConversationMenu() {
   const onSelectPreset = newPreset => {
     setMenuOpen(false);
     if (!newPreset) return;
+    // else if (newEndpoint === endpoint) return;
     else {
       newConversation({}, newPreset);
     }
@@ -84,12 +86,8 @@ export default function NewConversationMenu() {
     setPreset(preset);
   };
 
-  const clearAllPresets = () => {
-    deletePresetsMutation.mutate({arg: {}});
-  };
-
-  const onDeletePreset = preset => {
-    deletePresetsMutation.mutate({arg: preset});
+  const clearPreset = () => {
+    clearPresetsTrigger({});
   };
 
   const icon = getIcon({
@@ -101,7 +99,9 @@ export default function NewConversationMenu() {
   });
 
   return (
-    <Dialog>
+    <Dialog
+    // onOpenChange={onOpenChange}
+    >
       <DropdownMenu
         open={menuOpen}
         onOpenChange={setMenuOpen}
@@ -109,9 +109,13 @@ export default function NewConversationMenu() {
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
-            className={`absolute top-[0.25px] mb-0 ml-1 items-center rounded-md border-0 p-1 outline-none focus:ring-0 focus:ring-offset-0 disabled:top-[0.25px] dark:data-[state=open]:bg-opacity-50 md:top-1 md:left-1 md:ml-0 md:pl-1 md:disabled:top-1`}
+            // style={{backgroundColor: 'rgb(16, 163, 127)'}}
+            className={`group relative mt-[-8px] mb-[-12px] ml-0 items-center rounded-md border-0 p-1 outline-none focus:ring-0 focus:ring-offset-0 dark:data-[state=open]:bg-opacity-50 md:left-1 md:ml-[-12px] md:pl-1`}
           >
             {icon}
+            <span className="max-w-0 overflow-hidden whitespace-nowrap px-0 text-slate-600 transition-all group-hover:max-w-[80px] group-hover:px-2 group-data-[state=open]:max-w-[80px] group-data-[state=open]:px-2 dark:text-slate-300">
+              New Topic
+            </span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -146,6 +150,7 @@ export default function NewConversationMenu() {
                 <Button
                   type="button"
                   className="h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-red-700 hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-gray-800 dark:hover:text-red-400"
+                  // onClick={clearPreset}
                 >
                   Clear All
                 </Button>
@@ -154,7 +159,7 @@ export default function NewConversationMenu() {
                 title="Clear presets"
                 description="Are you sure you want to clear all presets? This is irreversible."
                 selection={{
-                  selectHandler: clearAllPresets,
+                  selectHandler: clearPreset,
                   selectClasses: 'bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
                   selectText: 'Clear'
                 }}
@@ -171,7 +176,7 @@ export default function NewConversationMenu() {
                 presets={presets}
                 onSelect={onSelectPreset}
                 onChangePreset={onChangePreset}
-                onDeletePreset={onDeletePreset}
+                onDeletePreset={clearPresetsTrigger}
               />
             ) : (
               <DropdownMenuLabel className="dark:text-gray-300">No preset yet.</DropdownMenuLabel>
