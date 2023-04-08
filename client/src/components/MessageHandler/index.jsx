@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
-import { SSE } from '~/utils/sse.mjs';
-import createPayload from '~/utils/createPayload';
+import { SSE } from '~/data-provider/sse.mjs';
+import createPayload from '~/data-provider/createPayload';
 
 import store from '~/store';
 

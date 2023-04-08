@@ -1,16 +1,15 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useRecoilValue, useSetRecoilState, useResetRecoilState } from 'recoil';
+import { useState, useEffect, useRef } from 'react';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import copy from 'copy-to-clipboard';
 import SubRow from './Content/SubRow';
 import Content from './Content/Content';
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
-import { fetchById } from '~/utils/fetchers';
 import getIcon from '~/utils/getIcon';
 import { useMessageHandler } from '~/utils/handleSubmit';
+import { useGetConversationByIdQuery } from '~/data-provider';
 import { cn } from '~/utils/';
-
 import store from '~/store';
 
 export default function Message({
@@ -23,17 +22,17 @@ export default function Message({
   siblingCount,
   setSiblingIdx
 }) {
+  const { text, searchResult, isCreatedByUser, error, submitting } = message;
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const setLatestMessage = useSetRecoilState(store.latestMessage);
-  // const { model, chatGptLabel, promptPrefix } = conversation;
   const [abortScroll, setAbort] = useState(false);
-  const { text, searchResult, isCreatedByUser, error, submitting } = message;
   const textEditor = useRef(null);
   const last = !message?.children?.length;
   const edit = message.messageId == currentEditId;
   const { ask, regenerate } = useMessageHandler();
   const { switchToConversation } = store.useConversation();
   const blinker = submitting && isSubmitting;
+  const getConversationQuery = useGetConversationByIdQuery(message.conversationId, { enabled: false });
 
   useEffect(() => {
     if (blinker && !abortScroll) {
@@ -99,10 +98,9 @@ export default function Message({
 
   const clickSearchResult = async () => {
     if (!searchResult) return;
-    const convoResponse = await fetchById('convos', message.conversationId);
-    const convo = convoResponse.data;
-
-    switchToConversation(convo);
+    getConversationQuery.refetch(message.conversationId).then((response) => {
+      switchToConversation(response.data);
+    });
   };
 
   return (

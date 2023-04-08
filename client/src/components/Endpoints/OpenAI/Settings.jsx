@@ -1,12 +1,10 @@
-import React from 'react';
 import { useRecoilValue } from 'recoil';
 import TextareaAutosize from 'react-textarea-autosize';
-import SelectDropdown from '../../ui/SelectDropDown';
+import SelectDropDown from '../../ui/SelectDropDown';
 import { Input } from '~/components/ui/Input.tsx';
 import { Label } from '~/components/ui/Label.tsx';
 import { Slider } from '~/components/ui/Slider.tsx';
 import { InputNumber } from '~/components/ui/InputNumber.tsx';
-// import { InputNumber } from '../../ui/InputNumber';
 import OptionHover from './OptionHover';
 import { HoverCard, HoverCardTrigger } from '~/components/ui/HoverCard.tsx';
 import { cn } from '~/utils/';
@@ -38,7 +36,7 @@ function Settings(props) {
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
-            <SelectDropdown
+            <SelectDropDown
               value={model}
               setValue={setModel}
               availableValues={models}
@@ -49,23 +47,6 @@ function Settings(props) {
               )}
               containerClassName="flex w-full resize-none"
             />
-            {/* <Label
-              htmlFor="model"
-              className="text-left text-sm font-medium"
-            >
-              Model
-            </Label>
-            <Input
-              id="model"
-              value={model}
-              // ref={inputRef}
-              onChange={e => setModel(e.target.value)}
-              placeholder="Set a custom name for ChatGPT"
-              className={cn(
-                defaultTextProps,
-                'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
-              )}
-            /> */}
           </div>
           <div className="grid w-full items-center gap-2">
             <Label
@@ -78,7 +59,6 @@ function Settings(props) {
               id="chatGptLabel"
               disabled={readonly}
               value={chatGptLabel || ''}
-              // ref={inputRef}
               onChange={e => setChatGptLabel(e.target.value || null)}
               placeholder="Set a custom name for ChatGPT"
               className={cn(
@@ -104,15 +84,6 @@ function Settings(props) {
                 defaultTextProps,
                 'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 '
               )}
-              // onFocus={() => {
-              //   textareaRef.current.classList.remove('max-h-10');
-              //   textareaRef.current.classList.add('max-h-52');
-              // }}
-              // onBlur={() => {
-              //   textareaRef.current.classList.remove('max-h-52');
-              //   textareaRef.current.classList.add('max-h-10');
-              // }}
-              // ref={textareaRef}
             />
           </div>
         </div>
@@ -160,43 +131,6 @@ function Settings(props) {
               side="left"
             />
           </HoverCard>
-
-          {/* <HoverCard openDelay={300}>
-            <HoverCardTrigger className="grid w-full items-center gap-2">
-              <div className="flex justify-between">
-                <Label
-                  htmlFor="chatGptLabel"
-                  className="text-left text-sm font-medium"
-                >
-                  Max tokens
-                </Label>
-                <Input
-                  id="max-tokens-int"
-                  disabled
-                  value={maxTokens}
-                  onChange={e => setMaxTokens(e.target.value)}
-                  className={cn(
-                    defaultTextProps,
-                    cn(optionText, 'h-auto w-12 border-0 group-hover/temp:border-gray-200')
-                  )}
-                />
-              </div>
-              <Slider
-              disabled={readonly}
-                value={[maxTokens]}
-                onValueChange={value => setMaxTokens(value[0])}
-                max={2048} // should be dynamic to the currently selected model
-                min={1}
-                step={1}
-                className="flex h-4 w-full"
-              />
-            </HoverCardTrigger>
-            <OptionHover
-              type="max"
-              side="left"
-            />
-          </HoverCard> */}
-
           <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">

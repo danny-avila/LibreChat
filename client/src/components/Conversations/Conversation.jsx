@@ -1,10 +1,9 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef, useEffect} from 'react';
 import { useRecoilState, useSetRecoilState } from 'recoil';
-
+import { useUpdateConversationMutation } from '~/data-provider';
 import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
 import ConvoIcon from '../svg/ConvoIcon';
-import manualSWR from '~/utils/fetchers';
 
 import store from '~/store';
 
@@ -15,14 +14,14 @@ export default function Conversation({ conversation, retainView }) {
   const { refreshConversations } = store.useConversations();
   const { switchToConversation } = store.useConversation();
 
+  const updateConvoMutation = useUpdateConversationMutation(currentConversation?.conversationId);
+
   const [renaming, setRenaming] = useState(false);
   const inputRef = useRef(null);
 
   const { conversationId, title } = conversation;
 
   const [titleInput, setTitleInput] = useState(title);
-
-  const rename = manualSWR(`/api/convos/update`, 'post');
 
   const clickHandler = async () => {
     if (currentConversation?.conversationId === conversationId) {
@@ -59,15 +58,20 @@ export default function Conversation({ conversation, retainView }) {
     if (titleInput === title) {
       return;
     }
-    rename.trigger({ conversationId, title: titleInput }).then(() => {
+    updateConvoMutation.mutate({ conversationId, title: titleInput });
+  };
+
+  useEffect(() => {   
+    if (updateConvoMutation.isSuccess) {
       refreshConversations();
-      if (conversationId == currentConversation?.conversationId)
+      if (conversationId == currentConversation?.conversationId) {
         setCurrentConversation(prevState => ({
           ...prevState,
           title: titleInput
         }));
-    });
-  };
+      }
+    }
+  }, [updateConvoMutation.isSuccess]);
 
   const handleKeyDown = e => {
     if (e.key === 'Enter') {
