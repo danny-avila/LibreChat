@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
-import EditPresetDialog from '../../Endpoints/EditPresetDialog.jsx';
-import EndpointItems from './EndpointItems.jsx';
-import PresetItems from './PresetItems.jsx';
-import FileUpload from './FileUpload.jsx';
+import EditPresetDialog from '../../Endpoints/EditPresetDialog';
+import EndpointItems from './EndpointItems';
+import PresetItems from './PresetItems';
+import FileUpload from './FileUpload';
 import getIcon from '~/utils/getIcon';
-import manualSWR, { handleFileSelected } from '~/utils/fetchers';
-
+import { useDeletePresetMutation, useCreatePresetMutation } from '~/data-provider';
 import { Button } from '../../ui/Button.tsx';
 import {
   DropdownMenu,
@@ -17,33 +16,34 @@ import {
   DropdownMenuTrigger
 } from '../../ui/DropdownMenu.tsx';
 import { Dialog, DialogTrigger } from '../../ui/Dialog.tsx';
-import DialogTemplate from '../../ui/DialogTemplate.jsx';
+import DialogTemplate from '../../ui/DialogTemplate';
 
 import store from '~/store';
 
 export default function NewConversationMenu() {
-  // const [modelSave, setModelSave] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [presetModelVisible, setPresetModelVisible] = useState(false);
   const [preset, setPreset] = useState(false);
 
-  // const models = useRecoilValue(store.models);
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
-  // const setCustomGPTModels = useSetRecoilState(store.customGPTModels);
   const [presets, setPresets] = useRecoilState(store.presets);
 
   const conversation = useRecoilValue(store.conversation) || {};
   const { endpoint, conversationId } = conversation;
-  // const { model, promptPrefix, chatGptLabel, conversationId } = conversation;
   const { newConversation } = store.useConversation();
 
-  const { trigger: clearPresetsTrigger } = manualSWR(`/api/presets/delete`, 'post', res => {
-    console.log(res);
-    setPresets(res.data);
-  });
+  const deletePresetsMutation = useDeletePresetMutation();
+  const createPresetMutation = useCreatePresetMutation();
 
   const importPreset = jsonData => {
-    handleFileSelected(jsonData).then(setPresets);
+    createPresetMutation.mutate({...jsonData}, {
+      onSuccess: (data) => {
+        setPresets(data);
+      },
+      onError: (error) => {
+        console.error('Error uploading the preset:', error);
+      }
+    })
   };
 
   // update the default model when availableModels changes
@@ -65,7 +65,6 @@ export default function NewConversationMenu() {
     setMenuOpen(false);
 
     if (!newEndpoint) return;
-    // else if (newEndpoint === endpoint) return;
     else {
       newConversation({}, { endpoint: newEndpoint });
     }
@@ -75,7 +74,6 @@ export default function NewConversationMenu() {
   const onSelectPreset = newPreset => {
     setMenuOpen(false);
     if (!newPreset) return;
-    // else if (newEndpoint === endpoint) return;
     else {
       newConversation({}, newPreset);
     }
@@ -86,8 +84,12 @@ export default function NewConversationMenu() {
     setPreset(preset);
   };
 
-  const clearPreset = () => {
-    clearPresetsTrigger({});
+  const clearAllPresets = () => {
+    deletePresetsMutation.mutate({arg: {}});
+  };
+
+  const onDeletePreset = preset => {
+    deletePresetsMutation.mutate({arg: preset});
   };
 
   const icon = getIcon({
@@ -99,9 +101,7 @@ export default function NewConversationMenu() {
   });
 
   return (
-    <Dialog
-    // onOpenChange={onOpenChange}
-    >
+    <Dialog>
       <DropdownMenu
         open={menuOpen}
         onOpenChange={setMenuOpen}
@@ -109,7 +109,6 @@ export default function NewConversationMenu() {
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
-            // style={{backgroundColor: 'rgb(16, 163, 127)'}}
             className={`group relative mt-[-8px] mb-[-12px] ml-0 items-center rounded-md border-0 p-1 outline-none focus:ring-0 focus:ring-offset-0 dark:data-[state=open]:bg-opacity-50 md:left-1 md:ml-[-12px] md:pl-1`}
           >
             {icon}
@@ -150,7 +149,6 @@ export default function NewConversationMenu() {
                 <Button
                   type="button"
                   className="h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-red-700 hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-gray-800 dark:hover:text-red-400"
-                  // onClick={clearPreset}
                 >
                   Clear All
                 </Button>
@@ -159,7 +157,7 @@ export default function NewConversationMenu() {
                 title="Clear presets"
                 description="Are you sure you want to clear all presets? This is irreversible."
                 selection={{
-                  selectHandler: clearPreset,
+                  selectHandler: clearAllPresets,
                   selectClasses: 'bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
                   selectText: 'Clear'
                 }}
@@ -176,7 +174,7 @@ export default function NewConversationMenu() {
                 presets={presets}
                 onSelect={onSelectPreset}
                 onChangePreset={onChangePreset}
-                onDeletePreset={clearPresetsTrigger}
+                onDeletePreset={onDeletePreset}
               />
             ) : (
               <DropdownMenuLabel className="dark:text-gray-300">No preset yet.</DropdownMenuLabel>
