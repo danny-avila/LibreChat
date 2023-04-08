@@ -1,5 +1,5 @@
 import React from 'react';
-import PresetItem from './PresetItem';
+import PresetItem from './PresetItem.jsx';
 
 export default function PresetItems({ presets, onSelect, onChangePreset, onDeletePreset }) {
   return (
