@@ -1,5 +1,5 @@
 import React from 'react';
-import EndpointItem from './EndpointItem';
+import EndpointItem from './EndpointItem.jsx';
 
 export default function EndpointItems({ endpoints, onSelect }) {
   return (
