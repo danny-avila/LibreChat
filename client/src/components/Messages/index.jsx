@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import Spinner from '../svg/Spinner';
-import { throttle } from 'lodash';
+import throttle from 'lodash/throttle';
 import { CSSTransition } from 'react-transition-group';
 import ScrollToBottom from './ScrollToBottom';
 import MultiMessage from './MultiMessage';
