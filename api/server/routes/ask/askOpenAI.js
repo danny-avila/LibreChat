@@ -6,6 +6,22 @@ const { titleConvo, askClient } = require('../../../app/');
 const { saveMessage, getConvoTitle, saveConvo, updateConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 
+const abortControllers = new Map();
+
+router.get('/abort', (req, res) => {
+  const requestId = req.query.requestId;
+
+  if (abortControllers.has(requestId)) {
+    const abortController = abortControllers.get(requestId);
+    abortController.abort();
+    abortControllers.delete(requestId);
+    console.log('Aborted request', requestId);
+    res.status(200).send('Aborted');
+  } else {
+    res.status(404).send('Request not found');
+  }
+});
+
 router.post('/', async (req, res) => {
   const {
     endpoint,
@@ -100,7 +116,14 @@ const ask = async ({
   try {
     const progressCallback = createOnProgress();
     const abortController = new AbortController();
-    res.on('close', () => abortController.abort());
+    const abortKey = userMessage.messageId;
+    abortControllers.set(abortKey, abortController);
+    
+    res.on('close', () => {
+      console.log('stopped message, aborting');
+      abortController.abort();
+      return res.end();
+    });
     let response = await askClient({
       text,
       parentMessageId: userParentMessageId,
@@ -170,6 +193,7 @@ const ask = async ({
       requestMessage: userMessage,
       responseMessage: responseMessage
     });
+    abortControllers.delete(abortKey);
     res.end();
 
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {

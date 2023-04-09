@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
+import { useEffect, useState } from 'react';
+import { useRecoilValue, useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
 import { SSE } from '~/data-provider/sse.mjs';
 import createPayload from '~/data-provider/createPayload';
 
@@ -11,6 +11,10 @@ export default function MessageHandler() {
   const setMessages = useSetRecoilState(store.messages);
   const setConversation = useSetRecoilState(store.conversation);
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
+  const [lastResponse, setLastResponse] = useRecoilState(store.lastResponse);
+  const setSubmission = useSetRecoilState(store.submission);
+  const [source, setSource] = useState(null);
+  const [abortKey, setAbortKey] = useState(null);
 
   const { refreshConversations } = store.useConversations();
 
@@ -45,7 +49,7 @@ export default function MessageHandler() {
   const cancelHandler = (data, submission) => {
     const { messages, message, initialResponse, isRegenerate = false } = submission;
 
-    if (isRegenerate)
+    if (isRegenerate) {
       setMessages([
         ...messages,
         {
@@ -56,7 +60,7 @@ export default function MessageHandler() {
           cancelled: true
         }
       ]);
-    else
+    } else {
       setMessages([
         ...messages,
         message,
@@ -65,9 +69,12 @@ export default function MessageHandler() {
           text: data,
           parentMessageId: message?.messageId,
           messageId: message?.messageId + '_',
-          cancelled: true
+          // cancelled: true
         }
       ]);
+      setLastResponse('');
+      setSource(null);
+    }
   };
 
   const createdHandler = (data, submission) => {
@@ -149,7 +156,33 @@ export default function MessageHandler() {
     if (submission === null) return;
     if (Object.keys(submission).length === 0) return;
 
-    let { message } = submission;
+    let { message, cancel } = submission;
+
+    if (cancel && source) {
+      console.log('message aborted', submission);
+      source.close();
+      const { endpoint } = submission.conversation;
+      const latestMessage = lastResponse.replaceAll('█', '');
+
+      fetch(`/api/ask/${endpoint}/abort?requestId=${abortKey}`)
+        .then(response => {
+          if (response.ok) {
+            console.log('Request aborted');
+          } else {
+            console.error('Error aborting request');
+          }
+        })
+        .catch(error => {
+          console.error(error);
+        });
+      console.log('source closed, got this far');
+      cancelHandler(latestMessage, { ...submission, message });
+      setIsSubmitting(false);
+      setSubmission(null);
+      return;
+    }
+
+    // events.oncancel = () => cancelHandler(latestResponseText, { ...submission, message });
 
     const { server, payload } = createPayload(submission);
 
@@ -158,7 +191,9 @@ export default function MessageHandler() {
       headers: { 'Content-Type': 'application/json' }
     });
 
-    let latestResponseText = '';
+    setSource(events);
+
+    // let latestResponseText = '';
     events.onmessage = e => {
       const data = JSON.parse(e.data);
 
@@ -173,12 +208,14 @@ export default function MessageHandler() {
         };
         createdHandler(data, { ...submission, message });
         console.log('created', message);
+        setAbortKey(message?.messageId);
       } else {
         let text = data.text || data.response;
         if (data.initial) console.log(data);
 
         if (data.message) {
-          latestResponseText = text;
+          // latestResponseText = text;
+          setLastResponse(text);
           messageHandler(text, { ...submission, message });
         }
         // console.log('dataStream', data);
@@ -187,7 +224,7 @@ export default function MessageHandler() {
 
     events.onopen = () => console.log('connection is opened');
 
-    events.oncancel = () => cancelHandler(latestResponseText, { ...submission, message });
+    // events.oncancel = () => cancelHandler(latestResponseText, { ...submission, message });
 
     events.onerror = function (e) {
       console.log('error in opening conn.');
@@ -204,6 +241,7 @@ export default function MessageHandler() {
     return () => {
       const isCancelled = events.readyState <= 1;
       events.close();
+      setSource(null);
       if (isCancelled) {
         const e = new Event('cancel');
         events.dispatchEvent(e);

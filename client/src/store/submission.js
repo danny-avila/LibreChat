@@ -31,7 +31,19 @@ const isSubmitting = atom({
   default: false,
 });
 
+const lastResponse = atom({
+  key: "lastResponse",
+  default: '',
+});
+
+const source = atom({
+  key: "source",
+  default: null,
+});
+
 export default {
   submission,
   isSubmitting,
+  lastResponse,
+  source,
 };

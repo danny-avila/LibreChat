@@ -138,7 +138,8 @@ const useMessageHandler = () => {
   };
 
   const stopGenerating = () => {
-    setSubmission(null);
+    // setSubmission(null);
+    setSubmission(prev => ({ ...prev, cancel: true }));
   };
 
   return { ask, regenerate, stopGenerating };
