@@ -15,7 +15,8 @@ export default function MessageHandler() {
   const [lastResponse, setLastResponse] = useRecoilState(store.lastResponse);
   const setSubmission = useSetRecoilState(store.submission);
   const [source, setSource] = useState(null);
-  const [abortKey, setAbortKey] = useState(null);
+  // const [abortKey, setAbortKey] = useState(null);
+  const [currentParent, setCurrentParent] = useState(null);
 
   const { refreshConversations } = store.useConversations();
 
@@ -174,8 +175,9 @@ export default function MessageHandler() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          abortKey,
-          message: latestMessage,
+          abortKey: currentParent.conversationId,
+          latestMessage,
+          parentMessageId: currentParent.messageId,
         })
       })
         .then(response => {
@@ -219,7 +221,8 @@ export default function MessageHandler() {
         };
         createdHandler(data, { ...submission, message });
         console.log('created', message);
-        setAbortKey(message?.conversationId);
+        // setAbortKey(message?.conversationId);
+        setCurrentParent(message);
       } else {
         let text = data.text || data.response;
         if (data.initial) console.log(data);

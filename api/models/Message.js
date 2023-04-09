@@ -12,6 +12,7 @@ module.exports = {
     error
   }) => {
     try {
+      // may also need to update the conversation here
       await Message.findOneAndUpdate(
         { messageId },
         {
