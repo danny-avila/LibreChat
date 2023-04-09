@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRecoilValue, useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
 import { SSE } from '~/data-provider/sse.mjs';
 import createPayload from '~/data-provider/createPayload';
+import { useAbortRequestWithMessage } from '~/data-provider';
 
 import store from '~/store';
 
@@ -68,12 +69,14 @@ export default function MessageHandler() {
           ...initialResponse,
           text: data,
           parentMessageId: message?.messageId,
-          messageId: message?.messageId + '_',
+          messageId: message?.messageId + '_'
           // cancelled: true
         }
       ]);
       setLastResponse('');
       setSource(null);
+      setIsSubmitting(false);
+      setSubmission(null);
     }
   };
 
@@ -162,9 +165,19 @@ export default function MessageHandler() {
       console.log('message aborted', submission);
       source.close();
       const { endpoint } = submission.conversation;
-      const latestMessage = lastResponse.replaceAll('█', '');
 
-      fetch(`/api/ask/${endpoint}/abort?requestId=${abortKey}`)
+      // splitting twice because the cursor may or may not be wrapped in a span
+      const latestMessage = lastResponse.split('█')[0].split('<span className="result-streaming">')[0];
+      fetch(`/api/ask/${endpoint}/abort`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          abortKey,
+          message: latestMessage,
+        })
+      })
         .then(response => {
           if (response.ok) {
             console.log('Request aborted');
@@ -177,8 +190,6 @@ export default function MessageHandler() {
         });
       console.log('source closed, got this far');
       cancelHandler(latestMessage, { ...submission, message });
-      setIsSubmitting(false);
-      setSubmission(null);
       return;
     }
 
@@ -208,7 +219,7 @@ export default function MessageHandler() {
         };
         createdHandler(data, { ...submission, message });
         console.log('created', message);
-        setAbortKey(message?.messageId);
+        setAbortKey(message?.conversationId);
       } else {
         let text = data.text || data.response;
         if (data.initial) console.log(data);
