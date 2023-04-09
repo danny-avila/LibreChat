@@ -39,7 +39,8 @@ router.post('/', async (req, res) => {
       jailbreakConversationId: req.body?.jailbreakConversationId ?? null,
       systemMessage: req.body?.systemMessage ?? null,
       context: req.body?.context ?? null,
-      toneStyle: req.body?.toneStyle ?? 'fast'
+      toneStyle: req.body?.toneStyle ?? 'fast',
+      token: req.body?.token ?? null
     };
   else
     endpointOption = {
@@ -49,7 +50,8 @@ router.post('/', async (req, res) => {
       conversationSignature: req.body?.conversationSignature ?? null,
       clientId: req.body?.clientId ?? null,
       invocationId: req.body?.invocationId ?? null,
-      toneStyle: req.body?.toneStyle ?? 'fast'
+      toneStyle: req.body?.toneStyle ?? 'fast',
+      token: req.body?.token ?? null
     };
 
   console.log('ask log', {

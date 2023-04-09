@@ -13,6 +13,7 @@ const askBing = async ({
   clientId,
   invocationId,
   toneStyle,
+  token,
   onProgress
 }) => {
   const { BingAIClient } = await import('@waylaidwanderer/chatgpt-api');
@@ -22,7 +23,7 @@ const askBing = async ({
 
   const bingAIClient = new BingAIClient({
     // "_U" cookie from bing.com
-    userToken: process.env.BINGAI_TOKEN,
+    userToken: process.env.BINGAI_TOKEN == 'user_provide' ? token : process.env.BINGAI_TOKEN ?? null,
     // If the above doesn't work, provide all your cookies as a string instead
     // cookies: '',
     debug: false,
