@@ -27,7 +27,7 @@ export default function ExportModel({ open, onOpenChange }) {
 
   const conversation = useRecoilValue(store.conversation) || {};
   const messagesTree = useRecoilValue(store.messagesTree) || [];
-  const endpointsFilter = useRecoilValue(store.endpointsFilter);
+  const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   const getSiblingIdx = useRecoilCallback(
     ({ snapshot }) =>
@@ -164,7 +164,7 @@ export default function ExportModel({ open, onOpenChange }) {
 
     if (includeOptions) {
       data += `\n## Options\n`;
-      const options = cleanupPreset({ preset: conversation, endpointsFilter });
+      const options = cleanupPreset({ preset: conversation, endpointsConfig });
 
       for (const key of Object.keys(options)) {
         data += `- ${key}: ${options[key]}\n`;
@@ -203,7 +203,7 @@ export default function ExportModel({ open, onOpenChange }) {
 
     if (includeOptions) {
       data += `\nOptions\n########################\n`;
-      const options = cleanupPreset({ preset: conversation, endpointsFilter });
+      const options = cleanupPreset({ preset: conversation, endpointsConfig });
 
       for (const key of Object.keys(options)) {
         data += `${key}: ${options[key]}\n`;
@@ -241,7 +241,7 @@ export default function ExportModel({ open, onOpenChange }) {
       recursive: recursive
     };
 
-    if (includeOptions) data.options = cleanupPreset({ preset: conversation, endpointsFilter });
+    if (includeOptions) data.options = cleanupPreset({ preset: conversation, endpointsConfig });
 
     const messages = await buildMessageTree({
       messageId: conversation?.conversationId,

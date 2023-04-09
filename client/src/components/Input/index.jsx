@@ -22,6 +22,7 @@ export default function TextChat({ isSearchView = false }) {
   const [text, setText] = useRecoilState(store.text);
   // const [text, setText] = useState('');
 
+  const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const isSubmitting = useRecoilValue(store.isSubmitting);
 
   // TODO: do we need this?
@@ -62,7 +63,7 @@ export default function TextChat({ isSearchView = false }) {
     setText('');
   };
 
-  const handleStopGenerating = (e) => {
+  const handleStopGenerating = e => {
     e.preventDefault();
     stopGenerating();
   };
@@ -169,6 +170,8 @@ export default function TextChat({ isSearchView = false }) {
                   handleStopGenerating={handleStopGenerating}
                   disabled={disabled || isNotAppendable}
                   isSubmitting={isSubmitting}
+                  endpointsConfig={endpointsConfig}
+                  endpoint={conversation?.endpoint}
                 />
                 {latestMessage && conversation?.jailbreak && conversation.endpoint === 'bingAI' ? (
                   <AdjustToneButton onClick={handleBingToneSetting} />

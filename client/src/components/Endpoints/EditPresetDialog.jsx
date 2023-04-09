@@ -21,7 +21,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
   const setPresets = useSetRecoilState(store.presets);
 
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
-  const endpointsFilter = useRecoilValue(store.endpointsFilter);
+  const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   const setOption = param => newValue => {
     let update = {};
@@ -32,7 +32,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
           ...prevState,
           ...update
         },
-        endpointsFilter
+        endpointsConfig
       })
     );
   };
@@ -44,7 +44,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
     axios({
       method: 'post',
       url: '/api/presets',
-      data: cleanupPreset({ preset, endpointsFilter }),
+      data: cleanupPreset({ preset, endpointsConfig }),
       withCredentials: true
     }).then(res => {
       setPresets(res?.data);
@@ -54,7 +54,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
   const exportPreset = () => {
     const fileName = filenamify(preset?.title || 'preset');
     exportFromJSON({
-      data: cleanupPreset({ preset, endpointsFilter }),
+      data: cleanupPreset({ preset, endpointsConfig }),
       fileName,
       exportType: exportFromJSON.types.json
     });

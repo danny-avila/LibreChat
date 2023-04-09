@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import EditPresetDialog from '../../Endpoints/EditPresetDialog';
 import EndpointItems from './EndpointItems';
 import PresetItems from './PresetItems';
+import { Trash2 } from 'lucide-react';
 import FileUpload from './FileUpload';
 import getIcon from '~/utils/getIcon';
 import { useDeletePresetMutation, useCreatePresetMutation } from '~/data-provider';
@@ -36,14 +37,17 @@ export default function NewConversationMenu() {
   const createPresetMutation = useCreatePresetMutation();
 
   const importPreset = jsonData => {
-    createPresetMutation.mutate({...jsonData}, {
-      onSuccess: (data) => {
-        setPresets(data);
-      },
-      onError: (error) => {
-        console.error('Error uploading the preset:', error);
+    createPresetMutation.mutate(
+      { ...jsonData },
+      {
+        onSuccess: data => {
+          setPresets(data);
+        },
+        onError: error => {
+          console.error('Error uploading the preset:', error);
+        }
       }
-    })
+    );
   };
 
   // update the default model when availableModels changes
@@ -85,11 +89,11 @@ export default function NewConversationMenu() {
   };
 
   const clearAllPresets = () => {
-    deletePresetsMutation.mutate({arg: {}});
+    deletePresetsMutation.mutate({ arg: {} });
   };
 
   const onDeletePreset = preset => {
-    deletePresetsMutation.mutate({arg: preset});
+    deletePresetsMutation.mutate({ arg: preset });
   };
 
   const icon = getIcon({
@@ -146,12 +150,18 @@ export default function NewConversationMenu() {
             <FileUpload onFileSelected={importPreset} />
             <Dialog>
               <DialogTrigger asChild>
-                <Button
+                <label
+                  htmlFor="file-upload"
+                  className=" mr-1 flex h-[32px] h-auto cursor-pointer  items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal text-gray-600 transition-colors hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-green-500"
+                >
+                  {/* <Button
                   type="button"
                   className="h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-red-700 hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-gray-800 dark:hover:text-red-400"
-                >
+                > */}
+                  <Trash2 className="mr-1 flex w-[22px] items-center stroke-1" />
                   Clear All
-                </Button>
+                  {/* </Button> */}
+                </label>
               </DialogTrigger>
               <DialogTemplate
                 title="Clear presets"
