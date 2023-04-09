@@ -6,6 +6,8 @@ COPY /client/package*.json /client/
 RUN npm ci
 # Copy the current directory contents into the container at /client
 COPY /client/ /client/
+# Set the memory limit for Node.js
+ENV NODE_OPTIONS="--max-old-space-size=2048"
 # Build webpack artifacts
 RUN npm run build
 
