@@ -62,7 +62,8 @@ export default function TextChat({ isSearchView = false }) {
     setText('');
   };
 
-  const handleStopGenerating = () => {
+  const handleStopGenerating = (e) => {
+    e.preventDefault();
     stopGenerating();
   };
 
