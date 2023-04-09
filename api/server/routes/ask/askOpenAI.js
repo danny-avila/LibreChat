@@ -8,18 +8,18 @@ const { handleError, sendMessage, createOnProgress, handleText } = require('./ha
 
 const abortControllers = new Map();
 
-router.get('/abort', (req, res) => {
-  const requestId = req.query.requestId;
-
-  if (abortControllers.has(requestId)) {
-    const abortController = abortControllers.get(requestId);
-    abortController.abort();
-    abortControllers.delete(requestId);
-    console.log('Aborted request', requestId);
-    res.status(200).send('Aborted');
-  } else {
-    res.status(404).send('Request not found');
+router.post('/abort', (req, res) => {
+  const { abortKey, message } = req.body;
+  if (!abortControllers.has(abortKey)) {
+    return res.status(404).send('Request not found');
   }
+
+  const { abortController, userMessage } = abortControllers.get(abortKey);
+  abortController.abort();
+  abortControllers.delete(abortKey);
+  console.log('Aborted request', abortKey, userMessage);
+  
+  res.status(200).send('Aborted');
 });
 
 router.post('/', async (req, res) => {
@@ -116,11 +116,11 @@ const ask = async ({
   try {
     const progressCallback = createOnProgress();
     const abortController = new AbortController();
-    const abortKey = userMessage.messageId;
-    abortControllers.set(abortKey, abortController);
+    const abortKey = conversationId;
+    console.log('conversationId -----> ', conversationId);
+    abortControllers.set(abortKey, { abortController, userMessage });
     
     res.on('close', () => {
-      console.log('stopped message, aborting');
       abortController.abort();
       return res.end();
     });
