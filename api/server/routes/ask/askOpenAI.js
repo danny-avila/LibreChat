@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
+const addToCache = require('./addToCache');
 const { getOpenAIModels } = require('../endpoints');
 const { titleConvo, askClient } = require('../../../app/');
 const { saveMessage, getConvoTitle, saveConvo, updateConvo, getConvo } = require('../../../models');
@@ -8,16 +9,22 @@ const { handleError, sendMessage, createOnProgress, handleText } = require('./ha
 
 const abortControllers = new Map();
 
-router.post('/abort', (req, res) => {
-  const { abortKey, message } = req.body;
+router.post('/abort', async (req, res) => {
+  const { abortKey, latestMessage, parentMessageId } = req.body;
+  console.log(`req.body`, req.body);
   if (!abortControllers.has(abortKey)) {
     return res.status(404).send('Request not found');
   }
+  
+  const { abortController, userMessage, endpointOption } = abortControllers.get(abortKey);
+  if (!endpointOption.endpoint) {
+    endpointOption.endpoint = req.originalUrl.replace('/api/ask/','').split('/abort')[0];
+  }
 
-  const { abortController, userMessage } = abortControllers.get(abortKey);
   abortController.abort();
   abortControllers.delete(abortKey);
-  console.log('Aborted request', abortKey, userMessage);
+  console.log('Aborted request', abortKey, userMessage, endpointOption);
+  await addToCache({ endpointOption, conversationId: abortKey, userMessage, latestMessage, parentMessageId });
   
   res.status(200).send('Aborted');
 });
@@ -118,7 +125,7 @@ const ask = async ({
     const abortController = new AbortController();
     const abortKey = conversationId;
     console.log('conversationId -----> ', conversationId);
-    abortControllers.set(abortKey, { abortController, userMessage });
+    abortControllers.set(abortKey, { abortController, userMessage, endpointOption });
     
     res.on('close', () => {
       abortController.abort();
