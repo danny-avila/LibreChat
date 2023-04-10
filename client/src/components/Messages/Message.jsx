@@ -188,17 +188,17 @@ export default function Message({
                       )}
                     </div>
                   </div>
-                  {!isSubmitting && cancelled ? (
+                  {/* {!isSubmitting && cancelled ? (
                     <div className="flex flex min-h-[20px] flex-grow flex-col items-start gap-2 gap-4  text-red-500">
                       <div className="rounded-md border border-blue-400 bg-blue-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-100">
                         {`This is a cancelled message.`}
                       </div>
                     </div>
-                  ) : null}
+                  ) : null} */}
                   {!isSubmitting && unfinished ? (
                     <div className="flex flex min-h-[20px] flex-grow flex-col items-start gap-2 gap-4  text-red-500">
                       <div className="rounded-md border border-blue-400 bg-blue-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-100">
-                        {`This is an unfinished message. It might because the AI is still generating or it has been aborted. Refresh later to see more updates.`}
+                        {`This is an unfinished message. The AI may still be generating a response or it was aborted. Refresh or visit later to see more updates.`}
                       </div>
                     </div>
                   ) : null}
