@@ -20,7 +20,7 @@ export default function Chat() {
 
   //disabled by default, we only enable it when messagesTree is null
   const messagesQuery = useGetMessagesByConvoId(conversationId, { enabled: false });
-  const getConversationMutation = useGetConversationByIdMutation(conversationId, setConversation);
+  const getConversationMutation = useGetConversationByIdMutation(conversationId);
 
   // when conversation changed or conversationId (in url) changed
   useEffect(() => {
@@ -31,7 +31,17 @@ export default function Chat() {
         newConversation();
       } else if (conversationId) {
         // fetch it from server
-        getConversationMutation.mutate();
+        getConversationMutation.mutate(conversationId, {
+          onSuccess: (data) => {
+            setConversation(data);
+          },
+          onError: (error) => {
+            console.error('failed to fetch the conversation');
+            console.error(error);
+            navigate(`/chat/new`);
+            newConversation();
+          }
+        });
         setMessages(null);
       } else {
         navigate(`/chat/new`);
@@ -44,15 +54,6 @@ export default function Chat() {
       navigate(`/chat/${conversation?.conversationId}`);
     }
   }, [conversation, conversationId]);
-
-  useEffect(() => {
-    if(getConversationMutation.isError) {
-      console.error('failed to fetch the conversation');
-      console.error(getConversationMutation.error);
-      newConversation();
-    }
-  }, [getConversationMutation.isError, newConversation]);
-
 
   useEffect(() => {
     if (messagesTree === null && conversation?.conversationId) {
