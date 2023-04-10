@@ -28,8 +28,8 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
   const helpText = {
     bingAI: (
       <small className="break-all text-gray-600">
-        'The Bing Access Token is the "_U" cookie from bing.com. Use dev tools or an extension while logged
-        into the site to view it.'
+        The Bing Access Token is the "_U" cookie from bing.com. Use dev tools or an extension while logged
+        into the site to view it.
       </small>
     ),
     chatGPTBrowser: (
