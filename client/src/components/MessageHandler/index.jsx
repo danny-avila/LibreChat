@@ -3,7 +3,7 @@ import { useRecoilValue, useRecoilState, useResetRecoilState, useSetRecoilState 
 import { SSE } from '~/data-provider/sse.mjs';
 import createPayload from '~/data-provider/createPayload';
 import { useAbortRequestWithMessage } from '~/data-provider';
-
+import { v4 } from 'uuid';
 import store from '~/store';
 
 export default function MessageHandler() {
@@ -13,6 +13,7 @@ export default function MessageHandler() {
   const setConversation = useSetRecoilState(store.conversation);
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
   const [lastResponse, setLastResponse] = useRecoilState(store.lastResponse);
+  const setLatestMessage = useSetRecoilState(store.latestMessage);
   const setSubmission = useSetRecoilState(store.submission);
   const [source, setSource] = useState(null);
   // const [abortKey, setAbortKey] = useState(null);
@@ -50,6 +51,7 @@ export default function MessageHandler() {
 
   const cancelHandler = (data, submission) => {
     const { messages, message, initialResponse, isRegenerate = false } = submission;
+    const { text, messageId, parentMessageId } = data;
 
     if (isRegenerate) {
       setMessages([
@@ -63,14 +65,15 @@ export default function MessageHandler() {
         }
       ]);
     } else {
+      console.log('cancelHandler, isRegenerate = false');
       setMessages([
         ...messages,
         message,
         {
           ...initialResponse,
-          text: data,
+          text,
           parentMessageId: message?.messageId,
-          messageId: message?.messageId + '_'
+          messageId,
           // cancelled: true
         }
       ]);
@@ -78,6 +81,7 @@ export default function MessageHandler() {
       setSource(null);
       setIsSubmitting(false);
       setSubmission(null);
+      setLatestMessage(data);
     }
   };
 
@@ -168,7 +172,14 @@ export default function MessageHandler() {
       const { endpoint } = submission.conversation;
 
       // splitting twice because the cursor may or may not be wrapped in a span
-      const latestMessage = lastResponse.split('█')[0].split('<span className="result-streaming">')[0];
+      const latestMessageText = lastResponse.split('█')[0].split('<span className="result-streaming">')[0];
+      const latestMessage = {
+        text: latestMessageText,
+        messageId: v4(),
+        parentMessageId: currentParent.messageId,
+        conversationId: currentParent.conversationId
+      };
+
       fetch(`/api/ask/${endpoint}/abort`, {
         method: 'POST',
         headers: {
@@ -176,8 +187,7 @@ export default function MessageHandler() {
         },
         body: JSON.stringify({
           abortKey: currentParent.conversationId,
-          latestMessage,
-          parentMessageId: currentParent.messageId,
+          latestMessage
         })
       })
         .then(response => {
@@ -194,8 +204,6 @@ export default function MessageHandler() {
       cancelHandler(latestMessage, { ...submission, message });
       return;
     }
-
-    // events.oncancel = () => cancelHandler(latestResponseText, { ...submission, message });
 
     const { server, payload } = createPayload(submission);
 

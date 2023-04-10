@@ -1,20 +1,15 @@
 const Keyv = require('keyv');
 const { KeyvFile } = require('keyv-file');
-const crypto = require('crypto');
 const { saveMessage } = require('../../../models');
 
-const addToCache = async ({
-  endpointOption,
-  conversationId,
-  userMessage,
-  latestMessage,
-  parentMessageId
-}) => {
+const addToCache = async ({ endpointOption, userMessage, latestMessage }) => {
   try {
     const conversationsCache = new Keyv({
       store: new KeyvFile({ filename: './data/cache.json' }),
-      namespace: 'chatgpt', // should be 'bing' for bing/sydney
+      namespace: 'chatgpt' // should be 'bing' for bing/sydney
     });
+
+    const { conversationId, messageId, parentMessageId, text } = latestMessage;
 
     let conversation = await conversationsCache.get(conversationId);
     // used to generate a title for the conversation if none exists
@@ -38,13 +33,13 @@ const addToCache = async ({
       }
     };
 
-    const messageId = crypto.randomUUID();
+    // const messageId = crypto.randomUUID();
 
     let responseMessage = {
       id: messageId,
       parentMessageId,
       role: roles(endpointOption),
-      message: latestMessage
+      message: text
     };
 
     await saveMessage({
@@ -52,7 +47,7 @@ const addToCache = async ({
       conversationId,
       messageId,
       sender: responseMessage.role,
-      text: latestMessage
+      text
     });
 
     conversation.messages.push(userMessage, responseMessage);
