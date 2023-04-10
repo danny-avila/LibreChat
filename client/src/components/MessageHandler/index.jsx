@@ -17,7 +17,7 @@ export default function MessageHandler() {
   const messageHandler = (data, submission) => {
     const { messages, message, initialResponse, isRegenerate = false } = submission;
 
-    if (isRegenerate)
+    if (isRegenerate) {
       setMessages([
         ...messages,
         {
@@ -26,10 +26,10 @@ export default function MessageHandler() {
           parentMessageId: message?.overrideParentMessageId,
           messageId: message?.overrideParentMessageId + '_',
           submitting: true,
-          unfinished: true
+          // unfinished: true
         }
       ]);
-    else
+    } else {
       setMessages([
         ...messages,
         message,
@@ -39,9 +39,10 @@ export default function MessageHandler() {
           parentMessageId: message?.messageId,
           messageId: message?.messageId + '_',
           submitting: true,
-          unfinished: true
+          // unfinished: true
         }
       ]);
+    }
   };
 
   const cancelHandler = (data, submission) => {
@@ -50,8 +51,11 @@ export default function MessageHandler() {
     const { requestMessage, responseMessage, conversation } = data;
 
     // update the messages
-    if (isRegenerate) setMessages([...messages, responseMessage]);
-    else setMessages([...messages, requestMessage, responseMessage]);
+    if (isRegenerate) {
+      setMessages([...messages, responseMessage]);
+    } else {
+      setMessages([...messages, requestMessage, responseMessage]);
+    }
     setIsSubmitting(false);
 
     // refresh title

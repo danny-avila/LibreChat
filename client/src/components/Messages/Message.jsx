@@ -34,6 +34,12 @@ export default function Message({
   const blinker = submitting && isSubmitting;
   const getConversationQuery = useGetConversationByIdQuery(message.conversationId, { enabled: false });
 
+  // debugging
+  // useEffect(() => {
+  //   console.log('isSubmitting:', isSubmitting);
+  //   console.log('unfinished:', unfinished);
+  // }, [isSubmitting, unfinished]);
+
   useEffect(() => {
     if (blinker && !abortScroll) {
       scrollToBottom();
