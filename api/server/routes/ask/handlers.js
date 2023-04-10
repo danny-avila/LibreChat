@@ -17,7 +17,7 @@ const sendMessage = (res, message) => {
   res.write(`event: message\ndata: ${JSON.stringify(message)}\n\n`);
 };
 
-const createOnProgress = () => {
+const createOnProgress = ({ onProgress: _onProgress }) => {
   let i = 0;
   let code = '';
   let tokens = '';
@@ -65,14 +65,21 @@ const createOnProgress = () => {
     }
 
     sendMessage(res, { text: tokens + cursor, message: true, initial: i === 0, ...rest });
+
+    _onProgress && _onProgress({ text: tokens, message: true, initial: i === 0, ...rest });
+
     i++;
   };
 
-  const onProgress = opts => {
+  const onProgress = (opts) => {
     return _.partialRight(progressCallback, opts);
   };
 
-  return onProgress;
+  const getPartialText = () => {
+    return tokens;
+  };
+
+  return { onProgress, getPartialText };
 };
 
 const handleText = async (response, bing = false) => {

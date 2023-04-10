@@ -43,6 +43,14 @@ const messageSchema = mongoose.Schema(
       required: true,
       default: false
     },
+    unfinished: {
+      type: Boolean,
+      default: false
+    },
+    cancelled: {
+      type: Boolean,
+      default: false
+    },
     error: {
       type: Boolean,
       default: false

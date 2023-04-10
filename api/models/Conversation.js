@@ -13,45 +13,21 @@ const getConvo = async (user, conversationId) => {
 
 module.exports = {
   Conversation,
-  saveConvo: async (user, { conversationId, newConversationId, title, ...convo }) => {
+  saveConvo: async (user, { conversationId, newConversationId, ...convo }) => {
     try {
       const messages = await getMessages({ conversationId });
-      const update = { ...convo, messages };
-      if (title) {
-        update.title = title;
-        update.user = user;
-      }
+      const update = { ...convo, messages, user };
       if (newConversationId) {
         update.conversationId = newConversationId;
       }
-      if (!update.jailbreakConversationId) {
-        update.jailbreakConversationId = null;
-      }
 
-      return await Conversation.findOneAndUpdate(
-        { conversationId: conversationId, user },
-        { $set: update },
-        { new: true, upsert: true }
-      ).exec();
-    } catch (error) {
-      console.log(error);
-      return { message: 'Error saving conversation' };
-    }
-  },
-  updateConvo: async (user, { conversationId, oldConvoId, ...update }) => {
-    try {
-      let convoId = conversationId;
-      if (oldConvoId) {
-        convoId = oldConvoId;
-        update.conversationId = conversationId;
-      }
-
-      return await Conversation.findOneAndUpdate({ conversationId: convoId, user }, update, {
-        new: true
+      return await Conversation.findOneAndUpdate({ conversationId: conversationId, user }, update, {
+        new: true,
+        upsert: true
       }).exec();
     } catch (error) {
       console.log(error);
-      return { message: 'Error updating conversation' };
+      return { message: 'Error saving conversation' };
     }
   },
   getConvosByPage: async (user, pageNumber = 1, pageSize = 12) => {
@@ -82,7 +58,7 @@ module.exports = {
       // will handle a syncing solution soon
       const deletedConvoIds = [];
 
-      convoIds.forEach(convo =>
+      convoIds.forEach((convo) =>
         promises.push(
           Conversation.findOne({
             user,
@@ -145,7 +121,7 @@ module.exports = {
   },
   deleteConvos: async (user, filter) => {
     let toRemove = await Conversation.find({ ...filter, user }).select('conversationId');
-    const ids = toRemove.map(instance => instance.conversationId);
+    const ids = toRemove.map((instance) => instance.conversationId);
     let deleteCount = await Conversation.deleteMany({ ...filter, user }).exec();
     deleteCount.messages = await deleteMessages({ conversationId: { $in: ids } });
     return deleteCount;

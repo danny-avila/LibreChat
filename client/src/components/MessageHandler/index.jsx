@@ -3,7 +3,6 @@ import { useRecoilValue, useRecoilState, useResetRecoilState, useSetRecoilState 
 import { SSE } from '~/data-provider/sse.mjs';
 import createPayload from '~/data-provider/createPayload';
 import { useAbortRequestWithMessage } from '~/data-provider';
-import { v4 } from 'uuid';
 import store from '~/store';
 
 export default function MessageHandler() {
@@ -12,12 +11,6 @@ export default function MessageHandler() {
   const setMessages = useSetRecoilState(store.messages);
   const setConversation = useSetRecoilState(store.conversation);
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
-  const [lastResponse, setLastResponse] = useRecoilState(store.lastResponse);
-  const setLatestMessage = useSetRecoilState(store.latestMessage);
-  const setSubmission = useSetRecoilState(store.submission);
-  const [source, setSource] = useState(null);
-  // const [abortKey, setAbortKey] = useState(null);
-  const [currentParent, setCurrentParent] = useState(null);
 
   const { refreshConversations } = store.useConversations();
 
@@ -32,7 +25,8 @@ export default function MessageHandler() {
           text: data,
           parentMessageId: message?.overrideParentMessageId,
           messageId: message?.overrideParentMessageId + '_',
-          submitting: true
+          submitting: true,
+          unfinished: true
         }
       ]);
     else
@@ -44,45 +38,38 @@ export default function MessageHandler() {
           text: data,
           parentMessageId: message?.messageId,
           messageId: message?.messageId + '_',
-          submitting: true
+          submitting: true,
+          unfinished: true
         }
       ]);
   };
 
   const cancelHandler = (data, submission) => {
-    const { messages, message, initialResponse, isRegenerate = false } = submission;
-    const { text, messageId, parentMessageId } = data;
+    const { messages, isRegenerate = false } = submission;
 
-    if (isRegenerate) {
-      setMessages([
-        ...messages,
-        {
-          ...initialResponse,
-          text: data,
-          parentMessageId: message?.overrideParentMessageId,
-          messageId: message?.overrideParentMessageId + '_',
-          cancelled: true
-        }
-      ]);
-    } else {
-      console.log('cancelHandler, isRegenerate = false');
-      setMessages([
-        ...messages,
-        message,
-        {
-          ...initialResponse,
-          text,
-          parentMessageId: message?.messageId,
-          messageId,
-          // cancelled: true
-        }
-      ]);
-      setLastResponse('');
-      setSource(null);
-      setIsSubmitting(false);
-      setSubmission(null);
-      setLatestMessage(data);
+    const { requestMessage, responseMessage, conversation } = data;
+
+    // update the messages
+    if (isRegenerate) setMessages([...messages, responseMessage]);
+    else setMessages([...messages, requestMessage, responseMessage]);
+    setIsSubmitting(false);
+
+    // refresh title
+    if (requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
+      setTimeout(() => {
+        refreshConversations();
+      }, 2000);
+
+      // in case it takes too long.
+      setTimeout(() => {
+        refreshConversations();
+      }, 5000);
     }
+
+    setConversation(prevState => ({
+      ...prevState,
+      ...conversation
+    }));
   };
 
   const createdHandler = (data, submission) => {
@@ -160,50 +147,37 @@ export default function MessageHandler() {
     return;
   };
 
+  const abortConversation = conversationId => {
+    console.log(submission);
+    const { endpoint } = submission?.conversation || {};
+
+    fetch(`/api/ask/${endpoint}/abort`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        abortKey: conversationId
+      })
+    })
+      .then(response => response.json())
+      .then(data => {
+        console.log('aborted', data);
+        cancelHandler(data, submission);
+      })
+      .catch(error => {
+        console.error('Error aborting request');
+        console.error(error);
+        // errorHandler({ text: 'Error aborting request' }, { ...submission, message });
+      });
+    return;
+  };
+
   useEffect(() => {
     if (submission === null) return;
     if (Object.keys(submission).length === 0) return;
 
-    let { message, cancel } = submission;
-
-    if (cancel && source) {
-      console.log('message aborted', submission);
-      source.close();
-      const { endpoint } = submission.conversation;
-
-      // splitting twice because the cursor may or may not be wrapped in a span
-      const latestMessageText = lastResponse.split('█')[0].split('<span className="result-streaming">')[0];
-      const latestMessage = {
-        text: latestMessageText,
-        messageId: v4(),
-        parentMessageId: currentParent.messageId,
-        conversationId: currentParent.conversationId
-      };
-
-      fetch(`/api/ask/${endpoint}/abort`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          abortKey: currentParent.conversationId,
-          latestMessage
-        })
-      })
-        .then(response => {
-          if (response.ok) {
-            console.log('Request aborted');
-          } else {
-            console.error('Error aborting request');
-          }
-        })
-        .catch(error => {
-          console.error(error);
-        });
-      console.log('source closed, got this far');
-      cancelHandler(latestMessage, { ...submission, message });
-      return;
-    }
+    let { message } = submission;
 
     const { server, payload } = createPayload(submission);
 
@@ -212,9 +186,6 @@ export default function MessageHandler() {
       headers: { 'Content-Type': 'application/json' }
     });
 
-    setSource(events);
-
-    // let latestResponseText = '';
     events.onmessage = e => {
       const data = JSON.parse(e.data);
 
@@ -229,24 +200,19 @@ export default function MessageHandler() {
         };
         createdHandler(data, { ...submission, message });
         console.log('created', message);
-        // setAbortKey(message?.conversationId);
-        setCurrentParent(message);
       } else {
         let text = data.text || data.response;
         if (data.initial) console.log(data);
 
         if (data.message) {
-          // latestResponseText = text;
-          setLastResponse(text);
           messageHandler(text, { ...submission, message });
         }
-        // console.log('dataStream', data);
       }
     };
 
     events.onopen = () => console.log('connection is opened');
 
-    // events.oncancel = () => cancelHandler(latestResponseText, { ...submission, message });
+    events.oncancel = () => abortConversation(message?.conversationId || submission?.conversationId);
 
     events.onerror = function (e) {
       console.log('error in opening conn.');
@@ -263,7 +229,7 @@ export default function MessageHandler() {
     return () => {
       const isCancelled = events.readyState <= 1;
       events.close();
-      setSource(null);
+      // setSource(null);
       if (isCancelled) {
         const e = new Event('cancel');
         events.dispatchEvent(e);
