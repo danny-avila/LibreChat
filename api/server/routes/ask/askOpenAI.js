@@ -10,7 +10,7 @@ const { handleError, sendMessage, createOnProgress, handleText } = require('./ha
 const abortControllers = new Map();
 
 router.post('/abort', async (req, res) => {
-  const { abortKey, latestMessage, parentMessageId } = req.body;
+  const { abortKey, latestMessage } = req.body;
   console.log(`req.body`, req.body);
   if (!abortControllers.has(abortKey)) {
     return res.status(404).send('Request not found');
@@ -24,7 +24,7 @@ router.post('/abort', async (req, res) => {
   abortController.abort();
   abortControllers.delete(abortKey);
   console.log('Aborted request', abortKey, userMessage, endpointOption);
-  await addToCache({ endpointOption, conversationId: abortKey, userMessage, latestMessage, parentMessageId });
+  await addToCache({ endpointOption, userMessage, latestMessage });
   
   res.status(200).send('Aborted');
 });
