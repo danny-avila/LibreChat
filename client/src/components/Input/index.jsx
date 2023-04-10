@@ -33,7 +33,7 @@ export default function TextChat({ isSearchView = false }) {
   // const bingStylesRef = useRef(null);
   const [showBingToneSetting, setShowBingToneSetting] = useState(false);
 
-  const isNotAppendable = latestMessage?.cancelled || latestMessage?.error;
+  const isNotAppendable = latestMessage?.unfinished || latestMessage?.error;
 
   // auto focus to input, when enter a conversation.
   useEffect(() => {

@@ -37,16 +37,16 @@ export default function ExportModel({ open, onOpenChange }) {
   );
 
   const typeOptions = [
+    { value: 'screenshot', display: 'screenshot (.png)' },
     { value: 'text', display: 'text (.txt)' },
     { value: 'markdown', display: 'markdown (.md)' },
-    { value: 'csv', display: 'csv (.csv)' },
     { value: 'json', display: 'json (.json)' },
-    { value: 'screenshot', display: 'screenshot (.png)' }
+    { value: 'csv', display: 'csv (.csv)' }
   ]; //,, 'webpage'];
 
   useEffect(() => {
     setFileName(filenamify(String(conversation?.title || 'file')));
-    setType('text');
+    setType('screenshot');
     setIncludeOptions(true);
     setExportBranches(false);
     setRecursive(true);
@@ -144,6 +144,8 @@ export default function ExportModel({ open, onOpenChange }) {
           fieldValues: entries.find(e => e.fieldName == 'isCreatedByUser').fieldValues
         },
         { fieldName: 'error', fieldValues: entries.find(e => e.fieldName == 'error').fieldValues },
+        { fieldName: 'unfinished', fieldValues: entries.find(e => e.fieldName == 'unfinished').fieldValues },
+        { fieldName: 'cancelled', fieldValues: entries.find(e => e.fieldName == 'cancelled').fieldValues },
         { fieldName: 'messageId', fieldValues: entries.find(e => e.fieldName == 'messageId').fieldValues },
         {
           fieldName: 'parentMessageId',
@@ -181,7 +183,11 @@ export default function ExportModel({ open, onOpenChange }) {
 
     data += `\n## History\n`;
     for (const message of messages) {
-      data += `**${message?.sender}:**\n${message?.text}\n\n`;
+      data += `**${message?.sender}:**\n${message?.text}\n`;
+      if (message.error) data += `*(This is an error message)*\n`;
+      if (message.unfinished) data += `*(This is an unfinished message)*\n`;
+      if (message.cancelled) data += `*(This is a cancelled message)*\n`;
+      data += '\n\n';
     }
 
     exportFromJSON({
@@ -220,7 +226,11 @@ export default function ExportModel({ open, onOpenChange }) {
 
     data += `\nHistory\n########################\n`;
     for (const message of messages) {
-      data += `${message?.sender}:\n${message?.text}\n\n`;
+      data += `>> ${message?.sender}:\n${message?.text}\n`;
+      if (message.error) data += `(This is an error message)\n`;
+      if (message.unfinished) data += `(This is an unfinished message)\n`;
+      if (message.cancelled) data += `(This is a cancelled message)\n`;
+      data += '\n\n';
     }
 
     exportFromJSON({

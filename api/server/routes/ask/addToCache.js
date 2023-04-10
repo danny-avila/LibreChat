@@ -2,14 +2,24 @@ const Keyv = require('keyv');
 const { KeyvFile } = require('keyv-file');
 const { saveMessage } = require('../../../models');
 
-const addToCache = async ({ endpointOption, userMessage, latestMessage }) => {
+const addToCache = async ({ endpoint, endpointOption, userMessage, responseMessage }) => {
   try {
     const conversationsCache = new Keyv({
       store: new KeyvFile({ filename: './data/cache.json' }),
       namespace: 'chatgpt' // should be 'bing' for bing/sydney
     });
 
-    const { conversationId, messageId, parentMessageId, text } = latestMessage;
+    const {
+      conversationId,
+      messageId: userMessageId,
+      parentMessageId: userParentMessageId,
+      text: userText
+    } = userMessage;
+    const {
+      messageId: responseMessageId,
+      parentMessageId: responseParentMessageId,
+      text: responseText
+    } = responseMessage;
 
     let conversation = await conversationsCache.get(conversationId);
     // used to generate a title for the conversation if none exists
@@ -22,10 +32,7 @@ const addToCache = async ({ endpointOption, userMessage, latestMessage }) => {
       // isNewConversation = true;
     }
 
-    // const shouldGenerateTitle = opts.shouldGenerateTitle && isNewConversation;
-
     const roles = (options) => {
-      const { endpoint } = options;
       if (endpoint === 'openAI') {
         return options?.chatGptLabel || 'ChatGPT';
       } else if (endpoint === 'bingAI') {
@@ -33,24 +40,21 @@ const addToCache = async ({ endpointOption, userMessage, latestMessage }) => {
       }
     };
 
-    // const messageId = crypto.randomUUID();
-
-    let responseMessage = {
-      id: messageId,
-      parentMessageId,
-      role: roles(endpointOption),
-      message: text
+    let _userMessage = {
+      id: userMessageId,
+      parentMessageId: userParentMessageId,
+      role: 'User',
+      message: userText
     };
 
-    await saveMessage({
-      ...responseMessage,
-      conversationId,
-      messageId,
-      sender: responseMessage.role,
-      text
-    });
+    let _responseMessage = {
+      id: responseMessageId,
+      parentMessageId: responseParentMessageId,
+      role: roles(endpointOption),
+      message: responseText
+    };
 
-    conversation.messages.push(userMessage, responseMessage);
+    conversation.messages.push(_userMessage, _responseMessage);
 
     await conversationsCache.set(conversationId, conversation);
   } catch (error) {
