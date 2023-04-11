@@ -9,8 +9,7 @@ router.post('/', async (req, res) => {
   try {
     const { arg } = req.body;
 
-    console.log('context:', arg, req.body);
-
+    // console.log('context:', arg, req.body);
     // console.log(typeof req.body === 'object' ? { ...req.body, ...req.query } : req.query);
     const model = await load(registry[models['gpt-3.5-turbo']]);
     const encoder = new Tiktoken(model.bpe_ranks, model.special_tokens, model.pat_str);
