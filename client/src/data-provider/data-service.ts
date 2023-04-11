@@ -66,5 +66,5 @@ export const getAIEndpoints = () => {
 }
 
 export const updateTokenCount = (text: string) => { 
-  return request.post(endpoints.tokenizer(), {arg: {text}});
+  return request.post(endpoints.tokenizer(), {arg: text});
 }
