@@ -84,7 +84,7 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
               )}
             />
             <small className="text-red-600">
-              Your token will be send to the server, but we won't save it.
+              Your token will be sent to the server, but not saved.
             </small>
             {helpText?.[endpoint]}
           </div>

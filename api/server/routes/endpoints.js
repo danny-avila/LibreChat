@@ -23,9 +23,9 @@ router.get('/', function (req, res) {
     : false;
   const chatGPTBrowser = process.env.CHATGPT_TOKEN
     ? {
-        userProvide: process.env.CHATGPT_TOKEN == 'user_provide',
-        availableModels: getChatGPTBrowserModels()
-      }
+      userProvide: process.env.CHATGPT_TOKEN == 'user_provide',
+      availableModels: getChatGPTBrowserModels()
+    }
     : false;
 
   res.send(JSON.stringify({ azureOpenAI, openAI, bingAI, chatGPTBrowser }));
