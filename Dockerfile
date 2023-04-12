@@ -6,6 +6,8 @@ COPY /client/package*.json /client/
 RUN npm ci
 # Copy the current directory contents into the container at /client
 COPY /client/ /client/
+# Set the memory limit for Node.js
+ENV NODE_OPTIONS="--max-old-space-size=2048"
 # Build webpack artifacts
 RUN npm run build
 
@@ -29,7 +31,7 @@ CMD ["npm", "start"]
 # Optional: for client with nginx routing
 FROM nginx:stable-alpine AS nginx-client
 WORKDIR /usr/share/nginx/html
-COPY --from=react-client /client/public /usr/share/nginx/html
+COPY --from=react-client /client/dist /usr/share/nginx/html
 # Add your nginx.conf
 COPY /client/nginx.conf /etc/nginx/conf.d/default.conf
 ENTRYPOINT ["nginx", "-g", "daemon off;"]

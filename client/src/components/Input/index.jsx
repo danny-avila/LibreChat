@@ -22,6 +22,7 @@ export default function TextChat({ isSearchView = false }) {
   const [text, setText] = useRecoilState(store.text);
   // const [text, setText] = useState('');
 
+  const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const isSubmitting = useRecoilValue(store.isSubmitting);
 
   // TODO: do we need this?
@@ -32,7 +33,7 @@ export default function TextChat({ isSearchView = false }) {
   // const bingStylesRef = useRef(null);
   const [showBingToneSetting, setShowBingToneSetting] = useState(false);
 
-  const isNotAppendable = latestMessage?.cancelled || latestMessage?.error;
+  const isNotAppendable = (latestMessage?.unfinished & !isSubmitting) || latestMessage?.error;
 
   // auto focus to input, when enter a conversation.
   useEffect(() => {
@@ -62,17 +63,22 @@ export default function TextChat({ isSearchView = false }) {
     setText('');
   };
 
-  const handleStopGenerating = () => {
+  const handleStopGenerating = e => {
+    e.preventDefault();
     stopGenerating();
   };
 
   const handleKeyDown = e => {
+    if (e.key === 'Enter' && isSubmitting) {
+      return;
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
     }
 
-    if (e.key === 'Enter' && !e.shiftKey) {
-      if (!isComposing?.current) submitMessage();
+    if (e.key === 'Enter' && !e.shiftKey && !isComposing?.current) {
+      submitMessage();
     }
   };
 
@@ -168,6 +174,8 @@ export default function TextChat({ isSearchView = false }) {
                   handleStopGenerating={handleStopGenerating}
                   disabled={disabled || isNotAppendable}
                   isSubmitting={isSubmitting}
+                  endpointsConfig={endpointsConfig}
+                  endpoint={conversation?.endpoint}
                 />
                 {latestMessage && conversation?.jailbreak && conversation.endpoint === 'bingAI' ? (
                   <AdjustToneButton onClick={handleBingToneSetting} />

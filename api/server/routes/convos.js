@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { titleConvo } = require('../../app/');
 const { getConvo, saveConvo, getConvoTitle } = require('../../models');
-const { getConvosByPage, deleteConvos, updateConvo } = require('../../models/Conversation');
+const { getConvosByPage, deleteConvos } = require('../../models/Conversation');
 const { getMessages } = require('../../models/Message');
 
 router.get('/', async (req, res) => {
@@ -44,7 +44,7 @@ router.post('/update', async (req, res) => {
   const update = req.body.arg;
 
   try {
-    const dbResponse = await updateConvo(req?.session?.user?.username, update);
+    const dbResponse = await saveConvo(req?.session?.user?.username, update);
     res.status(201).send(dbResponse);
   } catch (error) {
     console.error(error);

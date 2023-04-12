@@ -1,4 +1,4 @@
-const cleanupPreset = ({ preset: _preset, endpointsFilter = {} }) => {
+const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
   const { endpoint } = _preset;
 
   let preset = {};
@@ -6,7 +6,7 @@ const cleanupPreset = ({ preset: _preset, endpointsFilter = {} }) => {
     preset = {
       endpoint,
       presetId: _preset?.presetId ?? null,
-      model: _preset?.model ?? endpointsFilter[endpoint]?.availableModels?.[0] ?? 'gpt-3.5-turbo',
+      model: _preset?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'gpt-3.5-turbo',
       chatGptLabel: _preset?.chatGptLabel ?? null,
       promptPrefix: _preset?.promptPrefix ?? null,
       temperature: _preset?.temperature ?? 1,
@@ -30,7 +30,7 @@ const cleanupPreset = ({ preset: _preset, endpointsFilter = {} }) => {
       endpoint,
       presetId: _preset?.presetId ?? null,
       model:
-        _preset?.model ?? endpointsFilter[endpoint]?.availableModels?.[0] ?? 'text-davinci-002-render-sha',
+        _preset?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'text-davinci-002-render-sha',
       title: _preset?.title ?? 'New Preset'
     };
   } else if (endpoint === null) {
