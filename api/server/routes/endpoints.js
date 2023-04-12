@@ -19,11 +19,11 @@ router.get('/', function (req, res) {
   const azureOpenAI = !!process.env.AZURE_OPENAI_KEY;
   const openAI = process.env.OPENAI_KEY ? { availableModels: getOpenAIModels() } : false;
   const bingAI = process.env.BINGAI_TOKEN
-    ? { userProvide: process.env.BINGAI_TOKEN == 'user_provide' }
+    ? { userProvide: process.env.BINGAI_TOKEN == 'user_provided' }
     : false;
   const chatGPTBrowser = process.env.CHATGPT_TOKEN
     ? {
-      userProvide: process.env.CHATGPT_TOKEN == 'user_provide',
+      userProvide: process.env.CHATGPT_TOKEN == 'user_provided',
       availableModels: getChatGPTBrowserModels()
     }
     : false;
