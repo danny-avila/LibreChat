@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const { titleConvo, askBing } = require('../../../app');
-const { saveMessage, getConvoTitle, saveConvo, updateConvo, getConvo } = require('../../../models');
+const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 
 router.post('/', async (req, res) => {
@@ -39,7 +39,8 @@ router.post('/', async (req, res) => {
       jailbreakConversationId: req.body?.jailbreakConversationId ?? null,
       systemMessage: req.body?.systemMessage ?? null,
       context: req.body?.context ?? null,
-      toneStyle: req.body?.toneStyle ?? 'fast'
+      toneStyle: req.body?.toneStyle ?? 'fast',
+      token: req.body?.token ?? null
     };
   else
     endpointOption = {
@@ -49,7 +50,8 @@ router.post('/', async (req, res) => {
       conversationSignature: req.body?.conversationSignature ?? null,
       clientId: req.body?.clientId ?? null,
       invocationId: req.body?.invocationId ?? null,
-      toneStyle: req.body?.toneStyle ?? 'fast'
+      toneStyle: req.body?.toneStyle ?? 'fast',
+      token: req.body?.token ?? null
     };
 
   console.log('ask log', {
@@ -93,6 +95,8 @@ const ask = async ({
 }) => {
   let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
 
+  let responseMessageId = crypto.randomUUID();
+
   res.writeHead(200, {
     Connection: 'keep-alive',
     'Content-Type': 'text/event-stream',
@@ -104,9 +108,26 @@ const ask = async ({
   if (preSendRequest) sendMessage(res, { message: userMessage, created: true });
 
   try {
-    const progressCallback = createOnProgress();
+    let lastSavedTimestamp = 0;
+    const { onProgress: progressCallback, getPartialText } = createOnProgress({
+      onProgress: ({ text }) => {
+        const currentTimestamp = Date.now();
+        if (currentTimestamp - lastSavedTimestamp > 500) {
+          lastSavedTimestamp = currentTimestamp;
+          saveMessage({
+            messageId: responseMessageId,
+            sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
+            conversationId,
+            parentMessageId: overrideParentMessageId || userMessageId,
+            text: text,
+            unfinished: true,
+            cancelled: false,
+            error: false
+          });
+        }
+      }
+    });
     const abortController = new AbortController();
-    res.on('close', () => abortController.abort());
     let response = await askBing({
       text,
       parentMessageId: userParentMessageId,
@@ -133,14 +154,20 @@ const ask = async ({
 
     let responseMessage = {
       conversationId: newConversationId,
-      messageId: newResponseMessageId,
+      messageId: responseMessageId,
+      newMessageId: newResponseMessageId,
       parentMessageId: overrideParentMessageId || newUserMassageId,
       sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
       text: await handleText(response, true),
-      suggestions: response.details.suggestedResponses && response.details.suggestedResponses.map(s => s.text)
+      suggestions:
+        response.details.suggestedResponses && response.details.suggestedResponses.map((s) => s.text),
+      unfinished: false,
+      cancelled: false,
+      error: false
     };
 
     await saveMessage(responseMessage);
+    responseMessage.messageId = newResponseMessageId;
 
     // STEP2 update the convosation.
 
@@ -202,7 +229,7 @@ const ask = async ({
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
       const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: responseMessage });
 
-      await updateConvo(req?.session?.user?.username, {
+      await saveConvo(req?.session?.user?.username, {
         conversationId: conversationId,
         title
       });
@@ -210,10 +237,12 @@ const ask = async ({
   } catch (error) {
     console.log(error);
     const errorMessage = {
-      messageId: crypto.randomUUID(),
+      messageId: responseMessageId,
       sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
       conversationId,
       parentMessageId: overrideParentMessageId || userMessageId,
+      unfinished: false,
+      cancelled: false,
       error: true,
       text: error.message
     };

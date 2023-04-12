@@ -1,15 +1,20 @@
 const buildDefaultConversation = ({
   conversation,
   endpoint,
-  endpointsFilter = {},
+  endpointsConfig = {},
   lastConversationSetup = {}
 }) => {
+  const lastSelectedModel = JSON.parse(localStorage.getItem('lastSelectedModel')) || {};
+
   if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
     conversation = {
       ...conversation,
       endpoint,
       model:
-        lastConversationSetup?.model ?? endpointsFilter[endpoint]?.availableModels?.[0] ?? 'gpt-3.5-turbo',
+        lastConversationSetup?.model ??
+        lastSelectedModel[endpoint] ??
+        endpointsConfig[endpoint]?.availableModels?.[0] ??
+        'gpt-3.5-turbo',
       chatGptLabel: lastConversationSetup?.chatGptLabel ?? null,
       promptPrefix: lastConversationSetup?.promptPrefix ?? null,
       temperature: lastConversationSetup?.temperature ?? 1,
@@ -36,7 +41,8 @@ const buildDefaultConversation = ({
       endpoint,
       model:
         lastConversationSetup?.model ??
-        endpointsFilter[endpoint]?.availableModels?.[0] ??
+        lastSelectedModel[endpoint] ??
+        endpointsConfig[endpoint]?.availableModels?.[0] ??
         'text-davinci-002-render-sha'
     };
   } else if (endpoint === null) {
@@ -55,35 +61,35 @@ const buildDefaultConversation = ({
   return conversation;
 };
 
-const getDefaultConversation = ({ conversation, prevConversation, endpointsFilter, preset }) => {
+const getDefaultConversation = ({ conversation, prevConversation, endpointsConfig, preset }) => {
   const { endpoint: targetEndpoint } = preset || {};
 
   if (targetEndpoint) {
     // try to use preset
     const endpoint = targetEndpoint;
-    if (endpointsFilter?.[endpoint]) {
+    if (endpointsConfig?.[endpoint]) {
       conversation = buildDefaultConversation({
         conversation,
         endpoint,
         lastConversationSetup: preset,
-        endpointsFilter
+        endpointsConfig
       });
       return conversation;
     } else {
       console.log(endpoint);
-      console.warn(`Illegal target endpoint ${targetEndpoint} ${endpointsFilter}`);
+      console.warn(`Illegal target endpoint ${targetEndpoint} ${endpointsConfig}`);
     }
   }
 
   // try {
   //   // try to use current model
   //   const { endpoint = null } = prevConversation || {};
-  //   if (endpointsFilter?.[endpoint]) {
+  //   if (endpointsConfig?.[endpoint]) {
   //     conversation = buildDefaultConversation({
   //       conversation,
   //       endpoint,
   //       lastConversationSetup: prevConversation,
-  //       endpointsFilter
+  //       endpointsConfig
   //     });
   //     return conversation;
   //   }
@@ -94,20 +100,20 @@ const getDefaultConversation = ({ conversation, prevConversation, endpointsFilte
     const lastConversationSetup = JSON.parse(localStorage.getItem('lastConversationSetup'));
     const { endpoint = null } = lastConversationSetup;
 
-    if (endpointsFilter?.[endpoint]) {
-      conversation = buildDefaultConversation({ conversation, endpoint, endpointsFilter });
+    if (endpointsConfig?.[endpoint]) {
+      conversation = buildDefaultConversation({ conversation, endpoint, endpointsConfig });
       return conversation;
     }
   } catch (error) {}
 
   // if anything happens, reset to default model
 
-  const endpoint = ['openAI', 'azureOpenAI', 'bingAI', 'chatGPTBrowser'].find(e => endpointsFilter?.[e]);
+  const endpoint = ['openAI', 'azureOpenAI', 'bingAI', 'chatGPTBrowser'].find(e => endpointsConfig?.[e]);
   if (endpoint) {
-    conversation = buildDefaultConversation({ conversation, endpoint, endpointsFilter });
+    conversation = buildDefaultConversation({ conversation, endpoint, endpointsConfig });
     return conversation;
   } else {
-    conversation = buildDefaultConversation({ conversation, endpoint: null, endpointsFilter });
+    conversation = buildDefaultConversation({ conversation, endpoint: null, endpointsConfig });
     return conversation;
   }
 };

@@ -7,7 +7,9 @@ const useMessageHandler = () => {
   const currentConversation = useRecoilValue(store.conversation) || {};
   const setSubmission = useSetRecoilState(store.submission);
   const isSubmitting = useRecoilValue(store.isSubmitting);
-  const endpointsFilter = useRecoilValue(store.endpointsFilter);
+  const endpointsConfig = useRecoilValue(store.endpointsConfig);
+
+  const { getToken } = store.useToken(currentConversation?.endpoint);
 
   const latestMessage = useRecoilValue(store.latestMessage);
 
@@ -29,7 +31,7 @@ const useMessageHandler = () => {
       endpointOption = {
         endpoint,
         model:
-          currentConversation?.model ?? endpointsFilter[endpoint]?.availableModels?.[0] ?? 'gpt-3.5-turbo',
+          currentConversation?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'gpt-3.5-turbo',
         chatGptLabel: currentConversation?.chatGptLabel ?? null,
         promptPrefix: currentConversation?.promptPrefix ?? null,
         temperature: currentConversation?.temperature ?? 1,
@@ -48,7 +50,8 @@ const useMessageHandler = () => {
         jailbreakConversationId: currentConversation?.jailbreakConversationId ?? null,
         conversationSignature: currentConversation?.conversationSignature ?? null,
         clientId: currentConversation?.clientId ?? null,
-        invocationId: currentConversation?.invocationId ?? 1
+        invocationId: currentConversation?.invocationId ?? 1,
+        token: endpointsConfig[endpoint]?.userProvide ? getToken() : null
       };
       responseSender = endpointOption.jailbreak ? 'Sydney' : 'BingAI';
     } else if (endpoint === 'chatGPTBrowser') {
@@ -56,8 +59,9 @@ const useMessageHandler = () => {
         endpoint,
         model:
           currentConversation?.model ??
-          endpointsFilter[endpoint]?.availableModels?.[0] ??
-          'text-davinci-002-render-sha'
+          endpointsConfig[endpoint]?.availableModels?.[0] ??
+          'text-davinci-002-render-sha',
+        token: endpointsConfig[endpoint]?.userProvide ? getToken() : null
       };
       responseSender = 'ChatGPT';
     } else if (endpoint === null) {
@@ -102,6 +106,7 @@ const useMessageHandler = () => {
       parentMessageId: isRegenerate ? messageId : fakeMessageId,
       messageId: (isRegenerate ? messageId : fakeMessageId) + '_',
       conversationId,
+      unfinished: (endpoint === 'azureOpenAI' || endpoint === 'openAI') ? false : true,
       submitting: true
     };
 

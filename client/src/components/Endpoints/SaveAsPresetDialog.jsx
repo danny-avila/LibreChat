@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import DialogTemplate from '../ui/DialogTemplate';
 import { Dialog } from '../ui/Dialog.tsx';
@@ -11,7 +11,7 @@ import store from '~/store';
 
 const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
   const [title, setTitle] = useState(preset?.title || 'My Preset');
-  const endpointsFilter = useRecoilValue(store.endpointsFilter);
+  const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const createPresetMutation = useCreatePresetMutation();
 
   const defaultTextProps =
@@ -23,7 +23,7 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
         ...preset,
         title
       },
-      endpointsFilter
+      endpointsConfig
     });
     createPresetMutation.mutate(_preset);
   };

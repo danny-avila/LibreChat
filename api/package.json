@@ -1,6 +1,6 @@
 {
   "name": "chatgpt-clone",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "",
   "main": "server/index.js",
   "scripts": {

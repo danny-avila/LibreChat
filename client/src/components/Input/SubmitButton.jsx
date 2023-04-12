@@ -1,10 +1,29 @@
-import React from 'react';
+import React, { useState } from 'react';
 import StopGeneratingIcon from '../svg/StopGeneratingIcon';
+import { Settings } from 'lucide-react';
+import SetTokenDialog from './SetTokenDialog';
+import store from '../../store';
 
-export default function SubmitButton({ submitMessage, handleStopGenerating, disabled, isSubmitting }) {
+export default function SubmitButton({
+  endpoint,
+  submitMessage,
+  handleStopGenerating,
+  disabled,
+  isSubmitting,
+  endpointsConfig
+}) {
+  const [setTokenDialogOpen, setSetTokenDialogOpen] = useState(false);
+  const { getToken } = store.useToken(endpoint);
+
+  const isTokenProvided = endpointsConfig?.[endpoint]?.userProvide ? !!getToken() : true;
+
   const clickHandler = e => {
     e.preventDefault();
     submitMessage();
+  };
+
+  const setToken = () => {
+    setSetTokenDialogOpen(true);
   };
 
   if (isSubmitting)
@@ -42,7 +61,27 @@ export default function SubmitButton({ submitMessage, handleStopGenerating, disa
   //     </div>
   //   </button>
   // );
-  else
+  else if (!isTokenProvided) {
+    return (
+      <>
+        <button
+          onClick={setToken}
+          type="button"
+          className="group absolute bottom-0 right-0 flex h-[100%] w-auto items-center justify-center bg-transparent p-1 text-gray-500"
+        >
+          <div className="m-1 mr-0 rounded-md p-2 pt-[10px] pb-[10px] align-middle text-xs group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
+            <Settings className="mr-1 inline-block w-[18px]" />
+            Set Token First
+          </div>
+        </button>
+        <SetTokenDialog
+          open={setTokenDialogOpen}
+          onOpenChange={setSetTokenDialogOpen}
+          endpoint={endpoint}
+        />
+      </>
+    );
+  } else
     return (
       <button
         onClick={clickHandler}

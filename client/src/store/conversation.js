@@ -79,9 +79,9 @@ const useConversation = () => {
     ({ snapshot }) =>
       async (_conversation, messages = null, preset = null) => {
         const prevConversation = await snapshot.getPromise(conversation);
-        const endpointsFilter = await snapshot.getPromise(endpoints.endpointsFilter);
+        const endpointsConfig = await snapshot.getPromise(endpoints.endpointsConfig);
         _switchToConversation(_conversation, messages, preset, {
-          endpointsFilter,
+          endpointsConfig,
           prevConversation
         });
       },
@@ -92,7 +92,7 @@ const useConversation = () => {
     conversation,
     messages = null,
     preset = null,
-    { endpointsFilter = {}, prevConversation = {} }
+    { endpointsConfig = {}, prevConversation = {} }
   ) => {
     let { endpoint = null } = conversation;
 
@@ -100,7 +100,7 @@ const useConversation = () => {
       // get the default model
       conversation = getDefaultConversation({
         conversation,
-        endpointsFilter,
+        endpointsConfig,
         prevConversation,
         preset
       });

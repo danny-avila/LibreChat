@@ -1,10 +1,30 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
+const addToCache = require('./addToCache');
 const { getOpenAIModels } = require('../endpoints');
 const { titleConvo, askClient } = require('../../../app/');
-const { saveMessage, getConvoTitle, saveConvo, updateConvo, getConvo } = require('../../../models');
+const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
+
+const abortControllers = new Map();
+
+router.post('/abort', async (req, res) => {
+  const { abortKey } = req.body;
+  console.log(`req.body`, req.body);
+  if (!abortControllers.has(abortKey)) {
+    return res.status(404).send('Request not found');
+  }
+
+  const { abortController } = abortControllers.get(abortKey);
+
+  abortControllers.delete(abortKey);
+  const ret = await abortController.abortAsk();
+  console.log('Aborted request', abortKey);
+  console.log('Aborted message:', ret);
+
+  res.send(JSON.stringify(ret));
+});
 
 router.post('/', async (req, res) => {
   const {
@@ -43,7 +63,7 @@ router.post('/', async (req, res) => {
   };
 
   const availableModels = getOpenAIModels();
-  if (availableModels.find(model => model === endpointOption.model) === undefined)
+  if (availableModels.find((model) => model === endpointOption.model) === undefined)
     return handleError(res, { text: 'Illegal request: model' });
 
   console.log('ask log', {
@@ -87,6 +107,8 @@ const ask = async ({
 }) => {
   let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
 
+  let responseMessageId = crypto.randomUUID();
+
   res.writeHead(200, {
     Connection: 'keep-alive',
     'Content-Type': 'text/event-stream',
@@ -98,9 +120,55 @@ const ask = async ({
   if (preSendRequest) sendMessage(res, { message: userMessage, created: true });
 
   try {
-    const progressCallback = createOnProgress();
-    const abortController = new AbortController();
-    res.on('close', () => abortController.abort());
+    let lastSavedTimestamp = 0;
+    const { onProgress: progressCallback, getPartialText } = createOnProgress({
+      onProgress: ({ text }) => {
+        const currentTimestamp = Date.now();
+        if (currentTimestamp - lastSavedTimestamp > 500) {
+          lastSavedTimestamp = currentTimestamp;
+          saveMessage({
+            messageId: responseMessageId,
+            sender: endpointOption?.chatGptLabel || 'ChatGPT',
+            conversationId,
+            parentMessageId: overrideParentMessageId || userMessageId,
+            text: text,
+            unfinished: true,
+            cancelled: false,
+            error: false
+          });
+        }
+      }
+    });
+
+    let abortController = new AbortController();
+    abortController.abortAsk = async function () {
+      this.abort();
+
+      const responseMessage = {
+        messageId: responseMessageId,
+        sender: endpointOption?.chatGptLabel || 'ChatGPT',
+        conversationId,
+        parentMessageId: overrideParentMessageId || userMessageId,
+        text: getPartialText(),
+        unfinished: false,
+        cancelled: true,
+        error: false
+      };
+
+      saveMessage(responseMessage);
+      await addToCache({ endpoint: 'openAI', endpointOption, userMessage, responseMessage });
+
+      return {
+        title: await getConvoTitle(req?.session?.user?.username, conversationId),
+        final: true,
+        conversation: await getConvo(req?.session?.user?.username, conversationId),
+        requestMessage: userMessage,
+        responseMessage: responseMessage
+      };
+    };
+    const abortKey = conversationId;
+    abortControllers.set(abortKey, { abortController, ...endpointOption });
+
     let response = await askClient({
       text,
       parentMessageId: userParentMessageId,
@@ -114,6 +182,7 @@ const ask = async ({
       abortController
     });
 
+    abortControllers.delete(abortKey);
     console.log('CLIENT RESPONSE', response);
 
     const newConversationId = response.conversationId || conversationId;
@@ -125,13 +194,18 @@ const ask = async ({
 
     let responseMessage = {
       conversationId: newConversationId,
-      messageId: newResponseMessageId,
+      messageId: responseMessageId,
+      newMessageId: newResponseMessageId,
       parentMessageId: overrideParentMessageId || newUserMassageId,
       text: await handleText(response),
-      sender: endpointOption?.chatGptLabel || 'ChatGPT'
+      sender: endpointOption?.chatGptLabel || 'ChatGPT',
+      unfinished: false,
+      cancelled: false,
+      error: false
     };
 
     await saveMessage(responseMessage);
+    responseMessage.messageId = newResponseMessageId;
 
     // STEP2 update the conversation
     let conversationUpdate = { conversationId: newConversationId, endpoint: 'openAI' };
@@ -174,7 +248,7 @@ const ask = async ({
 
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
       const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: responseMessage });
-      await updateConvo(req?.session?.user?.username, {
+      await saveConvo(req?.session?.user?.username, {
         conversationId: conversationId,
         title
       });
@@ -182,10 +256,12 @@ const ask = async ({
   } catch (error) {
     console.error(error);
     const errorMessage = {
-      messageId: crypto.randomUUID(),
+      messageId: responseMessageId,
       sender: endpointOption?.chatGptLabel || 'ChatGPT',
       conversationId,
       parentMessageId: overrideParentMessageId || userMessageId,
+      unfinished: false,
+      cancelled: false,
       error: true,
       text: error.message
     };
