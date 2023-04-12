@@ -21,6 +21,10 @@ export enum QueryKeys {
   tokenCount = "tokenCount",
 }
 
+export const useAbortRequestWithMessage = (): UseMutationResult<void, Error, { endpoint: string; abortKey: string; message: string }> => {
+  return useMutation(({ endpoint, abortKey, message }) => dataService.abortRequestWithMessage(endpoint, abortKey, message));
+};
+
 export const useGetUserQuery = (): QueryObserverResult<t.TUser> => {
   return useQuery<t.TUser>([QueryKeys.user], () => dataService.getUser(), {
     refetchOnWindowFocus: false,

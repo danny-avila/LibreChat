@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const router = express.Router();
 const { getChatGPTBrowserModels } = require('../endpoints');
 const { browserClient } = require('../../../app/');
-const { saveMessage, getConvoTitle, saveConvo, updateConvo, getConvo } = require('../../../models');
+const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 
 router.post('/', async (req, res) => {
@@ -33,11 +33,12 @@ router.post('/', async (req, res) => {
 
   // build endpoint option
   const endpointOption = {
-    model: req.body?.model ?? 'text-davinci-002-render-sha'
+    model: req.body?.model ?? 'text-davinci-002-render-sha',
+    token: req.body?.token ?? null
   };
 
   const availableModels = getChatGPTBrowserModels();
-  if (availableModels.find(model => model === endpointOption.model) === undefined)
+  if (availableModels.find((model) => model === endpointOption.model) === undefined)
     return handleError(res, { text: 'Illegal request: model' });
 
   console.log('ask log', {
@@ -91,10 +92,29 @@ const ask = async ({
 
   if (preSendRequest) sendMessage(res, { message: userMessage, created: true });
 
+  let responseMessageId = crypto.randomUUID();
+
   try {
-    const progressCallback = createOnProgress();
+    let lastSavedTimestamp = 0;
+    const { onProgress: progressCallback, getPartialText } = createOnProgress({
+      onProgress: ({ text }) => {
+        const currentTimestamp = Date.now();
+        if (currentTimestamp - lastSavedTimestamp > 500) {
+          lastSavedTimestamp = currentTimestamp;
+          saveMessage({
+            messageId: responseMessageId,
+            sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
+            conversationId,
+            parentMessageId: overrideParentMessageId || userMessageId,
+            text: text,
+            unfinished: true,
+            cancelled: false,
+            error: false
+          });
+        }
+      }
+    });
     const abortController = new AbortController();
-    res.on('close', () => abortController.abort());
     let response = await browserClient({
       text,
       parentMessageId: userParentMessageId,
@@ -115,13 +135,18 @@ const ask = async ({
 
     let responseMessage = {
       conversationId: newConversationId,
-      messageId: newResponseMessageId,
+      messageId: responseMessageId,
+      newMessageId: newResponseMessageId,
       parentMessageId: overrideParentMessageId || newUserMassageId,
       text: await handleText(response),
-      sender: endpointOption?.chatGptLabel || 'ChatGPT'
+      sender: endpointOption?.chatGptLabel || 'ChatGPT',
+      unfinished: false,
+      cancelled: false,
+      error: false
     };
 
     await saveMessage(responseMessage);
+    responseMessage.messageId = newResponseMessageId;
 
     // STEP2 update the conversation
 
@@ -167,17 +192,19 @@ const ask = async ({
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
       // const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: responseMessage });
       const title = await response.details.title;
-      await updateConvo(req?.session?.user?.username, {
+      await saveConvo(req?.session?.user?.username, {
         conversationId: conversationId,
         title
       });
     }
   } catch (error) {
     const errorMessage = {
-      messageId: crypto.randomUUID(),
+      messageId: responseMessageId,
       sender: 'ChatGPT',
       conversationId,
       parentMessageId: overrideParentMessageId || userMessageId,
+      unfinished: false,
+      cancelled: false,
       error: true,
       text: error.message
     };

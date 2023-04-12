@@ -9,9 +9,12 @@ module.exports = {
     sender,
     text,
     isCreatedByUser = false,
-    error
+    error,
+    unfinished,
+    cancelled
   }) => {
     try {
+      // may also need to update the conversation here
       await Message.findOneAndUpdate(
         { messageId },
         {
@@ -21,7 +24,9 @@ module.exports = {
           sender,
           text,
           isCreatedByUser,
-          error
+          error,
+          unfinished,
+          cancelled
         },
         { upsert: true, new: true }
       );
@@ -44,7 +49,7 @@ module.exports = {
       return { message: 'Error deleting messages' };
     }
   },
-  getMessages: async filter => {
+  getMessages: async (filter) => {
     try {
       return await Message.find(filter).sort({ createdAt: 1 }).exec();
     } catch (error) {
@@ -52,7 +57,7 @@ module.exports = {
       return { message: 'Error getting messages' };
     }
   },
-  deleteMessages: async filter => {
+  deleteMessages: async (filter) => {
     try {
       return await Message.deleteMany(filter).exec();
     } catch (error) {

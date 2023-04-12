@@ -16,7 +16,7 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
   const [preset, setPreset] = useState(_preset);
 
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
-  const endpointsFilter = useRecoilValue(store.endpointsFilter);
+  const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   const setOption = param => newValue => {
     let update = {};
@@ -33,7 +33,7 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
 
   const exportPreset = () => {
     exportFromJSON({
-      data: cleanupPreset({ preset, endpointsFilter }),
+      data: cleanupPreset({ preset, endpointsConfig }),
       fileName: `${preset?.title}.json`,
       exportType: exportFromJSON.types.json
     });

@@ -6,6 +6,10 @@ export function getConversations(pageNumber: string): Promise<t.TGetConversation
   return request.get(endpoints.conversations(pageNumber));
 }
 
+export function abortRequestWithMessage(endpoint: string, abortKey: string, message: string): Promise<void> {
+  return request.post(endpoints.abortRequest(endpoint), { arg: {abortKey, message} });
+}
+
 export function deleteConversation(payload: t.TDeleteConversationRequest) {
   //todo: this should be a DELETE request
   return request.post(endpoints.deleteConversation(), {arg: payload});
@@ -62,5 +66,5 @@ export const getAIEndpoints = () => {
 }
 
 export const updateTokenCount = (text: string) => { 
-  return request.post(endpoints.tokenizer(), {arg: {text}});
+  return request.post(endpoints.tokenizer(), {arg: text});
 }
