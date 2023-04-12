@@ -61,7 +61,11 @@ export default function NewConversationMenu() {
 
   // save selected model to localstoreage
   useEffect(() => {
-    if (endpoint) localStorage.setItem('lastConversationSetup', JSON.stringify(conversation));
+    if (endpoint) {
+      const lastSelectedModel = JSON.parse(localStorage.getItem('lastSelectedModel')) || {};
+      localStorage.setItem('lastConversationSetup', JSON.stringify(conversation));
+      localStorage.setItem('lastSelectedModel', JSON.stringify({ ...lastSelectedModel, [endpoint] : conversation.model }));
+    }
   }, [conversation]);
 
   // set the current model
@@ -113,7 +117,7 @@ export default function NewConversationMenu() {
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
-            className={`group relative mt-[-8px] mb-[-12px] ml-0 items-center rounded-md border-0 p-1 outline-none focus:ring-0 focus:ring-offset-0 dark:data-[state=open]:bg-opacity-50 md:left-1 md:ml-[-12px] md:pl-1`}
+            className={`group relative mb-[-12px] ml-0 mt-[-8px] items-center rounded-md border-0 p-1 outline-none focus:ring-0 focus:ring-offset-0 dark:data-[state=open]:bg-opacity-50 md:left-1 md:ml-[-12px] md:pl-1`}
           >
             {icon}
             <span className="max-w-0 overflow-hidden whitespace-nowrap px-0 text-slate-600 transition-all group-hover:max-w-[80px] group-hover:px-2 group-data-[state=open]:max-w-[80px] group-data-[state=open]:px-2 dark:text-slate-300">

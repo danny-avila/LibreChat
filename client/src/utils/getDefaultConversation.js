@@ -4,12 +4,17 @@ const buildDefaultConversation = ({
   endpointsConfig = {},
   lastConversationSetup = {}
 }) => {
+  const lastSelectedModel = JSON.parse(localStorage.getItem('lastSelectedModel')) || {};
+
   if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
     conversation = {
       ...conversation,
       endpoint,
       model:
-        lastConversationSetup?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'gpt-3.5-turbo',
+        lastConversationSetup?.model ??
+        lastSelectedModel[endpoint] ??
+        endpointsConfig[endpoint]?.availableModels?.[0] ??
+        'gpt-3.5-turbo',
       chatGptLabel: lastConversationSetup?.chatGptLabel ?? null,
       promptPrefix: lastConversationSetup?.promptPrefix ?? null,
       temperature: lastConversationSetup?.temperature ?? 1,
@@ -36,6 +41,7 @@ const buildDefaultConversation = ({
       endpoint,
       model:
         lastConversationSetup?.model ??
+        lastSelectedModel[endpoint] ??
         endpointsConfig[endpoint]?.availableModels?.[0] ??
         'text-davinci-002-render-sha'
     };
