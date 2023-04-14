@@ -1,6 +1,6 @@
 {
   "name": "chatgpt-clone",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "",
   "main": "server/index.js",
   "scripts": {
@@ -21,7 +21,7 @@
   "dependencies": {
     "@dqbd/tiktoken": "^1.0.2",
     "@keyv/mongo": "^2.1.8",
-    "@waylaidwanderer/chatgpt-api": "^1.34.0",
+    "@waylaidwanderer/chatgpt-api": "^1.35.0",
     "axios": "^1.3.4",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",

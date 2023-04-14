@@ -6,6 +6,10 @@ export const messages = (id: string) => {
   return `/api/messages/${id}`;
 };
 
+export const abortRequest = (endpoint: string) => {
+  return `/api/ask/${endpoint}/abort`;
+};
+
 export const conversations = (pageNumber: string) => {
   return `/api/convos?pageNumber=${pageNumber}`;
 };
