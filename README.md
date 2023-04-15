@@ -194,14 +194,15 @@ Currently, this project is only functional with the `text-davinci-003` model.
 - [x] Config file for easy startup (docker compose)
 - [x] Mobile styling (thanks to [wtlyu](https://github.com/wtlyu))
 - [x] Resubmit/edit sent messages (thanks to [wtlyu](https://github.com/wtlyu))
-- [ ] Message Search
-- [ ] Custom params for ChatGPT API (temp, top_p, presence_penalty)
-- [ ] Bing AI Styling (params, suggested responses, convo end, etc.) - **In progress**
-- [ ] Add warning before clearing convos
+- [x] Message Search
+- [x] Custom params for ChatGPT API (temp, top_p, presence_penalty)
+- [x] Bing AI Styling (params, suggested responses, convo end, etc.)
+- [x] Add warning before clearing convos
 - [ ] Build test suite for CI/CD
 - [ ] Prompt Templates/Search
 - [ ] Refactor/clean up code (tech debt)
-- [ ] Optional use of local storage for credentials
+- [x] Optional use of local storage for credentials (for bing and browser)
+- [ ] ChatGPT Plugins (reverse engineered)
 - [ ] Deploy demo
 
 </details>
