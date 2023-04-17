@@ -30,6 +30,7 @@
 - Create, Save, & Share custom presets for OpenAI and BingAI endpoints - [More info on customization here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.3.0)
 - Edit and Resubmit messages just like the official site (with conversation branching)
 - Search all messages/conversations - [More info here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.1.0)
+- Integrating plugins soon
 
 ## Sponsors
 
