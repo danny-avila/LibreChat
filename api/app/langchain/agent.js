@@ -113,17 +113,18 @@ class ChatAgent {
     this.executor = await initializeAgentExecutor(
       tools,
       model,
-      // 'chat-conversational-react-description',
-      'chat-zero-shot-react-description',
+      'chat-conversational-react-description',
+      // 'chat-zero-shot-react-description',
       true
     );
 
     this.executor.memory = new BufferMemory({
       chatHistory: new ChatMessageHistory(pastMessages),
       returnMessages: true,
+      returnIntermediateSteps: true,
       memoryKey: 'chat_history',
       inputKey: 'input',
-      outputKey: 'output'
+      // outputKey: 'output'
     });
 
     console.log('Loaded agent.');
@@ -183,7 +184,7 @@ class ChatAgent {
 
     // await this.conversationsCache.set(conversationId, conversation);
 
-    return { ...replyMessage, details: result };
+    return { ...replyMessage, ...result };
   }
 }
 

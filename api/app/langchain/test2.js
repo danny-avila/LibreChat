@@ -23,5 +23,6 @@ const openAIApiKey = process.env.OPENAI_KEY;
   // };
   // const output1 = await chatAgent.sendMessage(input2, options);
 
-  console.log(`Got output`, output3);
+  console.log(`Got output`);
+  console.dir(output3, { depth: null });
 })();
