@@ -1,16 +1,10 @@
-const saveMessageToDatabase = async (conversationId, message, isCreatedByUser) => {
-  // Create a new Message document
-  const newMessage = new Message({
-    content: message,
-    isCreatedByUser: isCreatedByUser,
-  });
+const { saveMessage, saveConvo } = require('../../models');
 
-  // Save the message to the database
-  await newMessage.save();
+const saveMessageToDatabase = async (message, user = null) => {
+  saveMessage(message)
 
   // Update the conversation with the new message
-  await Conversation.updateOne(
-    { _id: conversationId },
-    { $push: { messages: newMessage._id } }
-  );
+  await saveConvo(user, { conversationId: message.conversationId, });
 };
+
+module.exports = saveMessageToDatabase;

@@ -5,7 +5,8 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "server-dev": "npx nodemon server/index.js"
+    "server-dev": "npx nodemon server/index.js",
+    "langchain": "node app/langchain/test2.js" 
   },
   "repository": {
     "type": "git",
@@ -22,7 +23,8 @@
     "@dqbd/tiktoken": "^1.0.2",
     "@keyv/mongo": "^2.1.8",
     "@waylaidwanderer/chatgpt-api": "^1.35.0",
-    "axios": "^1.3.4",
+    "axios": "^0.26.0",
+    "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
     "dotenv": "^16.0.3",
@@ -32,7 +34,7 @@
     "html": "^1.0.0",
     "keyv": "^4.5.2",
     "keyv-file": "^0.2.0",
-    "langchain": "^0.0.50",
+    "langchain": "^0.0.59",
     "lodash": "^4.17.21",
     "meilisearch": "^0.31.1",
     "mongoose": "^6.9.0",

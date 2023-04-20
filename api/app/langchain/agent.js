@@ -1,124 +1,190 @@
-require('dotenv').config();
-const { ChatOpenAI } = require('langchain/chat_models');
+const { ChatOpenAI } = require('langchain/chat_models/openai');
+const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
 const { CallbackManager } = require('langchain/callbacks');
 const { initializeAgentExecutor } = require('langchain/agents');
-const { SerpAPI, Calculator } = require('langchain/tools');
+const { SerpAPI } = require('langchain/tools');
+const { Calculator } = require('langchain/tools/calculator');
+const { WebBrowser } = require('langchain/tools/webbrowser');
 const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
+const { getMessages, saveMessage, saveConvo } = require('../../models');
+const crypto = require('crypto');
 
-// export const plugins = async ({
-//   onProgress,
-// }) => {
+class ChatAgent {
+  constructor(apiKey, options = {}) {
+    this.openAIApiKey = apiKey;
+    this.executor = null;
+    this.setOptions(options);
+  }
 
-const openAIApiKey = process.env.OPENAI_KEY;
-(async () => {
-  // const chatStreaming = new ChatOpenAI({
-  //   streaming: true,
-  //   callbackManager: CallbackManager.fromHandlers({
-  //     handleLLMNewToken: onProgress,
-  //   }),
-  // });
+  setOptions(options) {
+    if (this.options && !this.options.replaceOptions) {
+      // nested options aren't spread properly, so we need to do this manually
+      this.options.modelOptions = {
+        ...this.options.modelOptions,
+        ...options.modelOptions
+      };
+      delete options.modelOptions;
+      // now we can merge options
+      this.options = {
+        ...this.options,
+        ...options
+      };
+    } else {
+      this.options = options;
+    }
 
-  // process.env.LANGCHAIN_HANDLER = "langchain";
-  const model = new ChatOpenAI({ openAIApiKey, temperature: 0 });
-  const tools = [new SerpAPI(), new Calculator()];
+    const modelOptions = this.options.modelOptions || {};
+    this.modelOptions = {
+      ...modelOptions,
+      // set some good defaults (check for undefined in some cases because they may be 0)
+      model: modelOptions.model || 'gpt-3.5-turbo',
+      // all langchain examples have temp set to 0
+      temperature: typeof modelOptions.temperature === 'undefined' ? 0 : modelOptions.temperature,
+      top_p: typeof modelOptions.top_p === 'undefined' ? 1 : modelOptions.top_p,
+      presence_penalty:
+        typeof modelOptions.presence_penalty === 'undefined' ? 1 : modelOptions.presence_penalty,
+      stop: modelOptions.stop
+    };
 
-  const pastMessages = [
-    new HumanChatMessage("My name's Jonas"),
-    new AIChatMessage('Nice to meet you, Jonas!')
-  ];
+    // this.isChatGptModel = this.modelOptions.model.startsWith('gpt-');
+    // // Davinci models have a max context length of 4097 tokens.
+    // this.maxContextTokens = this.options.maxContextTokens || 4095;
+    // // I decided to reserve 1024 tokens for the response.
+    // // The max prompt tokens is determined by the max context tokens minus the max response tokens.
+    // // Earlier messages will be dropped until the prompt is within the limit.
+    // this.maxResponseTokens = this.modelOptions.max_tokens || 1024;
+    // this.maxPromptTokens = this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
 
-  const executor = await initializeAgentExecutor(tools, model, 'chat-conversational-react-description', true);
+    // if (this.maxPromptTokens + this.maxResponseTokens > this.maxContextTokens) {
+    //   throw new Error(
+    //     `maxPromptTokens + max_tokens (${this.maxPromptTokens} + ${this.maxResponseTokens} = ${
+    //       this.maxPromptTokens + this.maxResponseTokens
+    //     }) must be less than or equal to maxContextTokens (${this.maxContextTokens})`
+    //   );
+    // }
+  }
 
-  executor.memory = new BufferMemory({
-    chatHistory: new ChatMessageHistory(pastMessages),
-    returnMessages: true,
-    memoryKey: "chat_history",
-    inputKey: "input",
-  });
-  console.log('Loaded agent.');
+  async loadHistory(conversationId) {
+    // const conversation = await Conversation.findOne({ _id: conversationId }).populate('messages');
+    const messages = (await getMessages({ conversationId })) || [];
 
-  // const input0 = "hi, i am bob";
+    if (messages.length === 0) {
+      return [];
+    }
 
-  // const result0 = await executor.call({ input: input0 });
+    // Convert Message documents into appropriate ChatMessage instances
+    const chatMessages = messages.map((msg) =>
+      msg.isCreatedByUser ? new HumanChatMessage(msg.text) : new AIChatMessage(msg.text)
+    );
 
-  // console.log(`Got output ${result0.output}`);
+    return chatMessages;
+  }
 
-  const input1 = 'whats my name?';
+  async saveMessageToDatabase(message, user = null) {
+    await saveMessage(message);
+    await saveConvo(user, { conversationId: message.conversationId });
+  }
 
-  const result1 = await executor.call({ input: input1 });
+  async initialize(conversationId, user) {
+    const model = new ChatOpenAI({
+      openAIApiKey: this.openAIApiKey,
+      streaming: true,
+      callbackManager: CallbackManager.fromHandlers({
+        async handleLLMNewToken(token) {
+          console.log({ token });
+        },
+      }),
+      ...this.modelOptions
+    });
+    const tools = [new Calculator(), new WebBrowser({ model, embeddings: new OpenAIEmbeddings() })];
 
-  console.log(`Got output ${result1.output}`);
+    if (this.options.serpapiApiKey) {
+      tools.push(
+        new SerpAPI(this.options.serpapiApiKey, {
+          location: 'Austin,Texas,United States',
+          hl: 'en',
+          gl: 'us'
+        })
+      );
+    }
 
-  console.dir(executor.memory, { depth: null });
+    const pastMessages = await this.loadHistory(conversationId, user);
+    this.executor = await initializeAgentExecutor(
+      tools,
+      model,
+      // 'chat-conversational-react-description',
+      'chat-zero-shot-react-description',
+      true
+    );
 
-  // const input2 = "whats the weather in morris plains NJ?";
+    this.executor.memory = new BufferMemory({
+      chatHistory: new ChatMessageHistory(pastMessages),
+      returnMessages: true,
+      memoryKey: 'chat_history',
+      inputKey: 'input',
+      outputKey: 'output'
+    });
 
-  // const result2 = await executor.call({ input: input2 });
+    console.log('Loaded agent.');
+  }
 
-  // console.log(`Got output ${result2.output}`);
-})();
+  async sendMessage(message, opts = {}) {
+    if (opts.clientOptions && typeof opts.clientOptions === 'object') {
+      this.setOptions(opts.clientOptions);
+    }
 
+    const user = opts.user || null;
+    const conversationId = opts.conversationId || crypto.randomUUID();
+    const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
+    await this.initialize(conversationId, user);
 
-// ... (imports and other initializations)
+    // let conversation = await this.conversationsCache.get(conversationId);
+    // let isNewConversation = false;
+    // if (!conversation) {
+    //   conversation = {
+    //     messages: [],
+    //     createdAt: Date.now()
+    //   };
+    //   isNewConversation = true;
+    // }
+    // const shouldGenerateTitle = opts.shouldGenerateTitle && isNewConversation;
 
-// class ChatAgent {
-//   constructor(conversationId, openAIApiKey) {
-//     this.conversationId = conversationId;
-//     this.openAIApiKey = openAIApiKey;
-//     this.executor = null;
-//   }
+    const userMessage = {
+      messageId: crypto.randomUUID(),
+      parentMessageId,
+      conversationId,
+      sender: 'User',
+      text: message,
+      isCreatedByUser: true
+    };
 
-//   async initialize() {
-//     const model = new ChatOpenAI({
-//       openAIApiKey: this.openAIApiKey,
-//       temperature: 0,
-//     });
-//     const tools = [new SerpAPI(), new Calculator()];
+    this.saveMessageToDatabase(userMessage, user);
 
-//     const pastMessages = await loadConversationHistory(this.conversationId);
-//     this.executor = await initializeAgentExecutor(
-//       tools,
-//       model,
-//       'chat-conversational-react-description',
-//       true
-//     );
+    let reply = '';
+    let result = await this.executor.call({ input: message });
+    reply = result.output.trim();
 
-//     this.executor.memory = new BufferMemory({
-//       chatHistory: new ChatMessageHistory(pastMessages),
-//       returnMessages: true,
-//       memoryKey: 'chat_history',
-//       inputKey: 'input',
-//     });
+    const replyMessage = {
+      messageId: crypto.randomUUID(),
+      conversationId,
+      parentMessageId: userMessage.messageId,
+      sender: 'ChatGPT',
+      text: reply,
+      isCreatedByUser: false
+    };
 
-//     console.log('Loaded agent.');
-//   }
+    this.saveMessageToDatabase(replyMessage, user);
 
-//   async sendMessage(input) {
-//     if (!this.executor) {
-//       throw new Error('Agent is not initialized. Call initialize() before sending a message.');
-//     }
+    // if (shouldGenerateTitle) {
+    //   conversation.title = await this.generateTitle(userMessage, replyMessage);
+    //   returnData.title = conversation.title;
+    // }
 
-//     const result = await this.executor.call({ input: input });
+    // await this.conversationsCache.set(conversationId, conversation);
 
-//     // Save the input message to the database
-//     await saveMessageToDatabase(this.conversationId, input, true);
+    return { ...replyMessage, details: result };
+  }
+}
 
-//     // Save the output message to the database
-//     await saveMessageToDatabase(this.conversationId, result.output, false);
-
-//     return result.output;
-//   }
-// }
-
-// (async () => {
-//   const conversationId = 'your_conversation_id_here'; // Replace this with the actual conversationId
-//   const chatAgent = new ChatAgent(conversationId, openAIApiKey);
-
-//   await chatAgent.initialize();
-
-//   const input1 = 'whats my name?';
-//   const output1 = await chatAgent.sendMessage(input1);
-
-//   console.log(`Got output ${output1}`); // correctly outputs: your name is jonas
-// })();
+module.exports = ChatAgent;
