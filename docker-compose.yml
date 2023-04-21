@@ -15,13 +15,14 @@ services:
   #     - api
   api:
     ports:
-      - 3080:3080               # Change it to 9000:3080 if you want to use nginx
+      - 3080:3080               # Change it to 9000:3080 to use nginx
     depends_on:
       - mongodb
-    image: node-api
-    build:
-      context: .
-      target: node-api
+    # image: node-api            # Uncomment this to build from local file
+    # build:
+    #   context: .
+    #   target: node-api
+    image: chatgptclone/app:0.3.3 # Comment this & uncomment above to build from local file
     restart: always
     env_file:
       - ./api/.env
