@@ -1,8 +1,14 @@
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
 const { CallbackManager } = require('langchain/callbacks');
-const { initializeAgentExecutor } = require('langchain/agents');
-const { SerpAPI } = require('langchain/tools');
+const {
+  ChatAgent,
+  ChatConversationalAgent,
+  AgentExecutor,
+  initializeAgentExecutor,
+  initializeAgentExecutorWithOptions
+} = require('langchain/agents');
+const { SerpAPI, RequestsGetTool, RequestsPostTool, AIPluginTool } = require('langchain/tools');
 const { Calculator } = require('langchain/tools/calculator');
 const { WebBrowser } = require('langchain/tools/webbrowser');
 const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
@@ -10,7 +16,7 @@ const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
 const { getMessages, saveMessage, saveConvo } = require('../../models');
 const crypto = require('crypto');
 
-class ChatAgent {
+class CustomChatAgent {
   constructor(apiKey, options = {}) {
     this.openAIApiKey = apiKey;
     this.executor = null;
@@ -89,15 +95,27 @@ class ChatAgent {
   async initialize(conversationId, user) {
     const model = new ChatOpenAI({
       openAIApiKey: this.openAIApiKey,
-      streaming: true,
-      callbackManager: CallbackManager.fromHandlers({
-        async handleLLMNewToken(token) {
-          console.log({ token });
-        },
-      }),
+      // streaming: true,
+      // callbackManager: CallbackManager.fromHandlers({
+      //   // async handleLLMNewToken(token) {
+      //   //   console.log({ token });
+      //   // },
+      //   // async handleLLMStart(llm) {
+      //   //   console.log("handleLLMStart", { llm });
+      //   // },
+      //   // async handleToolStart(tool) {
+      //   //   console.log("handleToolStart", { tool });
+      //   // },
+      // }),
       ...this.modelOptions
     });
-    const tools = [new Calculator(), new WebBrowser({ model, embeddings: new OpenAIEmbeddings() })];
+    // const tools = [new Calculator(), new WebBrowser({ model, embeddings: new OpenAIEmbeddings() })];
+    const tools = [
+      new RequestsGetTool(),
+      new RequestsPostTool(),
+      await AIPluginTool.fromPluginUrl('https://www.greenyroad.com/.well-known/ai-plugin.json'), // chatgpt plugin
+      new Calculator(),
+    ];
 
     if (this.options.serpapiApiKey) {
       tools.push(
@@ -110,21 +128,60 @@ class ChatAgent {
     }
 
     const pastMessages = await this.loadHistory(conversationId, user);
-    this.executor = await initializeAgentExecutor(
+
+    // this.executor = await initializeAgentExecutor(
+    //   tools,
+    //   model,
+    //   'chat-conversational-react-description',
+    //   // 'chat-zero-shot-react-description',
+    //   false,
+    //   CallbackManager.fromHandlers({
+    //     // async handleLLMNewToken(token) {
+    //     //   console.log({ token });
+    //     // },
+    //     async handleAgentAction(action) {
+    //       console.log('handleAgentAction', action);
+    //     },
+
+    //   })
+    // );
+
+    this.executor = await initializeAgentExecutorWithOptions(
       tools,
       model,
-      'chat-conversational-react-description',
+      {
+        // agentType: 'chat-conversational-react-description',
+        agentType: 'chat-zero-shot-react-description',
+        verbose: true,
+        returnIntermediateSteps: true,
+        callbackManager: CallbackManager.fromHandlers({
+          // async handleLLMNewToken(token) {
+          //   console.log({ token });
+          // },
+          async handleAgentAction(action) {
+            console.log('handleAgentAction', action);
+          }
+        })
+      }
+      // 'chat-conversational-react-description',
       // 'chat-zero-shot-react-description',
-      true
+      // true
     );
+
+    // this.executor = AgentExecutor.fromAgentAndTools({
+    //   agent: ChatConversationalAgent.fromLLMAndTools(model, tools),
+    //   tools,
+    //   verbose: true,
+    //   outputParser: ChatAgent.getDefaultOutputParser(),
+    //   // callbackManager,
+    // });
 
     this.executor.memory = new BufferMemory({
       chatHistory: new ChatMessageHistory(pastMessages),
       returnMessages: true,
-      returnIntermediateSteps: true,
       memoryKey: 'chat_history',
       inputKey: 'input',
-      // outputKey: 'output'
+      outputKey: 'output'
     });
 
     console.log('Loaded agent.');
@@ -160,7 +217,7 @@ class ChatAgent {
       isCreatedByUser: true
     };
 
-    this.saveMessageToDatabase(userMessage, user);
+    await this.saveMessageToDatabase(userMessage, user);
 
     let reply = '';
     let result = await this.executor.call({ input: message });
@@ -175,7 +232,7 @@ class ChatAgent {
       isCreatedByUser: false
     };
 
-    this.saveMessageToDatabase(replyMessage, user);
+    await this.saveMessageToDatabase(replyMessage, user);
 
     // if (shouldGenerateTitle) {
     //   conversation.title = await this.generateTitle(userMessage, replyMessage);
@@ -188,4 +245,4 @@ class ChatAgent {
   }
 }
 
-module.exports = ChatAgent;
+module.exports = CustomChatAgent;
