@@ -7,6 +7,7 @@ const path = require('path');
 const cors = require('cors');
 const routes = require('./routes');
 const errorController = require('./controllers/errorController');
+const passport = require('passport');
 
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
@@ -22,6 +23,7 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use(errorController);
   app.use(cors());
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
   app.use(express.static(path.join(projectPath, 'dist')));
   app.set('trust proxy', 1); // trust first proxy
   app.use(
@@ -32,6 +34,13 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
       cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 } // 7 days
     })
   );
+
+  // Auth
+  app.use(passport.initialize());
+  require('../services/jwtStrategy');
+  require('../services/facebookStrategy');
+  require('../services/googleStrategy');
+  require('../services/localStrategy');
 
   // ROUTES
 
@@ -71,7 +80,7 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
 })();
 
 let messageCount = 0;
-process.on('uncaughtException', err => {
+process.on('uncaughtException', (err) => {
   if (!err.message.includes('fetch failed')) {
     console.error('There was an uncaught error:', err.message);
   }
