@@ -9,8 +9,10 @@ const {
 
 const initializeCustomAgent = async ({ tools, model, pastMessages, ...rest }) => {
   const prompt = ZeroShotAgent.createPrompt(tools, {
-    prefix: `Have a conversation with a human, answering the following questions as best you can. You have access to the following tools:`,
-    suffix: `Begin!`,
+    prefix: `Have a conversation with a human, answering the following requests as best you can. You have access to the following tools:`,
+    suffix: `Once you've completed a task, refrain from creating any extra steps that are beyond the human's request.
+    
+    Begin!`,
     inputVariables: ['input', 'chat_history', 'agent_scratchpad']
   });
 
@@ -19,7 +21,7 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, ...rest }) =>
   const chatPrompt = ChatPromptTemplate.fromPromptMessages([
     new SystemMessagePromptTemplate(prompt),
     HumanMessagePromptTemplate.fromTemplate(`{chat_history}
-    Question: {input}
+    Request: {input}
     {agent_scratchpad}`)
   ]);
 
