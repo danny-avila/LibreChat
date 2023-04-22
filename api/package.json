@@ -30,7 +30,6 @@
     "eslint": "^8.36.0",
     "express": "^4.18.2",
     "express-session": "^1.17.3",
-    "faker": "^6.6.6",
     "html": "^1.0.0",
     "joi": "^17.9.1",
     "jsonwebtoken": "^9.0.0",

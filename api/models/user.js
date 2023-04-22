@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Joi = require('joi');
-const DebugControl = require('../../utils/debug.js');
+const DebugControl = require('../utils/debug.js');
 
 function log({ title, parameters }) {
   DebugControl.log.functionName(title);
