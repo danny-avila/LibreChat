@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server/index.js",
     "server-dev": "npx nodemon server/index.js",
+    "test3": "node app/langchain/test3.js",
     "langchain": "node app/langchain/test2.js"
   },
   "repository": {
