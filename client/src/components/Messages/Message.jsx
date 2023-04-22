@@ -150,9 +150,8 @@ export default function Message({
               ) : edit ? (
                 <div className="flex min-h-[20px] flex-grow flex-col items-start gap-4 ">
                   {/* <div className={`${blinker ? 'result-streaming' : ''} markdown prose dark:prose-invert light w-full break-words`}> */}
-
                   <div
-                    className="markdown prose dark:prose-invert light w-full break-words border-none focus:outline-none"
+                    className="markdown prose dark:prose-invert light w-full whitespace-pre-wrap break-words border-none focus:outline-none"
                     contentEditable={true}
                     ref={textEditor}
                     suppressContentEditableWarning={true}
