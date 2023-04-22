@@ -4,7 +4,8 @@ const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
 const { Agent, ProxyAgent } = require('undici');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { CallbackManager } = require('langchain/callbacks');
-const { SerpAPI } = require('langchain/tools');
+const { initializeAgentExecutorWithOptions, ZapierToolKit } = require('langchain/agents');
+const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
 const { Calculator } = require('langchain/tools/calculator');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
 const { initializeCustomAgent } = require('./customAgent');
@@ -263,6 +264,15 @@ class CustomChatAgent {
     });
     // const tools = [new Calculator(), new WebBrowser({ model, embeddings: new OpenAIEmbeddings() })];
     const tools = [new Calculator()];
+
+    if (this.options.zapierApiKey) {
+      const zapier = new ZapierNLAWrapper({
+        apiKey: this.options.zapierApiKey
+      });
+
+      const toolkit = await ZapierToolKit.fromZapierNLAWrapper(zapier);
+      tools.push(...toolkit.tools);
+    }
 
     if (this.options.serpapiApiKey) {
       tools.push(
