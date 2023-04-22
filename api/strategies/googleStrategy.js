@@ -28,7 +28,7 @@ const googleLogin = new GoogleStrategy(
 
     try {
       const newUser = await new User({
-        provider: 'google',
+        auth_provider: 'google',
         googleId: profile.id,
         username: `user${profile.id}`,
         email: profile.email,

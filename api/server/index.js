@@ -37,10 +37,10 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
 
   // Auth
   app.use(passport.initialize());
-  require('../services/jwtStrategy');
-  require('../services/facebookStrategy');
-  require('../services/googleStrategy');
-  require('../services/localStrategy');
+  require('../strategies/jwtStrategy');
+  require('../strategies/facebookStrategy');
+  require('../strategies/googleStrategy');
+  require('../strategies/localStrategy');
 
   // ROUTES
 

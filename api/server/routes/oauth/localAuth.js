@@ -1,10 +1,9 @@
 const Router = require('express');
 const Joi = require('joi');
-const faker = require('faker');
 
-const User = require('../../models/User');
-const requireLocalAuth = require('../../middleware/requireLocalAuth');
-const { registerSchema } = require('../../services/validators');
+const User = require('../../../models/User');
+const requireLocalAuth = require('../../../middleware/requireLocalAuth');
+const { registerSchema } = require('../../../strategies/validators');
 
 const router = Router();
 
@@ -31,12 +30,12 @@ router.post('/register', async (req, res, next) => {
 
     try {
       const newUser = await new User({
-        provider: 'email',
+        auth_provider: 'email',
         email,
         password,
         username,
         name,
-        avatar: faker.image.avatar()
+        avatar: null
       });
 
       newUser.registerUser(newUser, (err, user) => {

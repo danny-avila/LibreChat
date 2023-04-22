@@ -40,7 +40,7 @@ const facebookLogin = new FacebookStrategy(
     // register user
     try {
       const newUser = await new User({
-        provider: 'facebook',
+        auth_provider: 'facebook',
         facebookId: profile.id,
         username: `user${profile.id}`,
         email: profile.emails[0].value,
