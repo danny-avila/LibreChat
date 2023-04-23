@@ -1,21 +1,38 @@
-const Router = require('express');
+const express = require('express');
 const Joi = require('joi');
 
 const User = require('../../../models/User');
 const requireLocalAuth = require('../../../middleware/requireLocalAuth');
 const { registerSchema } = require('../../../strategies/validators');
+const DebugControl = require('../../../utils/debug.js');
 
-const router = Router();
+function log({ title, parameters }) {
+  DebugControl.log.functionName(title);
+  DebugControl.log.parameters(parameters);
+}
+
+const router = express.Router();
+
+router.get('/user', requireLocalAuth, (req, res) => {
+  res.status(200).send(req.user);
+});
 
 router.post('/login', requireLocalAuth, (req, res) => {
   const token = req.user.generateJWT();
-  const me = req.user.toJSON();
-  res.json({ token, me });
+  const user = req.user.toJSON();
+  res.status(200).send({ token, user });
 });
 
 router.post('/register', async (req, res, next) => {
   const { error } = Joi.validate(req.body, registerSchema);
   if (error) {
+    log({
+      title: 'Route: register - Joi Validation Error',
+      parameters: [
+        { name: 'Request params:', value: req.body },
+        { name: 'Validation error:', value: error.details }
+      ]
+    });
     return res.status(422).send({ message: error.details[0].message });
   }
 
@@ -25,6 +42,13 @@ router.post('/register', async (req, res, next) => {
     const existingUser = await User.findOne({ email });
 
     if (existingUser) {
+      log({
+        title: 'Register User - Email in use',
+        parameters: [
+          { name: 'Request params:', value: req.body },
+          { name: 'Existing user:', value: existingUser }
+        ]
+      });
       return res.status(422).send({ message: 'Email is in use' });
     }
 
@@ -40,7 +64,9 @@ router.post('/register', async (req, res, next) => {
 
       newUser.registerUser(newUser, (err, user) => {
         if (err) throw err;
-        res.json({ message: 'Register success.' }); // just redirect to login
+        //TODO: send email verification, automatically login user
+        //on auto-login should check if email verified and display message to verify to continue to app
+        res.status(200).send();
       });
     } catch (err) {
       return next(err);
