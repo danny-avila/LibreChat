@@ -8,6 +8,8 @@ import { useRecoilState, useSetRecoilState } from 'recoil';
 import { ScreenshotProvider } from './utils/screenshotContext.jsx';
 import { useGetSearchEnabledQuery, useGetUserQuery, useGetEndpointsQuery, useGetPresetsQuery} from '~/data-provider';
 import {ReactQueryDevtools} from '@tanstack/react-query-devtools';
+import Login from './components/Auth/Login';
+import Registration from './components/Auth/Registration';
 
 const router = createBrowserRouter([
   {
@@ -32,17 +34,26 @@ const router = createBrowserRouter([
         element: <Search />
       }
     ]
+  },
+  {
+    path: 'login',
+    element: <Login />
+  },
+  { 
+    path: 'register',
+    element: <Registration />
   }
 ]);
 
 const App = () => {
+  
   const [user, setUser] = useRecoilState(store.user);
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
   const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
   const setPresets = useSetRecoilState(store.presets);
 
   const searchEnabledQuery = useGetSearchEnabledQuery();
-  const userQuery = useGetUserQuery();
+  // const userQuery = useGetUserQuery();
   const endpointsQuery = useGetEndpointsQuery();
   const presetsQuery = useGetPresetsQuery();
 
@@ -72,23 +83,23 @@ const App = () => {
     }
   }, [searchEnabledQuery.data, searchEnabledQuery.isError]);
 
-  useEffect(() => {
-    if (userQuery.data) {
-      setUser(userQuery.data);
-    } else if(userQuery.isError) {
-      console.error("Failed to get user", userQuery.error);
-      window.location.href = '/auth/login';
-    }
-  }, [userQuery.data, userQuery.isError]);
+  // useEffect(() => {
+  //   if (userQuery.data) {
+  //     setUser(userQuery.data);
+  //   } else if(userQuery.isError) {
+  //     console.error("Failed to get user", userQuery.error);
+  //     window.location.href = '/auth/login';
+  //   }
+  // }, [userQuery.data, userQuery.isError]);
 
-  if (user)
+  // if (user)
     return (
       <>
         <RouterProvider router={router} />
         <ReactQueryDevtools initialIsOpen={false} />
       </>
     );
-  else return <div className="flex h-screen"></div>;
+  // else return <div className="flex h-screen"></div>;
 };
 
 export default () => (
