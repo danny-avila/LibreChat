@@ -1,5 +1,5 @@
 export const user = () => {
-  return `/api/me`;
+  return `/oauth/user`;
 };
 
 export const messages = (id: string) => {
@@ -48,4 +48,24 @@ export const aiEndpoints = () => {
 
 export const tokenizer = () => {
   return `/api/tokenizer`;
+}
+
+export const login = () => {
+  return '/oauth/login';
+}
+
+export const logout = () => {
+  return '/oauth/logout';
+}
+
+export const register = () => {
+  return '/oauth/register';
+}
+
+export const loginFacebook = () => {
+  return '/oauth/facebook';
+}
+
+export const loginGoogle = () => {
+  return '/oauth/google';
 }

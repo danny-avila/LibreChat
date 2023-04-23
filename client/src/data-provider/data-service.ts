@@ -68,3 +68,15 @@ export const getAIEndpoints = () => {
 export const updateTokenCount = (text: string) => { 
   return request.post(endpoints.tokenizer(), {arg: text});
 }
+
+export const login = (payload: t.TLoginUser) => {
+  return request.post(endpoints.login(), payload);
+}
+
+export const logout = () => {
+  return request.post(endpoints.logout());
+}
+
+export const register = (payload: t.TRegisterUser) => {
+  return request.post(endpoints.register(), payload);
+}

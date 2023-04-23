@@ -224,3 +224,29 @@ export const useUpdateTokenCountMutation = (): UseMutationResult<t.TUpdateTokenC
     }
   );
 }
+
+export const useLoginUserMutation = (): UseMutationResult<t.TLoginUserResponse, unknown, t.TLoginUserRequest, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TLoginUserRequest) =>
+      dataService.login(payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.user]);
+      },
+    }
+  );
+}
+
+export const useRegisterUserMutation = (): UseMutationResult<t.TRegisterUserResponse, unknown, t.TRegisterUser, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TRegisterUser) =>
+      dataService.register(payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.user]);
+      },
+    }
+  );
+}
