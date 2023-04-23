@@ -98,8 +98,14 @@ export type TPreset = {
 }
 
 export type TUser = {
+  id: string,
   username: string,
-  display: string
+  email: string,
+  name: string,
+  avatar: string,
+  role: string,
+  createdAt: string,
+  updatedAt: string,
 };
 
 export type TGetConversationsResponse = {
@@ -161,3 +167,20 @@ export type TMessageTreeNode = {}
 export type TSearchMessage = {}
 
 export type TSearchMessageTreeNode = {}
+
+export type TRegisterUser = {
+  name: string,
+  email: string,
+  username: string,
+  password: string,
+}
+
+export type TLoginUser = {
+  email: string,
+  password: string,
+}
+
+export type TLoginResponse = {
+  token: string,
+  user: TUser
+}
