@@ -3,7 +3,9 @@ const DebugControl = require('../utils/debug.js');
 
 function log({ title, parameters }) {
   DebugControl.log.functionName(title);
-  DebugControl.log.parameters(parameters);
+  if (parameters) {
+    DebugControl.log.parameters(parameters);
+  }
 }
 
 const requireLocalAuth = (req, res, next) => {
@@ -13,9 +15,16 @@ const requireLocalAuth = (req, res, next) => {
   });
   passport.authenticate('local', (err, user, info) => {
     if (err) {
+      log({
+        title: 'Passport Auth Error',
+        parameters: [{ name: 'error', value: err }]
+      });
       return next(err);
     }
     if (!user) {
+      log({
+        title: '(requireLocalAuth) Login Failed - User Not Found',
+      });
       return res.status(422).send(info);
     }
     req.user = user;

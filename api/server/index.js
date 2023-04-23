@@ -8,6 +8,7 @@ const cors = require('cors');
 const routes = require('./routes');
 const errorController = require('./controllers/errorController');
 const passport = require('passport');
+// const oauthRoutes = require('./routes/oauth');
 
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
@@ -64,6 +65,11 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   // user system
   app.use('/auth', routes.auth);
   app.use('/api/me', routes.me);
+
+  // oauth
+  app.use('/oauth', routes.localAuth);
+  // app.use('/oauth', routes.googleAuth);
+  // app.use('/oauth', routes.facebookAuth);
 
   // static files
   app.get('/*', routes.authenticatedOrRedirect, function (req, res) {

@@ -31,7 +31,7 @@
     "express": "^4.18.2",
     "express-session": "^1.17.3",
     "html": "^1.0.0",
-    "joi": "^17.9.1",
+    "joi": "^14.3.1",
     "jsonwebtoken": "^9.0.0",
     "keyv": "^4.5.2",
     "keyv-file": "^0.2.0",

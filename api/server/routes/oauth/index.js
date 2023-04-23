@@ -1,15 +1,22 @@
-const express = require('express');
-const localAuthRoutes = require('./localAuth');
-const googleAuthRoutes = require('./googleAuth');
-const facebookAuthRoutes = require('./facebookAuth');
+// const express = require('express');
 
-const router = express.Router();
+const localAuth = require('./localAuth');
+const googleAuth = require('./googleAuth');
+const facebookAuth = require('./facebookAuth');
 
-router.use('/oauth', localAuthRoutes);
-router.use('/oauth', googleAuthRoutes);
-router.use('/oauth', facebookAuthRoutes);
+// const router = express.Router();
 
-module.exports = router;
+// router.use('/oauth', localAuthRoutes);
+// router.use('/oauth', googleAuthRoutes);
+// router.use('/oauth', facebookAuthRoutes);
+
+// module.exports = router;
+
+module.exports = {
+  localAuth,
+  googleAuth,
+  facebookAuth
+};
 
 /*
 routes:
@@ -25,5 +32,6 @@ POST /oauth/register
 GET /oauth/logout
 
 GET api/users/me
+GET /api/users/feature
 
 */
