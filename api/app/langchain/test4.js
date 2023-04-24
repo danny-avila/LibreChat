@@ -7,9 +7,9 @@ const openAIApiKey = process.env.OPENAI_KEY;
   await connectDb();
   const chatAgent = new ChatAgent(openAIApiKey, { serpapiApiKey: process.env.SERPAPI_API_KEY, zapierApiKey: process.env.ZAPIER_NLA_API_KEY });
 
-  const input1 = `Create a new card in the Prim-tech board entitled "Phase 2: Deliverables" which has a checklist with all the following items:
+  const input1 = `In the "Prim-Tech" board, in the "To Do" list, Create a new card called "Phase 2: Deliverables" which has a checklist with all the following items:
 
-Create your service
+"Create your service
 
 Initialize your API server
     Build out the framework for your service
@@ -36,7 +36,7 @@ Write unit tests and integration tests to cover your working service.
     Consider using an API Testing Framework
 
 Integrate your front end with your API
-    Confirm that your new API successfully replaces all functionality of the legacy system.
+    Confirm that your new API successfully replaces all functionality of the legacy system."
   `;
   const output1 = await chatAgent.sendMessage(input1);
 
