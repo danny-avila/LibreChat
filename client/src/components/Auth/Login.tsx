@@ -1,32 +1,23 @@
-import {useState} from 'react';
 import {useForm} from 'react-hook-form';
-import {useNavigate} from 'react-router-dom';
-import {useLoginUserMutation, TLoginUser} from '~/data-provider';
+import {TLoginUser} from '~/data-provider';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {faFacebook} from '@fortawesome/free-brands-svg-icons';
 import {faGoogle} from '@fortawesome/free-brands-svg-icons';
+import { useAuthContext } from '~/hooks/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 function Login() {
-  const navigate = useNavigate();
+  const { login, error, isAuthenticated } = useAuthContext();
   const {
     register,
     handleSubmit,
     formState: {errors}
   } = useForm<TLoginUser>();
-  const [error, setError] = useState(false);
-  const loginUser = useLoginUserMutation();
 
-  const onLoginFormSubmit = (data: TLoginUser) => {
-    loginUser.mutate(data, {
-      onSuccess: () => {
-        // set user
-        // set token
-        navigate('/');
-      },
-      onError: () => {
-        setError(true);
-      }
-    });
+  const navigate = useNavigate();
+
+  if (isAuthenticated) {
+    navigate('/chat/new');
   };
 
   return (
@@ -42,7 +33,7 @@ function Login() {
         <form className="mt-6"
           aria-label="Login form"
           method="POST"
-          onSubmit={handleSubmit(data => onLoginFormSubmit(data))}>
+          onSubmit={handleSubmit(data => login(data))}>
           <div className="mb-2">
             <label
               htmlFor="email"

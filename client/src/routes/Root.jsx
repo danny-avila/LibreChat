@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
+import { useAuthContext } from '../hooks/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 import MessageHandler from '../components/MessageHandler';
 import Nav from '../components/Nav';
@@ -7,6 +9,16 @@ import MobileNav from '../components/Nav/MobileNav';
 
 export default function Root() {
   const [navVisible, setNavVisible] = useState(false);
+  const navigate = useNavigate();
+  const { isAuthenticated } = useAuthContext();
+
+  useEffect(() => {
+      console.log('isAuthenticated', isAuthenticated);
+
+    if (!isAuthenticated) {
+      navigate('/login');
+    }
+  }, [isAuthenticated]);
 
   return (
     <>
@@ -22,7 +34,6 @@ export default function Root() {
           </div>
         </div>
       </div>
-
       <MessageHandler />
     </>
   );
