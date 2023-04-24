@@ -256,11 +256,16 @@ class CustomChatAgent {
     await saveConvo(user, { conversationId: message.conversationId });
   }
 
+  saveLatestAction (action) {
+    this.latestAction = action;
+  }
+
   async initialize(conversationId) {
     // TO DO: need to initialize by user
     const model = new ChatOpenAI({
       openAIApiKey: this.openAIApiKey,
-      ...this.modelOptions
+      ...this.modelOptions,
+      // model: 'text-davinci-003',
     });
     // const tools = [new Calculator(), new WebBrowser({ model, embeddings: new OpenAIEmbeddings() })];
     const tools = [new Calculator()];
@@ -286,6 +291,14 @@ class CustomChatAgent {
 
     const pastMessages = await this.loadHistory(conversationId, this.options?.parentMessageId);
 
+    const handleAction = (action) => {
+      this.saveLatestAction(action);
+
+      if (this.options.debug) {
+        console.debug('Latest Agent Action ', this.latestAction);
+      }
+    }
+
     this.executor = await initializeCustomAgent({
       tools,
       model,
@@ -294,7 +307,8 @@ class CustomChatAgent {
       returnIntermediateSteps: true,
       callbackManager: CallbackManager.fromHandlers({
         async handleAgentAction(action) {
-          console.log('handleAgentAction', action);
+          // console.log('handleAgentAction', action);
+          handleAction(action);
         }
       })
     });
@@ -390,7 +404,41 @@ class CustomChatAgent {
     await this.saveMessageToDatabase(userMessage, user);
 
     let reply = '';
-    let result = await this.executor.call({ input: message });
+    let result;
+    let errorMessage = '';
+    const maxAttempts = 3;
+    
+    for (let attempts = 1; attempts <= maxAttempts; attempts++) {
+
+      const input = attempts < maxAttempts ? message : `You encountered an error with my last message. Please try again.
+      
+      My last message: ${message}
+
+      Error: ${errorMessage}
+      
+      Your last action in response to my message that triggered the error: ${JSON.stringify(this.latestAction)}
+      `;
+
+      if (this.options.debug) {
+        console.debug(`Attempt ${attempts} of ${maxAttempts}`);
+      }
+
+      if (this.options.debug && errorMessage.length > 0) {
+        console.debug('Caught error, input:', input);
+      }
+
+      try {
+        result = await this.executor.call({ input });
+        break; // Exit the loop if the function call is successful
+      } catch (err) {
+        console.error(err);
+        errorMessage = err.message;
+        if (attempts > maxAttempts) {
+          return `I'm sorry, I'm having trouble with your latest message. Error: ${err.message}`;
+        }
+      }
+    }
+    
     reply = result.output.trim();
 
     const currentDateString = new Date().toLocaleDateString('en-us', {
