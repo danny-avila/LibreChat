@@ -4,8 +4,9 @@ const router = express.Router();
 const { titleConvo, askBing } = require('../../../app');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
+const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 
-router.post('/', async (req, res) => {
+router.post('/', requireJwtAuth, async (req, res) => {
   const {
     endpoint,
     text,
@@ -62,7 +63,7 @@ router.post('/', async (req, res) => {
 
   if (!overrideParentMessageId) {
     await saveMessage(userMessage);
-    await saveConvo(req?.session?.user?.username, {
+    await saveConvo(req.user.username, {
       ...userMessage,
       ...endpointOption,
       conversationId,
@@ -205,7 +206,7 @@ const ask = async ({
       conversationUpdate.invocationId = response.invocationId;
     }
 
-    await saveConvo(req?.session?.user?.username, conversationUpdate);
+    await saveConvo(req.user.username, conversationUpdate);
     conversationId = newConversationId;
 
     // STEP3 update the user message
@@ -218,9 +219,9 @@ const ask = async ({
     userMessageId = newUserMassageId;
 
     sendMessage(res, {
-      title: await getConvoTitle(req?.session?.user?.username, conversationId),
+      title: await getConvoTitle(req.user.username, conversationId),
       final: true,
-      conversation: await getConvo(req?.session?.user?.username, conversationId),
+      conversation: await getConvo(req.user.username, conversationId),
       requestMessage: userMessage,
       responseMessage: responseMessage
     });
@@ -229,7 +230,7 @@ const ask = async ({
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
       const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: responseMessage });
 
-      await saveConvo(req?.session?.user?.username, {
+      await saveConvo(req.user.username, {
         conversationId: conversationId,
         title
       });

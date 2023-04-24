@@ -88,20 +88,25 @@ userSchema.methods.toJSON = function () {
 
 const isProduction = process.env.NODE_ENV === 'production';
 const secretOrKey = isProduction ? process.env.JWT_SECRET_PROD : process.env.JWT_SECRET_DEV;
+// const refreshSecret = isProduction ? process.env.REFRESH_TOKEN_SECRET_PROD : process.env.REFRESH_TOKEN_SECRET_DEV;
 
 userSchema.methods.generateJWT = function () {
   const token = jwt.sign(
     {
-      expiresIn: '24h',
       id: this._id,
-      provider: this.provider,
+      username: this.username,
+      provider: this.auth_provider,
       email: this.email
     },
-    secretOrKey
+    secretOrKey,
+    { expiresIn: '24h' }
   );
   log({
     title: 'Generate JWT',
-    parameters: [{ name: 'token', value: token }]
+    parameters: [
+      { name: 'token', value: token },
+      { name: 'user', value: this.user }
+    ]
   });
   return token;
 };
@@ -178,6 +183,13 @@ module.exports.validateUser = (user) => {
 
   return Joi.validate(user, schema);
 };
+
+// module.exports.getRefreshToken = (user) => {
+//   const refreshToken = jwt.sign(user, refreshSecret, {
+//     expiresIn: eval(process.env.REFRESH_TOKEN_EXPIRY),
+//   });
+//   return refreshToken;
+// };
 
 const User = mongoose.model('User', userSchema);
 
