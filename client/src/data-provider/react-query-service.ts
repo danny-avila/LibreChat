@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-query";
 import * as t from "./types";
 import * as dataService from "./data-service";
+import axios from 'axios';
 
 export enum QueryKeys {
   messages = "messsages",
@@ -25,11 +26,13 @@ export const useAbortRequestWithMessage = (): UseMutationResult<void, Error, { e
   return useMutation(({ endpoint, abortKey, message }) => dataService.abortRequestWithMessage(endpoint, abortKey, message));
 };
 
-export const useGetUserQuery = (): QueryObserverResult<t.TUser> => {
+export const useGetUserQuery = (config?: UseQueryOptions<t.TUser>): QueryObserverResult<t.TUser> => {
+  console.log(axios.defaults.headers.common)
   return useQuery<t.TUser>([QueryKeys.user], () => dataService.getUser(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
+    ...config,
   });
 };
 
@@ -249,4 +252,13 @@ export const useRegisterUserMutation = (): UseMutationResult<t.TRegisterUserResp
       },
     }
   );
+}
+
+export const useLogoutUserMutation = (): UseMutationResult<unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.logout(), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.user]);
+    },
+  });
 }

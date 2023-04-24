@@ -5,8 +5,6 @@ import { ThemeProvider } from './hooks/ThemeContext';
 import App from './App';
 import './style.css';
 import './mobile.css';
-import { AuthProvider } from './hooks/AuthContext';
-
 
 const container = document.getElementById('root');
 const root = createRoot(container);
@@ -17,9 +15,7 @@ root.render(
   <QueryClientProvider client={queryClient}>
     <RecoilRoot>
       <ThemeProvider>
-        <AuthProvider>
           <App />
-        </AuthProvider>
       </ThemeProvider>
     </RecoilRoot>
   </QueryClientProvider>
