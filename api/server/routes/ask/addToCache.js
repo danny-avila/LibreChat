@@ -1,6 +1,5 @@
 const Keyv = require('keyv');
 const { KeyvFile } = require('keyv-file');
-const { saveMessage } = require('../../../models');
 
 const addToCache = async ({ endpoint, endpointOption, userMessage, responseMessage }) => {
   try {

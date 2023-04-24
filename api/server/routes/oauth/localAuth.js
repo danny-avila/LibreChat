@@ -3,6 +3,7 @@ const Joi = require('joi');
 
 const User = require('../../../models/User');
 const requireLocalAuth = require('../../../middleware/requireLocalAuth');
+const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 const { registerSchema } = require('../../../strategies/validators');
 const DebugControl = require('../../../utils/debug.js');
 
@@ -13,7 +14,7 @@ function log({ title, parameters }) {
 
 const router = express.Router();
 
-router.get('/user', requireLocalAuth, (req, res) => {
+router.get('/user', requireJwtAuth, (req, res) => {
   res.status(200).send(req.user);
 });
 
@@ -77,9 +78,9 @@ router.post('/register', async (req, res, next) => {
 });
 
 // logout
-router.get('/logout', (req, res) => {
+router.post('/logout', (req, res) => {
   req.logout();
-  res.send(false);
+  res.status(200).send(false);
 });
 
 module.exports = router;
