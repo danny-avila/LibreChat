@@ -44,7 +44,6 @@ services:
       - 27018:27017
     image: mongo
     restart: always
-    container_name: mongodb
     volumes:
       - ./data-node:/data/db
     command: mongod --noauth
