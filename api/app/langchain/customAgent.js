@@ -17,7 +17,9 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, ...rest }) =>
     
     Avoid repeating identical answers if it appears before. Only fulfill the human's requests, do not create extra steps beyond what the human has asked for.
     
-    Be honest. If you can't answer something, tell the human that you can't provide an answer or make a joke about it.`,
+    Be honest. If you can't answer something, tell the human that you can't provide an answer or make a joke about it.
+    
+    Attempt to fulfill the human's requests in as few actions as possible`,
     suffix: `Remember, all your responses MUST be in the format described. Do not respond unless it's in the format described.
     
     Don't forget to use the structure of Action, Action Input, etc.`,
