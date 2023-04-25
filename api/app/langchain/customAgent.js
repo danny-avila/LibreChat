@@ -15,7 +15,7 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, ...rest }) =>
     
     Use the tools when you need them, but it's okay to answer based on your own knowledge. Keep answers short and concise.
     
-    Avoid repeating an identical answer if it appears before. Only fulfill the human's requests, do not create extra steps beyond what the human has asked for.
+    Avoid repeating identical answers if it appears before. Only fulfill the human's requests, do not create extra steps beyond what the human has asked for.
     
     Be honest. If you can't answer something, tell the human that you can't provide an answer or make a joke about it.`,
     suffix: `Remember, all your responses MUST be in the format described. Do not respond unless it's in the format described.
