@@ -265,7 +265,7 @@ class CustomChatAgent {
     const model = new ChatOpenAI({
       openAIApiKey: this.openAIApiKey,
       ...this.modelOptions,
-      // model: 'text-davinci-003',
+      model: 'gpt-4',
     });
     // const tools = [new Calculator(), new WebBrowser({ model, embeddings: new OpenAIEmbeddings() })];
     const tools = [new Calculator()];
