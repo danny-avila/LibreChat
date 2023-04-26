@@ -1,5 +1,4 @@
 const express = require('express');
-const session = require('express-session');
 const connectDb = require('../lib/db/connectDb');
 const migrateDb = require('../lib/db/migrateDb');
 const indexSync = require('../lib/db/indexSync');
@@ -8,6 +7,7 @@ const cors = require('cors');
 const routes = require('./routes');
 const errorController = require('./controllers/errorController');
 const passport = require('passport');
+const cookieParser = require('cookie-parser');
 // const oauthRoutes = require('./routes/oauth');
 
 const port = process.env.PORT || 3080;
@@ -25,16 +25,9 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use(cors());
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+  app.use(cookieParser(process.env.COOKIE_SECRET));
   app.use(express.static(path.join(projectPath, 'dist')));
   app.set('trust proxy', 1); // trust first proxy
-  app.use(
-    session({
-      secret: 'chatgpt-clone-random-secrect',
-      resave: false,
-      saveUninitialized: true,
-      cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 } // 7 days
-    })
-  );
 
   // Auth
   app.use(passport.initialize());

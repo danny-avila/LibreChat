@@ -69,3 +69,7 @@ export const loginFacebook = () => {
 export const loginGoogle = () => {
   return '/oauth/google';
 }
+
+export const refreshToken = () => {
+  return '/oauth/refresh';
+}

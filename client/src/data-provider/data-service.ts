@@ -80,3 +80,7 @@ export const logout = () => {
 export const register = (payload: t.TRegisterUser) => {
   return request.post(endpoints.register(), payload);
 }
+
+export const refreshToken = () => {
+  return request.post(endpoints.refreshToken());
+}

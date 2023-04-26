@@ -262,3 +262,12 @@ export const useLogoutUserMutation = (): UseMutationResult<unknown> => {
     },
   });
 }
+
+export const useRefreshTokenMutation = (): UseMutationResult<t.TRefreshTokenResponse, unknown, unknown, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.refreshToken(), {
+    onSuccess: () => {
+      //queryClient.invalidateQueries([QueryKeys.user]);
+    },
+  });
+}
