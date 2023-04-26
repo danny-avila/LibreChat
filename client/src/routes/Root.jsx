@@ -9,16 +9,6 @@ import MobileNav from '../components/Nav/MobileNav';
 
 export default function Root() {
   const [navVisible, setNavVisible] = useState(false);
-  const navigate = useNavigate();
-  const { isAuthenticated } = useAuthContext();
-
-  useEffect(() => {
-      console.log('isAuthenticated', isAuthenticated);
-
-    if (!isAuthenticated) {
-      navigate('/login');
-    }
-  }, [isAuthenticated]);
 
   return (
     <>

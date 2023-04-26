@@ -9,6 +9,13 @@ function log({ title, parameters }) {
   DebugControl.log.parameters(parameters);
 }
 
+const Session = mongoose.Schema({
+  refreshToken: {
+    type: String,
+    default: ''
+  }
+});
+
 const userSchema = mongoose.Schema(
   {
     name: {
@@ -30,7 +37,7 @@ const userSchema = mongoose.Schema(
       match: [/\S+@\S+\.\S+/, 'is invalid'],
       index: true
     },
-    email_verified: {
+    emailVerified: {
       type: Boolean,
       required: true,
       default: false
@@ -45,9 +52,10 @@ const userSchema = mongoose.Schema(
       type: String,
       required: false
     },
-    auth_provider: {
+    provider: {
       type: String,
-      required: true
+      required: true,
+      default: 'local'
     },
     role: {
       type: String,
@@ -63,10 +71,8 @@ const userSchema = mongoose.Schema(
       unique: true,
       sparse: true
     },
-    githubId: {
-      type: String,
-      unique: true,
-      sparse: true
+    refreshToken: {
+      type: [Session]
     }
   },
   { timestamps: true }
@@ -75,12 +81,13 @@ const userSchema = mongoose.Schema(
 userSchema.methods.toJSON = function () {
   return {
     id: this._id,
-    provider: this.auth_provider,
+    provider: this.provider,
     email: this.email,
     name: this.name,
     username: this.username,
     avatar: this.avatar,
     role: this.role,
+    emailVerified: this.emailVerified,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt
   };
@@ -88,18 +95,20 @@ userSchema.methods.toJSON = function () {
 
 const isProduction = process.env.NODE_ENV === 'production';
 const secretOrKey = isProduction ? process.env.JWT_SECRET_PROD : process.env.JWT_SECRET_DEV;
-// const refreshSecret = isProduction ? process.env.REFRESH_TOKEN_SECRET_PROD : process.env.REFRESH_TOKEN_SECRET_DEV;
+const refreshSecret = isProduction
+  ? process.env.REFRESH_TOKEN_SECRET_PROD
+  : process.env.REFRESH_TOKEN_SECRET_DEV;
 
-userSchema.methods.generateJWT = function () {
+userSchema.methods.generateToken = function () {
   const token = jwt.sign(
     {
       id: this._id,
       username: this.username,
-      provider: this.auth_provider,
+      provider: this.provider,
       email: this.email
     },
     secretOrKey,
-    { expiresIn: '24h' }
+    { expiresIn: eval(process.env.SESSION_EXPIRY) }
   );
   log({
     title: 'Generate JWT',
@@ -109,6 +118,27 @@ userSchema.methods.generateJWT = function () {
     ]
   });
   return token;
+};
+
+userSchema.methods.generateRefreshToken = function () {
+  const refreshToken = jwt.sign(
+    {
+      id: this._id,
+      username: this.username,
+      provider: this.provider,
+      email: this.email
+    },
+    refreshSecret,
+    { expiresIn: eval(process.env.REFRESH_TOKEN_EXPIRY) }
+  );
+  log({
+    title: 'Generate Refresh Token',
+    parameters: [
+      { name: 'refreshToken', value: refreshToken },
+      { name: 'user', value: this.user }
+    ]
+  });
+  return refreshToken;
 };
 
 userSchema.methods.registerUser = (newUser, callback) => {
@@ -142,7 +172,6 @@ userSchema.methods.comparePassword = function (candidatePassword, callback) {
   });
 };
 
-// const delay = (t, ...vs) => new Promise(r => setTimeout(r, t, ...vs)) or util.promisify(setTimeout)
 
 module.exports.hashPassword = async (password) => {
   const saltRounds = 10;
@@ -184,28 +213,6 @@ module.exports.validateUser = (user) => {
   return Joi.validate(user, schema);
 };
 
-// module.exports.getRefreshToken = (user) => {
-//   const refreshToken = jwt.sign(user, refreshSecret, {
-//     expiresIn: eval(process.env.REFRESH_TOKEN_EXPIRY),
-//   });
-//   return refreshToken;
-// };
-
 const User = mongoose.model('User', userSchema);
 
 module.exports = User;
-
-// userSchema.methods.matchPassword = async function (enteredPassword) {
-//   return await bcrypt.compare(enteredPassword, this.password);
-// };
-
-// userSchema.pre('save', async function (next) {
-//   if (!this.isModified('password')) {
-//     next();
-//   }
-
-//   const salt = await bcrypt.genSalt(10);
-//   this.password = await bcrypt.hash(this.password, salt);
-// });
-
-// const User = mongoose.models.User || mongoose.model('User', userSchema);
