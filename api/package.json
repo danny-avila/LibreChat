@@ -6,9 +6,9 @@
   "scripts": {
     "start": "node server/index.js",
     "server-dev": "npx nodemon server/index.js",
-    "test2": "node app/langchain/test2.js",
-    "test3": "node app/langchain/test3.js",
-    "test4": "node app/langchain/test4.js",
+    "test2": "node --inspect app/langchain/test2.js",
+    "test3": "node --inspect app/langchain/test3.js",
+    "test4": "node --inspect app/langchain/test4.js",
     "langchain": "node app/langchain/test2.js"
   },
   "repository": {
@@ -37,7 +37,7 @@
     "html": "^1.0.0",
     "keyv": "^4.5.2",
     "keyv-file": "^0.2.0",
-    "langchain": "^0.0.59",
+    "langchain": "^0.0.64",
     "lodash": "^4.17.21",
     "meilisearch": "^0.31.1",
     "mongoose": "^6.9.0",
