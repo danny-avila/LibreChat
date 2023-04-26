@@ -16,7 +16,7 @@ const openAIApiKey = process.env.OPENAI_KEY;
   console.log(`[1] Got output`);
   console.dir(output1, { depth: null });
 
-  const input2 = 'can you divide that number in half?';
+  const input2 = 'can you divide that number in half and then multiply it by itself?';
   const options = {
     conversationId: output1.conversationId,
     parentMessageId: output1.messageId,

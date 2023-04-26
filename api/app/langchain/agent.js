@@ -3,11 +3,14 @@ const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = requ
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
 const { Agent, ProxyAgent } = require('undici');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
+const { OpenAIEmbeddings } = require("langchain/embeddings/openai");
 const { CallbackManager } = require('langchain/callbacks');
-const { initializeAgentExecutorWithOptions, ZapierToolKit } = require('langchain/agents');
+const { ZapierToolKit } = require('langchain/agents');
 const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
 const { Calculator } = require('langchain/tools/calculator');
+const { WebBrowser } = require('langchain/tools/webbrowser');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
+// const { HumanTool } = require('./tools/HumanTool');
 const { initializeCustomAgent } = require('./customAgent');
 const { getMessages, saveMessage, saveConvo } = require('../../models');
 
@@ -102,7 +105,7 @@ class CustomChatAgent {
     if (!abortController) {
       abortController = new AbortController();
     }
-    const modelOptions = { ...this.modelOptions };
+    const modelOptions = { ...this.modelOptions, temperature: 1 };
     if (typeof onProgress === 'function') {
       modelOptions.stream = true;
     }
@@ -243,7 +246,7 @@ class CustomChatAgent {
 
     // Convert Message documents into appropriate ChatMessage instances
     const chatMessages = orderedMessages.map((msg) =>
-      msg.isCreatedByUser ? new HumanChatMessage(msg.text) : new AIChatMessage(msg.text)
+      msg?.isCreatedByUser || msg?.role.toLowerCase() === 'user' ? new HumanChatMessage(msg.text) : new AIChatMessage(msg.text)
     );
 
     this.currentMessages = orderedMessages;
@@ -265,10 +268,10 @@ class CustomChatAgent {
     const model = new ChatOpenAI({
       openAIApiKey: this.openAIApiKey,
       ...this.modelOptions,
-      model: 'gpt-4',
+      // model: 'gpt-4',
     });
-    // const tools = [new Calculator(), new WebBrowser({ model, embeddings: new OpenAIEmbeddings() })];
-    const tools = [new Calculator()];
+    const tools = [new Calculator(), new WebBrowser({ model, embeddings: new OpenAIEmbeddings() })];
+    // const tools = [new Calculator()];
 
     if (this.options.zapierApiKey) {
       const zapier = new ZapierNLAWrapper({
@@ -410,13 +413,13 @@ class CustomChatAgent {
     
     for (let attempts = 1; attempts <= maxAttempts; attempts++) {
 
-      const input = attempts < maxAttempts ? message : `You encountered an error with my last message. Please try again.
+      const input = attempts < maxAttempts ? message : `You encountered an error with the human's last message. Please try again.
       
-      My last message: ${message}
+      Last message: ${message}
 
       Error: ${errorMessage}
       
-      Your last action in response to my message that triggered the error: ${JSON.stringify(this.latestAction)}
+      Your last action that triggered the error: ${JSON.stringify(this.latestAction)}
       `;
 
       if (this.options.debug) {
@@ -446,15 +449,14 @@ class CustomChatAgent {
       month: 'long',
       day: 'numeric'
     });
-    const promptPrefix = `You are ChatGPT, a large language model trained by OpenAI. Your current task is to review the response you generated using a list of tools. 
+    // const promptPrefix = `You are ChatGPT, a large language model trained by OpenAI. Your current task is to review the response you generated using a list of plugins. 
+    const promptPrefix = `As ChatGPT, review your generated response using plugins.
 
-    Tools Used: ${this.extractToolValues(result.intermediateSteps)}
+    Plugins Used: ${this.extractToolValues(result.intermediateSteps)}
 
-    Your Response: ${reply}
+    Response: ${reply}
     
-    If the response produced using these tools seems accurate or appropriate to the last user message, use it to respond to the user conversationally, incorporating the tools used in your answer. If not, try to answer again as best as possible, and if an answer is not possible, simply reply that an answer could not be given.
-    
-    Always respond conversationally.
+    If the response is accurate or appropriate, reply conversationally. Otherwise, attempt to answer again or admit an answer cannot be given. Always maintain a conversational tone. 
     Current date: ${currentDateString}${this.endToken}\n\n`;
 
     if (this.options.debug) {
