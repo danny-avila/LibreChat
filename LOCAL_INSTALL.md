@@ -6,9 +6,11 @@
     - Download the latest release here: https://github.com/danny-avila/chatgpt-clone/releases/
     - Or by clicking on the green code button in the top of the page and selecting "Download ZIP"
     - Or (Recommended if you have Git installed) pull the latest release from the main branch
-    - If you downloaded a zip file, extract the content in "C:/chatgpt-clone/" -**IMPORTANT : If you install the files somewhere else modify the instructions accordingly**
+    - If you downloaded a zip file, extract the content in "C:/chatgpt-clone/" 
+    - **IMPORTANT : If you install the files somewhere else modify the instructions accordingly**
+  
   - **To enable the Conversation search feature:**
-    -IF YOU DON'T WANT THIS FEATURE YOU CAN SKIP THIS STEP
+    - **IF YOU DON'T WANT THIS FEATURE YOU CAN SKIP THIS STEP**
 
     - Download MeileSearch latest release from : https://github.com/meilisearch/meilisearch/releases
     - Copy it to "C:/chatgpt-clone/"
