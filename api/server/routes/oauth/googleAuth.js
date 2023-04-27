@@ -4,7 +4,7 @@ const passport = require('passport');
 const router = express.Router();
 
 router.get(
-  '/google',
+  '/oauth/google',
   passport.authenticate('google', {
     scope: ['profile', 'email']
   })
@@ -14,7 +14,7 @@ const clientUrl =
   process.env.NODE_ENV === 'production' ? process.env.CLIENT_URL_PROD : process.env.CLIENT_URL_DEV;
 
 router.get(
-  '/google/callback',
+  '/oauth/google/callback',
   passport.authenticate('google', {
     failureRedirect: '/',
     session: false
