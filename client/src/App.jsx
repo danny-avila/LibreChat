@@ -4,7 +4,7 @@ import Root from './routes/Root';
 import Chat from './routes/Chat';
 import Search from './routes/Search';
 import store from './store';
-import { useRecoilState, useSetRecoilState } from 'recoil';
+import { useSetRecoilState } from 'recoil';
 import { ScreenshotProvider } from './utils/screenshotContext.jsx';
 import {
   useGetSearchEnabledQuery,

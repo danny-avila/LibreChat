@@ -84,3 +84,7 @@ export const register = (payload: t.TRegisterUser) => {
 export const refreshToken = () => {
   return request.post(endpoints.refreshToken());
 }
+
+export const getLoginGoogle = () => {
+  return request.get(endpoints.loginGoogle());
+}

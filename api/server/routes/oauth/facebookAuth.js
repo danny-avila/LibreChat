@@ -4,7 +4,7 @@ const passport = require('passport');
 const router = Router();
 
 router.get(
-  '/facebook',
+  '/oauth/facebook',
   passport.authenticate('facebook', {
     scope: ['public_profile', 'email']
   })
@@ -14,7 +14,7 @@ const clientUrl =
   process.env.NODE_ENV === 'production' ? process.env.CLIENT_URL_PROD : process.env.CLIENT_URL_DEV;
 
 router.get(
-  '/facebook/callback',
+  '/oauth/facebook/callback',
   passport.authenticate('facebook', {
     failureRedirect: '/',
     session: false

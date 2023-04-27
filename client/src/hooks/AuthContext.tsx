@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, ReactNode, createCont
 import { TUser, TLoginResponse, setTokenHeader } from '~/data-provider';
 import { useNavigate } from 'react-router-dom';
 import { useLoginUserMutation, useLogoutUserMutation, useGetUserQuery, useRefreshTokenMutation, TLoginUser } from '~/data-provider';
+import store from '~/store';
 
 export type TAuthContext = {
   user: TUser | undefined,
@@ -36,6 +37,8 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   const userQuery = useGetUserQuery({enabled: !!token});
   const refreshToken = useRefreshTokenMutation();
 
+  const { newConversation } = store.useConversation();
+
   const setUserContext = (userContext: TUserContext) => {
     const { user, token, isAuthenticated, redirect } = userContext;
     setUser(user);
@@ -55,6 +58,7 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
        // document.cookie = `token=${token}; path=/; expires=${new Date(Date.now() + 1000 * 60 * 60 * 24).toUTCString()}`;
        localStorage.setItem('token', token);
        setUserContext({ user, token, isAuthenticated: true, redirect: '/chat/new' });
+       newConversation();
       },
       onError: error => {
         setError(error.message);
