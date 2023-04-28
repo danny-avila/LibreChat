@@ -27,6 +27,7 @@ const jwtLogin = new JwtStrategy(
       if (user) {
         done(null, user);
       } else {
+        console.log('JwtStrategy => no user found');
         done(null, false);
       }
     } catch (err) {

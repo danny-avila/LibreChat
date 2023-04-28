@@ -6,34 +6,36 @@ const requireLocalAuth = require('../../../middleware/requireLocalAuth');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 const { registerSchema } = require('../../../strategies/validators');
 const DebugControl = require('../../../utils/debug.js');
-const { serialize, parse } = require('cookie');
+
+// token refresh code not yet being used
+// const { serialize, parse } = require('cookie');
 
 
-function setTokenCookie(res, token) {
-  const cookie = serialize('refresh_token', token, {
-    maxAge: eval(process.env.REFRESH_TOKEN_EXPIRY) * 1000,
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-    sameSite: 'none'
-  });
+// function setTokenCookie(res, token) {
+//   const cookie = serialize('refresh_token', token, {
+//     maxAge: eval(process.env.REFRESH_TOKEN_EXPIRY) * 1000,
+//     httpOnly: true,
+//     secure: process.env.NODE_ENV === 'production',
+//     path: '/',
+//     sameSite: 'none'
+//   });
 
-  res.setHeader('Set-Cookie', cookie);
-}
+//   res.setHeader('Set-Cookie', cookie);
+// }
 
-function removeTokenCookie(res) {
-  const cookie = serialize('refresh_token', '', {
-    maxAge: -1,
-    path: '/'
-  });
+// function removeTokenCookie(res) {
+//   const cookie = serialize('refresh_token', '', {
+//     maxAge: -1,
+//     path: '/'
+//   });
 
-  res.setHeader('Set-Cookie', cookie);
-}
+//   res.setHeader('Set-Cookie', cookie);
+// }
 
-function parseCookies(req) {
-  const cookie = req.headers?.cookie;
-  return parse(cookie || '');
-}
+// function parseCookies(req) {
+//   const cookie = req.headers?.cookie;
+//   return parse(cookie || '');
+// }
 
 function log({ title, parameters }) {
   DebugControl.log.functionName(title);
@@ -48,23 +50,24 @@ router.get('/user', requireJwtAuth, (req, res) => {
 
 router.post('/login', requireLocalAuth, (req, res, next) => {
   const token = req.user.generateToken();
-  const refreshToken = req.user.generateRefreshToken();
+  // const refreshToken = req.user.generateRefreshToken();
   User.findById(req.user._id).then(
-    (user) => {
-      user.refreshToken.push({ refreshToken });
-      user.save((err, user) => {
+    (dbUser) => {
+      // dbUser.refreshToken.push({ refreshToken });
+      dbUser.save((err, dbUser) => {
         if (err) {
           log({
             title: 'Route: login - user save error',
             parameters: [
               { name: 'Error:', value: err.message },
-              { name: 'User:', value: user }
+              { name: 'User:', value: dbUser }
             ]
           });
           res.status(500).json({ message: err.message });
         } else {
-          setTokenCookie(res, refreshToken);
-          // const sendUser = user.toJSON();
+          //setTokenCookie(res, refreshToken);
+          const user = dbUser.toJSON();
+          console.log("sending token, user => ", token, user)
           res.status(200).send({ token, user });
         }
       });
@@ -100,7 +103,7 @@ router.post('/refresh', (req, res, next) => {
                   res.statusCode = 500;
                   res.send(err);
                 } else {
-                  setTokenCookie(res, newRefreshToken);
+                //  setTokenCookie(res, newRefreshToken);
                   const user = req.user.toJSON();
                   res.status(200).send({ token, user });
                 }
@@ -163,8 +166,8 @@ router.post('/register', async (req, res, next) => {
       });
 
       const token = newUser.generateToken();
-      const refreshToken = newUser.generateRefreshToken();
-      newUser.refreshToken.push({ refreshToken });
+     // const refreshToken = newUser.generateRefreshToken();
+     // newUser.refreshToken.push({ refreshToken });
 
       newUser.registerUser(newUser, (err, user) => {
         if (err) {
@@ -172,7 +175,7 @@ router.post('/register', async (req, res, next) => {
         }
         //TODO: send email verification
         //on auto-login should check if email verified and display message to verify to continue to app
-        setTokenCookie(res, refreshToken);
+       // setTokenCookie(res, refreshToken);
         res.status(200).send({ token, user});
       });
     } catch (err) {
@@ -199,7 +202,7 @@ router.post('/logout', requireJwtAuth, (req, res, next) => {
           res.status(500).json({ message: err.message });
         } else {
           //res.clearCookie('refreshToken', COOKIE_OPTIONS);
-          removeTokenCookie(res);
+         // removeTokenCookie(res);
           res.status(200).send();
         }
       });
