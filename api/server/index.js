@@ -71,7 +71,7 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
 })();
 
 let messageCount = 0;
-process.on('uncaughtException', err => {
+process.on('uncaughtException', (err) => {
   if (!err.message.includes('fetch failed')) {
     console.error('There was an uncaught error:', err.message);
   }
