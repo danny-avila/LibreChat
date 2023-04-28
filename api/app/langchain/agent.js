@@ -506,7 +506,11 @@ class CustomChatAgent {
       promptPrefix
     };
 
-    const finalReply = await this.sendApiMessage(this.currentMessages, userMessage);
+    const finalReply = await this.sendApiMessage(this.currentMessages, userMessage, {
+      onProgress: (token) => {
+        console.log(token);
+      }
+    });
 
     const replyMessage = {
       messageId: crypto.randomUUID(),
