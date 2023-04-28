@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 
 router.get('/', requireJwtAuth, async (req, res) => {
-  const presets = (await getPresets(req.user.userId)).map((preset) => {
+  const presets = (await getPresets(req.user.username)).map((preset) => {
     return preset.toObject();
   });
   res.status(200).send(presets);
