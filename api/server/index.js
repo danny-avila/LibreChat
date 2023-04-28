@@ -32,8 +32,8 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   // Auth
   app.use(passport.initialize());
   require('../strategies/jwtStrategy');
-  require('../strategies/facebookStrategy');
-  require('../strategies/googleStrategy');
+  // require('../strategies/facebookStrategy');
+  // require('../strategies/googleStrategy');
   require('../strategies/localStrategy');
 
   // ROUTES
