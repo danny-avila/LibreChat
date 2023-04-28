@@ -31,6 +31,7 @@ export const useGetUserQuery = (config?: UseQueryOptions<t.TUser>): QueryObserve
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
+    retry: false,
     ...config,
   });
 };
@@ -127,6 +128,7 @@ export const useGetConversationsQuery = (pageNumber: string, config?: UseQueryOp
     dataService.getConversations(pageNumber), {
       refetchOnReconnect: false,
       refetchOnMount: false,
+      retry: false,
       ...config,
     }
   );
