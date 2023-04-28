@@ -27,7 +27,6 @@ export const useAbortRequestWithMessage = (): UseMutationResult<void, Error, { e
 };
 
 export const useGetUserQuery = (config?: UseQueryOptions<t.TUser>): QueryObserverResult<t.TUser> => {
-  console.log(axios.defaults.headers.common)
   return useQuery<t.TUser>([QueryKeys.user], () => dataService.getUser(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -123,11 +122,12 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
   });
 };
 
-export const useGetConversationsQuery = (pageNumber: string): QueryObserverResult<t.TConversation[]> => {
-  return useQuery([QueryKeys.allConversations, pageNumber], () =>
+export const useGetConversationsQuery = (pageNumber: string, config?: UseQueryOptions<t.TConversation[]>): QueryObserverResult<t.TConversation[]> => {
+  return useQuery<t.TConversation[]>([QueryKeys.allConversations, pageNumber], () =>
     dataService.getConversations(pageNumber), {
       refetchOnReconnect: false,
       refetchOnMount: false,
+      ...config,
     }
   );
 }
@@ -179,11 +179,12 @@ export const useUpdatePresetMutation = (): UseMutationResult<t.TPreset[], unknow
   );
 };
 
-export const useGetPresetsQuery = (): QueryObserverResult<t.TPreset[], unknown> => {
-  return useQuery([QueryKeys.presets], () => dataService.getPresets(), {
+export const useGetPresetsQuery = (config?: UseQueryOptions<t.TPreset[]>): QueryObserverResult<t.TPreset[], unknown> => {
+  return useQuery<t.TPreset[]>([QueryKeys.presets], () => dataService.getPresets(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
+    ...config,
   });
 };
 

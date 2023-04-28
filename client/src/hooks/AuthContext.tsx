@@ -57,6 +57,8 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
         console.log(data)
        // document.cookie = `token=${token}; path=/; expires=${new Date(Date.now() + 1000 * 60 * 60 * 24).toUTCString()}`;
        localStorage.setItem('token', token);
+       console.log("set localStorage token")
+       console.log("token", localStorage.getItem('token'))
        setUserContext({ user, token, isAuthenticated: true, redirect: '/chat/new' });
        newConversation();
       },
@@ -88,6 +90,14 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
     });
   };
 
+  useEffect(() => {
+    const localStorageToken = localStorage.getItem('token');
+    if(!token && localStorageToken) {
+      setToken(localStorageToken);
+      setTokenHeader(localStorageToken);
+    }
+  }, [token]);
+
   // const silentRefresh = useCallback(() => {
   //   refreshToken.mutate(undefined, {
   //     onSuccess: (data: TLoginResponse) => {
@@ -116,20 +126,6 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
         navigate('/login');
       }
     }, [userQuery.data, userQuery.isError]);
-
-    useEffect(() => {
-      const storageToken = localStorage.getItem('token');
-      if (!token) {
-        if (storageToken) {
-          setToken(storageToken);
-          setTokenHeader(storageToken);
-        }
-      }
-     if (token || (storageToken && !user)) {
-       userQuery.refetch();
-     }
-    }, [token]);
-
     // useEffect(() => {
     //   if (token)
     //   silentRefresh();

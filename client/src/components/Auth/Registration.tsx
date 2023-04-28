@@ -268,7 +268,7 @@ function Registration() {
               </a>
             </span>
           </div>
-          <div className="my-4 flex w-full items-center">
+          {/* <div className="my-4 flex w-full items-center">
             <hr className="w-full" />
             <p className="px-3 ">OR</p>
             <hr className="w-full" />
@@ -296,7 +296,7 @@ function Registration() {
               />
               <p>Login with Facebook</p>
             </button>
-          </div>
+          </div> */}
         </div>
       </div>
     </div>

@@ -7,6 +7,7 @@ async function _get<T>(url: string, options?: AxiosRequestConfig): Promise<T> {
 
 async function _post(url: string, data?: any) {
   const response = await axios.post(url, JSON.stringify(data), {
+    withCredentials: true,
     headers: { "Content-Type": "application/json" },
   });
   return response.data;
