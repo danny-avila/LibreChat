@@ -1,13 +1,18 @@
 require('dotenv').config();
 const connectDb = require('../../lib/db/connectDb');
 const ChatAgent = require('./agent');
+const validateTools = require('./validateTools');
 
-const openAIApiKey = process.env.OPENAI_KEY;
 (async () => {
   await connectDb();
-  // const conversationId = 'your_conversation_id_here'; // Replace this with the actual conversationId
-  const chatAgent = new ChatAgent(openAIApiKey, { serpapiApiKey: process.env.SERPAPI_API_KEY });
-  // const chatAgent = new ChatAgent(openAIApiKey);
+  const openAIApiKey = process.env.OPENAI_KEY;
+  const tools = ['calculator', 'google'];
+  const chatAgent = new ChatAgent(openAIApiKey, {
+    tools: validateTools(tools),
+    // modelOptions: {
+    //   model: 'gpt-4',
+    // },
+  });
 
   const input1 = "what's 2 + 5 + 3 * 7?";
 

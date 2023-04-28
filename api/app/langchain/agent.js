@@ -66,7 +66,7 @@ class CustomChatAgent {
       ? `\nYou encountered an error in attempting a response. Review the actions taken carefully in case there is a partial or complete answer within them.\nError Message: ${result.errorMessage}\n`
       : '';
 
-    return `As ChatGPT, review the response you generated having used plugins.${errorMessage}
+    return `As ChatGPT, review the answer you generated using plugins. The answer hasn't been sent to the user yet.${errorMessage}
 
   Actions Taken: ${
   result.intermediateSteps || result.intermediateSteps.length > 0
@@ -74,9 +74,9 @@ class CustomChatAgent {
     : 'None'
 }
 
-    Response: ${result.output.trim()}
+    Answer: ${result.output.trim()}
     
-    If the response is accurate or appropriate, reply conversationally. Otherwise, attempt to answer again or admit an answer cannot be given. Always maintain a conversational tone. 
+    Review if the answer is accurate or appropriate. Trust the answer, but otherwise, attempt to answer again or admit an answer cannot be given. Always maintain a conversational tone. 
     Current date: ${currentDateString}${this.endToken}\n\n`;
   }
 
