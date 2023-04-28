@@ -13,7 +13,7 @@ router.post('/', async (req, res) => {
     conversationId
   } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
-  if (endpoint !== 'GPTPlugins') return handleError(res, { text: 'Illegal request' });
+  if (endpoint !== 'gptPlugins') return handleError(res, { text: 'Illegal request' });
 
   // build user message --> handled by client
 
@@ -68,7 +68,7 @@ const ask = async ({
           lastSavedTimestamp = currentTimestamp;
           saveMessage({
             messageId: responseMessageId,
-            sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
+            sender: 'ChatGPT',
             conversationId,
             parentMessageId: overrideParentMessageId || userMessageId,
             text: text,

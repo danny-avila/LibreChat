@@ -64,6 +64,15 @@ const useMessageHandler = () => {
         token: endpointsConfig[endpoint]?.userProvide ? getToken() : null
       };
       responseSender = 'ChatGPT';
+    }  else if (endpoint === 'gptPlugins') {
+      endpointOption = {
+        endpoint,
+        model:
+          currentConversation?.model ??
+          endpointsConfig[endpoint]?.availableModels?.[0] ??
+          'gpt-3.5-turbo',
+      };
+      responseSender = 'ChatGPT';
     } else if (endpoint === null) {
       console.error('No endpoint available');
       return;
