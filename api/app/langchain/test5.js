@@ -6,15 +6,17 @@ const validateTools = require('./validateTools');
 (async () => {
   await connectDb();
   const openAIApiKey = process.env.OPENAI_KEY;
+  // const tools = ['calculator', 'google',];
   const tools = ['calculator', 'google', 'browser'];
   const chatAgent = new ChatAgent(openAIApiKey, {
     tools: validateTools(tools),
-    // modelOptions: {
-    //   model: 'gpt-4',
-    // },
+    modelOptions: {
+      model: 'gpt-4',
+    },
   });
 
-  const input1 = `What are some good restaurants in San Francisco that do take out? Can give me some recent customer reviews?`;
+  // const input1 = `What are some good restaurants in San Francisco?`;
+  const input1 = `What are some good restaurants in San Francisco that do take out? Can you give me some article reviews on one of them?`;
   const output1 = await chatAgent.sendMessage(input1);
 
   console.log(`[1] Got output`);
