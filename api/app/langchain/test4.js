@@ -6,9 +6,10 @@ const openAIApiKey = process.env.OPENAI_KEY;
 (async () => {
   await connectDb();
   // const chatAgent = new ChatAgent(openAIApiKey, { serpapiApiKey: process.env.SERPAPI_API_KEY, zapierApiKey: process.env.ZAPIER_NLA_API_KEY });
-  const chatAgent = new ChatAgent(openAIApiKey, { serpapiApiKey: process.env.SERPAPI_API_KEY, });
+  // const chatAgent = new ChatAgent(openAIApiKey, { serpapiApiKey: process.env.SERPAPI_API_KEY, });
+  const chatAgent = new ChatAgent(openAIApiKey);
 
-  const input1 = `What would be a good company name a company that makes colorful socks?`;
+  const input1 = `What are some good restaurants in San Francisco that do take out?`;
   const output1 = await chatAgent.sendMessage(input1);
 
   console.log(`[1] Got output`);
