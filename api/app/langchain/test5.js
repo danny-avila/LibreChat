@@ -16,7 +16,7 @@ const validateTools = require('./validateTools');
   });
 
   // const input1 = `What are some good restaurants in San Francisco?`;
-  const input1 = `What are some good restaurants in San Francisco that do take out? Can you give me some article reviews on one of them?`;
+  const input1 = `What are some good restaurants in San Francisco that do take out? Can you summarize an article review on one of them?`;
   const output1 = await chatAgent.sendMessage(input1);
 
   console.log(`[1] Got output`);
