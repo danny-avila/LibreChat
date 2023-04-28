@@ -1,24 +1,23 @@
 const express = require('express');
 const router = express.Router();
-const { titleConvo } = require('../../app/');
-const { getConvo, saveConvo, getConvoTitle } = require('../../models');
+const { getConvo, saveConvo } = require('../../models');
 const { getConvosByPage, deleteConvos } = require('../../models/Conversation');
-const { getMessages } = require('../../models/Message');
+const requireJwtAuth = require('../../middleware/requireJwtAuth');
 
-router.get('/', async (req, res) => {
+router.get('/', requireJwtAuth, async (req, res) => {
   const pageNumber = req.query.pageNumber || 1;
-  res.status(200).send(await getConvosByPage(req?.session?.user?.username, pageNumber));
+  res.status(200).send(await getConvosByPage(req.user.username, pageNumber));
 });
 
-router.get('/:conversationId', async (req, res) => {
+router.get('/:conversationId', requireJwtAuth, async (req, res) => {
   const { conversationId } = req.params;
-  const convo = await getConvo(req?.session?.user?.username, conversationId);
+  const convo = await getConvo(req.user.username, conversationId);
 
   if (convo) res.status(200).send(convo.toObject());
   else res.status(404).end();
 });
 
-router.post('/clear', async (req, res) => {
+router.post('/clear', requireJwtAuth, async (req, res) => {
   let filter = {};
   const { conversationId, source } = req.body.arg;
   if (conversationId) {
@@ -32,7 +31,7 @@ router.post('/clear', async (req, res) => {
   }
 
   try {
-    const dbResponse = await deleteConvos(req?.session?.user?.username, filter);
+    const dbResponse = await deleteConvos(req.user.username, filter);
     res.status(201).send(dbResponse);
   } catch (error) {
     console.error(error);
@@ -40,11 +39,11 @@ router.post('/clear', async (req, res) => {
   }
 });
 
-router.post('/update', async (req, res) => {
+router.post('/update', requireJwtAuth, async (req, res) => {
   const update = req.body.arg;
 
   try {
-    const dbResponse = await saveConvo(req?.session?.user?.username, update);
+    const dbResponse = await saveConvo(req.user.username, update);
     res.status(201).send(dbResponse);
   } catch (error) {
     console.error(error);
