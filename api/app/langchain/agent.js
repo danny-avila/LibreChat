@@ -28,12 +28,21 @@ class CustomChatAgent {
     this.executor = null;
   }
 
-  getActions() {
+  getActions(input = null) {
     let output = 'Actions taken:\n';
+    let actions = input || this.actions;
 
-    this.actions.forEach((actionObj, index) => {
+    if (actions[0]?.action) {
+      actions = actions.map((step) => (
+        {
+          log: `${step.action.log}\nObservation: ${step.observation}`,
+        }
+      ));
+    }
+
+    actions.forEach((actionObj, index) => {
       output += `${actionObj.log}`;
-      if (index < this.actions.length - 1) {
+      if (index < actions.length - 1) {
         output += '\n';
       }
     });
@@ -68,15 +77,15 @@ class CustomChatAgent {
 
     return `As ChatGPT, review the answer you generated using plugins. The answer hasn't been sent to the user yet.${errorMessage}
 
-  Actions Taken: ${
+${
   result.intermediateSteps || result.intermediateSteps.length > 0
-    ? this.extractToolValues(result.intermediateSteps)
+    ? this.getActions(result.intermediateSteps)
     : 'None'
 }
 
     Answer: ${result.output.trim()}
     
-    Review if the answer is accurate or appropriate. Trust the answer, but otherwise, attempt to answer again or admit an answer cannot be given. Always maintain a conversational tone. 
+    Review if the answer is accurate or appropriate. Compile a new answer based on your preliminary answer, actions, thoughts. and observations; if there is an error, attempt to answer again or admit an answer cannot be given. Always maintain a conversational tone. 
     Current date: ${currentDateString}${this.endToken}\n\n`;
   }
 
@@ -162,7 +171,7 @@ class CustomChatAgent {
     if (!abortController) {
       abortController = new AbortController();
     }
-    const modelOptions = { ...this.modelOptions, temperature: 0.8 };
+    const modelOptions = { ...this.modelOptions, temperature: 1 };
     if (typeof onProgress === 'function') {
       modelOptions.stream = true;
     }
@@ -381,7 +390,10 @@ class CustomChatAgent {
         async handleAgentAction(action) {
           // console.log('handleAgentAction', action);
           handleAction(action);
-        }
+        },
+        async handleChainEnd(action) {
+          console.log('handleChainEnd ------------->\n\n', action);
+        },
       })
     });
 
@@ -475,7 +487,7 @@ class CustomChatAgent {
 
     await this.saveMessageToDatabase(userMessage, user);
 
-    let result;
+    let result = {};
     let errorMessage = '';
     const maxAttempts = 3;
 
