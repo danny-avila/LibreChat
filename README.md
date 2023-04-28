@@ -244,7 +244,7 @@ Currently, this project is only functional with the `text-davinci-003` model.
 - If using MongoDB Atlas, remove `&w=majority` from default connection string.
 
 ### Local
-### **[In-depth instructions here!](https://github.com/danny-avila/chatgpt-clone/blob/0d4f0f74c04337aaf51b9a3eef898165a7009156/LOCAL_INSTALL.md)** 
+### **[In-depth instructions here!](https://github.com/danny-avila/chatgpt-clone/blob/main/guides/LOCAL_INSTALL.md)** 
 - thank you [@fuegovic](https://github.com/fuegovic)!
 
 ### Docker
