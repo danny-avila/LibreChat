@@ -12,6 +12,8 @@ const { WebBrowser } = require('langchain/tools/webbrowser');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
 // const { HumanTool } = require('./tools/HumanTool');
 const GoogleSearchAPI = require('./tools/googleSearch');
+const { initializeCustomAgent } = require('./customAgent');
+const { getMessages, saveMessage, saveConvo } = require('../../models');
 
 const FORMAT_INSTRUCTIONS = `Use the following format:
 
@@ -24,17 +26,15 @@ Observation: the result of the action
 Thought: I now know the final answer
 Final Answer: the final answer to the original input question`;
 
-const { initializeCustomAgent } = require('./customAgent');
-const { getMessages, saveMessage, saveConvo } = require('../../models');
-
 const tokenizersCache = {};
 
 class CustomChatAgent {
   constructor(apiKey, options = {}) {
-    this.openAIApiKey = apiKey;
-    this.executor = null;
-    this.setOptions(options);
+    this.tools = [];
     this.actions = [];
+    this.openAIApiKey = apiKey;
+    this.setOptions(options);
+    this.executor = null;
   }
 
   getActions() {
@@ -42,8 +42,6 @@ class CustomChatAgent {
 
     this.actions.forEach((actionObj, index) => {
       output += `${actionObj.log}`;
-      // output += `Action: ${actionObj.tool}\n`;
-      // output += `Action Input: ${actionObj.toolInput}\n`;
       if (index < this.actions.length - 1) {
         output += '\n';
       }
@@ -54,7 +52,7 @@ class CustomChatAgent {
 
   buildErrorInput(message, errorMessage) {
     const log = errorMessage.includes('Could not parse LLM output:')
-      ? `A formatting error occurred with your response to the human's last message. Remember to ${FORMAT_INSTRUCTIONS}`
+      ? `A formatting error occurred with your response to the human's last message. You didn't follow the formatting instructions. Remember to ${FORMAT_INSTRUCTIONS}`
       : `You encountered an error while replying to the human's last message. Please try again.\nError: ${errorMessage}`;
 
     return `
@@ -62,6 +60,27 @@ class CustomChatAgent {
       Human's last message: ${message}
       ${this.getActions()}
       `;
+  }
+
+  buildPromptPrefix(result) {
+    const currentDateString = new Date().toLocaleDateString('en-us', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    return `As ChatGPT, review your generated response using plugins.
+
+  Plugins Used: ${
+  result.intermediateSteps || result.intermediateSteps.length > 0
+    ? this.extractToolValues(result.intermediateSteps)
+    : 'None'
+}
+
+    Response: ${result.output.trim()}
+    
+    If the response is accurate or appropriate, reply conversationally. Otherwise, attempt to answer again or admit an answer cannot be given. Always maintain a conversational tone. 
+    Current date: ${currentDateString}${this.endToken}\n\n`;
   }
 
   setOptions(options) {
@@ -81,6 +100,14 @@ class CustomChatAgent {
     } else {
       this.options = options;
     }
+
+    // load tools
+    this.options.tools.forEach((tool) => {
+      const validTool = this.availableTools[tool];
+      if (validTool) {
+        this.tools.push(validTool());
+      }
+    });
 
     const modelOptions = this.options.modelOptions || {};
     this.modelOptions = {
@@ -146,7 +173,7 @@ class CustomChatAgent {
     if (!abortController) {
       abortController = new AbortController();
     }
-    const modelOptions = { ...this.modelOptions, temperature: 1 };
+    const modelOptions = { ...this.modelOptions, temperature: 0.8 };
     if (typeof onProgress === 'function') {
       modelOptions.stream = true;
     }
@@ -313,42 +340,41 @@ class CustomChatAgent {
       ...this.modelOptions
       // model: 'gpt-4',
     });
-    // const tools = [new Calculator(), new GoogleSearchAPI()];
-    const tools = [new Calculator(), new GoogleSearchAPI(), new WebBrowser({ model, embeddings: new OpenAIEmbeddings() })];
-    // const tools = [new Calculator(), new WebBrowser({ model, embeddings: new OpenAIEmbeddings() })];
-    // const tools = [new Calculator()];
 
-    if (this.options.zapierApiKey) {
-      const zapier = new ZapierNLAWrapper({
-        apiKey: this.options.zapierApiKey
-      });
-
-      const toolkit = await ZapierToolKit.fromZapierNLAWrapper(zapier);
-      tools.push(...toolkit.tools);
-    }
-
-    if (this.options.serpapiApiKey) {
-      tools.push(
-        new SerpAPI(this.options.serpapiApiKey, {
+    this.availableTools = {
+      calculator: () => new Calculator(),
+      google: () => new GoogleSearchAPI(),
+      browser: () => new WebBrowser({ model, embeddings: new OpenAIEmbeddings() }),
+      serpapi: () =>
+        new SerpAPI((process.env.SERPAPI_API_KEY || ''), {
           location: 'Austin,Texas,United States',
           hl: 'en',
           gl: 'us'
-        })
-      );
-    }
+        }),
+      zapier: () => {
+        const zapier = new ZapierNLAWrapper({
+          apiKey: process.env.ZAPIER_NLA_API_KEY || '',
+        });
 
+        return ZapierToolKit.fromZapierNLAWrapper(zapier);
+      },
+    };
     const pastMessages = await this.loadHistory(conversationId, this.options?.parentMessageId);
 
-    const handleAction = (action) => {
+    const handleAction = (action, callback = null) => {
       this.saveLatestAction(action);
 
       if (this.options.debug) {
-        console.debug('Latest Agent Action ', this.actions[0]);
+        console.debug('Latest Agent Action ', this.actions[this.actions.length - 1]);
+      }
+
+      if (typeof callback === 'function') {
+        callback(action);
       }
     };
 
     this.executor = await initializeCustomAgent({
-      tools,
+      tools: this.tools,
       model,
       pastMessages,
       verbose: true,
@@ -451,7 +477,6 @@ class CustomChatAgent {
 
     await this.saveMessageToDatabase(userMessage, user);
 
-    let reply = '';
     let result;
     let errorMessage = '';
     const maxAttempts = 3;
@@ -474,28 +499,14 @@ class CustomChatAgent {
       } catch (err) {
         console.error(err);
         errorMessage = err.message;
-        if (attempts > maxAttempts) {
-          return `I'm sorry, I'm having trouble with your latest message. Error: ${err.message}`;
+        if (attempts === maxAttempts) {
+          result.output = `I'm sorry, I'm having trouble with your latest message. Error: ${err.message}`;
+          break;
         }
       }
     }
 
-    reply = result.output.trim();
-
-    const currentDateString = new Date().toLocaleDateString('en-us', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-    // const promptPrefix = `You are ChatGPT, a large language model trained by OpenAI. Your current task is to review the response you generated using a list of plugins.
-    const promptPrefix = `As ChatGPT, review your generated response using plugins.
-
-    Plugins Used: ${this.extractToolValues(result.intermediateSteps)}
-
-    Response: ${reply}
-    
-    If the response is accurate or appropriate, reply conversationally. Otherwise, attempt to answer again or admit an answer cannot be given. Always maintain a conversational tone. 
-    Current date: ${currentDateString}${this.endToken}\n\n`;
+    const promptPrefix = this.buildPromptPrefix(result);
 
     if (this.options.debug) {
       console.debug('promptPrefix', promptPrefix);
