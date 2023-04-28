@@ -3,7 +3,7 @@ const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = requ
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
 const { Agent, ProxyAgent } = require('undici');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
-const { OpenAIEmbeddings } = require("langchain/embeddings/openai");
+const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
 const { CallbackManager } = require('langchain/callbacks');
 const { ZapierToolKit } = require('langchain/agents');
 const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
@@ -11,6 +11,19 @@ const { Calculator } = require('langchain/tools/calculator');
 const { WebBrowser } = require('langchain/tools/webbrowser');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
 // const { HumanTool } = require('./tools/HumanTool');
+const GoogleSearchAPI = require('./tools/googleSearch');
+
+const FORMAT_INSTRUCTIONS = `Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question`;
+
 const { initializeCustomAgent } = require('./customAgent');
 const { getMessages, saveMessage, saveConvo } = require('../../models');
 
@@ -21,6 +34,34 @@ class CustomChatAgent {
     this.openAIApiKey = apiKey;
     this.executor = null;
     this.setOptions(options);
+    this.actions = [];
+  }
+
+  getActions() {
+    let output = 'Actions taken:\n';
+
+    this.actions.forEach((actionObj, index) => {
+      output += `${actionObj.log}`;
+      // output += `Action: ${actionObj.tool}\n`;
+      // output += `Action Input: ${actionObj.toolInput}\n`;
+      if (index < this.actions.length - 1) {
+        output += '\n';
+      }
+    });
+
+    return output;
+  }
+
+  buildErrorInput(message, errorMessage) {
+    const log = errorMessage.includes('Could not parse LLM output:')
+      ? `A formatting error occurred with your response to the human's last message. Remember to ${FORMAT_INSTRUCTIONS}`
+      : `You encountered an error while replying to the human's last message. Please try again.\nError: ${errorMessage}`;
+
+    return `
+      ${log}
+      Human's last message: ${message}
+      ${this.getActions()}
+      `;
   }
 
   setOptions(options) {
@@ -246,7 +287,9 @@ class CustomChatAgent {
 
     // Convert Message documents into appropriate ChatMessage instances
     const chatMessages = orderedMessages.map((msg) =>
-      msg?.isCreatedByUser || msg?.role.toLowerCase() === 'user' ? new HumanChatMessage(msg.text) : new AIChatMessage(msg.text)
+      msg?.isCreatedByUser || msg?.role.toLowerCase() === 'user'
+        ? new HumanChatMessage(msg.text)
+        : new AIChatMessage(msg.text)
     );
 
     this.currentMessages = orderedMessages;
@@ -259,18 +302,20 @@ class CustomChatAgent {
     await saveConvo(user, { conversationId: message.conversationId });
   }
 
-  saveLatestAction (action) {
-    this.latestAction = action;
+  saveLatestAction(action) {
+    this.actions.push(action);
   }
 
   async initialize(conversationId) {
     // TO DO: need to initialize by user
     const model = new ChatOpenAI({
       openAIApiKey: this.openAIApiKey,
-      ...this.modelOptions,
+      ...this.modelOptions
       // model: 'gpt-4',
     });
-    const tools = [new Calculator(), new WebBrowser({ model, embeddings: new OpenAIEmbeddings() })];
+    // const tools = [new Calculator(), new GoogleSearchAPI()];
+    const tools = [new Calculator(), new GoogleSearchAPI(), new WebBrowser({ model, embeddings: new OpenAIEmbeddings() })];
+    // const tools = [new Calculator(), new WebBrowser({ model, embeddings: new OpenAIEmbeddings() })];
     // const tools = [new Calculator()];
 
     if (this.options.zapierApiKey) {
@@ -298,9 +343,9 @@ class CustomChatAgent {
       this.saveLatestAction(action);
 
       if (this.options.debug) {
-        console.debug('Latest Agent Action ', this.latestAction);
+        console.debug('Latest Agent Action ', this.actions[0]);
       }
-    }
+    };
 
     this.executor = await initializeCustomAgent({
       tools,
@@ -410,17 +455,10 @@ class CustomChatAgent {
     let result;
     let errorMessage = '';
     const maxAttempts = 3;
-    
+
     for (let attempts = 1; attempts <= maxAttempts; attempts++) {
-
-      const input = attempts < maxAttempts ? message : `You encountered an error with the human's last message. Please try again.
-      
-      Last message: ${message}
-
-      Error: ${errorMessage}
-      
-      Your last action that triggered the error: ${JSON.stringify(this.latestAction)}
-      `;
+      const errorInput = this.buildErrorInput(message, errorMessage);
+      const input = attempts > 1 ? errorInput : message;
 
       if (this.options.debug) {
         console.debug(`Attempt ${attempts} of ${maxAttempts}`);
@@ -441,7 +479,7 @@ class CustomChatAgent {
         }
       }
     }
-    
+
     reply = result.output.trim();
 
     const currentDateString = new Date().toLocaleDateString('en-us', {
@@ -449,7 +487,7 @@ class CustomChatAgent {
       month: 'long',
       day: 'numeric'
     });
-    // const promptPrefix = `You are ChatGPT, a large language model trained by OpenAI. Your current task is to review the response you generated using a list of plugins. 
+    // const promptPrefix = `You are ChatGPT, a large language model trained by OpenAI. Your current task is to review the response you generated using a list of plugins.
     const promptPrefix = `As ChatGPT, review your generated response using plugins.
 
     Plugins Used: ${this.extractToolValues(result.intermediateSteps)}
