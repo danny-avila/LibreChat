@@ -78,6 +78,14 @@ const userSchema = mongoose.Schema(
   { timestamps: true }
 );
 
+//Remove refreshToken from the response
+userSchema.set('toJSON', {
+  transform: function (doc, ret, options) {
+    delete ret.refreshToken;
+    return ret;
+  }
+});
+
 userSchema.methods.toJSON = function () {
   return {
     id: this._id,
@@ -110,36 +118,29 @@ userSchema.methods.generateToken = function () {
     secretOrKey,
     { expiresIn: eval(process.env.SESSION_EXPIRY) }
   );
-  log({
-    title: 'Generate JWT',
-    parameters: [
-      { name: 'token', value: token },
-      { name: 'user', value: this.user }
-    ]
-  });
   return token;
 };
 
-userSchema.methods.generateRefreshToken = function () {
-  const refreshToken = jwt.sign(
-    {
-      id: this._id,
-      username: this.username,
-      provider: this.provider,
-      email: this.email
-    },
-    refreshSecret,
-    { expiresIn: eval(process.env.REFRESH_TOKEN_EXPIRY) }
-  );
-  log({
-    title: 'Generate Refresh Token',
-    parameters: [
-      { name: 'refreshToken', value: refreshToken },
-      { name: 'user', value: this.user }
-    ]
-  });
-  return refreshToken;
-};
+// userSchema.methods.generateRefreshToken = function () {
+//   const refreshToken = jwt.sign(
+//     {
+//       id: this._id,
+//       username: this.username,
+//       provider: this.provider,
+//       email: this.email
+//     },
+//     refreshSecret,
+//     { expiresIn: eval(process.env.REFRESH_TOKEN_EXPIRY) }
+//   );
+//   log({
+//     title: 'Generate Refresh Token',
+//     parameters: [
+//       { name: 'refreshToken', value: refreshToken },
+//       { name: 'user', value: this.user }
+//     ]
+//   });
+//   return refreshToken;
+// };
 
 userSchema.methods.registerUser = (newUser, callback) => {
   log({
@@ -159,13 +160,6 @@ userSchema.methods.registerUser = (newUser, callback) => {
 };
 
 userSchema.methods.comparePassword = function (candidatePassword, callback) {
-  log({
-    title: 'Compare Password',
-    parameters: [
-      { name: 'candidatePassword', value: candidatePassword },
-      { name: 'saved password', value: this.password }
-    ]
-  });
   bcrypt.compare(candidatePassword, this.password, (err, isMatch) => {
     if (err) return callback(err);
     callback(null, isMatch);

@@ -46,14 +46,14 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   // });
 
   // api endpoint
-  app.use('/api/search', routes.authenticatedOr401, routes.search);
-  app.use('/api/ask', routes.authenticatedOr401, routes.ask);
-  app.use('/api/messages', routes.authenticatedOr401, routes.messages);
-  app.use('/api/convos', routes.authenticatedOr401, routes.convos);
-  app.use('/api/presets', routes.authenticatedOr401, routes.presets);
-  app.use('/api/prompts', routes.authenticatedOr401, routes.prompts);
-  app.use('/api/tokenizer', routes.authenticatedOr401, routes.tokenizer);
-  app.use('/api/endpoints', routes.authenticatedOr401, routes.endpoints);
+  app.use('/api/search', routes.search);
+  app.use('/api/ask', routes.ask);
+  app.use('/api/messages', routes.messages);
+  app.use('/api/convos', routes.convos);
+  app.use('/api/presets', routes.presets);
+  app.use('/api/prompts', routes.prompts);
+  app.use('/api/tokenizer', routes.tokenizer);
+  app.use('/api/endpoints', routes.endpoints);
 
   // user system
   app.use('/auth', routes.auth);

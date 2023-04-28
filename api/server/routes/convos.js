@@ -6,7 +6,6 @@ const requireJwtAuth = require('../../middleware/requireJwtAuth');
 
 router.get('/', requireJwtAuth, async (req, res) => {
   const pageNumber = req.query.pageNumber || 1;
-  console.log('convos -> req.user', req.user);
   res.status(200).send(await getConvosByPage(req.user.username, pageNumber));
 });
 
