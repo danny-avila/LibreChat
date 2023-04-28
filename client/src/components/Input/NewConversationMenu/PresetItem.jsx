@@ -28,6 +28,9 @@ export default function PresetItem({ preset = {}, value, onSelect, onChangePrese
     } else if (endpoint === 'chatGPTBrowser') {
       const { model } = preset;
       if (model) _title += `: ${model}`;
+    }  else if (endpoint === 'gptPlugins') {
+      const { model } = preset;
+      if (model) _title += `: ${model}`;
     } else if (endpoint === null) {
       null;
     } else {

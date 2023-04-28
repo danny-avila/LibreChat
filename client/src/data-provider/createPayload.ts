@@ -9,7 +9,8 @@ export default function createPayload(submission: TSubmission) {
     azureOpenAI: '/api/ask/azureOpenAI',
     openAI: '/api/ask/openAI',
     bingAI: '/api/ask/bingAI',
-    chatGPTBrowser: '/api/ask/chatGPTBrowser'
+    chatGPTBrowser: '/api/ask/chatGPTBrowser',
+    gptPlugins: '/api/ask/gptPlugins',
   };
 
   const server = endpointUrlMap[endpoint];

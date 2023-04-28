@@ -45,6 +45,16 @@ const buildDefaultConversation = ({
         endpointsConfig[endpoint]?.availableModels?.[0] ??
         'text-davinci-002-render-sha'
     };
+  }  else if (endpoint === 'gptPlugins') {
+    conversation = {
+      ...conversation,
+      endpoint,
+      model:
+        lastConversationSetup?.model ??
+        lastSelectedModel[endpoint] ??
+        endpointsConfig[endpoint]?.availableModels?.[0] ??
+        'gpt-3.5-turbo'
+    };
   } else if (endpoint === null) {
     conversation = {
       ...conversation,
@@ -108,7 +118,7 @@ const getDefaultConversation = ({ conversation, prevConversation, endpointsConfi
 
   // if anything happens, reset to default model
 
-  const endpoint = ['openAI', 'azureOpenAI', 'bingAI', 'chatGPTBrowser'].find(e => endpointsConfig?.[e]);
+  const endpoint = ['openAI', 'azureOpenAI', 'bingAI', 'chatGPTBrowser','gptPlugins'].find(e => endpointsConfig?.[e]);
   if (endpoint) {
     conversation = buildDefaultConversation({ conversation, endpoint, endpointsConfig });
     return conversation;
