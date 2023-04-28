@@ -6,34 +6,35 @@ const validateTools = require('./validateTools');
 (async () => {
   await connectDb();
   const openAIApiKey = process.env.OPENAI_KEY;
-  const tools = ['calculator', 'google'];
+  // const tools = ['calculator', 'google',];
+  const tools = ['calculator', 'google', 'browser'];
   const chatAgent = new ChatAgent(openAIApiKey, {
     tools: validateTools(tools),
-    // modelOptions: {
-    //   model: 'gpt-4',
-    // },
+    modelOptions: {
+      model: 'gpt-4',
+    },
   });
 
-  const input1 = "what's 2 + 5 + 3 * 7?";
-
+  // const input1 = `What are some good restaurants in San Francisco?`;
+  const input1 = `What are some good restaurants in San Francisco that do take out? Can you give me some article reviews on one of them?`;
   const output1 = await chatAgent.sendMessage(input1);
 
   console.log(`[1] Got output`);
   console.dir(output1, { depth: null });
 
-  const input2 = 'can you divide that number in half and then multiply it by itself?';
-  const options = {
-    conversationId: output1.conversationId,
-    parentMessageId: output1.messageId,
-    // conversationId: '165e8adb-67d9-4eea-afac-ab7df9ca7bc3',
-    // parentMessageId: '3e6a8135-282d-4177-9c13-de8acc993218',
-  };
+  // const input2 = 'can you divide that number in half?';
+  // const options = {
+  //   conversationId: output1.conversationId,
+  //   parentMessageId: output1.messageId,
+  //   // conversationId: '165e8adb-67d9-4eea-afac-ab7df9ca7bc3',
+  //   // parentMessageId: '3e6a8135-282d-4177-9c13-de8acc993218',
+  // };
 
-  // // console.log(`[2] Sending with options:`);
-  // // console.dir(options, { depth: null });
-  const output2 = await chatAgent.sendMessage(input2, options);
-  console.log(`[2] Got output`);
-  console.dir(output2, { depth: null });
+  // // // console.log(`[2] Sending with options:`);
+  // // // console.dir(options, { depth: null });
+  // const output2 = await chatAgent.sendMessage(input2, options);
+  // console.log(`[2] Got output`);
+  // console.dir(output2, { depth: null });
 
   // const options2 = {
   //   conversationId: output2.conversationId,

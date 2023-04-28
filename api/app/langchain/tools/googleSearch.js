@@ -15,7 +15,7 @@ class GoogleSearchAPI extends Tool {
    * The name of the tool.
    * @type {string}
    */
-  name = 'GoogleSearch';
+  name = 'google-search';
 
   /**
    * A description for the agent to use
