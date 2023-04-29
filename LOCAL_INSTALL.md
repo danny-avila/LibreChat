@@ -1,6 +1,8 @@
-### Local
+# Local
 
-- **Install the prerequisites**
+## Locally run the app
+
+### Install the prerequisites on your machine
 
   - **Download chatgpt-clone**
     - Download the latest release here: https://github.com/danny-avila/chatgpt-clone/releases/
@@ -51,20 +53,19 @@
   - Add your previously saved MeiliSearch Master key to this line **MEILI_MASTER_KEY=** (the key is needed if search is enabled even on local install or you may encounter errors)
   - Save the file as **"C:/chatgpt-clone/api/.env"**
 
-**DO THIS ONCE AFTER EVERY UPDATE**
+### Run the app
+
+#### Using the command line
 
 - **Run** `npm ci` in the "C:/chatgpt-clone/api" directory
 - **Run** `npm ci` in the "C:/chatgpt-clone/client" directory
 - **Run** `npm run build` in the "C:/chatgpt-clone/client"
-
-**DO THIS EVERY TIME YOU WANT TO START CHATGPT-CLONE**
-
 - **Run** `"meilisearch --master-key put_your_meilesearch_Master_Key_here"` in the "C:/chatgpt-clone" directory (Only if SEARCH=TRUE)
 - **Run** `npm start` in the "C:/chatgpt-clone/api" directory
 
 - **Visit** http://localhost:3080 (default port) & enjoy
 
-OPTIONAL BUT RECOMMENDED
+#### Using a batch file
 
 - **Make a batch file to automate the starting process**
   - Open a text editor
@@ -85,6 +86,10 @@ start "ChatGPT-Clone" cmd /k "cd api && npm start"
 REM this batch file goes at the root of the chatgpt-clone directory (C:/chatgpt-clone/)
 ```
 
+## Update the app version
+
 If you update the chatgpt-clone project files, mannually redo the `npm ci` and `npm run build` steps
+
+# Shared
 
 To share within network or serve as a public server, set `HOST` to `0.0.0.0` in `.env` file.
