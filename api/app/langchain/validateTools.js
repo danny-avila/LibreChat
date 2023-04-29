@@ -12,7 +12,6 @@ module.exports = (tools) => {
   validateAPIKey('GOOGLE_CSE_ID', 'google');
   validateAPIKey('GOOGLE_API_KEY', 'google');
 
-  console.log('Valid tools:', validTools);
-
+  // console.log('Valid tools:', validTools);
   return tools.filter((tool) => validTools.has(tool));
 };
