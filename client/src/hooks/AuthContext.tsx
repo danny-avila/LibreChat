@@ -57,8 +57,6 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
         console.log(data)
        // document.cookie = `token=${token}; path=/; expires=${new Date(Date.now() + 1000 * 60 * 60 * 24).toUTCString()}`;
        localStorage.setItem('token', token);
-       console.log("set localStorage token")
-       console.log("token", localStorage.getItem('token'))
        setUserContext({ user, token, isAuthenticated: true, redirect: '/chat/new' });
        newConversation();
       },
@@ -95,6 +93,7 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
     if(!token && localStorageToken) {
       setToken(localStorageToken);
       setTokenHeader(localStorageToken);
+      setIsAuthenticated(true);
     }
   }, [token]);
 

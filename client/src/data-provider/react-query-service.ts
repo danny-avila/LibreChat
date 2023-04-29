@@ -128,7 +128,6 @@ export const useGetConversationsQuery = (pageNumber: string, config?: UseQueryOp
     dataService.getConversations(pageNumber), {
       refetchOnReconnect: false,
       refetchOnMount: false,
-      retry: false,
       ...config,
     }
   );
