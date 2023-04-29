@@ -1,52 +1,46 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { browserClient } = require('../../../app/');
+const ChatAgent = require('../../../app/langchain/agent');
+const { getOpenAIModels } = require('../endpoints');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
+const { handleError, sendMessage, createOnProgress } = require('./handlers');
 
 router.post('/', async (req, res) => {
-  const {
-    endpoint,
-    text,
-    parentMessageId,
-    conversationId
-  } = req.body;
+  const { endpoint, text, parentMessageId, conversationId } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   if (endpoint !== 'gptPlugins') return handleError(res, { text: 'Illegal request' });
 
   // build user message --> handled by client
 
   // build endpoint option
-  // const endpointOption = {
-  //   model: req.body?.model ?? 'text-davinci-002-render-sha',
-  //   token: req.body?.token ?? null
-  // };
+  const endpointOption = {
+    model: req.body?.model ?? 'gpt-3.5-turbo',
+    token: req.body?.token ?? null
+  };
+  const availableModels = getOpenAIModels();
+  if (availableModels.find((model) => model === endpointOption.model) === undefined) {
+    return handleError(res, { text: 'Illegal request: model' });
+  }
 
   console.log('ask log', {
     text,
     conversationId,
-    // endpointOption,
+    endpointOption
   });
 
   // eslint-disable-next-line no-use-before-define
-  return await ask({
-    text,
-    conversationId,
-    parentMessageId,
-    req,
-    res
-  });
+  // return await ask({
+  //   text,
+  //   endpointOption,
+  //   conversationId,
+  //   parentMessageId,
+  //   req,
+  //   res
+  // });
 });
 
-const ask = async ({
-  // endpointOption,
-  text,
-  parentMessageId = null,
-  conversationId,
-  req,
-  res
-}) => {
+const ask = async ({ text, endpointOption, parentMessageId = null, conversationId, req, res }) => {
   // let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
 
   res.writeHead(200, {
@@ -56,13 +50,23 @@ const ask = async ({
     'Access-Control-Allow-Origin': '*',
     'X-Accel-Buffering': 'no'
   });
-
-  let responseMessageId = crypto.randomUUID();
+  let userMessage;
+  let userMessageId;
+  let responseMessageId;
+  let lastSavedTimestamp = 0;
 
   try {
-    let lastSavedTimestamp = 0;
+    const getIds = (data) => {
+      userMessage = data.userMessage;
+      userMessageId = userMessage.messageId;
+      responseMessageId = data.responseMessageId;
+      if (!conversationId) {
+        conversationId = data.conversationId;
+      }
+    };
+
     const { onProgress: progressCallback, getPartialText } = createOnProgress({
-      onProgress: ({ text }) => {
+      onProgress: ({ text: partialText }) => {
         const currentTimestamp = Date.now();
         if (currentTimestamp - lastSavedTimestamp > 500) {
           lastSavedTimestamp = currentTimestamp;
@@ -70,8 +74,8 @@ const ask = async ({
             messageId: responseMessageId,
             sender: 'ChatGPT',
             conversationId,
-            parentMessageId: overrideParentMessageId || userMessageId,
-            text: text,
+            parentMessageId: userMessageId,
+            text: partialText,
             unfinished: true,
             cancelled: false,
             error: false
@@ -79,18 +83,27 @@ const ask = async ({
         }
       }
     });
+
     const abortController = new AbortController();
-    let response = await browserClient({
-      text,
+
+    const chatAgent = new ChatAgent(process.env.OPENAI_KEY, {
+      tools: endpointOption?.tools || ['calculator', 'google', 'browser'],
+      modelOptions: {
+        model: 'gpt-4'
+      }
+    });
+
+    let response = await chatAgent.sendMessage(text, {
+      getIds,
+      user: req?.session?.user?.username,
       parentMessageId,
       conversationId,
-      ...endpointOption,
       onProgress: progressCallback.call(null, { res, text }),
-      abortController
+      abortController,
+      ...endpointOption
     });
 
     console.log('CLIENT RESPONSE', response);
-
 
     // STEP1 generate response message
     response.text = response.response || '**ChatGPT refused to answer.**';
@@ -99,16 +112,15 @@ const ask = async ({
       final: true,
       conversation: await getConvo(req?.session?.user?.username, conversationId),
       requestMessage: userMessage,
-      responseMessage: responseMessage
+      responseMessage: response
     });
     res.end();
 
-    // if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
-    if (!parentMessageId) {
+    if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
       // const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: responseMessage });
       const title = await response.details.title;
       await saveConvo(req?.session?.user?.username, {
-        conversationId: conversationId,
+        conversationId,
         title
       });
     }
@@ -117,7 +129,7 @@ const ask = async ({
       messageId: responseMessageId,
       sender: 'ChatGPT',
       conversationId,
-      parentMessageId: ,
+      parentMessageId,
       unfinished: false,
       cancelled: false,
       error: true,
