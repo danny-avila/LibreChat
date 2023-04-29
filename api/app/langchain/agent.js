@@ -321,8 +321,8 @@ ${
   }
 
   async saveMessageToDatabase(message, user = null) {
-    await saveMessage(message);
-    await saveConvo(user, { conversationId: message.conversationId });
+    await saveMessage({ ...message, unfinished: false });
+    await saveConvo(user, { conversationId: message.conversationId, endpoint: 'gptPlugins' });
   }
 
   saveLatestAction(action) {
@@ -382,16 +382,16 @@ ${
       tools: this.tools,
       model,
       pastMessages,
-      verbose: true,
+      verbose: this.options.debug,
       returnIntermediateSteps: true,
       callbackManager: CallbackManager.fromHandlers({
         async handleAgentAction(action) {
-          // console.log('handleAgentAction', action);
+          console.log('handleAgentAction ------>', action);
           handleAction(action);
-        }
-        // async handleChainEnd(action) {
-        //   console.log('handleChainEnd ------------->\n\n', action);
-        // },
+        },
+        async handleChainEnd(action) {
+          console.log('handleChainEnd ------>\n\n', action);
+        },
       })
     });
 
@@ -539,12 +539,8 @@ ${
 
     const finalReply = await this.sendApiMessage(
       this.currentMessages,
-      userMessage
-      // {
-      //   onProgress: (token) => {
-      //     console.log(token);
-      //   }
-      // }
+      userMessage,
+      opts
     );
 
     const responseMessage = {

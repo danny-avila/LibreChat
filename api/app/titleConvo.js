@@ -1,7 +1,7 @@
-const { Configuration, OpenAIApi } = require('openai');
+// const { Configuration, OpenAIApi } = require('openai');
 const _ = require('lodash');
 
-const proxyEnvToAxiosProxy = proxyString => {
+const proxyEnvToAxiosProxy = (proxyString) => {
   if (!proxyString) return null;
 
   const regex = /^([^:]+):\/\/(?:([^:@]*):?([^:@]*)@)?([^:]+)(?::(\d+))?/;
@@ -16,7 +16,8 @@ const proxyEnvToAxiosProxy = proxyString => {
   return proxyConfig;
 };
 
-const titleConvo = async ({ endpoint, text, response }) => {
+// const titleConvo = async ({ endpoint, text, response }) => {
+const titleConvo = async ({ text, response }) => {
   let title = 'New Chat';
   const ChatGPTClient = (await import('@waylaidwanderer/chatgpt-api')).default;
 

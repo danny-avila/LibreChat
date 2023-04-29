@@ -10,11 +10,11 @@ const handleError = (res, message) => {
   res.end();
 };
 
-const sendMessage = (res, message) => {
+const sendMessage = (res, message, event = 'message') => {
   if (message.length === 0) {
     return;
   }
-  res.write(`event: message\ndata: ${JSON.stringify(message)}\n\n`);
+  res.write(`event: ${event}\ndata: ${JSON.stringify(message)}\n\n`);
 };
 
 const createOnProgress = ({ onProgress: _onProgress }) => {
@@ -99,4 +99,17 @@ const handleText = async (response, bing = false) => {
   return text;
 };
 
-module.exports = { handleError, sendMessage, createOnProgress, handleText };
+function formatSteps(steps) {
+  let output = '';
+
+  for (const step of steps) {
+    const actionInput = step.action.toolInput;
+    const observation = step.observation;
+
+    output += `Input: ${actionInput}\nOutput: ${observation}\n---\n`;
+  }
+
+  return output;
+}
+
+module.exports = { handleError, sendMessage, createOnProgress, handleText, formatSteps };
