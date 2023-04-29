@@ -15,13 +15,13 @@ class GoogleSearchAPI extends Tool {
    * The name of the tool.
    * @type {string}
    */
-  name = 'google-search';
+  name = 'google';
 
   /**
    * A description for the agent to use
    * @type {string}
    */
-  description = `You can use the Google Custom Search API to search for information on the web.`;
+  description = `Use the 'google' tool to search for information on the web.`;
 
   getCx() {
     const cx = process.env.GOOGLE_CSE_ID || '';
@@ -76,7 +76,8 @@ class GoogleSearchAPI extends Tool {
       const response = await this.getCustomSearch().cse.list({
         q: input,
         cx: this.getCx(),
-        auth: this.getApiKey()
+        auth: this.getApiKey(),
+        num: 5, // Limit the number of results to 5
       });
 
       // return response.data;

@@ -33,11 +33,9 @@ class CustomChatAgent {
     let actions = input || this.actions;
 
     if (actions[0]?.action) {
-      actions = actions.map((step) => (
-        {
-          log: `${step.action.log}\nObservation: ${step.observation}`,
-        }
-      ));
+      actions = actions.map((step) => ({
+        log: `${step.action.log}\nObservation: ${step.observation}`
+      }));
     }
 
     actions.forEach((actionObj, index) => {
@@ -72,7 +70,7 @@ class CustomChatAgent {
     });
 
     const errorMessage = result.errorMessage
-      ? `\nYou encountered an error in attempting a response. Review the actions taken carefully in case there is a partial or complete answer within them.\nError Message: ${result.errorMessage}\n`
+      ? `\nYou encountered an error in attempting a response. The user is not aware of the error so you shouldn't mention it.\nReview the actions taken carefully in case there is a partial or complete answer within them.\nError Message: ${result.errorMessage}\n`
       : '';
 
     return `As ChatGPT, review the answer you generated using plugins. The answer hasn't been sent to the user yet.${errorMessage}
@@ -85,7 +83,8 @@ ${
 
     Answer: ${result.output.trim()}
     
-    Review if the answer is accurate or appropriate. Compile a new answer based on your preliminary answer, actions, thoughts. and observations; if there is an error, attempt to answer again or admit an answer cannot be given. Always maintain a conversational tone. 
+    Review if the answer is accurate or appropriate. Compile a new answer based on your preliminary answer, actions, thoughts. and observations; if there is an error, attempt to answer again or admit an answer cannot be given. 
+    Do your best to cite sources if you are using any web links. Always maintain a conversational tone.
     Current date: ${currentDateString}${this.endToken}\n\n`;
   }
 
@@ -101,7 +100,6 @@ ${
       this.options = {
         ...this.options,
         ...options,
-        debug: true
       };
     } else {
       this.options = options;
@@ -390,7 +388,7 @@ ${
         async handleAgentAction(action) {
           // console.log('handleAgentAction', action);
           handleAction(action);
-        },
+        }
         // async handleChainEnd(action) {
         //   console.log('handleChainEnd ------------->\n\n', action);
         // },
@@ -463,6 +461,8 @@ ${
     const user = opts.user || null;
     const conversationId = opts.conversationId || crypto.randomUUID();
     const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
+    const userMessageId = crypto.randomUUID();
+    const responseMessageId = crypto.randomUUID();
     await this.initialize(conversationId, user);
 
     // let conversation = await this.conversationsCache.get(conversationId);
@@ -477,14 +477,22 @@ ${
     // const shouldGenerateTitle = opts.shouldGenerateTitle && isNewConversation;
 
     const userMessage = {
-      messageId: crypto.randomUUID(),
+      messageId: userMessageId,
       parentMessageId,
       conversationId,
       sender: 'User',
       text: message,
       isCreatedByUser: true
     };
-
+    
+    if (typeof opts?.getIds === 'function') {
+      opts.getIds({
+        userMessage,
+        conversationId,
+        responseMessageId
+      });
+    }
+    
     await this.saveMessageToDatabase(userMessage, user);
 
     let result = {};
@@ -529,7 +537,9 @@ ${
       promptPrefix
     };
 
-    const finalReply = await this.sendApiMessage(this.currentMessages, userMessage, 
+    const finalReply = await this.sendApiMessage(
+      this.currentMessages,
+      userMessage
       // {
       //   onProgress: (token) => {
       //     console.log(token);
@@ -537,8 +547,8 @@ ${
       // }
     );
 
-    const replyMessage = {
-      messageId: crypto.randomUUID(),
+    const responseMessage = {
+      messageId: responseMessageId,
       conversationId,
       parentMessageId: userMessage.messageId,
       sender: 'ChatGPT',
@@ -546,16 +556,16 @@ ${
       isCreatedByUser: false
     };
 
-    await this.saveMessageToDatabase(replyMessage, user);
+    await this.saveMessageToDatabase(responseMessage, user);
 
     // if (shouldGenerateTitle) {
-    //   conversation.title = await this.generateTitle(userMessage, replyMessage);
+    //   conversation.title = await this.generateTitle(userMessage, responseMessage);
     //   returnData.title = conversation.title;
     // }
 
     // await this.conversationsCache.set(conversationId, conversation);
 
-    return { ...replyMessage, ...result };
+    return { ...responseMessage, ...result };
   }
 
   async buildPrompt(messages, userMessage, isChatGptModel = true) {
