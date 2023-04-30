@@ -14,6 +14,7 @@ services:
   #   depends_on:
   #     - api
   api:
+    container_name: chat-clone
     ports:
       - 3080:3080               # Change it to 9000:3080 to use nginx
     depends_on:
@@ -38,15 +39,16 @@ services:
       - ./api:/api
       - /api/node_modules
   mongodb:
+    container_name: chat-mongodb
     ports:
       - 27018:27017
     image: mongo
     restart: always
-    container_name: mongodb
     volumes:
       - ./data-node:/data/db
     command: mongod --noauth
   meilisearch:
+    container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.0
     ports:
       - 7700:7700
