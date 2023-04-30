@@ -21,6 +21,10 @@ const AuthLayout = () => (
 );
 const router = createBrowserRouter([
   {
+    path: 'register',
+    element: <Registration />
+  },
+  {
     element: <AuthLayout />,
     children: [
       {
