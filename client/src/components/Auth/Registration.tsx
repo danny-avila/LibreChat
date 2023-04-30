@@ -19,7 +19,8 @@ function Registration() {
     handleSubmit,
     formState: { errors }
   } = useForm<TRegisterUser>({ mode: 'onChange' });
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string>('')
   const registerUser = useRegisterUserMutation();
 
   const password = watch('password');
@@ -27,10 +28,13 @@ function Registration() {
   const onRegisterUserFormSubmit = (data: TRegisterUser) => {
     registerUser.mutate(data, {
       onSuccess: () => {
-        navigate('/login');
+        navigate('/chat/new');
       },
-      onError: () => {
+      onError: (error) => {
         setError(true);
+        if(error.response?.data?.message) {
+          setErrorMessage(error.response?.data?.message);
+        }
       }
     });
   };
@@ -50,7 +54,7 @@ function Registration() {
               className="relative mb-5 mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
               role="alert"
             >
-              There was an error attempting to register your account. Please try again.
+              There was an error attempting to register your account. Please try again. {errorMessage}
             </div>
           )}
           <form
