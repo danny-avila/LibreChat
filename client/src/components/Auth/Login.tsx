@@ -21,6 +21,7 @@ function Login() {
   };
 
   const SERVER_URL = import.meta.env.DEV ? import.meta.env.VITE_SERVER_URL_DEV : import.meta.env.VITE_SERVER_URL_PROD;
+  const showGoogleLogin = import.meta.env.VITE_SHOW_GOOGLE_LOGIN_OPTION === 'true';
 
   return (
     <div className="relative flex min-h-screen flex-col justify-center overflow-hidden">
@@ -46,6 +47,7 @@ function Login() {
             <input
               type="email"
               id="email"
+              autoComplete="email"
               aria-label="Email"
               {...register('email', {
                 required: 'Email is required',
@@ -84,7 +86,8 @@ function Login() {
             </label>
             <input
               type="password"
-               id="password"
+              id="password"
+              autoComplete="current-password"
               aria-label="Password"
               {...register('password', {
                 required: 'Password is required',
@@ -124,30 +127,35 @@ function Login() {
             </button>
           </div>
         </form>
-        <div className="relative mt-6 flex w-full items-center justify-center border border-t">
-          <div className="absolute bg-white px-5">Or</div>
-        </div>
-        <div className="mt-4 flex gap-x-2">
-          <a 
-            aria-label="Login with Google"
-            className="flex w-full items-center justify-center rounded-md border border-gray-600 p-2 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-            href={`${SERVER_URL}/oauth/google`}>
-              <FontAwesomeIcon
-                icon={faGoogle}
-                size={'lg'}
-              />
-          </a>
-          {/* <a 
-            aria-label="Login with Facebook"
-            className="flex w-full items-center justify-center rounded-md border border-gray-600 p-2 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-            href="http://localhost:3080/oauth/facebook">
-            <FontAwesomeIcon
-              icon={faFacebook} 
-              size={'lg'}
-            />
-          </a> */}
-        </div>
-
+        {showGoogleLogin && (
+          <>
+            <div className="relative mt-6 flex w-full items-center justify-center border border-t">
+              <div className="absolute bg-white px-5">Or</div>
+            </div>
+            <div className="mt-4 flex gap-x-2">
+            
+              <a 
+                aria-label="Login with Google"
+                className="flex w-full items-center justify-center rounded-md border border-gray-600 p-2 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
+                href={`${SERVER_URL}/oauth/google`}>
+                  <FontAwesomeIcon
+                    icon={faGoogle}
+                    size={'lg'}
+                  />
+              </a>
+          
+              {/* <a 
+                aria-label="Login with Facebook"
+                className="flex w-full items-center justify-center rounded-md border border-gray-600 p-2 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
+                href="http://localhost:3080/oauth/facebook">
+                <FontAwesomeIcon
+                  icon={faFacebook} 
+                  size={'lg'}
+                />
+              </a> */}
+            </div>
+          </>
+        )}
         <p className="mt-8 text-center text-xs font-light text-gray-700">
           {' '}
           Don't have an account?{' '}

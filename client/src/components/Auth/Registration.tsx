@@ -10,6 +10,7 @@ import {faGoogle} from '@fortawesome/free-brands-svg-icons';
 function Registration() {
 
   const SERVER_URL = import.meta.env.DEV ? import.meta.env.VITE_SERVER_URL_DEV : import.meta.env.VITE_SERVER_URL_PROD;
+  const showGoogleLogin = import.meta.env.VITE_SHOW_GOOGLE_LOGIN_OPTION === 'true';
 
   const navigate = useNavigate();
   const {
@@ -266,35 +267,39 @@ function Registration() {
               </a>
             </span>
           </div>
-          <div className="my-4 flex w-full items-center">
-            <hr className="w-full" />
-            <p className="px-3 ">OR</p>
-            <hr className="w-full" />
-          </div>
-          <div className="my-6 space-y-2">
-            <a
-              aria-label="Login with Google"
-              href={`${SERVER_URL}/oauth/google`}
-              className="flex w-full items-center justify-center space-x-3 rounded-md border p-2 focus:ring-2 focus:ring-violet-400 focus:ring-offset-1 dark:border-gray-400"
-            >
-              <FontAwesomeIcon
-                icon={faGoogle}
-                size={'lg'}
-              />
-              <p>Login with Google</p>
-            </a>
-            {/* <button
-              aria-label="Login with Facebook"
-              role="button"
-              className="flex w-full items-center justify-center space-x-3 rounded-md border p-4 focus:ring-2 focus:ring-violet-400 focus:ring-offset-1 dark:border-gray-400"
-            >
-              <FontAwesomeIcon
-                icon={faFacebook} 
-                size={'lg'}
-              />
-              <p>Login with Facebook</p>
-            </button> */}
-          </div>
+          {showGoogleLogin && (
+            <>
+              <div className="my-4 flex w-full items-center">
+                <hr className="w-full" />
+                <p className="px-3 ">OR</p>
+                <hr className="w-full" />
+              </div>
+              <div className="my-6 space-y-2">
+                  <a
+                    aria-label="Login with Google"
+                    href={`${SERVER_URL}/oauth/google`}
+                    className="flex w-full items-center justify-center space-x-3 rounded-md border p-2 focus:ring-2 focus:ring-violet-400 focus:ring-offset-1 dark:border-gray-400"
+                  >
+                    <FontAwesomeIcon
+                      icon={faGoogle}
+                      size={'lg'}
+                    />
+                    <p>Login with Google</p>
+                  </a>
+                {/* <button
+                  aria-label="Login with Facebook"
+                  role="button"
+                  className="flex w-full items-center justify-center space-x-3 rounded-md border p-4 focus:ring-2 focus:ring-violet-400 focus:ring-offset-1 dark:border-gray-400"
+                >
+                  <FontAwesomeIcon
+                    icon={faFacebook} 
+                    size={'lg'}
+                  />
+                  <p>Login with Facebook</p>
+                </button> */}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
