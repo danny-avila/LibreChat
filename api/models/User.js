@@ -166,7 +166,6 @@ userSchema.methods.comparePassword = function (candidatePassword, callback) {
   });
 };
 
-
 module.exports.hashPassword = async (password) => {
   const saltRounds = 10;
 
