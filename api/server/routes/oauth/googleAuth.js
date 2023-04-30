@@ -4,24 +4,30 @@ const passport = require('passport');
 const router = express.Router();
 
 router.get(
-  '/oauth/google',
+  '/google',
   passport.authenticate('google', {
-    scope: ['profile', 'email']
+    scope: ['openid', 'profile', 'email'],
+    session: false
   })
 );
-
-const clientUrl =
-  process.env.NODE_ENV === 'production' ? process.env.CLIENT_URL_PROD : process.env.CLIENT_URL_DEV;
+const isProduction = process.env.NODE_ENV === 'production';
+const clientUrl = isProduction ? process.env.CLIENT_URL_PROD : process.env.CLIENT_URL_DEV;
 
 router.get(
-  '/oauth/google/callback',
+  '/google/callback',
   passport.authenticate('google', {
-    failureRedirect: '/',
-    session: false
+    failureRedirect: `${clientUrl}/login`,
+    failureMessage: true,
+    session: false,
+    scope: ['openid', 'profile', 'email']
   }),
   (req, res) => {
-    const token = req.user.generateJWT();
-    res.cookie('x-auth-cookie', token);
+    const token = req.user.generateToken();
+    res.cookie('token', token, {
+      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
+      httpOnly: false,
+      secure: isProduction
+    });
     res.redirect(clientUrl);
   }
 );

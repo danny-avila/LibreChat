@@ -45,7 +45,7 @@ const userSchema = mongoose.Schema(
     password: {
       type: String,
       trim: true,
-      minlength: 6,
+      minlength: 8,
       maxlength: 60
     },
     avatar: {
@@ -197,10 +197,10 @@ module.exports.validateUser = (user) => {
     name: Joi.string().min(2).max(80).required(),
     username: Joi.string()
       .min(2)
-      .max(20)
+      .max(80)
       .regex(/^[a-zA-Z0-9_]+$/)
       .required(),
-    password: Joi.string().min(6).max(20).allow('').allow(null)
+    password: Joi.string().min(8).max(60).allow('').allow(null)
   };
 
   return Joi.validate(user, schema);

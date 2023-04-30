@@ -189,8 +189,8 @@ function Registration() {
                       message: 'Password must be at least 8 characters'
                     },
                     maxLength: {
-                      value: 40,
-                      message: 'Password must be less than 40 characters'
+                      value: 60,
+                      message: 'Password must be less than 60 characters'
                     }
                   })}
                   aria-invalid={!!errors.password}
@@ -219,10 +219,11 @@ function Registration() {
                   type="password"
                   id="confirm_password"
                   aria-label="Confirm Password"
-                  onPaste={e => {
-                    e.preventDefault();
-                    return false;
-                  }}
+                  // uncomment to prevent pasting in confirm field
+                  // onPaste={e => {
+                  //   e.preventDefault();
+                  //   return false;
+                  // }}
                   {...register('confirm_password', {
                     validate: value => value === password || 'Passwords do not match'
                   })}
@@ -240,12 +241,6 @@ function Registration() {
                 )}
               </div>
             </div>
-            <a
-              href="#"
-              className="text-xs text-indigo-600 hover:underline"
-            >
-              Forgot Password?
-            </a>
             <div className="mt-4 flex items-center">
               <button
                 disabled={!!errors.email || !!errors.name || !!errors.password || !!errors.username || !!errors.confirm_password}
@@ -268,15 +263,15 @@ function Registration() {
               </a>
             </span>
           </div>
-          {/* <div className="my-4 flex w-full items-center">
+          <div className="my-4 flex w-full items-center">
             <hr className="w-full" />
             <p className="px-3 ">OR</p>
             <hr className="w-full" />
           </div>
           <div className="my-6 space-y-2">
-            <button
+            <a
               aria-label="Login with Google"
-              type="button"
+              href="http://localhost:3080/oauth/google"
               className="flex w-full items-center justify-center space-x-3 rounded-md border p-2 focus:ring-2 focus:ring-violet-400 focus:ring-offset-1 dark:border-gray-400"
             >
               <FontAwesomeIcon
@@ -284,8 +279,8 @@ function Registration() {
                 size={'lg'}
               />
               <p>Login with Google</p>
-            </button>
-            <button
+            </a>
+            {/* <button
               aria-label="Login with Facebook"
               role="button"
               className="flex w-full items-center justify-center space-x-3 rounded-md border p-4 focus:ring-2 focus:ring-violet-400 focus:ring-offset-1 dark:border-gray-400"
@@ -295,8 +290,8 @@ function Registration() {
                 size={'lg'}
               />
               <p>Login with Facebook</p>
-            </button>
-          </div> */}
+            </button> */}
+          </div>
         </div>
       </div>
     </div>

@@ -43,6 +43,7 @@ function log({ title, parameters }) {
 }
 
 const router = express.Router();
+const isProduction = process.env.NODE_ENV === 'production';
 
 router.get('/user', requireJwtAuth, (req, res) => {
   res.status(200).send(req.user);
@@ -66,6 +67,11 @@ router.post('/login', requireLocalAuth, (req, res, next) => {
           res.status(500).json({ message: err.message });
         } else {
           //setTokenCookie(res, refreshToken);
+          res.cookie('token', token, {
+            expires: new Date(Date.now() + process.env.SESSION_EXPIRY),
+            httpOnly: false,
+            secure: isProduction
+          });
           const user = dbUser.toJSON();
           console.log("sending token, user => ", token, user)
           res.status(200).send({ token, user });

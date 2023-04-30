@@ -5,7 +5,6 @@ import {faFacebook} from '@fortawesome/free-brands-svg-icons';
 import {faGoogle} from '@fortawesome/free-brands-svg-icons';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useNavigate } from 'react-router-dom';
-// import { getLoginGoogle } from '~/data-provider';
 
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();
@@ -123,31 +122,29 @@ function Login() {
             </button>
           </div>
         </form>
-        {/* <div className="relative mt-6 flex w-full items-center justify-center border border-t">
+        <div className="relative mt-6 flex w-full items-center justify-center border border-t">
           <div className="absolute bg-white px-5">Or</div>
         </div>
         <div className="mt-4 flex gap-x-2">
-          <button
+          <a 
             aria-label="Login with Google"
-            type="button"
-            onClick={getLoginGoogle}
             className="flex w-full items-center justify-center rounded-md border border-gray-600 p-2 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-          >
-           <FontAwesomeIcon
-              icon={faGoogle}
-              size={'lg'}
-            />
-          </button>
-          <button 
-            type="button"
+            href="http://localhost:3080/oauth/google">
+              <FontAwesomeIcon
+                icon={faGoogle}
+                size={'lg'}
+              />
+          </a>
+          {/* <a 
             aria-label="Login with Facebook"
-            className="flex w-full items-center justify-center rounded-md border border-gray-600 p-2 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1">
+            className="flex w-full items-center justify-center rounded-md border border-gray-600 p-2 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
+            href="http://localhost:3080/oauth/facebook">
             <FontAwesomeIcon
               icon={faFacebook} 
               size={'lg'}
             />
-          </button>
-        </div> */}
+          </a> */}
+        </div>
 
         <p className="mt-8 text-center text-xs font-light text-gray-700">
           {' '}

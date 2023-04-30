@@ -1,5 +1,5 @@
 const passport = require('passport');
-const { Strategy: GoogleStrategy } = require('passport-google-oauth2');
+const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
 
 const User = require('../models/User');
 
@@ -14,13 +14,11 @@ const googleLogin = new GoogleStrategy(
     callbackURL: `${serverUrl}${process.env.GOOGLE_CALLBACK_URL}`,
     proxy: true
   },
-  async (accessToken, refreshToken, profile, done) => {
-    // console.log(profile);
+  async (accessToken, refreshToken, profile, cb) => {
     try {
-      const oldUser = await User.findOne({ email: profile.email });
-
+      const oldUser = await User.findOne({ email: profile.emails[0].value });
       if (oldUser) {
-        return done(null, oldUser);
+        return cb(null, oldUser);
       }
     } catch (err) {
       console.log(err);
@@ -28,14 +26,15 @@ const googleLogin = new GoogleStrategy(
 
     try {
       const newUser = await new User({
-        auth_provider: 'google',
+        provider: 'google',
         googleId: profile.id,
-        username: `user${profile.id}`,
-        email: profile.email,
-        name: profile.displayName,
-        avatar: profile.picture
+        username: profile.name.givenName + profile.name.familyName,
+        email: profile.emails[0].value,
+        emailVerified: profile.emails[0].verified,
+        name: `${profile.name.givenName} ${profile.name.familyName}`,
+        avatar: profile.photos[0].value
       }).save();
-      done(null, newUser);
+      cb(null, newUser);
     } catch (err) {
       console.log(err);
     }

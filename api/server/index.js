@@ -7,8 +7,6 @@ const cors = require('cors');
 const routes = require('./routes');
 const errorController = require('./controllers/errorController');
 const passport = require('passport');
-const cookieParser = require('cookie-parser');
-// const oauthRoutes = require('./routes/oauth');
 
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
@@ -22,28 +20,19 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
 
   const app = express();
   app.use(errorController);
-  app.use(cors());
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
-  app.use(cookieParser(process.env.COOKIE_SECRET));
   app.use(express.static(path.join(projectPath, 'dist')));
   app.set('trust proxy', 1); // trust first proxy
+  app.use(cors());
 
-  // Auth
   app.use(passport.initialize());
   require('../strategies/jwtStrategy');
   // require('../strategies/facebookStrategy');
-  // require('../strategies/googleStrategy');
+  require('../strategies/googleStrategy');
   require('../strategies/localStrategy');
 
   // ROUTES
-
-  /* chore: potential redirect error here, can only comment out this block; 
-    comment back in if using auth routes i guess */
-  // app.get('/', routes.authenticatedOrRedirect, function (req, res) {
-  //   console.log(path.join(projectPath, 'public', 'index.html'));
-  //   res.sendFile(path.join(projectPath, 'public', 'index.html'));
-  // });
 
   // api endpoint
   app.use('/api/search', routes.search);
@@ -55,17 +44,13 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use('/api/tokenizer', routes.tokenizer);
   app.use('/api/endpoints', routes.endpoints);
 
-  // user system
-  app.use('/auth', routes.auth);
-  app.use('/api/me', routes.me);
-
   // oauth
   app.use('/oauth', routes.localAuth);
-  // app.use('/oauth', routes.googleAuth);
+  app.use('/oauth', routes.googleAuth);
   // app.use('/oauth', routes.facebookAuth);
 
   // static files
-  app.get('/*', routes.authenticatedOrRedirect, function (req, res) {
+  app.get('/*', function (req, res) {
     res.sendFile(path.join(projectPath, 'dist', 'index.html'));
   });
 

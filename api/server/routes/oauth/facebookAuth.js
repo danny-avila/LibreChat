@@ -4,25 +4,30 @@ const passport = require('passport');
 const router = Router();
 
 router.get(
-  '/oauth/facebook',
+  '/facebook',
   passport.authenticate('facebook', {
-    scope: ['public_profile', 'email']
+    scope: ['public_profile', 'email'],
+    session: false
   })
 );
-
-const clientUrl =
-  process.env.NODE_ENV === 'production' ? process.env.CLIENT_URL_PROD : process.env.CLIENT_URL_DEV;
+const isProduction = process.env.NODE_ENV === 'production';
+const clientUrl = isProduction ? process.env.CLIENT_URL_PROD : process.env.CLIENT_URL_DEV;
 
 router.get(
-  '/oauth/facebook/callback',
+  '/facebook/callback',
   passport.authenticate('facebook', {
-    failureRedirect: '/',
-    session: false
+    failureRedirect: `${clientUrl}/login`,
+    failureMessage: true,
+    session: false,
+    scope: ['public_profile', 'email']
   }),
   (req, res) => {
-    // console.log(req.user);
-    const token = req.user.generateJWT();
-    res.cookie('x-auth-cookie', token);
+    const token = req.user.generateToken();
+    res.cookie('token', token, {
+      expires: new Date(Date.now() + process.env.SESSION_EXPIRY),
+      httpOnly: false,
+      secure: isProduction
+    });
     res.redirect(clientUrl);
   }
 );

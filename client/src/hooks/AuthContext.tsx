@@ -1,7 +1,15 @@
-import React, { useState, useEffect, useCallback, useMemo, ReactNode, createContext, useContext } from 'react';
-import { TUser, TLoginResponse, setTokenHeader } from '~/data-provider';
+import { useState, useEffect, useMemo, ReactNode, createContext, useContext } from 'react';
+import {
+  TUser,
+  TLoginResponse,
+  setTokenHeader,
+  useLoginUserMutation,
+  useLogoutUserMutation,
+  useGetUserQuery,
+  useRefreshTokenMutation,
+  TLoginUser
+} from '~/data-provider';
 import { useNavigate } from 'react-router-dom';
-import { useLoginUserMutation, useLogoutUserMutation, useGetUserQuery, useRefreshTokenMutation, TLoginUser } from '~/data-provider';
 import store from '~/store';
 
 export type TAuthContext = {
@@ -18,23 +26,23 @@ export type TUserContext = {
   user: TUser | undefined,
   token: string | undefined,
   isAuthenticated: boolean,
-  redirect?: string,
-}
+  redirect?: string
+};
 
-const AuthContext = createContext<TAuthContext | undefined>(undefined);
+const AuthContext = createContext <TAuthContext | undefined>(undefined);
 
 const AuthContextProvider = ({ children }: { children: ReactNode }) => {
-
-  const [user, setUser] = useState<TUser | undefined> (undefined);
-  const [token, setToken] = useState<string | undefined>(undefined);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [user, setUser] = useState<TUser | undefined>(undefined);
+  const [token, setToken] = useState <string | undefined>(undefined);
+  const [error, setError] = useState <string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
   const navigate = useNavigate();
+
   const loginUser = useLoginUserMutation();
   const logoutUser = useLogoutUserMutation();
-  const userQuery = useGetUserQuery({enabled: !!token});
+  const userQuery = useGetUserQuery({ enabled: !!token });
   const refreshToken = useRefreshTokenMutation();
 
   const { newConversation } = store.useConversation();
@@ -50,15 +58,20 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const getCookieValue = key => {
+    let keyValue = document.cookie.match('(^|;) ?' + key + '=([^;]*)(;|$)');
+    return keyValue ? keyValue[2] : null;
+  };
+
   const login = (data: TLoginUser) => {
     loginUser.mutate(data, {
       onSuccess: (data: TLoginResponse) => {
         const { user, token } = data;
-        console.log(data)
-       // document.cookie = `token=${token}; path=/; expires=${new Date(Date.now() + 1000 * 60 * 60 * 24).toUTCString()}`;
-       localStorage.setItem('token', token);
-       setUserContext({ user, token, isAuthenticated: true, redirect: '/chat/new' });
-       newConversation();
+        document.cookie = `token=${token}; path=/; expires=${new Date(
+          Date.now() + 1000 * 60 * 60 * 24
+        ).toUTCString()}`;
+        setUserContext({ user, token, isAuthenticated: true, redirect: '/chat/new' });
+        newConversation();
       },
       onError: error => {
         setError(error.message);
@@ -67,17 +80,17 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = () => {
-    // document.cookie.split(';').forEach(c => {
-    //   document.cookie = c
-    //     .replace(/^ +/, '')
-    //     .replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
-    // });
-     const localStorageKeys = Object.keys(localStorage);
-     localStorageKeys.forEach(key => {
-       if (key.includes('token')) {
-         localStorage.removeItem(key);
-       }
-     });
+    document.cookie.split(';').forEach(c => {
+      document.cookie = c
+        .replace(/^ +/, '')
+        .replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
+    });
+    //  const localStorageKeys = Object.keys(localStorage);
+    //  localStorageKeys.forEach(key => {
+    //    if (key.includes('token')) {
+    //      localStorage.removeItem(key);
+    //    }
+    //  });
     logoutUser.mutate(undefined, {
       onSuccess: () => {
         setUserContext({ user: undefined, token: undefined, isAuthenticated: false, redirect: '/login' });
@@ -89,13 +102,16 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    const localStorageToken = localStorage.getItem('token');
-    if(!token && localStorageToken) {
-      setToken(localStorageToken);
-      setTokenHeader(localStorageToken);
-      setIsAuthenticated(true);
+    if (!token || !isAuthenticated) {
+      const tokenFromCookie = getCookieValue('token');
+      console.log('tokenFromCookie', tokenFromCookie);
+      if (tokenFromCookie) {
+        setToken(tokenFromCookie);
+        setTokenHeader(tokenFromCookie);
+        setIsAuthenticated(true);
+      }
     }
-  }, [token]);
+  }, [token, isAuthenticated]);
 
   // const silentRefresh = useCallback(() => {
   //   refreshToken.mutate(undefined, {
@@ -110,25 +126,26 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   //   setTimeout(silentRefresh, 5 * 60 * 1000);
   // }, [setUserContext]);
 
-    useEffect(() => {
-      if (loginUser.isLoading || logoutUser.isLoading) {
-        setIsLoading(true);
-      } else {
-        setIsLoading(false);
-      }
-    }, [loginUser.isLoading, logoutUser.isLoading]);
+  useEffect(() => {
+    if (loginUser.isLoading || logoutUser.isLoading) {
+      setIsLoading(true);
+    } else {
+      setIsLoading(false);
+    }
+  }, [loginUser.isLoading, logoutUser.isLoading]);
 
-    useEffect(() => {
-      if (userQuery.data) {
-        setUser(userQuery.data);
-      } else if (userQuery.isError) {
-        navigate('/login');
-      }
-    }, [userQuery.data, userQuery.isError]);
-    // useEffect(() => {
-    //   if (token)
-    //   silentRefresh();
-    // }, [token, silentRefresh]);
+  useEffect(() => {
+    if (userQuery.data) {
+      setUser(userQuery.data);
+    } else if (userQuery.isError) {
+      navigate('/login');
+    }
+  }, [userQuery.data, userQuery.isError]);
+
+  // useEffect(() => {
+  //   if (token)
+  //   silentRefresh();
+  // }, [token, silentRefresh]);
 
   // Make the provider update only when it should
   const memoedValue = useMemo(
@@ -145,11 +162,7 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
     [user, isLoading, error, isAuthenticated, token]
   );
 
-  return (
-    <AuthContext.Provider value={memoedValue}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={memoedValue}>{children}</AuthContext.Provider>;
 };
 
 const useAuthContext = () => {
