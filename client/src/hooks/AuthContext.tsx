@@ -109,6 +109,9 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
         setTokenHeader(tokenFromCookie);
         setIsAuthenticated(true);
       }
+      else {
+        navigate('/login');
+      }
     }
   }, [token, isAuthenticated]);
 
