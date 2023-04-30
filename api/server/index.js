@@ -26,13 +26,17 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.set('trust proxy', 1); // trust first proxy
   app.use(cors());
 
+  // OAUTH
   app.use(passport.initialize());
   require('../strategies/jwtStrategy');
-  // require('../strategies/facebookStrategy');
-  require('../strategies/googleStrategy');
   require('../strategies/localStrategy');
-
-  // ROUTES
+  app.use('/oauth', routes.localAuth);
+  if(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    require('../strategies/googleStrategy');
+    app.use('/oauth', routes.googleAuth);
+  }
+  // require('../strategies/facebookStrategy');
+  // app.use('/oauth', routes.facebookAuth);
 
   // api endpoint
   app.use('/api/search', routes.search);
@@ -44,10 +48,7 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use('/api/tokenizer', routes.tokenizer);
   app.use('/api/endpoints', routes.endpoints);
 
-  // oauth
-  app.use('/oauth', routes.localAuth);
-  app.use('/oauth', routes.googleAuth);
-  // app.use('/oauth', routes.facebookAuth);
+
 
   // static files
   app.get('/*', function (req, res) {
