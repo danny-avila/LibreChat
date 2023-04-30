@@ -171,17 +171,20 @@ router.post('/register', async (req, res, next) => {
       });
 
       const token = newUser.generateToken();
-     // const refreshToken = newUser.generateRefreshToken();
-     // newUser.refreshToken.push({ refreshToken });
+      // const refreshToken = newUser.generateRefreshToken();
+      // newUser.refreshToken.push({ refreshToken });
 
       newUser.registerUser(newUser, (err, user) => {
         if (err) {
           res.status(500).json({ message: err.message });
         }
-        //TODO: send email verification
-        //on auto-login should check if email verified and display message to verify to continue to app
-       // setTokenCookie(res, refreshToken);
-        res.status(200).send({ token, user});
+        //send token for automatic login
+        res.cookie('token', token, {
+          expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
+          httpOnly: false,
+          secure: isProduction
+        });
+        res.status(200).send({ user });
       });
     } catch (err) {
       return next(err);
