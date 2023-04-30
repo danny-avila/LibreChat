@@ -133,15 +133,15 @@ function Login() {
               <div className="absolute bg-white px-5">Or</div>
             </div>
             <div className="mt-4 flex gap-x-2">
-            
               <a 
                 aria-label="Login with Google"
-                className="flex w-full items-center justify-center rounded-md border border-gray-600 p-2 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
+                className="flex w-full items-center justify-center space-x-3 rounded-md border border-gray-600 p-2 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
                 href={`${SERVER_URL}/oauth/google`}>
                   <FontAwesomeIcon
                     icon={faGoogle}
                     size={'lg'}
                   />
+                  <p>Login with Google</p>
               </a>
           
               {/* <a 
