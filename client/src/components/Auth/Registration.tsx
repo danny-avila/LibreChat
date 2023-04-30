@@ -228,10 +228,10 @@ function Registration() {
                   id="confirm_password"
                   aria-label="Confirm Password"
                   // uncomment to prevent pasting in confirm field
-                  // onPaste={e => {
-                  //   e.preventDefault();
-                  //   return false;
-                  // }}
+                  onPaste={e => {
+                    e.preventDefault();
+                    return false;
+                  }}
                   {...register('confirm_password', {
                     validate: value => value === password || 'Passwords do not match'
                   })}
