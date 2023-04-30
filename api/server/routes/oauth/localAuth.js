@@ -73,7 +73,6 @@ router.post('/login', requireLocalAuth, (req, res, next) => {
             secure: isProduction
           });
           const user = dbUser.toJSON();
-          console.log("sending token, user => ", token, user)
           res.status(200).send({ token, user });
         }
       });

@@ -9,9 +9,6 @@ function log({ title, parameters }) {
 }
 
 const requireLocalAuth = (req, res, next) => {
-  log({
-    title: 'Middleware: requireLocalAuth',
-  });
   passport.authenticate('local', (err, user, info) => {
     if (err) {
       log({
