@@ -24,7 +24,7 @@ router.get(
   (req, res) => {
     const token = req.user.generateToken();
     res.cookie('token', token, {
-      expires: new Date(Date.now() + process.env.SESSION_EXPIRY),
+      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
       httpOnly: false,
       secure: isProduction
     });

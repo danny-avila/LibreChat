@@ -68,7 +68,7 @@ router.post('/login', requireLocalAuth, (req, res, next) => {
         } else {
           //setTokenCookie(res, refreshToken);
           res.cookie('token', token, {
-            expires: new Date(Date.now() + process.env.SESSION_EXPIRY),
+            expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
             httpOnly: false,
             secure: isProduction
           });
