@@ -1,35 +1,21 @@
+const { prefix, suffix } = require('./instructions');
 const { LLMChain } = require('langchain/chains');
 const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
-const { ZeroShotAgent, AgentExecutor } = require('langchain/agents');
+const { ZeroShotAgent, AgentExecutor, ZeroShotAgentOutputParser } = require('langchain/agents');
 const {
   ChatPromptTemplate,
   SystemMessagePromptTemplate,
   HumanMessagePromptTemplate
 } = require('langchain/prompts');
 
-const initializeCustomAgent = async ({ tools, model, pastMessages, ...rest }) => {
+const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateString, ...rest }) => {
   const prompt = ZeroShotAgent.createPrompt(tools, {
-    prefix: `You are ChatGPT, a Large Language model with useful tools.
-
-    Talk to the human and provide meaningful answers when questions are asked.
+    prefix: `Assistant is a large language model trained by OpenAI.
+    Knowledge Cutoff: ${currentDateString}
+    Current date: ${currentDateString}
     
-    Use the tools when you need them, but use your own knowledge if you are confident of the answer. Keep answers short and concise.
-
-    A tool is not usually needed for creative requests, so do your best to answer them without tools.
-    
-    Avoid repeating identical answers if it appears before. Only fulfill the human's requests, do not create extra steps beyond what the human has asked for.
-
-    Read the chat history and observations carefully, they may contain the answer to the current question. Provide links when citing online sources.
-    
-    Be honest. If you can't answer something, or a tool is not appropriate, say you don't know or answer to the best of your ability.
-    
-    Attempt to fulfill the human's requests in as few actions as possible`,
-    // prefix: `As ChatGPT, provide concise, meaningful answers to questions. Use tools when needed, but rely on your knowledge when confident. Avoid repeating previous answers, focus on fulfilling the human's requests without extra steps. Examine chat history and observations, as they may contain answers. Be honest, and aim to fulfill requests efficiently.`,
-
-    suffix: `Remember, all your responses MUST be in the format described. Do not respond unless it's in the format described.
-    
-    Don't forget to use the structure of Action, Action Input, etc.`,
-    // suffix: `Ensure all responses follow the specified format. Respond only if adhering to the Action, Action Input structure, etc.`,
+    ${prefix}`,
+    suffix,
     inputVariables: ['input', 'chat_history', 'agent_scratchpad']
   });
 
@@ -38,9 +24,39 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, ...rest }) =>
   const chatPrompt = ChatPromptTemplate.fromPromptMessages([
     new SystemMessagePromptTemplate(prompt),
     HumanMessagePromptTemplate.fromTemplate(`{chat_history}
-    Question: {input}
+    User query: {input}
     {agent_scratchpad}`)
   ]);
+
+  class CustomOutputParser extends ZeroShotAgentOutputParser {
+    constructor(fields) {
+      super(fields);
+    }
+
+    async parse(text) {
+      if (text.includes(this.finishToolName)) {
+        const parts = text.split(this.finishToolName);
+        const output = parts[parts.length - 1].trim();
+        return {
+          returnValues: { output },
+          log: text
+        };
+      }
+      const match = /Action: (.*)\nAction Input: (.*)/s.exec(text);
+      if (!match) {
+        const output = text.replace(/[tT]hought:/, '').split('\n')[0].trim();
+        return {
+          returnValues: { output: `Thought: ${output}` },
+          log: text
+        };
+      }
+      return {
+        tool: match[1].trim(),
+        toolInput: match[2].trim().replace(/^"+|"+$/g, '') ?? '',
+        log: text
+      };
+    }
+  }
 
   const memory = new BufferMemory({
     chatHistory: new ChatMessageHistory(pastMessages),
@@ -59,6 +75,7 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, ...rest }) =>
 
   const agent = new ZeroShotAgent({
     llmChain,
+    outputParser: new CustomOutputParser(),
     allowedTools: tools.map((tool) => tool.name)
   });
 

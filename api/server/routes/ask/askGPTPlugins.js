@@ -3,9 +3,9 @@ const router = express.Router();
 const { titleConvo } = require('../../../app/');
 const { getOpenAIModels } = require('../endpoints');
 const ChatAgent = require('../../../app/langchain/agent');
-const validateTools = require('../../../app/langchain/validateTools');
+const { validateTools } = require('../../../app/langchain/tools');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress, formatSteps } = require('./handlers');
+const { handleError, sendMessage, createOnProgress, formatSteps, formatAction } = require('./handlers');
 
 router.post('/', async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId } = req.body;
@@ -16,7 +16,7 @@ router.post('/', async (req, res) => {
 
   // build endpoint option
   const endpointOption = {
-    model: req.body?.model ?? 'gpt-3.5-turbo'
+    model: req.body?.model ?? 'gpt-4',
     // chatGptLabel: req.body?.chatGptLabel ?? null,
     // promptPrefix: req.body?.promptPrefix ?? null,
     // temperature: req.body?.temperature ?? 1,
@@ -62,6 +62,13 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
   let responseMessageId;
   let lastSavedTimestamp = 0;
 
+  const plugin = {
+    loading: true,
+    inputs: [],
+    latest: null,
+    outputs: null
+  };
+
   try {
     const getIds = (data) => {
       userMessage = data.userMessage;
@@ -72,10 +79,14 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       }
     };
 
-    // const { onProgress: progressCallback, getPartialText } = createOnProgress({
-    const { onProgress: progressCallback } = createOnProgress({
+    const { onProgress: progressCallback, sendIntermediateMessage } = createOnProgress({
       onProgress: ({ text: partialText }) => {
         const currentTimestamp = Date.now();
+
+        if (plugin.loading === true) {
+          plugin.loading = false;
+        }
+
         if (currentTimestamp - lastSavedTimestamp > 500) {
           lastSavedTimestamp = currentTimestamp;
           saveMessage({
@@ -89,42 +100,37 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
             error: false
           });
         }
-      }
+      },
     });
 
     const abortController = new AbortController();
 
     const chatAgent = new ChatAgent(process.env.OPENAI_KEY, {
-      tools: validateTools(endpointOption?.tools || ['calculator', 'google', 'browser'])
-      // modelOptions: {
-      //   model: 'gpt-4'
-      // }
+      // tools: validateTools(endpointOption?.tools || ['calculator', 'dall-e',]),
+      tools: validateTools(endpointOption?.tools || ['google', 'browser',]),
+      // debug: true,
+      modelOptions: {
+        // model: 'gpt-3.5-turbo',
+        ...endpointOption,
+      }
     });
 
     const onAgentAction = (action) => {
-      const capitalizeWords = (input) =>
-        input
-          .replace(/-/g, ' ')
-          .split(' ')
-          .map((word) => word.charAt(0).toUpperCase() + word.slice(1));
-
-      const plugin = {
-        plugin: capitalizeWords(action.tool) || action.tool,
-        input: action.toolInput,
-        thought: action.includes('Thought: ')
-          ? action.log.split('\n')[0].replace('Thought: ', '')
-          : action.log.split('\n')[0]
-      };
-
-      sendMessage(res, plugin, 'plugin');
+      const formattedAction = formatAction(action);
+      plugin.inputs.push(formattedAction);
+      plugin.latest = formattedAction.plugin;
+      saveMessage(userMessage);
+      sendIntermediateMessage(res, { plugin });
+      // console.log('PLUGIN ACTION', formattedAction);
     };
-
+    
     const onChainEnd = (data) => {
       let { intermediateSteps: steps } = data;
-
-      sendMessage(res, {
-        steps: steps && steps[0].action ? formatSteps(steps) : 'An error occurred.'
-      }, 'pluginend');
+      plugin.outputs = steps && steps[0].action ? formatSteps(steps) : 'An error occurred.';
+      plugin.loading = false;
+      saveMessage(userMessage);
+      sendIntermediateMessage(res, { plugin });
+      // console.log('CHAIN END', plugin.outputs);
     }
 
     let response = await chatAgent.sendMessage(text, {
@@ -134,15 +140,15 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       conversationId,
       onAgentAction,
       onChainEnd,
-      onProgress: progressCallback.call(null, { res, text, parentMessageId: userMessageId }),
+      onProgress: progressCallback.call(null, { res, text, plugin, parentMessageId: userMessageId }),
       abortController,
-      ...endpointOption
     });
 
-    console.log('CLIENT RESPONSE');
-    console.dir(response, { depth: null });
+    // console.log('CLIENT RESPONSE');
+    // console.dir(response, { depth: null });
+    response.plugin = { ...plugin, loading: false };
+    await saveMessage(response);
 
-    // STEP1 generate response message
     sendMessage(res, {
       title: await getConvoTitle(req?.session?.user?.username, conversationId),
       final: true,

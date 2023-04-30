@@ -26,12 +26,12 @@ const MessageHeader = ({ isSearchView = false }) => {
   const plugins = (
     <>
       Plugins{' '}
-      <span class="py-0.25 ml-1 rounded bg-blue-200 px-1 text-[10px] font-semibold uppercase text-[#4559A4]">
+      <span className="py-0.25 ml-1 rounded bg-blue-200 px-1 text-[10px] font-semibold uppercase text-[#4559A4]">
         alpha
       </span>
-      <span class="px-1">•</span>
+      <span className="px-1">•</span>
       Model: {model}
-      <span class="px-1">•</span>
+      <span className="px-1">•</span>
       <div>Enabled plugins:</div>
     </>
   );

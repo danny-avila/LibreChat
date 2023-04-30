@@ -15,7 +15,7 @@ export default function MessageHandler() {
   const { refreshConversations } = store.useConversations();
 
   const messageHandler = (data, submission) => {
-    const { messages, message, initialResponse, isRegenerate = false } = submission;
+    const { messages, message, plugin, initialResponse, isRegenerate = false } = submission;
 
     if (isRegenerate) {
       setMessages([
@@ -25,6 +25,7 @@ export default function MessageHandler() {
           text: data,
           parentMessageId: message?.overrideParentMessageId,
           messageId: message?.overrideParentMessageId + '_',
+          plugin: plugin ? plugin : null,
           submitting: true,
           // unfinished: true
         }
@@ -38,6 +39,7 @@ export default function MessageHandler() {
           text: data,
           parentMessageId: message?.messageId,
           messageId: message?.messageId + '_',
+          plugin: plugin ? plugin : null,
           submitting: true,
           // unfinished: true
         }
@@ -206,10 +208,11 @@ export default function MessageHandler() {
         console.log('created', message);
       } else {
         let text = data.text || data.response;
-        if (data.initial) console.log(data);
+        let { initial, plugin } = data;
+        if (initial) console.log(data);
 
         if (data.message) {
-          messageHandler(text, { ...submission, message });
+          messageHandler(text, { ...submission, plugin, message });
         }
       }
     };

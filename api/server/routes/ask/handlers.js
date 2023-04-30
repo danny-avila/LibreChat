@@ -26,7 +26,7 @@ const createOnProgress = ({ onProgress: _onProgress }) => {
   let codeBlock = false;
   let cursor = cursorDefault;
 
-  const progressCallback = async (partial, { res, text, bing = false, ...rest }) => {
+  const progressCallback = async (partial, { res, text, plugin, bing = false, ...rest }) => {
     let chunk = partial === text ? '' : partial;
     tokens += chunk;
     precode += chunk;
@@ -64,10 +64,17 @@ const createOnProgress = ({ onProgress: _onProgress }) => {
       tokens = citeText(tokens, true);
     }
 
-    sendMessage(res, { text: tokens + cursor, message: true, initial: i === 0, ...rest });
+    const payload = { text: tokens, message: true, initial: i === 0, ...rest };
+    if (plugin) {
+      payload.plugin = plugin;
+    }
+    sendMessage(res, { ...payload, text: tokens + cursor });
+    _onProgress && _onProgress(payload);
+    i++;
+  };
 
-    _onProgress && _onProgress({ text: tokens, message: true, initial: i === 0, ...rest });
-
+  const sendIntermediateMessage = (res, payload) => {
+    sendMessage(res, { text: tokens + cursor, message: true, initial: i === 0, ...payload });
     i++;
   };
 
@@ -79,7 +86,7 @@ const createOnProgress = ({ onProgress: _onProgress }) => {
     return tokens;
   };
 
-  return { onProgress, getPartialText };
+  return { onProgress, getPartialText, sendIntermediateMessage };
 };
 
 const handleText = async (response, bing = false) => {
@@ -102,14 +109,39 @@ const handleText = async (response, bing = false) => {
 function formatSteps(steps) {
   let output = '';
 
-  for (const step of steps) {
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
     const actionInput = step.action.toolInput;
     const observation = step.observation;
 
-    output += `Input: ${actionInput}\nOutput: ${observation}\n---\n`;
+    output += `Input: ${actionInput}\nOutput: ${observation}`;
+
+    if (steps.length > 1 && i !== steps.length - 1) {
+      output += '\n---\n';
+    }
   }
 
   return output;
 }
 
-module.exports = { handleError, sendMessage, createOnProgress, handleText, formatSteps };
+function formatAction(action) {
+  const capitalizeWords = (input) =>
+    input
+      .replace(/-/g, ' ')
+      .split(' ')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+
+  const formattedAction = {
+    plugin: capitalizeWords(action.tool) || action.tool,
+    input: action.toolInput,
+    thought: action.log.includes('Thought: ')
+      ? action.log.split('\n')[0].replace('Thought: ', '')
+      : action.log.split('\n')[0]
+  };
+  formattedAction.inputStr = `{\n\tplugin: ${formattedAction.plugin}\n\tinput: ${formattedAction.input}\n\tthought: ${formattedAction.thought}\n}`;
+
+  return formattedAction;
+}
+
+module.exports = { handleError, sendMessage, createOnProgress, handleText, formatSteps, formatAction };

@@ -3,17 +3,11 @@ const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = requ
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
 const { Agent, ProxyAgent } = require('undici');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
-const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
 const { CallbackManager } = require('langchain/callbacks');
-const { ZapierToolKit } = require('langchain/agents');
-const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
-const { Calculator } = require('langchain/tools/calculator');
-const { WebBrowser } = require('langchain/tools/webbrowser');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
-// const { HumanTool } = require('./tools/HumanTool');
-const GoogleSearchAPI = require('./tools/googleSearch');
 const { initializeCustomAgent } = require('./customAgent');
 const { getMessages, saveMessage, saveConvo } = require('../../models');
+const { availableTools, SelfReflectionTool } = require('./tools');
 
 const FORMAT_INSTRUCTIONS = `Remember, all your responses MUST be in the format described. Do not respond unless it's in the format described, using the structure of Action, Action Input, etc.`;
 
@@ -29,7 +23,7 @@ class CustomChatAgent {
   }
 
   getActions(input = null) {
-    let output = 'Actions taken:\n';
+    let output = 'Internal actions taken:\n';
     let actions = input || this.actions;
 
     if (actions[0]?.action) {
@@ -51,7 +45,7 @@ class CustomChatAgent {
   buildErrorInput(message, errorMessage) {
     const log = errorMessage.includes('Could not parse LLM output:')
       ? `A formatting error occurred with your response to the human's last message. You didn't follow the formatting instructions. Remember to ${FORMAT_INSTRUCTIONS}`
-      : `You encountered an error while replying to the human's last message. Please try again.\nError: ${errorMessage}`;
+      : `You encountered an error while replying to the human's last message. Attempt to answer again or admit an answer cannot be given.\nError: ${errorMessage}`;
 
     return `
       ${log}
@@ -63,29 +57,28 @@ class CustomChatAgent {
   }
 
   buildPromptPrefix(result) {
-    const currentDateString = new Date().toLocaleDateString('en-us', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
+    if (result.output && result.output.includes('N/A')) {
+      return null;
+    }
+
+    const internalActions =
+      result?.intermediateSteps?.length > 0
+        ? this.getActions(result.intermediateSteps)
+        : 'Internal Actions Taken: None';
+
+    const toolBasedInstructions = internalActions.toLowerCase().includes('image')
+      ? 'Do your best to include image URLs from your observations with Markdown syntax: ![URL]'
+      : '';
 
     const errorMessage = result.errorMessage
       ? `\nYou encountered an error in attempting a response. The user is not aware of the error so you shouldn't mention it.\nReview the actions taken carefully in case there is a partial or complete answer within them.\nError Message: ${result.errorMessage}\n`
       : '';
 
-    return `As ChatGPT, review the answer you generated using plugins. The answer hasn't been sent to the user yet.${errorMessage}
-
-${
-  result.intermediateSteps || result.intermediateSteps.length > 0
-    ? this.getActions(result.intermediateSteps)
-    : 'None'
-}
-
-    Answer: ${result.output.trim()}
-    
-    Review if the answer is accurate or appropriate. Compile a new answer based on your preliminary answer, actions, thoughts. and observations; if there is an error, attempt to answer again or admit an answer cannot be given. 
-    Do your best to cite sources if you are using any web links. Always maintain a conversational tone.
-    Current date: ${currentDateString}${this.endToken}\n\n`;
+    return `As ChatGPT, review the answer you generated using plugins. The answer hasn't been sent to the user yet.${errorMessage}\n${internalActions}\n
+    Preliminary Answer: "${result.output.trim()}"\n
+    Review if the answer is accurate, appropriate, or can be improved. Compile a new answer based on your preliminary answer, internal actions, thoughts, and observations, making improvements wherever possible.
+    Always maintain a conversational tone. Do your best to cite sources if you are using any web links. ${toolBasedInstructions}
+    Current date: ${this.currentDateString}${this.endToken}\n\n`;
   }
 
   setOptions(options) {
@@ -99,7 +92,7 @@ ${
       // now we can merge options
       this.options = {
         ...this.options,
-        ...options,
+        ...options
       };
     } else {
       this.options = options;
@@ -218,7 +211,7 @@ ${
                 return;
               }
               if (debug) {
-                console.debug(response);
+                // console.debug(response);
               }
               let error;
               try {
@@ -329,7 +322,7 @@ ${
     this.actions.push(action);
   }
 
-  async initialize(conversationId) {
+  async initialize(conversationId, { onAgentAction, onChainEnd }) {
     // TO DO: need to initialize by user
     const model = new ChatOpenAI({
       openAIApiKey: this.openAIApiKey,
@@ -337,32 +330,25 @@ ${
       // model: 'gpt-4',
     });
 
-    this.availableTools = {
-      calculator: () => new Calculator(),
-      google: () => new GoogleSearchAPI(),
-      browser: () => new WebBrowser({ model, embeddings: new OpenAIEmbeddings() }),
-      serpapi: () =>
-        new SerpAPI(process.env.SERPAPI_API_KEY || '', {
-          location: 'Austin,Texas,United States',
-          hl: 'en',
-          gl: 'us'
-        }),
-      zapier: () => {
-        const zapier = new ZapierNLAWrapper({
-          apiKey: process.env.ZAPIER_NLA_API_KEY || ''
-        });
-
-        return ZapierToolKit.fromZapierNLAWrapper(zapier);
-      }
-    };
+    this.currentDateString = new Date().toLocaleDateString('en-us', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+    this.availableTools = availableTools({ model });
 
     // load tools
-    this.options.tools.forEach((tool) => {
+    this.tools = [new SelfReflectionTool()];
+
+    for (const tool of this.options.tools) {
       const validTool = this.availableTools[tool];
-      if (validTool) {
+
+      if (tool === 'plugins') {
+        this.tools = [...this.tools, ...(await validTool())];
+      } else if (validTool) {
         this.tools.push(validTool());
       }
-    });
+    }
 
     const pastMessages = await this.loadHistory(conversationId, this.options?.parentMessageId);
 
@@ -382,16 +368,20 @@ ${
       tools: this.tools,
       model,
       pastMessages,
+      currentDateString: this.currentDateString,
       verbose: this.options.debug,
       returnIntermediateSteps: true,
       callbackManager: CallbackManager.fromHandlers({
         async handleAgentAction(action) {
-          console.log('handleAgentAction ------>', action);
-          handleAction(action);
+          // console.log('handleAgentAction ------>', action);
+          handleAction(action, onAgentAction);
         },
         async handleChainEnd(action) {
-          console.log('handleChainEnd ------>\n\n', action);
-        },
+          // console.log('handleChainEnd ------>\n\n', action);
+          if (typeof onChainEnd === 'function') {
+            onChainEnd(action);
+          }
+        }
       })
     });
 
@@ -457,13 +447,15 @@ ${
     if (opts && typeof opts === 'object') {
       this.setOptions(opts);
     }
+    console.log('sendMessage', message, opts);
 
     const user = opts.user || null;
+    const { onAgentAction, onChainEnd } = opts;
     const conversationId = opts.conversationId || crypto.randomUUID();
     const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
     const userMessageId = crypto.randomUUID();
     const responseMessageId = crypto.randomUUID();
-    await this.initialize(conversationId, user);
+    await this.initialize(conversationId, { user, onAgentAction, onChainEnd });
 
     // let conversation = await this.conversationsCache.get(conversationId);
     // let isNewConversation = false;
@@ -484,7 +476,7 @@ ${
       text: message,
       isCreatedByUser: true
     };
-    
+
     if (typeof opts?.getIds === 'function') {
       opts.getIds({
         userMessage,
@@ -492,12 +484,12 @@ ${
         responseMessageId
       });
     }
-    
+
     await this.saveMessageToDatabase(userMessage, user);
 
     let result = {};
     let errorMessage = '';
-    const maxAttempts = 3;
+    const maxAttempts = 2;
 
     for (let attempts = 1; attempts <= maxAttempts; attempts++) {
       const errorInput = this.buildErrorInput(message, errorMessage);
@@ -537,11 +529,7 @@ ${
       promptPrefix
     };
 
-    const finalReply = await this.sendApiMessage(
-      this.currentMessages,
-      userMessage,
-      opts
-    );
+    const finalReply = await this.sendApiMessage(this.currentMessages, userMessage, opts);
 
     const responseMessage = {
       messageId: responseMessageId,
@@ -588,12 +576,7 @@ ${
       }
       promptPrefix = `${this.startToken}Instructions:\n${promptPrefix}`;
     } else {
-      const currentDateString = new Date().toLocaleDateString('en-us', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
-      promptPrefix = `${this.startToken}Instructions:\nYou are ChatGPT, a large language model trained by OpenAI. Respond conversationally.\nCurrent date: ${currentDateString}${this.endToken}\n\n`;
+      promptPrefix = `${this.startToken}Instructions:\nYou are ChatGPT, a large language model trained by OpenAI. Respond conversationally.\nCurrent date: ${this.currentDateString}${this.endToken}\n\n`;
     }
 
     const promptSuffix = `${this.startToken}${this.chatGptLabel}:\n`; // Prompt ChatGPT to respond.

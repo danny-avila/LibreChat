@@ -1,7 +1,7 @@
 require('dotenv').config();
 const connectDb = require('../../lib/db/connectDb');
 const ChatAgent = require('./agent');
-const validateTools = require('./validateTools');
+const { validateTools } = require('./tools');
 
 (async () => {
   await connectDb();
