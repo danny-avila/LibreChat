@@ -8,6 +8,9 @@ import {faGoogle} from '@fortawesome/free-brands-svg-icons';
 
 
 function Registration() {
+
+  const SERVER_URL = import.meta.env.DEV ? import.meta.env.VITE_SERVER_URL_DEV : import.meta.env.VITE_SERVER_URL_PROD;
+
   const navigate = useNavigate();
   const {
     register,
@@ -271,7 +274,7 @@ function Registration() {
           <div className="my-6 space-y-2">
             <a
               aria-label="Login with Google"
-              href="http://localhost:3080/oauth/google"
+              href={`${SERVER_URL}/oauth/google`}
               className="flex w-full items-center justify-center space-x-3 rounded-md border p-2 focus:ring-2 focus:ring-violet-400 focus:ring-offset-1 dark:border-gray-400"
             >
               <FontAwesomeIcon

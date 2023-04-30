@@ -104,7 +104,6 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!token || !isAuthenticated) {
       const tokenFromCookie = getCookieValue('token');
-      console.log('tokenFromCookie', tokenFromCookie);
       if (tokenFromCookie) {
         setToken(tokenFromCookie);
         setTokenHeader(tokenFromCookie);

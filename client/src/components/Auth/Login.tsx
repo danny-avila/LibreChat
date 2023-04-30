@@ -20,6 +20,8 @@ function Login() {
     navigate('/chat/new');
   };
 
+  const SERVER_URL = import.meta.env.DEV ? import.meta.env.VITE_SERVER_URL_DEV : import.meta.env.VITE_SERVER_URL_PROD;
+
   return (
     <div className="relative flex min-h-screen flex-col justify-center overflow-hidden">
       <div className="m-auto w-1/2 rounded-md bg-white p-6 shadow-xl lg:max-w-xl">
@@ -129,7 +131,7 @@ function Login() {
           <a 
             aria-label="Login with Google"
             className="flex w-full items-center justify-center rounded-md border border-gray-600 p-2 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-            href="http://localhost:3080/oauth/google">
+            href={`${SERVER_URL}/oauth/google`}>
               <FontAwesomeIcon
                 icon={faGoogle}
                 size={'lg'}
