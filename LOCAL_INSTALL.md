@@ -118,7 +118,7 @@ the provided docker-compose file:
 
    ```shell
    docker build `
-     --target=node-api ` 
+     --target=node-api `
      -t node-api `
      .
    ```
