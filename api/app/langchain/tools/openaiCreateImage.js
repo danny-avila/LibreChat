@@ -27,7 +27,8 @@ class OpenAICreateImage extends Tool {
       throw new Error(`No image URL returned from OpenAI API.`);
     }
 
-    return `![${input.replace(/\n/g, '')}](${theImageUrl})`;
+    // return `![${input.replace(/\n/g, '')}](${theImageUrl})`;
+    return `![generated-image](${theImageUrl})`;
   }
 }
 

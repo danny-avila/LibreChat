@@ -125,12 +125,17 @@ function formatSteps(steps) {
 }
 
 function formatAction(action) {
-  const capitalizeWords = (input) =>
-    input
+  const capitalizeWords = (input) => {
+    if (input === 'dall-e') {
+      return 'DALL-E';
+    }
+
+    return input
       .replace(/-/g, ' ')
       .split(' ')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
+  }
 
   const formattedAction = {
     plugin: capitalizeWords(action.tool) || action.tool,
@@ -139,7 +144,12 @@ function formatAction(action) {
       ? action.log.split('\n')[0].replace('Thought: ', '')
       : action.log.split('\n')[0]
   };
-  formattedAction.inputStr = `{\n\tplugin: ${formattedAction.plugin}\n\tinput: ${formattedAction.input}\n\tthought: ${formattedAction.thought}\n}`;
+
+  if (action.tool === 'self-reflection') {
+    formattedAction.inputStr = `{\n\tthoughts: ${formattedAction.input}${!formattedAction.thought.includes(formattedAction.input) ? ' - ' + formattedAction.thought : ''}\n}`;
+  } else {
+    formattedAction.inputStr = `{\n\tplugin: ${formattedAction.plugin}\n\tinput: ${formattedAction.input}\n\tthought: ${formattedAction.thought}\n}`;
+  }
 
   return formattedAction;
 }

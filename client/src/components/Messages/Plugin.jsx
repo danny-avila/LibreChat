@@ -23,8 +23,27 @@ export default function Plugin({ plugin }) {
   const [loading, setLoading] = useState(plugin.loading);
   const finished = plugin.outputs && plugin.outputs.length > 0;
 
+  if (!plugin.latest || (plugin.latest && plugin.latest.toLowerCase() === 'n/a')) {
+    return null;
+  }
+
   if (finished && loading) {
     setLoading(false);
+  }
+
+  const generateStatus = () => {
+    if (!loading && plugin.latest === 'Self Reflection') {
+      return 'Finished';
+    } else if (plugin.latest === 'Self Reflection') {
+      return 'I\'m  thinking...';
+     } else {
+      return (
+        <>
+        {loading ? 'Using' : 'Used'} <b>{plugin.latest}</b>
+        {loading ? '...' : ''}
+        </>
+      )
+    }
   }
 
   return (
@@ -41,8 +60,7 @@ export default function Plugin({ plugin }) {
               <div>
                 <div className="flex items-center gap-3">
                   <div>
-                    {loading ? 'Using' : 'Used'} <b>{plugin.latest || 'None'}</b>
-                    {loading ? '...' : ''}
+                    {generateStatus()}
                   </div>
                 </div>
               </div>
@@ -75,38 +93,4 @@ export default function Plugin({ plugin }) {
       </Disclosure>
     </div>
   );
-}
-
-{
-  /* 
-
-<div class="flex items-center rounded bg-green-100 p-3 text-sm text-gray-900">
-  <div>
-    <div class="flex items-center gap-3">
-      <div>
-        Using <b>Wolfram</b>...
-      </div>
-    </div>
-  </div>
-<Spinner />
-  <div
-    class="ml-12 flex items-center gap-2"
-    role="button"
-  >
-    <svg
-      stroke="currentColor"
-      fill="none"
-      stroke-width="2"
-      viewBox="0 0 24 24"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      class="h-4 w-4"
-      height="1em"
-      width="1em"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <polyline points="18 15 12 9 6 15"></polyline>
-    </svg>
-  </div>
-</div>; */
 }

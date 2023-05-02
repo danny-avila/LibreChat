@@ -67,7 +67,7 @@ class CustomChatAgent {
         : 'Internal Actions Taken: None';
 
     const toolBasedInstructions = internalActions.toLowerCase().includes('image')
-      ? 'Do your best to include image URLs from your observations with Markdown syntax: ![URL]'
+      ? 'Do your best to include image URLs from above with Markdown syntax: ![alt-text](URL)'
       : '';
 
     const errorMessage = result.errorMessage
@@ -162,7 +162,7 @@ class CustomChatAgent {
     if (!abortController) {
       abortController = new AbortController();
     }
-    const modelOptions = { ...this.modelOptions, temperature: 1 };
+    const modelOptions = { ...this.modelOptions, temperature: 0.8 };
     if (typeof onProgress === 'function') {
       modelOptions.stream = true;
     }
@@ -244,7 +244,7 @@ class CustomChatAgent {
             },
             onmessage(message) {
               if (debug) {
-                console.debug(message);
+                // console.debug(message);
               }
               if (!message.data || message.event === 'ping') {
                 return;
@@ -412,9 +412,7 @@ class CustomChatAgent {
           if (!token) {
             return;
           }
-          if (this.options.debug) {
-            console.debug(token);
-          }
+
           if (token === this.endToken) {
             return;
           }

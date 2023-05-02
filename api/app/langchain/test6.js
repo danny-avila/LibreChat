@@ -10,11 +10,11 @@ const { validateTools } = require('./tools');
     tools: validateTools(['dall-e']),
     debug: true,
     modelOptions: {
-      // model: 'gpt-4',
+      model: 'gpt-4',
     },
   });
 
-  const input1 = `Write me a poem in the style of Hemingway and then generate an image based on it.`;
+  const input1 = `Write me a poem in the style of Ezra Pound and then generate an image based on it.`;
   // const input1 = `Write me a weather report for today's weather in NYC.`;
   const output1 = await chatAgent.sendMessage(input1);
 

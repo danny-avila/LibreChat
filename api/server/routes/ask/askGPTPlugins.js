@@ -106,9 +106,9 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     const abortController = new AbortController();
 
     const chatAgent = new ChatAgent(process.env.OPENAI_KEY, {
-      // tools: validateTools(endpointOption?.tools || ['calculator', 'dall-e',]),
-      tools: validateTools(endpointOption?.tools || ['google', 'browser',]),
-      // debug: true,
+      tools: validateTools(endpointOption?.tools || ['dall-e']),
+      // tools: validateTools(endpointOption?.tools || ['google', 'browser',]),
+      debug: true,
       modelOptions: {
         // model: 'gpt-3.5-turbo',
         ...endpointOption,

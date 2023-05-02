@@ -10,11 +10,7 @@ const {
 
 const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateString, ...rest }) => {
   const prompt = ZeroShotAgent.createPrompt(tools, {
-    prefix: `Assistant is a large language model trained by OpenAI.
-    Knowledge Cutoff: ${currentDateString}
-    Current date: ${currentDateString}
-    
-    ${prefix}`,
+    prefix: `Assistant is a large language model trained by OpenAI.\nKnowledge Cutoff: ${currentDateString}\nCurrent date: ${currentDateString}\n\n${prefix}`,
     suffix,
     inputVariables: ['input', 'chat_history', 'agent_scratchpad']
   });
@@ -24,7 +20,7 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateSt
   const chatPrompt = ChatPromptTemplate.fromPromptMessages([
     new SystemMessagePromptTemplate(prompt),
     HumanMessagePromptTemplate.fromTemplate(`{chat_history}
-    User query: {input}
+    Query: {input}
     {agent_scratchpad}`)
   ]);
 
@@ -62,8 +58,8 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateSt
     chatHistory: new ChatMessageHistory(pastMessages),
     // returnMessages: true, // commenting this out retains memory
     memoryKey: 'chat_history',
-    humanPrefix: 'Human',
-    aiPrefix: 'AI',
+    humanPrefix: 'User',
+    aiPrefix: 'Assistant',
     inputKey: 'input',
     outputKey: 'output'
   });
