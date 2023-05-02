@@ -10,7 +10,7 @@ class OpenAICreateImage extends Tool {
       apiKey: process.env.OPENAI_API_KEY,
     }));
     this.name = 'dall-e';
-    this.description = `Generate images with 'dall-e'. Your input should exclusively be the description of the image you would like to generate`;
+    this.description = `You can generate images with 'dall-e'. Your input should exclusively be the description of the image you would like to generate`;
   }
 
   async _call(input) {
