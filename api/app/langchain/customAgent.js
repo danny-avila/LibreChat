@@ -45,7 +45,8 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateSt
           log: text
         };
       }
-      const match = /Action: (.*)\nAction Input: (.*)/s.exec(text);
+      // const match = /Action: (.*)\nAction Input: (.*)/s.exec(text); // old
+      const match = /Action: ([\s\S]*?)(?:\nAction Input: ([\s\S]*?))?$/.exec(text);
       if (!match) {
         const output = text.replace(/[tT]hought:/, '').split('\n')[0].trim();
         return {

@@ -7,7 +7,7 @@ const { CallbackManager } = require('langchain/callbacks');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
 const { initializeCustomAgent } = require('./customAgent');
 const { getMessages, saveMessage, saveConvo } = require('../../models');
-const { availableTools, SelfReflectionTool } = require('./tools');
+const { loadTools, SelfReflectionTool } = require('./tools');
 
 const FORMAT_INSTRUCTIONS = `Remember, all your responses MUST be in the format described. Do not respond unless it's in the format described, using the structure of Action, Action Input, etc.`;
 
@@ -335,7 +335,7 @@ class CustomChatAgent {
       month: 'long',
       day: 'numeric'
     });
-    this.availableTools = availableTools({ model });
+    this.availableTools = loadTools({ model });
 
     // load tools
     this.tools = [new SelfReflectionTool({ message })];
