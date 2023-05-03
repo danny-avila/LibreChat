@@ -22,12 +22,12 @@ const availableTools = [
   {
     name: 'Calculator',
     value: 'calculator',
-    icon: null,
+    icon: 'https://i.imgur.com/RHsSG5h.png',
   },
   {
     name: 'Google',
     value: 'google',
-    icon: null,
+    icon: 'https://i.imgur.com/SMmVkNB.png',
   },
   {
     name: 'Browser',
@@ -37,12 +37,12 @@ const availableTools = [
   {
     name: 'Serpapi',
     value: 'serpapi',
-    icon: null,
+    icon: 'https://i.imgur.com/5yQHUz4.png',
   },
   {
     name: 'DALL-E',
     value: 'dall-e',
-    icon: null,
+    icon: 'https://i.imgur.com/u2TzXzH.png',
   },
   {
     name: 'Zapier',

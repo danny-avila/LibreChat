@@ -67,6 +67,7 @@ const useMessageHandler = () => {
     }  else if (endpoint === 'gptPlugins') {
       endpointOption = {
         endpoint,
+        tools: currentConversation?.tools ?? [],
         model:
           currentConversation?.model ??
           endpointsConfig[endpoint]?.availableModels?.[0] ??

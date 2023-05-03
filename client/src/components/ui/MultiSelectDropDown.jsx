@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import CheckMark from '../svg/CheckMark.jsx';
+import useOnClickOutside from '~/hooks/useOnClickOutside.js';
 import { Listbox, Transition } from '@headlessui/react';
 import { Wrench } from 'lucide-react';
 import { cn } from '~/utils/';
@@ -17,6 +18,8 @@ function SelectDropDown({
   className
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef(null);
+  useOnClickOutside(menuRef, () => setIsOpen(false));
   const handleSelect = value => {
     setValue(value);
     setIsOpen(true);
@@ -76,7 +79,10 @@ function SelectDropDown({
                                 className="h-full w-full rounded-sm bg-white"
                               />
                             ) : (
-                              <Wrench key={i} className="h-full w-full rounded-sm bg-white" />
+                              <Wrench
+                                key={i}
+                                className="h-full w-full rounded-sm bg-white"
+                              />
                             )}
                             <div
                               key={i}
@@ -109,12 +115,15 @@ function SelectDropDown({
               <Transition
                 show={isOpen}
                 as={React.Fragment}
-                leave="transition ease-in duration-100"
+                leave="transition ease-in duration-150"
                 leaveFrom="opacity-100"
                 leaveTo="opacity-0"
                 className={showAbove ? 'bottom-full mb-3' : 'top-full mt-3'}
               >
-                <Listbox.Options className="absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%]">
+                <Listbox.Options
+                  ref={menuRef}
+                  className="absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%]"
+                >
                   {availableValues.map((option, i) => {
                     const selected = isSelected(option.value);
                     return (

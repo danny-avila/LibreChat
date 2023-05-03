@@ -17,6 +17,7 @@ router.post('/', async (req, res) => {
   // build endpoint option
   const endpointOption = {
     model: req.body?.model ?? 'gpt-4',
+    tools: req.body?.tools.map((tool) => tool.value) ?? [],
     // chatGptLabel: req.body?.chatGptLabel ?? null,
     // promptPrefix: req.body?.promptPrefix ?? null,
     // temperature: req.body?.temperature ?? 1,
@@ -106,11 +107,9 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     const abortController = new AbortController();
 
     const chatAgent = new ChatAgent(process.env.OPENAI_KEY, {
-      tools: validateTools(endpointOption?.tools || ['dall-e']),
-      // tools: validateTools(endpointOption?.tools || ['google', 'browser',]),
+      tools: validateTools(endpointOption?.tools || []),
       debug: true,
       modelOptions: {
-        // model: 'gpt-3.5-turbo',
         ...endpointOption,
       }
     });
