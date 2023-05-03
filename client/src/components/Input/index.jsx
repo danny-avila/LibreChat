@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import SubmitButton from './SubmitButton';
 import OpenAIOptions from './OpenAIOptions';
+import PluginsOptions from './PluginsOptions';
 import ChatGPTOptions from './ChatGPTOptions';
 import BingAIOptions from './BingAIOptions';
 // import BingStyles from './BingStyles';
@@ -138,6 +139,7 @@ export default function TextChat({ isSearchView = false }) {
         <div className="relative py-2 md:mb-[-16px] md:py-4 lg:mb-[-32px]">
           <span className="flex w-full flex-col items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
             <OpenAIOptions />
+            <PluginsOptions />
             <ChatGPTOptions />
             <BingAIOptions show={showBingToneSetting} />
           </span>

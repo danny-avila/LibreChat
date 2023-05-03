@@ -13,9 +13,46 @@ const GoogleSearchAPI = require('./googleSearch');
 const SelfReflectionTool = require('./selfReflection');
 const OpenAICreateImage = require('./openaiCreateImage');
 const WolframAlphaAPI = require('./wolfram');
+const availableTools = [
+  {
+    name: 'Wolfram',
+    value: 'wolfram',
+    icon: 'https://www.wolframcdn.com/images/icons/Wolfram.png',
+  },
+  {
+    name: 'Calculator',
+    value: 'calculator',
+    icon: null,
+  },
+  {
+    name: 'Google',
+    value: 'google',
+    icon: null,
+  },
+  {
+    name: 'Browser',
+    value: 'browser',
+    icon: null,
+  },
+  {
+    name: 'Serpapi',
+    value: 'serpapi',
+    icon: null,
+  },
+  {
+    name: 'DALL-E',
+    value: 'dall-e',
+    icon: null,
+  },
+  {
+    name: 'Zapier',
+    value: 'zapier',
+    icon: 'https://cdn.zappy.app/8f853364f9b383d65b44e184e04689ed.png',
+  },
+];
 
 const validateTools = (tools) => {
-  const validTools = new Set(['calculator', 'google', 'browser', 'serpapi', 'zapier', 'dall-e', 'wolfram']); // removed 'plugins'
+  const validTools = new Set(availableTools.map((tool) => tool.name)); // removed 'plugins'
 
   const validateAPIKey = (apiKeyName, toolName) => {
     if (!process.env[apiKeyName] || process.env[apiKeyName] === '') {
@@ -33,7 +70,7 @@ const validateTools = (tools) => {
   return tools.filter((tool) => validTools.has(tool));
 };
 
-const availableTools = ({ model }) => ({
+const loadTools = ({ model }) => ({
   calculator: () => new Calculator(),
   google: () => new GoogleSearchAPI(),
   browser: () => new WebBrowser({ model, embeddings: new OpenAIEmbeddings() }),
@@ -64,5 +101,6 @@ const availableTools = ({ model }) => ({
 module.exports = {
   validateTools,
   availableTools,
+  loadTools,
   SelfReflectionTool,
 };

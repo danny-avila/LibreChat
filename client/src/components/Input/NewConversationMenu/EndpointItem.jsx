@@ -30,7 +30,7 @@ export default function ModelItem({ endpoint, value, onSelect }) {
         {icon}
         {endpoint === 'gptPlugins' ? 'Plugins' : endpoint}
         {!!['azureOpenAI', 'openAI'].find(e => e === endpoint) && <sup>$</sup>}
-        {endpoint === 'gptPlugins' && <span class="py-0.25 ml-1 rounded px-1 text-[10px] font-semibold uppercase bg-blue-200 text-[#4559A4]">alpha</span>}
+        {endpoint === 'gptPlugins' && <span className="py-0.25 ml-1 rounded px-1 text-[10px] font-semibold uppercase bg-blue-200 text-[#4559A4]">alpha</span>}
         <div className="flex w-4 flex-1" />
         {isUserProvided ? (
           <button

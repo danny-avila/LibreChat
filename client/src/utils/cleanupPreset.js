@@ -37,6 +37,7 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
     preset = {
       endpoint,
       presetId: _preset?.presetId ?? null,
+      tools: _preset?.tools ?? [],
       model:
         _preset?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'gpt-3.5-turbo',
       title: _preset?.title ?? 'New Preset'
