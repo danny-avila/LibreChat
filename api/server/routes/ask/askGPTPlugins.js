@@ -49,7 +49,6 @@ router.post('/', async (req, res) => {
 });
 
 const ask = async ({ text, endpointOption, parentMessageId = null, conversationId, req, res }) => {
-  // let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
 
   res.writeHead(200, {
     Connection: 'keep-alive',
@@ -69,6 +68,9 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     latest: null,
     outputs: null
   };
+
+  const { tools } = endpointOption;
+  delete endpointOption.tools;
 
   try {
     const getIds = (data) => {
@@ -107,7 +109,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     const abortController = new AbortController();
 
     const chatAgent = new ChatAgent(process.env.OPENAI_KEY, {
-      tools: validateTools(endpointOption?.tools || []),
+      tools: validateTools(tools || []),
       debug: true,
       modelOptions: {
         ...endpointOption,

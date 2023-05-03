@@ -52,7 +52,7 @@ const availableTools = [
 ];
 
 const validateTools = (tools) => {
-  const validTools = new Set(availableTools.map((tool) => tool.name)); // removed 'plugins'
+  const validTools = new Set(availableTools.map((tool) => tool.value)); // removed 'plugins'
 
   const validateAPIKey = (apiKeyName, toolName) => {
     if (!process.env[apiKeyName] || process.env[apiKeyName] === '') {

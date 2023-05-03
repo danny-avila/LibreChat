@@ -1,3 +1,4 @@
+const CustomZeroShotAgent = require('./customZeroShotAgent');
 const { prefix, suffix } = require('./instructions');
 const { LLMChain } = require('langchain/chains');
 const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
@@ -46,7 +47,8 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateSt
         };
       }
       // const match = /Action: (.*)\nAction Input: (.*)/s.exec(text); // old
-      const match = /Action: ([\s\S]*?)(?:\nAction Input: ([\s\S]*?))?$/.exec(text);
+      // const match = /Action: ([\s\S]*?)(?:\nAction Input: ([\s\S]*?))?$/.exec(text); //old
+      const match = /(?:Action(?: 1)?:) ([\s\S]*?)(?:\n(?:Action Input(?: 1)?:) ([\s\S]*?))?$/.exec(text); //new
       if (!match) {
         const output = text.replace(/[tT]hought:/, '').split('\n')[0].trim();
         return {
@@ -87,7 +89,7 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateSt
     llm: model
   });
 
-  const agent = new ZeroShotAgent({
+  const agent = new CustomZeroShotAgent({
     llmChain,
     outputParser: new CustomOutputParser(),
     allowedTools: tools.map((tool) => tool.name)

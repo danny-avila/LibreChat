@@ -5,7 +5,7 @@ const { Agent, ProxyAgent } = require('undici');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { CallbackManager } = require('langchain/callbacks');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
-const { initializeCustomAgent } = require('./customAgent');
+const { initializeCustomAgent } = require('./initializeCustomAgent');
 const { getMessages, saveMessage, saveConvo } = require('../../models');
 const { loadTools, SelfReflectionTool } = require('./tools');
 
@@ -57,7 +57,7 @@ class CustomChatAgent {
   }
 
   buildPromptPrefix(result) {
-    if (result.output && result.output.includes('N/A')) {
+    if ((result.output && result.output.includes('N/A')) || !result.output) {
       return null;
     }
 
@@ -323,13 +323,15 @@ class CustomChatAgent {
   }
 
   async initialize(conversationId, { message, onAgentAction, onChainEnd }) {
+    const pastMessages = await this.loadHistory(conversationId, this.options?.parentMessageId);
+
     // TO DO: need to initialize by user
     const model = new ChatOpenAI({
       openAIApiKey: this.openAIApiKey,
       ...this.modelOptions
       // model: 'gpt-4',
     });
-
+    
     this.currentDateString = new Date().toLocaleDateString('en-us', {
       year: 'numeric',
       month: 'long',
@@ -338,8 +340,6 @@ class CustomChatAgent {
     this.availableTools = loadTools({ model });
 
     // load tools
-    this.tools = [new SelfReflectionTool({ message })];
-
     for (const tool of this.options.tools) {
       const validTool = this.availableTools[tool];
 
@@ -349,8 +349,12 @@ class CustomChatAgent {
         this.tools.push(validTool());
       }
     }
-
-    const pastMessages = await this.loadHistory(conversationId, this.options?.parentMessageId);
+    
+    if (this.tools.length > 0) {
+      this.tools.push(new SelfReflectionTool({ message }));
+    } else {
+      return;
+    }
 
     const handleAction = (action, callback = null) => {
       this.saveLatestAction(action);
@@ -441,6 +445,38 @@ class CustomChatAgent {
     return reply.trim();
   }
 
+  async executorCall(message) {
+    let errorMessage = '';
+    const maxAttempts = 2;
+
+    for (let attempts = 1; attempts <= maxAttempts; attempts++) {
+      const errorInput = this.buildErrorInput(message, errorMessage);
+      const input = attempts > 1 ? errorInput : message;
+
+      if (this.options.debug) {
+        console.debug(`Attempt ${attempts} of ${maxAttempts}`);
+      }
+
+      if (this.options.debug && errorMessage.length > 0) {
+        console.debug('Caught error, input:', input);
+      }
+
+      try {
+        this.result = await this.executor.call({ input });
+        break; // Exit the loop if the function call is successful
+      } catch (err) {
+        console.error(err);
+        errorMessage = err.message;
+        if (attempts === maxAttempts) {
+          this.result.output = `Encountered an error while attempting to respond. Error: ${err.message}`;
+          this.result.intermediateSteps = this.actions;
+          this.result.errorMessage = errorMessage;
+          break;
+        }
+      }
+    }
+  }
+
   async sendMessage(message, opts = {}) {
     if (opts && typeof opts === 'object') {
       this.setOptions(opts);
@@ -454,17 +490,6 @@ class CustomChatAgent {
     const userMessageId = crypto.randomUUID();
     const responseMessageId = crypto.randomUUID();
     await this.initialize(conversationId, { user, message, onAgentAction, onChainEnd });
-
-    // let conversation = await this.conversationsCache.get(conversationId);
-    // let isNewConversation = false;
-    // if (!conversation) {
-    //   conversation = {
-    //     messages: [],
-    //     createdAt: Date.now()
-    //   };
-    //   isNewConversation = true;
-    // }
-    // const shouldGenerateTitle = opts.shouldGenerateTitle && isNewConversation;
 
     const userMessage = {
       messageId: userMessageId,
@@ -485,38 +510,13 @@ class CustomChatAgent {
 
     await this.saveMessageToDatabase(userMessage, user);
 
-    let result = {};
-    let errorMessage = '';
-    const maxAttempts = 2;
+    this.result = {};
 
-    for (let attempts = 1; attempts <= maxAttempts; attempts++) {
-      const errorInput = this.buildErrorInput(message, errorMessage);
-      const input = attempts > 1 ? errorInput : message;
-
-      if (this.options.debug) {
-        console.debug(`Attempt ${attempts} of ${maxAttempts}`);
-      }
-
-      if (this.options.debug && errorMessage.length > 0) {
-        console.debug('Caught error, input:', input);
-      }
-
-      try {
-        result = await this.executor.call({ input });
-        break; // Exit the loop if the function call is successful
-      } catch (err) {
-        console.error(err);
-        errorMessage = err.message;
-        if (attempts === maxAttempts) {
-          result.output = `Encountered an error while attempting to respond. Error: ${err.message}`;
-          result.intermediateSteps = this.actions;
-          result.errorMessage = errorMessage;
-          break;
-        }
-      }
+    if (this.tools.length > 0) {
+      await this.executorCall(message);
     }
 
-    const promptPrefix = this.buildPromptPrefix(result);
+    const promptPrefix = this.buildPromptPrefix(this.result);
 
     if (this.options.debug) {
       console.debug('promptPrefix', promptPrefix);
@@ -539,15 +539,7 @@ class CustomChatAgent {
     };
 
     await this.saveMessageToDatabase(responseMessage, user);
-
-    // if (shouldGenerateTitle) {
-    //   conversation.title = await this.generateTitle(userMessage, responseMessage);
-    //   returnData.title = conversation.title;
-    // }
-
-    // await this.conversationsCache.set(conversationId, conversation);
-
-    return { ...responseMessage, ...result };
+    return { ...responseMessage, ...this.result };
   }
 
   async buildPrompt(messages, userMessage, isChatGptModel = true) {
