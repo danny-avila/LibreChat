@@ -24,6 +24,13 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateSt
     {agent_scratchpad}`)
   ]);
 
+  let longestToolName = '';
+  for (const tool of tools) {
+    if (tool.name.length > longestToolName.length) {
+      longestToolName = tool.name;
+    }
+  }
+
   class CustomOutputParser extends ZeroShotAgentOutputParser {
     constructor(fields) {
       super(fields);
@@ -46,6 +53,16 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateSt
           log: text
         };
       }
+
+      if (match && match[1].trim().length > longestToolName.length) {
+        console.log('HIT PARSING ERROR', match);
+        // const output = match[1].trim();
+        // return {
+        //   returnValues: { output },
+        //   log: text
+        // };
+      }
+
       return {
         tool: match[1].trim(),
         toolInput: match[2].trim().replace(/^"+|"+$/g, '') ?? '',

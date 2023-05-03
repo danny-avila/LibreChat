@@ -7,7 +7,7 @@ const { validateTools } = require('./tools');
   await connectDb();
   const openAIApiKey = process.env.OPENAI_KEY;
   const chatAgent = new ChatAgent(openAIApiKey, {
-    tools: validateTools(['dall-e']),
+    tools: validateTools(['']),
     debug: true,
     modelOptions: {
       model: 'gpt-4',

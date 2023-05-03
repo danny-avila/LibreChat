@@ -322,7 +322,7 @@ class CustomChatAgent {
     this.actions.push(action);
   }
 
-  async initialize(conversationId, { onAgentAction, onChainEnd }) {
+  async initialize(conversationId, { message, onAgentAction, onChainEnd }) {
     // TO DO: need to initialize by user
     const model = new ChatOpenAI({
       openAIApiKey: this.openAIApiKey,
@@ -338,7 +338,7 @@ class CustomChatAgent {
     this.availableTools = availableTools({ model });
 
     // load tools
-    this.tools = [new SelfReflectionTool()];
+    this.tools = [new SelfReflectionTool({ message })];
 
     for (const tool of this.options.tools) {
       const validTool = this.availableTools[tool];
@@ -453,7 +453,7 @@ class CustomChatAgent {
     const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
     const userMessageId = crypto.randomUUID();
     const responseMessageId = crypto.randomUUID();
-    await this.initialize(conversationId, { user, onAgentAction, onChainEnd });
+    await this.initialize(conversationId, { user, message, onAgentAction, onChainEnd });
 
     // let conversation = await this.conversationsCache.get(conversationId);
     // let isNewConversation = false;
