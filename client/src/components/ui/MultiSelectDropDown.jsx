@@ -73,19 +73,16 @@ function SelectDropDown({
                           >
                             {v.icon ? (
                               <img
-                                key={i}
                                 src={v.icon}
                                 alt={`${v} logo`}
                                 className="h-full w-full rounded-sm bg-white"
                               />
                             ) : (
                               <Wrench
-                                key={i}
                                 className="h-full w-full rounded-sm bg-white"
                               />
                             )}
                             <div
-                              key={i}
                               className="absolute inset-0 rounded-sm ring-1 ring-inset ring-black/10"
                             />
                           </div>

@@ -23,7 +23,7 @@ function PluginsOptions() {
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   if (endpoint !== 'gptPlugins') return null;
-  if (conversationId !== 'new') return null;
+  // if (conversationId !== 'new') return null; // --> allows to change options during conversation
 
   const models = endpointsConfig?.['gptPlugins']?.['availableModels'] || [];
   const availableTools = endpointsConfig?.['gptPlugins']?.['availableTools'] || [];
