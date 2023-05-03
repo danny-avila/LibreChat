@@ -7,6 +7,7 @@ const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 const { registerSchema } = require('../../../strategies/validators');
 const DebugControl = require('../../../utils/debug.js');
 
+
 // token refresh code not yet being used
 // const { serialize, parse } = require('cookie');
 
@@ -210,7 +211,7 @@ router.post('/logout', requireJwtAuth, (req, res, next) => {
           res.status(500).json({ message: err.message });
         } else {
           //res.clearCookie('refreshToken', COOKIE_OPTIONS);
-         // removeTokenCookie(res);
+          // removeTokenCookie(res);
           res.status(200).send();
         }
       });

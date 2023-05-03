@@ -4,8 +4,7 @@ import Chat from './routes/Chat';
 import Search from './routes/Search';
 import { ScreenshotProvider } from './utils/screenshotContext.jsx';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
-import Login from './components/Auth/Login';
-import Registration from './components/Auth/Registration';
+import { Login, Registration, RequestPasswordReset, ResetPassword } from './components/Auth';
 import { AuthContextProvider } from './hooks/AuthContext';
 import { RecoilRoot } from 'recoil';
 import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
@@ -25,15 +24,19 @@ const router = createBrowserRouter([
     element: <Registration />
   },
   {
+    path: 'forgot-password',
+    element: <RequestPasswordReset />
+  },
+  {
+    path: 'reset-password',
+    element: <ResetPassword />
+  },
+  {
     element: <AuthLayout />,
     children: [
       {
         path: 'login',
         element: <Login />
-      },
-      {
-        path: 'register',
-        element: <Registration />
       },
       {
         path: '/',

@@ -73,3 +73,11 @@ export const loginGoogle = () => {
 export const refreshToken = () => {
   return '/oauth/refresh';
 }
+
+export const requestPasswordReset = () => {
+  return '/auth/requestPasswordReset';
+}
+
+export const resetPassword = () => {
+  return '/auth/resetPassword';
+}

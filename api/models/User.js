@@ -167,21 +167,12 @@ userSchema.methods.comparePassword = function (candidatePassword, callback) {
 };
 
 module.exports.hashPassword = async (password) => {
-  const saltRounds = 10;
 
   const hashedPassword = await new Promise((resolve, reject) => {
-    bcrypt.hash(password, saltRounds, function (err, hash) {
+    bcrypt.hash(password, 10, function (err, hash) {
       if (err) reject(err);
       else resolve(hash);
     });
-  });
-
-  log({
-    title: 'Hash Password',
-    parameters: [
-      { name: 'password', value: password },
-      { name: 'hashed password', value: hashedPassword }
-    ]
   });
 
   return hashedPassword;

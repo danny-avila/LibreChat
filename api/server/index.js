@@ -5,7 +5,7 @@ const indexSync = require('../lib/db/indexSync');
 const path = require('path');
 const cors = require('cors');
 const routes = require('./routes');
-const errorController = require('./controllers/errorController');
+const errorController = require('./controllers/error.controller');
 const passport = require('passport');
 
 const port = process.env.PORT || 3080;
@@ -35,6 +35,7 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
     require('../strategies/googleStrategy');
     app.use('/oauth', routes.googleAuth);
   }
+  app.use('/auth', routes.auth);
   // require('../strategies/facebookStrategy');
   // app.use('/oauth', routes.facebookAuth);
 

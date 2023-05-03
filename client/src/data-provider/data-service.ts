@@ -88,3 +88,11 @@ export const refreshToken = () => {
 export const getLoginGoogle = () => {
   return request.get(endpoints.loginGoogle());
 }
+
+export const requestPasswordReset = (payload: t.TRequestPasswordReset) => {
+  return request.post(endpoints.requestPasswordReset(), payload);
+}
+
+export const resetPassword = (payload: t.TResetPassword) => {
+  return request.post(endpoints.resetPassword(), payload);
+}

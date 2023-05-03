@@ -184,3 +184,13 @@ export type TLoginResponse = {
   token: string,
   user: TUser
 }
+
+export type TRequestPasswordReset = {
+  email: string,
+}
+
+export type TResetPassword = {
+  userId: string,
+  token: string,
+  password: string,
+}

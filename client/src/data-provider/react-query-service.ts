@@ -267,7 +267,14 @@ export const useLogoutUserMutation = (): UseMutationResult<unknown> => {
 }
 
 export const useRefreshTokenMutation = (): UseMutationResult<t.TRefreshTokenResponse, unknown, unknown, unknown> => {
-  const queryClient = useQueryClient();
   return useMutation(() => dataService.refreshToken(), {
   });
+}
+
+export const useRequestPasswordResetMutation = (): UseMutationResult<unknown> => {
+  return useMutation((payload: t.TRequestPasswordReset) => dataService.requestPasswordReset(payload));
+}
+
+export const useResetPasswordMutation = (): UseMutationResult<unknown> => {
+  return useMutation((payload: t.TResetPassword) => dataService.resetPassword(payload));
 }
