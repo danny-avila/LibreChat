@@ -49,11 +49,12 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateSt
       // const match = /Action: (.*)\nAction Input: (.*)/s.exec(text); // old
       // const match = /Action: ([\s\S]*?)(?:\nAction Input: ([\s\S]*?))?$/.exec(text); //old
       const match = /(?:Action(?: 1)?:) ([\s\S]*?)(?:\n(?:Action Input(?: 1)?:) ([\s\S]*?))?$/.exec(text); //new
-      if (!match) {
-        const output = text.replace(/[tT]hought:/, '').split('\n')[0].trim();
+      if (!match || (match && match[1].trim() === 'N/A') || (match && !match[2])) {
+        const thought = text.replace(/[tT]hought:/, '').split('\n')[0].trim();
         return {
-          returnValues: { output: `Thought: ${output}` },
-          log: text
+          tool: 'N/A',
+          toolInput: 'None',
+          log: thought
         };
       }
 

@@ -315,7 +315,7 @@ class CustomChatAgent {
 
   async saveMessageToDatabase(message, user = null) {
     await saveMessage({ ...message, unfinished: false });
-    await saveConvo(user, { conversationId: message.conversationId, endpoint: 'gptPlugins' });
+    await saveConvo(user, { conversationId: message.conversationId, endpoint: 'gptPlugins', ...this.modelOptions });
   }
 
   saveLatestAction(action) {
