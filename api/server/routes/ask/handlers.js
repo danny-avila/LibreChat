@@ -145,7 +145,7 @@ function formatAction(action) {
       : action.log.split('\n')[0]
   };
 
-  if (action.tool === 'self-reflection') {
+  if (action.tool === 'self-reflection' || formattedAction.plugin === 'N/A') {
     formattedAction.inputStr = `{\n\tthoughts: ${formattedAction.input}${!formattedAction.thought.includes(formattedAction.input) ? ' - ' + formattedAction.thought : ''}\n}`;
   } else {
     formattedAction.inputStr = `{\n\tplugin: ${formattedAction.plugin}\n\tinput: ${formattedAction.input}\n\tthought: ${formattedAction.thought}\n}`;

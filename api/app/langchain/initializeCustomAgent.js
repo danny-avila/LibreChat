@@ -35,12 +35,22 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateSt
   class CustomOutputParser extends ZeroShotAgentOutputParser {
     constructor(fields) {
       super(fields);
+      this.finishToolNameRegex = /(?:the\s+)?final\s+answer[:\s]*\s*/i;
     }
 
     async parse(text) {
-      if (text.includes(this.finishToolName)) {
-        const parts = text.split(this.finishToolName);
-        const output = parts[parts.length - 1].trim();
+      const finalMatch = text.match(this.finishToolNameRegex);
+      // if (text.includes(this.finishToolName)) {
+      //   const parts = text.split(this.finishToolName);
+      //   const output = parts[parts.length - 1].trim();
+      //   return {
+      //     returnValues: { output },
+      //     log: text
+      //   };
+      // }
+
+      if (finalMatch) {
+        const output = text.substring(finalMatch.index + finalMatch[0].length).trim();
         return {
           returnValues: { output },
           log: text
