@@ -69,13 +69,48 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateSt
       }
 
       if (match && match[1].trim().length > longestToolName.length) {
-        console.log('HIT PARSING ERROR', match);
-        // const output = match[1].trim();
-        // return {
-        //   returnValues: { output },
-        //   log: text
-        // };
+        console.log('\n\n<----------------------HIT PARSING ERROR---------------------->\n\n');
+
+        let action, input, thought;
+        let firstIndex = Infinity;
+    
+        for (const tool of tools) {
+          const toolIndex = text.indexOf(tool);
+          if (toolIndex !== -1 && toolIndex < firstIndex) {
+            firstIndex = toolIndex;
+            action = tool;
+          }
+        }
+    
+        if (action) {
+          const actionEndIndex = text.indexOf('Action:', firstIndex + action.length);
+          const inputText = text.slice(firstIndex + action.length, actionEndIndex !== -1 ? actionEndIndex : undefined).trim();
+          const inputLines = inputText.split('\n');
+          input = inputLines[0];
+          if (inputLines.length > 1) {
+            thought = inputLines.slice(1).join('\n');
+          }
+          return {
+            tool: action,
+            toolInput: input,
+            log: thought || inputText
+          };
+        } else {
+          console.log('No valid tool mentioned.');
+          return {
+            tool: 'self-reflection',
+            toolInput: 'Hypothetical actions: \n"'+text+'"\n',
+            log: 'Thought: I need to look at my hypothetical actions and try each one according to the requested format one at a time'
+          };
+        }
+    
+        // if (action && input) {
+        //   console.log('Action:', action);
+        //   console.log('Input:', input);
+        // }
       }
+    
+    
 
       return {
         tool: match[1].trim(),
