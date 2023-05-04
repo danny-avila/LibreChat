@@ -74,6 +74,13 @@ class CustomChatAgent {
       ? `\nYou encountered an error in attempting a response. The user is not aware of the error so you shouldn't mention it.\nReview the actions taken carefully in case there is a partial or complete answer within them.\nError Message: ${result.errorMessage}\n`
       : '';
 
+    // return `You are ChatGPT, review your actions & draft answer you generated using plugins in response to user's message. The answer hasn't been sent to the user yet.${errorMessage}
+    // ${internalActions}
+    // Draft Answer: "${result.output.trim()}"
+    // Current date: ${this.currentDateString}${this.endToken}
+    // Review if the answer is accurate, appropriate, or can be improved. Compile a new conversational response revised from your Draft Answer, internal actions, thoughts, and observations, making improvements wherever possible.
+    // Do your best to cite sources if you are using any web links. ${toolBasedInstructions}
+    // Always maintain a conversational tone.`;
     return `As ChatGPT, review the answer you generated using plugins. The answer hasn't been sent to the user yet.${errorMessage}\n${internalActions}\n
     Preliminary Answer: "${result.output.trim()}"\n
     Review if the answer is accurate, appropriate, or can be improved. Compile a new answer to reply to the User based on your preliminary answer, internal actions, thoughts, and observations, making improvements wherever possible.
@@ -322,15 +329,17 @@ class CustomChatAgent {
     this.actions.push(action);
   }
 
-  async initialize(conversationId, { message, onAgentAction, onChainEnd }) {
-    const pastMessages = await this.loadHistory(conversationId, this.options?.parentMessageId);
-
-    // TO DO: need to initialize by user
+  async initialize({ message, onAgentAction, onChainEnd }) {
+    // TO DO: need to initialize by user?
     const model = new ChatOpenAI({
       openAIApiKey: this.openAIApiKey,
       ...this.modelOptions
-      // model: 'gpt-4',
     });
+
+    if (this.options.debug) {
+      console.debug('Agent Model:');
+      console.dir(model, { depth: null });
+    }
     
     this.currentDateString = new Date().toLocaleDateString('en-us', {
       year: 'numeric',
@@ -371,7 +380,7 @@ class CustomChatAgent {
     this.executor = await initializeCustomAgent({
       tools: this.tools,
       model,
-      pastMessages,
+      pastMessages: this.pastMessages,
       currentDateString: this.currentDateString,
       verbose: this.options.debug,
       returnIntermediateSteps: true,
@@ -489,8 +498,8 @@ class CustomChatAgent {
     const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
     const userMessageId = crypto.randomUUID();
     const responseMessageId = crypto.randomUUID();
-    await this.initialize(conversationId, { user, message, onAgentAction, onChainEnd });
-
+    this.pastMessages = await this.loadHistory(conversationId, this.options?.parentMessageId);
+    
     const userMessage = {
       messageId: userMessageId,
       parentMessageId,
@@ -499,7 +508,7 @@ class CustomChatAgent {
       text: message,
       isCreatedByUser: true
     };
-
+    
     if (typeof opts?.getIds === 'function') {
       opts.getIds({
         userMessage,
@@ -507,12 +516,13 @@ class CustomChatAgent {
         responseMessageId
       });
     }
-
+    
     await this.saveMessageToDatabase(userMessage, user);
-
+    
     this.result = {};
-
-    if (this.tools.length > 0) {
+    
+    if (this.options.tools.length > 0) {
+      await this.initialize({ user, message, onAgentAction, onChainEnd });
       await this.executorCall(message);
     }
 

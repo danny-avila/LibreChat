@@ -11,7 +11,8 @@ const {
 
 const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateString, ...rest }) => {
   const prompt = ZeroShotAgent.createPrompt(tools, {
-    prefix: `Assistant is a large language model trained by OpenAI.\nKnowledge Cutoff: ${currentDateString}\nCurrent date: ${currentDateString}\n\n${prefix}`,
+    prefix: `Current date: ${currentDateString}\n\n${prefix}`,
+    // prefix,
     suffix,
     inputVariables: ['input', 'chat_history', 'agent_scratchpad']
   });
@@ -60,11 +61,12 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateSt
       // const match = /Action: ([\s\S]*?)(?:\nAction Input: ([\s\S]*?))?$/.exec(text); //old
       const match = /(?:Action(?: 1)?:) ([\s\S]*?)(?:\n(?:Action Input(?: 1)?:) ([\s\S]*?))?$/.exec(text); //new
       if (!match || (match && match[1].trim() === 'N/A') || (match && !match[2])) {
+        console.log('\n\n<----------------------HIT PARSING ERROR---------------------->\n\n');
         const thought = text.replace(/[tT]hought:/, '').split('\n')[0].trim();
         return {
           tool: 'self-reflection',
-          toolInput: thought,
-          log: 'Thought: I should move on towards completing the task at hand'
+          toolInput: thought+'\nI should finalize my reply as soon as I have satisfied the user\'s query.',
+          log: ''
         };
       }
 
@@ -75,10 +77,11 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateSt
         let firstIndex = Infinity;
     
         for (const tool of tools) {
-          const toolIndex = text.indexOf(tool);
+          const { name } = tool;
+          const toolIndex = text.indexOf(name);
           if (toolIndex !== -1 && toolIndex < firstIndex) {
             firstIndex = toolIndex;
-            action = tool;
+            action = name;
           }
         }
     
@@ -96,11 +99,11 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateSt
             log: thought || inputText
           };
         } else {
-          console.log('No valid tool mentioned.');
+          console.log('No valid tool mentioned.', tools, text);
           return {
             tool: 'self-reflection',
             toolInput: 'Hypothetical actions: \n"'+text+'"\n',
-            log: 'Thought: I need to look at my hypothetical actions and try each one according to the requested format one at a time'
+            log: 'Thought: I need to look at my hypothetical actions and try one'
           };
         }
     
