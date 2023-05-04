@@ -10,8 +10,19 @@ class OpenAICreateImage extends Tool {
       apiKey: process.env.OPENAI_API_KEY,
     }));
     this.name = 'dall-e';
-    this.description = `You can generate images with 'dall-e'. Any requested visual output expects your use of this tool. Your input should visually describe the detail of the image you would like to generate. You can describe moods, define structures or proportions, and reproduce styles`;
+    this.description = `You can generate images with 'dall-e'.
+    Guidelines:
+    - Any requested visual output expects your use of this tool.
+    - You can describe moods, define structures or proportions, and reproduce styles
+    - Your input should visually describe the detail of the image you would like to generate.
+    - It is best to follow this format for image creation:
+    "Subject: [subject], Style: [style], Color: [color], Details: [details], Emotion: [emotion]"`;
   }
+  // "Subject": "Mona Lisa",
+  // "Style": "Chinese traditional painting",
+  // "Color": "Mainly wash tones of ink, with small color blocks in some parts",
+  // "Details": "Mona Lisa should have long hair, a silk dress, holding a fan. The background should have mountains and trees.",
+  // "Emotion": "Serene and elegant"
 
   replaceNewLinesWithSpaces(inputString) {
     return inputString.replace(/\r\n|\r|\n/g, ' ');
