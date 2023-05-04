@@ -23,7 +23,7 @@ class CustomChatAgent {
   }
 
   getActions(input = null) {
-    let output = 'Internal actions taken:\n';
+    let output = 'Internal thoughts & actions taken:\n"';
     let actions = input || this.actions;
 
     if (actions[0]?.action) {
@@ -39,7 +39,7 @@ class CustomChatAgent {
       }
     });
 
-    return output;
+    return '"' + output;
   }
 
   buildErrorInput(message, errorMessage) {
@@ -76,7 +76,7 @@ class CustomChatAgent {
 
     return `As ChatGPT, review the answer you generated using plugins. The answer hasn't been sent to the user yet.${errorMessage}\n${internalActions}\n
     Preliminary Answer: "${result.output.trim()}"\n
-    Review if the answer is accurate, appropriate, or can be improved. Compile a new answer based on your preliminary answer, internal actions, thoughts, and observations, making improvements wherever possible.
+    Review if the answer is accurate, appropriate, or can be improved. Compile a new answer to reply to the User based on your preliminary answer, internal actions, thoughts, and observations, making improvements wherever possible.
     Always maintain a conversational tone. Do your best to cite sources if you are using any web links. ${toolBasedInstructions}
     Current date: ${this.currentDateString}${this.endToken}\n\n`;
   }

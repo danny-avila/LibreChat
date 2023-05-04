@@ -15,7 +15,7 @@ class OpenAICreateImage extends Tool {
     - Any requested visual output expects your use of this tool.
     - You can describe moods, define structures or proportions, and reproduce styles
     - Your input should visually describe the detail of the image you would like to generate.
-    - It is best to follow this format for image creation:
+    - It is best to follow this format for image creation. Come up with the inputs yourself if none are given:
     "Subject: [subject], Style: [style], Color: [color], Details: [details], Emotion: [emotion]"`;
   }
   // "Subject": "Mona Lisa",

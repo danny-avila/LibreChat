@@ -62,9 +62,9 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateSt
       if (!match || (match && match[1].trim() === 'N/A') || (match && !match[2])) {
         const thought = text.replace(/[tT]hought:/, '').split('\n')[0].trim();
         return {
-          tool: 'N/A',
-          toolInput: 'None',
-          log: thought
+          tool: 'self-reflection',
+          toolInput: thought,
+          log: 'Thought: I should move on towards completing the task at hand'
         };
       }
 
