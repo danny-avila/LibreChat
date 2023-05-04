@@ -102,6 +102,9 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
+    if (error && isAuthenticated) {
+      setError(undefined);
+    }
     if (!token || !isAuthenticated) {
       const tokenFromCookie = getCookieValue('token');
       if (tokenFromCookie) {

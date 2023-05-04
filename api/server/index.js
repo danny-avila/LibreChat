@@ -30,16 +30,15 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use(passport.initialize());
   require('../strategies/jwtStrategy');
   require('../strategies/localStrategy');
-  app.use('/oauth', routes.localAuth);
   if(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     require('../strategies/googleStrategy');
-    app.use('/oauth', routes.googleAuth);
   }
-  app.use('/auth', routes.auth);
-  // require('../strategies/facebookStrategy');
-  // app.use('/oauth', routes.facebookAuth);
+  if(process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
+    require('../strategies/facebookStrategy');
+  }
 
   // api endpoint
+  app.use('/auth', routes.auth);
   app.use('/api/search', routes.search);
   app.use('/api/ask', routes.ask);
   app.use('/api/messages', routes.messages);

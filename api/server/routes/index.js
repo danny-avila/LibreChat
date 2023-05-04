@@ -7,7 +7,6 @@ const search = require('./search');
 const tokenizer = require('./tokenizer');
 const auth = require('./auth');
 const { router: endpoints } = require('./endpoints');
-const { localAuth, googleAuth, facebookAuth } = require('./oauth');
 
 module.exports = {
   search,
@@ -17,9 +16,6 @@ module.exports = {
   presets,
   prompts,
   auth,
-  localAuth,
-  googleAuth,
-  facebookAuth,
   tokenizer,
   endpoints,
 };
