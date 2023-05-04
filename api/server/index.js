@@ -5,12 +5,16 @@ const migrateDb = require('../lib/db/migrateDb');
 const indexSync = require('../lib/db/indexSync');
 const path = require('path');
 const cors = require('cors');
+const fs = require('fs');
+const https = require('https');
 const routes = require('./routes');
 const errorController = require('./controllers/errorController');
 
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
 const projectPath = path.join(__dirname, '..', '..', 'client');
+const certkey = process.env.CERTKEY;
+const privkey = process.env.PRIVKEY;
 
 (async () => {
   await connectDb();
@@ -61,13 +65,26 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
     res.sendFile(path.join(projectPath, 'dist', 'index.html'));
   });
 
-  app.listen(port, host, () => {
-    if (host == '0.0.0.0')
-      console.log(
-        `Server listening on all interface at port ${port}. Use http://localhost:${port} to access it`
-      );
-    else console.log(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
-  });
+
+
+if (certkey && privkey) {
+    const httpsServer = https.createServer({
+      key: fs.readFileSync(privkey),
+      cert: fs.readFileSync(certkey)
+    }, app);
+    httpsServer.listen(443, () => {
+      console.log(`Server listening on https://${host}:${443}`);
+    });
+  } else {
+    app.listen(port, host, () => {
+      if (host == '0.0.0.0')
+        console.log(
+          `Server listening on all interface at port ${port}. Use http://localhost:${port} to access it`
+        );
+      else console.log(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
+    });
+  }
+
 })();
 
 let messageCount = 0;
