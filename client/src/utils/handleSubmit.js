@@ -72,6 +72,10 @@ const useMessageHandler = () => {
           currentConversation?.model ??
           endpointsConfig[endpoint]?.availableModels?.[0] ??
           'gpt-3.5-turbo',
+        temperature: currentConversation?.temperature ?? 0,
+        top_p: currentConversation?.top_p ?? 1,
+        presence_penalty: currentConversation?.presence_penalty ?? 0,
+        frequency_penalty: currentConversation?.frequency_penalty ?? 0
       };
       responseSender = 'ChatGPT';
     } else if (endpoint === null) {

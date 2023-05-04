@@ -18,6 +18,7 @@ import store from '~/store';
 
 function Settings(props) {
   const { readonly, model, chatGptLabel, promptPrefix, temperature, topP, freqP, presP, setOption } = props;
+  const endpoint = props.endpoint || 'openAI';
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
@@ -29,7 +30,7 @@ function Settings(props) {
   const setFreqP = setOption('presence_penalty');
   const setPresP = setOption('frequency_penalty');
 
-  const models = endpointsConfig?.['openAI']?.['availableModels'] || [];
+  const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
 
   return (
     <>
@@ -48,44 +49,48 @@ function Settings(props) {
               containerClassName="flex w-full resize-none"
             />
           </div>
-          <div className="grid w-full items-center gap-2">
-            <Label
-              htmlFor="chatGptLabel"
-              className="text-left text-sm font-medium"
-            >
-              Custom Name <small className="opacity-40">(default: blank)</small>
-            </Label>
-            <Input
-              id="chatGptLabel"
-              disabled={readonly}
-              value={chatGptLabel || ''}
-              onChange={e => setChatGptLabel(e.target.value || null)}
-              placeholder="Set a custom name for ChatGPT"
-              className={cn(
-                defaultTextProps,
-                'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
-              )}
-            />
-          </div>
-          <div className="grid w-full items-center gap-2">
-            <Label
-              htmlFor="promptPrefix"
-              className="text-left text-sm font-medium"
-            >
-              Prompt Prefix <small className="opacity-40">(default: blank)</small>
-            </Label>
-            <TextareaAutosize
-              id="promptPrefix"
-              disabled={readonly}
-              value={promptPrefix || ''}
-              onChange={e => setPromptPrefix(e.target.value || null)}
-              placeholder="Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
-              className={cn(
-                defaultTextProps,
-                'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 '
-              )}
-            />
-          </div>
+          {endpoint === 'openAI' && (
+            <>
+              <div className="grid w-full items-center gap-2">
+                <Label
+                  htmlFor="chatGptLabel"
+                  className="text-left text-sm font-medium"
+                >
+                  Custom Name <small className="opacity-40">(default: blank)</small>
+                </Label>
+                <Input
+                  id="chatGptLabel"
+                  disabled={readonly}
+                  value={chatGptLabel || ''}
+                  onChange={e => setChatGptLabel(e.target.value || null)}
+                  placeholder="Set a custom name for ChatGPT"
+                  className={cn(
+                    defaultTextProps,
+                    'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                  )}
+                />
+              </div>
+              <div className="grid w-full items-center gap-2">
+                <Label
+                  htmlFor="promptPrefix"
+                  className="text-left text-sm font-medium"
+                >
+                  Prompt Prefix <small className="opacity-40">(default: blank)</small>
+                </Label>
+                <TextareaAutosize
+                  id="promptPrefix"
+                  disabled={readonly}
+                  value={promptPrefix || ''}
+                  onChange={e => setPromptPrefix(e.target.value || null)}
+                  placeholder="Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
+                  className={cn(
+                    defaultTextProps,
+                    'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 '
+                  )}
+                />
+              </div>
+            </>
+          )}
         </div>
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <HoverCard openDelay={300}>
@@ -95,7 +100,7 @@ function Settings(props) {
                   htmlFor="temp-int"
                   className="text-left text-sm font-medium"
                 >
-                  Temperature <small className="opacity-40">(default: 1)</small>
+                  Temperature <small className="opacity-40">(default: {endpoint === 'openAI' ? '1' : '0'})</small>
                 </Label>
                 <InputNumber
                   id="temp-int"

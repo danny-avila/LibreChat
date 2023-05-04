@@ -2,22 +2,22 @@ import { useState } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import SelectDropDown from '../../ui/SelectDropDown';
 import MultiSelectDropDown from '../../ui/MultiSelectDropDown';
-// import { Settings2 } from 'lucide-react';
-// import EndpointOptionsPopover from '../../Endpoints/EndpointOptionsPopover';
-// import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
-// import { Button } from '../../ui/Button.tsx';
-// import Settings from '../../Endpoints/OpenAI/Settings.jsx';
+import { Settings2 } from 'lucide-react';
+import EndpointOptionsPopover from '../../Endpoints/EndpointOptionsPopover';
+import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
+import { Button } from '../../ui/Button.tsx';
+import Settings from '../../Endpoints/OpenAI/Settings.jsx';
 import { cn } from '~/utils/';
 
 import store from '~/store';
 
 function PluginsOptions() {
   const [advancedMode, setAdvancedMode] = useState(false);
-  // const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
+  const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
 
   const [conversation, setConversation] = useRecoilState(store.conversation) || {};
   const { endpoint, conversationId } = conversation;
-  const { model } = conversation;
+  const { model, temperature, top_p, presence_penalty, frequency_penalty } = conversation;
   // const { model, chatGptLabel, promptPrefix, temperature, top_p, presence_penalty, frequency_penalty } = conversation;
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
@@ -28,15 +28,15 @@ function PluginsOptions() {
   const models = endpointsConfig?.['gptPlugins']?.['availableModels'] || [];
   const availableTools = endpointsConfig?.['gptPlugins']?.['availableTools'] || [];
 
-  // const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
+  const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
 
-  // const switchToSimpleMode = () => {
-  //   setAdvancedMode(false);
-  // };
+  const switchToSimpleMode = () => {
+    setAdvancedMode(false);
+  };
 
-  // const saveAsPreset = () => {
-  //   setSaveAsDialogShow(true);
-  // };
+  const saveAsPreset = () => {
+    setSaveAsDialogShow(true);
+  };
 
   function checkIfSelected(value) {
     if (!conversation.tools) return false;
@@ -74,7 +74,12 @@ function PluginsOptions() {
 
   return (
     <>
-      <div className="openAIOptions-simple-container show flex w-full flex-wrap items-center justify-center gap-2">
+      <div
+        className={
+          'openAIOptions-simple-container flex w-full flex-wrap items-center justify-center gap-2' +
+          (!advancedMode ? ' show' : '')
+        }
+      >
         <SelectDropDown
           value={model}
           setValue={setOption('model')}
@@ -90,7 +95,7 @@ function PluginsOptions() {
           showAbove={true}
           className={cn(cardStyle, 'min-w-60 z-50 w-60')}
         />
-        {/* <Button
+        <Button
           type="button"
           className={cn(
             cardStyle,
@@ -99,15 +104,14 @@ function PluginsOptions() {
           onClick={triggerAdvancedMode}
         >
           <Settings2 className="w-4 text-gray-600 dark:text-white" />
-        </Button> */}
+        </Button>
       </div>
-      {/* <EndpointOptionsPopover
+      <EndpointOptionsPopover
         content={
           <div className="px-4 py-4">
             <Settings
               model={model}
-              chatGptLabel={chatGptLabel}
-              promptPrefix={promptPrefix}
+              endpoint={endpoint}
               temperature={temperature}
               topP={top_p}
               freqP={presence_penalty}
@@ -124,7 +128,7 @@ function PluginsOptions() {
         open={saveAsDialogShow}
         onOpenChange={setSaveAsDialogShow}
         preset={conversation}
-      /> */}
+      />
     </>
   );
 }

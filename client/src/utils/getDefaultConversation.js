@@ -53,7 +53,11 @@ const buildDefaultConversation = ({
         lastConversationSetup?.model ??
         lastSelectedModel[endpoint] ??
         endpointsConfig[endpoint]?.availableModels?.[0] ??
-        'gpt-3.5-turbo'
+        'gpt-3.5-turbo',
+      temperature: lastConversationSetup?.temperature ?? 0,
+      top_p: lastConversationSetup?.top_p ?? 1,
+      presence_penalty: lastConversationSetup?.presence_penalty ?? 0,
+      frequency_penalty: lastConversationSetup?.frequency_penalty ?? 0
     };
   } else if (endpoint === null) {
     conversation = {
