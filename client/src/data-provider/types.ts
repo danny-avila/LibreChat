@@ -43,7 +43,8 @@ export enum EModelEndpoint {
   openAI = 'openAI',
   bingAI = 'bingAI',
   chatGPT = 'chatGPT',
-  chatGPTBrowser = 'chatGPTBrowser'
+  chatGPTBrowser = 'chatGPTBrowser',
+  gptPlugins = 'gptPlugins',
 }
 
 export type TConversation = {

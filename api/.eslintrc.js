@@ -21,7 +21,7 @@ module.exports = {
       }
     ],
     'linebreak-style': 0,
-    'arrow-parens': [2, 'as-needed', { requireForBlockBody: true }],
+    'arrow-parens': [2, 'always', { requireForBlockBody: true }],
     // 'no-plusplus': ['error', { allowForLoopAfterthoughts: true }],
     'no-console': 'off',
     'import/extensions': 'off',

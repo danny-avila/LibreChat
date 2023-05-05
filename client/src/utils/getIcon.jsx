@@ -34,7 +34,7 @@ const getIcon = props => {
       icon = <GPTIcon size={size * 0.7} />;
       bg = 'linear-gradient(0.375turn, #61bde2, #4389d0)';
       name = chatGptLabel || 'ChatGPT';
-    } else if (endpoint === 'openAI') {
+    } else if (endpoint === 'openAI' || endpoint === 'gptPlugins') {
       const { chatGptLabel } = props;
 
       icon = <GPTIcon size={size * 0.7} />;

@@ -60,7 +60,26 @@ const messageSchema = mongoose.Schema(
       required: false,
       select: false,
       default: false
+    },
+    plugin: {
+      latest: {
+        type: String,
+        required: false
+      },
+      inputs: {
+        type: [mongoose.Schema.Types.Mixed],
+        required: false
+      },
+      outputs: {
+        type: String,
+        required: false
+      }
     }
+    // plugin: {
+    //   type: mongoose.Schema.Types.Mixed,
+    //   required: false,
+    //   default: null
+    // }
   },
   { timestamps: true }
 );

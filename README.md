@@ -246,7 +246,7 @@ Currently, this project is only functional with the `text-davinci-003` model.
 ### Local
 ### **[Automated Installer (Windows)](https://github.com/fuegovic/chatgpt-clone-local-installer)**
 (Includes a Startup and Update Utility)
-### **[In-Depth Instructions](https://github.com/danny-avila/chatgpt-clone/blob/0d4f0f74c04337aaf51b9a3eef898165a7009156/LOCAL_INSTALL.md)** 
+### **[In-Depth Instructions](https://github.com/danny-avila/chatgpt-clone/blob/main/guides/LOCAL_INSTALL.md)** 
 by [@fuegovic](https://github.com/fuegovic)
 
 ### Docker
