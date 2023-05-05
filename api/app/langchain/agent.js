@@ -39,7 +39,7 @@ class CustomChatAgent {
       }
     });
 
-    return '"' + output;
+    return output + '"';
   }
 
   buildErrorInput(message, errorMessage) {
@@ -56,7 +56,7 @@ class CustomChatAgent {
       `;
   }
 
-  buildPromptPrefix(result) {
+  buildPromptPrefix(result, message) {
     if ((result.output && result.output.includes('N/A')) || !result.output) {
       return null;
     }
@@ -67,7 +67,7 @@ class CustomChatAgent {
         : 'Internal Actions Taken: None';
 
     const toolBasedInstructions = internalActions.toLowerCase().includes('image')
-      ? 'Do your best to include image URLs from above with Markdown syntax: ![alt-text](URL)'
+      ? 'You must include the exact image paths from above, formatted in Markdown syntax: ![alt-text](URL)'
       : '';
 
     const errorMessage = result.errorMessage
@@ -83,9 +83,10 @@ class CustomChatAgent {
     // Always maintain a conversational tone.`;
     return `As ChatGPT, review the answer you generated using plugins. The answer hasn't been sent to the user yet.${errorMessage}\n${internalActions}\n
     Preliminary Answer: "${result.output.trim()}"\n
-    Review if the answer is accurate, appropriate, or can be improved. Compile a new answer to reply to the User based on your preliminary answer, internal actions, thoughts, and observations, making improvements wherever possible.
-    Always maintain a conversational tone. Do your best to cite sources if you are using any web links. ${toolBasedInstructions}
-    Current date: ${this.currentDateString}${this.endToken}\n\n`;
+    Reply conversationally to the User based on your preliminary answer, internal actions, thoughts, and observations, making improvements wherever possible, but do not modify URLs.
+    You must cite sources if you are using any web links. ${toolBasedInstructions}
+    Only respond with your conversational reply to the following User Message:
+    "${message}"`;
   }
 
   setOptions(options) {
@@ -114,7 +115,9 @@ class CustomChatAgent {
       temperature: typeof modelOptions.temperature === 'undefined' ? 0 : modelOptions.temperature,
       top_p: typeof modelOptions.top_p === 'undefined' ? 1 : modelOptions.top_p,
       presence_penalty:
-        typeof modelOptions.presence_penalty === 'undefined' ? 1 : modelOptions.presence_penalty,
+        typeof modelOptions.presence_penalty === 'undefined' ? 0 : modelOptions.presence_penalty,
+      frequency_penalty:
+        typeof modelOptions.frequency_penalty === 'undefined' ? 0 : modelOptions.frequency_penalty,
       stop: modelOptions.stop
     };
 
@@ -526,7 +529,7 @@ class CustomChatAgent {
       await this.executorCall(message);
     }
 
-    const promptPrefix = this.buildPromptPrefix(this.result);
+    const promptPrefix = this.buildPromptPrefix(this.result, message);
 
     if (this.options.debug) {
       console.debug('promptPrefix', promptPrefix);
@@ -559,12 +562,12 @@ class CustomChatAgent {
 
     const orderedMessages = [
       ...messages,
-      {
-        messageId: userMessage.messageId,
-        parentMessageId: userMessage.parentMessageId,
-        role: 'User',
-        text: userMessage.text
-      }
+      // {
+      //   messageId: userMessage.messageId,
+      //   parentMessageId: userMessage.parentMessageId,
+      //   role: 'User',
+      //   text: userMessage.text
+      // }
     ];
 
     let promptPrefix;
@@ -609,7 +612,7 @@ class CustomChatAgent {
         const message = orderedMessages.pop();
         // const roleLabel = message.role === 'User' ? this.userLabel : this.chatGptLabel;
         const roleLabel = message.role;
-        const messageString = `${this.startToken}${roleLabel}:\n${message.text}${this.endToken}\n`;
+        let messageString = `${this.startToken}${roleLabel}:\n${message.text}${this.endToken}\n`;
         let newPromptBody;
         if (promptBody || isChatGptModel) {
           newPromptBody = `${messageString}${promptBody}`;
@@ -644,7 +647,8 @@ class CustomChatAgent {
 
     await buildPromptBody();
 
-    const prompt = `${promptBody}${promptSuffix}`;
+    // const prompt = `${promptBody}${promptSuffix}`;
+    const prompt = promptBody;
     if (isChatGptModel) {
       messagePayload.content = prompt;
       // Add 2 tokens for metadata after all messages have been counted.
@@ -658,7 +662,7 @@ class CustomChatAgent {
     );
 
     if (isChatGptModel) {
-      return [instructionsPayload, messagePayload];
+      return [messagePayload, instructionsPayload];
     }
     return prompt;
   }

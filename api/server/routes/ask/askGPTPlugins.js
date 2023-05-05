@@ -20,10 +20,10 @@ router.post('/', async (req, res) => {
     tools: req.body?.tools.map((tool) => tool.value) ?? [],
     // chatGptLabel: req.body?.chatGptLabel ?? null,
     // promptPrefix: req.body?.promptPrefix ?? null,
-    // temperature: req.body?.temperature ?? 1,
-    // top_p: req.body?.top_p ?? 1,
-    // presence_penalty: req.body?.presence_penalty ?? 0,
-    // frequency_penalty: req.body?.frequency_penalty ?? 0
+    temperature: req.body?.temperature ?? 0,
+    top_p: req.body?.top_p ?? 1,
+    presence_penalty: req.body?.presence_penalty ?? 0,
+    frequency_penalty: req.body?.frequency_penalty ?? 0
   };
 
   const availableModels = getOpenAIModels();
