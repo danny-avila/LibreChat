@@ -20,6 +20,11 @@ class CustomChatAgent {
     this.openAIApiKey = apiKey;
     this.setOptions(options);
     this.executor = null;
+    this.currentDateString = new Date().toLocaleDateString('en-us', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
   }
 
   getActions(input = null) {
@@ -74,19 +79,12 @@ class CustomChatAgent {
       ? `\nYou encountered an error in attempting a response. The user is not aware of the error so you shouldn't mention it.\nReview the actions taken carefully in case there is a partial or complete answer within them.\nError Message: ${result.errorMessage}\n`
       : '';
 
-    // return `You are ChatGPT, review your actions & draft answer you generated using plugins in response to user's message. The answer hasn't been sent to the user yet.${errorMessage}
-    // ${internalActions}
-    // Draft Answer: "${result.output.trim()}"
-    // Current date: ${this.currentDateString}${this.endToken}
-    // Review if the answer is accurate, appropriate, or can be improved. Compile a new conversational response revised from your Draft Answer, internal actions, thoughts, and observations, making improvements wherever possible.
-    // Do your best to cite sources if you are using any web links. ${toolBasedInstructions}
-    // Always maintain a conversational tone.`;
     return `As ChatGPT, review the answer you generated using plugins. The answer hasn't been sent to the user yet.${errorMessage}\n${internalActions}\n
-    Preliminary Answer: "${result.output.trim()}"\n
-    Reply conversationally to the User based on your preliminary answer, internal actions, thoughts, and observations, making improvements wherever possible, but do not modify URLs.
-    You must cite sources if you are using any web links. ${toolBasedInstructions}
-    Only respond with your conversational reply to the following User Message:
-    "${message}"`;
+Preliminary Answer: "${result.output.trim()}"\n
+Reply conversationally to the User based on your preliminary answer, internal actions, thoughts, and observations, making improvements wherever possible, but do not modify URLs.
+You must cite sources if you are using any web links. ${toolBasedInstructions}
+Only respond with your conversational reply to the following User Message:
+"${message}"`;
   }
 
   setOptions(options) {
@@ -122,6 +120,7 @@ class CustomChatAgent {
     };
 
     this.isChatGptModel = this.modelOptions.model.startsWith('gpt-');
+    this.isGpt3 = this.modelOptions.model.startsWith('gpt-3');
     // Davinci models have a max context length of 4097 tokens.
     this.maxContextTokens = this.options.maxContextTokens || 4095;
     // I decided to reserve 1024 tokens for the response.
@@ -325,7 +324,11 @@ class CustomChatAgent {
 
   async saveMessageToDatabase(message, user = null) {
     await saveMessage({ ...message, unfinished: false });
-    await saveConvo(user, { conversationId: message.conversationId, endpoint: 'gptPlugins', ...this.modelOptions });
+    await saveConvo(user, {
+      conversationId: message.conversationId,
+      endpoint: 'gptPlugins',
+      ...this.modelOptions
+    });
   }
 
   saveLatestAction(action) {
@@ -343,12 +346,7 @@ class CustomChatAgent {
       console.debug('Agent Model:');
       console.dir(model, { depth: null });
     }
-    
-    this.currentDateString = new Date().toLocaleDateString('en-us', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
+
     this.availableTools = loadTools({ model });
 
     // load tools
@@ -361,7 +359,7 @@ class CustomChatAgent {
         this.tools.push(validTool());
       }
     }
-    
+
     if (this.tools.length > 0) {
       this.tools.push(new SelfReflectionTool({ message }));
     } else {
@@ -410,7 +408,19 @@ class CustomChatAgent {
     let payload;
     // Doing it this way instead of having each message be a separate element in the array seems to be more reliable,
     // especially when it comes to keeping the AI in character. It also seems to improve coherency and context retention.
-    payload = await this.buildPrompt(messages, userMessage);
+    if (!this.options.promptPrefix) {
+      payload = await this.buildPrompt([
+        ...messages,
+        {
+          messageId: userMessage.messageId,
+          parentMessageId: userMessage.parentMessageId,
+          role: 'User',
+          text: userMessage.text
+        }
+      ]);
+    } else {
+      payload = await this.buildPrompt(messages);
+    }
 
     let reply = '';
     let result = {};
@@ -502,7 +512,7 @@ class CustomChatAgent {
     const userMessageId = crypto.randomUUID();
     const responseMessageId = crypto.randomUUID();
     this.pastMessages = await this.loadHistory(conversationId, this.options?.parentMessageId);
-    
+
     const userMessage = {
       messageId: userMessageId,
       parentMessageId,
@@ -511,7 +521,7 @@ class CustomChatAgent {
       text: message,
       isCreatedByUser: true
     };
-    
+
     if (typeof opts?.getIds === 'function') {
       opts.getIds({
         userMessage,
@@ -519,11 +529,11 @@ class CustomChatAgent {
         responseMessageId
       });
     }
-    
+
     await this.saveMessageToDatabase(userMessage, user);
-    
+
     this.result = {};
-    
+
     if (this.options.tools.length > 0) {
       await this.initialize({ user, message, onAgentAction, onChainEnd });
       await this.executorCall(message);
@@ -560,15 +570,7 @@ class CustomChatAgent {
       console.debug('buildPrompt messages', messages);
     }
 
-    const orderedMessages = [
-      ...messages,
-      // {
-      //   messageId: userMessage.messageId,
-      //   parentMessageId: userMessage.parentMessageId,
-      //   role: 'User',
-      //   text: userMessage.text
-      // }
-    ];
+    const orderedMessages = messages;
 
     let promptPrefix;
     if (this.options.promptPrefix) {
@@ -594,6 +596,11 @@ class CustomChatAgent {
       role: 'system',
       content: promptSuffix
     };
+
+    if (this.isGpt3) {
+      instructionsPayload.role = 'user';
+      messagePayload.role = 'user';
+    }
 
     let currentTokenCount;
     if (isChatGptModel) {
@@ -655,6 +662,12 @@ class CustomChatAgent {
       currentTokenCount += 2;
     }
 
+    if (this.isGpt3 && messagePayload.content.length > 0) {
+      const context = 'Conversation Context:\n';
+      messagePayload.content = `${context}${prompt}`;
+      currentTokenCount += this.getTokenCount(context);
+    }
+
     // Use up to `this.maxContextTokens` tokens (prompt + response), but try to leave `this.maxTokens` tokens for the response.
     this.modelOptions.max_tokens = Math.min(
       this.maxContextTokens - currentTokenCount,
@@ -662,7 +675,8 @@ class CustomChatAgent {
     );
 
     if (isChatGptModel) {
-      return [messagePayload, instructionsPayload];
+      const result = [messagePayload, instructionsPayload];
+      return result.filter((message) => message.content.length > 0);
     }
     return prompt;
   }
