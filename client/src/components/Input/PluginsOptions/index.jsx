@@ -110,7 +110,6 @@ function PluginsOptions() {
           )}
           onClick={() => setVisibility(prev => !prev)}
         >
-          {/* <Settings2 className="w-4 text-gray-600 dark:text-white" /> */}
           <ChevronDownIcon className={cn(!visibile ? 'rotate-180 transform' : '', 'w-4 text-gray-600 dark:text-white')} />
         </Button>
         <SelectDropDown
