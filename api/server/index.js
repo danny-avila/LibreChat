@@ -36,7 +36,7 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   if(process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
     require('../strategies/facebookStrategy');
   }
-
+  app.use('/oauth', routes.oauth)
   // api endpoint
   app.use('/api/auth', routes.auth);
   app.use('/api/search', routes.search);

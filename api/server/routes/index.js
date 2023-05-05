@@ -6,6 +6,7 @@ const prompts = require('./prompts');
 const search = require('./search');
 const tokenizer = require('./tokenizer');
 const auth = require('./auth');
+const oauth = require('./oauth');
 const { router: endpoints } = require('./endpoints');
 
 module.exports = {
@@ -16,6 +17,7 @@ module.exports = {
   presets,
   prompts,
   auth,
+  oauth,
   tokenizer,
   endpoints,
 };
