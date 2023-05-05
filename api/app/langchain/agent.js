@@ -79,7 +79,7 @@ class CustomChatAgent {
       ? `\nYou encountered an error in attempting a response. The user is not aware of the error so you shouldn't mention it.\nReview the actions taken carefully in case there is a partial or complete answer within them.\nError Message: ${result.errorMessage}\n`
       : '';
 
-    return `As ChatGPT, review the answer you generated using plugins. The answer hasn't been sent to the user yet.${errorMessage}\n${internalActions}\n
+    return `As ChatGPT, review the answer you generated using plugins in response to the User Message below. The answer hasn't been sent to the user yet.${errorMessage}\n${internalActions}\n
 Preliminary Answer: "${result.output.trim()}"\n
 Reply conversationally to the User based on your preliminary answer, internal actions, thoughts, and observations, making improvements wherever possible, but do not modify URLs.
 You must cite sources if you are using any web links. ${toolBasedInstructions}
