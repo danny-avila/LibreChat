@@ -1,5 +1,5 @@
 export const user = () => {
-  return `/auth/user`;
+  return `/api/auth/user`;
 };
 
 export const messages = (id: string) => {
@@ -51,33 +51,33 @@ export const tokenizer = () => {
 }
 
 export const login = () => {
-  return '/auth/login';
+  return '/api/auth/login';
 }
 
 export const logout = () => {
-  return '/auth/logout';
+  return '/api/auth/logout';
 }
 
 export const register = () => {
-  return '/auth/register';
+  return '/api/auth/register';
 }
 
 export const loginFacebook = () => {
-  return '/auth/facebook';
+  return '/api/auth/facebook';
 }
 
 export const loginGoogle = () => {
-  return '/auth/google';
+  return '/api/auth/google';
 }
 
 export const refreshToken = () => {
-  return '/auth/refresh';
+  return '/api/auth/refresh';
 }
 
 export const requestPasswordReset = () => {
-  return '/auth/requestPasswordReset';
+  return '/api/auth/requestPasswordReset';
 }
 
 export const resetPassword = () => {
-  return '/auth/resetPassword';
+  return '/api/auth/resetPassword';
 }

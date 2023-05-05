@@ -24,7 +24,6 @@ const userSchema = mongoose.Schema(
     username: {
       type: String,
       lowercase: true,
-      unique: true,
       required: [true, "can't be blank"],
       match: [/^[a-zA-Z0-9_]+$/, 'is invalid'],
       index: true
@@ -121,42 +120,18 @@ userSchema.methods.generateToken = function () {
   return token;
 };
 
-// userSchema.methods.generateRefreshToken = function () {
-//   const refreshToken = jwt.sign(
-//     {
-//       id: this._id,
-//       username: this.username,
-//       provider: this.provider,
-//       email: this.email
-//     },
-//     refreshSecret,
-//     { expiresIn: eval(process.env.REFRESH_TOKEN_EXPIRY) }
-//   );
-//   log({
-//     title: 'Generate Refresh Token',
-//     parameters: [
-//       { name: 'refreshToken', value: refreshToken },
-//       { name: 'user', value: this.user }
-//     ]
-//   });
-//   return refreshToken;
-// };
-
-userSchema.methods.registerUser = (newUser, callback) => {
-  log({
-    title: 'Register User',
-    parameters: [{ name: 'newUser', value: newUser }]
-  });
-  bcrypt.genSalt(10, (err, salt) => {
-    bcrypt.hash(newUser.password, salt, (errh, hash) => {
-      if (err) {
-        console.log(err);
-      }
-      // set pasword to hash
-      newUser.password = hash;
-      newUser.save(callback);
-    });
-  });
+userSchema.methods.generateRefreshToken = function () {
+  const refreshToken = jwt.sign(
+    {
+      id: this._id,
+      username: this.username,
+      provider: this.provider,
+      email: this.email
+    },
+    refreshSecret,
+    { expiresIn: eval(process.env.REFRESH_TOKEN_EXPIRY) }
+  );
+  return refreshToken;
 };
 
 userSchema.methods.comparePassword = function (candidatePassword, callback) {

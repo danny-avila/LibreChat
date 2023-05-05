@@ -6,6 +6,7 @@ const bcrypt = require('bcrypt');
 const DebugControl = require('../../utils/debug.js');
 const Joi = require('joi');
 const { registerSchema } = require('../../strategies/validators');
+const migrateDataToFirstUser = require('../../utils/migrateDataToFirstUser');
 
 function log({ title, parameters }) {
   DebugControl.log.functionName(title);
@@ -76,6 +77,9 @@ const registerUser = async (user) => {
       return response;
     }
 
+    //determine if this is the first registered user (not counting anonymous_user)
+    const isFirstRegisteredUser = await User.countDocuments({}) === 0;
+
     try {
       const newUser = await new User({
         provider: 'email',
@@ -83,7 +87,8 @@ const registerUser = async (user) => {
         password,
         username,
         name,
-        avatar: null
+        avatar: null,
+        role: isFirstRegisteredUser ? 'ADMIN' : 'USER',
       });
 
       // todo: implement refresh token
@@ -99,6 +104,11 @@ const registerUser = async (user) => {
           newUser.save();
         });
       });
+      console.log('newUser', newUser)
+      if (isFirstRegisteredUser) {
+        migrateDataToFirstUser(newUser);
+        // console.log(migrate);
+      }
       response = { status: 200, user: newUser };
       return response;
     } catch (err) {
@@ -175,6 +185,7 @@ const resetPassword = async (userId, token, password) => {
 
   return { message: 'Password reset was successful' };
 };
+
 
 module.exports = {
   // signup,

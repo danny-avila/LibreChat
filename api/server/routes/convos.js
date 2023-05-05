@@ -6,12 +6,12 @@ const requireJwtAuth = require('../../middleware/requireJwtAuth');
 
 router.get('/', requireJwtAuth, async (req, res) => {
   const pageNumber = req.query.pageNumber || 1;
-  res.status(200).send(await getConvosByPage(req.user.username, pageNumber));
+  res.status(200).send(await getConvosByPage(req.user.id, pageNumber));
 });
 
 router.get('/:conversationId', requireJwtAuth, async (req, res) => {
   const { conversationId } = req.params;
-  const convo = await getConvo(req.user.username, conversationId);
+  const convo = await getConvo(req.user.id, conversationId);
 
   if (convo) res.status(200).send(convo.toObject());
   else res.status(404).end();
@@ -31,7 +31,7 @@ router.post('/clear', requireJwtAuth, async (req, res) => {
   }
 
   try {
-    const dbResponse = await deleteConvos(req.user.username, filter);
+    const dbResponse = await deleteConvos(req.user.id, filter);
     res.status(201).send(dbResponse);
   } catch (error) {
     console.error(error);
@@ -43,7 +43,7 @@ router.post('/update', requireJwtAuth, async (req, res) => {
   const update = req.body.arg;
 
   try {
-    const dbResponse = await saveConvo(req.user.username, update);
+    const dbResponse = await saveConvo(req.user.id, update);
     res.status(201).send(dbResponse);
   } catch (error) {
     console.error(error);

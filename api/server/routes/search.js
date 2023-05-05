@@ -17,7 +17,7 @@ router.get('/sync', async function (req, res) {
 
 router.get('/', requireJwtAuth, async function (req, res) {
   try {
-    let user = req.user.username;
+    let user = req.user.id;
     user = user ?? null;
     const { q } = req.query;
     const pageNumber = req.query.pageNumber || 1;
