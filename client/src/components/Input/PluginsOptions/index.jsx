@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
+import { Settings2, ChevronDownIcon } from 'lucide-react';
 import SelectDropDown from '../../ui/SelectDropDown';
 import MultiSelectDropDown from '../../ui/MultiSelectDropDown';
-import { Settings2 } from 'lucide-react';
 import EndpointOptionsPopover from '../../Endpoints/EndpointOptionsPopover';
 import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
 import { Button } from '../../ui/Button.tsx';
@@ -14,13 +14,26 @@ import store from '~/store';
 function PluginsOptions() {
   const [advancedMode, setAdvancedMode] = useState(false);
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
-
+  const [visibile, setVisibility] = useState(true);
+  const [opacityClass, setOpacityClass] = useState('full-opacity');
+  const messagesTree = useRecoilValue(store.messagesTree);
   const [conversation, setConversation] = useRecoilState(store.conversation) || {};
+  const endpointsConfig = useRecoilValue(store.endpointsConfig);
+
+  useEffect(() => {
+    if (advancedMode) {
+      return;
+    } else if (messagesTree?.length >= 1) {
+      setOpacityClass('show');
+    } else {
+      setOpacityClass('full-opacity');
+    }
+  }, [messagesTree]);
+  
   const { endpoint, conversationId } = conversation;
   const { model, temperature, top_p, presence_penalty, frequency_penalty } = conversation;
   // const { model, chatGptLabel, promptPrefix, temperature, top_p, presence_penalty, frequency_penalty } = conversation;
 
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   if (endpoint !== 'gptPlugins') return null;
   // if (conversationId !== 'new') return null; // --> allows to change options during conversation
@@ -76,16 +89,36 @@ function PluginsOptions() {
     <>
       <div
         className={
-          'openAIOptions-simple-container flex w-full flex-wrap items-center justify-center gap-2' +
-          (!advancedMode ? ' show' : '')
+          'pluginOptions flex w-full flex-wrap items-center justify-center gap-2 ' +
+          (!advancedMode ? opacityClass : '')
         }
+        onMouseEnter={() => {
+          if (advancedMode) return;
+          setOpacityClass('full-opacity');
+        }}
+        onMouseLeave={() => {
+          if (advancedMode) return;
+          if (!messagesTree || messagesTree.length === 0) return;
+          setOpacityClass('show');
+        }}
       >
+        <Button
+          type="button"
+          className={cn(
+            cardStyle,
+            'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-4 hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-600'
+          )}
+          onClick={() => setVisibility(prev => !prev)}
+        >
+          {/* <Settings2 className="w-4 text-gray-600 dark:text-white" /> */}
+          <ChevronDownIcon className={cn(!visibile ? 'rotate-180 transform' : '', 'w-4 text-gray-600 dark:text-white')} />
+        </Button>
         <SelectDropDown
           value={model}
           setValue={setOption('model')}
           availableValues={models}
           showAbove={true}
-          className={cn(cardStyle, 'min-w-60 z-50 flex w-60')}
+          className={cn(cardStyle, 'min-w-60 z-49 flex w-60', !visibile && 'hidden')}
         />
         <MultiSelectDropDown
           value={conversation.tools || []}
@@ -93,13 +126,14 @@ function PluginsOptions() {
           setValue={setTools}
           availableValues={availableTools}
           showAbove={true}
-          className={cn(cardStyle, 'min-w-60 z-50 w-60')}
+          className={cn(cardStyle, 'min-w-60 z-50 w-60', !visibile && 'hidden')}
         />
         <Button
           type="button"
           className={cn(
             cardStyle,
-            'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-4 hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-600'
+            'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-4 hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-600',
+            !visibile && 'hidden'
           )}
           onClick={triggerAdvancedMode}
         >
