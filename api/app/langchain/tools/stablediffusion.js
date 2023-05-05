@@ -12,14 +12,11 @@ class StableDiffusionApi extends Tool {
     Guidelines:
     - Visually describe the moods, details, structures, styles, and/or proportions of the image
     - It's best to follow this format for image creation:
-    "[detailed keywords to describe the subject, separated by comma] | [keywords that tool should avoid]"
+    "[detailed keywords to describe the subject, separated by comma] | [keywords we want to exclude from the final image]"
+    - Here's an example prompt for generating a realistic portrait photo of a man:
+    "[photo of a man in black clothes, half body, high detailed skin, coastline, overcast weather, wind, waves, 8k uhd, dslr, soft lighting, high quality, film grain, Fujifilm XT3] | [semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime, out of frame, low quality, ugly, mutation, deformed]    
     - Generate images only once per human query unless explicitly requested by the user`;
   }
-  // "Subject": "Mona Lisa",
-  // "Style": "Chinese traditional painting",
-  // "Color": "Mainly wash tones of ink, with small color blocks in some parts",
-  // "Details": "Mona Lisa should have long hair, a silk dress, holding a fan. The background should have mountains and trees.",
-  // "Emotion": "Serene and elegant"
 
   replaceNewLinesWithSpaces(inputString) {
     return inputString.replace(/\r\n|\r|\n/g, ' ');
