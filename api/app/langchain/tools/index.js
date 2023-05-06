@@ -12,7 +12,7 @@ const { WebBrowser } = require('langchain/tools/webbrowser');
 const GoogleSearchAPI = require('./googleSearch');
 const SelfReflectionTool = require('./selfReflection');
 const OpenAICreateImage = require('./openaiCreateImage');
-const StableDiffusionApi = require('./stablediffusion');
+const StableDiffusionAPI = require('./stablediffusion');
 const WolframAlphaAPI = require('./wolfram');
 const availableTools = [
   {
@@ -94,7 +94,7 @@ const loadTools = ({ model }) => ({
     return ZapierToolKit.fromZapierNLAWrapper(zapier);
   },
   'dall-e': () => new OpenAICreateImage(),
-  'stable-diffusion': () => new StableDiffusionApi(),
+  'stable-diffusion': () => new StableDiffusionAPI(),
   'wolfram': () => new WolframAlphaAPI(),
   // plugins: async () => {
   //   return [

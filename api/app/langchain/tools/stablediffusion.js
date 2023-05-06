@@ -4,7 +4,7 @@ const path = require('path');
 const axios = require('axios');
 const sharp = require('sharp');
 
-class StableDiffusionApi extends Tool {
+class StableDiffusionAPI extends Tool {
   constructor() {
     super();
     this.name = 'stable-diffusion';
@@ -74,4 +74,4 @@ class StableDiffusionApi extends Tool {
   }
 }
 
-module.exports = StableDiffusionApi;
+module.exports = StableDiffusionAPI;
