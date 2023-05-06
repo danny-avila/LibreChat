@@ -94,7 +94,11 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
 
     return {
       tool: match[1].trim().toLowerCase(),
-      toolInput: match[2].trim().toLowerCase().replace(/^"+|"+$/g, '') ?? '',
+      toolInput:
+        match[2]
+          .trim()
+          .toLowerCase()
+          .replace(/^"+|"+$/g, '') ?? '',
       log: text
     };
   }
@@ -115,7 +119,7 @@ class Gpt4OutputParser extends ZeroShotAgentOutputParser {
     // this.actionValues = /(?:Action(?: \d*):) ?([\s\S]*?)(?:\n(?:Action Input(?: \d*):) ?([\s\S]*?))?$/i;
     // this.actionInputRegex = /(?:Action Input(?: \d*):) ?([\s\S]*?)$/i;
     this.actionValues = /(?:Action(?: [1-9])?:) ([\s\S]*?)(?:\n(?:Action Input(?: [1-9])?:) ([\s\S]*?))?$/i;
-    this.actionInputRegex = /(?:Action Input(?: \d*):) ?([\s\S]*?)$/i;
+    this.actionInputRegex = /(?:Action Input(?: *\d*):) ?([\s\S]*?)$/i;
   }
 
   async parse(text) {
@@ -150,10 +154,7 @@ class Gpt4OutputParser extends ZeroShotAgentOutputParser {
       };
     }
     if (!match) {
-      console.log(
-        '\n\n<----------------------HIT NO MATCH PARSING ERROR---------------------->\n\n',
-        match
-      );
+      console.log('\n\n<----------------------HIT NO MATCH PARSING ERROR---------------------->\n\n', match);
       const thoughts = text.replace(/[tT]hought:/, '').split('\n');
       return {
         tool: 'self-reflection',
@@ -167,21 +168,17 @@ class Gpt4OutputParser extends ZeroShotAgentOutputParser {
         '\n\n<----------------------HIT NO ACTION INPUT PARSING ERROR---------------------->\n\n',
         match
       );
-      
+
       // In case there is no action input, let's double-check if there is an action input in 'text' variable
       const actionInputMatch = this.actionInputRegex.exec(text);
-      let toolInput = null;
-      
       if (actionInputMatch) {
-        toolInput = actionInputMatch[1].trim();
+        return {
+          tool: match[1].trim().toLowerCase(),
+          toolInput: actionInputMatch[1].trim(),
+          log: text
+        };
       }
-    
-      return {
-        tool: match[1].trim().toLowerCase(),
-        toolInput,
-        log: text
-      };
-    }    
+    }
 
     if (match && match[1].trim().length > this.longestToolName.length) {
       console.log('\n\n<----------------------HIT LONG PARSING ERROR---------------------->\n\n');
@@ -196,6 +193,17 @@ class Gpt4OutputParser extends ZeroShotAgentOutputParser {
           firstIndex = toolIndex;
           action = name;
         }
+      }
+      
+      // In case there is no action input, let's double-check if there is an action input in 'text' variable
+      const actionInputMatch = this.actionInputRegex.exec(text);
+      if (action && actionInputMatch) {
+        console.log('\n\n<------Matched Action Input in Long Parsing Error------>\n\n', actionInputMatch);
+        return {
+          tool: action,
+          toolInput: actionInputMatch[1].trim().replaceAll('"', ''),
+          log: text
+        };
       }
 
       if (action) {
