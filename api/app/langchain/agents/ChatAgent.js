@@ -2,12 +2,13 @@ const crypto = require('crypto');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('@dqbd/tiktoken');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
 const { Agent, ProxyAgent } = require('undici');
+const TextStream = require('../tools/stream');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { CallbackManager } = require('langchain/callbacks');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
 const { initializeCustomAgent } = require('./initializeCustomAgent');
-const { getMessages, saveMessage, saveConvo } = require('../../models');
-const { loadTools, SelfReflectionTool } = require('./tools');
+const { getMessages, saveMessage, saveConvo } = require('../../../models');
+const { loadTools, SelfReflectionTool } = require('../tools');
 
 const FORMAT_INSTRUCTIONS = `Remember, all your responses MUST be in the format described. Do not respond unless it's in the format described, using the structure of Action, Action Input, etc.`;
 
@@ -307,9 +308,9 @@ Only respond with your conversational reply to the following User Message:
 
     const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
 
-    if (this.options.debug) {
-      console.debug('orderedMessages', orderedMessages);
-    }
+    // if (this.options.debug) {
+    //   console.debug('orderedMessages', orderedMessages);
+    // }
 
     // Convert Message documents into appropriate ChatMessage instances
     const chatMessages = orderedMessages.map((msg) =>
@@ -362,8 +363,16 @@ Only respond with your conversational reply to the following User Message:
       }
     }
 
+    if (this.options.debug) {
+      console.debug('Requested Tools');
+      console.debug(this.options.tools);
+      console.debug('Loaded Tools');
+      console.debug(this.tools.map((tool) => tool.name));
+    }
+
     if (this.tools.length > 0 ) {
-      this.tools.push(new SelfReflectionTool({ message, isGpt3: this.agentIsGpt3 }));
+      // this.tools.push(new SelfReflectionTool({ message, isGpt3: this.agentIsGpt3 }));
+      this.tools.push(new SelfReflectionTool({ message, isGpt3: false }));
     } else if (this.tools.length === 0) {
       return;
     }
@@ -536,6 +545,11 @@ Only respond with your conversational reply to the following User Message:
 
     this.result = {};
 
+    if (this.options.debug) {
+      console.debug('options');
+      console.debug(this.options);
+    }
+
     if (this.options.tools.length > 0) {
       await this.initialize({ user, message, onAgentAction, onChainEnd });
       await this.executorCall(message);
@@ -552,6 +566,8 @@ Only respond with your conversational reply to the following User Message:
       };
   
       await this.saveMessageToDatabase(responseMessage, user);
+      const textStream = new TextStream(this.result.output);
+      await textStream.processTextStream(opts.onProgress);
       return { ...responseMessage, ...this.result };
     }
 
@@ -679,7 +695,7 @@ Only respond with your conversational reply to the following User Message:
     }
 
     if (this.isGpt3 && messagePayload.content.length > 0) {
-      const context = 'Conversation Context:\n';
+      const context = `Chat History:\n`;
       messagePayload.content = `${context}${prompt}`;
       currentTokenCount += this.getTokenCount(context);
     }

@@ -18,43 +18,43 @@ const availableTools = [
   {
     name: 'Wolfram',
     value: 'wolfram',
-    icon: 'https://www.wolframcdn.com/images/icons/Wolfram.png',
+    icon: 'https://www.wolframcdn.com/images/icons/Wolfram.png'
   },
   {
     name: 'Calculator',
     value: 'calculator',
-    icon: 'https://i.imgur.com/RHsSG5h.png',
+    icon: 'https://i.imgur.com/RHsSG5h.png'
   },
   {
     name: 'Google',
     value: 'google',
-    icon: 'https://i.imgur.com/SMmVkNB.png',
+    icon: 'https://i.imgur.com/SMmVkNB.png'
   },
   {
     name: 'Browser',
     value: 'browser',
-    icon: null,
+    icon: null
   },
   {
     name: 'Serpapi',
     value: 'serpapi',
-    icon: 'https://i.imgur.com/5yQHUz4.png',
+    icon: 'https://i.imgur.com/5yQHUz4.png'
   },
   {
     name: 'DALL-E',
     value: 'dall-e',
-    icon: 'https://i.imgur.com/u2TzXzH.png',
+    icon: 'https://i.imgur.com/u2TzXzH.png'
   },
   {
     name: 'Stable Diffusion',
     value: 'stable-diffusion',
-    icon: 'https://i.imgur.com/Yr466dp.png',
+    icon: 'https://i.imgur.com/Yr466dp.png'
   },
   {
     name: 'Zapier',
     value: 'zapier',
-    icon: 'https://cdn.zappy.app/8f853364f9b383d65b44e184e04689ed.png',
-  },
+    icon: 'https://cdn.zappy.app/8f853364f9b383d65b44e184e04689ed.png'
+  }
 ];
 
 const validateTools = (tools) => {
@@ -72,8 +72,10 @@ const validateTools = (tools) => {
   validateAPIKey('GOOGLE_API_KEY', 'google');
   validateAPIKey('WOLFRAM_APP_ID', 'wolfram');
 
-  // console.log('Valid tools:', validTools);
-  return tools.filter((tool) => validTools.has(tool));
+  return tools.filter((tool) => {
+    if (!validTools.has(tool)) console.log('Invalid tool, are your tool credentials set? tool: ', tool);
+    return validTools.has(tool);
+  });
 };
 
 const loadTools = ({ model }) => ({
@@ -95,7 +97,7 @@ const loadTools = ({ model }) => ({
   },
   'dall-e': () => new OpenAICreateImage(),
   'stable-diffusion': () => new StableDiffusionAPI(),
-  'wolfram': () => new WolframAlphaAPI(),
+  wolfram: () => new WolframAlphaAPI()
   // plugins: async () => {
   //   return [
   //     new RequestsGetTool(),
@@ -109,5 +111,5 @@ module.exports = {
   validateTools,
   availableTools,
   loadTools,
-  SelfReflectionTool,
+  SelfReflectionTool
 };

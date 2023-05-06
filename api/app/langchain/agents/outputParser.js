@@ -111,6 +111,7 @@ class Gpt4OutputParser extends ZeroShotAgentOutputParser {
       }
     }
     this.finishToolNameRegex = /(?:the\s+)?final\s+answer[:\s]*\s*/i;
+    this.actionInputRegex = /(?:Action Input(?: 1)?:) ([\s\S]*?)(?:\n(?:Action Input(?: 1)?:) ([\s\S]*?))?$/;
   }
 
   async parse(text) {
@@ -138,18 +139,19 @@ class Gpt4OutputParser extends ZeroShotAgentOutputParser {
       return {
         tool: 'self-reflection',
         toolInput: match[2].trim().replace(/^"+|"+$/g, '') ?? '',
-        log: text,
+        log: text
       };
     }
     if (!match || (match && !match[2])) {
-      console.log('\n\n<----------------------HIT NO ACTION INPUT PARSING ERROR---------------------->\n\n', match);
-      const thoughts = text
-        .replace(/[tT]hought:/, '')
-        .split('\n');
+      console.log(
+        '\n\n<----------------------HIT NO ACTION INPUT PARSING ERROR---------------------->\n\n',
+        match
+      );
+      const thoughts = text.replace(/[tT]hought:/, '').split('\n');
       return {
         tool: 'self-reflection',
         toolInput: thoughts[0],
-        log: thoughts.slice(1).join('\n'),
+        log: thoughts.slice(1).join('\n')
       };
     }
 
@@ -178,11 +180,21 @@ class Gpt4OutputParser extends ZeroShotAgentOutputParser {
         if (inputLines.length > 1) {
           thought = inputLines.slice(1).join('\n');
         }
-        return {
+        const returnValues = {
           tool: action,
           toolInput: input,
           log: thought || inputText
         };
+
+        const inputMatch = this.actionInputRegex.exec(returnValues.log); //new
+        if (inputMatch) {
+          console.log('inputMatch');
+          console.dir(inputMatch, { depth: null });
+          returnValues.toolInput = inputMatch[1].replaceAll('"', '').trim();
+          returnValues.log = returnValues.log.replace(this.actionInputRegex, '');
+        }
+
+        return returnValues;
       } else {
         console.log('No valid tool mentioned.', this.tools, text);
         return {
@@ -205,6 +217,5 @@ class Gpt4OutputParser extends ZeroShotAgentOutputParser {
     };
   }
 }
-
 
 module.exports = { CustomOutputParser, Gpt4OutputParser };

@@ -1,10 +1,12 @@
 const CustomZeroShotAgent = require('./customZeroShotAgent');
 const CustomGpt4Agent = require('./customGpt4Agent');
-const { CustomOutputParser, Gpt4OutputParser } = require('./outputParser');
-const { prefix, suffix } = require('./instructions');
+// const { CustomOutputParser, Gpt4OutputParser } = require('./outputParser');
+// const { prefix, suffix } = require('./instructions');
+// const { ZeroShotAgent, AgentExecutor } = require('langchain/agents');
+const { Gpt4OutputParser } = require('./outputParser');
+const { AgentExecutor } = require('langchain/agents');
 const { LLMChain } = require('langchain/chains');
 const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
-const { ZeroShotAgent, AgentExecutor } = require('langchain/agents');
 const {
   ChatPromptTemplate,
   SystemMessagePromptTemplate,
@@ -12,17 +14,17 @@ const {
 } = require('langchain/prompts');
 
 const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateString, ...rest }) => {
-  let prompt;
-  const isGpt3 = model.modelName.startsWith('gpt-3');
-  if (isGpt3) {
-    prompt = ZeroShotAgent.createPrompt(tools, {
-      prefix: `Current date: ${currentDateString}\n\n${prefix}`,
-      suffix,
-      inputVariables: ['input', 'chat_history', 'agent_scratchpad']
-    });
-  } else {
-    prompt = CustomGpt4Agent.createPrompt(tools, { currentDateString });
-  }
+  let prompt = CustomGpt4Agent.createPrompt(tools, { currentDateString });
+  // const isGpt3 = model.modelName.startsWith('gpt-3');
+  // if (isGpt3) {
+  //   prompt = ZeroShotAgent.createPrompt(tools, {
+  //     prefix: `Current date: ${currentDateString}\n\n${prefix}`,
+  //     suffix,
+  //     inputVariables: ['input', 'chat_history', 'agent_scratchpad']
+  //   });
+  // } else {
+  //   prompt = CustomGpt4Agent.createPrompt(tools, { currentDateString });
+  // }
 
   console.log('pastMessages', pastMessages);
 
@@ -33,7 +35,8 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateSt
     {agent_scratchpad}`)
   ]);
 
-  const outputParser = isGpt3 ? new CustomOutputParser({ tools }) : new Gpt4OutputParser({ tools });
+  // const outputParser = isGpt3 ? new CustomOutputParser({ tools }) : new Gpt4OutputParser({ tools });
+  const outputParser = new Gpt4OutputParser({ tools });
 
   const memory = new BufferMemory({
     chatHistory: new ChatMessageHistory(pastMessages),

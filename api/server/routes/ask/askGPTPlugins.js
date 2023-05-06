@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { titleConvo } = require('../../../app/');
 const { getOpenAIModels } = require('../endpoints');
-const ChatAgent = require('../../../app/langchain/agent');
+const ChatAgent = require('../../../app/langchain/agents/ChatAgent');
 const { validateTools } = require('../../../app/langchain/tools');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, formatSteps, formatAction } = require('./handlers');
@@ -38,11 +38,14 @@ router.post('/', async (req, res) => {
     return handleError(res, { text: `Illegal request: model` });
   }
 
-  console.log('ask log', {
-    text,
-    conversationId,
-    endpointOption
-  });
+  // console.log('ask log', {
+  //   text,
+  //   conversationId,
+  //   endpointOption
+  // });
+
+  console.log('ask log');
+  console.dir({ text, conversationId, endpointOption }, { depth: null });
 
   // eslint-disable-next-line no-use-before-define
   return await ask({
