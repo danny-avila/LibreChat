@@ -1,8 +1,10 @@
 const CustomZeroShotAgent = require('./customZeroShotAgent');
+const CustomGpt4Agent = require('./customGpt4Agent');
+const { CustomOutputParser, Gpt4OutputParser } = require('./outputParser');
 const { prefix, suffix } = require('./instructions');
 const { LLMChain } = require('langchain/chains');
 const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
-const { ZeroShotAgent, AgentExecutor, ZeroShotAgentOutputParser } = require('langchain/agents');
+const { ZeroShotAgent, AgentExecutor } = require('langchain/agents');
 const {
   ChatPromptTemplate,
   SystemMessagePromptTemplate,
@@ -10,12 +12,17 @@ const {
 } = require('langchain/prompts');
 
 const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateString, ...rest }) => {
-  const prompt = ZeroShotAgent.createPrompt(tools, {
-    prefix: `Current date: ${currentDateString}\n\n${prefix}`,
-    // prefix,
-    suffix,
-    inputVariables: ['input', 'chat_history', 'agent_scratchpad']
-  });
+  let prompt;
+  const isGpt3 = model.modelName.startsWith('gpt-3');
+  if (isGpt3) {
+    prompt = ZeroShotAgent.createPrompt(tools, {
+      prefix: `Current date: ${currentDateString}\n\n${prefix}`,
+      suffix,
+      inputVariables: ['input', 'chat_history', 'agent_scratchpad']
+    });
+  } else {
+    prompt = CustomGpt4Agent.createPrompt(tools, { currentDateString });
+  }
 
   console.log('pastMessages', pastMessages);
 
@@ -26,102 +33,7 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateSt
     {agent_scratchpad}`)
   ]);
 
-  let longestToolName = '';
-  for (const tool of tools) {
-    if (tool.name.length > longestToolName.length) {
-      longestToolName = tool.name;
-    }
-  }
-
-  class CustomOutputParser extends ZeroShotAgentOutputParser {
-    constructor(fields) {
-      super(fields);
-      this.finishToolNameRegex = /(?:the\s+)?final\s+answer[:\s]*\s*/i;
-    }
-
-    async parse(text) {
-      const finalMatch = text.match(this.finishToolNameRegex);
-      // if (text.includes(this.finishToolName)) {
-      //   const parts = text.split(this.finishToolName);
-      //   const output = parts[parts.length - 1].trim();
-      //   return {
-      //     returnValues: { output },
-      //     log: text
-      //   };
-      // }
-
-      if (finalMatch) {
-        const output = text.substring(finalMatch.index + finalMatch[0].length).trim();
-        return {
-          returnValues: { output },
-          log: text
-        };
-      }
-      // const match = /Action: (.*)\nAction Input: (.*)/s.exec(text); // old
-      // const match = /Action: ([\s\S]*?)(?:\nAction Input: ([\s\S]*?))?$/.exec(text); //old
-      const match = /(?:Action(?: 1)?:) ([\s\S]*?)(?:\n(?:Action Input(?: 1)?:) ([\s\S]*?))?$/.exec(text); //new
-      if (!match || (match && match[1].trim() === 'N/A') || (match && !match[2])) {
-        console.log('\n\n<----------------------HIT PARSING ERROR---------------------->\n\n');
-        const thought = text.replace(/[tT]hought:/, '').split('\n')[0].trim();
-        return {
-          tool: 'self-reflection',
-          toolInput: thought+'\nI should finalize my reply as soon as I have satisfied the user\'s query.',
-          log: ''
-        };
-      }
-
-      if (match && match[1].trim().length > longestToolName.length) {
-        console.log('\n\n<----------------------HIT PARSING ERROR---------------------->\n\n');
-
-        let action, input, thought;
-        let firstIndex = Infinity;
-    
-        for (const tool of tools) {
-          const { name } = tool;
-          const toolIndex = text.indexOf(name);
-          if (toolIndex !== -1 && toolIndex < firstIndex) {
-            firstIndex = toolIndex;
-            action = name;
-          }
-        }
-    
-        if (action) {
-          const actionEndIndex = text.indexOf('Action:', firstIndex + action.length);
-          const inputText = text.slice(firstIndex + action.length, actionEndIndex !== -1 ? actionEndIndex : undefined).trim();
-          const inputLines = inputText.split('\n');
-          input = inputLines[0];
-          if (inputLines.length > 1) {
-            thought = inputLines.slice(1).join('\n');
-          }
-          return {
-            tool: action,
-            toolInput: input,
-            log: thought || inputText
-          };
-        } else {
-          console.log('No valid tool mentioned.', tools, text);
-          return {
-            tool: 'self-reflection',
-            toolInput: 'Hypothetical actions: \n"'+text+'"\n',
-            log: 'Thought: I need to look at my hypothetical actions and try one'
-          };
-        }
-    
-        // if (action && input) {
-        //   console.log('Action:', action);
-        //   console.log('Input:', input);
-        // }
-      }
-    
-    
-
-      return {
-        tool: match[1].trim(),
-        toolInput: match[2].trim().replace(/^"+|"+$/g, '') ?? '',
-        log: text
-      };
-    }
-  }
+  const outputParser = isGpt3 ? new CustomOutputParser({ tools }) : new Gpt4OutputParser({ tools });
 
   const memory = new BufferMemory({
     chatHistory: new ChatMessageHistory(pastMessages),
@@ -140,7 +52,7 @@ const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateSt
 
   const agent = new CustomZeroShotAgent({
     llmChain,
-    outputParser: new CustomOutputParser(),
+    outputParser,
     allowedTools: tools.map((tool) => tool.name)
   });
 

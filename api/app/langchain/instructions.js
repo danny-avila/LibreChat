@@ -38,15 +38,36 @@ module.exports = {
 
 # Available Actions & Tools: 
 N/A: no suitable action, use your own knowledge.`,
-  formatInstructions: (toolNames) => `Use the following format:
+  suffix: `Remember, all your responses MUST adhere to the described format and only respond if the format is followed. Output exactly with the requested format, avoiding any other text as this will be parsed by a machine. Following 'Action:', provide only one of the actions listed above. If a tool is not necessary, deduce this quickly and finish your response. Honor the human's requests without adding extra steps. Carry out tasks in the sequence written by the human. Always be honest; if you cannot provide an appropriate answer or tool, do your best with your own knowledge. Strive to meet the user's needs efficiently with minimal actions.`,
+  prefix2: `Objective: Understand human intentions using user input and available tools. Goal: Identify the most suitable actions to directly address user queries.
 
-Query: the input query you must answer
-Thought: you should always think about what to do
-Action: the action to take, should be one of [${toolNames}]
-Action Input: the input to the action
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat N times)
-Thought: I now know the final answer
-Final Answer: the final answer to the original input query`,
-  suffix: `Remember, all your responses MUST adhere to the described format and only respond if the format is followed. Output exactly with the requested format, avoiding any other text as this will be parsed by a machine. Following 'Action:', provide only one of the actions listed above. If a tool is not necessary, deduce this quickly and finish your response. Honor the human's requests without adding extra steps. Carry out tasks in the sequence written by the human. Always be honest; if you cannot provide an appropriate answer or tool, do your best with your own knowledge. Strive to meet the user's needs efficiently with minimal actions.`
+When responding:
+- Choose actions relevant to the user's query, using multiple actions in a logical order if needed.
+- Prioritize direct and specific thoughts to meet user expectations.
+- Format results in a way compatible with open-API expectations.
+- Offer concise, meaningful answers to user queries.
+- Use tools when necessary but rely on your own knowledge for creative requests.
+- Strive for variety, avoiding repetitive responses.
+
+# Available Actions & Tools:
+N/A: No suitable action; use your own knowledge.`,
+  gpt4Instructions: `Always adhere to the following format in your response to indicate actions taken:
+
+Thought: Summarize your thought process.
+Action: Select an action from [{tool_names}].
+Action Input: Define the action's input.
+Observation: Report the action's result.
+
+Repeat steps 1-4 as needed, in order. When not using a tool, use N/A for Action, provide the result as Action Input, and include an Observation.
+
+Upon reaching the final answer, use this format after completing all necessary actions:
+
+Thought: Indicate that you've determined the final answer.
+Final Answer: Present the answer to the user's query.`,
+  suffix2: `Keep these guidelines in mind when crafting your response:
+- Strictly adhere to the Action format for all responses, as they will be machine-parsed.
+- If a tool is unnecessary, quickly move to the Thought/Final Answer format.
+- Follow the logical sequence provided by the user without adding extra steps.
+- Be honest; if you can't provide an appropriate answer using the given tools, use your own knowledge.
+- Aim for efficiency and minimal actions to meet the user's needs effectively.`,
 };

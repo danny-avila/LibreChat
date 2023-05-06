@@ -16,19 +16,26 @@ router.post('/', async (req, res) => {
 
   // build endpoint option
   const endpointOption = {
-    model: req.body?.model ?? 'gpt-4',
-    tools: req.body?.tools.map((tool) => tool.value) ?? [],
-    // chatGptLabel: req.body?.chatGptLabel ?? null,
-    // promptPrefix: req.body?.promptPrefix ?? null,
-    temperature: req.body?.temperature ?? 0,
-    top_p: req.body?.top_p ?? 1,
-    presence_penalty: req.body?.presence_penalty ?? 0,
-    frequency_penalty: req.body?.frequency_penalty ?? 0
+    modelOptions: {
+      model: req.body?.model ?? 'gpt-4',
+      // chatGptLabel: req.body?.chatGptLabel ?? null,
+      // promptPrefix: req.body?.promptPrefix ?? null,
+      temperature: req.body?.temperature ?? 0,
+      top_p: req.body?.top_p ?? 1,
+      presence_penalty: req.body?.presence_penalty ?? 0,
+      frequency_penalty: req.body?.frequency_penalty ?? 0
+    },
+    agentOptions: {
+      model: 'gpt-3.5-turbo', // for agent model
+      // model: 'gpt-4', // for agent model
+      tools: req.body?.tools.map((tool) => tool.value) ?? [],
+      temperature: req.body?.temperature ?? 0,
+    },
   };
 
   const availableModels = getOpenAIModels();
-  if (availableModels.find((model) => model === endpointOption.model) === undefined) {
-    return handleError(res, { text: 'Illegal request: model' });
+  if (availableModels.find((model) => model === endpointOption.modelOptions.model) === undefined) {
+    return handleError(res, { text: `Illegal request: model` });
   }
 
   console.log('ask log', {
@@ -69,8 +76,8 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     outputs: null
   };
 
-  const { tools } = endpointOption;
-  delete endpointOption.tools;
+  const { tools } = endpointOption.agentOptions;
+  delete endpointOption.agentOptions.tools;
 
   try {
     const getIds = (data) => {
@@ -111,9 +118,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     const chatAgent = new ChatAgent(process.env.OPENAI_KEY, {
       tools: validateTools(tools || []),
       debug: true,
-      modelOptions: {
-        ...endpointOption,
-      }
+      ...endpointOption,
     });
 
     const onAgentAction = (action) => {

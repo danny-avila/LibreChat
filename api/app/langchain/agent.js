@@ -104,6 +104,7 @@ Only respond with your conversational reply to the following User Message:
       this.options = options;
     }
 
+    this.agentIsGpt3 = this.options.agentOptions.model.startsWith('gpt-3');
     const modelOptions = this.options.modelOptions || {};
     this.modelOptions = {
       ...modelOptions,
@@ -339,12 +340,13 @@ Only respond with your conversational reply to the following User Message:
     // TO DO: need to initialize by user?
     const model = new ChatOpenAI({
       openAIApiKey: this.openAIApiKey,
-      ...this.modelOptions
+      modelName: this.options.agentOptions.model,
+      temperature: this.options.agentOptions.temperature,
     });
 
     if (this.options.debug) {
-      console.debug('Agent Model:');
-      console.dir(model, { depth: null });
+      console.debug(`<--------------Agent Model: ${model.modelName}-------------->`);
+      // console.dir(model, { depth: null });
     }
 
     this.availableTools = loadTools({ model });
@@ -360,9 +362,9 @@ Only respond with your conversational reply to the following User Message:
       }
     }
 
-    if (this.tools.length > 0) {
-      this.tools.push(new SelfReflectionTool({ message }));
-    } else {
+    if (this.tools.length > 0 ) {
+      this.tools.push(new SelfReflectionTool({ message, isGpt3: this.agentIsGpt3 }));
+    } else if (this.tools.length === 0) {
       return;
     }
 
@@ -537,6 +539,20 @@ Only respond with your conversational reply to the following User Message:
     if (this.options.tools.length > 0) {
       await this.initialize({ user, message, onAgentAction, onChainEnd });
       await this.executorCall(message);
+    }
+
+    if (!this.agentIsGpt3 && this.result.output) {
+      const responseMessage = {
+        messageId: responseMessageId,
+        conversationId,
+        parentMessageId: userMessage.messageId,
+        sender: 'ChatGPT',
+        text: this.result.output,
+        isCreatedByUser: false
+      };
+  
+      await this.saveMessageToDatabase(responseMessage, user);
+      return { ...responseMessage, ...this.result };
     }
 
     const promptPrefix = this.buildPromptPrefix(this.result, message);
