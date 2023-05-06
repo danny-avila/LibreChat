@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { TLoginUser } from "~/data-provider";
 import { useAuthContext } from "~/hooks/AuthContext";
@@ -13,9 +14,12 @@ function Login() {
 
   const navigate = useNavigate();
 
-  if (isAuthenticated) {
-    navigate("/chat/new");
-  }
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate("/chat/new");
+    }
+  }, [isAuthenticated, navigate])
+
 
   const SERVER_URL = import.meta.env.DEV
     ? import.meta.env.VITE_SERVER_URL_DEV

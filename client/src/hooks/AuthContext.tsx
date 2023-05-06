@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, ReactNode, createContext, useContext } from 'react';
+import { useState, useCallback, useEffect, useMemo, ReactNode, createContext, useContext } from 'react';
 import {
   TUser,
   TLoginResponse,
@@ -9,7 +9,7 @@ import {
   useRefreshTokenMutation,
   TLoginUser
 } from '~/data-provider';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import store from '~/store';
 
 export type TAuthContext = {
@@ -23,7 +23,7 @@ export type TAuthContext = {
 };
 
 export type TUserContext = {
-  user: TUser | undefined,
+  user?: TUser | undefined,
   token: string | undefined,
   isAuthenticated: boolean,
   redirect?: string
@@ -45,11 +45,15 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   const userQuery = useGetUserQuery({ enabled: !!token });
   const refreshToken = useRefreshTokenMutation();
 
+  const location = useLocation();
+
   const { newConversation } = store.useConversation();
 
   const setUserContext = (userContext: TUserContext) => {
-    const { user, token, isAuthenticated, redirect } = userContext;
-    setUser(user);
+    const { token, isAuthenticated, user, redirect } = userContext;
+    if(user) {
+      setUser(user);
+    }
     setToken(token);
     setTokenHeader(token);
     setIsAuthenticated(isAuthenticated);
@@ -67,15 +71,11 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
     loginUser.mutate(data, {
       onSuccess: (data: TLoginResponse) => {
         const { user, token } = data;
-        document.cookie = `token=${token}; path=/; expires=${new Date(
-          Date.now() + 1000 * 60 * 60 * 24
-        ).toUTCString()}`;
-        setUserContext({ user, token, isAuthenticated: true, redirect: '/chat/new' });
-        newConversation();
+        setUserContext({ token, isAuthenticated: true, user, redirect: '/chat/new' });
       },
       onError: error => {
         setError(error.message);
-      }
+      },
     });
   };
 
@@ -85,15 +85,9 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
         .replace(/^ +/, '')
         .replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
     });
-    //  const localStorageKeys = Object.keys(localStorage);
-    //  localStorageKeys.forEach(key => {
-    //    if (key.includes('token')) {
-    //      localStorage.removeItem(key);
-    //    }
-    //  });
     logoutUser.mutate(undefined, {
       onSuccess: () => {
-        setUserContext({ user: undefined, token: undefined, isAuthenticated: false, redirect: '/login' });
+        setUserContext({ token: undefined, isAuthenticated: false, user: undefined, redirect: '/login' });
       },
       onError: error => {
         setError(error.message);
@@ -102,27 +96,33 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
+    if (userQuery.data) {
+      setUser(userQuery.data);
+    } 
+    else if (userQuery.isError) {
+      setError(userQuery.error.message);
+      navigate('/login');
+    }
     if (error && isAuthenticated) {
       setError(undefined);
     }
     if (!token || !isAuthenticated) {
       const tokenFromCookie = getCookieValue('token');
       if (tokenFromCookie) {
-        setToken(tokenFromCookie);
-        setTokenHeader(tokenFromCookie);
-        setIsAuthenticated(true);
+        // debugger;
+        setUserContext({ token: tokenFromCookie, isAuthenticated: true, user: userQuery.data, redirect: '/chat/new' })
       }
       else {
         navigate('/login');
       }
     }
-  }, [token, isAuthenticated]);
+  }, [token, isAuthenticated, userQuery.data, userQuery.isError]);
 
   // const silentRefresh = useCallback(() => {
   //   refreshToken.mutate(undefined, {
   //     onSuccess: (data: TLoginResponse) => {
   //       const { user, token } = data;
-  //       setUserContext({ user, token, isAuthenticated: true });
+  //       setUserContext({ token, isAuthenticated: true, user });
   //     },
   //     onError: error => {
   //       setError(error.message);
@@ -138,14 +138,6 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
       setIsLoading(false);
     }
   }, [loginUser.isLoading, logoutUser.isLoading]);
-
-  useEffect(() => {
-    if (userQuery.data) {
-      setUser(userQuery.data);
-    } else if (userQuery.isError) {
-      navigate('/login');
-    }
-  }, [userQuery.data, userQuery.isError]);
 
   // useEffect(() => {
   //   if (token)

@@ -82,7 +82,7 @@ const registerUser = async (user) => {
 
     try {
       const newUser = await new User({
-        provider: 'email',
+        provider: 'local',
         email,
         password,
         username,
