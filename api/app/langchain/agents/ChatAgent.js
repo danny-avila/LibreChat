@@ -631,6 +631,7 @@ Only respond with your conversational reply to the following User Message:
 
     if (this.isGpt3) {
       instructionsPayload.role = 'user';
+      instructionsPayload.content += `\n${this.startToken}${this.chatGptLabel}:\n`;
       messagePayload.role = 'user';
     }
 
