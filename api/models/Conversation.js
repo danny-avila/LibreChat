@@ -3,6 +3,7 @@ const Conversation = require('./schema/convoSchema');
 const { getMessages, deleteMessages } = require('./Message');
 
 const getConvo = async (user, conversationId) => {
+  console.log('getConvo -> userId', user);
   try {
     return await Conversation.findOne({ user, conversationId }).exec();
   } catch (error) {
@@ -39,7 +40,6 @@ module.exports = {
         .skip((pageNumber - 1) * pageSize)
         .limit(pageSize)
         .exec();
-
       return { conversations: convos, pages: totalPages, pageNumber, pageSize };
     } catch (error) {
       console.log(error);

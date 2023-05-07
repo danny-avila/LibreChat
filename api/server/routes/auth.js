@@ -1,57 +1,25 @@
 const express = require('express');
+const {
+  resetPasswordRequestController,
+  resetPasswordController,
+  getUserController,
+  loginController,
+  logoutController,
+  refreshController,
+  registrationController,
+} = require('../controllers/auth.controller');
+const requireJwtAuth = require('../../middleware/requireJwtAuth');
+const requireLocalAuth = require('../../middleware/requireLocalAuth');
+
 const router = express.Router();
-const authYourLogin = require('./authYourLogin');
-const userSystemEnabled = !!process.env.ENABLE_USER_SYSTEM || false;
 
-router.get('/login', function (req, res) {
-  if (userSystemEnabled) {
-    res.redirect('/auth/your_login_page');
-  } else {
-    res.redirect('/');
-  }
-});
+//Local
+router.get('/user', requireJwtAuth, getUserController);
+router.post('/logout', requireJwtAuth, logoutController);
+router.post('/login', requireLocalAuth, loginController);
+router.post('/refresh', requireJwtAuth, refreshController);
+router.post('/register', registrationController);
+router.post('/requestPasswordReset', resetPasswordRequestController);
+router.post('/resetPassword', resetPasswordController);
 
-router.get('/logout', function (req, res) {
-  // clear the session
-  req.session.user = null;
-
-  req.session.save(function () {
-    if (userSystemEnabled) {
-      res.redirect('/auth/your_login_page/logout');
-    } else {
-      res.redirect('/');
-    }
-  });
-});
-
-const authenticatedOr401 = (req, res, next) => {
-  if (userSystemEnabled) {
-    const user = req?.session?.user;
-
-    if (user) {
-      next();
-    } else {
-      res.status(401).end();
-    }
-  } else {
-    next();
-  }
-};
-
-const authenticatedOrRedirect = (req, res, next) => {
-  if (userSystemEnabled) {
-    const user = req?.session?.user;
-
-    if (user) {
-      next();
-    } else {
-      res.redirect('/auth/login');
-    }
-  } else next();
-};
-
-if (userSystemEnabled) {
-  router.use('/your_login_page', authYourLogin);
-}
-
-module.exports = { router, authenticatedOr401, authenticatedOrRedirect };
+module.exports = router;
