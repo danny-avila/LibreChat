@@ -45,7 +45,6 @@
     "openai": "^3.1.0",
     "passport": "^0.6.0",
     "passport-facebook": "^3.0.0",
-    "passport-github": "^1.1.0",
     "passport-google-oauth20": "^2.0.0",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
