@@ -6,8 +6,9 @@ const ChatAgent = require('../../../app/langchain/agents/ChatAgent');
 const { validateTools } = require('../../../app/langchain/tools');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, formatSteps, formatAction } = require('./handlers');
+const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 
-router.post('/', async (req, res) => {
+router.post('/', requireJwtAuth, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   if (endpoint !== 'gptPlugins') return handleError(res, { text: 'Illegal request' });
@@ -144,7 +145,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
 
     let response = await chatAgent.sendMessage(text, {
       getIds,
-      user: req?.session?.user?.username,
+      user: req.user.id,
       parentMessageId,
       conversationId,
       onAgentAction,
@@ -159,9 +160,9 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     await saveMessage(response);
 
     sendMessage(res, {
-      title: await getConvoTitle(req?.session?.user?.username, conversationId),
+      title: await getConvoTitle(req.user.id, conversationId),
       final: true,
-      conversation: await getConvo(req?.session?.user?.username, conversationId),
+      conversation: await getConvo(req.user.id, conversationId),
       requestMessage: userMessage,
       responseMessage: response
     });
@@ -169,12 +170,13 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
 
     if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
       const title = await titleConvo({ text, response });
-      await saveConvo(req?.session?.user?.username, {
+      await saveConvo(req.user.id, {
         conversationId: conversationId,
         title
       });
     }
   } catch (error) {
+    console.error(error);
     const errorMessage = {
       messageId: responseMessageId,
       sender: 'ChatGPT',
