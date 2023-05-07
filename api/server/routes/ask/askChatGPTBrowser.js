@@ -82,6 +82,7 @@ const ask = async ({
   res
 }) => {
   let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
+  const userId = req.user.id;
 
   res.writeHead(200, {
     Connection: 'keep-alive',
@@ -122,7 +123,8 @@ const ask = async ({
       conversationId,
       ...endpointOption,
       onProgress: progressCallback.call(null, { res, text }),
-      abortController
+      abortController,
+      userId
     });
 
     console.log('CLIENT RESPONSE', response);

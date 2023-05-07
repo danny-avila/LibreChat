@@ -107,7 +107,7 @@ const ask = async ({
   res
 }) => {
   let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
-
+  const userId = req.user.id;
   let responseMessageId = crypto.randomUUID();
 
   res.writeHead(200, {
@@ -180,7 +180,8 @@ const ask = async ({
         text,
         parentMessageId: overrideParentMessageId || userMessageId
       }),
-      abortController
+      abortController,
+      userId
     });
 
     abortControllers.delete(abortKey);
