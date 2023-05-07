@@ -8,10 +8,11 @@ import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useGetConversationsQuery, useSearchQuery } from '~/data-provider';
 import useDebounce from '~/hooks/useDebounce';
 import store from '~/store';
+import { useAuthContext } from '~/hooks/AuthContext';
 
 export default function Nav({ navVisible, setNavVisible }) {
   const [isHovering, setIsHovering] = useState(false);
-
+  const { isAuthenticated } = useAuthContext();
   const containerRef = useRef(null);
   const scrollPositionRef = useRef(null);
 
@@ -22,7 +23,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const [pages, setPages] = useState(1);
   
   // data provider 
-  const getConversationsQuery = useGetConversationsQuery(pageNumber);
+  const getConversationsQuery = useGetConversationsQuery(pageNumber, { enabled: isAuthenticated });
 
   // search
   const searchQuery = useRecoilValue(store.searchQuery);

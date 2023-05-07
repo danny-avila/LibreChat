@@ -8,7 +8,8 @@ const browserClient = async ({
   model,
   token,
   onProgress,
-  abortController
+  abortController,
+  userId
 }) => {
   const { ChatGPTBrowserClient } = await import('@waylaidwanderer/chatgpt-api');
   const store = {
@@ -21,8 +22,9 @@ const browserClient = async ({
     // Access token from https://chat.openai.com/api/auth/session
     accessToken: process.env.CHATGPT_TOKEN == 'user_provided' ? token : process.env.CHATGPT_TOKEN ?? null,
     model: model,
-    // debug: true
-    proxy: process.env.PROXY || null
+    debug: false,
+    proxy: process.env.PROXY || null,
+    user: userId
   };
 
   const client = new ChatGPTBrowserClient(clientOptions, store);

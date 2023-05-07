@@ -17,23 +17,27 @@ export default defineConfig({
       '/auth': {
         target: 'http://localhost:3080',
         changeOrigin: true
+      },
+      '/oauth': {
+        target: 'http://localhost:3080',
+        changeOrigin: true
       }
     }
   },
-  plugins: [react(), sourcemapExclude({ excludeNodeModules: true }),],
+  plugins: [react(), sourcemapExclude({excludeNodeModules: true})],
   publicDir: './public',
   build: {
     sourcemap: true,
     outDir: './dist',
     rollupOptions: {
       output: {
-        manualChunks: (id) => {
-          if (id.includes("node_modules")) {
-            return "vendor";
+        manualChunks: id => {
+          if (id.includes('node_modules')) {
+            return 'vendor';
           }
-        },
-      },
-    },
+        }
+      }
+    }
   },
   resolve: {
     alias: {

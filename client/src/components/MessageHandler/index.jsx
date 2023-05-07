@@ -4,6 +4,7 @@ import { SSE } from '~/data-provider/sse.mjs';
 import createPayload from '~/data-provider/createPayload';
 import { useAbortRequestWithMessage } from '~/data-provider';
 import store from '~/store';
+import { useAuthContext } from '~/hooks/AuthContext';
 
 export default function MessageHandler() {
   const submission = useRecoilValue(store.submission);
@@ -11,6 +12,7 @@ export default function MessageHandler() {
   const setMessages = useSetRecoilState(store.messages);
   const setConversation = useSetRecoilState(store.conversation);
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
+  const { token } = useAuthContext();
 
   const { refreshConversations } = store.useConversations();
 
@@ -160,7 +162,8 @@ export default function MessageHandler() {
     fetch(`/api/ask/${endpoint}/abort`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({
         abortKey: conversationId
@@ -189,7 +192,7 @@ export default function MessageHandler() {
 
     const events = new SSE(server, {
       payload: JSON.stringify(payload),
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`}
     });
 
     events.onmessage = e => {

@@ -149,10 +149,6 @@ Currently, this project is only functional with the `text-davinci-003` model.
 </details>
 
 # Table of Contents
-- [ChatGPT Clone](#chatgpt-clone)
-  - [All AI Conversations under One Roof.](#all-ai-conversations-under-one-roof)
-  - [Features](#features)
-  - [Updates](#updates)
 - [Table of Contents](#table-of-contents)
   - [Roadmap](#roadmap)
     - [Tech Stack](#tech-stack)
@@ -160,10 +156,12 @@ Currently, this project is only functional with the `text-davinci-003` model.
     - [Prerequisites](#prerequisites)
   - [Usage](#usage)
     - [Local](#local)
+    - [**Automated Installer (Windows)**](#automated-installer-windows)
+    - [**In-Depth Instructions**](#in-depth-instructions)
     - [Docker](#docker)
     - [Access Tokens](#access-tokens)
     - [Proxy](#proxy)
-    - [User System](#user-system)
+    - [User/Auth System](#userauth-system)
     - [Updating](#updating)
   - [Use Cases](#use-cases)
   - [Origin](#origin)
@@ -310,45 +308,75 @@ set in docker-compose.yml file, under services - api - environment
 
 </details>
 
-### User System
+### User/Auth System
 
-By default, there is no user system enabled, so anyone can access your server.
+**First Time Setup**
 
-**This project is not designed to provide a complete and full-featured user system.** It's not high priority task and might never be provided.
+In order for the auth system to function properly, there are some environment variables that are needed. Note that this information is also included in the [/api/.env.example](https://github.com/danny-avila/chatgpt-clone/blob/main/api/.env.example) and [/client/.env.example](https://github.com/danny-avila/chatgpt-clone/blob/main/client/.env.example) files.
 
-[wtlyu](https://github.com/wtlyu) provide a sample user system structure, that you can implement your own user system. It's simple and not a ready-for-use edition. 
-
-(If you want to implement your user system, open this ↓)
-
-<details>
-<summary><strong>Implement your own user system </strong></summary>
-
-To enable the user system, set `ENABLE_USER_SYSTEM=1` in your `.env` file.
-
-The sample structure is simple. It provide three basic endpoint:
-
-1. `/auth/login` will redirect to your own login url. In the sample code, it's `/auth/your_login_page`.
-2. `/auth/logout` will redirect to your own logout url. In the sample code, it's `/auth/your_login_page/logout`.
-3. `/api/me` will return the userinfo: `{ username, display }`.
-   1. `username` will be used in db, used to distinguish between users.
-   2. `display` will be displayed in UI.
-
-The only one thing that drive user system work is `req.session.user`. Once it's set, the client will be trusted. Set to `null` if logout.
-
-Please refer to `/api/server/routes/authYourLogin.js` file. It's very clear and simple to tell you how to implement your user system.
-
-Or you can ask chatGPT to write the code for you, here is one example to connect LDAP:
-
-```
-Please write me an express module, that serve the login and logout endpoint as a router. The login and logout uri is '/' and '/logout'. Once loginned, save display name and username in session.user, as {display, username}. Then redirect to '/'. Please write the code using express and other lib, and storage any server configuration in a config variable. I want the user to be connected to my LDAP server.
+In /api/.env, you will need to set the following variables:
+```bash
+JWT_SECRET_DEV=secret
+# Add a secure secret for production if deploying to live domain.
+JWT_SECRET_PROD=secret
+# Set the expiration delay for the secure cookie with the JWT token
+# Delay is in millisecond e.g. 7 days is 1000*60*60*24*7
+SESSION_EXPIRY=1000 * 60 * 60 * 24 * 7
+# Note: NODE_ENV should be set to 'development' in the Server configuration section if you want to run in dev mode
+CLIENT_URL_DEV=http://localhost:3090
+SERVER_URL_DEV=http://localhost:3080
+# Change these values to domain if deploying:
+CLIENT_URL_PROD=http://localhost:3080
+SERVER_URL_PROD=http://localhost:3080
 ```
 
-</details>
+In /client/.env, you will need to set the following variables:
+```bash
+VITE_SERVER_URL_DEV=http://localhost:3080
+# Change this to domain if deploying:
+VITE_SERVER_URL_PROD=http://localhost:3080
+```
 
+The first time you run the application, you should register a new account by clicking the "Sign up" link on the login page. The first account registered will be recieve an admin role. The admin account does not currently have extended functionality, but is valuable should you choose to create an admin dashboard for user management. 
+
+**Migrating Previous Conversations and Presets to new User Account**
+
+When the first account is registered, the application will automatically migrate any conversations and presets that you created before the user system was implemented to that account. 
+
+IMPORTANT: if you use login for the first time with a social login account (eg. Google, facebook, etc.), the conversations and presets that you created before the user system was implemented will NOT be migrated to that account. You should register and login with a local account (email and password) for the first time. 
+
+**OAuth2/Social Login**
+
+The application is setup to support OAuth2/Social Login with Google. All of the code is in place for Facebook login as well, but this has not been tested because the setup process with Facebook was honestly just too painful for me to deal with. I plan to add support for other OAuth2 providers including Github and Discord at a later time.
+
+To enable Google login, you must create an application in the [Google Cloud Console](https://cloud.google.com) and provide the client ID and client secret in the [/api/.env](https://github.com/danny-avila/chatgpt-clone/blob/main/api/.env.example) file, then set `VITE_SHOW_GOOGLE_LOGIN_OPTION=true` in the [/client/.env](https://github.com/danny-avila/chatgpt-clone/blob/main/client/.env.example) file. 
+
+*Instructions for setting up Google login are provided below.*
+
+1. Go to "APIs and Services" in your Google Cloud account and click on "Credentials".
+2. Click on "Configure consent screen" and select "External" as the user type.
+3. Add "profile", "email" and "openid" as the scopes for your app. These are the first three checkboxes when you click on "Add or remove scopes".
+4. Click on "Save and continue" and then "Back to dashboard".
+5. Click on "Create Credentials" and then "OAuth client ID".
+6. Select "Web application" as the application type and give it a name.
+7. Add "http://localhost/" "http://localhost:3080/" and "http://localhost:3090/" to the authorized JavaScript origins.
+8. Add "http://localhost:3080/oauth/google/callback" to the authorized redirect URIs.
+9. Click on "Create" and copy your client ID and client secret.
+10. Paste them into your api/.env file.
+11. Enable the feature in the client/.env file
+
+
+**Email and Password Reset** 
+
+Most of the code is in place for sending password reset emails, but is not yet feature-complete as I have not setup an email server to test it. Currently, submitting a password reset request will then display a link with the one-time reset token that can then be used to reset the password. Understanding that this is a considerable security hazard, email integration will be included in the next release.
+
+***Warning***
+
+If you previously implemented your own user system using the original scaffolding that was provided, you will no longer see conversations and presets by switching to the new user system. This is because of a design flaw in the scaffolding implementation that was problematic for the inclusion of social login.
 
 ### Updating
 
-- As the project is still a work-in-progress, you should pull the latest and run the steps over. Reset your browser cache/clear site data.
+- As the project is still a work-in-progress, you should pull the latest and run the steps over. Reset your browser cache/clear cookies and site data.
 
 ## Use Cases ##
 

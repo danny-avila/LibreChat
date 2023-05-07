@@ -8,7 +8,7 @@ RUN npm ci
 COPY /client/ /client/
 # Set the memory limit for Node.js
 ENV NODE_OPTIONS="--max-old-space-size=2048"
-# Build webpack artifacts
+# Build artifacts
 RUN npm run build
 
 FROM node:19-alpine AS node-api
