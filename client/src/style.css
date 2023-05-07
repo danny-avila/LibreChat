@@ -54,13 +54,13 @@
 
 .openAIOptions-simple-container.show {
   pointer-events: fill;
-  opacity: 0.75;
+  opacity: 1;
 }
 
 .pluginOptions {
   pointer-events: none;
   opacity: 0;
-  transition: all 1s ease-in-out;
+  transition: all 0.5s ease-in-out;
 }
 
 .pluginOptions.full-opacity {
