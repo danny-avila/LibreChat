@@ -68,3 +68,31 @@ export const getAIEndpoints = () => {
 export const updateTokenCount = (text: string) => { 
   return request.post(endpoints.tokenizer(), {arg: text});
 }
+
+export const login = (payload: t.TLoginUser) => {
+  return request.post(endpoints.login(), payload);
+}
+
+export const logout = () => {
+  return request.post(endpoints.logout());
+}
+
+export const register = (payload: t.TRegisterUser) => {
+  return request.post(endpoints.register(), payload);
+}
+
+export const refreshToken = () => {
+  return request.post(endpoints.refreshToken());
+}
+
+export const getLoginGoogle = () => {
+  return request.get(endpoints.loginGoogle());
+}
+
+export const requestPasswordReset = (payload: t.TRequestPasswordReset) => {
+  return request.post(endpoints.requestPasswordReset(), payload);
+}
+
+export const resetPassword = (payload: t.TResetPassword) => {
+  return request.post(endpoints.resetPassword(), payload);
+}
