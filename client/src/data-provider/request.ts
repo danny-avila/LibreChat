@@ -1,7 +1,7 @@
 import axios, { AxiosRequestConfig } from "axios";
 
 async function _get<T>(url: string, options?: AxiosRequestConfig): Promise<T> {
-  const response = await axios.get(url, { withCredentials: true, ...options});
+  const response = await axios.get(url, { ...options});
   return response.data;
 }
 

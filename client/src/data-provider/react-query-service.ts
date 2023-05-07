@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-query";
 import * as t from "./types";
 import * as dataService from "./data-service";
+import axios from 'axios';
 
 export enum QueryKeys {
   messages = "messsages",
@@ -25,11 +26,13 @@ export const useAbortRequestWithMessage = (): UseMutationResult<void, Error, { e
   return useMutation(({ endpoint, abortKey, message }) => dataService.abortRequestWithMessage(endpoint, abortKey, message));
 };
 
-export const useGetUserQuery = (): QueryObserverResult<t.TUser> => {
+export const useGetUserQuery = (config?: UseQueryOptions<t.TUser>): QueryObserverResult<t.TUser> => {
   return useQuery<t.TUser>([QueryKeys.user], () => dataService.getUser(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
+    retry: false,
+    ...config,
   });
 };
 
@@ -120,11 +123,13 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
   });
 };
 
-export const useGetConversationsQuery = (pageNumber: string): QueryObserverResult<t.TConversation[]> => {
-  return useQuery([QueryKeys.allConversations, pageNumber], () =>
+export const useGetConversationsQuery = (pageNumber: string, config?: UseQueryOptions<t.TConversation[]>): QueryObserverResult<t.TConversation[]> => {
+  return useQuery<t.TConversation[]>([QueryKeys.allConversations, pageNumber], () =>
     dataService.getConversations(pageNumber), {
       refetchOnReconnect: false,
       refetchOnMount: false,
+      retry: 1,
+      ...config,
     }
   );
 }
@@ -176,11 +181,12 @@ export const useUpdatePresetMutation = (): UseMutationResult<t.TPreset[], unknow
   );
 };
 
-export const useGetPresetsQuery = (): QueryObserverResult<t.TPreset[], unknown> => {
-  return useQuery([QueryKeys.presets], () => dataService.getPresets(), {
+export const useGetPresetsQuery = (config?: UseQueryOptions<t.TPreset[]>): QueryObserverResult<t.TPreset[], unknown> => {
+  return useQuery<t.TPreset[]>([QueryKeys.presets], () => dataService.getPresets(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
+    ...config,
   });
 };
 
@@ -223,4 +229,52 @@ export const useUpdateTokenCountMutation = (): UseMutationResult<t.TUpdateTokenC
       },
     }
   );
+}
+
+export const useLoginUserMutation = (): UseMutationResult<t.TLoginUserResponse, unknown, t.TLoginUserRequest, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TLoginUserRequest) =>
+      dataService.login(payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.user]);
+      },
+    }
+  );
+}
+
+export const useRegisterUserMutation = (): UseMutationResult<t.TRegisterUserResponse, unknown, t.TRegisterUser, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TRegisterUser) =>
+      dataService.register(payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.user]);
+      },
+    }
+  );
+}
+
+export const useLogoutUserMutation = (): UseMutationResult<unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.logout(), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.user]);
+    },
+  });
+}
+
+export const useRefreshTokenMutation = (): UseMutationResult<t.TRefreshTokenResponse, unknown, unknown, unknown> => {
+  return useMutation(() => dataService.refreshToken(), {
+  });
+}
+
+export const useRequestPasswordResetMutation = (): UseMutationResult<unknown> => {
+  return useMutation((payload: t.TRequestPasswordReset) => dataService.requestPasswordReset(payload));
+}
+
+export const useResetPasswordMutation = (): UseMutationResult<unknown> => {
+  return useMutation((payload: t.TResetPassword) => dataService.resetPassword(payload));
 }

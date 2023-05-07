@@ -58,3 +58,9 @@ src/style - official.css
 /e2e/playwright-report/
 /playwright/.cache/
 .DS_Store
+*.code-workspace
+
+# meilisearch
+meilisearch
+data.ms/*
+
