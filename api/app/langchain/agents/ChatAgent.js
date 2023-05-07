@@ -346,8 +346,7 @@ Only respond with your conversational reply to the following User Message:
     });
 
     if (this.options.debug) {
-      console.debug(`<--------------Agent Model: ${model.modelName}-------------->`);
-      // console.dir(model, { depth: null });
+      console.debug(`<-----Agent Model: ${model.modelName} | Temp: ${model.temperature}----->`);
     }
 
     this.availableTools = loadTools({ model });
