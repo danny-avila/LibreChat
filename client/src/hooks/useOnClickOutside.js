@@ -4,7 +4,6 @@ export default function useOnClickOutside(ref, handler, excludeIds) {
   useEffect(() => {
     const handleClickOutside = event => {
       if (excludeIds.includes(event.target.id)) {
-        console.log('excluded');
         return;
       }
 

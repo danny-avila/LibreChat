@@ -24,12 +24,12 @@ General guidelines:
 - If data for multiple properties is needed, make separate calls for each property.
 - If a wolfram Alpha result is not relevant to the query:
 -- If wolfram provides multiple 'Assumptions' for a query, choose the more relevant one(s) without explaining the initial result. If you are unsure, ask the user to choose.
--- Re-send the exact same 'input' with NO modifications, and add the 'assumption' parameter, formatted as a list, with the relevant values.
--- ONLY simplify or rephrase the initial query if a more relevant 'Assumption' or other input suggestions are not provided.
--- Do not explain each step unless user input is needed. Proceed directly to making a better input based on the available assumptions.
-- Please ensure your input is properly formatted for wolfram Alpha.
-- wolfram Language code is accepted, but accepts only syntactically correct wolfram Language code.
 - Performs complex calculations, data analysis, plotting, data import, and information retrieval.`;
+  // - Please ensure your input is properly formatted for wolfram Alpha.
+  // -- Re-send the exact same 'input' with NO modifications, and add the 'assumption' parameter, formatted as a list, with the relevant values.
+  // -- ONLY simplify or rephrase the initial query if a more relevant 'Assumption' or other input suggestions are not provided.
+  // -- Do not explain each step unless user input is needed. Proceed directly to making a better input based on the available assumptions.
+  // - wolfram Language code is accepted, but accepts only syntactically correct wolfram Language code.
   }
 
   async fetchRawText(url) {
@@ -51,8 +51,10 @@ General guidelines:
   }
 
   createWolframAlphaURL(query) {
+    // Clean up query
+    const formattedQuery = query.replaceAll(/\`/g, '');
     const baseURL = 'https://www.wolframalpha.com/api/v1/llm-api';
-    const encodedQuery = encodeURIComponent(query);
+    const encodedQuery = encodeURIComponent(formattedQuery);
     const appId = this.getAppId();
     const url = `${baseURL}?input=${encodedQuery}&appid=${appId}`;
     return url;

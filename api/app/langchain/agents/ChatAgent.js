@@ -80,7 +80,7 @@ class CustomChatAgent {
       ? `\nYou encountered an error in attempting a response. The user is not aware of the error so you shouldn't mention it.\nReview the actions taken carefully in case there is a partial or complete answer within them.\nError Message: ${result.errorMessage}\n`
       : '';
 
-    return `As ChatGPT, review the answer you generated using plugins in response to the User Message below. The answer hasn't been sent to the user yet.${errorMessage}\n${internalActions}\n
+    return `As ChatGPT, review and improve the answer you generated using plugins in response to the User Message below. The answer hasn't been sent to the user yet.${errorMessage}\n${internalActions}\n
 Preliminary Answer: "${result.output.trim()}"\n
 Reply conversationally to the User based on your preliminary answer, internal actions, thoughts, and observations, making improvements wherever possible, but do not modify URLs.
 You must cite sources if you are using any web links. ${toolBasedInstructions}
@@ -604,7 +604,9 @@ Only respond with your conversational reply to the following User Message:
     const orderedMessages = messages;
 
     let promptPrefix;
+    let usedPlugins = false;
     if (this.options.promptPrefix) {
+      usedPlugins = true;
       promptPrefix = this.options.promptPrefix.trim();
       // If the prompt prefix doesn't end with the end token, add it.
       if (!promptPrefix.endsWith(`${this.endToken}`)) {
@@ -630,8 +632,11 @@ Only respond with your conversational reply to the following User Message:
 
     if (this.isGpt3) {
       instructionsPayload.role = 'user';
-      instructionsPayload.content += `\n${this.startToken}${this.chatGptLabel}:\n`;
       messagePayload.role = 'user';
+    }
+
+    if (this.isGpt3 && usedPlugins) {
+      instructionsPayload.content += `\n${promptSuffix}`;
     }
 
     let currentTokenCount;
@@ -705,6 +710,11 @@ Only respond with your conversational reply to the following User Message:
       this.maxContextTokens - currentTokenCount,
       this.maxResponseTokens
     );
+
+    if (this.isGpt3 && !usedPlugins) {
+      messagePayload.content += promptSuffix;
+      return [instructionsPayload, messagePayload];
+    }
 
     if (isChatGptModel) {
       const result = [messagePayload, instructionsPayload];
