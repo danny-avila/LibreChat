@@ -3,7 +3,6 @@ const Conversation = require('./schema/convoSchema');
 const { getMessages, deleteMessages } = require('./Message');
 
 const getConvo = async (user, conversationId) => {
-  console.log('getConvo -> userId', user);
   try {
     return await Conversation.findOne({ user, conversationId }).exec();
   } catch (error) {

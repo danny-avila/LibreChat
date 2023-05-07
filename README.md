@@ -39,16 +39,30 @@
 
 ## Updates
 <details open>
-<summary><strong>2023-04-05</strong></summary>
+<summary><strong>2023-05-07</strong></summary>
 
 
 
-**Released [v0.3.0](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.3.0)**, Introducing more customization for both OpenAI & BingAI conversations! This is one of the biggest updates yet and will make integrating future LLM's a lot easier, providing a lot of customization features as well, including sharing presets! Please feel free to share them in the **[community discord server](https://discord.gg/NGaa9RPCft)**
+**Released [v0.4.0](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.0)**, Introducing User/Auth System and OAuth2/Social Login! You can now register and login with an email account or use Google login. Your your previous conversations and presets will migrate to your new profile upon creation. Check out the details in the [User/Auth System](#userauth-system) section of the README.md.
+ 
+⚠️ **IMPORTANT :** You should register and login with a local account (email and password) for the first time sign-up. if you use login for the first time with a social login account (eg. Google, facebook, etc.), the conversations and presets that you created before the user system was implemented will NOT be migrated to that account.
+
+⚠️ **Breaking - new Env Variables :** You will need to add the new env variables from .env.example for the app to work, even if you're not using multiple users for your purposes.
+
+For discussion and suggestion you can join us: **[community discord server](https://discord.gg/NGaa9RPCft)**
 
 </details>
 
 <details>
 <summary><strong>Previous Updates</strong></summary>
+
+<details>
+<summary><strong>2023-04-05</strong></summary>
+
+**Released [v0.3.0](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.3.0)**, Introducing more customization for both OpenAI & BingAI conversations! This is one of the biggest updates yet and will make integrating future LLM's a lot easier, providing a lot of customization features as well, including sharing presets! Please feel free to share them in the **[community discord server](https://discord.gg/NGaa9RPCft)**
+
+</details>
+
   
 <details>
 <summary><strong>2023-03-23</strong></summary>
@@ -352,19 +366,19 @@ The application is setup to support OAuth2/Social Login with Google. All of the 
 To enable Google login, you must create an application in the [Google Cloud Console](https://cloud.google.com) and provide the client ID and client secret in the [/api/.env](https://github.com/danny-avila/chatgpt-clone/blob/main/api/.env.example) file, then set `VITE_SHOW_GOOGLE_LOGIN_OPTION=true` in the [/client/.env](https://github.com/danny-avila/chatgpt-clone/blob/main/client/.env.example) file. 
 
 *Instructions for setting up Google login are provided below.*
-
+```
 1. Go to "APIs and Services" in your Google Cloud account and click on "Credentials".
 2. Click on "Configure consent screen" and select "External" as the user type.
 3. Add "profile", "email" and "openid" as the scopes for your app. These are the first three checkboxes when you click on "Add or remove scopes".
 4. Click on "Save and continue" and then "Back to dashboard".
 5. Click on "Create Credentials" and then "OAuth client ID".
 6. Select "Web application" as the application type and give it a name.
-7. Add "http://localhost/" "http://localhost:3080/" and "http://localhost:3090/" to the authorized JavaScript origins.
+7. Add "http://localhost" "http://localhost:3080" and "http://localhost:3090" to the authorized JavaScript origins.
 8. Add "http://localhost:3080/oauth/google/callback" to the authorized redirect URIs.
 9. Click on "Create" and copy your client ID and client secret.
 10. Paste them into your api/.env file.
 11. Enable the feature in the client/.env file
-
+```
 
 **Email and Password Reset** 
 
