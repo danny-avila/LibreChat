@@ -19,11 +19,11 @@ services:
       - 3080:3080               # Change it to 9000:3080 to use nginx
     depends_on:
       - mongodb
-    # image: node-api            # Uncomment this to build from local file
-    # build:
-    #   context: .
-    #   target: node-api
-    image: chatgptclone/app:0.3.3 # Comment this & uncomment above to build from local file
+    image: node-api            # Comment this & uncomment below to build from docker hub image
+    build:
+      context: .
+      target: node-api
+    # image: chatgptclone/app:0.4.0 # Uncomment this & comment above to build from docker hub image
     restart: always
     env_file:
       - ./api/.env
