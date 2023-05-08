@@ -14,7 +14,8 @@ const askClient = async ({
   presence_penalty,
   frequency_penalty,
   onProgress,
-  abortController
+  abortController,
+  userId
 }) => {
   const ChatGPTClient = (await import('@waylaidwanderer/chatgpt-api')).default;
   const store = {
@@ -36,7 +37,8 @@ const askClient = async ({
     chatGptLabel,
     promptPrefix,
     proxy: process.env.PROXY || null,
-    debug: false
+    debug: false,
+    user: userId
   };
 
   const client = new ChatGPTClient(process.env.OPENAI_KEY, clientOptions, store);

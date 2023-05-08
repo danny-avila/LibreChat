@@ -1,5 +1,5 @@
 export const user = () => {
-  return `/api/me`;
+  return `/api/auth/user`;
 };
 
 export const messages = (id: string) => {
@@ -48,4 +48,36 @@ export const aiEndpoints = () => {
 
 export const tokenizer = () => {
   return `/api/tokenizer`;
+}
+
+export const login = () => {
+  return '/api/auth/login';
+}
+
+export const logout = () => {
+  return '/api/auth/logout';
+}
+
+export const register = () => {
+  return '/api/auth/register';
+}
+
+export const loginFacebook = () => {
+  return '/api/auth/facebook';
+}
+
+export const loginGoogle = () => {
+  return '/api/auth/google';
+}
+
+export const refreshToken = () => {
+  return '/api/auth/refresh';
+}
+
+export const requestPasswordReset = () => {
+  return '/api/auth/requestPasswordReset';
+}
+
+export const resetPassword = () => {
+  return '/api/auth/resetPassword';
 }

@@ -18,7 +18,7 @@ COPY /api/ /app/api/
 # Set the memory limit for Node.js
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 
-# Build webpack artifacts for the client
+# Build artifacts for the client
 RUN cd /app/client && npm run build
 
 # Create the necessary directory and copy the client side code to the api directory

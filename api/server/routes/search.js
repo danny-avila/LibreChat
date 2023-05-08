@@ -5,6 +5,8 @@ const { Message } = require('../../models/Message');
 const { Conversation, getConvosQueried } = require('../../models/Conversation');
 const { reduceHits } = require('../../lib/utils/reduceHits');
 const { cleanUpPrimaryKeyValue } = require('../../lib/utils/misc');
+const requireJwtAuth = require('../../middleware/requireJwtAuth');
+
 const cache = new Map();
 
 router.get('/sync', async function (req, res) {
@@ -13,9 +15,9 @@ router.get('/sync', async function (req, res) {
   res.send('synced');
 });
 
-router.get('/', async function (req, res) {
+router.get('/', requireJwtAuth, async function (req, res) {
   try {
-    let user = req?.session?.user?.username;
+    let user = req.user.id;
     user = user ?? null;
     const { q } = req.query;
     const pageNumber = req.query.pageNumber || 1;

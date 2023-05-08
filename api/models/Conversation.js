@@ -39,7 +39,6 @@ module.exports = {
         .skip((pageNumber - 1) * pageSize)
         .limit(pageSize)
         .exec();
-
       return { conversations: convos, pages: totalPages, pageNumber, pageSize };
     } catch (error) {
       console.log(error);
