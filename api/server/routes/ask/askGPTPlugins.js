@@ -122,6 +122,8 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     const chatAgent = new ChatAgent(process.env.OPENAI_KEY, {
       tools: validateTools(tools || []),
       debug: true,
+      reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
+      proxy: process.env.PROXY || null,
       ...endpointOption,
     });
 
