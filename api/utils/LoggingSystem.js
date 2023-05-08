@@ -1,7 +1,11 @@
 const pino = require('pino');
 
 const logger = pino({
-  level: 'info'
+  level: 'info',
+  redact: {
+    paths: [], // Paths to redact
+    censor: '***', // Redaction character
+  },
 });
 
 const levels = {
@@ -13,7 +17,7 @@ const levels = {
   FATAL: 60
 };
 
-const apiKeyPattern = /api[-_]?key/i;
+const redactPatterns = [/api[-_]?key/i, /password/i]; // Array of regular expressions for redacting patterns
 
 let level = levels.INFO;
 
@@ -59,7 +63,13 @@ module.exports = {
     },
     variable: ({ name, value }) => {
       if (level > levels.DEBUG) return;
-      const sanitizedValue = apiKeyPattern.test(name) ? pino.redact(value) : value;
+      // Check if the variable name matches any of the redact patterns and redact the value
+      for (const pattern of redactPatterns) {
+        if (pattern.test(name)) {
+          sanitizedValue = '***';
+          break;
+        }
+      }
       logger.debug({ variable: { name, value: sanitizedValue } }, `VARIABLE ${name}`);
     },
     request: () => (req, res, next) => {
