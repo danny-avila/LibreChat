@@ -10,7 +10,6 @@ import {
   TLoginUser
 } from '~/data-provider';
 import { useNavigate, useLocation } from 'react-router-dom';
-import store from '~/store';
 
 export type TAuthContext = {
   user: TUser | undefined,
@@ -46,8 +45,6 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   const refreshToken = useRefreshTokenMutation();
 
   const location = useLocation();
-
-  const { newConversation } = store.useConversation();
 
   const setUserContext = (userContext: TUserContext) => {
     const { token, isAuthenticated, user, redirect } = userContext;
@@ -110,7 +107,7 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
       const tokenFromCookie = getCookieValue('token');
       if (tokenFromCookie) {
         // debugger;
-        setUserContext({ token: tokenFromCookie, isAuthenticated: true, user: userQuery.data, redirect: '/chat/new' })
+        setUserContext({ token: tokenFromCookie, isAuthenticated: true, user: userQuery.data })
       }
       else {
         navigate('/login');
