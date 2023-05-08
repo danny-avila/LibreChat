@@ -16,7 +16,7 @@ const askBing = async ({
   token,
   onProgress
 }) => {
-  const { BingAIClient } = await import('@waylaidwanderer/chatgpt-api');
+  const { BingAIClient } = await import('og-chatgpt-api');
   const store = {
     store: new KeyvFile({ filename: './data/cache.json' })
   };

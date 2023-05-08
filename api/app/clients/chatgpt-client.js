@@ -22,10 +22,11 @@ const askClient = async ({
     store: new KeyvFile({ filename: './data/cache.json' })
   };
 
-  const clientOptions = {
-    // Warning: This will expose your access token to a third party. Consider the risks before using this.
-    reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
+  const azure = process.env.AZURE_OPENAI_API_KEY ? true : false;
 
+  const clientOptions = {
+    reverseProxyUrl: azure ? process.env.AZURE_ENDPOINT : (process.env.OPENAI_REVERSE_PROXY || null),
+    azure,
     modelOptions: {
       model: model,
       temperature,
@@ -37,11 +38,12 @@ const askClient = async ({
     chatGptLabel,
     promptPrefix,
     proxy: process.env.PROXY || null,
-    debug: false,
+    debug: true,
     user: userId
   };
 
-  const client = new ChatGPTClient(process.env.OPENAI_KEY, clientOptions, store);
+  let apiKey = azure && clientOptions.reverseProxyUrl ? process.env.AZURE_OPENAI_API_KEY : process.env.OPENAI_KEY;
+  const client = new ChatGPTClient(apiKey, clientOptions, store);
   let options = { onProgress, abortController };
 
   if (!!parentMessageId && !!conversationId) {
