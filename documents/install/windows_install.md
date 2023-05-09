@@ -1,4 +1,4 @@
-﻿# Local Windows Install
+﻿# Windows Install
 
 ### Recommended:
 ### **[Automated Installer (Windows)](https://github.com/fuegovic/chatgpt-clone-local-installer)**
