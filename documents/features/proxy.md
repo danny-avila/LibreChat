@@ -35,4 +35,4 @@ set in docker-compose.yml file, under services - api - environment
 
 ##
 
-## [Go Back to ReadMe](README.md)
+## [Go Back to ReadMe](../../README.md)
