@@ -78,12 +78,10 @@ For discussion and suggestion you can join us: **[community discord server](http
   <summary><strong>Features</strong></summary>
 
   * [User Auth System](documents/features/user_auth_system.md)
-  * [Proxy](documents/features/proxy.md)
-  
-    <details>
-      <summary><strong>Plugins</strong></summary>
+  * <details hidden>
+      <summary><strong>Proxy</strong></summary>
 
-      * [Google Search](documents/features/plugins/google_search.md)
+      * [Plugins](documents/features/plugins/)
     </details>
 </details>
 
