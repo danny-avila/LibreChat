@@ -1,6 +1,6 @@
 ﻿# Documentation Guidelines
 
-- ⚠️Keep it organized and structured⚠️
+- ## ⚠️Keep it organized and structured⚠️
  - For new features, create new documents and place them in the appropriate folder(s)
  - When you create a new document, do not forget to add it to the table of content
  - Do not add unrelated information to an existing document, create a new one if needed
