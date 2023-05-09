@@ -66,13 +66,13 @@ For discussion and suggestion you can join us: **[community discord server](http
    - [Project Origin](documents/general_info/project_origin.md)
    - [Roadmap](documents/general_info/roadmap.md)
    - [Tech Stack](documents/general_info/tech_stack.md)
-   - [Bing Jailbreak Info](documents/general_info/docs/bing_jailbreak_info.md)
+   - [Bing Jailbreak Info](documents/general_info/bing_jailbreak_info.md)
  
  **[Features](documents/features/)**
    - [User Auth System](documents/features/user_auth_system.md)
    - [Proxy](documents/features/proxy.md)
-	- **[Plugins](documents/features/plugins/)**
-	   - [Google Search](documents/features/google_search.md)
+      - **[Plugins](documents/features/plugins/)**
+	      - [Google Search](documents/features/plugins/google_search.md)
 
  **[Cloud Deployment](documents/deployment/)**
  - [Heroku](documents/deployment/heroku.md)
@@ -85,9 +85,9 @@ For discussion and suggestion you can join us: **[community discord server](http
  - [Pull Request Template](documents/contributions/pull_request_template.md)
 
 **[Report Templates](documents/report_templates)**
- - [Bug Report Template](documents/report_templates/code_of_conduct.md)
- - [Custom Issue Template](documents/report_templates/contributor_guidelines.md)
- - [Feature Request Template](documents/report_templates/contributor_guidelines.md)
+ - [Bug Report Template](documents/report_templates/bug_report_template.md)
+ - [Custom Issue Template](documents/report_templates/custom_issue_template.md)
+ - [Feature Request Template](documents/report_templates/feature_request_template.md)
 
 ## 
   
