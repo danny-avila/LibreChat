@@ -78,11 +78,7 @@ For discussion and suggestion you can join us: **[community discord server](http
   <summary><strong>Features</strong></summary>
 
   * [User Auth System](documents/features/user_auth_system.md)
-  * <details hidden>
-      <summary><strong>Proxy</strong></summary>
-
-      * [Plugins](documents/features/plugins/)
-    </details>
+  * [Proxy](documents/features/proxy.md)
 </details>
 
 <details>
