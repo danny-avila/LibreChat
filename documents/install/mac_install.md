@@ -1,4 +1,4 @@
-﻿# Local Mac Install
+﻿# Mac Install
 Thanks to @heathriel!
 ##
 
