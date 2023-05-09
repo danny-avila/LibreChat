@@ -36,7 +36,7 @@ const askClient = async ({
     chatGptLabel,
     promptPrefix,
     proxy: process.env.PROXY || null,
-    debug: true
+    debug: false
   };
 
   let apiKey = process.env.OPENAI_KEY;
@@ -45,8 +45,6 @@ const askClient = async ({
     apiKey = process.env.AZURE_OPENAI_API_KEY;
     clientOptions.reverseProxyUrl = `https://${process.env.AZURE_OPENAI_API_INSTANCE_NAME}.openai.azure.com/openai/deployments/${process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME}/chat/completions?api-version=${process.env.AZURE_OPENAI_API_VERSION}`;
   }
-
-  console.log('askClient', { clientOptions, apiKey });
 
   const client = new ChatGPTClient(apiKey, clientOptions, store);
   

@@ -27,7 +27,6 @@ const createOnProgress = ({ onProgress: _onProgress }) => {
   let cursor = cursorDefault;
 
   const progressCallback = async (partial, { res, text, bing = false, ...rest }) => {
-    console.log('partial', partial);
     let chunk = partial === text ? '' : partial;
     tokens += chunk;
     precode += chunk;
