@@ -1,4 +1,4 @@
-﻿# Local Linux Install
+﻿# Linux Install
 
 ⚠️Not properly documented yet, use docker or extrapolate from the other guides.
 
