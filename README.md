@@ -56,8 +56,8 @@ For discussion and suggestion you can join us: **[community discord server](http
 
 # Table of Contents
 
-  **[Getting Started](documents/install/)**
-   - [Docker Install](documents/install/docker_install.md)
+  **[Getting Started](/documents/install/)**
+   - [Docker Install](/documents/install/docker_install.md)
    - [Linux Install](documentats/install/linux_install.md)
    - [Mac Install](documentats/install/mac_install.md)
    - [Windows Install](documentats/install/windows_install.md)
