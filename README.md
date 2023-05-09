@@ -54,47 +54,64 @@ For discussion and suggestion you can join us: **[community discord server](http
 
 ##
 
-# Table of Contents
+<h1>Table of Contents</h1>
 
-  **[Getting Started](/documents/install/)**
-   - [Docker Install](/documents/install/docker_install.md)
-   - [Linux Install](documents/install/linux_install.md)
-   - [Mac Install](documents/install/mac_install.md)
-   - [Windows Install](documents/install/windows_install.md)
+<details open>
+  <summary><strong>Getting Started</strong></summary>
 
-**[General Information](documents/general_info/)**
-   - [Project Origin](documents/general_info/project_origin.md)
-   - [Roadmap](documents/general_info/roadmap.md)
-   - [Tech Stack](documents/general_info/tech_stack.md)
-   - [Bing Jailbreak Info](documents/general_info/bing_jailbreak_info.md)
- 
- **[Features](documents/features/)**
-   - [User Auth System](documents/features/user_auth_system.md)
-   - [Proxy](documents/features/proxy.md)
-      - **[Plugins](documents/features/plugins/)**
-	      - [Google Search](documents/features/plugins/google_search.md)
+  * [Docker Install](/documents/install/docker_install.md)
+  * [Linux Install](documents/install/linux_install.md)
+  * [Mac Install](documents/install/mac_install.md)
+  * [Windows Install](documents/install/windows_install.md)
+</details>
 
- **[Cloud Deployment](documents/deployment/)**
- - [Heroku](documents/deployment/heroku.md)
+<details>
+  <summary><strong>General Information</strong></summary>
 
-**[Contributions](documents/contributions/)**
- - [Code of Conduct](documents/contributions/code_of_conduct.md)
- - [Contributor Guidelines](documents/contributions/contributor_guidelines.md)
- - [Documentation Guidelines](documents/contributions/contributor_guidelines.md)
- - [Testing](documents/contributions/testing.md)
- - [Pull Request Template](documents/contributions/pull_request_template.md)
+  * [Project Origin](documents/general_info/project_origin.md)
+  * [Roadmap](documents/general_info/roadmap.md)
+  * [Tech Stack](documents/general_info/tech_stack.md)
+  * [Bing Jailbreak Info](documents/general_info/bing_jailbreak_info.md)
+</details>
 
-**[Report Templates](documents/report_templates)**
- - [Bug Report Template](documents/report_templates/bug_report_template.md)
- - [Custom Issue Template](documents/report_templates/custom_issue_template.md)
- - [Feature Request Template](documents/report_templates/feature_request_template.md)
+<details>
+  <summary><strong>Features</strong></summary>
 
-## 
+  * [User Auth System](documents/features/user_auth_system.md)
+  * [Proxy](documents/features/proxy.md)
   
- - [License](LICENSE.md)
- - [Contributors](CONTRIBUTORS.md)
- - [Changelog](CHANGELOG.md)
+    <details>
+      <summary><strong>Plugins</strong></summary>
 
+      * [Google Search](documents/features/plugins/google_search.md)
+    </details>
+</details>
+
+<details>
+  <summary><strong>Cloud Deployment</strong></summary>
+
+  * [Heroku](documents/deployment/heroku.md)
+</details>
+
+<details>
+  <summary><strong>Contributions</strong></summary>
+
+  * [Code of Conduct](documents/contributions/code_of_conduct.md)
+  * [Contributor Guidelines](documents/contributions/contributor_guidelines.md)
+  * [Documentation Guidelines](documents/contributions/contributor_guidelines.md)
+  * [Testing](documents/contributions/testing.md)
+  * [Pull Request Template](documents/contributions/pull_request_template.md)
+</details>
+
+<details>
+  <summary><strong>Report Templates</strong></summary>
+
+  * [Bug Report Template](documents/report_templates/bug_report_template.md)
+  * [Custom Issue Template](documents/report_templates/custom_issue_template.md)
+  * [Feature Request Template](documents/report_templates/feature_request_template.md)
+</details>
+
+##
 
 ## Contributing
 
