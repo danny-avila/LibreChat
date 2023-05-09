@@ -71,6 +71,7 @@ For discussion and suggestion you can join us: **[community discord server](http
   * [Project Origin](documents/general_info/project_origin.md)
   * [Roadmap](documents/general_info/roadmap.md)
   * [Tech Stack](documents/general_info/tech_stack.md)
+  * [Changelog](CHANGELOG.md)
   * [Bing Jailbreak Info](documents/general_info/bing_jailbreak_info.md)
 </details>
 
@@ -117,6 +118,6 @@ For new features, components, or extensions, please open an issue and discuss be
 - Join the [Discord community](https://discord.gg/NGaa9RPCft)
 
 ## License
-This project is licensed under the MIT License.
+This project is licensed under the [MIT License](LICENSE.md).
 ##
 
