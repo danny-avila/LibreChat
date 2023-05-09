@@ -28,7 +28,7 @@ const googleLogin = new GoogleStrategy(
       const newUser = await new User({
         provider: 'google',
         googleId: profile.id,
-        username: profile.name.givenName + profile.name.familyName,
+        username: profile.name.givenName,
         email: profile.emails[0].value,
         emailVerified: profile.emails[0].verified,
         name: `${profile.name.givenName} ${profile.name.familyName}`,
