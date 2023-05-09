@@ -103,4 +103,4 @@ If you update the chatgpt-clone project files, mannually redo the `npm ci` and `
 
 ##
 
-## [Go Back to ReadMe](README.md)
+## [Go Back to ReadMe](../../README.md)
