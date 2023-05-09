@@ -110,7 +110,7 @@ For discussion and suggestion you can join us: **[community discord server](http
 ## Contributing
 
 Contributions and suggestions bug reports and fixes are welcome!
-Please read the according documentation before you do!
+Please read the documentation before you do!
 
 For new features, components, or extensions, please open an issue and discuss before sending a PR. 
 
