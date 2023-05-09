@@ -66,9 +66,9 @@ For discussion and suggestion you can join us: **[community discord server](http
    - [Project Origin](documentats/general_info/project_origin.md)
    - [Roadmap](documentats/general_info/roadmap.md)
    - [Tech Stack](documents/general_info/tech_stack.md)
-   - [Bing Jailbreak Info](documentats/general_info/docs/bing_jailbreak_info.md)
+   - [Bing Jailbreak Info](documents/general_info/docs/bing_jailbreak_info.md)
  
- **[Features](documents/)**
+ **[Features](documents/features/)**
    - [User Auth System](documents/features/user_auth_system.md)
    - [Proxy](documents/features/proxy.md)
 	- **[Plugins](documents/features/plugins/)**
