@@ -58,13 +58,13 @@ For discussion and suggestion you can join us: **[community discord server](http
 
   **[Getting Started](/documents/install/)**
    - [Docker Install](/documents/install/docker_install.md)
-   - [Linux Install](documentats/install/linux_install.md)
-   - [Mac Install](documentats/install/mac_install.md)
-   - [Windows Install](documentats/install/windows_install.md)
+   - [Linux Install](documents/install/linux_install.md)
+   - [Mac Install](documents/install/mac_install.md)
+   - [Windows Install](documents/install/windows_install.md)
 
 **[General Information](documents/general_info/)**
-   - [Project Origin](documentats/general_info/project_origin.md)
-   - [Roadmap](documentats/general_info/roadmap.md)
+   - [Project Origin](documents/general_info/project_origin.md)
+   - [Roadmap](documents/general_info/roadmap.md)
    - [Tech Stack](documents/general_info/tech_stack.md)
    - [Bing Jailbreak Info](documents/general_info/docs/bing_jailbreak_info.md)
  
