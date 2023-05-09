@@ -1,6 +1,6 @@
 ﻿# Roadmap
 
-<details>
+
 <summary><strong>Here are my recently completed and planned features:</strong></summary>
 
 - [x] Persistent conversation
@@ -26,7 +26,7 @@
 - [ ] ChatGPT Plugins (reverse engineered)
 - [ ] Deploy demo
 
-</details>
+
 
 ##
 
