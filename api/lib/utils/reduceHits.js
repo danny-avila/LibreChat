@@ -2,19 +2,20 @@ const mergeSort = require('./mergeSort');
 const { cleanUpPrimaryKeyValue } = require('./misc');
 
 function reduceMessages(hits) {
-  const counts = {};
+  const conversationCounts = {};
 
   for (const hit of hits) {
-    if (!counts[hit.conversationId]) {
-      counts[hit.conversationId] = 1;
+    const conversationId = hit.conversationId;
+    if (Object.hasOwnProperty.call(conversationCounts, conversationId)) {
+      conversationCounts[conversationId]++;
     } else {
-      counts[hit.conversationId]++;
+      conversationCounts[conversationId] = 1;
     }
   }
 
   const result = [];
 
-  for (const [conversationId, count] of Object.entries(counts)) {
+  for (const [conversationId, count] of Object.entries(conversationCounts)) {
     result.push({
       conversationId,
       count
@@ -25,31 +26,30 @@ function reduceMessages(hits) {
 }
 
 function reduceHits(hits, titles = []) {
-  const counts = {};
+  const conversationCounts = {};
   const titleMap = {};
   const convos = [...hits, ...titles];
 
   for (const convo of convos) {
     const currentId = cleanUpPrimaryKeyValue(convo.conversationId);
-    if (!counts[currentId]) {
-      counts[currentId] = 1;
+    if (Object.hasOwnProperty.call(conversationCounts, currentId)) {
+      conversationCounts[currentId]++;
     } else {
-      counts[currentId]++;
+      conversationCounts[currentId] = 1;
     }
 
     if (convo.title) {
-      // titleMap[currentId] = convo._formatted.title;
       titleMap[currentId] = convo.title;
     }
   }
 
   const result = [];
 
-  for (const [conversationId, count] of Object.entries(counts)) {
+  for (const [conversationId, count] of Object.entries(conversationCounts)) {
     result.push({
       conversationId,
       count,
-      title: titleMap[conversationId] ? titleMap[conversationId] : null
+      title: titleMap[conversationId] ?? null
     });
   }
 

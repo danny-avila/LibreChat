@@ -20,11 +20,15 @@ const migratePresets = async (userId) => {
 }
 
 const migrateDataToFirstUser = async (user) => {
-  const conversations = await migrateConversations(user.id);
-  console.log(conversations);
-  const presets = await migratePresets(user.id);
-  console.log(presets);
+  try {
+    const conversations = await migrateConversations(user.id);
+    console.log(conversations);
+    const presets = await migratePresets(user.id);
+    console.log(presets);
+  } catch (error) {
+    console.log(error);
+    throw new Error('Error migrating data to first user');
+  }
 }
-
 
 module.exports = migrateDataToFirstUser;

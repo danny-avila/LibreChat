@@ -28,4 +28,6 @@ const requireLocalAuth = (req, res, next) => {
   })(req, res, next);
 };
 
-module.exports = requireLocalAuth;
+const requireJwtAuth = passport.authenticate('jwt', { session: false });
+
+module.exports = { requireLocalAuth, requireJwtAuth };

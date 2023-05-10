@@ -14,7 +14,7 @@ module.exports = {
     parameters: (parameters) => {
       if (levels.HIGH > level) return;
       console.group();
-      parameters.forEach((p) => console.log(`${p.name}:`, p.value));
+      parameters.forEach((p) => console.log(`${p.name}: ${p.value}`));
       console.groupEnd();
     },
     functionName: (name) => {
@@ -29,13 +29,13 @@ module.exports = {
       if (levels.HIGH > level) return;
       console.group();
       console.group();
-      console.log(`VARIABLE ${name}:`, value);
+      console.log(`VARIABLE ${name}: ${value}`);
       console.groupEnd();
       console.groupEnd();
     },
     request: () => (req, res, next) => {
       if (levels.HIGH > level) return next();
-      console.log('Hit URL', req.url, 'with following:');
+      console.log(`Hit URL ${req.url} with following:`);
       console.group();
       console.log('Query:', req.query);
       console.log('Body:', req.body);

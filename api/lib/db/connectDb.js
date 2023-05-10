@@ -1,5 +1,6 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
+
 const MONGO_URI = process.env.MONGO_URI;
 
 if (!MONGO_URI) {
@@ -17,6 +18,11 @@ if (!cached) {
   cached = global.mongoose = { conn: null, promise: null };
 }
 
+/**
+ * Connect to MongoDB.
+ *
+ * @returns {Promise<mongoose.Connection>} The MongoDB connection.
+ */
 async function connectDb() {
   if (cached.conn) {
     return cached.conn;
@@ -33,10 +39,15 @@ async function connectDb() {
     };
 
     mongoose.set('strictQuery', true);
-    cached.promise = mongoose.connect(MONGO_URI, opts).then((mongoose) => {
-      return mongoose;
-    });
+
+    cached.promise = mongoose.connect(MONGO_URI, opts)
+      .then(mongoose => mongoose)
+      .catch(err => {
+        console.error(`Failed to connect to MongoDB: ${err.message}`);
+        process.exit(1);
+      });
   }
+
   cached.conn = await cached.promise;
   return cached.conn;
 }

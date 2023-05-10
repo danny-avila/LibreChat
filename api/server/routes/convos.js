@@ -5,8 +5,14 @@ const { getConvosByPage, deleteConvos } = require('../../models/Conversation');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 
 router.get('/', requireJwtAuth, async (req, res) => {
-  const pageNumber = req.query.pageNumber || 1;
-  res.status(200).send(await getConvosByPage(req.user.id, pageNumber));
+  const { pageNumber = 1 } = req.query;
+  try {
+    const convos = await getConvosByPage(req.user.id, pageNumber);
+    res.status(200).send(convos);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send(error);
+  }
 });
 
 router.get('/:conversationId', requireJwtAuth, async (req, res) => {
@@ -18,11 +24,8 @@ router.get('/:conversationId', requireJwtAuth, async (req, res) => {
 });
 
 router.post('/clear', requireJwtAuth, async (req, res) => {
-  let filter = {};
-  const { conversationId, source } = req.body.arg;
-  if (conversationId) {
-    filter = { conversationId };
-  }
+  const { conversationId, source } = req.body;
+  const filter = conversationId ? { conversationId } : {};
 
   console.log('source:', source);
 

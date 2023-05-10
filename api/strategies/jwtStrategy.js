@@ -21,6 +21,7 @@ const jwtLogin = new JwtStrategy(
         done(null, false);
       }
     } catch (err) {
+      // Throw errors instead of logging them
       done(err, false);
     }
   }
