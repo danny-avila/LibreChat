@@ -108,6 +108,7 @@ For discussion and suggestion you can join us: **[community discord server](http
   * [Testing](documents/contributions/testing.md)
   * [Pull Request Template](documents/contributions/pull_request_template.md)
   * [Contributors](CONTRIBUTORS.md)
+  * [Trello Board](https://trello.com/b/17z094kq/chatgpt-clone)
 </details>
 
 <details>
@@ -117,6 +118,9 @@ For discussion and suggestion you can join us: **[community discord server](http
   * [Custom Issue Template](documents/report_templates/custom_issue_template.md)
   * [Feature Request Template](documents/report_templates/feature_request_template.md)
 </details>
+
+##
+### [Alternative Documentation](https://chatgpt-clone.gitbook.io/chatgpt-clone-docs/get-started/docker)
 
 ##
 
