@@ -1,6 +1,6 @@
 const { ZeroShotAgentOutputParser } = require('langchain/agents');
 
-class CustomOutputParser extends ZeroShotAgentOutputParser {
+class OldOutputParser extends ZeroShotAgentOutputParser {
   constructor(fields) {
     super(fields);
     this.tools = fields.tools;
@@ -104,7 +104,7 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
   }
 }
 
-class Gpt4OutputParser extends ZeroShotAgentOutputParser {
+class CustomOutputParser extends ZeroShotAgentOutputParser {
   constructor(fields) {
     super(fields);
     this.tools = fields.tools;
@@ -254,4 +254,4 @@ class Gpt4OutputParser extends ZeroShotAgentOutputParser {
   }
 }
 
-module.exports = { CustomOutputParser, Gpt4OutputParser };
+module.exports = { OldOutputParser, CustomOutputParser };

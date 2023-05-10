@@ -2,13 +2,13 @@ const crypto = require('crypto');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('@dqbd/tiktoken');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
 const { Agent, ProxyAgent } = require('undici');
-const TextStream = require('../tools/stream');
+const TextStream = require('./tools/stream');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { CallbackManager } = require('langchain/callbacks');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
-const { initializeCustomAgent } = require('./initializeCustomAgent');
-const { getMessages, saveMessage, saveConvo } = require('../../../models');
-const { loadTools, SelfReflectionTool } = require('../tools');
+const { initializeCustomAgent } = require('./agents/CustomAgent/initializeCustomAgent');
+const { getMessages, saveMessage, saveConvo } = require('../../models');
+const { loadTools, SelfReflectionTool } = require('./tools');
 
 const FORMAT_INSTRUCTIONS = `Remember, all your responses MUST be in the format described. Do not respond unless it's in the format described, using the structure of Action, Action Input, etc.`;
 

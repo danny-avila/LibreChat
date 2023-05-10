@@ -1,8 +1,8 @@
 const { ZeroShotAgent } = require('langchain/agents');
 const { PromptTemplate, renderTemplate } = require('langchain/prompts');
-const { prefix2, gpt4Instructions, suffix2 } = require('./instructions');
+const { prefix, instructions, suffix } = require('./instructions');
 
-class CustomGpt4Agent extends ZeroShotAgent {
+class CustomAgent extends ZeroShotAgent {
   constructor(input) {
     super(input);
   }
@@ -13,12 +13,10 @@ class CustomGpt4Agent extends ZeroShotAgent {
 
   static createPrompt(tools) {
     // const { currentDateString } = args;
-    const prefix = prefix2;
-    const suffix = suffix2;
     const inputVariables = ['input', 'chat_history', 'agent_scratchpad'];
     const toolStrings = tools.filter((tool) => tool.name !== 'self-reflection').map((tool) => `${tool.name}: ${tool.description}`).join('\n');
     const toolNames = tools.map((tool) => tool.name);
-    const formatInstructions = (0, renderTemplate)(gpt4Instructions, 'f-string', {
+    const formatInstructions = (0, renderTemplate)(instructions, 'f-string', {
       tool_names: toolNames
     });
     const template = [prefix, toolStrings, formatInstructions, suffix].join('\n\n');
@@ -29,4 +27,4 @@ class CustomGpt4Agent extends ZeroShotAgent {
   }
 }
 
-module.exports = CustomGpt4Agent;
+module.exports = CustomAgent;
