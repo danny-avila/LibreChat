@@ -1,5 +1,28 @@
 ﻿# # Changelog
 <details open>
+<summary><strong>2023-05-09</strong></summary>
+ 
+**Released [v0.4.1](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.1)**
+ 
+ * update user system section of readme by @danorlando in #207
+ * remove github-passport and update package.lock files by @danorlando in #208
+ * Update README.md by @fuegovic in #209
+ * fix: fix browser refresh redirecting to /chat/new by @danorlando in #210
+ * fix: fix issue with validation when google account has multiple spaces in username by @danorlando in #211
+ * chore: update docker image version to use latest by @danny-avila in #218
+ * update documentation structure by @fuegovic in #220
+ * Feat: Add Azure support by @danny-avila in #219
+ * Update Message.js by @DavidDev1334 in #191
+ 
+⚠️ **IMPORTANT :** Since V0.4.0 You should register and login with a local account (email and password) for the first time sign-up. if you use login for the first time with a social login account (eg. Google, facebook, etc.), the conversations and presets that you created before the user system was implemented will NOT be migrated to that account.
+
+⚠️ **Breaking - new Env Variables :** Since V0.4.0 You will need to add the new env variables from .env.example for the app to work, even if you're not using multiple users for your purposes.
+
+For discussion and suggestion you can join us: **[community discord server](https://discord.gg/NGaa9RPCft)**
+</details>
+
+
+ <details>
 <summary><strong>2023-05-07</strong></summary>
 
 **Released [v0.4.0](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.0)**, Introducing User/Auth System and OAuth2/Social Login! You can now register and login with an email account or use Google login. Your your previous conversations and presets will migrate to your new profile upon creation. Check out the details in the [User/Auth System](#userauth-system) section of the README.md.
@@ -10,11 +33,7 @@
 
 For discussion and suggestion you can join us: **[community discord server](https://discord.gg/NGaa9RPCft)**
 </details>
-
-
-<details>
-<summary><strong>Previous Updates</strong></summary>
-
+ 
 
 <details>
 <summary><strong>2023-04-05</strong></summary>
@@ -45,7 +64,7 @@ The above features are next and then I will have to focus on building the **test
 
 On that note, I had to switch the default branch due to some breaking changes that haven't been straight forward to debug, mainly related to node-chat-gpt the main dependency of the project. Thankfully, my working branch, now switched to default as main, is working as expected.
 </details>
-</details>
+
 
 ##
 
