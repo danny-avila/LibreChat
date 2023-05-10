@@ -67,6 +67,10 @@ class CustomChatAgent {
       return null;
     }
 
+    if (result?.intermediateSteps?.length === 1 && result?.intermediateSteps[0]?.action?.toolInput === 'N/A') {
+      return null;
+    }
+
     const internalActions =
       result?.intermediateSteps?.length > 0
         ? this.getActions(result.intermediateSteps)

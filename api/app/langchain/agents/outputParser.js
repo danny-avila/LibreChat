@@ -149,7 +149,7 @@ class Gpt4OutputParser extends ZeroShotAgentOutputParser {
       console.log('\n\n<----------------------HIT N/A PARSING ERROR---------------------->\n\n', match);
       return {
         tool: 'self-reflection',
-        toolInput: match[2].trim().replace(/^"+|"+$/g, '') ?? '',
+        toolInput: match[2]?.trim().replace(/^"+|"+$/g, '') ?? '',
         log: text
       };
     }
