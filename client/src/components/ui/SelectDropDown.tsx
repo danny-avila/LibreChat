@@ -1,7 +1,21 @@
 import React from 'react';
 import CheckMark from '../svg/CheckMark.jsx';
 import { Listbox, Transition } from '@headlessui/react';
+
+// @ts-ignore
 import { cn } from '~/utils/';
+
+type Props = {
+  title?: string | JSX.Element,
+  value: string,
+  disabled?: boolean,
+  setValue: (value: string) => void,
+  availableValues: string[],
+  showAbove?: boolean,
+  showLabel?: boolean,
+  containerClassName?: string,
+  className?: string
+};
 
 function SelectDropDown({
   title = 'Model',
@@ -13,7 +27,7 @@ function SelectDropDown({
   showLabel = true,
   containerClassName,
   className
-}) {
+}: Props) {
   return (
     <div className={cn('flex items-center justify-center gap-2', containerClassName)}>
       <div className="relative w-full">
@@ -75,6 +89,7 @@ function SelectDropDown({
                 leave="transition ease-in duration-100"
                 leaveFrom="opacity-100"
                 leaveTo="opacity-0"
+                // @ts-ignore
                 className={showAbove ? 'bottom-full mb-3' : 'top-full mt-3'}
               >
                 <Listbox.Options className="absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%]">

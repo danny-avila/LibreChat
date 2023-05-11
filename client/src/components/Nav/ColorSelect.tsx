@@ -1,13 +1,15 @@
 import React, { useState, useContext } from 'react';
-import DarkModeIcon from '../svg/DarkModeIcon';
-import LightModeIcon from '../svg/LightModeIcon';
+import DarkModeIcon from '../svg/DarkModeIcon.jsx';
+import LightModeIcon from '../svg/LightModeIcon.jsx';
+// @ts-ignore
 import { ThemeContext } from '~/hooks/ThemeContext';
 import SelectDropDown from '../ui/SelectDropDown.jsx';
 import { COLORS } from '../../../colors.js';
+// @ts-ignore
 import { cn } from '~/utils/';
 
 export default function DarkMode({ className }) {
-  const { theme, setTheme } = useContext(ThemeContext);
+  const { theme, setTheme } = useContext<{ theme: any, setTheme: (value: any) => void }>(ThemeContext);
 
   const cardStyle =
     'transition-colors rounded-md min-w-[75px] font-normal bg-white border-black/10 hover:border-black/10 focus:border-black/10 dark:border-black/10 dark:hover:border-black/10 dark:focus:border-black/10 border dark:bg-gray-700 text-black dark:text-white';
