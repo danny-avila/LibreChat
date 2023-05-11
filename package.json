@@ -1,6 +1,6 @@
 {
   "name": "chatgpt-clone",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "",
   "scripts": {
     "e2e": "playwright test --config=e2e/playwright.config.js",
