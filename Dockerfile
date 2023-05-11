@@ -1,6 +1,7 @@
 FROM node:19-alpine AS react-client
 WORKDIR /client
 # copy package.json into the container at /client
+COPY /client/.env /client/.env
 COPY /client/package*.json /client/
 # install dependencies
 RUN npm ci
