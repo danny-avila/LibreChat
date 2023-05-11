@@ -69,7 +69,7 @@ You will need all your credentials, (API keys, access tokens, and Mongo Connecti
 ### Using the command line (in the root directory)
 
 1. Run `npm ci`
-2. Run `npm run frontend`
+2. Run `npm run frontend-dev`
 3. Run `npm run backend`
 4. Run `meilisearch --master-key put_your_meilesearch_Master_Key_here` (Only if SEARCH=TRUE)
 5. Visit http://localhost:3080 (default port) & enjoy
