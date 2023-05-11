@@ -66,3 +66,6 @@ src/style - official.css
 meilisearch
 data.ms/*
 
+# replit
+.replit
+replit.nix

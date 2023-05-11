@@ -18,7 +18,7 @@ var SSE = function (url, options) {
   options = options || {};
   this.headers = options.headers || {};
   this.payload = options.payload !== undefined ? options.payload : '';
-  this.method = options.method || (this.payload && 'POST' || 'GET');
+  this.method = options.method || (this.payload && 'POST') || 'GET';
   this.withCredentials = !!options.withCredentials;
 
   this.FIELD_SEPARATOR = ':';
@@ -29,7 +29,7 @@ var SSE = function (url, options) {
   this.progress = 0;
   this.chunk = '';
 
-  this.addEventListener = function(type, listener) {
+  this.addEventListener = function (type, listener) {
     if (this.listeners[type] === undefined) {
       this.listeners[type] = [];
     }
@@ -39,13 +39,13 @@ var SSE = function (url, options) {
     }
   };
 
-  this.removeEventListener = function(type, listener) {
+  this.removeEventListener = function (type, listener) {
     if (this.listeners[type] === undefined) {
       return;
     }
 
     var filtered = [];
-    this.listeners[type].forEach(function(element) {
+    this.listeners[type].forEach(function (element) {
       if (element !== listener) {
         filtered.push(element);
       }
@@ -57,7 +57,7 @@ var SSE = function (url, options) {
     }
   };
 
-  this.dispatchEvent = function(e) {
+  this.dispatchEvent = function (e) {
     if (!e) {
       return true;
     }
@@ -73,7 +73,7 @@ var SSE = function (url, options) {
     }
 
     if (this.listeners[e.type]) {
-      return this.listeners[e.type].every(function(callback) {
+      return this.listeners[e.type].every(function (callback) {
         callback(e);
         return !e.defaultPrevented;
       });
@@ -82,26 +82,26 @@ var SSE = function (url, options) {
     return true;
   };
 
-  this._setReadyState = function(state) {
+  this._setReadyState = function (state) {
     var event = new CustomEvent('readystatechange');
     event.readyState = state;
     this.readyState = state;
     this.dispatchEvent(event);
   };
 
-  this._onStreamFailure = function(e) {
+  this._onStreamFailure = function (e) {
     var event = new CustomEvent('error');
     event.data = e.currentTarget.response;
     this.dispatchEvent(event);
     this.close();
-  }
+  };
 
-  this._onStreamAbort = function(e) {
+  this._onStreamAbort = function (e) {
     this.dispatchEvent(new CustomEvent('abort'));
     this.close();
-  }
+  };
 
-  this._onStreamProgress = function(e) {
+  this._onStreamProgress = function (e) {
     if (!this.xhr) {
       return;
     }
@@ -118,17 +118,19 @@ var SSE = function (url, options) {
 
     var data = this.xhr.responseText.substring(this.progress);
     this.progress += data.length;
-    data.split(/(\r\n|\r|\n){2}/g).forEach(function(part) {
-      if (part.trim().length === 0) {
-        this.dispatchEvent(this._parseEventChunk(this.chunk.trim()));
-        this.chunk = '';
-      } else {
-        this.chunk += part;
-      }
-    }.bind(this));
+    data.split(/(\r\n|\r|\n){2}/g).forEach(
+      function (part) {
+        if (part.trim().length === 0) {
+          this.dispatchEvent(this._parseEventChunk(this.chunk.trim()));
+          this.chunk = '';
+        } else {
+          this.chunk += part;
+        }
+      }.bind(this)
+    );
   };
 
-  this._onStreamLoaded = function(e) {
+  this._onStreamLoaded = function (e) {
     this._onStreamProgress(e);
 
     // Parse the last chunk.
@@ -139,33 +141,35 @@ var SSE = function (url, options) {
   /**
    * Parse a received SSE event chunk into a constructed event object.
    */
-  this._parseEventChunk = function(chunk) {
+  this._parseEventChunk = function (chunk) {
     if (!chunk || chunk.length === 0) {
       return null;
     }
 
-    var e = {'id': null, 'retry': null, 'data': '', 'event': 'message'};
-    chunk.split(/\n|\r\n|\r/).forEach(function(line) {
-      line = line.trimRight();
-      var index = line.indexOf(this.FIELD_SEPARATOR);
-      if (index <= 0) {
-        // Line was either empty, or started with a separator and is a comment.
-        // Either way, ignore.
-        return;
-      }
+    var e = { id: null, retry: null, data: '', event: 'message' };
+    chunk.split(/\n|\r\n|\r/).forEach(
+      function (line) {
+        line = line.trimRight();
+        var index = line.indexOf(this.FIELD_SEPARATOR);
+        if (index <= 0) {
+          // Line was either empty, or started with a separator and is a comment.
+          // Either way, ignore.
+          return;
+        }
 
-      var field = line.substring(0, index);
-      if (!(field in e)) {
-        return;
-      }
+        var field = line.substring(0, index);
+        if (!(field in e)) {
+          return;
+        }
 
-      var value = line.substring(index + 1).trimLeft();
-      if (field === 'data') {
-        e[field] += value;
-      } else {
-        e[field] = value;
-      }
-    }.bind(this));
+        var value = line.substring(index + 1).trimLeft();
+        if (field === 'data') {
+          e[field] += value;
+        } else {
+          e[field] = value;
+        }
+      }.bind(this)
+    );
 
     var event = new CustomEvent(e.event);
     event.data = e.data;
@@ -173,7 +177,7 @@ var SSE = function (url, options) {
     return event;
   };
 
-  this._checkStreamClosed = function() {
+  this._checkStreamClosed = function () {
     if (!this.xhr) {
       return;
     }
@@ -183,7 +187,7 @@ var SSE = function (url, options) {
     }
   };
 
-  this.stream = function() {
+  this.stream = function () {
     this._setReadyState(this.CONNECTING);
 
     this.xhr = new XMLHttpRequest();
@@ -200,7 +204,7 @@ var SSE = function (url, options) {
     this.xhr.send(this.payload);
   };
 
-  this.close = function() {
+  this.close = function () {
     if (this.readyState === this.CLOSED) {
       return;
     }

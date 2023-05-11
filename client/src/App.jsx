@@ -80,19 +80,19 @@ const App = () => {
   });
 
   return (
-		<div>
-			{/* {THEMES.map(theme => (
+    <div>
+      {/* {THEMES.map(theme => (
   			<div className={theme.value}></div>
 			))} */}
-	    <QueryClientProvider client={queryClient}>
-	      <RecoilRoot>
-	        <ThemeProvider>
-	          <RouterProvider router={router} />
-	          <ReactQueryDevtools initialIsOpen={false} />
-	        </ThemeProvider>
-	      </RecoilRoot>
-	    </QueryClientProvider>
-		</div>
+      <QueryClientProvider client={queryClient}>
+        <RecoilRoot>
+          <ThemeProvider>
+            <RouterProvider router={router} />
+            <ReactQueryDevtools initialIsOpen={false} />
+          </ThemeProvider>
+        </RecoilRoot>
+      </QueryClientProvider>
+    </div>
   );
 };
 

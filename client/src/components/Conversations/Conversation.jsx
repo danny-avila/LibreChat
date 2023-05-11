@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect} from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRecoilState, useSetRecoilState } from 'recoil';
 import { useUpdateConversationMutation } from '~/data-provider';
 import RenameButton from './RenameButton';
@@ -61,7 +61,7 @@ export default function Conversation({ conversation, retainView }) {
     updateConvoMutation.mutate({ conversationId, title: titleInput });
   };
 
-  useEffect(() => {   
+  useEffect(() => {
     if (updateConvoMutation.isSuccess) {
       refreshConversations();
       if (conversationId == currentConversation?.conversationId) {

@@ -32,10 +32,10 @@ export default function Chat() {
       } else if (conversationId) {
         // fetch it from server
         getConversationMutation.mutate(conversationId, {
-          onSuccess: (data) => {
+          onSuccess: data => {
             setConversation(data);
           },
-          onError: (error) => {
+          onError: error => {
             console.error('failed to fetch the conversation');
             console.error(error);
             navigate(`/chat/new`);
@@ -60,11 +60,11 @@ export default function Chat() {
       messagesQuery.refetch(conversation?.conversationId);
     }
   }, [conversation?.conversationId, messagesQuery, messagesTree]);
-  
+
   useEffect(() => {
     if (messagesQuery.data) {
       setMessages(messagesQuery.data);
-    } else if(messagesQuery.isError) {
+    } else if (messagesQuery.isError) {
       console.error('failed to fetch the messages');
       console.error(messagesQuery.error);
       setMessages(null);

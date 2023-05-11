@@ -83,9 +83,7 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
                 'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
               )}
             />
-            <small className="text-red-600">
-              Your token will be sent to the server, but not saved.
-            </small>
+            <small className="text-red-600">Your token will be sent to the server, but not saved.</small>
             {helpText?.[endpoint]}
           </div>
         }

@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function BingIcon({ size=25 }) {
+export default function BingIcon({ size = 25 }) {
   return (
     <svg
       width={size}
@@ -42,7 +42,7 @@ export default function BingIcon({ size=25 }) {
           y2="38.1597"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stopColor="#37BDFF"/>
+          <stop stopColor="#37BDFF" />
           <stop
             offset="0.1832"
             stopColor="#33BFFD"
@@ -84,7 +84,7 @@ export default function BingIcon({ size=25 }) {
           y2="45.3798"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stopColor="#39D2FF"/>
+          <stop stopColor="#39D2FF" />
           <stop
             offset="0.1501"
             stopColor="#38CEFE"
@@ -126,7 +126,7 @@ export default function BingIcon({ size=25 }) {
           y2="1.52914"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stopColor="#1B48EF"/>
+          <stop stopColor="#1B48EF" />
           <stop
             offset="0.1221"
             stopColor="#1C51F0"
@@ -152,7 +152,7 @@ export default function BingIcon({ size=25 }) {
           y2="32.6475"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stopColor="white"/>
+          <stop stopColor="white" />
           <stop
             offset="0.3726"
             stopColor="#FDFDFD"
@@ -193,7 +193,7 @@ export default function BingIcon({ size=25 }) {
             offset="0.9926"
             stopColor="#090909"
           />
-          <stop offset="1"/>
+          <stop offset="1" />
         </linearGradient>
         <linearGradient
           id="paint4_linear_36_2239"
@@ -203,7 +203,7 @@ export default function BingIcon({ size=25 }) {
           y2="47.9822"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stopColor="white"/>
+          <stop stopColor="white" />
           <stop
             offset="0.3726"
             stopColor="#FDFDFD"
@@ -244,7 +244,7 @@ export default function BingIcon({ size=25 }) {
             offset="0.9926"
             stopColor="#090909"
           />
-          <stop offset="1"/>
+          <stop offset="1" />
         </linearGradient>
         <clipPath id="clip0_36_2239">
           <rect

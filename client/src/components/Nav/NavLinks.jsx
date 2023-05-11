@@ -8,15 +8,11 @@ import Settings from './Settings';
 export default function NavLinks({ clearSearch, isSearchEnabled }) {
   return (
     <>
-      {!!isSearchEnabled && (
-        <SearchBar
-          clearSearch={clearSearch}
-        />
-      )}
+      {!!isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
       <ExportConversation />
       <DarkMode />
       <ClearConvos />
-			<Settings />
+      <Settings />
       <Logout />
     </>
   );

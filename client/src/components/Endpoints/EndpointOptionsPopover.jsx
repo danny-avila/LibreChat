@@ -19,7 +19,7 @@ function EndpointOptionsPopover({ content, visible, saveAsPreset, switchToSimple
         <div
           className={
             cardStyle +
-            ' border-s-0 border-d-0 flex w-full flex-col overflow-hidden rounded-none border-t bg-slate-200 px-0 pb-[10px] dark:border-white/10 md:rounded-md md:border lg:w-[736px]'
+            ' border-d-0 flex w-full flex-col overflow-hidden rounded-none border-s-0 border-t bg-slate-200 px-0 pb-[10px] dark:border-white/10 md:rounded-md md:border lg:w-[736px]'
           }
         >
           <div className="flex w-full items-center justify-between bg-slate-100 px-2 py-2 dark:bg-gray-800/60">
