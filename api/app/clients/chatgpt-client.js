@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
-const { genAzureEndpoint } = require('../../utils/genAzureEndpoints');
+const { genAzureChatCompletion } = require('../../utils/genAzureEndpoints');
 
 const askClient = async ({
   text,
@@ -44,7 +44,7 @@ const askClient = async ({
 
   if (azure) {
     apiKey = process.env.AZURE_OPENAI_API_KEY;
-    clientOptions.reverseProxyUrl = genAzureEndpoint({ 
+    clientOptions.reverseProxyUrl = genAzureChatCompletion({ 
       azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME, 
       azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME, 
       azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION

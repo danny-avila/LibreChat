@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { genAzureChatCompletion } = require('../../utils/genAzureEndpoints');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('@dqbd/tiktoken');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
 const { Agent, ProxyAgent } = require('undici');
@@ -21,9 +22,14 @@ class CustomChatAgent {
     this.actions = [];
     this.openAIApiKey = apiKey;
     this.azure = options.azure || false;
-    this.azureEndpoint = this.azure
-      ? `https://${this.azure.azureOpenAIApiInstanceName}.openai.azure.com/openai/deployments/${this.azure.azureOpenAIApiDeploymentName}/chat/completions?api-version=${this.azure.azureOpenAIApiVersion}`
-      : null;
+    if (this.azure) {
+      const { azureOpenAIApiInstanceName, azureOpenAIApiDeploymentName, azureOpenAIApiVersion } = this.azure;
+      this.azureEndpoint = genAzureChatCompletion({
+        azureOpenAIApiInstanceName,
+        azureOpenAIApiDeploymentName,
+        azureOpenAIApiVersion
+      });
+    }
     this.setOptions(options);
     this.executor = null;
     this.currentDateString = new Date().toLocaleDateString('en-us', {

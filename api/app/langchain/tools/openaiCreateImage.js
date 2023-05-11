@@ -1,18 +1,35 @@
 // From https://platform.openai.com/docs/api-reference/images/create
 // To use this tool, you must pass in a configured OpenAIApi object.
 const { Configuration, OpenAIApi } = require('openai');
+const { genAzureEndpoint } = require('../../../utils/genAzureEndpoints');
 const { Tool } = require('langchain/tools');
 const saveImageFromUrl = require('./saveImageFromUrl');
 const path = require('path');
 
 class OpenAICreateImage extends Tool {
-  constructor() {
+  constructor(fields = {}) {
     super();
-    this.openaiApi = new OpenAIApi(
-      new Configuration({
-        apiKey: process.env.OPENAI_API_KEY
-      })
-    );
+
+    let apiKey = process.env.OPENAI_API_KEY;
+    let config = { apiKey };
+
+    if (process.env.AZURE_OPENAI_API_KEY && fields.azure) {
+      apiKey = process.env.AZURE_OPENAI_API_KEY;
+      config = {
+        apiKey,
+        basePath: genAzureEndpoint({
+          azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME,
+          azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME
+        }),
+        baseOptions: {
+          headers: { 'api-key': apiKey },
+          params: {
+            'api-version': process.env.AZURE_OPENAI_API_VERSION // this might change. I got the current value from the sample code at https://oai.azure.com/portal/chat
+          }
+        }
+      };
+    }
+    this.openaiApi = new OpenAIApi(new Configuration(config));
     this.name = 'dall-e';
     this.description = `You can generate images with 'dall-e'.
 Guidelines:
@@ -35,7 +52,7 @@ Guidelines:
     const imageUrl = path.join(this.relativeImageUrl, imageName).replace(/\\/g, '/');
     return `![generated image](/${imageUrl})`;
   }
-  
+
   async _call(input) {
     const resp = await this.openaiApi.createImage({
       prompt: this.replaceNewLinesWithSpaces(input),
@@ -63,7 +80,7 @@ Guidelines:
     }
 
     this.outputPath = path.resolve(__dirname, '..', '..', '..', '..', 'client', 'dist', 'images');
-    const appRoot = path.resolve(__dirname, '..', '..', '..', '..','client');
+    const appRoot = path.resolve(__dirname, '..', '..', '..', '..', 'client');
     this.relativeImageUrl = path.relative(appRoot, this.outputPath);
 
     try {

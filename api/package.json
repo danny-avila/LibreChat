@@ -52,7 +52,7 @@
     "mongoose": "^6.9.0",
     "nodemailer": "^6.9.1",
     "og-chatgpt-api": "npm:@waylaidwanderer/chatgpt-api@^1.35.0",
-    "openai": "^3.1.0",
+    "openai": "^3.2.1",
     "passport": "^0.6.0",
     "passport-facebook": "^3.0.0",
     "passport-google-oauth20": "^2.0.0",
