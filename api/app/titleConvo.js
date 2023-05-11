@@ -34,7 +34,9 @@ const titleConvo = async ({ endpoint, text, response }) => {
     ||>Title:`
     };
 
+    const azure = process.env.AZURE_OPENAI_API_KEY ? true : false;
     const options = {
+      azure,
       reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
       proxy: process.env.PROXY || null
     };
@@ -48,7 +50,6 @@ const titleConvo = async ({ endpoint, text, response }) => {
       frequency_penalty: 0
     };
 
-    const azure = process.env.AZURE_OPENAI_API_KEY ? true : false;
     let apiKey = process.env.OPENAI_KEY;
 
     if (azure) {
