@@ -49,7 +49,7 @@ ChatGPT-Clone received some important upgrades and improvements. A new contribut
 
 There is active work on the new Plugins feature, converting the frontend to Typescript, and looking to integrate Palm2, google's new generative AI accessible via API, to the project as a new endpoint.
 
-You can check the full changelog in between [v0.4.1](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.1) and [v0.4.2](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.2) [here](https://github.com/danny-avila/chatgpt-clone/compare/v0.4.1...v0.4.2)."
+You can check the full changelog in between v0.4.1 and v0.4.2 [here](https://github.com/danny-avila/chatgpt-clone/compare/v0.4.1...v0.4.2).
 
 ⚠️ **IMPORTANT :** Since V0.4.0 You should register and login with a local account (email and password) for the first time sign-up. if you use login for the first time with a social login account (eg. Google, facebook, etc.), the conversations and presets that you created before the user system was implemented will NOT be migrated to that account.
 
