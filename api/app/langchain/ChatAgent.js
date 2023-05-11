@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('@dqbd/tiktoken');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
 const { Agent, ProxyAgent } = require('undici');
-const TextStream = require('./tools/stream');
+const TextStream = require('./stream');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { CallbackManager } = require('langchain/callbacks');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
@@ -20,6 +20,10 @@ class CustomChatAgent {
     this.tools = [];
     this.actions = [];
     this.openAIApiKey = apiKey;
+    this.azure = options.azure || false;
+    this.azureEndpoint = this.azure
+      ? `https://${this.azure.azureOpenAIApiInstanceName}.openai.azure.com/openai/deployments/${this.azure.azureOpenAIApiDeploymentName}/chat/completions?api-version=${this.azure.azureOpenAIApiVersion}`
+      : null;
     this.setOptions(options);
     this.executor = null;
     this.currentDateString = new Date().toLocaleDateString('en-us', {
@@ -68,7 +72,10 @@ class CustomChatAgent {
       return null;
     }
 
-    if (result?.intermediateSteps?.length === 1 && result?.intermediateSteps[0]?.action?.toolInput === 'N/A') {
+    if (
+      result?.intermediateSteps?.length === 1 &&
+      result?.intermediateSteps[0]?.action?.toolInput === 'N/A'
+    ) {
       return null;
     }
 
@@ -158,6 +165,14 @@ Only respond with your conversational reply to the following User Message:
     if (this.options.reverseProxyUrl) {
       this.completionsUrl = this.options.reverseProxyUrl;
     }
+
+    if (this.azureEndpoint) {
+      this.completionsUrl = this.azureEndpoint;
+    }
+
+    if (this.azureEndpoint && this.options.debug) {
+      console.debug(`Using Azure endpoint: ${this.azureEndpoint}`, this.azure);
+    }
   }
 
   static getTokenizer(encoding, isModelName = false, extendSpecialTokens = {}) {
@@ -206,7 +221,10 @@ Only respond with your conversational reply to the following User Message:
         headersTimeout: 0
       })
     };
-    if (this.openAIApiKey) {
+
+    if (this.azureEndpoint) {
+      opts.headers['api-key'] = this.azure.azureOpenAIApiKey;
+    } else if (this.openAIApiKey) {
       opts.headers.Authorization = `Bearer ${this.openAIApiKey}`;
     }
 
@@ -343,12 +361,20 @@ Only respond with your conversational reply to the following User Message:
   }
 
   async initialize({ message, onAgentAction, onChainEnd }) {
-    // TO DO: need to initialize by user?
-    const model = new ChatOpenAI({
-      openAIApiKey: this.openAIApiKey,
+    const modelOptions = {
       modelName: this.options.agentOptions.model,
-      temperature: this.options.agentOptions.temperature,
-    });
+      temperature: this.options.agentOptions.temperature
+    };
+
+    const model = this.azure
+      ? new ChatOpenAI({
+        ...this.azure,
+        ...modelOptions
+      })
+      : new ChatOpenAI({
+        openAIApiKey: this.openAIApiKey,
+        ...modelOptions
+      });
 
     if (this.options.debug) {
       console.debug(`<-----Agent Model: ${model.modelName} | Temp: ${model.temperature}----->`);
@@ -374,7 +400,7 @@ Only respond with your conversational reply to the following User Message:
       console.debug(this.tools.map((tool) => tool.name));
     }
 
-    if (this.tools.length > 0 ) {
+    if (this.tools.length > 0) {
       // this.tools.push(new SelfReflectionTool({ message, isGpt3: this.agentIsGpt3 }));
       this.tools.push(new SelfReflectionTool({ message, isGpt3: false }));
     } else if (this.tools.length === 0) {
@@ -570,7 +596,7 @@ Only respond with your conversational reply to the following User Message:
         text: this.result.output,
         isCreatedByUser: false
       };
-  
+
       await this.saveMessageToDatabase(responseMessage, user);
       const textStream = new TextStream(this.result.output);
       await textStream.processTextStream(opts.onProgress);

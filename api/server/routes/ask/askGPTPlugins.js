@@ -30,8 +30,8 @@ router.post('/', requireJwtAuth, async (req, res) => {
       model: 'gpt-3.5-turbo', // for agent model
       // model: 'gpt-4', // for agent model
       tools: req.body?.tools.map((tool) => tool.value) ?? [],
-      temperature: req.body?.temperature ?? 0,
-    },
+      temperature: req.body?.temperature ?? 0
+    }
   };
 
   const availableModels = getOpenAIModels();
@@ -60,7 +60,6 @@ router.post('/', requireJwtAuth, async (req, res) => {
 });
 
 const ask = async ({ text, endpointOption, parentMessageId = null, conversationId, req, res }) => {
-
   res.writeHead(200, {
     Connection: 'keep-alive',
     'Content-Type': 'text/event-stream',
@@ -114,18 +113,29 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
             error: false
           });
         }
-      },
+      }
     });
 
     const abortController = new AbortController();
 
-    const chatAgent = new ChatAgent(process.env.OPENAI_KEY, {
+    const clientOptions = {
       tools: validateTools(tools || []),
       debug: true,
       reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
       proxy: process.env.PROXY || null,
-      ...endpointOption,
-    });
+      ...endpointOption
+    };
+
+    if (process.env.AZURE_OPENAI_API_KEY) {
+      clientOptions.azure = {
+        azureOpenAIApiKey: process.env.AZURE_OPENAI_API_KEY,
+        azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME,
+        azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME,
+        azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION
+      };
+    }
+
+    const chatAgent = new ChatAgent(process.env.OPENAI_KEY, clientOptions);
 
     const onAgentAction = (action) => {
       const formattedAction = formatAction(action);
@@ -135,7 +145,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       sendIntermediateMessage(res, { plugin });
       // console.log('PLUGIN ACTION', formattedAction);
     };
-    
+
     const onChainEnd = (data) => {
       let { intermediateSteps: steps } = data;
       plugin.outputs = steps && steps[0].action ? formatSteps(steps) : 'An error occurred.';
@@ -143,7 +153,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       saveMessage(userMessage);
       sendIntermediateMessage(res, { plugin });
       // console.log('CHAIN END', plugin.outputs);
-    }
+    };
 
     let response = await chatAgent.sendMessage(text, {
       getIds,
@@ -153,7 +163,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       onAgentAction,
       onChainEnd,
       onProgress: progressCallback.call(null, { res, text, plugin, parentMessageId: userMessageId }),
-      abortController,
+      abortController
     });
 
     // console.log('CLIENT RESPONSE');
