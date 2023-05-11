@@ -7,6 +7,7 @@ const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { CallbackManager } = require('langchain/callbacks');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
 const { initializeCustomAgent } = require('./agents/CustomAgent/initializeCustomAgent');
+// const { initializePAEAgent } = require('./agents/PlanAndExecute/initializePAEAgent');
 const { getMessages, saveMessage, saveConvo } = require('../../models');
 const { loadTools, SelfReflectionTool } = require('./tools');
 
@@ -392,6 +393,8 @@ Only respond with your conversational reply to the following User Message:
       }
     };
 
+    // initialize agent
+    // this.executor = await initializePAEAgent({
     this.executor = await initializeCustomAgent({
       tools: this.tools,
       model,
