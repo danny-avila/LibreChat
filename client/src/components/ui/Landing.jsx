@@ -32,9 +32,10 @@ export default function Landing() {
   return (
     <div className="flex h-full flex-col items-center overflow-y-auto pt-0 text-sm dark:bg-gray-800">
       <div className="w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
-        <h1 id="landing-title" className="mt-6 ml-auto mr-auto mb-10 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-16 md:mt-[10vh]">
+        <h1 id="landing-title" className="mt-6 ml-auto mr-auto flex items-center justify-center gap-2 text-center text-4xl font-semibold md:mt-[10vh]">
           ChatGPT Clone
         </h1>
+				<div class="mb-10 sm:mb-16 mt-4  text-black/50 dark:text-white/50">Huge thanks for <a href="https://replit.com/@CharCoder" class="text-black/100 dark:text-white/100 hover:text-black/70 dark:hover:text-white/70">@CharCoder</a> for keeping this app alive by donating their OpenAI API key! Without their donation, this app would have been shut down.</div>
         <div className="items-start gap-3.5 text-center md:flex">
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
             <h2 className="m-auto flex items-center gap-3 text-lg font-normal md:flex-col md:gap-2">

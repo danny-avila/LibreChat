@@ -26,6 +26,7 @@ dist/
 public/main.js
 public/main.js.map
 public/main.js.LICENSE.txt
+client/.env
 client/public/main.js
 client/public/main.js.map
 client/public/main.js.LICENSE.txt
@@ -35,6 +36,7 @@ client/public/main.js.LICENSE.txt
 # see https://npmjs.org/doc/faq.html#Should-I-check-my-node_modules-folder-into-git
 node_modules/
 meili_data/
+api/.env
 api/node_modules/
 client/node_modules/
 bower_components/

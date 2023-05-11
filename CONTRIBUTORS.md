@@ -1,15 +1,16 @@
-﻿# Contributors List
+# Contributors List
 
-We appreciate all the contributors who helped make this project possible:
+Here is a list of all contributors to this project:
 
 -   danny-avila (Admin)
 -   wtlyu (Contributor)
 -   danorlando (Contributor)
+-   techwithanirudh (Contributor)
 -   alfredo-f (Contributor)
 -   HyunggyuJang (Contributor)
 -   fuegovic (Contributor)
 -   DavidDev1334
--	toordog (Contributor)
+-	  toordog (Contributor)
 -   heathriel (External Contributor)
 -   hackreactor-bot (Contributor)
 -   git-bruh (Contributor)

@@ -21,5 +21,8 @@
   "devDependencies": {
     "@playwright/test": "^1.32.1",
     "cross-env": "^7.0.3"
+  },
+  "dependencies": {
+    "pino": "^8.14.1"
   }
 }

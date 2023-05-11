@@ -43,7 +43,6 @@ const redactPatterns = [ // Array of regular expressions for redacting patterns
     }
     return obj;
   }
-
   // Example of redacting sensitive data from object class instances
   logger.info({ newUser: redactSensitiveData(newUser) }, 'newUser');
 */
@@ -122,4 +121,3 @@ module.exports = {
     }
   }
 };
-

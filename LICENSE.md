@@ -1,4 +1,4 @@
-﻿# MIT License
+# MIT License
 
 Copyright (c) 2023 Danny Avila
 ##
@@ -24,4 +24,4 @@ SOFTWARE.
 
 ##
 
-## [Go Back to ReadMe](README.md)
+## [Go Back to ReadMe](README.md)r

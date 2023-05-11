@@ -11,6 +11,7 @@ import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-qu
 import { ThemeProvider } from './hooks/ThemeContext';
 import { useApiErrorBoundary } from './hooks/ApiErrorBoundaryContext';
 import ApiErrorWatcher from './components/Auth/ApiErrorWatcher';
+// import { THEMES } from 'themes.js';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -79,14 +80,19 @@ const App = () => {
   });
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <RecoilRoot>
-        <ThemeProvider>
-          <RouterProvider router={router} />
-          <ReactQueryDevtools initialIsOpen={false} />
-        </ThemeProvider>
-      </RecoilRoot>
-    </QueryClientProvider>
+		<div>
+			{/* {THEMES.map(theme => (
+  			<div className={theme.value}></div>
+			))} */}
+	    <QueryClientProvider client={queryClient}>
+	      <RecoilRoot>
+	        <ThemeProvider>
+	          <RouterProvider router={router} />
+	          <ReactQueryDevtools initialIsOpen={false} />
+	        </ThemeProvider>
+	      </RecoilRoot>
+	    </QueryClientProvider>
+		</div>
   );
 };
 

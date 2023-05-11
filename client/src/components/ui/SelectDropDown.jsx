@@ -47,7 +47,7 @@ function SelectDropDown({
                       !showLabel ? 'text-xs' : ''
                     )}
                   >
-                    {!showLabel && <span className="text-xs text-gray-700 dark:text-gray-500">{title}:</span>}
+                    {!showLabel && <span className="text-xs text-gray-700 dark:text-gray-500">{title}</span>}
                     {value}
                   </span>
                 </span>

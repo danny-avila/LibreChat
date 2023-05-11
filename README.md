@@ -1,4 +1,4 @@
-﻿
+
 <p align="center">
   <a href="https://discord.gg/NGaa9RPCft">
     <picture>
@@ -136,4 +136,3 @@ For new features, components, or extensions, please open an issue and discuss be
 ## License
 This project is licensed under the [MIT License](LICENSE.md).
 ##
-

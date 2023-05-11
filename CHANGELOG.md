@@ -1,4 +1,4 @@
-﻿# # Changelog
+# # Changelog
 <details open>
 <summary><strong>2023-05-09</strong></summary>
  
