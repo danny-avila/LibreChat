@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
+const { genAzureEndpoint } = require('../../utils/genAzureEndpoints');
 
 const askClient = async ({
   text,
@@ -43,7 +44,11 @@ const askClient = async ({
 
   if (azure) {
     apiKey = process.env.AZURE_OPENAI_API_KEY;
-    clientOptions.reverseProxyUrl = `https://${process.env.AZURE_OPENAI_API_INSTANCE_NAME}.openai.azure.com/openai/deployments/${process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME}/chat/completions?api-version=${process.env.AZURE_OPENAI_API_VERSION}`;
+    clientOptions.reverseProxyUrl = genAzureEndpoint({ 
+      azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME, 
+      azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME, 
+      azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION
+    });
   }
 
   const client = new ChatGPTClient(apiKey, clientOptions, store);
