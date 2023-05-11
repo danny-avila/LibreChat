@@ -134,7 +134,7 @@ export default function TextChat({ isSearchView = false }) {
 
   return (
     <>
-      <div className="fixed bottom-0 left-0 w-full md:absolute">
+      <div className="fixed bottom-0 left-0 w-full md:absolute border-transparent bg-gradient-to-b from-transparent via-white to-white pt-6 dark:border-white/20 dark:via-gray-800 dark:to-gray-800">
         <div className="relative py-2 md:mb-[-16px] md:py-4 lg:mb-[-32px]">
           <span className="flex w-full flex-col items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
             <OpenAIOptions />

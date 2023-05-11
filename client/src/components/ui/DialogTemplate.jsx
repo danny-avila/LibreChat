@@ -49,7 +49,10 @@ export default function DialogTemplate({
           />
         </div>
       </div> */}
-      {main ? main : null}
+      
+      <div className='px-6'>
+        {main ? main : null}
+      </div>
       <DialogFooter>
         <div>{leftButtons ? leftButtons : null}</div>
         <div className="flex gap-2">
