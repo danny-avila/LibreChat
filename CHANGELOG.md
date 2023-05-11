@@ -1,5 +1,19 @@
 ﻿# # Changelog
 <details open>
+<summary><strong>2023-05-11</strong></summary>
+ 
+**Released [v0.4.2](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.2)**
+ 
+ChatGPT-Clone received some important upgrades and improvements. A new contributor, [@qcgm1978](https://github.com/qcgm1978), makes their first contribution by adding a null check for adaptiveCards variable. Additionally, support for titling conversations with the Azure endpoint is added by [@danny-avila](https://github.com/danny-avila) in PR [#234](https://github.com/danny-avila/chatgpt-clone/pull/234). In PR [#235](https://github.com/danny-avila/chatgpt-clone/pull/235), [@danny-avila](https://github.com/danny-avila) also makes some necessary fixes to titling, quotation marks, and endpoints being unavailable with only the Azure key provided. The logging system is now powered by Pino and sanitization, thanks to [@danorlando](https://github.com/danorlando) in PR [#227](https://github.com/danny-avila/chatgpt-clone/pull/227). To bulletproof the Docker container, the .dockerignore file is updated to include the client/.env file by [@danny-avila](https://github.com/danny-avila) in PR [#241](https://github.com/danny-avila/chatgpt-clone/pull/241). This issue was brought to our attention on discord.
+
+There is active work on the new Plugins feature, converting the frontend to Typescript, and looking to integrate Palm2, google's new generative AI accessible via API, to the project as a new endpoint.
+
+You can check the full changelog in between [v0.4.1](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.1) and [v0.4.2](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.2) [here](https://github.com/danny-avila/chatgpt-clone/compare/v0.4.1...v0.4.2)."
+
+For discussion and suggestion you can join us: **[community discord server](https://discord.gg/NGaa9RPCft)**
+</details>
+
+<details>
 <summary><strong>2023-05-09</strong></summary>
  
 **Released [v0.4.1](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.1)**
@@ -20,8 +34,6 @@
 
 For discussion and suggestion you can join us: **[community discord server](https://discord.gg/NGaa9RPCft)**
 </details>
-
-
  <details>
 <summary><strong>2023-05-07</strong></summary>
 
