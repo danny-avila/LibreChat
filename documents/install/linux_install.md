@@ -88,15 +88,13 @@ You will need all your credentials, (API keys, access tokens, and MongoDB Connec
 
 ## Run the project
 
-### Using the command line
+### Using the command line (in the root directory)
 
-1. Run `npm ci` in the "/home/user/chatgpt-clone/api" directory
-2. Run `npm ci` in the "/home/user/chatgpt-clone/client" directory
-3. Run `npm run build` in the "/home/user/chatgpt-clone/client"
-4. Run `meilisearch --master-key put_your_meilesearch_Master_Key_here` in the "/home/user/chat
-5. Run "meilisearch --master-key put_your_meilesearch_Master_Key_here" in the "/home/user/chatgpt-clone" directory (Only if SEARCH=TRUE)
-6. Run npm start in the "/home/user/chatgpt-clone/api" directory
-7. Visit http://localhost:3080 (default port) & enjoy
+1. Run `npm ci`
+2. Run `npm run frontend`
+3. Run `npm run backend`
+4. Run `meilisearch --master-key put_your_meilesearch_Master_Key_here` (Only if SEARCH=TRUE)
+5. Visit http://localhost:3080 (default port) & enjoy
 
 ### Using a shell script
 
