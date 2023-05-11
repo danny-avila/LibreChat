@@ -18,7 +18,7 @@ const getChatGPTBrowserModels = () => {
 
 router.get('/', function (req, res) {
   const azureOpenAI = !!process.env.AZURE_OPENAI_KEY;
-  const openAI = process.env.OPENAI_KEY ? { availableModels: getOpenAIModels() } : false;
+  const openAI = process.env.OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY ? { availableModels: getOpenAIModels() } : false;
   const gptPlugins = process.env.OPENAI_KEY ? { availableModels: ['gpt-4', 'gpt-3.5-turbo', 'gpt-3.5-turbo-0301'], availableTools } : false;
   const bingAI = process.env.BINGAI_TOKEN
     ? { userProvide: process.env.BINGAI_TOKEN == 'user_provided' }

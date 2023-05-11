@@ -1,4 +1,6 @@
 # Linux Installation
+Thanks to @DavidDev1334 !
+##
 
 ## Prerequisites
 

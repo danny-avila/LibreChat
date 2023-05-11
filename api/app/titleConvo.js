@@ -1,5 +1,6 @@
 // const { Configuration, OpenAIApi } = require('openai');
 const _ = require('lodash');
+const { genAzureEndpoint } = require('../utils/genAzureEndpoints');
 
 const proxyEnvToAxiosProxy = (proxyString) => {
   if (!proxyString) return null;
@@ -34,7 +35,9 @@ const titleConvo = async ({ text, response }) => {
     ||>Title:`
     };
 
+    const azure = process.env.AZURE_OPENAI_API_KEY ? true : false;
     const options = {
+      azure,
       reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
       proxy: process.env.PROXY || null
     };
@@ -48,9 +51,20 @@ const titleConvo = async ({ text, response }) => {
       frequency_penalty: 0
     };
 
-    const titleGenClient = new ChatGPTClient(process.env.OPENAI_KEY, titleGenClientOptions);
+    let apiKey = process.env.OPENAI_KEY;
+
+    if (azure) {
+      apiKey = process.env.AZURE_OPENAI_API_KEY;
+      titleGenClientOptions.reverseProxyUrl = genAzureEndpoint({
+        azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME,
+        azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME,
+        azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION
+      });
+    }
+
+    const titleGenClient = new ChatGPTClient(apiKey, titleGenClientOptions);
     const result = await titleGenClient.getCompletion([instructionsPayload], null);
-    title = result.choices[0].message.content.replace(/\s+/g, ' ').trim();
+    title = result.choices[0].message.content.replace(/\s+/g, ' ').replaceAll('"', '').trim();
   } catch (e) {
     console.error(e);
     console.log('There was an issue generating title, see error above');

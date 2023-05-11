@@ -58,6 +58,7 @@
     "passport-google-oauth20": "^2.0.0",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
+    "pino": "^8.12.1",
     "sanitize": "^2.1.2",
     "sharp": "^0.32.1"
   },
