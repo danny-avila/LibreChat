@@ -1,6 +1,6 @@
 # Contributors List
 
-Here is a list of all contributors to this project:
+We appreciate all the contributors who helped make this project possible:
 
 -   danny-avila (Admin)
 -   wtlyu (Contributor)

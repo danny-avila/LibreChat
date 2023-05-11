@@ -3,7 +3,7 @@ import DarkModeIcon from "../svg/DarkModeIcon";
 import LightModeIcon from "../svg/LightModeIcon";
 import { ThemeContext } from "~/hooks/ThemeContext";
 import SelectDropDown from "../ui/SelectDropDown.jsx";
-import { THEMES } from '../../../themes.js';
+import { COLORS } from '../../../colors.js';
 import { cn } from "~/utils/";
 
 export default function DarkMode({ className }) {
@@ -14,7 +14,7 @@ export default function DarkMode({ className }) {
 
 	function getValue() {
 		if (!theme) return "Default"
-		const defaultColor = THEMES.find((color) => color.value === theme.color);
+		const defaultColor = COLORS.find((color) => color.value === theme.color);
 		if (!defaultColor) return "Default"
 		return defaultColor.name
 	}
@@ -23,12 +23,12 @@ export default function DarkMode({ className }) {
 		<SelectDropDown
 			value={getValue()}
 			setValue={(value) => {
-				const defaultColor = THEMES.find((color) => color.name === value);
+				const defaultColor = COLORS.find((color) => color.name === value);
 				setTheme(
 					{ theme: theme && theme.theme, color: defaultColor && defaultColor.value }
 				)
 			}}
-			availableValues={THEMES.map((theme) => theme.name)}
+			availableValues={COLORS.map((color) => color.name)}
 			showAbove={false}
 			showLabel={false}
 			title={
