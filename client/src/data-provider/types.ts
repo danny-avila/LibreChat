@@ -105,6 +105,8 @@ export type TUser = {
   name: string,
   avatar: string,
   role: string,
+  provider: string,
+  plugins: string[],  
   createdAt: string,
   updatedAt: string,
 };
@@ -194,4 +196,11 @@ export type TResetPassword = {
   userId: string,
   token: string,
   password: string,
+}
+
+export type TPlugin = {
+  id: string,
+  name: string,
+  description: string,
+  imageSource: string,
 }

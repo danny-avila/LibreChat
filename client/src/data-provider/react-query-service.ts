@@ -20,6 +20,7 @@ export enum QueryKeys {
   presets = "presets",
   searchResults = "searchResults",
   tokenCount = "tokenCount",
+  availablePlugins = "availablePlugins",
 }
 
 export const useAbortRequestWithMessage = (): UseMutationResult<void, Error, { endpoint: string; abortKey: string; message: string }> => {
@@ -277,4 +278,12 @@ export const useRequestPasswordResetMutation = (): UseMutationResult<unknown> =>
 
 export const useResetPasswordMutation = (): UseMutationResult<unknown> => {
   return useMutation((payload: t.TResetPassword) => dataService.resetPassword(payload));
+}
+
+export const useAvailablePluginsQuery = (): QueryObserverResult<t.TPlugin[]> => {
+  return useQuery<t.TPlugin[]>([QueryKeys.availablePlugins], () => dataService.getAvailablePlugins(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  });
 }

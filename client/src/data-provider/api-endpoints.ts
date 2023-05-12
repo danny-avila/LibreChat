@@ -81,3 +81,7 @@ export const requestPasswordReset = () => {
 export const resetPassword = () => {
   return '/api/auth/resetPassword';
 }
+
+export const plugins = () => {
+  return '/api/plugins';
+}
