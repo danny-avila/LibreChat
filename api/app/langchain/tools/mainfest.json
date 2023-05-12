@@ -1,0 +1,58 @@
+[
+  {
+    "name": "Zapier",
+    "description": "Interact with over 5,000+ apps like Google Sheets, Gmail, HubSpot, Salesforce, and thousands more.",
+    "imageSource": "https://cdn.zappy.app/8f853364f9b383d65b44e184e04689ed.png"
+  },
+  {
+    "name": "Kayak",
+    "description": "Search flights, stays & rental cars or get recommendations where you can go on your budget.",
+    "imageSource": "https://content.r9cdn.net/images/apple-touch-icons/apple-touch-icon-120x120.png"
+  },
+  {
+    "name": "Instacart",
+    "description": "Ask about recipes and discover the ingredients you need—then get it all delivered from local stores.",
+    "imageSource": "https://www.instacart.com/assets/beetstrap/brand/2022/carrotlogo-1286c257354036d178c09e815906198eb7f012b8cdc4f6f8ec86d3e64d799a5b.png"
+  },
+  {
+    "name": "Google Search",
+    "description": "Use Google Search to find information about the weather, news, sports, and more.",
+    "imageSource": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/Google_%22G%22_Logo.svg/706px-Google_%22G%22_Logo.svg.png"
+  },
+  {
+    "name": "Wolfram",
+    "description": "Access computation, math, curated knowledge & real-time data through Wolfram|Alpha and Wolfram Language.",
+    "imageSource": "https://www.wolframcdn.com/images/icons/Wolfram.png"
+  },
+  {
+    "name": "OpenTable",
+    "description": "Allows you to search for restaurants available for booking dining experiences.",
+    "imageSource": "https://cdn.otstatic.com/third-party/images/opentable-logo-512.png"
+  },
+  {
+    "name": "FiscalNote",
+    "description": "FiscalNote enables access to select market-leading, real-time data sets for legal, political, and regulatory",
+    "imageSource": "https://api.factba.se/static/fn-logo.png"
+  },
+  {
+    "name": "DEV Community",
+    "description": "Plugin for recommending articles or users from DEV Community.",
+    "imageSource": "https://dev.to/logo.png"
+  },
+  {
+    "name": "Savvy Trader AI",
+    "description": "Realtime stock, crypto and other investment data.",
+    "imageSource": "https://savvytrader.com/android-chrome-192x192.png"
+  },
+  {
+    "name": "Yabble",
+    "description": "Your ultimate AI research assistant; create surveys, specify audiences, collect data & analyze.",
+    "imageSource": "https://yabblezone.net/.well-known/logo.png"
+  },
+  {
+    "name": "Coupert",
+    "description": "Search for the internet’s best coupons from thousands of online stores.",
+    "imageSource": "https://www.coupert.com/img/favicon.svg"
+  },
+
+]
