@@ -15,11 +15,19 @@ const data = {
       ],
       messages: [
         {
-          author: 'user',
+          author: 'Human',
           content: 'Are my favorite movies based on a book series?'
-        }
+        },
+        {
+          author: 'Assistant',
+          content: "Yes, your favorite movies, The Lord of the Rings and The Hobbit, are based on book series of the same name by J.R.R. Tolkien. The Lord of the Rings trilogy is made up of the films The Fellowship of the Ring, The Two Towers, and The Return of the King."
+        },
+        {
+          author: 'Human',
+          content: 'Tell me a fun fact about The Lord of the Rings.'
+        },
       ]
-    }
+    },
   ],
   parameters: {
     temperature: 0.3,
@@ -35,13 +43,22 @@ const scopes = ['https://www.googleapis.com/auth/cloud-platform'];
 const jwtClient = new google.auth.JWT(
   key.client_email,
   null,
-  key.private_key,
+  // key.private_key,
+  process.env.GOOGLE_PRIVATE_KEY,
   scopes
 );
 
 const url = `https://us-central1-aiplatform.googleapis.com/v1/projects/${key.project_id}/locations/us-central1/publishers/google/models/chat-bison:predict`;
 
+// jwtClient.authorize((err, tokens) => {
+//   if (err) {
+//     console.err(err);
+//     return;
+//   }
+//   console.log('Access token:', tokens.access_token);
+// });
+
 (async () => {
   const res = await jwtClient.request({ url, method: 'POST', data});
-  console.dir(res.data, {depth: null});
+  console.dir(res, {depth: null});
 })();
