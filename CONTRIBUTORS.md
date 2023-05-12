@@ -10,7 +10,7 @@ We appreciate all the contributors who helped make this project possible:
 -   HyunggyuJang (Contributor)
 -   fuegovic (Contributor)
 -   DavidDev1334
--	  toordog (Contributor)
+-	toordog (Contributor)
 -   heathriel (External Contributor)
 -   hackreactor-bot (Contributor)
 -   git-bruh (Contributor)

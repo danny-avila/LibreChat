@@ -66,3 +66,5 @@ src/style - official.css
 meilisearch
 data.ms/*
 
+# shell
+shell.sh
