@@ -37,7 +37,8 @@ const useMessageHandler = () => {
         temperature: currentConversation?.temperature ?? 1,
         top_p: currentConversation?.top_p ?? 1,
         presence_penalty: currentConversation?.presence_penalty ?? 0,
-        frequency_penalty: currentConversation?.frequency_penalty ?? 0
+        frequency_penalty: currentConversation?.frequency_penalty ?? 0,
+        token: endpointsConfig[endpoint]?.userProvide ? getToken() : null
       };
       responseSender = endpointOption.chatGptLabel ?? 'ChatGPT';
     } else if (endpoint === 'bingAI') {
