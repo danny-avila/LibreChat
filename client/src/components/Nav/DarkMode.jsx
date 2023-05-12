@@ -1,12 +1,10 @@
 import React, { useState, useContext } from 'react';
-import DarkModeIcon from '../svg/DarkModeIcon.jsx';
-import LightModeIcon from '../svg/LightModeIcon.jsx';
-
-// @ts-ignore
+import DarkModeIcon from '../svg/DarkModeIcon';
+import LightModeIcon from '../svg/LightModeIcon';
 import { ThemeContext } from '~/hooks/ThemeContext';
 
 export default function DarkMode() {
-  const { theme, setTheme } = useContext<{ theme: any, setTheme: (value: any) => void }>(ThemeContext);
+  const { theme, setTheme } = useContext(ThemeContext);
 
   const clickHandler = () => {
     setTheme(
