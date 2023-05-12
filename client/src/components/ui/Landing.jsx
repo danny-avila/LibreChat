@@ -39,15 +39,7 @@ export default function Landing() {
           ChatGPT Clone
         </h1>
         <div class="mb-10 mt-4 text-black/50  dark:text-white/50 sm:mb-16">
-          Huge thanks for{' '}
-          <a
-            href="https://replit.com/@CharCoder"
-            class="text-black/100 hover:text-black/70 dark:text-white/100 dark:hover:text-white/70"
-          >
-            @CharCoder
-          </a>{' '}
-          for keeping this app alive by donating their OpenAI API key! Without their donation, this app would
-          have been shut down.
+          A opensource clone of <a href="https://chatbot.openai.com/">chat.openai.com</a>.
         </div>
         <div className="items-start gap-3.5 text-center md:flex">
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
