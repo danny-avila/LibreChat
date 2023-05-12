@@ -32,7 +32,7 @@ function EndpointOptionsPopover({
             {/* <span className="text-xs font-medium font-normal">Advanced settings for OpenAI endpoint</span> */}
             <Button
               type="button"
-              className="h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white"
+              className="h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
               onClick={saveAsPreset}
             >
               <Save className="mr-1 w-[14px]" />
@@ -41,7 +41,7 @@ function EndpointOptionsPopover({
             {additionalButton && (
               <Button
                 type="button"
-                className="ml-1 h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white"
+                className="ml-1 h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
                 onClick={additionalButton.handler}
               >
                 {additionalButton.icon}
@@ -50,7 +50,7 @@ function EndpointOptionsPopover({
             )}
             <Button
               type="button"
-              className="ml-auto h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white"
+              className="ml-auto h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white"
               onClick={switchToSimpleMode}
             >
               <CrossIcon className="mr-1" />

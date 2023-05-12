@@ -35,7 +35,7 @@ function Examples({ readonly, examples, setExample, addExample, removeExample })
                     disabled={readonly}
                     value={example?.input || ''}
                     onChange={e => setExample(idx, 'input', e.target.value || null)}
-                    placeholder="Set example input. Defaults to None"
+                    placeholder="Set example input. Example is ignored if empty."
                     className={cn(
                       defaultTextProps,
                       'flex max-h-[300px] min-h-[75px] w-full resize-none px-3 py-2 '
@@ -62,7 +62,7 @@ function Examples({ readonly, examples, setExample, addExample, removeExample })
                     disabled={readonly}
                     value={example?.output || ''}
                     onChange={e => setExample(idx, 'output', e.target.value || null)}
-                    placeholder={`Set example output. Defaults to None`}
+                    placeholder={`Set example output. Example is ignored if empty.`}
                     className={cn(
                       defaultTextProps,
                       'flex max-h-[300px] min-h-[75px] w-full resize-none px-3 py-2 '
@@ -74,20 +74,24 @@ function Examples({ readonly, examples, setExample, addExample, removeExample })
           ))}
         </div>
       </div>
-      <Button
-        type="button"
-        className="h-auto justify-center bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white"
-        onClick={removeExample}
-      >
-        <Minus className="mr-1 w-[14px]" />
-      </Button>
-      <Button
-        type="button"
-        className="h-auto justify-center bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white"
-        onClick={addExample}
-      >
-        <Plus className="mr-1 w-[14px]" />
-      </Button>
+      <div className="flex justify-center">
+        {examples.length > 1 && (
+          <Button
+            type="button"
+            className="mr-2 mt-1 h-auto items-center focus:ring-offset-0 justify-center bg-transparent px-3 py-2 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
+            onClick={removeExample}
+          >
+            <Minus className="w-[16px]" />
+          </Button>
+        )}
+        <Button
+          type="button"
+          className="mt-1 h-auto items-center focus:ring-offset-0 justify-center bg-transparent px-3 py-2 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
+          onClick={addExample}
+        >
+          <Plus className="w-[16px]" />
+        </Button>
+      </div>
     </>
   );
 }

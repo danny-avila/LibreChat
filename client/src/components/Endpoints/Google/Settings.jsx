@@ -79,7 +79,7 @@ function Settings(props) {
               disabled={readonly}
               value={promptPrefix || ''}
               onChange={e => setPromptPrefix(e.target.value || null)}
-              placeholder="Set custom instructions. Defaults to None"
+              placeholder="Set custom instructions or context. Ignored if empty."
               className={cn(
                 defaultTextProps,
                 'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 '
