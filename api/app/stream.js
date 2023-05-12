@@ -1,16 +1,17 @@
 const { Readable } = require('stream');
 
 class TextStream extends Readable {
-  constructor(text, options) {
+  constructor(text, options = {}) {
     super(options);
     this.text = text;
     this.currentIndex = 0;
+    this.delay = options.delay || 20; // Time in milliseconds
   }
 
   _read() {
     const minChunkSize = 2;
     const maxChunkSize = 4;
-    const delay = 20; // Time in milliseconds
+    const { delay } = this;
 
     if (this.currentIndex < this.text.length) {
       setTimeout(() => {

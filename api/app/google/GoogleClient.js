@@ -57,7 +57,7 @@ class GoogleAgent {
     this.isTextModel = this.modelOptions.model.startsWith('text-');
     const { isTextModel } = this;
 
-    this.maxContextTokens = this.options.maxContextTokens || 4096;
+    this.maxContextTokens = this.options.maxContextTokens || (isTextModel ? 8000 : 4096);
     // The max prompt tokens is determined by the max context tokens minus the max response tokens.
     // Earlier messages will be dropped until the prompt is within the limit.
     this.maxResponseTokens = this.modelOptions.maxOutputTokens || 1024;
@@ -296,7 +296,7 @@ class GoogleAgent {
       console.debug(this.options);
     }
 
-    const textStream = new TextStream(reply);
+    const textStream = new TextStream(reply, { delay: 1 });
     await textStream.processTextStream(opts.onProgress);
 
     const responseMessage = {
