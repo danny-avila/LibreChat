@@ -10,7 +10,7 @@ const defaultTextProps =
 function Examples({ readonly, examples, setExample, addExample, removeExample }) {
   return (
     <>
-      <div className="max-h-[600px] overflow-y-auto">
+      <div className="max-h-[350px] overflow-y-auto">
         <div
           id="examples-grid"
           className="grid gap-6 sm:grid-cols-2"
@@ -38,7 +38,7 @@ function Examples({ readonly, examples, setExample, addExample, removeExample })
                     placeholder="Set example input. Defaults to None"
                     className={cn(
                       defaultTextProps,
-                      'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 '
+                      'flex max-h-[300px] min-h-[75px] w-full resize-none px-3 py-2 '
                     )}
                   />
                 </div>
@@ -65,7 +65,7 @@ function Examples({ readonly, examples, setExample, addExample, removeExample })
                     placeholder={`Set example output. Defaults to None`}
                     className={cn(
                       defaultTextProps,
-                      'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 '
+                      'flex max-h-[300px] min-h-[75px] w-full resize-none px-3 py-2 '
                     )}
                   />
                 </div>
