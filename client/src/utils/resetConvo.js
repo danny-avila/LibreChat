@@ -2,7 +2,7 @@ export default function resetConvo(messages, sender) {
   if (messages.length === 0) {
     return false;
   }
-  let modelMessages = messages.filter(message => !message.isCreatedByUser);
+  let modelMessages = messages.filter((message) => !message.isCreatedByUser);
   let lastModel = modelMessages[modelMessages.length - 1].sender;
   if (lastModel !== sender) {
     console.log(

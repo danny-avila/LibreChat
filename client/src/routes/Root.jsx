@@ -19,6 +19,7 @@ export default function Root() {
   const endpointsQuery = useGetEndpointsQuery();
   const presetsQuery = useGetPresetsQuery({ enabled: !!user });
 
+
   useEffect(() => {
     if (endpointsQuery.data) {
       setEndpointsConfig(endpointsQuery.data);
@@ -42,7 +43,7 @@ export default function Root() {
       console.error('Failed to get search enabled', searchEnabledQuery.error);
     }
   }, [searchEnabledQuery.data, searchEnabledQuery.isError]);
-
+  
   return (
     <>
       <div className="flex h-screen">

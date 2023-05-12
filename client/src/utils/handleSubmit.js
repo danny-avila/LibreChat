@@ -106,7 +106,7 @@ const useMessageHandler = () => {
       parentMessageId: isRegenerate ? messageId : fakeMessageId,
       messageId: (isRegenerate ? messageId : fakeMessageId) + '_',
       conversationId,
-      unfinished: endpoint === 'azureOpenAI' || endpoint === 'openAI' ? false : true,
+      unfinished: (endpoint === 'azureOpenAI' || endpoint === 'openAI') ? false : true,
       submitting: true
     };
 

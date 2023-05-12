@@ -38,12 +38,9 @@ const getIcon = props => {
       const { chatGptLabel } = props;
 
       icon = <GPTIcon size={size * 0.7} />;
-      bg =
-        model && model.toLowerCase() === 'gpt-4'
-          ? 'black'
-          : chatGptLabel
-          ? `rgba(16, 163, 127, ${button ? 0.75 : 1})`
-          : `rgba(16, 163, 127, ${button ? 0.75 : 1})`;
+      bg = model && model.toLowerCase() === 'gpt-4' ? 'black' : (chatGptLabel
+        ? `rgba(16, 163, 127, ${button ? 0.75 : 1})`
+        : `rgba(16, 163, 127, ${button ? 0.75 : 1})`);
       name = chatGptLabel || 'ChatGPT';
     } else if (endpoint === 'bingAI') {
       const { jailbreak } = props;

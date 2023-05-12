@@ -25,7 +25,7 @@ export default function ExportConversation() {
     <>
       <button
         className={cn(
-          'flex items-center gap-3 rounded-md px-3 py-3 text-sm transition-colors duration-200 hover:bg-gray-500/10',
+          'flex items-center gap-3 rounded-md py-3 px-3 text-sm transition-colors duration-200 hover:bg-gray-500/10',
           exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-gray-400'
         )}
         onClick={clickHandler}

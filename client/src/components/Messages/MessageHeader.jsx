@@ -51,7 +51,7 @@ const MessageHeader = ({ isSearchView = false }) => {
     <>
       <div
         className={cn(
-          'w-full gap-1 border-b border-black/10 bg-gray-50 text-sm text-gray-500 transition-all hover:bg-gray-100 hover:bg-opacity-30 dark:border-gray-900/50 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:bg-opacity-100',
+          'dark:text-gray-400 w-full gap-1 border-b border-black/10 bg-gray-50 text-sm text-gray-500 transition-all hover:bg-gray-100 hover:bg-opacity-30 dark:border-gray-900/50 dark:bg-gray-700 dark:hover:bg-gray-600 dark:hover:bg-opacity-100',
           endpoint === 'chatGPTBrowser' ? '' : 'cursor-pointer '
         )}
         onClick={() => (endpoint === 'chatGPTBrowser' ? null : setSaveAsDialogShow(true))}

@@ -27,7 +27,7 @@ export default function MessageHandler() {
           text: data,
           parentMessageId: message?.overrideParentMessageId,
           messageId: message?.overrideParentMessageId + '_',
-          submitting: true
+          submitting: true,
           // unfinished: true
         }
       ]);
@@ -40,7 +40,7 @@ export default function MessageHandler() {
           text: data,
           parentMessageId: message?.messageId,
           messageId: message?.messageId + '_',
-          submitting: true
+          submitting: true,
           // unfinished: true
         }
       ]);
@@ -161,7 +161,7 @@ export default function MessageHandler() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
+        'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({
         abortKey: conversationId
@@ -190,7 +190,7 @@ export default function MessageHandler() {
 
     const events = new SSE(server, {
       payload: JSON.stringify(payload),
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`}
     });
 
     events.onmessage = e => {

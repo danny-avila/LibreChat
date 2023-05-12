@@ -4,7 +4,7 @@ import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
+import rehypeRaw from 'rehype-raw'
 import CodeBlock from './CodeBlock';
 import { langSubset } from '~/utils/languages.mjs';
 
@@ -19,7 +19,7 @@ const Content = React.memo(({ content }) => {
         subset: langSubset
       }
     ],
-    [rehypeRaw]
+    [rehypeRaw],
   ];
 
   return (
@@ -29,7 +29,7 @@ const Content = React.memo(({ content }) => {
       linkTarget="_new"
       components={{
         code,
-        p
+        p,
         // em,
       }}
     >
@@ -38,7 +38,7 @@ const Content = React.memo(({ content }) => {
   );
 });
 
-const code = React.memo(props => {
+const code = React.memo((props) => {
   const { inline, className, children } = props;
   const match = /language-(\w+)/.exec(className || '');
   const lang = match && match[1];
@@ -55,8 +55,8 @@ const code = React.memo(props => {
   }
 });
 
-const p = React.memo(props => {
-  return <p className="mb-2 whitespace-pre-wrap">{props?.children}</p>;
+const p = React.memo((props) => {
+  return <p className="whitespace-pre-wrap mb-2">{props?.children}</p>;
 });
 
 // const blinker = ({ node }) => {

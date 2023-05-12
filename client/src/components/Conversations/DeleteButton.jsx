@@ -14,16 +14,17 @@ export default function DeleteButton({ conversationId, renaming, cancelHandler, 
   const deleteConvoMutation = useDeleteConversationMutation(conversationId);
 
   useEffect(() => {
-    if (deleteConvoMutation.isSuccess) {
-      if (currentConversation?.conversationId == conversationId) newConversation();
-
+    if(deleteConvoMutation.isSuccess) {
+      if (currentConversation?.conversationId == conversationId) newConversation(); 
+      
       refreshConversations();
       retainView();
     }
   }, [deleteConvoMutation.isSuccess]);
 
+
   const clickHandler = () => {
-    deleteConvoMutation.mutate({ conversationId, source: 'button' });
+    deleteConvoMutation.mutate({conversationId, source: 'button' });
   };
 
   const handler = renaming ? cancelHandler : clickHandler;

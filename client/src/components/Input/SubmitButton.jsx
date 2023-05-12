@@ -33,7 +33,7 @@ export default function SubmitButton({
         type="button"
         className="group absolute bottom-0 right-0 flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500"
       >
-        <div className="m-1 mr-0 rounded-md p-2 pb-[10px] pt-[10px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
+        <div className="m-1 mr-0 rounded-md p-2 pt-[10px] pb-[10px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
           <StopGeneratingIcon />
         </div>
       </button>
@@ -69,7 +69,7 @@ export default function SubmitButton({
           type="button"
           className="group absolute bottom-0 right-0 flex h-[100%] w-auto items-center justify-center bg-transparent p-1 text-gray-500"
         >
-          <div className="m-1 mr-0 rounded-md p-2 pb-[10px] pt-[10px] align-middle text-xs group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
+          <div className="m-1 mr-0 rounded-md p-2 pt-[10px] pb-[10px] align-middle text-xs group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
             <Settings className="mr-1 inline-block w-[18px]" />
             Set Token First
           </div>
@@ -88,7 +88,7 @@ export default function SubmitButton({
         disabled={disabled}
         className="group absolute bottom-0 right-0 flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500"
       >
-        <div className="m-1 mr-0 rounded-md p-2 pb-[9px] pl-[11px] pr-[7px] pt-[11px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
+        <div className="m-1 mr-0 rounded-md p-2 pt-[11px] pl-[11px] pr-[7px] pb-[9px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
           <svg
             stroke="currentColor"
             fill="none"

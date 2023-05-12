@@ -21,25 +21,23 @@ function Settings(props) {
   const debouncedContext = useDebounce(context, 250);
   const updateTokenCountMutation = useUpdateTokenCountMutation();
 
-  useEffect(() => {
+  useEffect(() => { 
     if (!debouncedContext || debouncedContext.trim() === '') {
       setTokenCount(0);
       return;
     }
 
     const handleTextChange = context => {
-      updateTokenCountMutation.mutate(
-        { text: context },
-        {
-          onSuccess: data => {
-            setTokenCount(data.count);
-          }
+      updateTokenCountMutation.mutate({ text: context }, {
+        onSuccess: data => {
+          setTokenCount(data.count);
         }
-      );
+      });
     };
 
     handleTextChange(debouncedContext);
   }, [debouncedContext]);
+
 
   return (
     <>

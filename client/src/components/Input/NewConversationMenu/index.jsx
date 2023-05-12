@@ -64,10 +64,7 @@ export default function NewConversationMenu() {
     if (endpoint) {
       const lastSelectedModel = JSON.parse(localStorage.getItem('lastSelectedModel')) || {};
       localStorage.setItem('lastConversationSetup', JSON.stringify(conversation));
-      localStorage.setItem(
-        'lastSelectedModel',
-        JSON.stringify({ ...lastSelectedModel, [endpoint]: conversation.model })
-      );
+      localStorage.setItem('lastSelectedModel', JSON.stringify({ ...lastSelectedModel, [endpoint] : conversation.model }));
     }
   }, [conversation]);
 

@@ -8,7 +8,7 @@ export default function RowButton({ onClick, children, text, className }) {
       type="button"
     >
       {children}
-      <span className="hidden md:block">{text}</span>
+      <span className="hidden md:block">{text}</span> 
       {/* <RegenerateIcon />
 <span className="hidden md:block">Regenerate response</span> */}
     </button>

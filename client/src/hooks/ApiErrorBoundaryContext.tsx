@@ -5,7 +5,7 @@ export type ApiError = {
   setError: (error: any) => void
 };
 
-const ApiErrorBoundaryContext = (React.createContext < ApiError) | (undefined > undefined);
+const ApiErrorBoundaryContext = React.createContext<ApiError | undefined>(undefined);
 
 export const ApiErrorBoundaryProvider = ({
   value,

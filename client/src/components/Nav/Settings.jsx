@@ -1,22 +1,22 @@
-import GearIcon from '../svg/GearIcon';
-import { Dialog, DialogTrigger } from '../ui/Dialog.tsx';
-import * as Tabs from '@radix-ui/react-tabs';
+import GearIcon from "../svg/GearIcon";
+import { Dialog, DialogTrigger } from "../ui/Dialog.tsx";
+import * as Tabs from "@radix-ui/react-tabs";
 import {
   DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle
-} from '../ui/Dialog.tsx';
+  DialogTitle,
+} from "../ui/Dialog.tsx";
 import { useEffect } from 'react';
-import { cn } from '~/utils/';
+import { cn } from "~/utils/";
 import { useClearConversationsMutation } from '~/data-provider';
 import store from '~/store';
-import ColorSelect from './ColorSelect.jsx';
+import ColorSelect from "./ColorSelect.jsx";
 
 export default function ClearConvos() {
-  const { newConversation } = store.useConversation();
+	const { newConversation } = store.useConversation();
   const { refreshConversations } = store.useConversations();
   const clearConvosMutation = useClearConversationsMutation();
 
@@ -31,19 +31,23 @@ export default function ClearConvos() {
       refreshConversations();
     }
   }, [clearConvosMutation.isSuccess]);
-
+	
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <button className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10">
+        <button className="flex cursor-pointer items-center gap-3 rounded-md py-3 px-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10">
           <GearIcon />
           Settings
         </button>
       </DialogTrigger>
 
-      <DialogContent className={cn('shadow-2xl dark:bg-gray-900 dark:text-white')}>
+      <DialogContent
+        className={cn("shadow-2xl dark:bg-gray-900 dark:text-white")}
+      >
         <DialogHeader>
-          <DialogTitle className="text-gray-800 dark:text-white">Settings</DialogTitle>
+          <DialogTitle className="text-gray-800 dark:text-white">
+            Settings
+          </DialogTitle>
         </DialogHeader>
         <div className="px-6">
           <Tabs.Root
@@ -56,7 +60,7 @@ export default function ClearConvos() {
               role="tablist"
               aria-orientation="vertical"
               className="-ml-[8px] flex min-w-[180px] flex-shrink-0 flex-col"
-              style={{ outline: 'none' }}
+              style={{ outline: "none" }}
             >
               <Tabs.Trigger
                 className="flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm radix-state-active:bg-gray-800 radix-state-active:text-white"
@@ -87,17 +91,14 @@ export default function ClearConvos() {
                       <option value="dark">Dark</option>
                       <option value="light">Light</option>
                     </select> */}
-                    <ColorSelect />
+										<ColorSelect />
                   </div>
                 </div>
                 <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
                   <div className="flex items-center justify-between">
                     <div>Clear all chats</div>
-                    <button className="btn relative bg-red-600  text-white hover:bg-red-800">
-                      <div
-                        className="flex w-full items-center justify-center gap-2"
-                        onClick={clearConvos}
-                      >
+                    <button className="btn relative bg-red-600  hover:bg-red-800 text-white">
+                      <div className="flex w-full gap-2 items-center justify-center" onClick={clearConvos}>
                         Clear
                       </div>
                     </button>
