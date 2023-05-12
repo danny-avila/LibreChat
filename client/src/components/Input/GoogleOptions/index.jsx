@@ -53,10 +53,9 @@ function GoogleOptions() {
     let update = {};
     let current = conversation?.examples.slice() || [];
     let currentExample = { ...current[i] } || {};
-    currentExample[type] = newValue;
+    currentExample[type] = { content: newValue };
     current[i] = currentExample;
     update.examples = current;
-    console.log('setExample', update);
     setConversation(prevState => ({
       ...prevState,
       ...update
@@ -66,9 +65,8 @@ function GoogleOptions() {
   const addExample = () => {
     let update = {};
     let current = conversation?.examples.slice() || [];
-    current.push({ input: '', output: '' });
+    current.push({ input: { content: '' }, output: { content: '' } });
     update.examples = current;
-    console.log('addExample', update);
     setConversation(prevState => ({
       ...prevState,
       ...update
@@ -79,11 +77,15 @@ function GoogleOptions() {
     let update = {};
     let current = conversation?.examples.slice() || [];
     if (current.length <= 1) {
+      update.examples = [{ input: { content: '' }, output: { content: '' } }];
+      setConversation(prevState => ({
+        ...prevState,
+        ...update
+      }));
       return;
     }
     current.pop();
     update.examples = current;
-    console.log('removeExample', update);
     setConversation(prevState => ({
       ...prevState,
       ...update
