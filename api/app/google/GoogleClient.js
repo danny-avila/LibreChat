@@ -137,12 +137,7 @@ class GoogleAgent {
 
   async getClient() {
     const scopes = ['https://www.googleapis.com/auth/cloud-platform'];
-    const jwtClient = new google.auth.JWT(
-      this.client_email,
-      null,
-      this.private_key,
-      scopes
-    );
+    const jwtClient = new google.auth.JWT(this.client_email, null, this.private_key, scopes);
 
     jwtClient.authorize((err) => {
       if (err) {
@@ -155,19 +150,31 @@ class GoogleAgent {
   }
 
   buildPayload(input, { context, examples, parameters, messages = [] }) {
+    // if (this.options.debug) {
+    //   console.debug('buildPayload', input, context, examples, parameters, messages);
+    // }
     let payload = {
-      instances: [{
-        context,
-        examples,
-        messages: [...messages, { author: this.userLabel, content: input }],
-      }],
-      parameters,
+      instances: [
+        {
+          context,
+          examples,
+          messages: [...messages, { author: this.userLabel, content: input }]
+        }
+      ],
+      parameters
     };
 
     if (this.isTextModel) {
-      payload.instances = [{
-        prompt: input,
-      }];
+      payload.instances = [
+        {
+          prompt: input
+        }
+      ];
+    }
+
+    if (this.options.debug) {
+      console.debug('buildPayload');
+      console.dir(payload, { depth: null });
     }
 
     return payload;
@@ -199,9 +206,9 @@ class GoogleAgent {
     }
 
     const client = await this.getClient();
-    const payload = this.buildPayload(input, { ...this.modelOptions, messages });
-    const res = await client.request({ url, method: 'POST', data: payload});
-    console.dir(res.data, {depth: null});
+    const payload = this.buildPayload(input, { parameters: { ...this.modelOptions }, messages });
+    const res = await client.request({ url, method: 'POST', data: payload });
+    console.dir(res.data, { depth: null });
     return res.data;
   }
 
@@ -222,12 +229,12 @@ class GoogleAgent {
     }
 
     const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
-
-    
-    return orderedMessages.map(message => ({
-      author: message.isCreatedByUser ? this.userLabel : this.modelLabel,
-      content: message.text,
-    }));
+    return orderedMessages.map((message) => {
+      return {
+        author: message.isCreatedByUser ? this.userLabel : this.modelLabel,
+        content: message.content 
+      }
+    });
   }
 
   async saveMessageToDatabase(message, user = null) {
@@ -357,10 +364,8 @@ class GoogleAgent {
     }
 
     return orderedMessages.map(msg => ({
-      messageId: msg.messageId,
-      parentMessageId: msg.parentMessageId,
-      role: msg.isCreatedByUser ? 'User' : 'PaLM2',
-      text: msg.text
+      isCreatedByUser: msg.isCreatedByUser,
+      content: msg.text
     }));
   }
 }
