@@ -15,6 +15,18 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
       frequency_penalty: _preset?.frequency_penalty ?? 0,
       title: _preset?.title ?? 'New Preset'
     };
+  } else if (endpoint === 'google') {
+    preset = {
+      endpoint,
+      presetId: _preset?.presetId ?? null,
+      model: _preset?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'chat-bison',
+      modelLabel: _preset?.modelLabel ?? null,
+      promptPrefix: _preset?.promptPrefix ?? null,
+      temperature: _preset?.temperature ?? 0.2,
+      topP: _preset?.topP ?? 0.95,
+      topK: _preset?.topK ?? 40,
+      title: _preset?.title ?? 'New Preset'
+    };
   } else if (endpoint === 'bingAI') {
     preset = {
       endpoint,

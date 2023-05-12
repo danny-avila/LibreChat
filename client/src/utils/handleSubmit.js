@@ -40,6 +40,18 @@ const useMessageHandler = () => {
         frequency_penalty: currentConversation?.frequency_penalty ?? 0
       };
       responseSender = endpointOption.chatGptLabel ?? 'ChatGPT';
+    } else if (endpoint === 'google') {
+      endpointOption = {
+        endpoint,
+        model:
+          currentConversation?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'chat-bison',
+        chatGptLabel: currentConversation?.chatGptLabel ?? null,
+        promptPrefix: currentConversation?.promptPrefix ?? null,
+        temperature: currentConversation?.temperature ?? 0.2,
+        topP: currentConversation?.topP ?? 0.95,
+        topK: currentConversation?.topK ?? 40,
+      };
+      responseSender = endpointOption.chatGptLabel ?? 'ChatGPT';
     } else if (endpoint === 'bingAI') {
       endpointOption = {
         endpoint,
@@ -125,7 +137,7 @@ const useMessageHandler = () => {
       initialResponse
     };
 
-    console.log('User Input:', text);
+    console.log('User Input:', text, submission);
 
     if (isRegenerate) {
       setMessages([...currentMessages, initialResponse]);

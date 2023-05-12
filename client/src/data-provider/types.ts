@@ -43,7 +43,8 @@ export enum EModelEndpoint {
   openAI = 'openAI',
   bingAI = 'bingAI',
   chatGPT = 'chatGPT',
-  chatGPTBrowser = 'chatGPTBrowser'
+  chatGPTBrowser = 'chatGPTBrowser',
+  google = 'google',
 }
 
 export type TConversation = {
@@ -57,9 +58,13 @@ export type TConversation = {
   updatedAt: string;
   // for azureOpenAI, openAI only
   chatGptLabel?: string;
+  modelLabel?: string;
+  userLabel?: string;
   model?: string;
   promptPrefix?: string;
   temperature?: number;
+  topP?: number;
+  topK?: number;
   top_p?: number;
   presence_penalty?: number;
   // for bingAI only

@@ -17,6 +17,12 @@ module.exports = {
     default: null,
     required: false
   },
+  // for google only
+  modelLabel: {
+    type: String,
+    default: null,
+    required: false
+  },
   promptPrefix: {
     type: String,
     default: null,
@@ -30,6 +36,17 @@ module.exports = {
   top_p: {
     type: Number,
     default: 1,
+    required: false
+  },
+  // for google only
+  topP: {
+    type: Number,
+    default: 0.95,
+    required: false
+  },
+  topK: {
+    type: Number,
+    default: 40,
     required: false
   },
   presence_penalty: {

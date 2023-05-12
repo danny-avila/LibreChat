@@ -15,7 +15,15 @@ const getChatGPTBrowserModels = () => {
   return models;
 };
 
-router.get('/', function (req, res) {
+let key;
+router.get('/', async function (req, res) {
+  try {
+    key = require('../../data/auth.json');
+  } catch (e) {
+    console.log('error getting key', e);
+  }
+
+  const google = !!key;
   const azureOpenAI = !!process.env.AZURE_OPENAI_KEY;
   const openAI = process.env.OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY ? { availableModels: getOpenAIModels() } : false;
   const bingAI = process.env.BINGAI_TOKEN
@@ -28,7 +36,7 @@ router.get('/', function (req, res) {
     }
     : false;
 
-  res.send(JSON.stringify({ azureOpenAI, openAI, bingAI, chatGPTBrowser }));
+  res.send(JSON.stringify({ azureOpenAI, openAI, google, bingAI, chatGPTBrowser }));
 });
 
 module.exports = { router, getOpenAIModels, getChatGPTBrowserModels };

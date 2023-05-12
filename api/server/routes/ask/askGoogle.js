@@ -15,11 +15,11 @@ router.post('/', requireJwtAuth, async (req, res) => {
   const endpointOption = {
     modelOptions: {
       model: req.body?.model ?? 'chat-bison',
-      // chatGptLabel: req.body?.chatGptLabel ?? null,
-      // promptPrefix: req.body?.promptPrefix ?? null,
-      temperature: req.body?.temperature ?? 0,
-      topP: req.body?.topP ?? 1,
-      topK: req.body?.topK ?? 0,
+      modelLabel: req.body?.modelLabel ?? null,
+      promptPrefix: req.body?.promptPrefix ?? null,
+      temperature: req.body?.temperature ?? 0.2,
+      topP: req.body?.topP ?? 0.95,
+      topK: req.body?.topK ?? 40,
     }
   };
 
@@ -72,7 +72,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
           lastSavedTimestamp = currentTimestamp;
           saveMessage({
             messageId: responseMessageId,
-            sender: 'ChatGPT',
+            sender: 'PaLM2',
             conversationId,
             parentMessageId: userMessageId,
             text: partialText,
@@ -93,11 +93,10 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       ...endpointOption
     };
 
-    const chatAgent = new GoogleClient({
+    const key = require('../../../data/auth.json');
+    const client = new GoogleClient(key, clientOptions);
 
-    }, clientOptions);
-
-    let response = await chatAgent.sendMessage(text, {
+    let response = await client.sendMessage(text, {
       getIds,
       user: req.user.id,
       parentMessageId,
