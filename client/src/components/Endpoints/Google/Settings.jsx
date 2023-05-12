@@ -17,7 +17,7 @@ const optionText =
 import store from '~/store';
 
 function Settings(props) {
-  const { readonly, model, modelLabel, promptPrefix, examples, temperature, topP, topK, maxOutputTokens, setOption } = props;
+  const { readonly, model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens, setOption } = props;
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
@@ -28,7 +28,6 @@ function Settings(props) {
   const setTopP = setOption('topP');
   const setTopK = setOption('topK');
   const setMaxOutputTokens = setOption('maxOutputTokens');
-  const setExamples = setOption('examples');
 
   const models = endpointsConfig?.['google']?.['availableModels'] || [];
 

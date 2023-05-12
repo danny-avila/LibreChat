@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Settings2,  } from 'lucide-react';
+import { Settings2 } from 'lucide-react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import MessagesSquared from '~/components/svg/MessagesSquared.jsx';
 import SelectDropDown from '../../ui/SelectDropDown';
@@ -52,11 +52,38 @@ function GoogleOptions() {
   const setExample = (i, type, newValue = null) => {
     let update = {};
     let current = conversation?.examples.slice() || [];
-    let currentExample =  { ...current[i] } || {};
+    let currentExample = { ...current[i] } || {};
     currentExample[type] = newValue;
     current[i] = currentExample;
     update.examples = current;
-    console.log('setOption', update);
+    console.log('setExample', update);
+    setConversation(prevState => ({
+      ...prevState,
+      ...update
+    }));
+  };
+
+  const addExample = () => {
+    let update = {};
+    let current = conversation?.examples.slice() || [];
+    current.push({ input: '', output: '' });
+    update.examples = current;
+    console.log('addExample', update);
+    setConversation(prevState => ({
+      ...prevState,
+      ...update
+    }));
+  };
+
+  const removeExample = () => {
+    let update = {};
+    let current = conversation?.examples.slice() || [];
+    if (current.length <= 1) {
+      return;
+    }
+    current.pop();
+    update.examples = current;
+    console.log('removeExample', update);
     setConversation(prevState => ({
       ...prevState,
       ...update
@@ -100,21 +127,23 @@ function GoogleOptions() {
         content={
           <div className="px-4 py-4">
             {showExamples ? (
-            <Examples
-            examples={examples}
-            setExample={setExample}
-          />
+              <Examples
+                examples={examples}
+                setExample={setExample}
+                addExample={addExample}
+                removeExample={removeExample}
+              />
             ) : (
-            <Settings
-              model={model}
-              modelLabel={modelLabel}
-              promptPrefix={promptPrefix}
-              temperature={temperature}
-              topP={topP}
-              topK={topK}
-              maxOutputTokens={maxOutputTokens}
-              setOption={setOption}
-            />
+              <Settings
+                model={model}
+                modelLabel={modelLabel}
+                promptPrefix={promptPrefix}
+                temperature={temperature}
+                topP={topP}
+                topK={topK}
+                maxOutputTokens={maxOutputTokens}
+                setOption={setOption}
+              />
             )}
           </div>
         }
@@ -122,7 +151,7 @@ function GoogleOptions() {
         saveAsPreset={saveAsPreset}
         switchToSimpleMode={switchToSimpleMode}
         additionalButton={{
-          label: (showExamples ? 'Hide': 'Show') + ' Examples',
+          label: (showExamples ? 'Hide' : 'Show') + ' Examples',
           handler: triggerExamples,
           icon: <MessagesSquared className="mr-1 w-[14px]" />
         }}

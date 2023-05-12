@@ -17,7 +17,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
       model: req.body?.model ?? 'chat-bison',
       modelLabel: req.body?.modelLabel ?? null,
       promptPrefix: req.body?.promptPrefix ?? null,
-      examples: req.body?.examples ?? [],
+      examples: req.body?.examples ?? [{ input: '', output: ''}],
       temperature: req.body?.temperature ?? 0.2,
       maxOutputTokens: req.body?.maxOutputTokens ?? 1024,
       topP: req.body?.topP ?? 0.95,
