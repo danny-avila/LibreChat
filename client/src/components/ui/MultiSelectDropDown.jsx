@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import CheckMark from '../svg/CheckMark.jsx';
 import useOnClickOutside from '~/hooks/useOnClickOutside.js';
 import { Listbox, Transition } from '@headlessui/react';
-import { Wrench } from 'lucide-react';
+import { Wrench, ArrowRight } from 'lucide-react';
 import { cn } from '~/utils/';
 
 function SelectDropDown({
@@ -15,11 +15,11 @@ function SelectDropDown({
   showLabel = true,
   containerClassName,
   isSelected,
-  className
+  className,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
-  const excludeIds = ['select-plugin','plugins-label','selected-plugins'];
+  const excludeIds = ['select-plugin', 'plugins-label', 'selected-plugins'];
   useOnClickOutside(menuRef, () => setIsOpen(false), excludeIds);
   const handleSelect = value => {
     setValue(value);
@@ -55,7 +55,10 @@ function SelectDropDown({
                     {title}
                   </Listbox.Label>
                 )}
-                <span className="inline-flex w-full truncate" id={excludeIds[2]}>
+                <span
+                  className="inline-flex w-full truncate"
+                  id={excludeIds[2]}
+                >
                   <span
                     className={cn(
                       'flex h-6 items-center gap-1 truncate text-sm text-gray-900 dark:text-white',
@@ -80,13 +83,9 @@ function SelectDropDown({
                                 className="h-full w-full rounded-sm bg-white"
                               />
                             ) : (
-                              <Wrench
-                                className="h-full w-full rounded-sm bg-white"
-                              />
+                              <Wrench className="h-full w-full rounded-sm bg-white" />
                             )}
-                            <div
-                              className="absolute inset-0 rounded-sm ring-1 ring-inset ring-black/10"
-                            />
+                            <div className="absolute inset-0 rounded-sm ring-1 ring-inset ring-black/10" />
                           </div>
                         ))}
                       </div>
@@ -132,6 +131,7 @@ function SelectDropDown({
                         className="group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-900 last:border-0 hover:bg-[#ECECF1] dark:border-white/20 dark:text-white dark:hover:bg-gray-700"
                       >
                         <span className="flex items-center gap-1.5 truncate">
+                          {!option.isButton && (
                           <span className="h-6 w-6 shrink-0">
                             <div
                               className="relative"
@@ -149,6 +149,7 @@ function SelectDropDown({
                               <div className="absolute inset-0 rounded-sm ring-1 ring-inset ring-black/10"></div>
                             </div>
                           </span>
+                          )}
                           <span
                             className={cn(
                               'flex h-6 items-center gap-1 text-gray-800 dark:text-gray-100',
@@ -157,7 +158,12 @@ function SelectDropDown({
                           >
                             {option.name}
                           </span>
-                          {selected && (
+                          {option.isButton && (
+                            <span className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-800 dark:text-gray-100">
+                              <ArrowRight />
+                            </span>
+                          )}
+                          {selected && !option.isButton && (
                             <span className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-800 dark:text-gray-100">
                               <CheckMark />
                             </span>
@@ -166,6 +172,42 @@ function SelectDropDown({
                       </Listbox.Option>
                     );
                   })}
+                  {/* { showFooterOption && (
+                    <Listbox.Option className="group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-900 last:border-0 hover:bg-[#ECECF1] dark:border-white/20 dark:text-white dark:hover:bg-gray-700">
+                    <span className="flex items-center gap-1.5 truncate">
+                      <span className="h-6 w-6 shrink-0">
+                        <div
+                          className="relative"
+                          style={{ width: '100%', height: '100%' }}
+                        >
+                          {option.icon ? (
+                            <img
+                              src={option.icon}
+                              alt={`${option} logo`}
+                              className="h-full w-full rounded-sm bg-white"
+                            />
+                          ) : (
+                            <Wrench className="h-full w-full rounded-sm bg-white" />
+                          )}
+                          <div className="absolute inset-0 rounded-sm ring-1 ring-inset ring-black/10"></div>
+                        </div>
+                      </span>
+                      <span
+                        className={cn(
+                          'flex h-6 items-center gap-1 text-gray-800 dark:text-gray-100',
+                          selected ? 'font-semibold' : ''
+                        )}
+                      >
+                        {option.name}
+                      </span>
+                      {selected && (
+                        <span className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-800 dark:text-gray-100">
+                          <CheckMark />
+                        </span>
+                      )}
+                    </span>
+                  </Listbox.Option>
+                  )} */}
                 </Listbox.Options>
               </Transition>
             </>

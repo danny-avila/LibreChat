@@ -8,12 +8,14 @@ import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
 import { Button } from '../../ui/Button.tsx';
 import Settings from '../../Endpoints/OpenAI/Settings.jsx';
 import { cn } from '~/utils/';
-
 import store from '~/store';
+import { PluginStoreDialog } from '~/components';
+
 
 function PluginsOptions() {
   const [advancedMode, setAdvancedMode] = useState(false);
-  const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
+  const [showSavePresetDialog, setShowSavePresetDialog] = useState(false);
+  const [showPluginStoreDialog, setShowPluginStoreDialog] = useState(false);
   const [visibile, setVisibility] = useState(true);
   const [opacityClass, setOpacityClass] = useState('full-opacity');
   const messagesTree = useRecoilValue(store.messagesTree);
@@ -40,6 +42,8 @@ function PluginsOptions() {
 
   const models = endpointsConfig?.['gptPlugins']?.['availableModels'] || [];
   const availableTools = endpointsConfig?.['gptPlugins']?.['availableTools'] || [];
+  const pluginStore = { name: 'Plugin store', value: 'pluginStore', isButton: true };
+  const tools = [...availableTools, pluginStore ];
 
   const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
 
@@ -48,7 +52,7 @@ function PluginsOptions() {
   };
 
   const saveAsPreset = () => {
-    setSaveAsDialogShow(true);
+    setShowSavePresetDialog(true);
   };
 
   function checkIfSelected(value) {
@@ -66,6 +70,10 @@ function PluginsOptions() {
   };
 
   const setTools = newValue => {
+    if(newValue === 'pluginStore') {
+      setShowPluginStoreDialog(true);
+      return;
+    }
     let update = {};
     let current = conversation.tools || [];
     let isSelected = checkIfSelected(newValue);
@@ -123,8 +131,11 @@ function PluginsOptions() {
           value={conversation.tools || []}
           isSelected={checkIfSelected}
           setValue={setTools}
-          availableValues={availableTools}
+          availableValues={tools}
           showAbove={true}
+          // showFooterOption={true}
+          // footerOptionName="Plugin store"
+          // onFooterOptionClick={openPluginStore}
           className={cn(cardStyle, 'min-w-60 z-50 w-60', !visibile && 'hidden')}
         />
         <Button
@@ -158,10 +169,13 @@ function PluginsOptions() {
         switchToSimpleMode={switchToSimpleMode}
       />
       <SaveAsPresetDialog
-        open={saveAsDialogShow}
-        onOpenChange={setSaveAsDialogShow}
+        open={showSavePresetDialog}
+        onOpenChange={setShowSavePresetDialog}
         preset={conversation}
       />
+      <PluginStoreDialog 
+        isOpen={showPluginStoreDialog}
+        setIsOpen={setShowPluginStoreDialog}/>
     </>
   );
 }
