@@ -33,7 +33,9 @@ const buildDefaultConversation = ({
         'chat-bison',
       modelLabel: lastConversationSetup?.modelLabel ?? null,
       promptPrefix: lastConversationSetup?.promptPrefix ?? null,
+      examples: lastConversationSetup?.examples ?? [],
       temperature: lastConversationSetup?.temperature ?? 0.2,
+      maxOutputTokens: lastConversationSetup?.maxOutputTokens ?? 1024,
       topP: lastConversationSetup?.topP ?? 0.95,
       topK: lastConversationSetup?.topK ?? 40,
     };

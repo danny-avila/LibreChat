@@ -47,7 +47,9 @@ const useMessageHandler = () => {
           currentConversation?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'chat-bison',
         chatGptLabel: currentConversation?.chatGptLabel ?? null,
         promptPrefix: currentConversation?.promptPrefix ?? null,
+        examples: currentConversation?.examples ?? [],
         temperature: currentConversation?.temperature ?? 0.2,
+        maxOutputTokens: currentConversation?.maxOutputTokens ?? 1024,
         topP: currentConversation?.topP ?? 0.95,
         topK: currentConversation?.topK ?? 40,
       };

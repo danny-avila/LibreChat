@@ -21,8 +21,10 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
       presetId: _preset?.presetId ?? null,
       model: _preset?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'chat-bison',
       modelLabel: _preset?.modelLabel ?? null,
+      examples: _preset?.examples ?? [],
       promptPrefix: _preset?.promptPrefix ?? null,
       temperature: _preset?.temperature ?? 0.2,
+      maxOutputTokens: _preset?.maxOutputTokens ?? 1024,
       topP: _preset?.topP ?? 0.95,
       topK: _preset?.topK ?? 40,
       title: _preset?.title ?? 'New Preset'

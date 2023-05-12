@@ -23,7 +23,7 @@ router.get('/', async function (req, res) {
     console.log('error getting key', e);
   }
 
-  const google = !!key;
+  const google = key ? { availableModels: ['chat-bison','text-bison'] } : false;
   const azureOpenAI = !!process.env.AZURE_OPENAI_KEY;
   const openAI = process.env.OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY ? { availableModels: getOpenAIModels() } : false;
   const bingAI = process.env.BINGAI_TOKEN

@@ -11,6 +11,14 @@ const data = {
         {
           input: { content: 'What do I like?' },
           output: { content: 'Ned likes watching movies.' }
+        },
+        {
+          input: { content: 'Who am I?' },
+          output: { content: 'You are Ned.' }
+        },
+        {
+          input: { content: 'What is the first letter of my name?' },
+          output: { content: 'The letter is "N."' }
         }
       ],
       messages: [
@@ -37,14 +45,16 @@ const data = {
   }
 };
 require('dotenv').config();
+// const fs = require('fs');
+// const stream = require('stream');
 const {google} = require('googleapis');
 const key = require('../../data/auth.json');
 const scopes = ['https://www.googleapis.com/auth/cloud-platform'];
 const jwtClient = new google.auth.JWT(
   key.client_email,
   null,
-  // key.private_key,
-  process.env.GOOGLE_PRIVATE_KEY,
+  key.private_key,
+  // process.env.GOOGLE_PRIVATE_KEY,
   scopes
 );
 
@@ -59,6 +69,25 @@ const url = `https://us-central1-aiplatform.googleapis.com/v1/projects/${key.pro
 // });
 
 (async () => {
-  const res = await jwtClient.request({ url, method: 'POST', data});
+  const res = await jwtClient.request({ url, method: 'POST', data, responseType: 'stream'});
   console.dir(res, {depth: null});
+
+  // const gunzip = res.data;
+
+  // const output = new stream.Writable({
+  //   write(chunk, encoding, callback) {
+  //     console.log(chunk.toString());
+  //     callback();
+  //   },
+  // });
+
+  // gunzip.pipe(output); // Pipe the readable gzip stream to the writable output stream
+
+  // gunzip.on('error', (error) => {
+  //   console.error('An error occurred while decompressing the data:', error);
+  // });
+
+  // gunzip.on('end', () => {
+  //   console.log('Finished reading the data');
+  // });
 })();
