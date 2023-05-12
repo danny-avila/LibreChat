@@ -1,5 +1,5 @@
 {
-  "name": "chatgpt-clone",
+  "name": "chat-backend",
   "version": "0.4.2",
   "description": "",
   "main": "server/index.js",
