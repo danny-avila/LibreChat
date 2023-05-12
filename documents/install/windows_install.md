@@ -66,15 +66,13 @@ You will need all your credentials, (API keys, access tokens, and Mongo Connecti
 
 ### Run the app
 
-#### Using the command line
+### Using the command line (in the root directory)
 
-- **Run** `npm ci` in the "C:/chatgpt-clone/api" directory
-- **Run** `npm ci` in the "C:/chatgpt-clone/client" directory
-- **Run** `npm run build` in the "C:/chatgpt-clone/client"
-- **Run** `"meilisearch --master-key put_your_meilesearch_Master_Key_here"` in the "C:/chatgpt-clone" directory (Only if SEARCH=TRUE)
-- **Run** `npm start` in the "C:/chatgpt-clone/api" directory
-
-- **Visit** http://localhost:3080 (default port) & enjoy
+1. Run `npm ci`
+2. Run `npm run frontend-dev`
+3. Run `npm run backend`
+4. Run `meilisearch --master-key put_your_meilesearch_Master_Key_here` (Only if SEARCH=TRUE)
+5. Visit http://localhost:3080 (default port) & enjoy
 
 #### Using a batch file
 

@@ -59,6 +59,7 @@ src/style - official.css
 /playwright/.cache/
 .DS_Store
 *.code-workspace
+.idea
 
 # meilisearch
 meilisearch
