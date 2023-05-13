@@ -16,7 +16,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
       as="div"
       className="group relative"
     >
-      {({ open, close }) => (
+      {({ open }) => (
         <>
           <Menu.Button
             className={cn(
@@ -49,42 +49,23 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
             leaveTo="transform opacity-0 scale-95"
           >
             <Menu.Items className="absolute bottom-full left-0 z-20 mb-2 w-full translate-y-0 overflow-hidden rounded-md bg-[#050509] py-1.5 opacity-100 outline-none">
-              <Menu.Item
-                onClick={close}
-                as="a"
-              >
-                {!!isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
+              <Menu.Item>
+                {({}) => <>{!!isSearchEnabled && <SearchBar clearSearch={clearSearch} />}</>}
               </Menu.Item>
-              <Menu.Item
-                as="a"
-              >
-                <ExportConversation />
-              </Menu.Item>
+              <Menu.Item>{({}) => <ExportConversation />}</Menu.Item>
 
               <div
                 class="my-1.5 h-px bg-white/20"
                 role="none"
               ></div>
-              <Menu.Item
-                onClick={close}
-                as="a"
-              >
-                <DarkMode />
-              </Menu.Item>
-              <Menu.Item
-                as="a"
-              >
-                <ClearConvos />
-              </Menu.Item>
+              <Menu.Item>{({}) => <DarkMode />}</Menu.Item>
+              <Menu.Item>{({}) => <ClearConvos />}</Menu.Item>
 
               <div
                 class="my-1.5 h-px bg-white/20"
                 role="none"
               ></div>
-              <Menu.Item
-                onClick={close}
-                as="a"
-              >
+              <Menu.Item>
                 <Logout />
               </Menu.Item>
             </Menu.Items>
