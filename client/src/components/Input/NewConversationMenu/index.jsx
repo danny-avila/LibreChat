@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import cleanupPreset from '~/utils/cleanupPreset.js';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import EditPresetDialog from '../../Endpoints/EditPresetDialog';
 import EndpointItems from './EndpointItems';
@@ -27,6 +28,7 @@ export default function NewConversationMenu() {
   const [preset, setPreset] = useState(false);
 
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
+  const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const [presets, setPresets] = useRecoilState(store.presets);
 
   const conversation = useRecoilValue(store.conversation) || {};
@@ -48,6 +50,11 @@ export default function NewConversationMenu() {
         }
       }
     );
+  };
+
+  const onFileSelected = jsonData => {
+    const jsonPreset = { ...cleanupPreset({ preset: jsonData, endpointsConfig }), presetId: null };
+    importPreset(jsonPreset);
   };
 
   // update the default model when availableModels changes
@@ -151,7 +158,7 @@ export default function NewConversationMenu() {
           <DropdownMenuLabel className="flex items-center dark:text-gray-300">
             <span>Select a Preset</span>
             <div className="flex-1" />
-            <FileUpload onFileSelected={importPreset} />
+            <FileUpload onFileSelected={onFileSelected} />
             <Dialog>
               <DialogTrigger asChild>
                 <label

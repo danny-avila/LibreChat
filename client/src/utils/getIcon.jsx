@@ -42,6 +42,10 @@ const getIcon = props => {
         ? `rgba(16, 163, 127, ${button ? 0.75 : 1})`
         : `rgba(16, 163, 127, ${button ? 0.75 : 1})`);
       name = chatGptLabel || 'ChatGPT';
+    } else if (endpoint === 'google') {
+      const { modelLabel } = props;
+      icon = <img src='/assets/palm.png' />;
+      name = modelLabel || 'PaLM2';
     } else if (endpoint === 'bingAI') {
       const { jailbreak } = props;
 
