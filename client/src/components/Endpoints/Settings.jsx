@@ -8,6 +8,7 @@ import GoogleSettings from './Google/Settings.jsx';
 const Settings = ({ preset, ...props }) => {
   const renderSettings = () => {
     const { endpoint } = preset || {};
+    // console.log('preset', preset);
 
     if (endpoint === 'openAI') {
       return (
@@ -38,10 +39,12 @@ const Settings = ({ preset, ...props }) => {
           model={preset?.model}
           modelLabel={preset?.modelLabel}
           promptPrefix={preset?.promptPrefix}
+          examples={preset?.examples}
           temperature={preset?.temperature}
           topP={preset?.topP}
           topK={preset?.topK}
           maxOutputTokens={preset?.maxOutputTokens}
+          edit={true}
           {...props}
         />
       );

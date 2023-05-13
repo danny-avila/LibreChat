@@ -13,11 +13,11 @@ router.post('/', requireJwtAuth, async (req, res) => {
 
   // build endpoint option
   const endpointOption = {
+    examples: req.body?.examples ?? [{ input: { content: '' }, output: { content: '' }}],
+    promptPrefix: req.body?.promptPrefix ?? null,
     modelOptions: {
       model: req.body?.model ?? 'chat-bison',
       modelLabel: req.body?.modelLabel ?? null,
-      promptPrefix: req.body?.promptPrefix ?? null,
-      examples: req.body?.examples ?? [{ input: { content: '' }, output: { content: '' }}],
       temperature: req.body?.temperature ?? 0.2,
       maxOutputTokens: req.body?.maxOutputTokens ?? 1024,
       topP: req.body?.topP ?? 0.95,

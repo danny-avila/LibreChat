@@ -17,8 +17,8 @@ const optionText =
 import store from '~/store';
 
 function Settings(props) {
-  const { readonly, model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens, setOption } = props;
-
+  const { readonly, model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens, setOption, edit = false } = props;
+  const maxHeight = edit ? 'max-h-[233px]' : 'max-h-[350px]';
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   const setModel = setOption('model');
@@ -32,7 +32,7 @@ function Settings(props) {
   const models = endpointsConfig?.['google']?.['availableModels'] || [];
 
   return (
-    <div className="max-h-[350px] overflow-y-auto">
+    <div className={`${maxHeight} overflow-y-auto`}>
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">

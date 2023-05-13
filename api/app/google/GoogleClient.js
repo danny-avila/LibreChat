@@ -41,6 +41,8 @@ class GoogleAgent {
       this.options = options;
     }
 
+    this.options.examples = this.options.examples.filter(obj => obj.input.content !== '' && obj.output.content !== '');
+
     const modelOptions = this.options.modelOptions || {};
     this.modelOptions = {
       ...modelOptions,
@@ -149,20 +151,23 @@ class GoogleAgent {
     return jwtClient;
   }
 
-  buildPayload(input, { context, examples, parameters, messages = [] }) {
-    // if (this.options.debug) {
-    //   console.debug('buildPayload', input, context, examples, parameters, messages);
-    // }
+  buildPayload(input, { messages = [] }) {
     let payload = {
       instances: [
         {
-          context,
-          examples,
           messages: [...messages, { author: this.userLabel, content: input }]
         }
       ],
-      parameters
+      parameters: this.options.modelOptions,
     };
+
+    if (this.options.promptPrefix) {
+      payload.instances[0].context = this.options.promptPrefix;
+    }
+
+    if (this.options.examples.length > 0) {
+      payload.instances[0].examples = this.options.examples;
+    }
 
     if (this.isTextModel) {
       payload.instances = [
@@ -206,7 +211,7 @@ class GoogleAgent {
     }
 
     const client = await this.getClient();
-    const payload = this.buildPayload(input, { parameters: { ...this.modelOptions }, messages });
+    const payload = this.buildPayload(input, { messages });
     const res = await client.request({ url, method: 'POST', data: payload });
     console.dir(res.data, { depth: null });
     return res.data;

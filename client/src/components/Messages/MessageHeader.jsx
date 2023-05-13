@@ -32,6 +32,7 @@ const MessageHeader = ({ isSearchView = false }) => {
         if (model) _title += `: ${model}`;
         if (chatGptLabel) _title += ` as ${chatGptLabel}`;
       } else if (endpoint === 'google') {
+        _title = 'PaLM';
         const { modelLabel, model } = conversation;
         if (model) _title += `: ${model}`;
         if (modelLabel) _title += ` as ${modelLabel}`;

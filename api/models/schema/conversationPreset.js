@@ -49,6 +49,11 @@ module.exports = {
     default: 40,
     required: false
   },
+  maxOutputTokens: {
+    type: Number,
+    default: 1024,
+    required: false
+  },
   presence_penalty: {
     type: Number,
     default: 0,
