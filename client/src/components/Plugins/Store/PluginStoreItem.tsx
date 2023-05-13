@@ -1,13 +1,13 @@
 type TPluginStoreItemProps = {
-  title: string,
+  name: string,
   description: string,
   imageSource: string,
-  isInstalled: boolean,
   onInstall: () => void
   onUninstall: () => void
+  isInstalled?: boolean,
 }
 
-function PluginStoreItem({ title, description, imageSource, onInstall, onUninstall, isInstalled }: TPluginStoreItemProps) {
+function PluginStoreItem({ name, description, imageSource, onInstall, onUninstall, isInstalled }: TPluginStoreItemProps) {
 
   const handleClick = () => {
     if (isInstalled) {
@@ -25,7 +25,7 @@ function PluginStoreItem({ title, description, imageSource, onInstall, onUninsta
           <div className="relative h-full w-full">
             <img
               src={imageSource}
-              alt={`${title} logo`}
+              alt={`${name} logo`}
               className="h-full w-full rounded-[5px] bg-white"
             />
             <div className="absolute inset-0 rounded-[5px] ring-1 ring-inset ring-black/10"></div>
@@ -33,18 +33,18 @@ function PluginStoreItem({ title, description, imageSource, onInstall, onUninsta
         </div>
         <div className="flex min-w-0 flex-col items-start justify-between">
           <div className="line-clamp-1 max-w-full text-lg leading-5 text-white">
-            {title}
+            {name}
           </div>
           <button className="btn btn-primary relative" onClick={handleClick}>
             <div className="flex w-full items-center justify-center gap-2">
-              {isInstalled ? 'Install' : 'Uninstall'}
+              {isInstalled ? 'Uninstall' : 'Install'}
               <svg
                 stroke="currentColor"
                 fill="none"
-                stroke-width="2"
+                strokeWidth="2"
                 viewBox="0 0 24 24"
-                stroke-linecap="round"
-                stroke-linejoin="round"
+                strokeLinecap="round"
+                strokeLinejoin="round"
                 className="h-4 w-4"
                 height="1em"
                 width="1em"
