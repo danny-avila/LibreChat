@@ -17,6 +17,8 @@ const presetSchema = mongoose.Schema(
       type: String,
       default: null
     },
+    // google only
+    examples: [{ type: mongoose.Schema.Types.Mixed }],
     ...conversationPreset
   },
   { timestamps: true }

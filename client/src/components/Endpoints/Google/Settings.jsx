@@ -17,22 +17,22 @@ const optionText =
 import store from '~/store';
 
 function Settings(props) {
-  const { readonly, model, chatGptLabel, promptPrefix, temperature, topP, freqP, presP, setOption } = props;
-
+  const { readonly, model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens, setOption, edit = false } = props;
+  const maxHeight = edit ? 'max-h-[233px]' : 'max-h-[350px]';
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   const setModel = setOption('model');
-  const setChatGptLabel = setOption('chatGptLabel');
+  const setModelLabel = setOption('modelLabel');
   const setPromptPrefix = setOption('promptPrefix');
   const setTemperature = setOption('temperature');
-  const setTopP = setOption('top_p');
-  const setFreqP = setOption('presence_penalty');
-  const setPresP = setOption('frequency_penalty');
+  const setTopP = setOption('topP');
+  const setTopK = setOption('topK');
+  const setMaxOutputTokens = setOption('maxOutputTokens');
 
-  const models = endpointsConfig?.['openAI']?.['availableModels'] || [];
+  const models = endpointsConfig?.['google']?.['availableModels'] || [];
 
   return (
-    <div className="max-h-[350px] overflow-y-auto">
+    <div className={`${maxHeight} overflow-y-auto`}>
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
@@ -50,17 +50,17 @@ function Settings(props) {
           </div>
           <div className="grid w-full items-center gap-2">
             <Label
-              htmlFor="chatGptLabel"
+              htmlFor="modelLabel"
               className="text-left text-sm font-medium"
             >
               Custom Name <small className="opacity-40">(default: blank)</small>
             </Label>
             <Input
-              id="chatGptLabel"
+              id="modelLabel"
               disabled={readonly}
-              value={chatGptLabel || ''}
-              onChange={e => setChatGptLabel(e.target.value || null)}
-              placeholder="Set a custom name for ChatGPT"
+              value={modelLabel || ''}
+              onChange={e => setModelLabel(e.target.value || null)}
+              placeholder="Set a custom name for PaLM2"
               className={cn(
                 defaultTextProps,
                 'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
@@ -79,7 +79,7 @@ function Settings(props) {
               disabled={readonly}
               value={promptPrefix || ''}
               onChange={e => setPromptPrefix(e.target.value || null)}
-              placeholder="Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
+              placeholder="Set custom instructions or context. Ignored if empty."
               className={cn(
                 defaultTextProps,
                 'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 '
@@ -95,14 +95,14 @@ function Settings(props) {
                   htmlFor="temp-int"
                   className="text-left text-sm font-medium"
                 >
-                  Temperature <small className="opacity-40">(default: 1)</small>
+                  Temperature <small className="opacity-40">(default: 0.2)</small>
                 </Label>
                 <InputNumber
                   id="temp-int"
                   disabled={readonly}
                   value={temperature}
                   onChange={value => setTemperature(value)}
-                  max={2}
+                  max={1}
                   min={0}
                   step={0.01}
                   controls={false}
@@ -120,7 +120,7 @@ function Settings(props) {
                 value={[temperature]}
                 onValueChange={value => setTemperature(value[0])}
                 doubleClickHandler={() => setTemperature(1)}
-                max={2}
+                max={1}
                 min={0}
                 step={0.01}
                 className="flex h-4 w-full"
@@ -138,7 +138,7 @@ function Settings(props) {
                   htmlFor="top-p-int"
                   className="text-left text-sm font-medium"
                 >
-                  Top P <small className="opacity-40">(default: 1)</small>
+                  Top P <small className="opacity-40">(default: 0.95)</small>
                 </Label>
                 <InputNumber
                   id="top-p-int"
@@ -179,18 +179,18 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label
-                  htmlFor="freq-penalty-int"
+                  htmlFor="top-k-int"
                   className="text-left text-sm font-medium"
                 >
-                  Frequency Penalty <small className="opacity-40">(default: 0)</small>
+                  Top K <small className="opacity-40">(default: 40)</small>
                 </Label>
                 <InputNumber
-                  id="freq-penalty-int"
+                  id="top-k-int"
                   disabled={readonly}
-                  value={freqP}
-                  onChange={value => setFreqP(value)}
-                  max={2}
-                  min={-2}
+                  value={topK}
+                  onChange={value => setTopK(value)}
+                  max={40}
+                  min={1}
                   step={0.01}
                   controls={false}
                   className={cn(
@@ -204,17 +204,17 @@ function Settings(props) {
               </div>
               <Slider
                 disabled={readonly}
-                value={[freqP]}
-                onValueChange={value => setFreqP(value[0])}
-                doubleClickHandler={() => setFreqP(0)}
-                max={2}
-                min={-2}
+                value={[topK]}
+                onValueChange={value => setTopK(value[0])}
+                doubleClickHandler={() => setTopK(0)}
+                max={40}
+                min={1}
                 step={0.01}
                 className="flex h-4 w-full"
               />
             </HoverCardTrigger>
             <OptionHover
-              type="freq"
+              type="topk"
               side="left"
             />
           </HoverCard>
@@ -223,19 +223,19 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label
-                  htmlFor="pres-penalty-int"
+                  htmlFor="max-tokens-int"
                   className="text-left text-sm font-medium"
                 >
-                  Presence Penalty <small className="opacity-40">(default: 0)</small>
+                  Max Output Tokens <small className="opacity-40">(default: 1024)</small>
                 </Label>
                 <InputNumber
-                  id="pres-penalty-int"
+                  id="max-tokens-int"
                   disabled={readonly}
-                  value={presP}
-                  onChange={value => setPresP(value)}
-                  max={2}
-                  min={-2}
-                  step={0.01}
+                  value={maxOutputTokens}
+                  onChange={value => setMaxOutputTokens(value)}
+                  max={1024}
+                  min={1}
+                  step={1}
                   controls={false}
                   className={cn(
                     defaultTextProps,
@@ -248,17 +248,17 @@ function Settings(props) {
               </div>
               <Slider
                 disabled={readonly}
-                value={[presP]}
-                onValueChange={value => setPresP(value[0])}
-                doubleClickHandler={() => setPresP(0)}
-                max={2}
-                min={-2}
-                step={0.01}
+                value={[maxOutputTokens]}
+                onValueChange={value => setMaxOutputTokens(value[0])}
+                doubleClickHandler={() => setMaxOutputTokens(0)}
+                max={1024}
+                min={1}
+                step={1}
                 className="flex h-4 w-full"
               />
             </HoverCardTrigger>
             <OptionHover
-              type="pres"
+              type="maxoutputtokens"
               side="left"
             />
           </HoverCard>
