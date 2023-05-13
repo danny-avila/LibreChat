@@ -41,7 +41,9 @@ class GoogleAgent {
       this.options = options;
     }
 
-    this.options.examples = this.options.examples.filter(obj => obj.input.content !== '' && obj.output.content !== '');
+    this.options.examples = this.options.examples.filter(
+      obj => obj.input.content !== '' && obj.output.content !== ''
+    );
 
     const modelOptions = this.options.modelOptions || {};
     this.modelOptions = {
@@ -158,7 +160,7 @@ class GoogleAgent {
           messages: [...messages, { author: this.userLabel, content: input }]
         }
       ],
-      parameters: this.options.modelOptions,
+      parameters: this.options.modelOptions
     };
 
     if (this.options.promptPrefix) {
@@ -237,8 +239,8 @@ class GoogleAgent {
     return orderedMessages.map((message) => {
       return {
         author: message.isCreatedByUser ? this.userLabel : this.modelLabel,
-        content: message.content 
-      }
+        content: message.content
+      };
     });
   }
 
@@ -285,9 +287,16 @@ class GoogleAgent {
 
     await this.saveMessageToDatabase(userMessage, user);
     let reply = '';
+    let blocked = false;
     try {
       const result = await this.getCompletion(message, messages, opts.abortController);
-      reply = result?.predictions?.[0]?.candidates?.[0]?.content || result?.predictions?.[0]?.content;
+      blocked = result?.predictions?.[0]?.safetyAttributes?.blocked;
+      reply = result?.predictions?.[0]?.candidates?.[0]?.content || result?.predictions?.[0]?.content || '';
+      if (blocked === true) {
+        reply = `Google blocked a proper response to your message:\n${JSON.stringify(
+          result.predictions[0].safetyAttributes
+        )}${reply.length > 0 ? `\nAI Response:\n${reply}` : ''}`;
+      }
       if (this.options.debug) {
         console.debug('result');
         console.debug(result);
@@ -301,8 +310,10 @@ class GoogleAgent {
       console.debug(this.options);
     }
 
-    const textStream = new TextStream(reply, { delay: 1 });
-    await textStream.processTextStream(opts.onProgress);
+    if (!blocked) {
+      const textStream = new TextStream(reply, { delay: 0.5 });
+      await textStream.processTextStream(opts.onProgress);
+    }
 
     const responseMessage = {
       messageId: responseMessageId,
@@ -310,6 +321,7 @@ class GoogleAgent {
       parentMessageId: userMessage.messageId,
       sender: 'PaLM2',
       text: reply,
+      error: blocked,
       isCreatedByUser: false
     };
 

@@ -102,7 +102,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     }
 
     const clientOptions = {
-      // debug: true,
+      // debug: true, // for testing
       reverseProxyUrl: process.env.GOOGLE_REVERSE_PROXY || null,
       proxy: process.env.PROXY || null,
       ...endpointOption
