@@ -23,12 +23,13 @@ const askClient = async ({
   };
 
   const azure = process.env.AZURE_OPENAI_API_KEY ? true : false;
-
+  const max_tokens = (model === "gpt-4") ? 7200 : (model === "gpt-4-32k") ? 31000 : 3071;
   const clientOptions = {
     reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
     azure,
     modelOptions: {
       model: model,
+      max_tokens: max_tokens,
       temperature,
       top_p,
       presence_penalty,
