@@ -1,5 +1,36 @@
 ﻿# # Changelog
-<details open>
+ <details open>
+<summary><strong>2023-05-13</strong></summary>
+ 
+**Released [v0.4.3](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.3) which now supports Google's PaLM 2!**
+  
+  ![image](https://github.com/danny-avila/chatgpt-clone/assets/110412045/ec5e8ff3-6c3a-4f25-9687-d8558435d094)
+ 
+**How to Setup PaLM 2 (via Google Cloud Vertex AI API)**
+
+- Enable the Vertex AI API on Google Cloud:
+- - https://console.cloud.google.com/vertex-ai
+- Create a Service Account:
+- - https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts/create?walkthrough_id=iam--create-service-account#step_index=1
+- Make sure to click 'Create and Continue' to give at least the 'Vertex AI User' role.
+- Create a JSON key, rename as 'auth.json' and save it in /api/data/.
+
+**Alternatively**
+
+- In your ./api/.env file, set PALM_KEY as "user_provided" to allow the user to provide a Service Account key JSON from the UI.
+- They will follow the steps above except for renaming the file, simply importing the JSON when prompted.
+- The key is sent to the server but never saved except in your local storage
+
+**Note:**
+
+- Vertex AI does not (yet) support response streaming for text generations, so response may seem to take long when generating a lot of text.
+- Text streaming is simulated
+
+
+You can check the full changelog in between v0.4.2 and v0.4.3 [here](https://github.com/danny-avila/chatgpt-clone/compare/v0.4.2...v0.4.3).
+</details>
+
+<details>
 <summary><strong>2023-05-11</strong></summary>
  
 **Released [v0.4.2](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.2)**
