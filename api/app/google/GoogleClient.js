@@ -287,7 +287,7 @@ class GoogleAgent {
     let reply = '';
     try {
       const result = await this.getCompletion(message, messages, opts.abortController);
-      reply = result?.predictions?.[0]?.candidates?.[0]?.content;
+      reply = result?.predictions?.[0]?.candidates?.[0]?.content || result?.predictions?.[0]?.content;
       if (this.options.debug) {
         console.debug('result');
         console.debug(result);

@@ -13,15 +13,16 @@ router.post('/', requireJwtAuth, async (req, res) => {
 
   // build endpoint option
   const endpointOption = {
-    examples: req.body?.examples ?? [{ input: { content: '' }, output: { content: '' }}],
+    examples: req.body?.examples ?? [{ input: { content: '' }, output: { content: '' } }],
     promptPrefix: req.body?.promptPrefix ?? null,
+    token: req.body?.token ?? null,
     modelOptions: {
       model: req.body?.model ?? 'chat-bison',
       modelLabel: req.body?.modelLabel ?? null,
       temperature: req.body?.temperature ?? 0.2,
       maxOutputTokens: req.body?.maxOutputTokens ?? 1024,
       topP: req.body?.topP ?? 0.95,
-      topK: req.body?.topK ?? 40,
+      topK: req.body?.topK ?? 40
     }
   };
 
@@ -29,9 +30,6 @@ router.post('/', requireJwtAuth, async (req, res) => {
   if (availableModels.find(model => model === endpointOption.modelOptions.model) === undefined) {
     return handleError(res, { text: `Illegal request: model` });
   }
-
-  console.log('ask log');
-  console.dir({ text, conversationId, endpointOption }, { depth: null });
 
   // eslint-disable-next-line no-use-before-define
   return await ask({
@@ -88,14 +86,28 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
 
     const abortController = new AbortController();
 
+    let key;
+    if (endpointOption.token) {
+      key = JSON.parse(endpointOption.token);
+      delete endpointOption.token;
+      console.log('Using service account key provided by User for PaLM models');
+    }
+
+    try {
+      if (!key) {
+        key = require('../../data/auth.json');
+      }
+    } catch (e) {
+      console.log("No 'auth.json' file (service account key) found in /api/data/ for PaLM models");
+    }
+
     const clientOptions = {
-      debug: true,
+      // debug: true,
       reverseProxyUrl: process.env.GOOGLE_REVERSE_PROXY || null,
       proxy: process.env.PROXY || null,
       ...endpointOption
     };
 
-    const key = require('../../../data/auth.json');
     const client = new GoogleClient(key, clientOptions);
 
     let response = await client.sendMessage(text, {

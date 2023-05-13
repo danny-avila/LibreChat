@@ -52,6 +52,7 @@ const useMessageHandler = () => {
         maxOutputTokens: currentConversation?.maxOutputTokens ?? 1024,
         topP: currentConversation?.topP ?? 0.95,
         topK: currentConversation?.topK ?? 40,
+        token: endpointsConfig[endpoint]?.userProvide ? getToken() : null
       };
       responseSender = endpointOption.chatGptLabel ?? 'ChatGPT';
     } else if (endpoint === 'bingAI') {

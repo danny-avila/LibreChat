@@ -15,17 +15,33 @@ const getChatGPTBrowserModels = () => {
   return models;
 };
 
-let key;
+let i = 0;
 router.get('/', async function (req, res) {
+  let key, palmUser;
   try {
     key = require('../../data/auth.json');
   } catch (e) {
-    console.log('error getting key', e);
+    if (i === 0) {
+      console.log("No 'auth.json' file (service account key) found in /api/data/ for PaLM models");
+      i++;
+    }
   }
 
-  const google = key ? { availableModels: ['chat-bison','text-bison'] } : false;
+  if (process.env.PALM_KEY === 'user_provided') {
+    palmUser = true;
+    if (i <= 1) {
+      console.log('User will provide key for PaLM models');
+      i++;
+    }
+  }
+
+  const google =
+    key || palmUser ? { userProvide: palmUser, availableModels: ['chat-bison', 'text-bison'] } : false;
   const azureOpenAI = !!process.env.AZURE_OPENAI_KEY;
-  const openAI = process.env.OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY ? { availableModels: getOpenAIModels() } : false;
+  const openAI =
+    process.env.OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY
+      ? { availableModels: getOpenAIModels() }
+      : false;
   const bingAI = process.env.BINGAI_TOKEN
     ? { userProvide: process.env.BINGAI_TOKEN == 'user_provided' }
     : false;

@@ -1,12 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { useRecoilValue } from 'recoil';
 import DialogTemplate from '../../ui/DialogTemplate';
 import { Dialog } from '../../ui/Dialog.tsx';
 import { Input } from '../../ui/Input.tsx';
 import { Label } from '../../ui/Label.tsx';
 import { cn } from '~/utils/';
-import cleanupPreset from '~/utils/cleanupPreset';
-import { useCreatePresetMutation } from '~/data-provider';
+import FileUpload from '../NewConversationMenu/FileUpload';
 import store from '~/store';
 
 const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
@@ -54,6 +52,30 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
         </a>
         . Copy access token.
       </small>
+    ),
+    google: (
+      <small className="break-all text-gray-600">
+        You need to{' '}
+        <a
+          target="_blank"
+          href="https://console.cloud.google.com/vertex-ai"
+          rel="noreferrer"
+          className="text-blue-600 underline"
+        >
+          Enable Vertex AI
+        </a>{' '}
+        API on Google Cloud, then{' '}
+        <a
+          target="_blank"
+          href="https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts/create?walkthrough_id=iam--create-service-account#step_index=1"
+          rel="noreferrer"
+          className="text-blue-600 underline"
+        >
+          Create a Service Account
+        </a>
+        . Make sure to click 'Create and Continue' to give at least the 'Vertex AI User' role. Lastly, create
+        a JSON key to import here.
+      </small>
     )
   };
 
@@ -73,19 +95,61 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
               Token Name
               <br />
             </Label>
-            <Input
-              id="chatGptLabel"
-              value={token || ''}
-              onChange={e => setToken(e.target.value || '')}
-              placeholder="Set the token."
-              className={cn(
-                defaultTextProps,
-                'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
-              )}
-            />
-            <small className="text-red-600">
-              Your token will be sent to the server, but not saved.
-            </small>
+            {endpoint === 'google' ? (
+              <FileUpload
+              id="googleKey"
+                className="w-full"
+                text="Import Service Account JSON Key"
+                successText="Successfully Imported Service Account JSON Key"
+                invalidText="Invalid Service Account JSON Key, Did you import the correct file?"
+                validator={credentials => {
+                  if (!credentials) {
+                    return false;
+                  }
+
+                  if (
+                    !credentials.client_email ||
+                    typeof credentials.client_email !== 'string' ||
+                    credentials.client_email.length <= 2
+                  ) {
+                    return false;
+                  }
+
+                  if (
+                    !credentials.project_id ||
+                    typeof credentials.project_id !== 'string' ||
+                    credentials.project_id.length <= 2
+                  ) {
+                    return false;
+                  }
+
+                  if (
+                    !credentials.private_key ||
+                    typeof credentials.private_key !== 'string' ||
+                    credentials.private_key.length <= 600
+                  ) {
+                    return false;
+                  }
+
+                  return true;
+                }}
+                onFileSelected={data => {
+                  setToken(JSON.stringify(data));
+                }}
+              />
+            ) : (
+              <Input
+                id="chatGptLabel"
+                value={token || ''}
+                onChange={e => setToken(e.target.value || '')}
+                placeholder="Set the token."
+                className={cn(
+                  defaultTextProps,
+                  'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                )}
+              />
+            )}
+            <small className="text-red-600">Your token will be sent to the server, but not saved.</small>
             {helpText?.[endpoint]}
           </div>
         }

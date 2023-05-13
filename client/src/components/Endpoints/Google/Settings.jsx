@@ -249,8 +249,8 @@ function Settings(props) {
               <Slider
                 disabled={readonly}
                 value={[maxOutputTokens]}
-                onValueChange={value => setMaxTokens(value[0])}
-                doubleClickHandler={() => setMaxTokens(0)}
+                onValueChange={value => setMaxOutputTokens(value[0])}
+                doubleClickHandler={() => setMaxOutputTokens(0)}
                 max={1024}
                 min={1}
                 step={1}
