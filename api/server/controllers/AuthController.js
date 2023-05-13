@@ -4,7 +4,7 @@ const {
   registerUser,
   requestPasswordReset,
   resetPassword,
-} = require("../services/auth.service");
+} = require("../services/AuthService");
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -48,7 +48,7 @@ const logoutController = async (req, res) => {
   }
   catch (err) {
     console.log(err);
-    return res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message });
   }
 }
 
@@ -73,12 +73,12 @@ const registrationController = async (req, res) => {
   }
   catch (err) {
     console.log(err);
-    return res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
 const getUserController = async (req, res) => {
-  return res.status(200).send(req.user);
+  res.status(200).send(req.user);
 };
 
 const resetPasswordRequestController = async (req, res) => {
