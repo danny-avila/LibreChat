@@ -41,7 +41,7 @@
 ##
 
 <details open>
-<summary><strong>2023-05-11</strong></summary>
+<summary><strong>2023-05-13</strong></summary>
  
 **Released [v0.4.3](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.3) which now supports Google's PaLM 2!**
   
