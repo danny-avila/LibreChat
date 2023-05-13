@@ -7,7 +7,7 @@ import ExportModel from './ExportModel';
 
 import store from '~/store';
 
-export default function ExportConversation() {
+export default function ExportConversation({ onClick }) {
   const [open, setOpen] = useState(false);
 
   const conversation = useRecoilValue(store.conversation) || {};
@@ -17,7 +17,8 @@ export default function ExportConversation() {
     conversation?.conversationId !== 'new' &&
     conversation?.conversationId !== 'search';
 
-  const clickHandler = () => {
+  const clickHandler = (e) => {
+    if (onClick) onClick(e);
     if (exportable) setOpen(true);
   };
 
@@ -25,7 +26,7 @@ export default function ExportConversation() {
     <>
       <button
         className={cn(
-          'flex items-center gap-3 rounded-md py-3 px-3 text-sm transition-colors duration-200 hover:bg-gray-500/10',
+          'flex py-3 px-3 items-center gap-3 transition-colors duration-200 text-white cursor-pointer text-sm hover:bg-gray-700 w-full',
           exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-gray-400'
         )}
         onClick={clickHandler}

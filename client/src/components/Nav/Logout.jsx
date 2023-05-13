@@ -2,17 +2,18 @@ import React from 'react';
 import LogOutIcon from '../svg/LogOutIcon';
 import { useAuthContext } from '~/hooks/AuthContext';
 
-export default function Logout() {
+export default function Logout({ onClick }) {
   const { user, logout } = useAuthContext();
 
-  const handleLogout = () => {
+  const handleLogout = (e) => {
+    if (onClick) onClick(e);
     logout()
     window.location.reload();
   };
 
   return (
     <button
-      className="flex cursor-pointer items-center gap-3 rounded-md py-3 px-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10"
+      className="flex py-3 px-3 items-center gap-3 transition-colors duration-200 text-white cursor-pointer text-sm hover:bg-gray-700 w-full"
       onClick={handleLogout}
     >
       <LogOutIcon />

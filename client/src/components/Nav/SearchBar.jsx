@@ -2,7 +2,7 @@ import { Search } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import store from '~/store';
 
-export default function SearchBar({ clearSearch }) {
+export default function SearchBar({ clearSearch, onClick }) {
 
   const [searchQuery, setSearchQuery] = useRecoilState(store.searchQuery);
 
@@ -23,6 +23,7 @@ export default function SearchBar({ clearSearch }) {
         value={searchQuery}
         onChange={e => setSearchQuery(e.target.value)}
         placeholder="Search messages"
+        onClick={e => onClick && onClick(e)}
         onKeyUp={handleKeyUp}
       />
     </div>
