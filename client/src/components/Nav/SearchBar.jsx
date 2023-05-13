@@ -2,11 +2,11 @@ import { Search } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import store from '~/store';
 
-export default function SearchBar({ clearSearch, onClick }) {
+export default function SearchBar({ clearSearch }) {
 
   const [searchQuery, setSearchQuery] = useRecoilState(store.searchQuery);
 
-  const handleKeyUp = e => {
+  const handleKeyUp = () => {
     const { value } = e.target;
     if (e.keyCode === 8 && value === '') {
       setSearchQuery('');
@@ -23,7 +23,6 @@ export default function SearchBar({ clearSearch, onClick }) {
         value={searchQuery}
         onChange={e => setSearchQuery(e.target.value)}
         placeholder="Search messages"
-        onClick={e => onClick && onClick(e)}
         onKeyUp={handleKeyUp}
       />
     </div>

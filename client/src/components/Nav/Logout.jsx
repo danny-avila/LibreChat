@@ -2,11 +2,10 @@ import React from 'react';
 import LogOutIcon from '../svg/LogOutIcon';
 import { useAuthContext } from '~/hooks/AuthContext';
 
-export default function Logout({ onClick }) {
+export default function Logout() {
   const { user, logout } = useAuthContext();
 
-  const handleLogout = (e) => {
-    if (onClick) onClick(e);
+  const handleLogout = () => {
     logout()
     window.location.reload();
   };
