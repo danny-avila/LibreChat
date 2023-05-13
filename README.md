@@ -43,13 +43,32 @@
 <details open>
 <summary><strong>2023-05-11</strong></summary>
  
-**Released [v0.4.2](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.2)**
+**Released [v0.4.3](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.3) which now supports Google's PaLM 2!**
+  
+  ![image](https://github.com/danny-avila/chatgpt-clone/assets/110412045/ec5e8ff3-6c3a-4f25-9687-d8558435d094)
  
-ChatGPT-Clone received some important upgrades and improvements. A new contributor, [@qcgm1978](https://github.com/qcgm1978), makes their first contribution by adding a null check for adaptiveCards variable. Additionally, support for titling conversations with the Azure endpoint is added by [@danny-avila](https://github.com/danny-avila) in PR [#234](https://github.com/danny-avila/chatgpt-clone/pull/234). In PR [#235](https://github.com/danny-avila/chatgpt-clone/pull/235), [@danny-avila](https://github.com/danny-avila) also makes some necessary fixes to titling, quotation marks, and endpoints being unavailable with only the Azure key provided. The logging system is now powered by Pino and sanitization, thanks to [@danorlando](https://github.com/danorlando) in PR [#227](https://github.com/danny-avila/chatgpt-clone/pull/227). To bulletproof the Docker container, the .dockerignore file is updated to include the client/.env file by [@danny-avila](https://github.com/danny-avila) in PR [#241](https://github.com/danny-avila/chatgpt-clone/pull/241). This issue was brought to our attention on discord.
+**How to Setup PaLM 2 (via Google Cloud Vertex AI API)**
 
-There is active work on the new Plugins feature, converting the frontend to Typescript, and looking to integrate Palm2, google's new generative AI accessible via API, to the project as a new endpoint.
+- Enable the Vertex AI API on Google Cloud:
+- - https://console.cloud.google.com/vertex-ai
+- Create a Service Account:
+- - https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts/create?walkthrough_id=iam--create-service-account#step_index=1
+- Make sure to click 'Create and Continue' to give at least the 'Vertex AI User' role.
+- Create a JSON key, rename as 'auth.json' and save it in /api/data/.
 
-You can check the full changelog in between v0.4.1 and v0.4.2 [here](https://github.com/danny-avila/chatgpt-clone/compare/v0.4.1...v0.4.2).
+**Alternatively**
+
+- In your ./api/.env file, set PALM_KEY as "user_provided" to allow the user to provide a Service Account key JSON from the UI.
+- They will follow the steps above except for renaming the file, simply importing the JSON when prompted.
+- The key is sent to the server but never saved except in your local storage
+
+**Note:**
+
+- Vertex AI does not (yet) support response streaming for text generations, so response may seem to take long when generating a lot of text.
+- Text streaming is simulated
+
+
+You can check the full changelog in between v0.4.2 and v0.4.3 [here](https://github.com/danny-avila/chatgpt-clone/compare/v0.4.2...v0.4.3).
 
 ⚠️ **IMPORTANT :** Since V0.4.0 You should register and login with a local account (email and password) for the first time sign-up. if you use login for the first time with a social login account (eg. Google, facebook, etc.), the conversations and presets that you created before the user system was implemented will NOT be migrated to that account.
 
@@ -133,3 +152,6 @@ For new features, components, or extensions, please open an issue and discuss be
 This project is licensed under the [MIT License](LICENSE.md).
 ##
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=danny-avila/chatgpt-clone&type=Date)](https://star-history.com/#danny-avila/chatgpt-clone&Date)
