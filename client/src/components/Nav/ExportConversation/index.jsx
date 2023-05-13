@@ -7,7 +7,7 @@ import ExportModel from './ExportModel';
 
 import store from '~/store';
 
-export default function ExportConversation({ onClick }) {
+export default function ExportConversation() {
   const [open, setOpen] = useState(false);
 
   const conversation = useRecoilValue(store.conversation) || {};
@@ -18,7 +18,6 @@ export default function ExportConversation({ onClick }) {
     conversation?.conversationId !== 'search';
 
   const clickHandler = (e) => {
-    if (onClick) onClick(e);
     if (exportable) setOpen(true);
   };
 

@@ -5,12 +5,12 @@ import { Dialog, DialogTrigger } from '../ui/Dialog.tsx';
 import DialogTemplate from '../ui/DialogTemplate';
 import { useClearConversationsMutation } from '~/data-provider';
 
-export default function ClearConvos({ onClick }) {
+export default function ClearConvos() {
   const { newConversation } = store.useConversation();
   const { refreshConversations } = store.useConversations();
   const clearConvosMutation = useClearConversationsMutation();
 
-  const clickHandler = e => {
+  const clickHandler = () => {
     console.log('Clearing conversations...');
     clearConvosMutation.mutate();
   };
@@ -24,7 +24,7 @@ export default function ClearConvos({ onClick }) {
 
   return (
     <Dialog>
-      <DialogTrigger asChild onClick={onClick}>
+      <DialogTrigger asChild>
         <button
           className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
         >

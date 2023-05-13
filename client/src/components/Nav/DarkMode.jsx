@@ -3,11 +3,10 @@ import DarkModeIcon from '../svg/DarkModeIcon';
 import LightModeIcon from '../svg/LightModeIcon';
 import { ThemeContext } from '~/hooks/ThemeContext';
 
-export default function DarkMode({ onClick }) {
+export default function DarkMode() {
   const { theme, setTheme } = useContext(ThemeContext);
 
-  const clickHandler = e => {
-    if (onClick) onClick(e);
+  const clickHandler = () => {
     setTheme(theme === 'dark' ? 'light' : 'dark');
   };
   const mode = theme === 'dark' ? 'Light mode' : 'Dark mode';

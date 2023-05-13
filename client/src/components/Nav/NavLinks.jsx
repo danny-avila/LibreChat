@@ -7,6 +7,7 @@ import Logout from './Logout';
 import ExportConversation from './ExportConversation';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { cn } from '~/utils/';
+import DotsIcon from '../svg/DotsIcon';
 
 export default function NavLinks({ clearSearch, isSearchEnabled }) {
   const { user, logout } = useAuthContext();
@@ -27,7 +28,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
               <div class="relative flex">
                 <img
                   class="rounded-sm"
-                  src={user?.avatar || '/images/default-avatar.png'}
+                  src={user?.avatar || `https://avatars.dicebear.com/api/initials/${user?.name}.svg`}
                   alt=""
                 />
               </div>
@@ -35,6 +36,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
             <div class="grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-white">
               {user?.name || 'USER'}
             </div>
+            <DotsIcon />
           </Menu.Button>
 
           <Transition
@@ -48,25 +50,16 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
           >
             <Menu.Items className="absolute bottom-full left-0 z-20 mb-2 w-full translate-y-0 overflow-hidden rounded-md bg-[#050509] py-1.5 opacity-100 outline-none">
               <Menu.Item>
-                {({ close }) => (
-                  <>
-                    {!!isSearchEnabled && (
-                      <SearchBar
-                        clearSearch={clearSearch}
-                        onClick={close}
-                      />
-                    )}
-                  </>
-                )}
+                {({}) => <>{!!isSearchEnabled && <SearchBar clearSearch={clearSearch} />}</>}
               </Menu.Item>
-              <Menu.Item>{({ close }) => <ExportConversation onClick={close} />}</Menu.Item>
+              <Menu.Item>{({}) => <ExportConversation />}</Menu.Item>
 
               <div
                 class="my-1.5 h-px bg-white/20"
                 role="none"
               ></div>
-              <Menu.Item>{({ close }) => <DarkMode onClick={close} />}</Menu.Item>
-              <Menu.Item>{({ close }) => <ClearConvos onClick={close} />}</Menu.Item>
+              <Menu.Item>{({}) => <DarkMode />}</Menu.Item>
+              <Menu.Item>{({}) => <ClearConvos />}</Menu.Item>
 
               <div
                 class="my-1.5 h-px bg-white/20"
