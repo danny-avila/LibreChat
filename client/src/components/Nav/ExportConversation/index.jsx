@@ -17,7 +17,7 @@ export default function ExportConversation() {
     conversation?.conversationId !== 'new' &&
     conversation?.conversationId !== 'search';
 
-  const clickHandler = (e) => {
+  const clickHandler = () => {
     if (exportable) setOpen(true);
   };
 
