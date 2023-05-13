@@ -6,9 +6,7 @@ import { ThemeContext } from '~/hooks/ThemeContext';
 export default function DarkMode() {
   const { theme, setTheme } = useContext(ThemeContext);
 
-  const clickHandler = () => {
-    setTheme(theme === 'dark' ? 'light' : 'dark');
-  };
+  const clickHandler = () => setTheme(theme === 'dark' ? 'light' : 'dark');
   const mode = theme === 'dark' ? 'Light mode' : 'Dark mode';
 
   return (

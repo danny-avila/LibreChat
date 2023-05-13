@@ -6,7 +6,7 @@ export default function SearchBar({ clearSearch }) {
 
   const [searchQuery, setSearchQuery] = useRecoilState(store.searchQuery);
 
-  const handleKeyUp = () => {
+  const handleKeyUp = e => {
     const { value } = e.target;
     if (e.keyCode === 8 && value === '') {
       setSearchQuery('');
