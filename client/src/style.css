@@ -7,7 +7,7 @@
   font-family: Signifier;
   font-style: normal;
   font-weight: 400;
-  src: url("../public/fonts/signifier-light.woff2") format("woff2")
+  src: url("../fonts/signifier-light.woff2") format("woff2")
 }
 
 @font-face {
@@ -15,7 +15,7 @@
   font-family: Signifier;
   font-style: italic;
   font-weight: 400;
-  src: url("../public/fonts/signifier-light-italic.woff2") format("woff2")
+  src: url("../fonts/signifier-light-italic.woff2") format("woff2")
 }
 
 @font-face {
@@ -23,7 +23,7 @@
   font-family: Signifier;
   font-style: normal;
   font-weight: 700;
-  src: url("../public/fonts/signifier-bold.woff2") format("woff2")
+  src: url("../fonts/signifier-bold.woff2") format("woff2")
 }
 
 @font-face {
@@ -31,7 +31,7 @@
   font-family: Signifier;
   font-style: italic;
   font-weight: 700;
-  src: url("../public/fonts/signifier-bold-italic.woff2") format("woff2")
+  src: url("../fonts/signifier-bold-italic.woff2") format("woff2")
 }
 
 @font-face {
@@ -39,7 +39,7 @@
   font-family: Söhne;
   font-style: normal;
   font-weight: 400;
-  src: url("../public/fonts/soehne-buch.woff2") format("woff2")
+  src: url("../fonts/soehne-buch.woff2") format("woff2")
 }
 
 @font-face {
@@ -47,7 +47,7 @@
   font-family: Söhne;
   font-style: italic;
   font-weight: 400;
-  src: url("../public/fonts/soehne-buch-kursiv.woff2") format("woff2")
+  src: url("../fonts/soehne-buch-kursiv.woff2") format("woff2")
 }
 
 @font-face {
@@ -55,7 +55,7 @@
   font-family: Söhne;
   font-style: normal;
   font-weight: 500;
-  src: url("../public/fonts/soehne-kraftig.woff2") format("woff2")
+  src: url("../fonts/soehne-kraftig.woff2") format("woff2")
 }
 
 @font-face {
@@ -63,7 +63,7 @@
   font-family: Söhne;
   font-style: italic;
   font-weight: 500;
-  src: url("../public/fonts/soehne-kraftig-kursiv.woff2") format("woff2")
+  src: url("../fonts/soehne-kraftig-kursiv.woff2") format("woff2")
 }
 
 @font-face {
@@ -71,7 +71,7 @@
   font-family: Söhne;
   font-style: normal;
   font-weight: 600;
-  src: url("../public/fonts/soehne-halbfett.woff2") format("woff2")
+  src: url("../fonts/soehne-halbfett.woff2") format("woff2")
 }
 
 @font-face {
@@ -79,7 +79,7 @@
   font-family: Söhne;
   font-style: italic;
   font-weight: 600;
-  src: url("../public/fonts/soehne-halbfett-kursiv.woff2") format("woff2")
+  src: url("../fonts/soehne-halbfett-kursiv.woff2") format("woff2")
 }
 
 @font-face {
@@ -87,7 +87,7 @@
   font-family: Söhne Mono;
   font-style: normal;
   font-weight: 400;
-  src: url("../public/fonts/soehne-mono-buch.woff2") format("woff2")
+  src: url("../fonts/soehne-mono-buch.woff2") format("woff2")
 }
 
 @font-face {
@@ -95,7 +95,7 @@
   font-family: Söhne Mono;
   font-style: normal;
   font-weight: 700;
-  src: url("../public/fonts/soehne-mono-halbfett.woff2") format("woff2")
+  src: url("../fonts/soehne-mono-halbfett.woff2") format("woff2")
 }
 
 @font-face {
@@ -103,7 +103,7 @@
   font-family: Söhne Mono;
   font-style: italic;
   font-weight: 400;
-  src: url("../public/fonts/soehne-mono-buch-kursiv.woff2") format("woff2")
+  src: url("../fonts/soehne-mono-buch-kursiv.woff2") format("woff2")
 }
 
 /* * {
