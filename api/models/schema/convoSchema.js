@@ -20,6 +20,8 @@ const convoSchema = mongoose.Schema(
       default: null
     },
     messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
+    // google only
+    examples: [{ type: mongoose.Schema.Types.Mixed }],
     ...conversationPreset,
     // for bingAI only
     jailbreakConversationId: {

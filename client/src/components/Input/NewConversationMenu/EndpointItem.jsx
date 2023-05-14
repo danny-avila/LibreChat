@@ -7,6 +7,14 @@ import SetTokenDialog from '../SetTokenDialog';
 
 import store from '../../../store';
 
+const alternateName = {
+  openAI: 'OpenAI',
+  azureOpenAI: 'Azure OpenAI',
+  bingAI: 'Bing',
+  chatGPTBrowser: 'ChatGPT',
+  google: 'PaLM',
+}
+
 export default function ModelItem({ endpoint, value, onSelect }) {
   const [setTokenDialogOpen, setSetTokenDialogOpen] = useState(false);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
@@ -28,7 +36,7 @@ export default function ModelItem({ endpoint, value, onSelect }) {
         className="group dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800"
       >
         {icon}
-        {endpoint}
+        {alternateName[endpoint] || endpoint}
         {!!['azureOpenAI', 'openAI'].find(e => e === endpoint) && <sup>$</sup>}
         <div className="flex w-4 flex-1" />
         {isuserProvide ? (

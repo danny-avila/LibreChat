@@ -8,6 +8,7 @@ export default function createPayload(submission: TSubmission) {
   const endpointUrlMap = {
     azureOpenAI: '/api/ask/azureOpenAI',
     openAI: '/api/ask/openAI',
+    google: '/api/ask/google',
     bingAI: '/api/ask/bingAI',
     chatGPTBrowser: '/api/ask/chatGPTBrowser'
   };
