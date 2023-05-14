@@ -104,10 +104,9 @@ const registerUser = async (user) => {
           newUser.save();
         });
       });
-      console.log('newUser', newUser)
       if (isFirstRegisteredUser) {
+        console.log('Migrating data to first registered user...');
         migrateDataToFirstUser(newUser);
-        // console.log(migrate);
       }
       response = { status: 200, user: newUser };
       return response;

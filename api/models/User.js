@@ -65,10 +65,9 @@ const userSchema = mongoose.Schema(
       unique: true,
       sparse: true
     },
-    facebookId: {
-      type: String,
-      unique: true,
-      sparse: true
+    plugins: {
+      type: Array,
+      default: []
     },
     refreshToken: {
       type: [Session]
@@ -95,6 +94,7 @@ userSchema.methods.toJSON = function () {
     avatar: this.avatar,
     role: this.role,
     emailVerified: this.emailVerified,
+    plugins: this.plugins,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt
   };

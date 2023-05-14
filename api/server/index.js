@@ -40,6 +40,7 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use('/oauth', routes.oauth)
   // api endpoint
   app.use('/api/auth', routes.auth);
+  app.use('/api/user', routes.user);
   app.use('/api/search', routes.search);
   app.use('/api/ask', routes.ask);
   app.use('/api/messages', routes.messages);

@@ -2,7 +2,6 @@ const express = require('express');
 const {
   resetPasswordRequestController,
   resetPasswordController,
-  getUserController,
   loginController,
   logoutController,
   refreshController,
@@ -14,7 +13,6 @@ const requireLocalAuth = require('../../middleware/requireLocalAuth');
 const router = express.Router();
 
 //Local
-router.get('/user', requireJwtAuth, getUserController);
 router.post('/logout', requireJwtAuth, logoutController);
 router.post('/login', requireLocalAuth, loginController);
 router.post('/refresh', requireJwtAuth, refreshController);

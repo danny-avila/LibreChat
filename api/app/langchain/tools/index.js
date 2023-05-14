@@ -14,48 +14,7 @@ const SelfReflectionTool = require('./selfReflection');
 const OpenAICreateImage = require('./openaiCreateImage');
 const StableDiffusionAPI = require('./stablediffusion');
 const WolframAlphaAPI = require('./wolfram');
-const availableTools = [
-  {
-    name: 'Wolfram',
-    value: 'wolfram',
-    icon: 'https://www.wolframcdn.com/images/icons/Wolfram.png'
-  },
-  {
-    name: 'Calculator',
-    value: 'calculator',
-    icon: 'https://i.imgur.com/RHsSG5h.png'
-  },
-  {
-    name: 'Google',
-    value: 'google',
-    icon: 'https://i.imgur.com/SMmVkNB.png'
-  },
-  {
-    name: 'Browser',
-    value: 'browser',
-    icon: null
-  },
-  {
-    name: 'Serpapi',
-    value: 'serpapi',
-    icon: 'https://i.imgur.com/5yQHUz4.png'
-  },
-  {
-    name: 'DALL-E',
-    value: 'dall-e',
-    icon: 'https://i.imgur.com/u2TzXzH.png'
-  },
-  {
-    name: 'Stable Diffusion',
-    value: 'stable-diffusion',
-    icon: 'https://i.imgur.com/Yr466dp.png'
-  },
-  {
-    name: 'Zapier',
-    value: 'zapier',
-    icon: 'https://cdn.zappy.app/8f853364f9b383d65b44e184e04689ed.png'
-  }
-];
+const availableTools = require('./manifest.json');
 
 const validateTools = (tools) => {
   const validTools = new Set(availableTools.map((tool) => tool.value)); // removed 'plugins'

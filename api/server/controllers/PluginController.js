@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const getAvailableToolsController = async (req, res) => {
+const getAvailablePluginsController = async (req, res) => {
   try {
     fs.readFile(
       path.join(__dirname, '..', '..', 'app', 'langchain', 'tools', 'manifest.json'),
@@ -22,5 +22,5 @@ const getAvailableToolsController = async (req, res) => {
 };
 
 module.exports = {
-  getAvailableToolsController
+  getAvailablePluginsController
 };
