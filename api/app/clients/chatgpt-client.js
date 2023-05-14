@@ -38,7 +38,7 @@ const askClient = async ({
     chatGptLabel,
     promptPrefix,
     proxy: process.env.PROXY || null,
-    debug: true
+    // debug: true
   };
 
   let apiKey = process.env.OPENAI_KEY;
