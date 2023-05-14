@@ -24,16 +24,16 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
               open ? 'bg-gray-800' : ''
             )}
           >
-            <div class="-ml-0.5 h-5 w-5 flex-shrink-0">
-              <div class="relative flex">
+            <div className="-ml-0.5 h-5 w-5 flex-shrink-0">
+              <div className="relative flex">
                 <img
-                  class="rounded-sm"
+                  className="rounded-sm"
                   src={user?.avatar || `https://avatars.dicebear.com/api/initials/${user?.name}.svg`}
                   alt=""
                 />
               </div>
             </div>
-            <div class="grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-white">
+            <div className="grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-white">
               {user?.name || 'USER'}
             </div>
             <DotsIcon />
@@ -55,14 +55,14 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
               <Menu.Item>{({}) => <ExportConversation />}</Menu.Item>
 
               <div
-                class="my-1.5 h-px bg-white/20"
+                className="my-1.5 h-px bg-white/20"
                 role="none"
               ></div>
               <Menu.Item>{({}) => <DarkMode />}</Menu.Item>
               <Menu.Item>{({}) => <ClearConvos />}</Menu.Item>
 
               <div
-                class="my-1.5 h-px bg-white/20"
+                className="my-1.5 h-px bg-white/20"
                 role="none"
               ></div>
               <Menu.Item>
