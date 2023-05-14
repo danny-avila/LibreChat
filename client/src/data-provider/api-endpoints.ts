@@ -1,5 +1,9 @@
 export const user = () => {
-  return `/api/auth/user`;
+  return `/api/user`;
+};
+
+export const userPlugins = () => {
+  return `/api/user/plugins`;
 };
 
 export const messages = (id: string) => {

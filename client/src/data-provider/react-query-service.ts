@@ -287,3 +287,16 @@ export const useAvailablePluginsQuery = (): QueryObserverResult<t.TPlugin[]> => 
     refetchOnMount: false,
   });
 }
+
+export const useUpdateUserPluginsMutation = (): UseMutationResult<t.TUser, unknown, t.TUpdateUserPlugins, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TUpdateUserPlugins) =>
+      dataService.updateUserPlugins(payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.user]);
+      },
+    }
+  );
+}
