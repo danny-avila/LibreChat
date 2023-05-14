@@ -1,6 +1,6 @@
 import React from 'react';
 import Clipboard from '../svg/Clipboard';
-import ClipboardCheck from '../svg/ClipboardCheck';
+import CheckMark from '../svg/CheckMark';
 import EditIcon from '../svg/EditIcon';
 import RegenerateIcon from '../svg/RegenerateIcon';
 
@@ -65,7 +65,7 @@ export default function HoverButtons({
         type="button"
         title={isCopied ? 'Copied to clipboard' : 'Copy to clipboard'}
       >
-        {isCopied ? <ClipboardCheck /> : <Clipboard />}
+        {isCopied ? <CheckMark /> : <Clipboard />}
       </button>
     </div>
   );
