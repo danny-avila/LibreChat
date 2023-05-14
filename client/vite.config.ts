@@ -11,11 +11,11 @@ export default defineConfig({
     strictPort: false,
     proxy: {
       '/api': {
-        target: 'https://chatgpt-clone-client-4sa6.vercel.app',
+        target: 'https://52yh43-3080.csb.app',
         changeOrigin: true
       },
       '/auth': {
-        target: 'https://chatgpt-clone-client-4sa6.vercel.app',
+        target: 'https://52yh43-3080.csb.app',
         changeOrigin: true
       },
       '/oauth': {
