@@ -30,7 +30,7 @@ module.exports = {
       return { message: 'Error saving conversation' };
     }
   },
-  getConvosByPage: async (user, pageNumber = 1, pageSize = 12) => {
+  getConvosByPage: async (user, pageNumber = 1, pageSize = 14) => {
     try {
       const totalConvos = (await Conversation.countDocuments({ user })) || 1;
       const totalPages = Math.ceil(totalConvos / pageSize);
@@ -45,7 +45,7 @@ module.exports = {
       return { message: 'Error getting conversations' };
     }
   },
-  getConvosQueried: async (user, convoIds, pageNumber = 1, pageSize = 12) => {
+  getConvosQueried: async (user, convoIds, pageNumber = 1, pageSize = 14) => {
     try {
       if (!convoIds || convoIds.length === 0) {
         return { conversations: [], pages: 1, pageNumber, pageSize };
@@ -57,7 +57,7 @@ module.exports = {
       // will handle a syncing solution soon
       const deletedConvoIds = [];
 
-      convoIds.forEach((convo) =>
+      convoIds.forEach(convo =>
         promises.push(
           Conversation.findOne({
             user,
@@ -120,7 +120,7 @@ module.exports = {
   },
   deleteConvos: async (user, filter) => {
     let toRemove = await Conversation.find({ ...filter, user }).select('conversationId');
-    const ids = toRemove.map((instance) => instance.conversationId);
+    const ids = toRemove.map(instance => instance.conversationId);
     let deleteCount = await Conversation.deleteMany({ ...filter, user }).exec();
     deleteCount.messages = await deleteMessages({ conversationId: { $in: ids } });
     return deleteCount;
