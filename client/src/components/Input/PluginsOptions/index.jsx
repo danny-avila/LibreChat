@@ -1,26 +1,28 @@
 import { useState, useEffect } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { Settings2, ChevronDownIcon } from 'lucide-react';
-import SelectDropDown from '../../ui/SelectDropDown';
-import MultiSelectDropDown from '../../ui/MultiSelectDropDown';
+import { SelectDropDown, MultiSelectDropDown, Button } from '~/components';
 import EndpointOptionsPopover from '../../Endpoints/EndpointOptionsPopover';
 import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
-import { Button } from '../../ui/Button.tsx';
 import Settings from '../../Endpoints/OpenAI/Settings.jsx';
 import { cn } from '~/utils/';
 import store from '~/store';
 import { PluginStoreDialog } from '~/components';
-
+import { useAuthContext } from '~/hooks/AuthContext';
+import { useAvailablePluginsQuery } from '~/data-provider';
 
 function PluginsOptions() {
+  const { data: allPlugins } = useAvailablePluginsQuery();
   const [advancedMode, setAdvancedMode] = useState(false);
   const [showSavePresetDialog, setShowSavePresetDialog] = useState(false);
   const [showPluginStoreDialog, setShowPluginStoreDialog] = useState(false);
+  const [availableTools, setAvailableTools] = useState([]);
   const [visibile, setVisibility] = useState(true);
   const [opacityClass, setOpacityClass] = useState('full-opacity');
   const messagesTree = useRecoilValue(store.messagesTree);
   const [conversation, setConversation] = useRecoilState(store.conversation) || {};
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
+  const { user } = useAuthContext();
 
   useEffect(() => {
     if (advancedMode) {
@@ -31,6 +33,20 @@ function PluginsOptions() {
       setOpacityClass('full-opacity');
     }
   }, [messagesTree]);
+
+  useEffect(() => {
+    if (allPlugins && user) {
+      const pluginStore = { name: 'Plugin store', pluginKey: 'pluginStore', isButton: true };
+      if (!user.plugins || user.plugins.length === 0) {
+        setAvailableTools([pluginStore]);
+        return;
+      }
+      const tools = [...user.plugins].map(el => {
+        return allPlugins.find(plugin => plugin.pluginKey === el);
+      });
+      setAvailableTools([...tools, pluginStore]);
+    }
+  }, [allPlugins, user]);
   
   const { endpoint, conversationId } = conversation;
   const { model, temperature, top_p, presence_penalty, frequency_penalty } = conversation;
@@ -41,25 +57,23 @@ function PluginsOptions() {
   // if (conversationId !== 'new') return null; // --> allows to change options during conversation
 
   const models = endpointsConfig?.['gptPlugins']?.['availableModels'] || [];
-  const availableTools = endpointsConfig?.['gptPlugins']?.['availableTools'] || [];
-  const pluginStore = { name: 'Plugin store', value: 'pluginStore', isButton: true };
-  const tools = [...availableTools, pluginStore ];
-
+  // const availableTools = endpointsConfig?.['gptPlugins']?.['availableTools'] || [];
+    
   const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
-
+  
   const switchToSimpleMode = () => {
     setAdvancedMode(false);
   };
-
+  
   const saveAsPreset = () => {
     setShowSavePresetDialog(true);
   };
-
+  
   function checkIfSelected(value) {
     if (!conversation.tools) return false;
     return conversation.tools.find(el => el.value === value) ? true : false;
   }
-
+  
   const setOption = param => newValue => {
     let update = {};
     update[param] = newValue;
@@ -68,7 +82,7 @@ function PluginsOptions() {
       ...update
     }));
   };
-
+  
   const setTools = newValue => {
     if(newValue === 'pluginStore') {
       setShowPluginStoreDialog(true);
@@ -77,9 +91,9 @@ function PluginsOptions() {
     let update = {};
     let current = conversation.tools || [];
     let isSelected = checkIfSelected(newValue);
-    let tool = availableTools[availableTools.findIndex(el => el.value === newValue)];
+    let tool = availableTools[availableTools.findIndex(el => el.pluginKey === newValue)];
     if (isSelected) {
-      update.tools = current.filter(el => el.value !== newValue);
+      update.tools = current.filter(el => el.pluginKey !== newValue);
     } else {
       update.tools = [...current, tool];
     }
@@ -130,12 +144,10 @@ function PluginsOptions() {
         <MultiSelectDropDown
           value={conversation.tools || []}
           isSelected={checkIfSelected}
-          setValue={setTools}
-          availableValues={tools}
+          setSelected={setTools}
+          availableValues={availableTools}
+          optionValueKey="pluginKey"
           showAbove={true}
-          // showFooterOption={true}
-          // footerOptionName="Plugin store"
-          // onFooterOptionClick={openPluginStore}
           className={cn(cardStyle, 'min-w-60 z-50 w-60', !visibile && 'hidden')}
         />
         <Button

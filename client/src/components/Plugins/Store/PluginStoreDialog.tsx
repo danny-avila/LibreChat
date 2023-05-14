@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Dialog } from '@headlessui/react';
 import { X } from 'lucide-react';
 import { PluginStoreItem, PluginPagination, PluginStoreLinkButton } from '.';
-import { useAvailablePluginsQuery } from '~/data-provider';
+import { useAvailablePluginsQuery, useUpdateUserPluginsMutation, TUpdateUserPlugins } from '~/data-provider';
+import { useAuthContext } from '~/hooks/AuthContext';
 
 type TPluginStoreDialogProps = {
   isOpen: boolean,
@@ -10,17 +11,20 @@ type TPluginStoreDialogProps = {
 };
 
 function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
-  const { data, isLoading } = useAvailablePluginsQuery();
-  const [currentPage, setCurrentPage] = useState<number>(1);
+  const { data } = useAvailablePluginsQuery();
+  const { user } = useAuthContext();
+  const updateUserPlugins = useUpdateUserPluginsMutation<TUpdateUserPlugins>();
+  const [currentPage, setCurrentPage] = useState  <number>(1);
   const [itemsPerPage, setItemsPerPage] = useState<number>(1);
   const [maxPage, setMaxPage] = useState<number>(1);
+  const [userPlugins, setUserPlugins] = useState<string[]>([]);
 
-  const onPluginInstall = (name: string) => {
-    console.log(`Installing ${name}`);
+  const onPluginInstall = (plugin: string) => {
+    updateUserPlugins.mutate({ pluginKey: plugin, action: 'install' });
   };
 
-  const onPluginUninstall = (name: string) => {
-    console.log(`Uninstalling ${name}`);
+  const onPluginUninstall = (plugin: string) => {
+    updateUserPlugins.mutate({ pluginKey: plugin, action: 'uninstall' });
   };
 
   const onInstallUnverifiedPlugin = () => {
@@ -59,16 +63,20 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   }, []);
   
   useEffect(() => {
+    if (user) {
+      if(user.plugins) {
+        setUserPlugins(user.plugins);
+      }
+    }
     if (data) {
       setMaxPage(Math.ceil(data.length / itemsPerPage));
     }
-  }, [data, itemsPerPage]);
+  }, [data, itemsPerPage, user]);
   
   const handleChangePage = (page: number) => {
     setCurrentPage(page);
   };
   
-  console.log('itemsPerPage', itemsPerPage)
   return (
     <Dialog
       open={isOpen}
@@ -107,18 +115,18 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                 ref={gridRef}
                 className="grid grid-cols-1 grid-rows-2 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
               >
-                {isLoading && <div>Loading...</div>}
                 {data &&
                   data
                     .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                     .map((plugin, index) => (
                       <PluginStoreItem
                         key={index}
-                        title={plugin.title}
+                        title={plugin.name}
                         description={plugin.description}
-                        imageSource={plugin.imageSource}
-                        onInstall={() => onPluginInstall(plugin.name)}
-                        onUninstall={() => onPluginUninstall(plugin.name)}
+                        icon={plugin.icon}
+                        isInstalled={userPlugins.includes(plugin.pluginKey)}
+                        onInstall={() => onPluginInstall(plugin.pluginKey)}
+                        onUninstall={() => onPluginUninstall(plugin.pluginKey)}
                       />
                     ))}
               </div>

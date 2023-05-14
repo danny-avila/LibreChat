@@ -5,24 +5,26 @@ import { Listbox, Transition } from '@headlessui/react';
 import { Wrench, ArrowRight } from 'lucide-react';
 import { cn } from '~/utils/';
 
-function SelectDropDown({
+function MultiSelectDropDown({
   title = 'Plugins',
   value,
   disabled,
-  setValue,
+  setSelected,
   availableValues,
   showAbove = false,
   showLabel = true,
   containerClassName,
   isSelected,
   className,
+  optionValueKey = 'value',
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
   const excludeIds = ['select-plugin', 'plugins-label', 'selected-plugins'];
   useOnClickOutside(menuRef, () => setIsOpen(false), excludeIds);
-  const handleSelect = value => {
-    setValue(value);
+  
+  const handleSelect = option => {
+    setSelected(option);
     setIsOpen(true);
   };
 
@@ -123,11 +125,11 @@ function SelectDropDown({
                   className="absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%]"
                 >
                   {availableValues.map((option, i) => {
-                    const selected = isSelected(option.value);
+                    const selected = isSelected(option[optionValueKey]);
                     return (
                       <Listbox.Option
                         key={i}
-                        value={option.value}
+                        value={option[optionValueKey]}
                         className="group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-900 last:border-0 hover:bg-[#ECECF1] dark:border-white/20 dark:text-white dark:hover:bg-gray-700"
                       >
                         <span className="flex items-center gap-1.5 truncate">
@@ -140,7 +142,7 @@ function SelectDropDown({
                               {option.icon ? (
                                 <img
                                   src={option.icon}
-                                  alt={`${option} logo`}
+                                  alt={`${option.name} logo`}
                                   className="h-full w-full rounded-sm bg-white"
                                 />
                               ) : (
@@ -172,42 +174,6 @@ function SelectDropDown({
                       </Listbox.Option>
                     );
                   })}
-                  {/* { showFooterOption && (
-                    <Listbox.Option className="group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-900 last:border-0 hover:bg-[#ECECF1] dark:border-white/20 dark:text-white dark:hover:bg-gray-700">
-                    <span className="flex items-center gap-1.5 truncate">
-                      <span className="h-6 w-6 shrink-0">
-                        <div
-                          className="relative"
-                          style={{ width: '100%', height: '100%' }}
-                        >
-                          {option.icon ? (
-                            <img
-                              src={option.icon}
-                              alt={`${option} logo`}
-                              className="h-full w-full rounded-sm bg-white"
-                            />
-                          ) : (
-                            <Wrench className="h-full w-full rounded-sm bg-white" />
-                          )}
-                          <div className="absolute inset-0 rounded-sm ring-1 ring-inset ring-black/10"></div>
-                        </div>
-                      </span>
-                      <span
-                        className={cn(
-                          'flex h-6 items-center gap-1 text-gray-800 dark:text-gray-100',
-                          selected ? 'font-semibold' : ''
-                        )}
-                      >
-                        {option.name}
-                      </span>
-                      {selected && (
-                        <span className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-800 dark:text-gray-100">
-                          <CheckMark />
-                        </span>
-                      )}
-                    </span>
-                  </Listbox.Option>
-                  )} */}
                 </Listbox.Options>
               </Transition>
             </>
@@ -218,4 +184,4 @@ function SelectDropDown({
   );
 }
 
-export default SelectDropDown;
+export default MultiSelectDropDown;

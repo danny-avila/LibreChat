@@ -1,13 +1,13 @@
 type TPluginStoreItemProps = {
   name: string,
   description: string,
-  imageSource: string,
+  icon: string,
   onInstall: () => void
   onUninstall: () => void
   isInstalled?: boolean,
 }
 
-function PluginStoreItem({ name, description, imageSource, onInstall, onUninstall, isInstalled }: TPluginStoreItemProps) {
+function PluginStoreItem({ name, description, icon, onInstall, onUninstall, isInstalled }: TPluginStoreItemProps) {
 
   const handleClick = () => {
     if (isInstalled) {
@@ -24,7 +24,7 @@ function PluginStoreItem({ name, description, imageSource, onInstall, onUninstal
         <div className="h-[70px] w-[70px] shrink-0">
           <div className="relative h-full w-full">
             <img
-              src={imageSource}
+              src={icon}
               alt={`${name} logo`}
               className="h-full w-full rounded-[5px] bg-white"
             />
@@ -35,9 +35,10 @@ function PluginStoreItem({ name, description, imageSource, onInstall, onUninstal
           <div className="line-clamp-1 max-w-full text-lg leading-5 text-white">
             {name}
           </div>
+          {!isInstalled ? (
           <button className="btn btn-primary relative" onClick={handleClick}>
             <div className="flex w-full items-center justify-center gap-2">
-              {isInstalled ? 'Uninstall' : 'Install'}
+              Install
               <svg
                 stroke="currentColor"
                 fill="none"
@@ -61,7 +62,29 @@ function PluginStoreItem({ name, description, imageSource, onInstall, onUninstal
               </svg>
             </div>
           </button>
-        </div>
+          ) : (
+            <button className="btn relative bg-gray-50 hover:bg-gray-200">
+              <div className="flex w-full gap-2 items-center justify-center">
+                Uninstall
+                <svg 
+                  stroke="currentColor" 
+                  fill="none" 
+                  stroke-Width="2" 
+                  viewBox="0 0 24 24" 
+                  strokeLinecap="round" 
+                  stroke-linejoin="round" 
+                  className="h-4 w-4" 
+                  height="1em" 
+                  width="1em" 
+                  xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+              </div>
+            </button>
+          )};
+       </div>
       </div>
       <div className="line-clamp-3 h-[60px] text-sm text-black/70 dark:text-white/70">
         {description}

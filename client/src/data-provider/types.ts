@@ -199,8 +199,13 @@ export type TResetPassword = {
 }
 
 export type TPlugin = {
-  id: string,
   name: string,
+  pluginKey: string,
   description: string,
-  imageSource: string,
+  icon: string,
+}
+
+export type TUpdateUserPlugins = {
+  pluginKey: string,
+  action: string,
 }
