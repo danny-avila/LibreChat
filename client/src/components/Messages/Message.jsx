@@ -98,8 +98,13 @@ export default function Message({
     if (!isSubmitting && !message?.isCreatedByUser) regenerate(message);
   };
 
-  const copyToClipboard = () => {
+  const copyToClipboard = (setIsCopied) => {
+    setIsCopied(true);
     copy(message?.text);
+
+    setTimeout(() => {
+      setIsCopied(false);
+    }, 3000);
   };
 
   const clickSearchResult = async () => {
@@ -217,7 +222,7 @@ export default function Message({
               conversation={conversation}
               enterEdit={() => enterEdit()}
               regenerate={() => regenerateMessage()}
-              copyToClipboard={() => copyToClipboard()}
+              copyToClipboard={copyToClipboard}
             />
             <SubRow subclasses="switch-container">
               <SiblingSwitch
