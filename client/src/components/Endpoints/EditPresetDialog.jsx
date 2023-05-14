@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import Examples from './Google/Examples.jsx';
+import MessagesSquared from '~/components/svg/MessagesSquared.jsx';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import filenamify from 'filenamify';
 import axios from 'axios';
@@ -7,6 +9,7 @@ import DialogTemplate from '../ui/DialogTemplate';
 import { Dialog, DialogClose, DialogButton } from '../ui/Dialog.tsx';
 import { Input } from '../ui/Input.tsx';
 import { Label } from '../ui/Label.tsx';
+import { Button } from '../ui/Button.tsx';
 import Dropdown from '../ui/Dropdown';
 import { cn } from '~/utils/';
 import cleanupPreset from '~/utils/cleanupPreset';
@@ -18,14 +21,80 @@ import store from '~/store';
 const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
   //   const [title, setTitle] = useState('My Preset');
   const [preset, setPreset] = useState(_preset);
+  const [showExamples, setShowExamples] = useState(false);
   const setPresets = useSetRecoilState(store.presets);
 
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
+  const triggerExamples = () => setShowExamples(prev => !prev);
+
   const setOption = param => newValue => {
     let update = {};
     update[param] = newValue;
+    setPreset(prevState =>
+      cleanupPreset({
+        preset: {
+          ...prevState,
+          ...update
+        },
+        endpointsConfig
+      })
+    );
+  };
+
+  const setExample = (i, type, newValue = null) => {
+    let update = {};
+    let current = preset?.examples.slice() || [];
+    let currentExample = { ...current[i] } || {};
+    currentExample[type] = { content: newValue };
+    current[i] = currentExample;
+    update.examples = current;
+    setPreset(prevState =>
+      cleanupPreset({
+        preset: {
+          ...prevState,
+          ...update
+        },
+        endpointsConfig
+      })
+    );
+  };
+
+  const addExample = () => {
+    let update = {};
+    let current = preset?.examples.slice() || [];
+    current.push({ input: { content: '' }, output: { content: '' } });
+    update.examples = current;
+    setPreset(prevState =>
+      cleanupPreset({
+        preset: {
+          ...prevState,
+          ...update
+        },
+        endpointsConfig
+      })
+    );
+  };
+
+  const removeExample = () => {
+    let update = {};
+    let current = preset?.examples.slice() || [];
+    if (current.length <= 1) {
+      update.examples = [{ input: { content: '' }, output: { content: '' } }];
+      setPreset(prevState =>
+        cleanupPreset({
+          preset: {
+            ...prevState,
+            ...update
+          },
+          endpointsConfig
+        })
+      );
+      return;
+    }
+    current.pop();
+    update.examples = current;
     setPreset(prevState =>
       cleanupPreset({
         preset: {
@@ -111,14 +180,35 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
                   )}
                   containerClassName="flex w-full resize-none"
                 />
+                {preset?.endpoint === 'google' && (
+                  <Button
+                    type="button"
+                    className="ml-1 flex h-auto w-full bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
+                    onClick={triggerExamples}
+                  >
+                    <MessagesSquared className="mr-1 w-[14px]" />
+                    {(showExamples ? 'Hide' : 'Show') + ' Examples'}
+                  </Button>
+                )}
               </div>
             </div>
             <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
             <div className="w-full p-0">
-              <Settings
-                preset={preset}
-                setOption={setOption}
-              />
+              {((preset?.endpoint === 'google' && !showExamples) || preset?.endpoint !== 'google') && (
+                <Settings
+                  preset={_preset}
+                  setOption={setOption}
+                />
+              )}
+              {preset?.endpoint === 'google' && showExamples && (
+                <Examples
+                  examples={preset.examples}
+                  setExample={setExample}
+                  addExample={addExample}
+                  removeExample={removeExample}
+                  edit={true}
+                />
+              )}
             </div>
           </div>
         }
