@@ -95,7 +95,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
 
     try {
       if (!key) {
-        key = require('../../data/auth.json');
+        key = require('../../../data/auth.json');
       }
     } catch (e) {
       console.log("No 'auth.json' file (service account key) found in /api/data/ for PaLM models");
