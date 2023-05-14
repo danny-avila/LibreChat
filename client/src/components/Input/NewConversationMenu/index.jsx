@@ -188,7 +188,7 @@ export default function NewConversationMenu() {
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
             onValueChange={onSelectPreset}
-            className="overflow-y-auto"
+            className="max-h-[150px] overflow-y-auto"
           >
             {presets.length ? (
               <PresetItems
