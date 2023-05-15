@@ -174,7 +174,7 @@ const ask = async ({
       text,
       parentMessageId: userParentMessageId,
       conversationId,
-      apiKey: req.body?.token ?? null,
+      oaiApiKey: req.body?.token ?? null,
       ...endpointOption,
       onProgress: progressCallback.call(null, {
         res,

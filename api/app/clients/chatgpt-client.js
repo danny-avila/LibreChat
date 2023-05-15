@@ -7,7 +7,7 @@ const askClient = async ({
   parentMessageId,
   conversationId,
   model,
-  apiKey,
+  oaiApiKey,
   chatGptLabel,
   promptPrefix,
   temperature,
@@ -42,10 +42,10 @@ const askClient = async ({
     // debug: true
   };
 
-  let apiKey = apiKey ? apiKey : process.env.OPENAI_KEY || null;
+  let apiKey = oaiApiKey ? oaiApiKey : process.env.OPENAI_KEY || null;
 
   if (azure) {
-    apiKey = apiKey ? apiKey : process.env.AZURE_OPENAI_API_KEY || null;
+    apiKey = oaiApiKey ? oaiApiKey : process.env.AZURE_OPENAI_API_KEY || null;
     clientOptions.reverseProxyUrl = genAzureEndpoint({
       azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME,
       azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME,
