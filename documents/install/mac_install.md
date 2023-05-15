@@ -59,7 +59,7 @@ Follow the instructions for setting up proxies, access tokens, and user system:
 
   - Create a .env file in the api directory by running cp api/.env.example api/.env and edit the file with your preferred text editor, adding the required API keys, access tokens, and MongoDB connection string
   - Run npm ci root directory `npm ci`
-  - Build the client by running `npm run frontend-dev`
+  - Build the client by running `npm run frontend`
 
 **Download MeiliSearch for macOS:**
   - You can download the latest MeiliSearch binary for macOS from their GitHub releases page: https://github.com/meilisearch/MeiliSearch/releases. Look for the file named meilisearch-macos-amd64 (or the equivalent for your system architecture) and download it.
@@ -102,7 +102,7 @@ Visit http://localhost:3080 (default port) & enjoy
 if [ -x "$(command -v ./meilisearch)" ]; then
     ./meilisearch --master-key your_master_key_goes_here &
 fi
-cd api && npm start
+npm run backend
 ```
 
 **Make the script executable by running** 

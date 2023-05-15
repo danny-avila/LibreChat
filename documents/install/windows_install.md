@@ -67,12 +67,14 @@ You will need all your credentials, (API keys, access tokens, and Mongo Connecti
 ### Run the app
 
 ### Using the command line (in the root directory)
-
+To setup the app:
 1. Run `npm ci`
-2. Run `npm run frontend-dev`
-3. Run `npm run backend`
-4. Run `meilisearch --master-key put_your_meilesearch_Master_Key_here` (Only if SEARCH=TRUE)
-5. Visit http://localhost:3080 (default port) & enjoy
+2. Run `npm run frontend`
+
+To use the app:
+1. Run `npm run backend`
+2. Run `meilisearch --master-key put_your_meilesearch_Master_Key_here` (Only if SEARCH=TRUE)
+3. Visit http://localhost:3080 (default port) & enjoy
 
 #### Using a batch file
 
@@ -90,14 +92,14 @@ start "MeiliSearch" cmd /k "meilisearch --master-key your_master_key_goes_here
 
 REM ↑↑↑ meilisearch is the name of the meilisearch executable, put your own master key there
 
-start "ChatGPT-Clone" cmd /k "cd api && npm start"
+start "ChatGPT-Clone" cmd /k "npm run backend"
 
 REM this batch file goes at the root of the chatgpt-clone directory (C:/chatgpt-clone/)
 ```
 
 ### Update the app version
 
-If you update the chatgpt-clone project files, mannually redo the `npm ci` and `npm run build` steps
+If you update the chatgpt-clone project files, mannually redo the `npm ci` and `npm run frontend` steps
 
 ##
 
