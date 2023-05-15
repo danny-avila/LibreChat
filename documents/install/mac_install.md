@@ -102,7 +102,7 @@ Visit http://localhost:3080 (default port) & enjoy
 if [ -x "$(command -v ./meilisearch)" ]; then
     ./meilisearch --master-key your_master_key_goes_here &
 fi
-cd api && npm start
+npm run backend
 ```
 
 **Make the script executable by running** 
