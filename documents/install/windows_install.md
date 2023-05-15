@@ -99,7 +99,7 @@ REM this batch file goes at the root of the chatgpt-clone directory (C:/chatgpt-
 
 ### Update the app version
 
-If you update the chatgpt-clone project files, mannually redo the `npm ci` and `npm run build` steps
+If you update the chatgpt-clone project files, mannually redo the `npm ci` and `npm run frontend` steps
 
 ##
 
