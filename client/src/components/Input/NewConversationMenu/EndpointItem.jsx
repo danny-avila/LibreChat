@@ -12,6 +12,7 @@ const alternateName = {
   azureOpenAI: 'Azure OpenAI',
   bingAI: 'Bing',
   chatGPTBrowser: 'ChatGPT',
+  gptPlugins: 'Plugins',
   google: 'PaLM',
 }
 
@@ -36,7 +37,7 @@ export default function ModelItem({ endpoint, value, onSelect }) {
         className="group dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800"
       >
         {icon}
-        {alternateName[endpoint] || endpoint === 'gptPlugins' ? 'Plugins' : endpoint}
+        {alternateName[endpoint] || endpoint}
         {!!['azureOpenAI', 'openAI'].find(e => e === endpoint) && <sup>$</sup>}
         {endpoint === 'gptPlugins' && <span className="py-0.25 ml-1 rounded px-1 text-[10px] font-semibold uppercase bg-blue-200 text-[#4559A4]">alpha</span>}
         <div className="flex w-4 flex-1" />
