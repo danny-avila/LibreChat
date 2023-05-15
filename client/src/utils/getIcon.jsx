@@ -30,15 +30,13 @@ const getIcon = props => {
     let icon, bg, name;
     if (endpoint === 'azureOpenAI') {
       const { chatGptLabel } = props;
-
       icon = <GPTIcon size={size * 0.7} />;
       bg = 'linear-gradient(0.375turn, #61bde2, #4389d0)';
       name = chatGptLabel || 'ChatGPT';
     } else if (endpoint === 'openAI') {
       const { chatGptLabel } = props;
-
       icon = <GPTIcon size={size * 0.7} />;
-      bg = model && model.toLowerCase() === 'gpt-4' ? 'black' : (chatGptLabel
+      bg = model && model.toLowerCase() === 'gpt-4' ? '#AB68FF' : (chatGptLabel
         ? `rgba(16, 163, 127, ${button ? 0.75 : 1})`
         : `rgba(16, 163, 127, ${button ? 0.75 : 1})`);
       name = chatGptLabel || 'ChatGPT';
@@ -48,13 +46,12 @@ const getIcon = props => {
       name = modelLabel || 'PaLM2';
     } else if (endpoint === 'bingAI') {
       const { jailbreak } = props;
-
       icon = <BingIcon size={size * 0.7} />;
       bg = jailbreak ? `radial-gradient(circle at 90% 110%, #F0F0FA, #D0E0F9)` : `transparent`;
       name = jailbreak ? 'Sydney' : 'BingAI';
     } else if (endpoint === 'chatGPTBrowser') {
       icon = <GPTIcon size={size * 0.7} />;
-      bg = model && model.toLowerCase() === 'gpt-4' ? 'black' : `rgba(0, 163, 255, ${button ? 0.75 : 1})`;
+      bg = model && model.toLowerCase() === 'gpt-4' ? '#AB68FF' : `rgba(0, 163, 255, ${button ? 0.75 : 1})`;
       name = 'ChatGPT';
     } else if (endpoint === null) {
       icon = <GPTIcon size={size * 0.7} />;
