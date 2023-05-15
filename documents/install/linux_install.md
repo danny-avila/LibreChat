@@ -120,7 +120,7 @@ gnome-terminal --tab --title="ChatGPT-Clone" --working-directory=/home/user/chat
 
 ## Update the app version
 
-If you update the chatgpt-clone project files, manually redo the npm ci and npm run backend steps.
+If you update the chatgpt-clone project files, manually redo the npm ci and npm run frontend steps.
 
 ##
 
