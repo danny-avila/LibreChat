@@ -114,13 +114,13 @@ Start the app:
 gnome-terminal --tab --title="MeiliSearch" --command="bash -c 'meilisearch --master-key your_master_key_goes_here'"
 # ↑↑↑ meilisearch is the name of the meilisearch executable, put your own master key there
 
-gnome-terminal --tab --title="ChatGPT-Clone" --working-directory=/home/user/chatgpt-clone/api --command="bash -c 'npm start'"
+gnome-terminal --tab --title="ChatGPT-Clone" --working-directory=/home/user/chatgpt-clone/ --command="bash -c 'npm run backend'"
 # this shell script goes at the root of the chatgpt-clone directory (/home/user/chatgpt-clone/)
 ```
 
 ## Update the app version
 
-If you update the chatgpt-clone project files, manually redo the npm ci and npm run build steps.
+If you update the chatgpt-clone project files, manually redo the npm ci and npm run backend steps.
 
 ##
 
