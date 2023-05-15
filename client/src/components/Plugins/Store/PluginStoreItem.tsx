@@ -1,4 +1,7 @@
+import { TPlugin } from "~/data-provider";
+
 type TPluginStoreItemProps = {
+  plugin: TPlugin,
   name: string,
   description: string,
   icon: string,
@@ -7,7 +10,7 @@ type TPluginStoreItemProps = {
   isInstalled?: boolean,
 }
 
-function PluginStoreItem({ name, description, icon, onInstall, onUninstall, isInstalled }: TPluginStoreItemProps) {
+function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPluginStoreItemProps) {
 
   const handleClick = () => {
     if (isInstalled) {
@@ -16,7 +19,7 @@ function PluginStoreItem({ name, description, icon, onInstall, onUninstall, isIn
       onInstall();
     }
   }
-  
+
   return (
     <>
       <div className="flex flex-col gap-4 rounded border border-black/10 bg-white p-6 dark:border-white/20 dark:bg-gray-900">
@@ -24,16 +27,16 @@ function PluginStoreItem({ name, description, icon, onInstall, onUninstall, isIn
         <div className="h-[70px] w-[70px] shrink-0">
           <div className="relative h-full w-full">
             <img
-              src={icon}
-              alt={`${name} logo`}
+              src={plugin.icon}
+              alt={`${plugin.name} logo`}
               className="h-full w-full rounded-[5px] bg-white"
             />
             <div className="absolute inset-0 rounded-[5px] ring-1 ring-inset ring-black/10"></div>
           </div>
         </div>
         <div className="flex min-w-0 flex-col items-start justify-between">
-          <div className="line-clamp-1 max-w-full text-lg leading-5 text-white">
-            {name}
+          <div className="line-clamp-1 max-w-full text-lg mb-2 leading-5 text-white">
+            {plugin.name}
           </div>
           {!isInstalled ? (
           <button className="btn btn-primary relative" onClick={handleClick}>
@@ -72,7 +75,7 @@ function PluginStoreItem({ name, description, icon, onInstall, onUninstall, isIn
                   stroke-Width="2" 
                   viewBox="0 0 24 24" 
                   strokeLinecap="round" 
-                  stroke-linejoin="round" 
+                  strokeLinejoin="round" 
                   className="h-4 w-4" 
                   height="1em" 
                   width="1em" 
@@ -87,7 +90,7 @@ function PluginStoreItem({ name, description, icon, onInstall, onUninstall, isIn
        </div>
       </div>
       <div className="line-clamp-3 h-[60px] text-sm text-black/70 dark:text-white/70">
-        {description}
+        {plugin.description}
       </div>
     </div>
   </>

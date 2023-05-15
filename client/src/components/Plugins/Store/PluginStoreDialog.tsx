@@ -121,9 +121,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                     .map((plugin, index) => (
                       <PluginStoreItem
                         key={index}
-                        title={plugin.name}
-                        description={plugin.description}
-                        icon={plugin.icon}
+                        plugin={plugin}
                         isInstalled={userPlugins.includes(plugin.pluginKey)}
                         onInstall={() => onPluginInstall(plugin.pluginKey)}
                         onUninstall={() => onPluginUninstall(plugin.pluginKey)}
