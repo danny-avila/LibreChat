@@ -92,7 +92,7 @@ start "MeiliSearch" cmd /k "meilisearch --master-key your_master_key_goes_here
 
 REM ↑↑↑ meilisearch is the name of the meilisearch executable, put your own master key there
 
-start "ChatGPT-Clone" cmd /k "cd api && npm start"
+start "ChatGPT-Clone" cmd /k "npm run backend"
 
 REM this batch file goes at the root of the chatgpt-clone directory (C:/chatgpt-clone/)
 ```
