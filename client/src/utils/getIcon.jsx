@@ -3,25 +3,28 @@ import React from 'react';
 import { twMerge } from 'tailwind-merge';
 import GPTIcon from '../components/svg/GPTIcon';
 import BingIcon from '../components/svg/BingIcon';
+import { useAuthContext } from '~/hooks/AuthContext';
 
 const getIcon = props => {
   // { size = 30, isCreatedByUser, model, chatGptLabel, error, ...props }
   const { size = 30, isCreatedByUser, button, model } = props;
+  const { user, logout } = useAuthContext();
 
   if (isCreatedByUser)
     return (
       <div
-        title="User"
+        title={user.name}
         style={{
-          background: 'radial-gradient(circle at 90% 110%, rgb(1 43 128), rgb(17, 139, 161))',
-          color: 'white',
-          fontSize: 12,
           width: size,
           height: size
         }}
-        className={`relative flex items-center justify-center rounded-sm text-white ` + props?.className}
+        className={`relative flex items-center justify-center` + props?.className}
       >
-        User
+        <img
+          className="rounded-sm"
+          src={user?.avatar || `https://avatars.dicebear.com/api/initials/${user?.name}.svg`}
+          alt=""
+        />
       </div>
     );
   else if (!isCreatedByUser) {
