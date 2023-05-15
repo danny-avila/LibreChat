@@ -26,7 +26,7 @@ export default function ModelItem({ endpoint, value, onSelect }) {
     className: 'mr-2'
   });
 
-  const isuserProvide = endpointsConfig?.[endpoint]?.userProvide;
+  const isUserProvided = endpointsConfig?.[endpoint]?.userProvide;
 
   // regular model
   return (
@@ -39,7 +39,7 @@ export default function ModelItem({ endpoint, value, onSelect }) {
         {alternateName[endpoint] || endpoint}
         {!!['azureOpenAI', 'openAI'].find(e => e === endpoint) && <sup>$</sup>}
         <div className="flex w-4 flex-1" />
-        {isuserProvide ? (
+        {isUserProvided ? (
           <button
             className="invisible m-0 mr-1 flex-initial rounded-md p-0 text-xs font-medium text-gray-400 hover:text-gray-700 group-hover:visible dark:font-normal dark:text-gray-400 dark:hover:text-gray-200"
             onClick={e => {
