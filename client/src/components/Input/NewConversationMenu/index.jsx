@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import cleanupPreset from '~/utils/cleanupPreset.js';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import EditPresetDialog from '../../Endpoints/EditPresetDialog';
 import EndpointItems from './EndpointItems';
@@ -23,10 +24,12 @@ import store from '~/store';
 
 export default function NewConversationMenu() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showPresets, setShowPresets] = useState(true);
   const [presetModelVisible, setPresetModelVisible] = useState(false);
   const [preset, setPreset] = useState(false);
 
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
+  const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const [presets, setPresets] = useRecoilState(store.presets);
 
   const conversation = useRecoilValue(store.conversation) || {};
@@ -50,6 +53,11 @@ export default function NewConversationMenu() {
     );
   };
 
+  const onFileSelected = jsonData => {
+    const jsonPreset = { ...cleanupPreset({ preset: jsonData, endpointsConfig }), presetId: null };
+    importPreset(jsonPreset);
+  };
+
   // update the default model when availableModels changes
   // typically, availableModels changes => modelsFilter or customGPTModels changes
   useEffect(() => {
@@ -64,7 +72,10 @@ export default function NewConversationMenu() {
     if (endpoint) {
       const lastSelectedModel = JSON.parse(localStorage.getItem('lastSelectedModel')) || {};
       localStorage.setItem('lastConversationSetup', JSON.stringify(conversation));
-      localStorage.setItem('lastSelectedModel', JSON.stringify({ ...lastSelectedModel, [endpoint] : conversation.model }));
+      localStorage.setItem(
+        'lastSelectedModel',
+        JSON.stringify({ ...lastSelectedModel, [endpoint]: conversation.model })
+      );
     }
   }, [conversation]);
 
@@ -149,9 +160,14 @@ export default function NewConversationMenu() {
           <div className="mt-6 w-full" />
 
           <DropdownMenuLabel className="flex items-center dark:text-gray-300">
-            <span>Select a Preset</span>
+            <span
+              className="cursor-pointer"
+              onClick={() => setShowPresets(prev => !prev)}
+            >
+              {showPresets ? 'Hide ' : 'Show '} Presets
+            </span>
             <div className="flex-1" />
-            <FileUpload onFileSelected={importPreset} />
+            <FileUpload onFileSelected={onFileSelected} />
             <Dialog>
               <DialogTrigger asChild>
                 <label
@@ -181,18 +197,19 @@ export default function NewConversationMenu() {
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
             onValueChange={onSelectPreset}
-            className="overflow-y-auto"
+            className="max-h-[150px] overflow-y-auto"
           >
-            {presets.length ? (
-              <PresetItems
-                presets={presets}
-                onSelect={onSelectPreset}
-                onChangePreset={onChangePreset}
-                onDeletePreset={onDeletePreset}
-              />
-            ) : (
-              <DropdownMenuLabel className="dark:text-gray-300">No preset yet.</DropdownMenuLabel>
-            )}
+            {showPresets &&
+              (presets.length ? (
+                <PresetItems
+                  presets={presets}
+                  onSelect={onSelectPreset}
+                  onChangePreset={onChangePreset}
+                  onDeletePreset={onDeletePreset}
+                />
+              ) : (
+                <DropdownMenuLabel className="dark:text-gray-300">No preset yet.</DropdownMenuLabel>
+              ))}
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>

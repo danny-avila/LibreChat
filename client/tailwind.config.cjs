@@ -9,10 +9,11 @@ module.exports = {
     // colors: {
     //   'gpt-dark-gray': '#343541',
     // },
+    fontFamily: {
+      sans: ['Söhne', 'sans-serif'],
+      mono: ['Söhne Mono', 'monospace'],	
+    },
     extend: {
-      // fontFamily: {
-      //   sans: ['var(--font-sans)', ...fontFamily.sans]
-      // },
       keyframes: {
         'accordion-down': {
           from: { height: 0 },
@@ -52,7 +53,7 @@ module.exports = {
           800: "#06373e",
           900: "#031f29",
         },
-    }
+      }
     }
   },
   plugins: [

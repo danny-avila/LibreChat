@@ -10,6 +10,7 @@ export default function PresetItem({ preset = {}, value, onSelect, onChangePrese
   const icon = getIcon({
     size: 20,
     endpoint: preset?.endpoint,
+    model: preset?.model,
     error: false,
     className: 'mr-2'
   });
@@ -21,6 +22,10 @@ export default function PresetItem({ preset = {}, value, onSelect, onChangePrese
       const { chatGptLabel, model } = preset;
       if (model) _title += `: ${model}`;
       if (chatGptLabel) _title += ` as ${chatGptLabel}`;
+    } else if (endpoint === 'google') {
+      const { modelLabel, model } = preset;
+      if (model) _title += `: ${model}`;
+      if (modelLabel) _title += ` as ${modelLabel}`;
     } else if (endpoint === 'bingAI') {
       const { jailbreak, toneStyle } = preset;
       if (toneStyle) _title += `: ${toneStyle}`;

@@ -23,12 +23,13 @@ const askClient = async ({
   };
 
   const azure = process.env.AZURE_OPENAI_API_KEY ? true : false;
-
+  const maxContextTokens = model === 'gpt-4' ? 8191 : model === 'gpt-4-32k' ? 32767 : 4095; // 1 less than maximum
   const clientOptions = {
     reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
     azure,
+    maxContextTokens,
     modelOptions: {
-      model: model,
+      model,
       temperature,
       top_p,
       presence_penalty,
@@ -37,7 +38,7 @@ const askClient = async ({
     chatGptLabel,
     promptPrefix,
     proxy: process.env.PROXY || null,
-    debug: false
+    // debug: true
   };
 
   let apiKey = process.env.OPENAI_KEY;
@@ -52,7 +53,7 @@ const askClient = async ({
   }
 
   const client = new ChatGPTClient(apiKey, clientOptions, store);
-  
+
   const options = {
     onProgress,
     abortController,

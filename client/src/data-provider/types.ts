@@ -11,6 +11,11 @@ export type TMessage = {
   updatedAt: string,
 };
 
+export type TExample = {
+  input: string,
+  output: string,
+};
+
 export type TSubmission = {
   clientId?: string;
   context?: string;
@@ -44,6 +49,7 @@ export enum EModelEndpoint {
   bingAI = 'bingAI',
   chatGPT = 'chatGPT',
   chatGPTBrowser = 'chatGPTBrowser',
+  google = 'google',
   gptPlugins = 'gptPlugins',
 }
 
@@ -56,11 +62,19 @@ export type TConversation = {
   messages?: TMessage[];
   createdAt: string;
   updatedAt: string;
+  // google only
+  modelLabel?: string;
+  examples?: TExample[];
   // for azureOpenAI, openAI only
   chatGptLabel?: string;
+  userLabel?: string;
   model?: string;
   promptPrefix?: string;
   temperature?: number;
+  topP?: number;
+  topK?: number;
+  // bing and google
+  context?: string;
   top_p?: number;
   presence_penalty?: number;
   // for bingAI only

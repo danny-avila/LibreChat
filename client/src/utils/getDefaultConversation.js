@@ -22,6 +22,23 @@ const buildDefaultConversation = ({
       presence_penalty: lastConversationSetup?.presence_penalty ?? 0,
       frequency_penalty: lastConversationSetup?.frequency_penalty ?? 0
     };
+  } else if (endpoint === 'google') {
+    conversation = {
+      ...conversation,
+      endpoint,
+      model:
+        lastConversationSetup?.model ??
+        lastSelectedModel[endpoint] ??
+        endpointsConfig[endpoint]?.availableModels?.[0] ??
+        'chat-bison',
+      modelLabel: lastConversationSetup?.modelLabel ?? null,
+      promptPrefix: lastConversationSetup?.promptPrefix ?? null,
+      examples: lastConversationSetup?.examples ?? [{ input: { content: '' }, output: { content: '' }}],
+      temperature: lastConversationSetup?.temperature ?? 0.2,
+      maxOutputTokens: lastConversationSetup?.maxOutputTokens ?? 1024,
+      topP: lastConversationSetup?.topP ?? 0.95,
+      topK: lastConversationSetup?.topK ?? 40,
+    };
   } else if (endpoint === 'bingAI') {
     conversation = {
       ...conversation,
@@ -122,7 +139,7 @@ const getDefaultConversation = ({ conversation, prevConversation, endpointsConfi
 
   // if anything happens, reset to default model
 
-  const endpoint = ['openAI', 'azureOpenAI', 'bingAI', 'chatGPTBrowser','gptPlugins'].find(e => endpointsConfig?.[e]);
+  const endpoint = ['openAI', 'azureOpenAI', 'bingAI', 'chatGPTBrowser','gptPlugins', 'google'].find(e => endpointsConfig?.[e]);
   if (endpoint) {
     conversation = buildDefaultConversation({ conversation, endpoint, endpointsConfig });
     return conversation;

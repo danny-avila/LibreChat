@@ -5,6 +5,7 @@ import OpenAIOptions from './OpenAIOptions';
 import PluginsOptions from './PluginsOptions';
 import ChatGPTOptions from './ChatGPTOptions';
 import BingAIOptions from './BingAIOptions';
+import GoogleOptions from './GoogleOptions';
 // import BingStyles from './BingStyles';
 import NewConversationMenu from './NewConversationMenu';
 import AdjustToneButton from './AdjustToneButton';
@@ -141,6 +142,7 @@ export default function TextChat({ isSearchView = false }) {
             <OpenAIOptions />
             <PluginsOptions />
             <ChatGPTOptions />
+            <GoogleOptions />
             <BingAIOptions show={showBingToneSetting} />
           </span>
         </div>

@@ -1,5 +1,6 @@
 import React from 'react';
 import Clipboard from '../svg/Clipboard';
+import CheckMark from '../svg/CheckMark';
 import EditIcon from '../svg/EditIcon';
 import RegenerateIcon from '../svg/RegenerateIcon';
 
@@ -13,10 +14,11 @@ export default function HoverButtons({
   regenerate
 }) {
   const { endpoint, jailbreak = false } = conversation;
+  const [isCopied, setIsCopied] = React.useState(false);
 
   const branchingSupported =
     // azureOpenAI, openAI, chatGPTBrowser support branching, so edit enabled
-    !!['azureOpenAI', 'openAI', 'chatGPTBrowser', 'gptPlugins'].find(e => e === endpoint) ||
+    !!['azureOpenAI', 'openAI', 'chatGPTBrowser', 'google', 'gptPlugins'].find(e => e === endpoint) ||
     // Sydney in bingAI supports branching, so edit enabled
     (endpoint === 'bingAI' && jailbreak);
 
@@ -59,11 +61,11 @@ export default function HoverButtons({
 
       <button
         className="hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible"
-        onClick={copyToClipboard}
+        onClick={() => copyToClipboard(setIsCopied)}
         type="button"
-        title="copy to clipboard"
+        title={isCopied ? 'Copied to clipboard' : 'Copy to clipboard'}
       >
-        <Clipboard />
+        {isCopied ? <CheckMark /> : <Clipboard />}
       </button>
     </div>
   );

@@ -88,15 +88,15 @@ You will need all your credentials, (API keys, access tokens, and MongoDB Connec
 
 ## Run the project
 
-### Using the command line
+### Using the command line (in the root directory)
+Setup the app:
+1. Run `npm ci`
+2. Run `npm run frontend`
 
-1. Run `npm ci` in the "/home/user/chatgpt-clone/api" directory
-2. Run `npm ci` in the "/home/user/chatgpt-clone/client" directory
-3. Run `npm run build` in the "/home/user/chatgpt-clone/client"
-4. Run `meilisearch --master-key put_your_meilesearch_Master_Key_here` in the "/home/user/chat
-5. Run "meilisearch --master-key put_your_meilesearch_Master_Key_here" in the "/home/user/chatgpt-clone" directory (Only if SEARCH=TRUE)
-6. Run npm start in the "/home/user/chatgpt-clone/api" directory
-7. Visit http://localhost:3080 (default port) & enjoy
+Start the app:
+1. Run `npm run backend`
+2. Run `meilisearch --master-key put_your_meilesearch_Master_Key_here` (Only if SEARCH=TRUE)
+3. Visit http://localhost:3080 (default port) & enjoy
 
 ### Using a shell script
 
@@ -114,13 +114,13 @@ You will need all your credentials, (API keys, access tokens, and MongoDB Connec
 gnome-terminal --tab --title="MeiliSearch" --command="bash -c 'meilisearch --master-key your_master_key_goes_here'"
 # ↑↑↑ meilisearch is the name of the meilisearch executable, put your own master key there
 
-gnome-terminal --tab --title="ChatGPT-Clone" --working-directory=/home/user/chatgpt-clone/api --command="bash -c 'npm start'"
+gnome-terminal --tab --title="ChatGPT-Clone" --working-directory=/home/user/chatgpt-clone/ --command="bash -c 'npm run backend'"
 # this shell script goes at the root of the chatgpt-clone directory (/home/user/chatgpt-clone/)
 ```
 
 ## Update the app version
 
-If you update the chatgpt-clone project files, manually redo the npm ci and npm run build steps.
+If you update the chatgpt-clone project files, manually redo the npm ci and npm run frontend steps.
 
 ##
 

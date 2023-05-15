@@ -12,11 +12,15 @@ import store from '~/store';
 
 // A preset dialog to show readonly preset values.
 const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) => {
-  //   const [title, setTitle] = useState('My Preset');
   const [preset, setPreset] = useState(_preset);
+  const [endpointName, setEndpointName] = useState(preset?.endpoint);
 
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
+
+  if (endpointName === 'google') {
+    setEndpointName('PaLM');
+  }
 
   const setOption = param => newValue => {
     let update = {};
@@ -50,7 +54,7 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
         onOpenChange={onOpenChange}
       >
         <DialogTemplate
-          title={`${title || 'View Options'} - ${preset?.endpoint}`}
+          title={`${title || 'View Options'} - ${endpointName}`}
           className="max-w-full sm:max-w-4xl"
           main={
             <div className="flex w-full flex-col items-center gap-2">
