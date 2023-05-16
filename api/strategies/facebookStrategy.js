@@ -30,9 +30,10 @@ const facebookLogin = new FacebookStrategy(
     console.log('facebookLogin => profile', profile);
     try {
       const oldUser = await User.findOne({ email: profile.emails[0].value });
-
       if (oldUser) {
-        await oldUser.updateOne({ avatar: profile.photos[0].value });
+        if (profile?.photos?.[0]?.value) {
+          await oldUser.updateOne({ avatar: profile.photos[0].value });
+        }
         console.log('FACEBOOK LOGIN => found user', oldUser);
         return done(null, oldUser);
       }

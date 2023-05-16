@@ -18,7 +18,9 @@ const googleLogin = new GoogleStrategy(
     try {
       const oldUser = await User.findOne({ email: profile.emails[0].value });
       if (oldUser) {
-        await oldUser.updateOne({ avatar: profile.photos[0].value });
+        if (profile?.photos?.[0]?.value) {
+          await oldUser.updateOne({ avatar: profile.photos[0].value });
+        }
         return cb(null, oldUser);
       }
     } catch (err) {
