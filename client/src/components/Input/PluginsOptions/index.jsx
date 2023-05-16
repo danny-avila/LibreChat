@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { Settings2, ChevronDownIcon } from 'lucide-react';
 import { SelectDropDown, MultiSelectDropDown, Button } from '~/components';
@@ -71,7 +71,7 @@ function PluginsOptions() {
   
   function checkIfSelected(value) {
     if (!conversation.tools) return false;
-    return conversation.tools.find(el => el.value === value) ? true : false;
+    return conversation.tools.find(el => el.pluginKey === value) ? true : false;
   }
   
   const setOption = param => newValue => {
@@ -192,4 +192,4 @@ function PluginsOptions() {
   );
 }
 
-export default PluginsOptions;
+export default memo(PluginsOptions);

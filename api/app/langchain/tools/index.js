@@ -17,7 +17,7 @@ const WolframAlphaAPI = require('./wolfram');
 const availableTools = require('./manifest.json');
 
 const validateTools = (tools) => {
-  const validTools = new Set(availableTools.map((tool) => tool.value)); // removed 'plugins'
+  const validTools = new Set(availableTools.map((tool) => tool.pluginKey));
 
   const validateAPIKey = (apiKeyName, toolName) => {
     if (!process.env[apiKeyName] || process.env[apiKeyName] === '') {

@@ -29,7 +29,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
     agentOptions: {
       model: 'gpt-3.5-turbo', // for agent model
       // model: 'gpt-4', // for agent model
-      tools: req.body?.tools.map((tool) => tool.value) ?? [],
+      tools: req.body?.tools.map((tool) => tool.pluginKey) ?? [],
       temperature: req.body?.temperature ?? 0
     }
   };
