@@ -12,6 +12,12 @@
     "icon": "https://www.wolframcdn.com/images/icons/Wolfram.png"
   },
   {
+    "name": "Browser",
+    "pluginKey": "browser",
+    "description": "Scrape and summarize webpage data",
+    "icon": ""
+  },
+  {
     "name": "Serpapi",
     "pluginKey": "serpapi",
     "description": "SerpApi is a real-time API to access search engine results.",
