@@ -114,6 +114,7 @@ For discussion and suggestion you can join us: **[community discord server](http
   <summary><strong>General Information</strong></summary>
 
   * [Project Origin](documents/general_info/project_origin.md)
+  * [Multilingual Information](documents/general_info/multilingual_information.md)
   * [Roadmap](documents/general_info/roadmap.md)
   * [Tech Stack](documents/general_info/tech_stack.md)
   * [Changelog](CHANGELOG.md)
