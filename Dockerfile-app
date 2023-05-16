@@ -6,10 +6,10 @@ WORKDIR /app
 # Copy package.json files for client and api
 COPY /client/package*.json /app/client/
 COPY /api/package*.json /app/api/
+COPY /package*.json /app/
 
 # Install dependencies for both client and api
-RUN cd /app/client && npm ci
-RUN cd /app/api && npm ci
+RUN npm ci
 
 # Copy the current directory contents into the container
 COPY /client/ /app/client/
