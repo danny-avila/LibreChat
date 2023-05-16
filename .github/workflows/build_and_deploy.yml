@@ -46,7 +46,7 @@ jobs:
       - name: Build Docker Image
         working-directory: ./
         run: |
-          docker build -t danorlando/cleverchatai:app-${{github.run_number}} .
+          docker build -t danorlando/chatgpt-clone .
 
       # Build a Docker image for the NGINX reverse proxy
       # - name: Build NGINX Docker Image
@@ -65,7 +65,7 @@ jobs:
       # Push the Docker images to Docker Hub
       - name: Push Docker Images to Docker Hub
         run: |
-          docker push danorlando/cleverchatai:app-${{github.run_number}}
+          docker push danorlando/cleverchatai:latest
 
       # This is the step that is deploying the application to Elastic Beanstalk.
       - name: Deploy to Elastic Beanstalk

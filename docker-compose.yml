@@ -14,23 +14,24 @@ services:
   #   depends_on:
   #     - api
   api:
-    container_name: chat-clone
+    container_name: cleverchatai
     ports:
       - 3080:3080               # Change it to 9000:3080 to use nginx
     depends_on:
       - mongodb
-    image: node-api            # Comment this & uncomment below to build from docker hub image
+    # image: node-api            # Comment this & uncomment below to build from docker hub image
     build:
       context: .
       target: node-api
     # image: chatgptclone/app:latest # Uncomment this & comment above to build from docker hub image
+    image: danorlando/cleverchatai:latest # Uncomment this & comment above to build from docker hub image
     restart: always
     env_file:
       - ./api/.env
     environment:
       - HOST=0.0.0.0
       - NODE_ENV=production
-      - MONGO_URI=mongodb://mongodb:27017/chatgpt-clone
+      - MONGO_URI=${{ secrets.MONGO_URI }}
       # - CHATGPT_REVERSE_PROXY=http://host.docker.internal:8080/api/conversation # if you are hosting your own chatgpt reverse proxy
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_HTTP_ADDR=meilisearch:7700
