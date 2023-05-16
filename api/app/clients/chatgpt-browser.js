@@ -11,7 +11,7 @@ const browserClient = async ({
   abortController,
   userId
 }) => {
-  const { ChatGPTBrowserClient } = await import('og-chatgpt-api');
+  const { ChatGPTBrowserClient } = await import('@waylaidwanderer/chatgpt-api');
   const store = {
     store: new KeyvFile({ filename: './data/cache.json' })
   };
