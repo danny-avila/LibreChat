@@ -139,6 +139,7 @@ For discussion and suggestion you can join us: **[community discord server](http
   * [Code of Conduct](documents/contributions/code_of_conduct.md)
   * [Contributor Guidelines](documents/contributions/contributor_guidelines.md)
   * [Documentation Guidelines](documents/contributions/documentation_guidelines.md)
+  * [Code Standards and Conventions](documents/contributions/coding_conventions.md)
   * [Testing](documents/contributions/testing.md)
   * [Pull Request Template](documents/contributions/pull_request_template.md)
   * [Contributors](CONTRIBUTORS.md)
