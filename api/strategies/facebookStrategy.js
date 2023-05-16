@@ -1,7 +1,7 @@
-const passport = require('passport'); 
-const FacebookStrategy = require('passport-facebook').Strategy; 
+const passport = require('passport');
+const FacebookStrategy = require('passport-facebook').Strategy;
 const User = require('../models/User');
- 
+
 const serverUrl =
   process.env.NODE_ENV === 'production' ? process.env.SERVER_URL_PROD : process.env.SERVER_URL_DEV;
 
@@ -32,6 +32,7 @@ const facebookLogin = new FacebookStrategy(
       const oldUser = await User.findOne({ email: profile.emails[0].value });
 
       if (oldUser) {
+        await oldUser.updateOne({ avatar: profile.photos[0].value });
         console.log('FACEBOOK LOGIN => found user', oldUser);
         return done(null, oldUser);
       }
