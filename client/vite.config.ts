@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import type { Plugin } from "vite";
@@ -24,7 +24,7 @@ export default defineConfig({
       }
     }
   },
-  plugins: [react(), sourcemapExclude({excludeNodeModules: true})],
+  plugins: [react(), sourcemapExclude({ excludeNodeModules: true })],
   publicDir: './public',
   build: {
     sourcemap: true,
@@ -51,16 +51,26 @@ interface SourcemapExclude {
 }
 export function sourcemapExclude(opts?: SourcemapExclude): Plugin {
   return {
-      name: "sourcemap-exclude",
-      transform(code: string, id: string) {
-          if (opts?.excludeNodeModules && id.includes("node_modules")) {
-              return {
-                  code,
-                  // https://github.com/rollup/rollup/blob/master/docs/plugin-development/index.md#source-code-transformations
-                  map: { mappings: "" },
-              };
-          }
-      },
+    name: "sourcemap-exclude",
+    transform(code: string, id: string) {
+      if (opts?.excludeNodeModules && id.includes("node_modules")) {
+        return {
+          code,
+          // https://github.com/rollup/rollup/blob/master/docs/plugin-development/index.md#source-code-transformations
+          map: { mappings: "" },
+        };
+      }
+    },
   };
 }
 
+function htmlPlugin(env: ReturnType<typeof loadEnv>) {
+  return {
+    name: "html-transform",
+    transformIndexHtml: {
+      enforce: "pre" as const,
+      transform: (html: string): string =>
+        html.replace(/%(.*?)%/g, (match, p1) => env[p1] ?? match),
+    },
+  };
+}
