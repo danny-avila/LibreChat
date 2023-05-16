@@ -158,8 +158,11 @@ For discussion and suggestion you can join us: **[community discord server](http
 
 ##
 
-## Contributing
+## Star History
 
+[![Star History Chart](https://api.star-history.com/svg?repos=danny-avila/chatgpt-clone&type=Date)](https://star-history.com/#danny-avila/chatgpt-clone&Date)
+
+## Contributors
 Contributions and suggestions bug reports and fixes are welcome!
 Please read the documentation before you do!
 
@@ -167,10 +170,7 @@ For new features, components, or extensions, please open an issue and discuss be
 
 - Join the [Discord community](https://discord.gg/NGaa9RPCft)
 
-## License
-This project is licensed under the [MIT License](LICENSE.md).
-##
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=danny-avila/chatgpt-clone&type=Date)](https://star-history.com/#danny-avila/chatgpt-clone&Date)
+This project exists in its current state thanks to all the people who contribute
+<a href="https://github.com/danny-avila/chatgpt-clone/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=danny-avila/chatgpt-clone" />
+</a>
