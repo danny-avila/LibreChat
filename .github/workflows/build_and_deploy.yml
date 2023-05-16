@@ -1,0 +1,80 @@
+# The name of the workflow.
+name: Build and Deploy
+
+# Run the workflow when code is pushed to the main branch
+on:
+  push:
+    branches:
+      - main
+
+# Set environment variables
+# env:
+#   MONGODB_URI: ${{ secrets.MONGODB_URI }}
+#   TOKEN_KEY: ${{ secrets.TOKEN_KEY }}
+#   EMAIL: ${{ secrets.EMAIL }}
+#   PASSWORD: ${{ secrets.PASSWORD }}
+
+# This is the workflow that is being run.
+jobs:
+  build-and-deploy:
+    # This is telling GitHub to run the workflow on the latest version of Ubuntu.
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout the code from the GitHub repository
+      # - name: Checkout code
+      #   uses: actions/checkout@v3
+
+      # Install dependencies and run tests for the client application
+      # - name: Install and Test Client
+      #   working-directory: ./client
+      #   run: |
+      #     npm install
+      #     npm run test
+
+      # Install dependencies, export environment variables to be used by application and run tests for the server application
+      # - name: Install and Test Server
+      #   working-directory: ./server
+      #   run: |
+      #     npm install
+      #     export MONGODB_URI=$MONGODB_URI
+      #     export TOKEN_KEY=$TOKEN_KEY
+      #     export EMAIL=$EMAIL
+      #     export PASSWORD=$PASSWORD
+      #     npm run test
+
+      # Build a Docker image for the application
+      - name: Build Docker Image
+        working-directory: ./
+        run: |
+          docker build -t danorlando/cleverchatai:app-${{github.run_number}} .
+
+      # Build a Docker image for the NGINX reverse proxy
+      # - name: Build NGINX Docker Image
+      #   working-directory: ./nginx
+      #   # Build image with tag rakeshpotnuru/productivity-app:nginx
+      #   run: |
+      #     docker build -t rakeshpotnuru/productivity-app:nginx-${{github.run_number}} -t rakeshpotnuru/productivity-app:nginx-latest .
+
+      # Log in to Docker Hub using credentials from repository secrets
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # Push the Docker images to Docker Hub
+      - name: Push Docker Images to Docker Hub
+        run: |
+          docker push danorlando/cleverchatai:app-${{github.run_number}}
+
+      # This is the step that is deploying the application to Elastic Beanstalk.
+      - name: Deploy to Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v21
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          application_name: ${{ secrets.EB_APP_NAME }}
+          environment_name: ${{ secrets.EB_ENV_NAME }}
+          region: ${{ secrets.EB_REGION }}
+          version_label: "version-${{ github.run_number }}"
+          deployment_package: docker-compose.yml
