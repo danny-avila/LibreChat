@@ -74,7 +74,8 @@ class CustomChatAgent {
   }
 
   buildPromptPrefix(result, message) {
-    if ((result.output && result.output.includes('N/A')) || !result.output) {
+    if ((result.output && result.output.includes('N/A')) || result.output === undefined) {
+    // if ((result.output && result.output.includes('N/A')) || !result.output) {
       return null;
     }
 
@@ -98,10 +99,13 @@ class CustomChatAgent {
       ? `\nYou encountered an error in attempting a response. The user is not aware of the error so you shouldn't mention it.\nReview the actions taken carefully in case there is a partial or complete answer within them.\nError Message: ${result.errorMessage}\n`
       : '';
 
-    return `As ChatGPT, review and improve the answer you generated using plugins in response to the User Message below. The answer hasn't been sent to the user yet.${errorMessage}\n${internalActions}\n
-Preliminary Answer: "${result.output.trim()}"\n
-Reply conversationally to the User based on your preliminary answer, internal actions, thoughts, and observations, making improvements wherever possible, but do not modify URLs.
-You must cite sources if you are using any web links. ${toolBasedInstructions}
+    const preliminaryAnswer = result.output?.length > 0 ? `Preliminary Answer: "${result.output.trim()}"` : '';
+    const prefix = preliminaryAnswer ? `review and improve the answer you generated using plugins in response to the User Message below. The answer hasn't been sent to the user yet.` : 'respond to the User Message below based on your preliminary thoughts & actions.'; 
+
+    return `As ChatGPT, ${prefix}${errorMessage}\n${internalActions}
+${preliminaryAnswer}
+Reply conversationally to the User based on your ${preliminaryAnswer ? 'preliminary answer, ' : ''}internal actions, thoughts, and observations, making improvements wherever possible, but do not modify URLs.
+${preliminaryAnswer ? '' : '\nIf there is an incomplete thought or action, you are expected to complete it in your response now.\n'}You must cite sources if you are using any web links. ${toolBasedInstructions}
 Only respond with your conversational reply to the following User Message:
 "${message}"`;
   }
@@ -607,6 +611,10 @@ Only respond with your conversational reply to the following User Message:
       const textStream = new TextStream(this.result.output);
       await textStream.processTextStream(opts.onProgress);
       return { ...responseMessage, ...this.result };
+    }
+
+    if (this.options.debug) {
+      console.debug('this.result', this.result);
     }
 
     const promptPrefix = this.buildPromptPrefix(this.result, message);
