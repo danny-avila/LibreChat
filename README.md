@@ -171,6 +171,7 @@ For new features, components, or extensions, please open an issue and discuss be
 - Join the [Discord community](https://discord.gg/NGaa9RPCft)
 
 This project exists in its current state thanks to all the people who contribute
+---
 <a href="https://github.com/danny-avila/chatgpt-clone/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=danny-avila/chatgpt-clone" />
 </a>
