@@ -9,7 +9,7 @@ const getOpenAIModels = () => {
 };
 
 const getChatGPTBrowserModels = () => {
-  let models = ['text-davinci-002-render-sha', 'text-davinci-002-render-paid', 'gpt-4'];
+  let models = ['text-davinci-002-render-sha', 'text-davinci-002-render-paid', 'gpt-4', 'gpt-4-plugins', 'gpt-4-browsing', 'gpt-4-code-interpreter'];
   if (process.env.CHATGPT_MODELS) models = String(process.env.CHATGPT_MODELS).split(',');
 
   return models;
