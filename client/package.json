@@ -61,7 +61,7 @@
     "react-hook-form": "^7.43.9",
     "react-lazy-load": "^4.0.1",
     "react-markdown": "^8.0.6",
-    "react-router-dom": "^6.9.0",
+    "react-router-dom": "^6.11.2",
     "react-string-replace": "^1.1.0",
     "react-textarea-autosize": "^8.4.0",
     "react-transition-group": "^4.4.5",
