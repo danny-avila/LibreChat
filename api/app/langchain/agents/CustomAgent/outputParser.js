@@ -115,11 +115,9 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
       }
     }
     this.finishToolNameRegex = /(?:the\s+)?final\s+answer[:\s]*\s*/i;
-    // this.actionValues = /(?:Action(?: [1-9])?:) ([\s\S]*?)(?:\n(?:Action Input(?: [1-9])?:) ([\s\S]*?))?$/;
-    // this.actionValues = /(?:Action(?: \d*):) ?([\s\S]*?)(?:\n(?:Action Input(?: \d*):) ?([\s\S]*?))?$/i;
-    // this.actionInputRegex = /(?:Action Input(?: \d*):) ?([\s\S]*?)$/i;
     this.actionValues = /(?:Action(?: [1-9])?:) ([\s\S]*?)(?:\n(?:Action Input(?: [1-9])?:) ([\s\S]*?))?$/i;
     this.actionInputRegex = /(?:Action Input(?: *\d*):) ?([\s\S]*?)$/i;
+    this.thoughtRegex = /(?:Thought(?: *\d*):) ?([\s\S]*?)$/i;
   }
 
   async parse(text) {
@@ -171,10 +169,19 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
 
       // In case there is no action input, let's double-check if there is an action input in 'text' variable
       const actionInputMatch = this.actionInputRegex.exec(text);
+      const thoughtMatch = this.thoughtRegex.exec(text);
       if (actionInputMatch) {
         return {
           tool: match[1].trim().toLowerCase(),
           toolInput: actionInputMatch[1].trim(),
+          log: text
+        };
+      }
+
+      if (thoughtMatch && !actionInputMatch) {
+        return {
+          tool: match[1].trim().toLowerCase(),
+          toolInput: thoughtMatch[1].trim(),
           log: text
         };
       }
