@@ -42,7 +42,7 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
 
   useEffect(() => {
     if (!showPanel && isJson(token)) {
-      setToken('')
+      setToken('');
     }
   }, [showPanel]);
 
@@ -176,12 +176,12 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
               <>
                 {!showPanel ? (
                   <>
-                               <InputWithLabel
-                  id={"chatGPTLabel"}
-                  value={token || ''}
-                  onChange={e => setToken(e.target.value || '')}
-                  label={"OpenAI API Key"}
-                  />
+                    <InputWithLabel
+                      id={'chatGPTLabel'}
+                      value={token || ''}
+                      onChange={e => setToken(e.target.value || '')}
+                      label={'OpenAI API Key'}
+                    />
                   </>
                 ) : (
                   <>
@@ -216,7 +216,7 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
                 )}
                 <div className="flex items-center">
                   <Checkbox.Root
-                    className="flex h-[20px] w-[20px] appearance-none items-center justify-center rounded-[4px] bg-gray-100 hover:bg-gray-200 text-white outline-none dark:bg-gray-700 dark:hover:bg-gray-900"
+                    className="flex h-[20px] w-[20px] appearance-none items-center justify-center rounded-[4px] bg-gray-100 text-white outline-none hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-900"
                     id="azureOpenAI"
                     checked={showPanel}
                     onCheckedChange={() => setShowPanel(!showPanel)}
@@ -230,19 +230,18 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
                     className="pl-[8px] text-[15px] leading-none dark:text-white"
                     htmlFor="azureOpenAI"
                   >
-                    Configure Azure OpenAI.
+                    Use Azure OpenAI.
                   </label>
                 </div>
               </>
             ) : (
               <>
-
                 <InputWithLabel
-                  id={"chatGPTLabel"}
+                  id={'chatGPTLabel'}
                   value={token || ''}
                   onChange={e => setToken(e.target.value || '')}
-                  label={"Token Name"}
-                  />
+                  label={'Token Name'}
+                />
               </>
             )}
             <small className="text-red-600">Your token will be sent to the server, but not saved.</small>
