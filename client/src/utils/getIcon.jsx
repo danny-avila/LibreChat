@@ -39,7 +39,7 @@ const getIcon = props => {
     } else if (endpoint === 'openAI' || endpoint === 'gptPlugins') {
       const { chatGptLabel } = props;
       icon = <GPTIcon size={size * 0.7} />;
-      bg = model && model.toLowerCase() === 'gpt-4' ? '#AB68FF' : (chatGptLabel
+      bg = model && model.toLowerCase().startsWith('gpt-4') ? '#AB68FF' : (chatGptLabel
         ? `rgba(16, 163, 127, ${button ? 0.75 : 1})`
         : `rgba(16, 163, 127, ${button ? 0.75 : 1})`);
       name = chatGptLabel || 'ChatGPT';
@@ -54,7 +54,7 @@ const getIcon = props => {
       name = jailbreak ? 'Sydney' : 'BingAI';
     } else if (endpoint === 'chatGPTBrowser') {
       icon = <GPTIcon size={size * 0.7} />;
-      bg = model && model.toLowerCase() === 'gpt-4' ? '#AB68FF' : `rgba(0, 163, 255, ${button ? 0.75 : 1})`;
+      bg = model && model.toLowerCase().startsWith('gpt-4') ? '#AB68FF' : `rgba(0, 163, 255, ${button ? 0.75 : 1})`;
       name = 'ChatGPT';
     } else if (endpoint === null) {
       icon = <GPTIcon size={size * 0.7} />;

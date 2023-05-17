@@ -1,2 +1,3 @@
 **/node_modules
 api/.env
+client/dist/images
