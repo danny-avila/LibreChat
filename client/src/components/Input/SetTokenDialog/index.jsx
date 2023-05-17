@@ -33,10 +33,6 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
   };
 
   useEffect(() => {
-    console.log(token);
-  }, [token]);
-
-  useEffect(() => {
     let oldToken = getToken();
     if (isJson(token)) {
       setShowPanel(true);
