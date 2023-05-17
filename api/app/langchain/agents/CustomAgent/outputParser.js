@@ -120,6 +120,19 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
     this.thoughtRegex = /(?:Thought(?: *\d*):) ?([\s\S]*?)$/i;
   }
 
+  getValidTool(text) {
+    let result = false;
+    for (const tool of this.tools) {
+      const { name } = tool;
+      const toolIndex = text.indexOf(name);
+      if (toolIndex !== -1) {
+        result = name;
+        break;
+      }
+    }
+    return result;
+  }
+
   async parse(text) {
     const finalMatch = text.match(this.finishToolNameRegex);
     // if (text.includes(this.finishToolName)) {
@@ -139,18 +152,9 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
       };
     }
 
-    // const match = /(?:Action(?: 1)?:) ([\s\S]*?)(?:\n(?:Action Input(?: 1)?:) ([\s\S]*?))?$/.exec(text); // old
-    // const match = /(?:Action(?: \d*):) ?([\s\S]*?)(?:\n(?:Action Input(?: \d*):) ?([\s\S]*?))?$/i.exec(text); // old v2
     const match = this.actionValues.exec(text); // old v2
+    let selectedTool = match[1].trim().toLowerCase();
 
-    if (match && match[1].trim().toLowerCase() === 'n/a') {
-      console.log('\n\n<----------------------HIT N/A PARSING ERROR---------------------->\n\n', match);
-      return {
-        tool: 'self-reflection',
-        toolInput: match[2]?.trim().replace(/^"+|"+$/g, '') ?? '',
-        log: text
-      };
-    }
     if (!match) {
       console.log('\n\n<----------------------HIT NO MATCH PARSING ERROR---------------------->\n\n', match);
       const thoughts = text.replace(/[tT]hought:/, '').split('\n');
@@ -158,6 +162,15 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
         tool: 'self-reflection',
         toolInput: thoughts[0],
         log: thoughts.slice(1).join('\n')
+      };
+    }
+
+    if (match && selectedTool === 'n/a') {
+      console.log('\n\n<----------------------HIT N/A PARSING ERROR---------------------->\n\n', match);
+      return {
+        tool: 'self-reflection',
+        toolInput: match[2]?.trim().replace(/^"+|"+$/g, '') ?? '',
+        log: text
       };
     }
 
@@ -172,7 +185,7 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
       const thoughtMatch = this.thoughtRegex.exec(text);
       if (actionInputMatch) {
         return {
-          tool: match[1].trim().toLowerCase(),
+          tool: selectedTool,
           toolInput: actionInputMatch[1].trim(),
           log: text
         };
@@ -180,14 +193,14 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
 
       if (thoughtMatch && !actionInputMatch) {
         return {
-          tool: match[1].trim().toLowerCase(),
+          tool: selectedTool,
           toolInput: thoughtMatch[1].trim(),
           log: text
         };
       }
     }
 
-    if (match && match[1].trim().length > this.longestToolName.length) {
+    if (match && (selectedTool.length > this.longestToolName.length || !this.getValidTool(selectedTool))) {
       console.log('\n\n<----------------------HIT LONG PARSING ERROR---------------------->\n\n');
 
       let action, input, thought;
@@ -253,8 +266,14 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
       // }
     }
 
+    // let selectedIsValid = this.getValidTool(selectedTool);
+
+    // if (!selectedIsValid) {
+    //   //
+    // }
+
     return {
-      tool: match[1].trim().toLowerCase(),
+      tool: selectedTool,
       toolInput: match[2].trim().replace(/^"+|"+$/g, '') ?? '',
       log: text
     };
