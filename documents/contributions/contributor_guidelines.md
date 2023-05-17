@@ -5,10 +5,18 @@ such as bug reports, documentation improvements, feature requests, and code cont
 
 ## Contributing Guidelines
 
-When contributing to this repository, please first discuss the change you wish to make via [issue](https://github.com/danny-avila/chatgpt-clone/issues) or 
-join our discord [Discord community](https://discord.gg/NGaa9RPCft).
+If the feature you would like to contribute has not already received prior approval from the project maintainers (ie. the feature is currently on the roadmap or on the [trello board]()), please submit a proposal in the [proposals category](https://github.com/danny-avila/chatgpt-clone/discussions/categories/proposals) of the discussions board before beginning work on it. 
+- Proposals should include specific implementation details including areas of the application that will be effected by the change inlcuding designs if applicable, and any other relevant information that might be required for a speedy review.
+- Proposals are not required for small changes, bug fixes, or documentation improvements. 
+- Small changes and bug fixes should be tied to an [issue](https://github.com/danny-avila/chatgpt-clone/issues) and included in the corresponding pull request for tracking purposes. 
+ 
+*Please note that a pull request involving a feature that has not been reviewed and approved by the project maintainers may be rejected.*
+
+If you would like to discuss the changes you wish to make, join our [Discord community](https://discord.gg/NGaa9RPCft).
 
 ## Our Standards
+
+Please read our [Coding Standards and Conventions](coding_conventions.md) before beginning on a contribution.
 
 Examples of behavior that contributes to creating a positive environment
 include:

@@ -114,6 +114,7 @@ For discussion and suggestion you can join us: **[community discord server](http
   <summary><strong>General Information</strong></summary>
 
   * [Project Origin](documents/general_info/project_origin.md)
+  * [Multilingual Information](documents/general_info/multilingual_information.md)
   * [Roadmap](documents/general_info/roadmap.md)
   * [Tech Stack](documents/general_info/tech_stack.md)
   * [Changelog](CHANGELOG.md)
@@ -139,6 +140,7 @@ For discussion and suggestion you can join us: **[community discord server](http
   * [Code of Conduct](documents/contributions/code_of_conduct.md)
   * [Contributor Guidelines](documents/contributions/contributor_guidelines.md)
   * [Documentation Guidelines](documents/contributions/documentation_guidelines.md)
+  * [Code Standards and Conventions](documents/contributions/coding_conventions.md)
   * [Testing](documents/contributions/testing.md)
   * [Pull Request Template](documents/contributions/pull_request_template.md)
   * [Contributors](CONTRIBUTORS.md)
@@ -171,6 +173,7 @@ For new features, components, or extensions, please open an issue and discuss be
 - Join the [Discord community](https://discord.gg/NGaa9RPCft)
 
 This project exists in its current state thanks to all the people who contribute
+---
 <a href="https://github.com/danny-avila/chatgpt-clone/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=danny-avila/chatgpt-clone" />
 </a>
