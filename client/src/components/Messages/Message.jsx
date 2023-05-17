@@ -76,7 +76,6 @@ export default function Message({
     var json = match ? match[0] : ''
     if (isJson(json)) {
       json = JSON.parse(json);
-      console.log(json)
       if (json.code === 'invalid_api_key') {
         return 'Invalid API key. Please check your API key and try again. You can access your API key by clicking on the model logo in the top-left corner of the textbox.';
       } else if (json.type === 'insufficient_quota') {
@@ -85,7 +84,6 @@ export default function Message({
         return `Oops! Something went wrong. Please try again in a few moments. Here's the specific error message we encountered: ${text}`;
       }
     } else {
-      console.log(json);
       return `Oops! Something went wrong. Please try again in a few moments. Here's the specific error message we encountered: ${text}`;
     }
   };
