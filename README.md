@@ -67,37 +67,7 @@
 
 ---
 
-<details open>
-<summary><strong>2023-05-14</strong></summary>
-
-**Released [v0.4.4](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.4):**
-
-1. The Msg Clipboard was changed to a checkmark for improved user experience by @techwithanirudh in PR [#247](https://github.com/danny-avila/chatgpt-clone/pull/247).
-2. A typo in the auth.json path for accessing Google Palm was corrected by @antonme in PR [#266](https://github.com/danny-avila/chatgpt-clone/pull/266).
-3. @techwithanirudh added a Popup Menu to save sidebar space in PR [#260](https://github.com/danny-avila/chatgpt-clone/pull/260). 
-4. The default pageSize in Conversation.js was increased from 12 to 14 by @danny-avila in PR [#267](https://github.com/danny-avila/chatgpt-clone/pull/267).
-5. Fonts were updated by @techwithanirudh in PR [#261](https://github.com/danny-avila/chatgpt-clone/pull/261).
-6. Font file paths in style.css were changed by @danny-avila in PR [#268](https://github.com/danny-avila/chatgpt-clone/pull/268).
-7. Code was fixed to adjust max_tokens according to model selection by @p4w4n in PR [#263](https://github.com/danny-avila/chatgpt-clone/pull/263).
-8. Various improvements were made, such as fixing react errors and adjusting the mobile view, by @danny-avila in PR [#269](https://github.com/danny-avila/chatgpt-clone/pull/269).
-
-New contributors to the project include:
-
-- @techwithanirudh, who made their first contribution in PR [#247](https://github.com/danny-avila/chatgpt-clone/pull/247).
-- @antonme, who made their first contribution in PR [#266](https://github.com/danny-avila/chatgpt-clone/pull/266).
-- @p4w4n, who made their first contribution in PR [#263](https://github.com/danny-avila/chatgpt-clone/pull/263).
-
-The [full changelog can be found here](https://github.com/danny-avila/chatgpt-clone/compare/v0.4.3...v0.4.4)
-
-⚠️ **IMPORTANT :** Since V0.4.0 You should register and login with a local account (email and password) for the first time sign-up. if you use login for the first time with a social login account (eg. Google, facebook, etc.), the conversations and presets that you created before the user system was implemented will NOT be migrated to that account.
-
-⚠️ **Breaking - new Env Variables :** Since V0.4.0 You will need to add the new env variables from .env.example for the app to work, even if you're not using multiple users for your purposes.
-
-For discussion and suggestion you can join us: **[community discord server](https://discord.gg/NGaa9RPCft)**
-</details>
-
-[Past Updates](CHANGELOG.md)
-##
+## [Read all Latest Updates here](CHANGELOG.md)
 
 <h1>Table of Contents</h1>
 
