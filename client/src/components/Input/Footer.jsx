@@ -9,7 +9,7 @@ export default function Footer() {
         rel="noreferrer"
         className="underline"
       >
-        ChatGPT Clone
+        {import.meta.env.VITE_APP_TITLE || "ChatGPT Clone"}
       </a>
       . Serves and searches all conversations reliably. All AI convos under one house. Pay per call and not
       per month (cents compared to dollars).
