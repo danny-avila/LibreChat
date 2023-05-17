@@ -12,6 +12,15 @@ import { useGetConversationByIdQuery } from '~/data-provider';
 import { cn } from '~/utils/';
 import store from '~/store';
 
+function isJson(str) {
+  try {
+    JSON.parse(str);
+  } catch (e) {
+    return false;
+  }
+  return true;
+}
+
 export default function Message({
   conversation,
   message,
@@ -62,6 +71,25 @@ export default function Message({
     }
   };
 
+  const getError = text => {
+    const match = text.match(/\{[^{}]*\}/);
+    var json = match ? match[0] : ''
+    if (isJson(json)) {
+      json = JSON.parse(json);
+      console.log(json)
+      if (json.code === 'invalid_api_key') {
+        return 'Invalid API key. Please check your API key and try again. You can access your API key by clicking on the model logo in the top-left corner of the textbox.';
+      } else if (json.type === 'insufficient_quota') {
+        return "We're sorry, but the default API key has reached its limit. To continue using this service, please set up your own API key. You can do this by clicking on the model logo in the top-left corner of the textbox.";
+      } else {
+        return `Oops! Something went wrong. Please try again in a few moments. Here's the specific error message we encountered: ${text}`;
+      }
+    } else {
+      console.log(json);
+      return `Oops! Something went wrong. Please try again in a few moments. Here's the specific error message we encountered: ${text}`;
+    }
+  };
+
   const props = {
     className:
       'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 bg-white dark:text-gray-100 group dark:bg-gray-800'
@@ -98,7 +126,7 @@ export default function Message({
     if (!isSubmitting && !message?.isCreatedByUser) regenerate(message);
   };
 
-  const copyToClipboard = (setIsCopied) => {
+  const copyToClipboard = setIsCopied => {
     setIsCopied(true);
     copy(message?.text);
 
@@ -149,16 +177,7 @@ export default function Message({
               {error ? (
                 <div className="flex flex min-h-[20px] flex-grow flex-col items-start gap-2 gap-4  text-red-500">
                   <div className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-100">
-                    {text.error && text.error.code === 'invalid_api_key' ? (  
-                      'Invalid API key. Please check your API key and try again. You can access your API key by clicking on the model logo in the top-left corner of the textbox.'
-                    ) : text.error && text.error.type === "insufficient_quota" ? (
-                      'We\'re sorry, but the default API key has reached its limit. To continue using this service, please set up your own API key. You can do this by clicking on the model logo in the top-left corner of the textbox.'
-                    ) : (
-                      `Oops! Something went wrong. Please try again in a few moments. Here's the specific error message we encountered:  ${text}`
-
-                    )}
-
-
+                    {getError(text)}
                   </div>
                 </div>
               ) : edit ? (
