@@ -151,7 +151,7 @@ export default function Message({
                   <div className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-100">
                     {text.error && text.error.code === 'invalid_api_key' ? (  
                       'Invalid API key. Please check your API key and try again. You can access your API key by clicking on the model logo in the top-left corner of the textbox.'
-                    ) : text.error && text.error.code === "insufficient_quota" ? (
+                    ) : text.error && text.error.type === "insufficient_quota" ? (
                       'We\'re sorry, but the default API key has reached its limit. To continue using this service, please set up your own API key. You can do this by clicking on the model logo in the top-left corner of the textbox.'
                     ) : (
                       `Oops! Something went wrong. Please try again in a few moments. Here's the specific error message we encountered:  ${text}`
