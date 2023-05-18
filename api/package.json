@@ -35,7 +35,7 @@
     "googleapis": "^118.0.0",
     "handlebars": "^4.7.7",
     "html": "^1.0.0",
-    "joi": "^14.3.1",
+    "joi": "^17.9.2",
     "jsonwebtoken": "^9.0.0",
     "keyv": "^4.5.2",
     "keyv-file": "^0.2.0",
