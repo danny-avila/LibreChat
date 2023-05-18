@@ -170,7 +170,7 @@ export default function Nav({ navVisible, setNavVisible }) {
         </div>
         <button
           type="button"
-          className="nav-close-button -ml-0.5 -mt-2.5 inline-flex h-10 w-10 items-center justify-center rounded-md dark:text-white focus:outline-none focus:ring-white md:-ml-1 md:-mt-[9px] transition ease-in-out duration-150"
+          className="nav-close-button -ml-0.5 -mt-2.5 inline-flex h-10 w-10 items-center justify-center rounded-md transition duration-150 ease-in-out focus:outline-none focus:ring-white dark:text-white md:-ml-1 md:-mt-2.5"
           onClick={toggleNavVisible}
         >
           <span className="sr-only">Close sidebar</span>
@@ -181,7 +181,7 @@ export default function Nav({ navVisible, setNavVisible }) {
             viewBox="0 0 24 24"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="w-6 h-6 md:h-7 md:w-7"
+            className="block h-6 w-6 md:hidden"
             height="1em"
             width="1em"
             xmlns="http://www.w3.org/2000/svg"
@@ -199,12 +199,26 @@ export default function Nav({ navVisible, setNavVisible }) {
               y2="6"
             />
           </svg>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={1.5}
+            stroke="currentColor"
+            className="h-[26px] w-[26px] hidden md:block"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75"
+            />
+          </svg>
         </button>
       </div>
       {!navVisible && (
         <button
           type="button"
-          className="nav-open-button fixed top-1 left-2 z-10 inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-900 dark:text-white hover:text-gray-800 dark:hover:text-gray-200 focus:outline-none focus:ring-white"
+          className="nav-open-button fixed left-2 top-0.5 z-10 inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-900 hover:text-gray-800 focus:outline-none focus:ring-white dark:text-white dark:hover:text-gray-200"
           onClick={toggleNavVisible}
         >
           <span className="sr-only">Open sidebar</span>
@@ -219,7 +233,7 @@ export default function Nav({ navVisible, setNavVisible }) {
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
-              d="M12 9.75L14.25 12m0 0l2.25 2.25M14.25 12l2.25-2.25M14.25 12L12 14.25m-2.58 4.92l-6.375-6.375a1.125 1.125 0 010-1.59L9.42 4.83c.211-.211.498-.33.796-.33H19.5a2.25 2.25 0 012.25 2.25v10.5a2.25 2.25 0 01-2.25 2.25h-9.284c-.298 0-.585-.119-.796-.33z"
+              d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"
             />
           </svg>
         </button>
