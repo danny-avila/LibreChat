@@ -180,7 +180,7 @@ export default function Nav({ navVisible, setNavVisible }) {
         </div>
         <button
           type="button"
-          className="nav-close-button -ml-0.5 -mt-2.5 inline-flex h-10 w-10 items-center justify-center rounded-md transition duration-150 ease-in-out focus:outline-none focus:ring-white dark:text-white md:-ml-1 md:-mt-2.5"
+          className="nav-close-button -ml-0.5 -mt-2.5 inline-flex h-10 w-10 items-center justify-center rounded-md focus:outline-none focus:ring-white dark:text-white md:-ml-1 md:-mt-2.5"
           onClick={toggleNavVisible}
         >
           <span className="sr-only">Close sidebar</span>
