@@ -27,12 +27,12 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
-  const triggerExamples = () => setShowExamples(prev => !prev);
+  const triggerExamples = () => setShowExamples((prev) => !prev);
 
-  const setOption = param => (newValue) => {
+  const setOption = (param) => (newValue) => {
     let update = {};
     update[param] = newValue;
-    setPreset(prevState =>
+    setPreset((prevState) =>
       cleanupPreset({
         preset: {
           ...prevState,
@@ -50,7 +50,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
     currentExample[type] = { content: newValue };
     current[i] = currentExample;
     update.examples = current;
-    setPreset(prevState =>
+    setPreset((prevState) =>
       cleanupPreset({
         preset: {
           ...prevState,
@@ -66,7 +66,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
     let current = preset?.examples.slice() || [];
     current.push({ input: { content: '' }, output: { content: '' } });
     update.examples = current;
-    setPreset(prevState =>
+    setPreset((prevState) =>
       cleanupPreset({
         preset: {
           ...prevState,
@@ -82,7 +82,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
     let current = preset?.examples.slice() || [];
     if (current.length <= 1) {
       update.examples = [{ input: { content: '' }, output: { content: '' } }];
-      setPreset(prevState =>
+      setPreset((prevState) =>
         cleanupPreset({
           preset: {
             ...prevState,
@@ -95,7 +95,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
     }
     current.pop();
     update.examples = current;
-    setPreset(prevState =>
+    setPreset((prevState) =>
       cleanupPreset({
         preset: {
           ...prevState,
@@ -131,6 +131,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
 
   useEffect(() => {
     setPreset(_preset);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   return (
@@ -148,7 +149,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
                 <Input
                   id="chatGptLabel"
                   value={preset?.title || ''}
-                  onChange={e => setOption('title')(e.target.value || '')}
+                  onChange={(e) => setOption('title')(e.target.value || '')}
                   placeholder="Set a custom name, in case you can find this preset"
                   className={cn(
                     defaultTextProps,
@@ -187,7 +188,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
             <div className="w-full p-0">
               {((preset?.endpoint === 'google' && !showExamples) ||
                 preset?.endpoint !== 'google') && (
-                <Settings preset={_preset} setOption={setOption} />
+                <Settings preset={preset} setOption={setOption} />
               )}
               {preset?.endpoint === 'google' && showExamples && (
                 <Examples
