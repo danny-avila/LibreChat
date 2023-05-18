@@ -21,33 +21,32 @@ function Settings(props) {
   const debouncedContext = useDebounce(context, 250);
   const updateTokenCountMutation = useUpdateTokenCountMutation();
 
-  useEffect(() => { 
+  useEffect(() => {
     if (!debouncedContext || debouncedContext.trim() === '') {
       setTokenCount(0);
       return;
     }
 
-    const handleTextChange = context => {
-      updateTokenCountMutation.mutate({ text: context }, {
-        onSuccess: data => {
-          setTokenCount(data.count);
+    const handleTextChange = (context) => {
+      updateTokenCountMutation.mutate(
+        { text: context },
+        {
+          onSuccess: (data) => {
+            setTokenCount(data.count);
+          }
         }
-      });
+      );
     };
 
     handleTextChange(debouncedContext);
   }, [debouncedContext]);
-
 
   return (
     <div className="max-h-[350px] overflow-y-auto">
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
-            <Label
-              htmlFor="toneStyle-dropdown"
-              className="text-left text-sm font-medium"
-            >
+            <Label htmlFor="toneStyle-dropdown" className="text-left text-sm font-medium">
               Tone Style <small className="opacity-40">(default: fast)</small>
             </Label>
             <SelectDropDown
@@ -65,10 +64,7 @@ function Settings(props) {
             />
           </div>
           <div className="grid w-full items-center gap-2">
-            <Label
-              htmlFor="context"
-              className="text-left text-sm font-medium"
-            >
+            <Label htmlFor="context" className="text-left text-sm font-medium">
               Context <small className="opacity-40">(default: blank)</small>
             </Label>
             <TextareaAutosize
@@ -87,10 +83,7 @@ function Settings(props) {
         </div>
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
-            <Label
-              htmlFor="jailbreak"
-              className="text-left text-sm font-medium"
-            >
+            <Label htmlFor="jailbreak" className="text-left text-sm font-medium">
               Enable Sydney <small className="opacity-40">(default: false)</small>
             </Label>
             <div className="flex h-[40px] w-full items-center space-x-3">

@@ -3,28 +3,26 @@ const {
   logoutUser,
   registerUser,
   requestPasswordReset,
-  resetPassword,
-} = require("../services/auth.service");
+  resetPassword
+} = require('../services/auth.service');
 
 const isProduction = process.env.NODE_ENV === 'production';
 
 const loginController = async (req, res) => {
   try {
     const token = req.user.generateToken();
-    const user = await loginUser(req.user)
-    if(user) {
+    const user = await loginUser(req.user);
+    if (user) {
       res.cookie('token', token, {
         expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
         httpOnly: false,
         secure: isProduction
       });
       res.status(200).send({ token, user });
-    }
-    else {
+    } else {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
-  }
-  catch (err) {
+  } catch (err) {
     console.log(err);
     return res.status(500).json({ message: err.message });
   }
@@ -35,22 +33,20 @@ const logoutController = async (req, res) => {
   const { refreshToken } = signedCookies;
   try {
     const logout = await logoutUser(req.user, refreshToken);
-    console.log(logout)
+    console.log(logout);
     const { status, message } = logout;
     if (status === 200) {
       res.clearCookie('token');
       res.clearCookie('refreshToken');
       res.status(status).send({ message });
-    }
-    else {
+    } else {
       res.status(status).send({ message });
     }
-  }
-  catch (err) {
+  } catch (err) {
     console.log(err);
     return res.status(500).json({ message: err.message });
   }
-}
+};
 
 const registrationController = async (req, res) => {
   try {
@@ -65,13 +61,11 @@ const registrationController = async (req, res) => {
         secure: isProduction
       });
       res.status(status).send({ user });
-    }
-    else {
+    } else {
       const { status, message } = response;
       res.status(status).send({ message });
     }
-  }
-  catch (err) {
+  } catch (err) {
     console.log(err);
     return res.status(500).json({ message: err.message });
   }
@@ -83,17 +77,13 @@ const getUserController = async (req, res) => {
 
 const resetPasswordRequestController = async (req, res) => {
   try {
-    const resetService = await requestPasswordReset(
-      req.body.email
-    );
+    const resetService = await requestPasswordReset(req.body.email);
     if (resetService.link) {
       return res.status(200).json(resetService);
-    }
-    else {
+    } else {
       return res.status(400).json(resetService);
     }
-  }
-  catch (e) {
+  } catch (e) {
     console.log(e);
     return res.status(400).json({ message: e.message });
   }
@@ -106,14 +96,12 @@ const resetPasswordController = async (req, res) => {
       req.body.token,
       req.body.password
     );
-    if(resetPasswordService instanceof Error) {
+    if (resetPasswordService instanceof Error) {
       return res.status(400).json(resetPasswordService);
-    }
-    else {
+    } else {
       return res.status(200).json(resetPasswordService);
     }
-  }
-  catch (e) {
+  } catch (e) {
     console.log(e);
     return res.status(400).json({ message: e.message });
   }
@@ -176,5 +164,5 @@ module.exports = {
   refreshController,
   registrationController,
   resetPasswordRequestController,
-  resetPasswordController,
+  resetPasswordController
 };

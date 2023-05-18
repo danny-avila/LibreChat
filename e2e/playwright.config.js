@@ -15,9 +15,7 @@ export default defineConfig({
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: [
-    ['html', { outputFolder: 'playwright-report' }]
-  ],
+  reporter: [['html', { outputFolder: 'playwright-report' }]],
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     baseURL: 'http://localhost:3080',
@@ -25,17 +23,17 @@ export default defineConfig({
     trace: 'retain-on-failure',
     headless: true,
     storageState: path.resolve('./e2e/storageState.json'),
-    screenshot: 'only-on-failure',
+    screenshot: 'only-on-failure'
   },
   expect: {
-    timeout: 10000,
+    timeout: 10000
   },
   /* Configure projects for major browsers */
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
+      use: { ...devices['Desktop Chrome'] }
+    }
 
     // Note: enabling these will slow down the CI and is probably unnecessary.
     // {
@@ -74,6 +72,6 @@ export default defineConfig({
     command: 'node ../api/server/index.js',
     url: 'http://localhost:3080',
     timeout: 30_000,
-    reuseExistingServer: !process.env.CI,
-  },
+    reuseExistingServer: !process.env.CI
+  }
 });

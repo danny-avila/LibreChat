@@ -17,7 +17,7 @@ export default function SubmitButton({
 
   const isTokenProvided = endpointsConfig?.[endpoint]?.userProvide ? !!getToken() : true;
 
-  const clickHandler = e => {
+  const clickHandler = (e) => {
     e.preventDefault();
     submitMessage();
   };
@@ -101,12 +101,7 @@ export default function SubmitButton({
             width="1em"
             xmlns="http://www.w3.org/2000/svg"
           >
-            <line
-              x1="22"
-              y1="2"
-              x2="11"
-              y2="13"
-            />
+            <line x1="22" y1="2" x2="11" y2="13" />
             <polygon points="22 2 15 22 11 13 2 9 22 2" />
           </svg>
         </div>

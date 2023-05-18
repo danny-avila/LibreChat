@@ -39,7 +39,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
   };
 
   const availableModels = getChatGPTBrowserModels();
-  if (availableModels.find((model) => model === endpointOption.model) === undefined)
+  if (availableModels.find(model => model === endpointOption.model) === undefined)
     return handleError(res, { text: 'Illegal request: model' });
 
   console.log('ask log', {
@@ -180,7 +180,11 @@ const ask = async ({
 
     // If response has parentMessageId, the fake userMessage.messageId should be updated to the real one.
     if (!overrideParentMessageId)
-      await saveMessage({ ...userMessage, messageId: userMessageId, newMessageId: newUserMassageId });
+      await saveMessage({
+        ...userMessage,
+        messageId: userMessageId,
+        newMessageId: newUserMassageId
+      });
     userMessageId = newUserMassageId;
 
     sendMessage(res, {

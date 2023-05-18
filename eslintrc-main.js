@@ -4,105 +4,102 @@ module.exports = {
     es2021: true,
     node: true,
     commonjs: true,
-    es6: true,
+    es6: true
   },
   extends: [
-    "eslint:recommended",
-    "plugin:react/recommended",
-    "plugin:react-hooks/recommended",
-    "prettier",
+    'eslint:recommended',
+    'plugin:react/recommended',
+    'plugin:react-hooks/recommended',
+    'prettier'
   ],
   parser: '@typescript-eslint/parser',
   parserOptions: {
-    ecmaVersion: "latest",
-    sourceType: "module",
+    ecmaVersion: 'latest',
+    sourceType: 'module',
     ecmaFeatures: {
-      jsx: true,
-    },
+      jsx: true
+    }
   },
-  plugins: ["react", "react-hooks", "@typescript-eslint"],
+  plugins: ['react', 'react-hooks', '@typescript-eslint'],
   rules: {
-    "@typescript-eslint/ban-ts-comment": [
-      "error",
-      { "ts-ignore": "allow-with-description" },
-    ],
-    indent: ["error", 2, { SwitchCase: 1 }],
-    "max-len": [
-      "error",
+    '@typescript-eslint/ban-ts-comment': ['error', { 'ts-ignore': 'allow-with-description' }],
+    indent: ['error', 2, { SwitchCase: 1 }],
+    'max-len': [
+      'error',
       {
         code: 150,
         ignoreStrings: true,
         ignoreTemplateLiterals: true,
-        ignoreComments: true,
-      },
+        ignoreComments: true
+      }
     ],
-    "linebreak-style": 0,
+    'linebreak-style': 0,
     // "arrow-parens": [2, "as-needed", { requireForBlockBody: true }],
     // 'no-plusplus': ['error', { allowForLoopAfterthoughts: true }],
-    "no-console": "off",
-    "import/extensions": "off",
-    "no-use-before-define": [
-      "error",
+    'no-console': 'off',
+    'import/extensions': 'off',
+    'no-use-before-define': [
+      'error',
       {
-        functions: false,
-      },
+        functions: false
+      }
     ],
-    "no-promise-executor-return": "off",
-    "no-param-reassign": "off",
-    "no-continue": "off",
-    "no-restricted-syntax": "off",
-    "react/prop-types": ["off"],
-    "react/display-name": ["off"],
+    'no-promise-executor-return': 'off',
+    'no-param-reassign': 'off',
+    'no-continue': 'off',
+    'no-restricted-syntax': 'off',
+    'react/prop-types': ['off'],
+    'react/display-name': ['off']
   },
   overrides: [
     {
-      files: ["**/*.ts", "**/*.tsx"],
+      files: ['**/*.ts', '**/*.tsx'],
       rules: {
-        "no-unused-vars": "off", // off because it conflicts with '@typescript-eslint/no-unused-vars'
-        "react/display-name": "off",
-        "@typescript-eslint/no-unused-vars": "warn",
-      },
+        'no-unused-vars': 'off', // off because it conflicts with '@typescript-eslint/no-unused-vars'
+        'react/display-name': 'off',
+        '@typescript-eslint/no-unused-vars': 'warn'
+      }
     },
     {
-      files: ["rollup.config.js", ".eslintrc.js", "jest.config.js"],
+      files: ['rollup.config.js', '.eslintrc.js', 'jest.config.js'],
       env: {
-        node: true,
-      },
+        node: true
+      }
     },
     {
       files: [
-        "**/*.test.js",
-        "**/*.test.jsx",
-        "**/*.test.ts",
-        "**/*.test.tsx",
-        "**/*.spec.js",
-        "**/*.spec.jsx",
-        "**/*.spec.ts",
-        "**/*.spec.tsx",
-        "setupTests.js",
+        '**/*.test.js',
+        '**/*.test.jsx',
+        '**/*.test.ts',
+        '**/*.test.tsx',
+        '**/*.spec.js',
+        '**/*.spec.jsx',
+        '**/*.spec.ts',
+        '**/*.spec.tsx',
+        'setupTests.js'
       ],
       env: {
         jest: true,
-        node: true,
+        node: true
       },
       rules: {
-        "react/display-name": "off",
-        "react/prop-types": "off",
-        "react/no-unescaped-entities": "off",
-      },
+        'react/display-name': 'off',
+        'react/prop-types': 'off',
+        'react/no-unescaped-entities': 'off'
+      }
     },
     {
-      files: "**/*.+(ts)",
-      parser: "@typescript-eslint/parser",
+      files: '**/*.+(ts)',
+      parser: '@typescript-eslint/parser',
       parserOptions: {
-        project: "./client/tsconfig.json",
+        project: './client/tsconfig.json'
       },
-      plugins: ["@typescript-eslint/eslint-plugin"],
+      plugins: ['@typescript-eslint/eslint-plugin'],
       extends: [
-        "plugin:@typescript-eslint/eslint-recommended",
-        "plugin:@typescript-eslint/recommended",
-      ],
-    },
+        'plugin:@typescript-eslint/eslint-recommended',
+        'plugin:@typescript-eslint/recommended'
+      ]
+    }
   ],
   settings: {
     react: {
@@ -110,7 +107,7 @@ module.exports = {
       // default to "createReactClass"
       pragma: 'React', // Pragma to use, default to "React"
       fragment: 'Fragment', // Fragment to use (may be a property of <pragma>), default to "Fragment"
-      version: 'detect', // React version. "detect" automatically picks the version you have installed.
-    },
-  },
+      version: 'detect' // React version. "detect" automatically picks the version you have installed.
+    }
+  }
 };

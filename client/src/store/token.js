@@ -5,10 +5,10 @@ const tokenRefreshHints = atom({
   default: 1
 });
 
-const useToken = endpoint => {
+const useToken = (endpoint) => {
   const [hints, setHints] = useRecoilState(tokenRefreshHints);
   const getToken = () => localStorage.getItem(`${endpoint}_token`);
-  const saveToken = value => {
+  const saveToken = (value) => {
     localStorage.setItem(`${endpoint}_token`, value);
     setHints(prev => prev + 1);
   };

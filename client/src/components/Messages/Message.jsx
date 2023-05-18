@@ -41,7 +41,9 @@ export default function Message({
   const { ask, regenerate } = useMessageHandler();
   const { switchToConversation } = store.useConversation();
   const blinker = submitting && isSubmitting;
-  const getConversationQuery = useGetConversationByIdQuery(message.conversationId, { enabled: false });
+  const getConversationQuery = useGetConversationByIdQuery(message.conversationId, {
+    enabled: false
+  });
 
   // debugging
   // useEffect(() => {
@@ -71,9 +73,9 @@ export default function Message({
     }
   };
 
-  const getError = text => {
+  const getError = (text) => {
     const match = text.match(/\{[^{}]*\}/);
-    var json = match ? match[0] : ''
+    var json = match ? match[0] : '';
     if (isJson(json)) {
       json = JSON.parse(json);
       if (json.code === 'invalid_api_key') {
@@ -124,7 +126,7 @@ export default function Message({
     if (!isSubmitting && !message?.isCreatedByUser) regenerate(message);
   };
 
-  const copyToClipboard = setIsCopied => {
+  const copyToClipboard = (setIsCopied) => {
     setIsCopied(true);
     copy(message?.text);
 
@@ -135,17 +137,14 @@ export default function Message({
 
   const clickSearchResult = async () => {
     if (!searchResult) return;
-    getConversationQuery.refetch(message.conversationId).then(response => {
+    getConversationQuery.refetch(message.conversationId).then((response) => {
       switchToConversation(response.data);
     });
   };
 
   return (
     <>
-      <div
-        {...props}
-        onWheel={handleWheel}
-      >
+      <div {...props} onWheel={handleWheel}>
         <div className="relative m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
           <div className="relative flex h-[30px] w-[30px] flex-col items-end text-right text-xs md:text-sm">
             {typeof icon === 'string' && icon.match(/[^\\x00-\\x7F]+/) ? (
@@ -197,10 +196,7 @@ export default function Message({
                     >
                       Save & Submit
                     </button>
-                    <button
-                      className="btn btn-neutral relative"
-                      onClick={() => enterEdit(true)}
-                    >
+                    <button className="btn btn-neutral relative" onClick={() => enterEdit(true)}>
                       Cancel
                     </button>
                   </div>

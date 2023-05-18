@@ -34,7 +34,7 @@ export default function TextChat({ isSearchView = false }) {
   // const bingStylesRef = useRef(null);
   const [showBingToneSetting, setShowBingToneSetting] = useState(false);
 
-  const isNotAppendable = (latestMessage?.unfinished & !isSubmitting) || latestMessage?.error;
+  const isNotAppendable = latestMessage?.unfinished & !isSubmitting || latestMessage?.error;
 
   // auto focus to input, when enter a conversation.
   useEffect(() => {
@@ -64,12 +64,12 @@ export default function TextChat({ isSearchView = false }) {
     setText('');
   };
 
-  const handleStopGenerating = e => {
+  const handleStopGenerating = (e) => {
     e.preventDefault();
     stopGenerating();
   };
 
-  const handleKeyDown = e => {
+  const handleKeyDown = (e) => {
     if (e.key === 'Enter' && isSubmitting) {
       return;
     }
@@ -83,7 +83,7 @@ export default function TextChat({ isSearchView = false }) {
     }
   };
 
-  const handleKeyUp = e => {
+  const handleKeyUp = (e) => {
     if (e.keyCode === 8 && e.target.value.trim() === '') {
       setText(e.target.value);
     }
@@ -105,7 +105,7 @@ export default function TextChat({ isSearchView = false }) {
     isComposing.current = false;
   };
 
-  const changeHandler = e => {
+  const changeHandler = (e) => {
     const { value } = e.target;
 
     setText(value);

@@ -25,7 +25,7 @@ export default function ExportConversation() {
     <>
       <button
         className={cn(
-          'flex py-3 px-3 items-center gap-3 transition-colors duration-200 text-white cursor-pointer text-sm hover:bg-gray-700 w-full',
+          'flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700',
           exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-gray-400'
         )}
         onClick={clickHandler}
@@ -34,10 +34,7 @@ export default function ExportConversation() {
         Export conversation
       </button>
 
-      <ExportModel
-        open={open}
-        onOpenChange={setOpen}
-      />
+      <ExportModel open={open} onOpenChange={setOpen} />
     </>
   );
 }

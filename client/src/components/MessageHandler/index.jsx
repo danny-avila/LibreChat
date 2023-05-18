@@ -27,7 +27,7 @@ export default function MessageHandler() {
           text: data,
           parentMessageId: message?.overrideParentMessageId,
           messageId: message?.overrideParentMessageId + '_',
-          submitting: true,
+          submitting: true
           // unfinished: true
         }
       ]);
@@ -40,7 +40,7 @@ export default function MessageHandler() {
           text: data,
           parentMessageId: message?.messageId,
           messageId: message?.messageId + '_',
-          submitting: true,
+          submitting: true
           // unfinished: true
         }
       ]);
@@ -153,7 +153,7 @@ export default function MessageHandler() {
     return;
   };
 
-  const abortConversation = conversationId => {
+  const abortConversation = (conversationId) => {
     console.log(submission);
     const { endpoint } = submission?.conversation || {};
 
@@ -161,18 +161,18 @@ export default function MessageHandler() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+        Authorization: `Bearer ${token}`
       },
       body: JSON.stringify({
         abortKey: conversationId
       })
     })
       .then(response => response.json())
-      .then(data => {
+      .then((data) => {
         console.log('aborted', data);
         cancelHandler(data, submission);
       })
-      .catch(error => {
+      .catch((error) => {
         console.error('Error aborting request');
         console.error(error);
         // errorHandler({ text: 'Error aborting request' }, { ...submission, message });
@@ -190,10 +190,10 @@ export default function MessageHandler() {
 
     const events = new SSE(server, {
       payload: JSON.stringify(payload),
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`}
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
     });
 
-    events.onmessage = e => {
+    events.onmessage = (e) => {
       const data = JSON.parse(e.data);
 
       if (data.final) {
@@ -219,7 +219,8 @@ export default function MessageHandler() {
 
     events.onopen = () => console.log('connection is opened');
 
-    events.oncancel = () => abortConversation(message?.conversationId || submission?.conversationId);
+    events.oncancel = () =>
+      abortConversation(message?.conversationId || submission?.conversationId);
 
     events.onerror = function (e) {
       console.log('error in opening conn.');

@@ -12,8 +12,8 @@ const alternateName = {
   azureOpenAI: 'Azure OpenAI',
   bingAI: 'Bing',
   chatGPTBrowser: 'ChatGPT',
-  google: 'PaLM',
-}
+  google: 'PaLM'
+};
 
 export default function ModelItem({ endpoint, value, onSelect }) {
   const [setTokenDialogOpen, setSetTokenDialogOpen] = useState(false);
@@ -42,7 +42,7 @@ export default function ModelItem({ endpoint, value, onSelect }) {
         {isUserProvided ? (
           <button
             className="invisible m-0 mr-1 flex-initial rounded-md p-0 text-xs font-medium text-gray-400 hover:text-gray-700 group-hover:visible dark:font-normal dark:text-gray-400 dark:hover:text-gray-200"
-            onClick={e => {
+            onClick={(e) => {
               e.preventDefault();
               setSetTokenDialogOpen(true);
             }}
