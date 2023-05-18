@@ -1,4 +1,3 @@
-import React from 'react';
 import { Search } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import store from '~/store';
