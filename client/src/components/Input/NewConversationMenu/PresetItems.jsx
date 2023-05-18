@@ -4,7 +4,7 @@ import PresetItem from './PresetItem.jsx';
 export default function PresetItems({ presets, onSelect, onChangePreset, onDeletePreset }) {
   return (
     <>
-      {presets.map(preset => (
+      {presets.map((preset) => (
         <PresetItem
           key={preset?.presetId}
           value={preset}

@@ -61,7 +61,7 @@ export default function NewConversationMenu() {
   // update the default model when availableModels changes
   // typically, availableModels changes => modelsFilter or customGPTModels changes
   useEffect(() => {
-    const isInvalidConversation = !availableEndpoints.find(e => e === endpoint);
+    const isInvalidConversation = !availableEndpoints.find((e) => e === endpoint);
     if (conversationId == 'new' && isInvalidConversation) {
       newConversation();
     }
@@ -135,7 +135,7 @@ export default function NewConversationMenu() {
         </DropdownMenuTrigger>
         <DropdownMenuContent
           className="min-w-[300px] dark:bg-gray-700"
-          onCloseAutoFocus={event => event.preventDefault()}
+          onCloseAutoFocus={(event) => event.preventDefault()}
         >
           <DropdownMenuLabel className="dark:text-gray-300">Select an Endpoint</DropdownMenuLabel>
           <DropdownMenuSeparator />
@@ -156,7 +156,7 @@ export default function NewConversationMenu() {
           <div className="mt-6 w-full" />
 
           <DropdownMenuLabel className="flex items-center dark:text-gray-300">
-            <span className="cursor-pointer" onClick={() => setShowPresets(prev => !prev)}>
+            <span className="cursor-pointer" onClick={() => setShowPresets((prev) => !prev)}>
               {showPresets ? 'Hide ' : 'Show '} Presets
             </span>
             <div className="flex-1" />

@@ -20,7 +20,7 @@ export default function SearchBar({ clearSearch }) {
         type="text"
         className="m-0 mr-0 w-full border-none bg-transparent p-0 text-sm leading-tight outline-none"
         value={searchQuery}
-        onChange={e => setSearchQuery(e.target.value)}
+        onChange={(e) => setSearchQuery(e.target.value)}
         placeholder="Search messages"
         onKeyUp={handleKeyUp}
       />

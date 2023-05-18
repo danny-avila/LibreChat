@@ -16,7 +16,7 @@ const refreshConversationsHint = atom({
 const useConversations = () => {
   const setRefreshConversationsHint = useSetRecoilState(refreshConversationsHint);
 
-  const refreshConversations = () => setRefreshConversationsHint(prevState => prevState + 1);
+  const refreshConversations = () => setRefreshConversationsHint((prevState) => prevState + 1);
 
   return { refreshConversations };
 };

@@ -39,7 +39,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
   };
 
   const availableModels = getChatGPTBrowserModels();
-  if (availableModels.find(model => model === endpointOption.model) === undefined)
+  if (availableModels.find((model) => model === endpointOption.model) === undefined)
     return handleError(res, { text: 'Illegal request: model' });
 
   console.log('ask log', {

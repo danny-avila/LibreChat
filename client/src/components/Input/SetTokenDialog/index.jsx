@@ -176,7 +176,7 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
                     <InputWithLabel
                       id={'chatGPTLabel'}
                       value={token || ''}
-                      onChange={e => setToken(e.target.value || '')}
+                      onChange={(e) => setToken(e.target.value || '')}
                       label={'OpenAI API Key'}
                     />
                   </>
@@ -185,28 +185,28 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
                     <InputWithLabel
                       id={'instanceNameLabel'}
                       value={getAzure('instanceName') || ''}
-                      onChange={e => setAzure('instanceName', e.target.value || '')}
+                      onChange={(e) => setAzure('instanceName', e.target.value || '')}
                       label={'Azure OpenAI Instance Name'}
                     />
 
                     <InputWithLabel
                       id={'deploymentNameLabel'}
                       value={getAzure('deploymentName') || ''}
-                      onChange={e => setAzure('deploymentName', e.target.value || '')}
+                      onChange={(e) => setAzure('deploymentName', e.target.value || '')}
                       label={'Azure OpenAI Deployment Name'}
                     />
 
                     <InputWithLabel
                       id={'versionLabel'}
                       value={getAzure('version') || ''}
-                      onChange={e => setAzure('version', e.target.value || '')}
+                      onChange={(e) => setAzure('version', e.target.value || '')}
                       label={'Azure OpenAI API Version'}
                     />
 
                     <InputWithLabel
                       id={'apiKeyLabel'}
                       value={getAzure('apiKey') || ''}
-                      onChange={e => setAzure('apiKey', e.target.value || '')}
+                      onChange={(e) => setAzure('apiKey', e.target.value || '')}
                       label={'Azure OpenAI API Key'}
                     />
                   </>
@@ -236,7 +236,7 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
                 <InputWithLabel
                   id={'chatGPTLabel'}
                   value={token || ''}
-                  onChange={e => setToken(e.target.value || '')}
+                  onChange={(e) => setToken(e.target.value || '')}
                   label={'Token Name'}
                 />
               </>

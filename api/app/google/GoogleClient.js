@@ -45,7 +45,7 @@ class GoogleAgent {
     }
 
     this.options.examples = this.options.examples.filter(
-      obj => obj.input.content !== '' && obj.output.content !== ''
+      (obj) => obj.input.content !== '' && obj.output.content !== ''
     );
 
     const modelOptions = this.options.modelOptions || {};
@@ -375,7 +375,7 @@ class GoogleAgent {
     let currentMessageId = parentMessageId;
     while (currentMessageId) {
       // eslint-disable-next-line no-loop-func
-      const message = messages.find(m => m.messageId === currentMessageId);
+      const message = messages.find((m) => m.messageId === currentMessageId);
       if (!message) {
         break;
       }
@@ -387,7 +387,7 @@ class GoogleAgent {
       return [];
     }
 
-    return orderedMessages.map(msg => ({
+    return orderedMessages.map((msg) => ({
       isCreatedByUser: msg.isCreatedByUser,
       content: msg.text
     }));

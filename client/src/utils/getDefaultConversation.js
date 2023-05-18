@@ -128,7 +128,7 @@ const getDefaultConversation = ({ conversation, prevConversation, endpointsConfi
   // if anything happens, reset to default model
 
   const endpoint = ['openAI', 'azureOpenAI', 'bingAI', 'chatGPTBrowser', 'google'].find(
-    e => endpointsConfig?.[e]
+    (e) => endpointsConfig?.[e]
   );
   if (endpoint) {
     conversation = buildDefaultConversation({ conversation, endpoint, endpointsConfig });

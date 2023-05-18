@@ -66,7 +66,7 @@ function Settings(props) {
               id="chatGptLabel"
               disabled={readonly}
               value={chatGptLabel || ''}
-              onChange={e => setChatGptLabel(e.target.value || null)}
+              onChange={(e) => setChatGptLabel(e.target.value || null)}
               placeholder="Set a custom name for ChatGPT"
               className={cn(
                 defaultTextProps,
@@ -82,7 +82,7 @@ function Settings(props) {
               id="promptPrefix"
               disabled={readonly}
               value={promptPrefix || ''}
-              onChange={e => setPromptPrefix(e.target.value || null)}
+              onChange={(e) => setPromptPrefix(e.target.value || null)}
               placeholder="Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
               className={cn(
                 defaultTextProps,
@@ -102,7 +102,7 @@ function Settings(props) {
                   id="temp-int"
                   disabled={readonly}
                   value={temperature}
-                  onChange={value => setTemperature(value)}
+                  onChange={(value) => setTemperature(value)}
                   max={2}
                   min={0}
                   step={0.01}
@@ -119,7 +119,7 @@ function Settings(props) {
               <Slider
                 disabled={readonly}
                 value={[temperature]}
-                onValueChange={value => setTemperature(value[0])}
+                onValueChange={(value) => setTemperature(value[0])}
                 doubleClickHandler={() => setTemperature(1)}
                 max={2}
                 min={0}
@@ -139,7 +139,7 @@ function Settings(props) {
                   id="top-p-int"
                   disabled={readonly}
                   value={topP}
-                  onChange={value => setTopP(value)}
+                  onChange={(value) => setTopP(value)}
                   max={1}
                   min={0}
                   step={0.01}
@@ -156,7 +156,7 @@ function Settings(props) {
               <Slider
                 disabled={readonly}
                 value={[topP]}
-                onValueChange={value => setTopP(value[0])}
+                onValueChange={(value) => setTopP(value[0])}
                 doubleClickHandler={() => setTopP(1)}
                 max={1}
                 min={0}
@@ -177,7 +177,7 @@ function Settings(props) {
                   id="freq-penalty-int"
                   disabled={readonly}
                   value={freqP}
-                  onChange={value => setFreqP(value)}
+                  onChange={(value) => setFreqP(value)}
                   max={2}
                   min={-2}
                   step={0.01}
@@ -194,7 +194,7 @@ function Settings(props) {
               <Slider
                 disabled={readonly}
                 value={[freqP]}
-                onValueChange={value => setFreqP(value[0])}
+                onValueChange={(value) => setFreqP(value[0])}
                 doubleClickHandler={() => setFreqP(0)}
                 max={2}
                 min={-2}
@@ -215,7 +215,7 @@ function Settings(props) {
                   id="pres-penalty-int"
                   disabled={readonly}
                   value={presP}
-                  onChange={value => setPresP(value)}
+                  onChange={(value) => setPresP(value)}
                   max={2}
                   min={-2}
                   step={0.01}
@@ -232,7 +232,7 @@ function Settings(props) {
               <Slider
                 disabled={readonly}
                 value={[presP]}
-                onValueChange={value => setPresP(value[0])}
+                onValueChange={(value) => setPresP(value[0])}
                 doubleClickHandler={() => setPresP(0)}
                 max={2}
                 min={-2}

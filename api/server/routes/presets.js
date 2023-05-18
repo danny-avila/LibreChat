@@ -40,7 +40,7 @@ router.post('/delete', requireJwtAuth, async (req, res) => {
   try {
     await deletePresets(req.user.id, filter);
 
-    const presets = (await getPresets(req.user.id)).map(preset => preset.toObject());
+    const presets = (await getPresets(req.user.id)).map((preset) => preset.toObject());
 
     // console.log('delete preset response', presets);
     res.status(201).send(presets);

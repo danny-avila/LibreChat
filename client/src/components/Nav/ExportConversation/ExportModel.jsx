@@ -31,7 +31,7 @@ export default function ExportModel({ open, onOpenChange }) {
 
   const getSiblingIdx = useRecoilCallback(
     ({ snapshot }) =>
-      async messageId =>
+      async (messageId) =>
         await snapshot.getPromise(store.messagesSiblingIdxFamily(messageId)),
     []
   );
@@ -142,39 +142,39 @@ export default function ExportModel({ open, onOpenChange }) {
       fileName: filename,
       extension: 'csv',
       exportType: exportFromJSON.types.csv,
-      beforeTableEncode: entries => [
+      beforeTableEncode: (entries) => [
         {
           fieldName: 'sender',
-          fieldValues: entries.find(e => e.fieldName == 'sender').fieldValues
+          fieldValues: entries.find((e) => e.fieldName == 'sender').fieldValues
         },
-        { fieldName: 'text', fieldValues: entries.find(e => e.fieldName == 'text').fieldValues },
+        { fieldName: 'text', fieldValues: entries.find((e) => e.fieldName == 'text').fieldValues },
         {
           fieldName: 'isCreatedByUser',
-          fieldValues: entries.find(e => e.fieldName == 'isCreatedByUser').fieldValues
+          fieldValues: entries.find((e) => e.fieldName == 'isCreatedByUser').fieldValues
         },
         {
           fieldName: 'error',
-          fieldValues: entries.find(e => e.fieldName == 'error').fieldValues
+          fieldValues: entries.find((e) => e.fieldName == 'error').fieldValues
         },
         {
           fieldName: 'unfinished',
-          fieldValues: entries.find(e => e.fieldName == 'unfinished').fieldValues
+          fieldValues: entries.find((e) => e.fieldName == 'unfinished').fieldValues
         },
         {
           fieldName: 'cancelled',
-          fieldValues: entries.find(e => e.fieldName == 'cancelled').fieldValues
+          fieldValues: entries.find((e) => e.fieldName == 'cancelled').fieldValues
         },
         {
           fieldName: 'messageId',
-          fieldValues: entries.find(e => e.fieldName == 'messageId').fieldValues
+          fieldValues: entries.find((e) => e.fieldName == 'messageId').fieldValues
         },
         {
           fieldName: 'parentMessageId',
-          fieldValues: entries.find(e => e.fieldName == 'parentMessageId').fieldValues
+          fieldValues: entries.find((e) => e.fieldName == 'parentMessageId').fieldValues
         },
         {
           fieldName: 'createdAt',
-          fieldValues: entries.find(e => e.fieldName == 'createdAt').fieldValues
+          fieldValues: entries.find((e) => e.fieldName == 'createdAt').fieldValues
         }
       ]
     });
@@ -322,7 +322,7 @@ export default function ExportModel({ open, onOpenChange }) {
                 <Input
                   id="filename"
                   value={filename}
-                  onChange={e => setFileName(filenamify(e.target.value || ''))}
+                  onChange={(e) => setFileName(filenamify(e.target.value || ''))}
                   placeholder="Set the filename"
                   className={cn(
                     defaultTextProps,
