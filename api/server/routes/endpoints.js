@@ -38,9 +38,11 @@ router.get('/', async function (req, res) {
   const google =
     key || palmUser ? { userProvide: palmUser, availableModels: ['chat-bison', 'text-bison'] } : false;
   const azureOpenAI = !!process.env.AZURE_OPENAI_KEY;
+  const apiKey = process.env.OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY;
+  console.log('API KEY', apiKey);
   const openAI =
-    process.env.OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY
-      ? { availableModels: getOpenAIModels(), userProvide: true }
+    apiKey
+      ? { availableModels: getOpenAIModels(), userProvide: apiKey === 'user_provided' }
       : false;
   const bingAI = process.env.BINGAI_TOKEN
     ? { userProvide: process.env.BINGAI_TOKEN == 'user_provided' }
