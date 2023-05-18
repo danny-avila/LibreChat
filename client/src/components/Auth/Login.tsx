@@ -42,7 +42,7 @@ function Login() {
           className="mt-6"
           aria-label="Login form"
           method="POST"
-          onSubmit={handleSubmit(data => login(data))}
+          onSubmit={handleSubmit((data) => login(data))}
         >
           <div className="mb-2">
             <div className="relative">

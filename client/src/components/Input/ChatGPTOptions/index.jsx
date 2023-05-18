@@ -17,10 +17,10 @@ function ChatGPTOptions() {
 
   const models = endpointsConfig?.['chatGPTBrowser']?.['availableModels'] || [];
 
-  const setOption = param => (newValue) => {
+  const setOption = (param) => (newValue) => {
     let update = {};
     update[param] = newValue;
-    setConversation(prevState => ({
+    setConversation((prevState) => ({
       ...prevState,
       ...update
     }));

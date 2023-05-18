@@ -22,12 +22,12 @@ const ModelSelect = ({ model, onChange, availableModels, ...props }) => {
       </DropdownMenuTrigger>
       <DropdownMenuContent
         className="w-56 dark:bg-gray-700"
-        onCloseAutoFocus={event => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <DropdownMenuLabel className="dark:text-gray-300">Select a model</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuRadioGroup value={model} onValueChange={onChange} className="overflow-y-auto">
-          {availableModels.map(model => (
+          {availableModels.map((model) => (
             <DropdownMenuRadioItem
               key={model}
               value={model}

@@ -22,10 +22,10 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
     setEndpointName('PaLM');
   }
 
-  const setOption = param => (newValue) => {
+  const setOption = (param) => (newValue) => {
     let update = {};
     update[param] = newValue;
-    setPreset(prevState => ({
+    setPreset((prevState) => ({
       ...prevState,
       ...update
     }));

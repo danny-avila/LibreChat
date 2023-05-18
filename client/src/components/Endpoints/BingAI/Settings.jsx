@@ -17,7 +17,7 @@ function Settings(props) {
   const setContext = setOption('context');
   const setSystemMessage = setOption('systemMessage');
   const setJailbreak = setOption('jailbreak');
-  const setToneStyle = value => setOption('toneStyle')(value.toLowerCase());
+  const setToneStyle = (value) => setOption('toneStyle')(value.toLowerCase());
   const debouncedContext = useDebounce(context, 250);
   const updateTokenCountMutation = useUpdateTokenCountMutation();
 
@@ -71,7 +71,7 @@ function Settings(props) {
               id="context"
               disabled={readonly}
               value={context || ''}
-              onChange={e => setContext(e.target.value || null)}
+              onChange={(e) => setContext(e.target.value || null)}
               placeholder="Bing can use up to 7k tokens for 'context', which it can reference for the conversation. The specific limit is not known but may run into errors exceeding 7k tokens"
               className={cn(
                 defaultTextProps,
@@ -123,7 +123,7 @@ function Settings(props) {
                 id="systemMessage"
                 disabled={readonly}
                 value={systemMessage || ''}
-                onChange={e => setSystemMessage(e.target.value || null)}
+                onChange={(e) => setSystemMessage(e.target.value || null)}
                 placeholder="WARNING: Misuse of this feature can get you BANNED from using Bing! Click on 'System Message' for full instructions and the default message if omitted, which is the 'Sydney' preset that is considered safe."
                 className={cn(
                   defaultTextProps,

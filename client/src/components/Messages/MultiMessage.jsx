@@ -41,7 +41,7 @@ export default function MultiMessage({
     return (
       <>
         {messagesTree
-          ? messagesTree.map(message => (
+          ? messagesTree.map((message) => (
             <Message
               key={message.messageId}
               conversation={conversation}

@@ -37,7 +37,7 @@ export default function ModelItem({ endpoint, value, onSelect }) {
       >
         {icon}
         {alternateName[endpoint] || endpoint}
-        {!!['azureOpenAI', 'openAI'].find(e => e === endpoint) && <sup>$</sup>}
+        {!!['azureOpenAI', 'openAI'].find((e) => e === endpoint) && <sup>$</sup>}
         <div className="flex w-4 flex-1" />
         {isUserProvided ? (
           <button

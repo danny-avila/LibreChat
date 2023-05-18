@@ -164,7 +164,7 @@ const ask = async ({
       text: await handleText(response, true),
       suggestions:
         response.details.suggestedResponses &&
-        response.details.suggestedResponses.map(s => s.text),
+        response.details.suggestedResponses.map((s) => s.text),
       unfinished: false,
       cancelled: false,
       error: false

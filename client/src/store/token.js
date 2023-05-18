@@ -10,7 +10,7 @@ const useToken = (endpoint) => {
   const getToken = () => localStorage.getItem(`${endpoint}_token`);
   const saveToken = (value) => {
     localStorage.setItem(`${endpoint}_token`, value);
-    setHints(prev => prev + 1);
+    setHints((prev) => prev + 1);
   };
 
   return { token: getToken(), getToken, saveToken };

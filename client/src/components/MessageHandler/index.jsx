@@ -72,7 +72,7 @@ export default function MessageHandler() {
       }, 5000);
     }
 
-    setConversation(prevState => ({
+    setConversation((prevState) => ({
       ...prevState,
       ...conversation
     }));
@@ -104,7 +104,7 @@ export default function MessageHandler() {
       ]);
 
     const { conversationId } = message;
-    setConversation(prevState => ({
+    setConversation((prevState) => ({
       ...prevState,
       conversationId
     }));
@@ -133,7 +133,7 @@ export default function MessageHandler() {
       }, 5000);
     }
 
-    setConversation(prevState => ({
+    setConversation((prevState) => ({
       ...prevState,
       ...conversation
     }));
@@ -167,7 +167,7 @@ export default function MessageHandler() {
         abortKey: conversationId
       })
     })
-      .then(response => response.json())
+      .then((response) => response.json())
       .then((data) => {
         console.log('aborted', data);
         cancelHandler(data, submission);

@@ -26,7 +26,7 @@ const loginUser = async (user) => {
 
 const logoutUser = async (user, refreshToken) => {
   User.findById(user._id).then((user) => {
-    const tokenIndex = user.refreshToken.findIndex(item => item.refreshToken === refreshToken);
+    const tokenIndex = user.refreshToken.findIndex((item) => item.refreshToken === refreshToken);
 
     if (tokenIndex !== -1) {
       user.refreshToken.id(user.refreshToken[tokenIndex]._id).remove();
