@@ -196,7 +196,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
             <div className="w-full p-0">
               {((preset?.endpoint === 'google' && !showExamples) || preset?.endpoint !== 'google') && (
                 <Settings
-                  preset={_preset}
+                  preset={preset}
                   setOption={setOption}
                 />
               )}

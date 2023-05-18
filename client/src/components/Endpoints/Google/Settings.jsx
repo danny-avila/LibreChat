@@ -18,7 +18,7 @@ import store from '~/store';
 
 function Settings(props) {
   const { readonly, model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens, setOption, edit = false } = props;
-  const maxHeight = edit ? 'max-h-[233px]' : 'max-h-[350px]';
+  const maxHeight = edit ? 'max-h-[305px]' : 'max-h-[350px]';
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   const setModel = setOption('model');
