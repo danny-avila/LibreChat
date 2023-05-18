@@ -17,7 +17,7 @@ export default function MultiMessage({
 
   const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
 
-  const setSiblingIdxRev = value => {
+  const setSiblingIdxRev = (value) => {
     setSiblingIdx(messagesTree?.length - value - 1);
   };
 
@@ -42,18 +42,18 @@ export default function MultiMessage({
       <>
         {messagesTree
           ? messagesTree.map(message => (
-              <Message
-                key={message.messageId}
-                conversation={conversation}
-                message={message}
-                scrollToBottom={scrollToBottom}
-                currentEditId={currentEditId}
-                setCurrentEditId={null}
-                siblingIdx={1}
-                siblingCount={1}
-                setSiblingIdx={null}
-              />
-            ))
+            <Message
+              key={message.messageId}
+              conversation={conversation}
+              message={message}
+              scrollToBottom={scrollToBottom}
+              currentEditId={currentEditId}
+              setCurrentEditId={null}
+              siblingIdx={1}
+              siblingCount={1}
+              setSiblingIdx={null}
+            />
+          ))
           : null}
       </>
     );

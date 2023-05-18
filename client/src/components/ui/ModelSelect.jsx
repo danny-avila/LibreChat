@@ -14,10 +14,7 @@ const ModelSelect = ({ model, onChange, availableModels, ...props }) => {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <DropdownMenu
-      open={menuOpen}
-      onOpenChange={setMenuOpen}
-    >
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
         <Button {...props}>
           <span className="w-full text-center text-xs font-medium font-normal">Model: {model}</span>
@@ -29,11 +26,7 @@ const ModelSelect = ({ model, onChange, availableModels, ...props }) => {
       >
         <DropdownMenuLabel className="dark:text-gray-300">Select a model</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuRadioGroup
-          value={model}
-          onValueChange={onChange}
-          className="overflow-y-auto"
-        >
+        <DropdownMenuRadioGroup value={model} onValueChange={onChange} className="overflow-y-auto">
           {availableModels.map(model => (
             <DropdownMenuRadioItem
               key={model}

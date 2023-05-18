@@ -17,7 +17,17 @@ const optionText =
 import store from '~/store';
 
 function Settings(props) {
-  const { readonly, model, chatGptLabel, promptPrefix, temperature, topP, freqP, presP, setOption } = props;
+  const {
+    readonly,
+    model,
+    chatGptLabel,
+    promptPrefix,
+    temperature,
+    topP,
+    freqP,
+    presP,
+    setOption
+  } = props;
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
@@ -49,10 +59,7 @@ function Settings(props) {
             />
           </div>
           <div className="grid w-full items-center gap-2">
-            <Label
-              htmlFor="chatGptLabel"
-              className="text-left text-sm font-medium"
-            >
+            <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
               Custom Name <small className="opacity-40">(default: blank)</small>
             </Label>
             <Input
@@ -68,10 +75,7 @@ function Settings(props) {
             />
           </div>
           <div className="grid w-full items-center gap-2">
-            <Label
-              htmlFor="promptPrefix"
-              className="text-left text-sm font-medium"
-            >
+            <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
               Prompt Prefix <small className="opacity-40">(default: blank)</small>
             </Label>
             <TextareaAutosize
@@ -91,10 +95,7 @@ function Settings(props) {
           <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
-                <Label
-                  htmlFor="temp-int"
-                  className="text-left text-sm font-medium"
-                >
+                <Label htmlFor="temp-int" className="text-left text-sm font-medium">
                   Temperature <small className="opacity-40">(default: 1)</small>
                 </Label>
                 <InputNumber
@@ -126,18 +127,12 @@ function Settings(props) {
                 className="flex h-4 w-full"
               />
             </HoverCardTrigger>
-            <OptionHover
-              type="temp"
-              side="left"
-            />
+            <OptionHover type="temp" side="left" />
           </HoverCard>
           <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
-                <Label
-                  htmlFor="top-p-int"
-                  className="text-left text-sm font-medium"
-                >
+                <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
                   Top P <small className="opacity-40">(default: 1)</small>
                 </Label>
                 <InputNumber
@@ -169,19 +164,13 @@ function Settings(props) {
                 className="flex h-4 w-full"
               />
             </HoverCardTrigger>
-            <OptionHover
-              type="topp"
-              side="left"
-            />
+            <OptionHover type="topp" side="left" />
           </HoverCard>
 
           <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
-                <Label
-                  htmlFor="freq-penalty-int"
-                  className="text-left text-sm font-medium"
-                >
+                <Label htmlFor="freq-penalty-int" className="text-left text-sm font-medium">
                   Frequency Penalty <small className="opacity-40">(default: 0)</small>
                 </Label>
                 <InputNumber
@@ -213,19 +202,13 @@ function Settings(props) {
                 className="flex h-4 w-full"
               />
             </HoverCardTrigger>
-            <OptionHover
-              type="freq"
-              side="left"
-            />
+            <OptionHover type="freq" side="left" />
           </HoverCard>
 
           <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
-                <Label
-                  htmlFor="pres-penalty-int"
-                  className="text-left text-sm font-medium"
-                >
+                <Label htmlFor="pres-penalty-int" className="text-left text-sm font-medium">
                   Presence Penalty <small className="opacity-40">(default: 0)</small>
                 </Label>
                 <InputNumber
@@ -257,10 +240,7 @@ function Settings(props) {
                 className="flex h-4 w-full"
               />
             </HoverCardTrigger>
-            <OptionHover
-              type="pres"
-              side="left"
-            />
+            <OptionHover type="pres" side="left" />
           </HoverCard>
         </div>
       </div>

@@ -142,7 +142,6 @@ userSchema.methods.comparePassword = function (candidatePassword, callback) {
 };
 
 module.exports.hashPassword = async (password) => {
-
   const hashedPassword = await new Promise((resolve, reject) => {
     bcrypt.hash(password, 10, function (err, hash) {
       if (err) reject(err);

@@ -17,14 +17,14 @@ export default function Landing() {
 
   useDocumentTitle(title);
 
-  const clickHandler = e => {
+  const clickHandler = (e) => {
     e.preventDefault();
     const { innerText } = e.target;
     const quote = innerText.split('"')[1].trim();
     setText(quote);
   };
 
-  const showTemplates = e => {
+  const showTemplates = (e) => {
     e.preventDefault();
     setShowingTemplates(!showingTemplates);
   };
@@ -32,8 +32,11 @@ export default function Landing() {
   return (
     <div className="flex h-full flex-col items-center overflow-y-auto pt-0 text-sm dark:bg-gray-800">
       <div className="w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
-        <h1 id="landing-title" className="mt-6 ml-auto mr-auto mb-10 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-16 md:mt-[10vh]">
-          {import.meta.env.VITE_APP_TITLE || "ChatGPT Clone"}
+        <h1
+          id="landing-title"
+          className="mb-10 ml-auto mr-auto mt-6 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-16 md:mt-[10vh]"
+        >
+          {import.meta.env.VITE_APP_TITLE || 'ChatGPT Clone'}
         </h1>
         <div className="items-start gap-3.5 text-center md:flex">
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">

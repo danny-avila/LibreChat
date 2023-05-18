@@ -39,21 +39,21 @@ export default function NewConversationMenu() {
   const deletePresetsMutation = useDeletePresetMutation();
   const createPresetMutation = useCreatePresetMutation();
 
-  const importPreset = jsonData => {
+  const importPreset = (jsonData) => {
     createPresetMutation.mutate(
       { ...jsonData },
       {
-        onSuccess: data => {
+        onSuccess: (data) => {
           setPresets(data);
         },
-        onError: error => {
+        onError: (error) => {
           console.error('Error uploading the preset:', error);
         }
       }
     );
   };
 
-  const onFileSelected = jsonData => {
+  const onFileSelected = (jsonData) => {
     const jsonPreset = { ...cleanupPreset({ preset: jsonData, endpointsConfig }), presetId: null };
     importPreset(jsonPreset);
   };
@@ -80,7 +80,7 @@ export default function NewConversationMenu() {
   }, [conversation]);
 
   // set the current model
-  const onSelectEndpoint = newEndpoint => {
+  const onSelectEndpoint = (newEndpoint) => {
     setMenuOpen(false);
 
     if (!newEndpoint) return;
@@ -90,7 +90,7 @@ export default function NewConversationMenu() {
   };
 
   // set the current model
-  const onSelectPreset = newPreset => {
+  const onSelectPreset = (newPreset) => {
     setMenuOpen(false);
     if (!newPreset) return;
     else {
@@ -98,7 +98,7 @@ export default function NewConversationMenu() {
     }
   };
 
-  const onChangePreset = preset => {
+  const onChangePreset = (preset) => {
     setPresetModelVisible(true);
     setPreset(preset);
   };
@@ -107,7 +107,7 @@ export default function NewConversationMenu() {
     deletePresetsMutation.mutate({ arg: {} });
   };
 
-  const onDeletePreset = preset => {
+  const onDeletePreset = (preset) => {
     deletePresetsMutation.mutate({ arg: preset });
   };
 
@@ -121,10 +121,7 @@ export default function NewConversationMenu() {
 
   return (
     <Dialog>
-      <DropdownMenu
-        open={menuOpen}
-        onOpenChange={setMenuOpen}
-      >
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
@@ -148,22 +145,18 @@ export default function NewConversationMenu() {
             className="overflow-y-auto"
           >
             {availableEndpoints.length ? (
-              <EndpointItems
-                endpoints={availableEndpoints}
-                onSelect={onSelectEndpoint}
-              />
+              <EndpointItems endpoints={availableEndpoints} onSelect={onSelectEndpoint} />
             ) : (
-              <DropdownMenuLabel className="dark:text-gray-300">No endpoint available.</DropdownMenuLabel>
+              <DropdownMenuLabel className="dark:text-gray-300">
+                No endpoint available.
+              </DropdownMenuLabel>
             )}
           </DropdownMenuRadioGroup>
 
           <div className="mt-6 w-full" />
 
           <DropdownMenuLabel className="flex items-center dark:text-gray-300">
-            <span
-              className="cursor-pointer"
-              onClick={() => setShowPresets(prev => !prev)}
-            >
+            <span className="cursor-pointer" onClick={() => setShowPresets(prev => !prev)}>
               {showPresets ? 'Hide ' : 'Show '} Presets
             </span>
             <div className="flex-1" />

@@ -76,7 +76,7 @@ export default function Messages({ isSearchView = false }) {
     timeoutId = setTimeout(handleScroll, 100);
   };
 
-  const scrollHandler = e => {
+  const scrollHandler = (e) => {
     e.preventDefault();
     scrollToBottom();
   };
@@ -87,10 +87,7 @@ export default function Messages({ isSearchView = false }) {
       ref={scrollableRef}
       onScroll={debouncedHandleScroll}
     >
-      <div
-        className="dark:gpt-dark-gray mb-32 h-auto md:mb-48"
-        ref={screenshotTargetRef}
-      >
+      <div className="dark:gpt-dark-gray mb-32 h-auto md:mb-48" ref={screenshotTargetRef}>
         <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
           <MessageHeader isSearchView={isSearchView} />
           {_messagesTree === null ? (

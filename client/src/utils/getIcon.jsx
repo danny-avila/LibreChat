@@ -5,7 +5,7 @@ import GPTIcon from '../components/svg/GPTIcon';
 import BingIcon from '../components/svg/BingIcon';
 import { useAuthContext } from '~/hooks/AuthContext';
 
-const getIcon = props => {
+const getIcon = (props) => {
   // { size = 30, isCreatedByUser, model, chatGptLabel, error, ...props }
   const { size = 30, isCreatedByUser, button, model } = props;
   const { user, logout } = useAuthContext();
@@ -22,7 +22,10 @@ const getIcon = props => {
       >
         <img
           className="rounded-sm"
-          src={user?.avatar || `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name}&fontFamily=Verdana&fontSize=36`}
+          src={
+            user?.avatar ||
+            `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name}&fontFamily=Verdana&fontSize=36`
+          }
           alt="avatar"
         />
       </div>
@@ -39,13 +42,16 @@ const getIcon = props => {
     } else if (endpoint === 'openAI') {
       const { chatGptLabel } = props;
       icon = <GPTIcon size={size * 0.7} />;
-      bg = model && model.toLowerCase().startsWith('gpt-4') ? '#AB68FF' : (chatGptLabel
-        ? `rgba(16, 163, 127, ${button ? 0.75 : 1})`
-        : `rgba(16, 163, 127, ${button ? 0.75 : 1})`);
+      bg =
+        model && model.toLowerCase().startsWith('gpt-4')
+          ? '#AB68FF'
+          : chatGptLabel
+            ? `rgba(16, 163, 127, ${button ? 0.75 : 1})`
+            : `rgba(16, 163, 127, ${button ? 0.75 : 1})`;
       name = chatGptLabel || 'ChatGPT';
     } else if (endpoint === 'google') {
       const { modelLabel } = props;
-      icon = <img src='/assets/palm.png' />;
+      icon = <img src="/assets/palm.png" />;
       name = modelLabel || 'PaLM2';
     } else if (endpoint === 'bingAI') {
       const { jailbreak } = props;
@@ -54,7 +60,10 @@ const getIcon = props => {
       name = jailbreak ? 'Sydney' : 'BingAI';
     } else if (endpoint === 'chatGPTBrowser') {
       icon = <GPTIcon size={size * 0.7} />;
-      bg = model && model.toLowerCase().startsWith('gpt-4') ? '#AB68FF' : `rgba(0, 163, 255, ${button ? 0.75 : 1})`;
+      bg =
+        model && model.toLowerCase().startsWith('gpt-4')
+          ? '#AB68FF'
+          : `rgba(0, 163, 255, ${button ? 0.75 : 1})`;
       name = 'ChatGPT';
     } else if (endpoint === null) {
       icon = <GPTIcon size={size * 0.7} />;
@@ -74,7 +83,9 @@ const getIcon = props => {
           width: size,
           height: size
         }}
-        className={`relative flex items-center justify-center rounded-sm text-white ` + props?.className}
+        className={
+          `relative flex items-center justify-center rounded-sm text-white ` + props?.className
+        }
       >
         {icon}
         {error && (

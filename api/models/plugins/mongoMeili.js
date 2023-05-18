@@ -19,10 +19,7 @@ const createMeiliMongooseModel = function ({ index, indexName, client, attribute
     static async clearMeiliIndex() {
       await index.delete();
       // await index.deleteAllDocuments();
-      await this.collection.updateMany(
-        { _meiliIndex: true },
-        { $set: { _meiliIndex: false } }
-      );
+      await this.collection.updateMany({ _meiliIndex: true }, { $set: { _meiliIndex: false } });
     }
 
     static async resetIndex() {
@@ -67,7 +64,7 @@ const createMeiliMongooseModel = function ({ index, indexName, client, attribute
               return { ...results, [key]: 1 };
             },
             { _id: 1 }
-          ),
+          )
         );
 
         // Add additional data from mongodb into Meili search hits
@@ -198,8 +195,8 @@ module.exports = function mongoMeili(schema, options) {
     if (Object.prototype.hasOwnProperty.call(schema.obj, 'messages')) {
       console.log('Syncing convos...');
       mongoose.model('Conversation').syncWithMeili();
-    } 
-    
+    }
+
     if (Object.prototype.hasOwnProperty.call(schema.obj, 'messageId')) {
       console.log('Syncing messages...');
       mongoose.model('Message').syncWithMeili();

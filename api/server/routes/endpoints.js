@@ -36,13 +36,14 @@ router.get('/', async function (req, res) {
   }
 
   const google =
-    key || palmUser ? { userProvide: palmUser, availableModels: ['chat-bison', 'text-bison'] } : false;
+    key || palmUser
+      ? { userProvide: palmUser, availableModels: ['chat-bison', 'text-bison'] }
+      : false;
   const azureOpenAI = !!process.env.AZURE_OPENAI_KEY;
   const apiKey = process.env.OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY;
-  const openAI =
-    apiKey
-      ? { availableModels: getOpenAIModels(), userProvide: apiKey === 'user_provided' }
-      : false;
+  const openAI = apiKey
+    ? { availableModels: getOpenAIModels(), userProvide: apiKey === 'user_provided' }
+    : false;
   const bingAI = process.env.BINGAI_TOKEN
     ? { userProvide: process.env.BINGAI_TOKEN == 'user_provided' }
     : false;

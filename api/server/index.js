@@ -30,13 +30,13 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use(passport.initialize());
   require('../strategies/jwtStrategy');
   require('../strategies/localStrategy');
-  if(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     require('../strategies/googleStrategy');
   }
-  if(process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
+  if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
     require('../strategies/facebookStrategy');
   }
-  app.use('/oauth', routes.oauth)
+  app.use('/oauth', routes.oauth);
   // api endpoint
   app.use('/api/auth', routes.auth);
   app.use('/api/search', routes.search);
@@ -48,8 +48,6 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use('/api/tokenizer', routes.tokenizer);
   app.use('/api/endpoints', routes.endpoints);
 
-
-
   // static files
   app.get('/*', function (req, res) {
     res.sendFile(path.join(projectPath, 'dist', 'index.html'));
@@ -60,7 +58,8 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
       console.log(
         `Server listening on all interface at port ${port}. Use http://localhost:${port} to access it`
       );
-    else console.log(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
+    else
+      console.log(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
   });
 })();
 

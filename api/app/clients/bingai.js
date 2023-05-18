@@ -23,7 +23,8 @@ const askBing = async ({
 
   const bingAIClient = new BingAIClient({
     // "_U" cookie from bing.com
-    userToken: process.env.BINGAI_TOKEN == 'user_provided' ? token : process.env.BINGAI_TOKEN ?? null,
+    userToken:
+      process.env.BINGAI_TOKEN == 'user_provided' ? token : process.env.BINGAI_TOKEN ?? null,
     // If the above doesn't work, provide all your cookies as a string instead
     // cookies: '',
     debug: false,

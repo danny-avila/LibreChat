@@ -44,12 +44,7 @@ const router = createBrowserRouter([
         children: [
           {
             index: true,
-            element: (
-              <Navigate
-                to="/chat/new"
-                replace={true}
-              />
-            )
+            element: <Navigate to="/chat/new" replace={true} />
           },
           {
             path: 'chat/:conversationId?',
@@ -70,7 +65,7 @@ const App = () => {
 
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
-      onError: error => {
+      onError: (error) => {
         if (error?.response?.status === 401) {
           setError(error);
         }

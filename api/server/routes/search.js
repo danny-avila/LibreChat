@@ -27,7 +27,9 @@ router.get('/', requireJwtAuth, async function (req, res) {
       console.log('cache hit', key);
       const cached = cache.get(key);
       const { pages, pageSize, messages } = cached;
-      res.status(200).send({ conversations: cached[pageNumber], pages, pageNumber, pageSize, messages });
+      res
+        .status(200)
+        .send({ conversations: cached[pageNumber], pages, pageNumber, pageSize, messages });
       return;
     } else {
       cache.clear();
@@ -44,7 +46,7 @@ router.get('/', requireJwtAuth, async function (req, res) {
         },
         true
       )
-    ).hits.map(message => {
+    ).hits.map((message) => {
       const { _formatted, ...rest } = message;
       return {
         ...rest,
@@ -95,12 +97,12 @@ router.get('/clear', async function (req, res) {
 
 router.get('/test', async function (req, res) {
   const { q } = req.query;
-  const messages = (await Message.meiliSearch(q, { attributesToHighlight: ['text'] }, true)).hits.map(
-    message => {
-      const { _formatted, ...rest } = message;
-      return { ...rest, searchResult: true, text: _formatted.text };
-    }
-  );
+  const messages = (
+    await Message.meiliSearch(q, { attributesToHighlight: ['text'] }, true)
+  ).hits.map((message) => {
+    const { _formatted, ...rest } = message;
+    return { ...rest, searchResult: true, text: _formatted.text };
+  });
   res.send(messages);
 });
 

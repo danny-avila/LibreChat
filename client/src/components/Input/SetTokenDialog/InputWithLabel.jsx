@@ -9,10 +9,7 @@ function InputWithLabel({ value, onChange, label, id }) {
 
   return (
     <>
-      <Label
-        htmlFor={id}
-        className="text-left text-sm font-medium"
-      >
+      <Label htmlFor={id} className="text-left text-sm font-medium">
         {label}
         <br />
       </Label>

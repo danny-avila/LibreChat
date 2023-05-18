@@ -3,7 +3,8 @@ const pino = require('pino');
 const logger = pino({
   level: 'info',
   redact: {
-    paths: [  // List of Paths to redact from the logs (https://getpino.io/#/docs/redaction)
+    paths: [
+      // List of Paths to redact from the logs (https://getpino.io/#/docs/redaction)
       'env.OPENAI_KEY',
       'env.BINGAI_TOKEN',
       'env.CHATGPT_TOKEN',
@@ -11,14 +12,16 @@ const logger = pino({
       'env.GOOGLE_CLIENT_SECRET',
       'env.JWT_SECRET_DEV',
       'env.JWT_SECRET_PROD',
-      'newUser.password'], // See example to filter object class instances
-    censor: '***', // Redaction character
-  },
+      'newUser.password'
+    ], // See example to filter object class instances
+    censor: '***' // Redaction character
+  }
 });
 
 // Sanitize outside the logger paths. This is useful for sanitizing variables directly with Regex and patterns.
-const redactPatterns = [ // Array of regular expressions for redacting patterns
-  /api[-_]?key/i, 
+const redactPatterns = [
+  // Array of regular expressions for redacting patterns
+  /api[-_]?key/i,
   /password/i,
   /token/i,
   /secret/i,
@@ -30,7 +33,7 @@ const redactPatterns = [ // Array of regular expressions for redacting patterns
   /authorization[-_]?acr[-_]?values/i,
   /authorization[-_]?response[-_]?mode/i,
   /authorization[-_]?nonce/i
-]; 
+];
 
 /*
   // Example of redacting sensitive data from object class instances
@@ -49,21 +52,19 @@ const redactPatterns = [ // Array of regular expressions for redacting patterns
 */
 
 const levels = {
-  TRACE:  10,
-  DEBUG:  20,
-  INFO:   30,
-  WARN:   40,
-  ERROR:  50,
-  FATAL:  60
+  TRACE: 10,
+  DEBUG: 20,
+  INFO: 30,
+  WARN: 40,
+  ERROR: 50,
+  FATAL: 60
 };
-
-
 
 let level = levels.INFO;
 
 module.exports = {
   levels,
-  setLevel: (l) => (level = l),
+  setLevel: l => (level = l),
   log: {
     trace: (msg) => {
       if (level <= levels.TRACE) return;
@@ -122,4 +123,3 @@ module.exports = {
     }
   }
 };
-

@@ -65,4 +65,3 @@ function log({ title, parameters }) {
     DebugControl.log.parameters(parameters);
   }
 }
-

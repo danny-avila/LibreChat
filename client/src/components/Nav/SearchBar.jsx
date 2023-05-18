@@ -3,10 +3,9 @@ import { useRecoilState } from 'recoil';
 import store from '~/store';
 
 export default function SearchBar({ clearSearch }) {
-
   const [searchQuery, setSearchQuery] = useRecoilState(store.searchQuery);
 
-  const handleKeyUp = e => {
+  const handleKeyUp = (e) => {
     const { value } = e.target;
     if (e.keyCode === 8 && value === '') {
       setSearchQuery('');
@@ -15,7 +14,7 @@ export default function SearchBar({ clearSearch }) {
   };
 
   return (
-    <div className="flex cursor-pointer items-center gap-3 rounded-md py-3 px-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10">
+    <div className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10">
       {<Search className="h-4 w-4" />}
       <input
         type="text"

@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function BingIcon({ size=25 }) {
+export default function BingIcon({ size = 25 }) {
   return (
     <svg
       width={size}
@@ -42,39 +42,15 @@ export default function BingIcon({ size=25 }) {
           y2="38.1597"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stopColor="#37BDFF"/>
-          <stop
-            offset="0.1832"
-            stopColor="#33BFFD"
-          />
-          <stop
-            offset="0.3576"
-            stopColor="#28C5F5"
-          />
-          <stop
-            offset="0.528"
-            stopColor="#15D0E9"
-          />
-          <stop
-            offset="0.5468"
-            stopColor="#12D1E7"
-          />
-          <stop
-            offset="0.5903"
-            stopColor="#1CD2E5"
-          />
-          <stop
-            offset="0.7679"
-            stopColor="#42D8DC"
-          />
-          <stop
-            offset="0.9107"
-            stopColor="#59DBD6"
-          />
-          <stop
-            offset="1"
-            stopColor="#62DCD4"
-          />
+          <stop stopColor="#37BDFF" />
+          <stop offset="0.1832" stopColor="#33BFFD" />
+          <stop offset="0.3576" stopColor="#28C5F5" />
+          <stop offset="0.528" stopColor="#15D0E9" />
+          <stop offset="0.5468" stopColor="#12D1E7" />
+          <stop offset="0.5903" stopColor="#1CD2E5" />
+          <stop offset="0.7679" stopColor="#42D8DC" />
+          <stop offset="0.9107" stopColor="#59DBD6" />
+          <stop offset="1" stopColor="#62DCD4" />
         </linearGradient>
         <linearGradient
           id="paint1_linear_36_2239"
@@ -84,39 +60,15 @@ export default function BingIcon({ size=25 }) {
           y2="45.3798"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stopColor="#39D2FF"/>
-          <stop
-            offset="0.1501"
-            stopColor="#38CEFE"
-          />
-          <stop
-            offset="0.2931"
-            stopColor="#35C3FA"
-          />
-          <stop
-            offset="0.4327"
-            stopColor="#2FB0F3"
-          />
-          <stop
-            offset="0.5468"
-            stopColor="#299AEB"
-          />
-          <stop
-            offset="0.5827"
-            stopColor="#2692EC"
-          />
-          <stop
-            offset="0.7635"
-            stopColor="#1A6CF1"
-          />
-          <stop
-            offset="0.909"
-            stopColor="#1355F4"
-          />
-          <stop
-            offset="1"
-            stopColor="#104CF5"
-          />
+          <stop stopColor="#39D2FF" />
+          <stop offset="0.1501" stopColor="#38CEFE" />
+          <stop offset="0.2931" stopColor="#35C3FA" />
+          <stop offset="0.4327" stopColor="#2FB0F3" />
+          <stop offset="0.5468" stopColor="#299AEB" />
+          <stop offset="0.5827" stopColor="#2692EC" />
+          <stop offset="0.7635" stopColor="#1A6CF1" />
+          <stop offset="0.909" stopColor="#1355F4" />
+          <stop offset="1" stopColor="#104CF5" />
         </linearGradient>
         <linearGradient
           id="paint2_linear_36_2239"
@@ -126,23 +78,11 @@ export default function BingIcon({ size=25 }) {
           y2="1.52914"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stopColor="#1B48EF"/>
-          <stop
-            offset="0.1221"
-            stopColor="#1C51F0"
-          />
-          <stop
-            offset="0.3212"
-            stopColor="#1E69F5"
-          />
-          <stop
-            offset="0.5676"
-            stopColor="#2190FB"
-          />
-          <stop
-            offset="1"
-            stopColor="#26B8F4"
-          />
+          <stop stopColor="#1B48EF" />
+          <stop offset="0.1221" stopColor="#1C51F0" />
+          <stop offset="0.3212" stopColor="#1E69F5" />
+          <stop offset="0.5676" stopColor="#2190FB" />
+          <stop offset="1" stopColor="#26B8F4" />
         </linearGradient>
         <linearGradient
           id="paint3_linear_36_2239"
@@ -152,48 +92,18 @@ export default function BingIcon({ size=25 }) {
           y2="32.6475"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stopColor="white"/>
-          <stop
-            offset="0.3726"
-            stopColor="#FDFDFD"
-          />
-          <stop
-            offset="0.5069"
-            stopColor="#F6F6F6"
-          />
-          <stop
-            offset="0.6026"
-            stopColor="#EBEBEB"
-          />
-          <stop
-            offset="0.68"
-            stopColor="#DADADA"
-          />
-          <stop
-            offset="0.7463"
-            stopColor="#C4C4C4"
-          />
-          <stop
-            offset="0.805"
-            stopColor="#A8A8A8"
-          />
-          <stop
-            offset="0.8581"
-            stopColor="#888888"
-          />
-          <stop
-            offset="0.9069"
-            stopColor="#626262"
-          />
-          <stop
-            offset="0.9523"
-            stopColor="#373737"
-          />
-          <stop
-            offset="0.9926"
-            stopColor="#090909"
-          />
-          <stop offset="1"/>
+          <stop stopColor="white" />
+          <stop offset="0.3726" stopColor="#FDFDFD" />
+          <stop offset="0.5069" stopColor="#F6F6F6" />
+          <stop offset="0.6026" stopColor="#EBEBEB" />
+          <stop offset="0.68" stopColor="#DADADA" />
+          <stop offset="0.7463" stopColor="#C4C4C4" />
+          <stop offset="0.805" stopColor="#A8A8A8" />
+          <stop offset="0.8581" stopColor="#888888" />
+          <stop offset="0.9069" stopColor="#626262" />
+          <stop offset="0.9523" stopColor="#373737" />
+          <stop offset="0.9926" stopColor="#090909" />
+          <stop offset="1" />
         </linearGradient>
         <linearGradient
           id="paint4_linear_36_2239"
@@ -203,56 +113,21 @@ export default function BingIcon({ size=25 }) {
           y2="47.9822"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stopColor="white"/>
-          <stop
-            offset="0.3726"
-            stopColor="#FDFDFD"
-          />
-          <stop
-            offset="0.5069"
-            stopColor="#F6F6F6"
-          />
-          <stop
-            offset="0.6026"
-            stopColor="#EBEBEB"
-          />
-          <stop
-            offset="0.68"
-            stopColor="#DADADA"
-          />
-          <stop
-            offset="0.7463"
-            stopColor="#C4C4C4"
-          />
-          <stop
-            offset="0.805"
-            stopColor="#A8A8A8"
-          />
-          <stop
-            offset="0.8581"
-            stopColor="#888888"
-          />
-          <stop
-            offset="0.9069"
-            stopColor="#626262"
-          />
-          <stop
-            offset="0.9523"
-            stopColor="#373737"
-          />
-          <stop
-            offset="0.9926"
-            stopColor="#090909"
-          />
-          <stop offset="1"/>
+          <stop stopColor="white" />
+          <stop offset="0.3726" stopColor="#FDFDFD" />
+          <stop offset="0.5069" stopColor="#F6F6F6" />
+          <stop offset="0.6026" stopColor="#EBEBEB" />
+          <stop offset="0.68" stopColor="#DADADA" />
+          <stop offset="0.7463" stopColor="#C4C4C4" />
+          <stop offset="0.805" stopColor="#A8A8A8" />
+          <stop offset="0.8581" stopColor="#888888" />
+          <stop offset="0.9069" stopColor="#626262" />
+          <stop offset="0.9523" stopColor="#373737" />
+          <stop offset="0.9926" stopColor="#090909" />
+          <stop offset="1" />
         </linearGradient>
         <clipPath id="clip0_36_2239">
-          <rect
-            width="37"
-            height="56"
-            fill="white"
-            transform="translate(10)"
-          ></rect>
+          <rect width="37" height="56" fill="white" transform="translate(10)"></rect>
         </clipPath>
       </defs>
     </svg>

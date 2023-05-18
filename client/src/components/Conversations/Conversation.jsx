@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect} from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRecoilState, useSetRecoilState } from 'recoil';
 import { useUpdateConversationMutation } from '~/data-provider';
 import RenameButton from './RenameButton';
@@ -38,7 +38,7 @@ export default function Conversation({ conversation, retainView }) {
     switchToConversation(conversation);
   };
 
-  const renameHandler = e => {
+  const renameHandler = (e) => {
     e.preventDefault();
     setTitleInput(title);
     setRenaming(true);
@@ -47,12 +47,12 @@ export default function Conversation({ conversation, retainView }) {
     }, 25);
   };
 
-  const cancelHandler = e => {
+  const cancelHandler = (e) => {
     e.preventDefault();
     setRenaming(false);
   };
 
-  const onRename = e => {
+  const onRename = (e) => {
     e.preventDefault();
     setRenaming(false);
     if (titleInput === title) {
@@ -61,7 +61,7 @@ export default function Conversation({ conversation, retainView }) {
     updateConvoMutation.mutate({ conversationId, title: titleInput });
   };
 
-  useEffect(() => {   
+  useEffect(() => {
     if (updateConvoMutation.isSuccess) {
       refreshConversations();
       if (conversationId == currentConversation?.conversationId) {
@@ -73,7 +73,7 @@ export default function Conversation({ conversation, retainView }) {
     }
   }, [updateConvoMutation.isSuccess]);
 
-  const handleKeyDown = e => {
+  const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
       onRename(e);
     }
@@ -90,10 +90,7 @@ export default function Conversation({ conversation, retainView }) {
   }
 
   return (
-    <a
-      onClick={() => clickHandler()}
-      {...aProps}
-    >
+    <a onClick={() => clickHandler()} {...aProps}>
       <ConvoIcon />
       <div className="relative max-h-5 flex-1 overflow-hidden text-ellipsis break-all">
         {renaming === true ? (
@@ -126,7 +123,7 @@ export default function Conversation({ conversation, retainView }) {
           />
         </div>
       ) : (
-        <div className="absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-gray-900 group-hover:from-[#2A2B32] rounded-r-md" />
+        <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-gray-900 group-hover:from-[#2A2B32]" />
       )}
     </a>
   );

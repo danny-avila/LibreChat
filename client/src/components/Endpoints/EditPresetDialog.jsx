@@ -29,7 +29,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
 
   const triggerExamples = () => setShowExamples(prev => !prev);
 
-  const setOption = param => newValue => {
+  const setOption = param => (newValue) => {
     let update = {};
     update[param] = newValue;
     setPreset(prevState =>
@@ -115,7 +115,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
       url: '/api/presets',
       data: cleanupPreset({ preset, endpointsConfig }),
       withCredentials: true
-    }).then(res => {
+    }).then((res) => {
       setPresets(res?.data);
     });
   };
@@ -134,10 +134,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
   }, [open]);
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={`${title || 'Edit Preset'} - ${preset?.title}`}
         className="max-w-full sm:max-w-4xl"
@@ -145,10 +142,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
           <div className="flex w-full flex-col items-center gap-2">
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
-                <Label
-                  htmlFor="chatGptLabel"
-                  className="text-left text-sm font-medium"
-                >
+                <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
                   Preset Name
                 </Label>
                 <Input
@@ -163,10 +157,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
                 />
               </div>
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
-                <Label
-                  htmlFor="endpoint"
-                  className="text-left text-sm font-medium"
-                >
+                <Label htmlFor="endpoint" className="text-left text-sm font-medium">
                   Endpoint
                 </Label>
                 <Dropdown
@@ -194,11 +185,9 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
             </div>
             <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
             <div className="w-full p-0">
-              {((preset?.endpoint === 'google' && !showExamples) || preset?.endpoint !== 'google') && (
-                <Settings
-                  preset={_preset}
-                  setOption={setOption}
-                />
+              {((preset?.endpoint === 'google' && !showExamples) ||
+                preset?.endpoint !== 'google') && (
+                <Settings preset={_preset} setOption={setOption} />
               )}
               {preset?.endpoint === 'google' && showExamples && (
                 <Examples
@@ -224,10 +213,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
         }
         leftButtons={
           <>
-            <DialogButton
-              onClick={exportPreset}
-              className="dark:hover:gray-400 border-gray-700"
-            >
+            <DialogButton onClick={exportPreset} className="dark:hover:gray-400 border-gray-700">
               Export
             </DialogButton>
           </>

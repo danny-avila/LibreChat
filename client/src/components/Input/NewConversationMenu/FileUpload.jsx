@@ -2,16 +2,23 @@ import { useState } from 'react';
 import { FileUp } from 'lucide-react';
 import { cn } from '~/utils/';
 
-const FileUpload = ({ onFileSelected, successText = null, invalidText = null, validator = null, text = null, id = '1' }) => {
+const FileUpload = ({
+  onFileSelected,
+  successText = null,
+  invalidText = null,
+  validator = null,
+  text = null,
+  id = '1'
+}) => {
   const [statusColor, setStatusColor] = useState('text-gray-600');
   const [status, setStatus] = useState(null);
 
-  const handleFileChange = event => {
+  const handleFileChange = (event) => {
     const file = event.target.files[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = e => {
+    reader.onload = (e) => {
       const jsonData = JSON.parse(e.target.result);
       if (validator && !validator(jsonData)) {
         setStatus('invalid');
@@ -23,7 +30,7 @@ const FileUpload = ({ onFileSelected, successText = null, invalidText = null, va
         setStatus('success');
         setStatusColor('text-green-500 dark:text-green-500');
       }
-      
+
       onFileSelected(jsonData);
     };
     reader.readAsText(file);
@@ -38,7 +45,9 @@ const FileUpload = ({ onFileSelected, successText = null, invalidText = null, va
       )}
     >
       <FileUp className="mr-1 flex w-[22px] items-center stroke-1" />
-      <span className="flex text-xs ">{!status ? text || 'Import' : (status === 'success' ? successText : invalidText)}</span>
+      <span className="flex text-xs ">
+        {!status ? text || 'Import' : status === 'success' ? successText : invalidText}
+      </span>
       <input
         id={`file-upload-${id}`}
         value=""

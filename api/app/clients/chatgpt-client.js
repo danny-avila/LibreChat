@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
 const { genAzureEndpoint } = require('../../utils/genAzureEndpoints');
-const tiktoken = require("@dqbd/tiktoken");
+const tiktoken = require('@dqbd/tiktoken');
 const encoding_for_model = tiktoken.encoding_for_model;
 
 const askClient = async ({
@@ -27,7 +27,7 @@ const askClient = async ({
 
   const azure = process.env.AZURE_OPENAI_API_KEY ? true : false;
   if (promptPrefix == null) {
-    promptText = "You are ChatGPT, a large language model trained by OpenAI.";
+    promptText = 'You are ChatGPT, a large language model trained by OpenAI.';
   } else {
     promptText = promptPrefix;
   }
@@ -45,7 +45,7 @@ const askClient = async ({
     },
     chatGptLabel,
     promptPrefix,
-    proxy: process.env.PROXY || null,
+    proxy: process.env.PROXY || null
     // debug: true
   };
 
@@ -77,16 +77,16 @@ const askClient = async ({
   const res = await client.sendMessage(text, { ...options, userId });
   // return res;
   // create a new response object that includes the token counts
-const newRes = {
-  ...res, 
-  usage: {
-    prompt_tokens: prompt_tokens.length,
-    completion_tokens: text_tokens.length,
-    total_tokens: prompt_tokens.length + text_tokens.length
-  }
-};
+  const newRes = {
+    ...res,
+    usage: {
+      prompt_tokens: prompt_tokens.length,
+      completion_tokens: text_tokens.length,
+      total_tokens: prompt_tokens.length + text_tokens.length
+    }
+  };
 
-return newRes;
+  return newRes;
 };
 
 module.exports = { askClient };

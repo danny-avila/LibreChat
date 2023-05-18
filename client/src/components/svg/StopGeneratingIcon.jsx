@@ -14,14 +14,7 @@ export default function StopGeneratingIcon() {
       width="1em"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <rect
-        x="3"
-        y="3"
-        width="18"
-        height="18"
-        rx="2"
-        ry="2"
-      ></rect>
+      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
     </svg>
   );
 }

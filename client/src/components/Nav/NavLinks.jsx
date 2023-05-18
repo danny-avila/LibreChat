@@ -12,10 +12,7 @@ import DotsIcon from '../svg/DotsIcon';
 export default function NavLinks({ clearSearch, isSearchEnabled }) {
   const { user, logout } = useAuthContext();
   return (
-    <Menu
-      as="div"
-      className="group relative"
-    >
+    <Menu as="div" className="group relative">
       {({ open }) => (
         <>
           <Menu.Button
@@ -28,7 +25,9 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
               <div className="relative flex">
                 <img
                   className="rounded-sm"
-                  src={user?.avatar || `https://avatars.dicebear.com/api/initials/${user?.name}.svg`}
+                  src={
+                    user?.avatar || `https://avatars.dicebear.com/api/initials/${user?.name}.svg`
+                  }
                   alt=""
                 />
               </div>
@@ -54,17 +53,11 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
               </Menu.Item>
               <Menu.Item>{({}) => <ExportConversation />}</Menu.Item>
 
-              <div
-                className="my-1.5 h-px bg-white/20"
-                role="none"
-              ></div>
+              <div className="my-1.5 h-px bg-white/20" role="none"></div>
               <Menu.Item>{({}) => <DarkMode />}</Menu.Item>
               <Menu.Item>{({}) => <ClearConvos />}</Menu.Item>
 
-              <div
-                className="my-1.5 h-px bg-white/20"
-                role="none"
-              ></div>
+              <div className="my-1.5 h-px bg-white/20" role="none"></div>
               <Menu.Item>
                 <Logout />
               </Menu.Item>
