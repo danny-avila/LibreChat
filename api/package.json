@@ -41,7 +41,7 @@
     "keyv-file": "^0.2.0",
     "lodash": "^4.17.21",
     "meilisearch": "^0.32.3",
-    "mongoose": "^6.9.0",
+    "mongoose": "^7.1.1",
     "nodemailer": "^6.9.1",
     "openai": "^3.1.0",
     "passport": "^0.6.0",
