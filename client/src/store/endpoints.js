@@ -7,7 +7,7 @@ const endpointsConfig = atom({
     openAI: null,
     bingAI: null,
     chatGPTBrowser: null,
-    google: null,
+    google: null
   }
 });
 

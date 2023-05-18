@@ -7,7 +7,7 @@ const getCitations = (res) => {
   if (!textBlocks) return '';
   let links = textBlocks[textBlocks.length - 1]?.text.match(regex);
   if (links?.length === 0 || !links) return '';
-  links = links.map((link) => link.trim());
+  links = links.map(link => link.trim());
   return links.join('\n');
 };
 

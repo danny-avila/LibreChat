@@ -18,9 +18,11 @@ const browserClient = async ({
 
   const clientOptions = {
     // Warning: This will expose your access token to a third party. Consider the risks before using this.
-    reverseProxyUrl: process.env.CHATGPT_REVERSE_PROXY || 'https://ai.fakeopen.com/api/conversation',
+    reverseProxyUrl:
+      process.env.CHATGPT_REVERSE_PROXY || 'https://ai.fakeopen.com/api/conversation',
     // Access token from https://chat.openai.com/api/auth/session
-    accessToken: process.env.CHATGPT_TOKEN == 'user_provided' ? token : process.env.CHATGPT_TOKEN ?? null,
+    accessToken:
+      process.env.CHATGPT_TOKEN == 'user_provided' ? token : process.env.CHATGPT_TOKEN ?? null,
     model: model,
     debug: false,
     proxy: process.env.PROXY || null,

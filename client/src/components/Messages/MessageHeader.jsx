@@ -6,7 +6,7 @@ import { Button } from '../ui/Button.tsx';
 
 import store from '~/store';
 
-const clipPromptPrefix = str => {
+const clipPromptPrefix = (str) => {
   if (typeof str !== 'string') {
     return null;
   } else if (str.length > 10) {
@@ -61,7 +61,9 @@ const MessageHeader = ({ isSearchView = false }) => {
         )}
         onClick={() => (endpoint === 'chatGPTBrowser' ? null : setSaveAsDialogShow(true))}
       >
-        <div className="d-block flex w-full items-center justify-center p-3">{getConversationTitle()}</div>
+        <div className="d-block flex w-full items-center justify-center p-3">
+          {getConversationTitle()}
+        </div>
       </div>
 
       <EndpointOptionsDialog

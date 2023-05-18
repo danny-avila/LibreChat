@@ -7,15 +7,9 @@ const CodeBlock = ({ lang, codeChildren }) => {
 
   return (
     <div className="rounded-md bg-black">
-      <CodeBar
-        lang={lang}
-        codeRef={codeRef}
-      />
+      <CodeBar lang={lang} codeRef={codeRef} />
       <div className="overflow-y-auto p-4">
-        <code
-          ref={codeRef}
-          className={`hljs !whitespace-pre language-${lang}`}
-        >
+        <code ref={codeRef} className={`hljs !whitespace-pre language-${lang}`}>
           {codeChildren}
         </code>
       </div>

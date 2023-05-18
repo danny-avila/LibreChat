@@ -19,5 +19,5 @@ module.exports = {
   auth,
   oauth,
   tokenizer,
-  endpoints,
+  endpoints
 };

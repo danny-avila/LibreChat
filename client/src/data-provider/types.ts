@@ -1,19 +1,19 @@
 export type TMessage = {
-  messageId: string,
-  conversationId: string,
-  clientId: string,
-  parentMessageId: string,
-  sender: string,
-  text: string,
-  isCreatedByUser: boolean,
-  error: boolean,
-  createdAt: string,
-  updatedAt: string,
+  messageId: string;
+  conversationId: string;
+  clientId: string;
+  parentMessageId: string;
+  sender: string;
+  text: string;
+  isCreatedByUser: boolean;
+  error: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type TExample = {
-  input: string,
-  output: string,
+  input: string;
+  output: string;
 };
 
 export type TSubmission = {
@@ -40,16 +40,15 @@ export type TSubmission = {
   top_p?: number;
   presence_penalty?: number;
   frequence_penalty?: number;
-}
-
+};
 
 export enum EModelEndpoint {
-  azureOpenAI = 'azureOpenAI', 
+  azureOpenAI = 'azureOpenAI',
   openAI = 'openAI',
   bingAI = 'bingAI',
   chatGPT = 'chatGPT',
   chatGPTBrowser = 'chatGPTBrowser',
-  google = 'google',
+  google = 'google'
 }
 
 export type TConversation = {
@@ -84,127 +83,127 @@ export type TConversation = {
   clientId?: string;
   invocationId?: string;
   toneStyle?: string;
-}
+};
 
 export type TPreset = {
-  title: string,
-  endpoint: EModelEndpoint,
-  conversationSignature?: string,
-  createdAt?: string,
-  updatedAt?: string,
-  presetId?: string,
-  user?: string,
+  title: string;
+  endpoint: EModelEndpoint;
+  conversationSignature?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  presetId?: string;
+  user?: string;
   // for azureOpenAI, openAI only
-  chatGptLabel?: string,
-  frequence_penalty?: number,
-  model?: string,
-  presence_penalty?: number,
-  promptPrefix?: string,
-  temperature?: number,
-  top_p?: number,
+  chatGptLabel?: string;
+  frequence_penalty?: number;
+  model?: string;
+  presence_penalty?: number;
+  promptPrefix?: string;
+  temperature?: number;
+  top_p?: number;
   //for BingAI
-  clientId?: string,
-  invocationId?: number,
-  jailbreak?: boolean,
-  jailbreakPresetId?: string,
-  presetSignature?: string,
-  toneStyle?: string,
-}
+  clientId?: string;
+  invocationId?: number;
+  jailbreak?: boolean;
+  jailbreakPresetId?: string;
+  presetSignature?: string;
+  toneStyle?: string;
+};
 
 export type TUser = {
-  id: string,
-  username: string,
-  email: string,
-  name: string,
-  avatar: string,
-  role: string,
-  createdAt: string,
-  updatedAt: string,
+  id: string;
+  username: string;
+  email: string;
+  name: string;
+  avatar: string;
+  role: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type TGetConversationsResponse = {
-  conversations: TConversation[],
-  pageNumber: string,
-  pageSize: string | number,
-  pages: string | number
+  conversations: TConversation[];
+  pageNumber: string;
+  pageSize: string | number;
+  pages: string | number;
 };
 
 export type TUpdateConversationRequest = {
-  conversationId: string,
-  title: string,
+  conversationId: string;
+  title: string;
 };
 
 export type TUpdateConversationResponse = {
-  data: TConversation
+  data: TConversation;
 };
 
 export type TDeleteConversationRequest = {
-  conversationId?: string,
-  source?: string
-}
+  conversationId?: string;
+  source?: string;
+};
 
 export type TDeleteConversationResponse = {
-  acknowledged: boolean,
-  deletedCount: number,
+  acknowledged: boolean;
+  deletedCount: number;
   messages: {
-    acknowledged: boolean,
-    deletedCount: number
-  }
+    acknowledged: boolean;
+    deletedCount: number;
+  };
 };
 
 export type TSearchResults = {
-  conversations: TConversation[],
-  messages: TMessage[],
-  pageNumber: string,
-  pageSize: string | number,
-  pages: string | number
-  filter: {}
+  conversations: TConversation[];
+  messages: TMessage[];
+  pageNumber: string;
+  pageSize: string | number;
+  pages: string | number;
+  filter: {};
 };
 
 export type TEndpoints = {
-  azureOpenAI: boolean,
-  bingAI: boolean,
+  azureOpenAI: boolean;
+  bingAI: boolean;
   ChatGptBrowser: {
-    availableModels: []
-  }
+    availableModels: [];
+  };
   OpenAI: {
-    availableModels: []
-  }
+    availableModels: [];
+  };
 };
 
 export type TUpdateTokenCountResponse = {
-  count: number,
+  count: number;
 };
 
-export type TMessageTreeNode = {}
+export type TMessageTreeNode = {};
 
-export type TSearchMessage = {}
+export type TSearchMessage = {};
 
-export type TSearchMessageTreeNode = {}
+export type TSearchMessageTreeNode = {};
 
 export type TRegisterUser = {
-  name: string,
-  email: string,
-  username: string,
-  password: string,
-}
+  name: string;
+  email: string;
+  username: string;
+  password: string;
+};
 
 export type TLoginUser = {
-  email: string,
-  password: string,
-}
+  email: string;
+  password: string;
+};
 
 export type TLoginResponse = {
-  token: string,
-  user: TUser
-}
+  token: string;
+  user: TUser;
+};
 
 export type TRequestPasswordReset = {
-  email: string,
-}
+  email: string;
+};
 
 export type TResetPassword = {
-  userId: string,
-  token: string,
-  password: string,
-}
+  userId: string;
+  token: string;
+  password: string;
+};

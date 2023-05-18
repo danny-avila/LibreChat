@@ -49,8 +49,8 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
   const helpText = {
     bingAI: (
       <small className="break-all text-gray-600">
-        The Bing Access Token is the "_U" cookie from bing.com. Use dev tools or an extension while logged
-        into the site to view it.
+        The Bing Access Token is the "_U" cookie from bing.com. Use dev tools or an extension while
+        logged into the site to view it.
       </small>
     ),
     chatGPTBrowser: (
@@ -96,8 +96,8 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
         >
           Create a Service Account
         </a>
-        . Make sure to click 'Create and Continue' to give at least the 'Vertex AI User' role. Lastly, create
-        a JSON key to import here.
+        . Make sure to click 'Create and Continue' to give at least the 'Vertex AI User' role.
+        Lastly, create a JSON key to import here.
       </small>
     )
   };
@@ -122,10 +122,7 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={`Set Token of ${endpoint}`}
         main={
@@ -137,7 +134,7 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
                 text="Import Service Account JSON Key"
                 successText="Successfully Imported Service Account JSON Key"
                 invalidText="Invalid Service Account JSON Key, Did you import the correct file?"
-                validator={credentials => {
+                validator={(credentials) => {
                   if (!credentials) {
                     return false;
                   }
@@ -168,7 +165,7 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
 
                   return true;
                 }}
-                onFileSelected={data => {
+                onFileSelected={(data) => {
                   setToken(JSON.stringify(data));
                 }}
               />
@@ -244,7 +241,9 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
                 />
               </>
             )}
-            <small className="text-red-600">Your token will be sent to the server, but not saved.</small>
+            <small className="text-red-600">
+              Your token will be sent to the server, but not saved.
+            </small>
             {helpText?.[endpoint]}
           </div>
         }

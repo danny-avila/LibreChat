@@ -31,7 +31,9 @@ const useMessageHandler = () => {
       endpointOption = {
         endpoint,
         model:
-          currentConversation?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'gpt-3.5-turbo',
+          currentConversation?.model ??
+          endpointsConfig[endpoint]?.availableModels?.[0] ??
+          'gpt-3.5-turbo',
         chatGptLabel: currentConversation?.chatGptLabel ?? null,
         promptPrefix: currentConversation?.promptPrefix ?? null,
         temperature: currentConversation?.temperature ?? 1,
@@ -45,10 +47,14 @@ const useMessageHandler = () => {
       endpointOption = {
         endpoint,
         model:
-          currentConversation?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'chat-bison',
+          currentConversation?.model ??
+          endpointsConfig[endpoint]?.availableModels?.[0] ??
+          'chat-bison',
         chatGptLabel: currentConversation?.chatGptLabel ?? null,
         promptPrefix: currentConversation?.promptPrefix ?? null,
-        examples: currentConversation?.examples ?? [{ input: { content: '' }, output: { content: '' } }],
+        examples: currentConversation?.examples ?? [
+          { input: { content: '' }, output: { content: '' } }
+        ],
         temperature: currentConversation?.temperature ?? 0.2,
         maxOutputTokens: currentConversation?.maxOutputTokens ?? 1024,
         topP: currentConversation?.topP ?? 0.95,
@@ -94,7 +100,8 @@ const useMessageHandler = () => {
     // this is not a real messageId, it is used as placeholder before real messageId returned
     text = text.trim();
     const fakeMessageId = v4();
-    parentMessageId = parentMessageId || latestMessage?.messageId || '00000000-0000-0000-0000-000000000000';
+    parentMessageId =
+      parentMessageId || latestMessage?.messageId || '00000000-0000-0000-0000-000000000000';
     conversationId = conversationId || currentConversation?.conversationId;
     if (conversationId == 'search') {
       console.error('cannot send any message under search view!');
@@ -122,7 +129,7 @@ const useMessageHandler = () => {
       parentMessageId: isRegenerate ? messageId : fakeMessageId,
       messageId: (isRegenerate ? messageId : fakeMessageId) + '_',
       conversationId,
-      unfinished: (endpoint === 'azureOpenAI' || endpoint === 'openAI') ? false : true,
+      unfinished: endpoint === 'azureOpenAI' || endpoint === 'openAI' ? false : true,
       submitting: true
     };
 
@@ -154,8 +161,12 @@ const useMessageHandler = () => {
   const regenerate = ({ parentMessageId }) => {
     const parentMessage = messages?.find(element => element.messageId == parentMessageId);
 
-    if (parentMessage && parentMessage.isCreatedByUser) ask({ ...parentMessage }, { isRegenerate: true });
-    else console.error('Failed to regenerate the message: parentMessage not found or not created by user.');
+    if (parentMessage && parentMessage.isCreatedByUser)
+      ask({ ...parentMessage }, { isRegenerate: true });
+    else
+      console.error(
+        'Failed to regenerate the message: parentMessage not found or not created by user.'
+      );
   };
 
   const stopGenerating = () => {

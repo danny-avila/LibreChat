@@ -6,13 +6,9 @@ export default function Conversations({ conversations, conversationId, moveToTop
     <>
       {conversations &&
         conversations.length > 0 &&
-        conversations.map(convo => {
+        conversations.map((convo) => {
           return (
-            <Conversation
-              key={convo.conversationId}
-              conversation={convo}
-              retainView={moveToTop}
-            />
+            <Conversation key={convo.conversationId} conversation={convo} retainView={moveToTop} />
           );
         })}
     </>

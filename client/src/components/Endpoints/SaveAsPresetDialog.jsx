@@ -33,18 +33,12 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
   }, [open]);
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title="Save As Preset"
         main={
           <div className="grid w-full items-center gap-2">
-            <Label
-              htmlFor="chatGptLabel"
-              className="text-left text-sm font-medium"
-            >
+            <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
               Preset Name
             </Label>
             <Input

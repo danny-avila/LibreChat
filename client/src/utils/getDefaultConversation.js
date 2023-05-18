@@ -33,11 +33,13 @@ const buildDefaultConversation = ({
         'chat-bison',
       modelLabel: lastConversationSetup?.modelLabel ?? null,
       promptPrefix: lastConversationSetup?.promptPrefix ?? null,
-      examples: lastConversationSetup?.examples ?? [{ input: { content: '' }, output: { content: '' }}],
+      examples: lastConversationSetup?.examples ?? [
+        { input: { content: '' }, output: { content: '' } }
+      ],
       temperature: lastConversationSetup?.temperature ?? 0.2,
       maxOutputTokens: lastConversationSetup?.maxOutputTokens ?? 1024,
       topP: lastConversationSetup?.topP ?? 0.95,
-      topK: lastConversationSetup?.topK ?? 40,
+      topK: lastConversationSetup?.topK ?? 40
     };
   } else if (endpoint === 'bingAI') {
     conversation = {
@@ -125,7 +127,9 @@ const getDefaultConversation = ({ conversation, prevConversation, endpointsConfi
 
   // if anything happens, reset to default model
 
-  const endpoint = ['openAI', 'azureOpenAI', 'bingAI', 'chatGPTBrowser', 'google'].find(e => endpointsConfig?.[e]);
+  const endpoint = ['openAI', 'azureOpenAI', 'bingAI', 'chatGPTBrowser', 'google'].find(
+    e => endpointsConfig?.[e]
+  );
   if (endpoint) {
     conversation = buildDefaultConversation({ conversation, endpoint, endpointsConfig });
     return conversation;

@@ -21,8 +21,8 @@ export default function Nav({ navVisible, setNavVisible }) {
   const [pageNumber, setPageNumber] = useState(1);
   // total pages
   const [pages, setPages] = useState(1);
-  
-  // data provider 
+
+  // data provider
   const getConversationsQuery = useGetConversationsQuery(pageNumber, { enabled: isAuthenticated });
 
   // search
@@ -41,11 +41,9 @@ export default function Nav({ navVisible, setNavVisible }) {
   const [isFetching, setIsFetching] = useState(false);
 
   const debouncedSearchTerm = useDebounce(searchQuery, 750);
-  const searchQueryFn = useSearchQuery(debouncedSearchTerm, pageNumber, { 
-    enabled: !!debouncedSearchTerm && 
-    debouncedSearchTerm.length > 0 &&
-    isSearchEnabled && 
-    isSearching,
+  const searchQueryFn = useSearchQuery(debouncedSearchTerm, pageNumber, {
+    enabled:
+      !!debouncedSearchTerm && debouncedSearchTerm.length > 0 && isSearchEnabled && isSearching
   });
 
   const onSearchSuccess = (data, expectedPage) => {
@@ -64,11 +62,10 @@ export default function Nav({ navVisible, setNavVisible }) {
     //we use isInitialLoading here instead of isLoading because query is disabled by default
     if (searchQueryFn.isInitialLoading) {
       setIsFetching(true);
-    }
-    else if (searchQueryFn.data) {
+    } else if (searchQueryFn.data) {
       onSearchSuccess(searchQueryFn.data);
     }
-  }, [searchQueryFn.data, searchQueryFn.isInitialLoading])
+  }, [searchQueryFn.data, searchQueryFn.isInitialLoading]);
 
   const clearSearch = () => {
     setPageNumber(1);
@@ -98,7 +95,9 @@ export default function Nav({ navVisible, setNavVisible }) {
         setPageNumber(pages);
       } else {
         if (!isSearching) {
-          conversations = conversations.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          conversations = conversations.sort(
+            (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+          );
         }
         setConversations(conversations);
         setPages(pages);
@@ -118,7 +117,6 @@ export default function Nav({ navVisible, setNavVisible }) {
       scrollPositionRef.current = container.scrollTop;
     }
   };
-
 
   const toggleNavVisible = () => {
     setNavVisible(prev => !prev);
@@ -142,8 +140,8 @@ export default function Nav({ navVisible, setNavVisible }) {
         }
       >
         <div className="flex h-full min-h-0 flex-col ">
-          <div className="scrollbar-trigger flex h-full w-full flex-1 items-start border-white/20 relative">
-            <nav className="flex h-full flex-1 flex-col space-y-1 p-2 relative">
+          <div className="scrollbar-trigger relative flex h-full w-full flex-1 items-start border-white/20">
+            <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
               <NewChat />
               <div
                 className={`flex-1 flex-col overflow-y-auto ${
@@ -171,10 +169,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                   />
                 </div>
               </div>
-              <NavLinks
-                clearSearch={clearSearch}
-                isSearchEnabled={isSearchEnabled}
-              />
+              <NavLinks clearSearch={clearSearch} isSearchEnabled={isSearchEnabled} />
             </nav>
           </div>
         </div>
@@ -196,25 +191,12 @@ export default function Nav({ navVisible, setNavVisible }) {
             width="1em"
             xmlns="http://www.w3.org/2000/svg"
           >
-            <line
-              x1="3"
-              y1="6"
-              x2="15"
-              y2="18"
-            />
-            <line
-              x1="3"
-              y1="18"
-              x2="15"
-              y2="6"
-            />
+            <line x1="3" y1="6" x2="15" y2="18" />
+            <line x1="3" y1="18" x2="15" y2="6" />
           </svg>
         </button>
       </div>
-      <div
-        className={'nav-mask' + (navVisible ? ' active' : '')}
-        onClick={toggleNavVisible}
-      ></div>
+      <div className={'nav-mask' + (navVisible ? ' active' : '')} onClick={toggleNavVisible}></div>
     </>
   );
 }

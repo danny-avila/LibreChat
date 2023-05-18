@@ -40,7 +40,7 @@ function GoogleOptions() {
     setSaveAsDialogShow(true);
   };
 
-  const setOption = param => newValue => {
+  const setOption = param => (newValue) => {
     let update = {};
     update[param] = newValue;
     setConversation(prevState => ({

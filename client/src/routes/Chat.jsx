@@ -61,11 +61,11 @@ export default function Chat() {
       messagesQuery.refetch(conversation?.conversationId);
     }
   }, [conversation?.conversationId, messagesQuery, messagesTree]);
-  
+
   useEffect(() => {
     if (messagesQuery.data) {
       setMessages(messagesQuery.data);
-    } else if(messagesQuery.isError) {
+    } else if (messagesQuery.isError) {
       console.error('failed to fetch the messages');
       console.error(messagesQuery.error);
       setMessages(null);

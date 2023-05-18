@@ -27,7 +27,9 @@ export default function DialogTemplate({
     <DialogContent className={cn('shadow-2xl dark:bg-gray-800', className || '')}>
       <DialogHeader>
         <DialogTitle className="text-gray-800 dark:text-white">{title}</DialogTitle>
-        <DialogDescription className="text-gray-600 dark:text-gray-300">{description}</DialogDescription>
+        <DialogDescription className="text-gray-600 dark:text-gray-300">
+          {description}
+        </DialogDescription>
       </DialogHeader>
       {main ? main : null}
       <DialogFooter>
@@ -40,7 +42,7 @@ export default function DialogTemplate({
               onClick={selectHandler}
               className={`${
                 selectClasses || defaultSelect
-              } inline-flex h-10 items-center justify-center rounded-md border-none py-2 px-4 text-sm font-semibold`}
+              } inline-flex h-10 items-center justify-center rounded-md border-none px-4 py-2 text-sm font-semibold`}
             >
               {selectText}
             </DialogClose>
