@@ -1,3 +1,4 @@
+import React from 'react';
 import { useRecoilValue } from 'recoil';
 import TextareaAutosize from 'react-textarea-autosize';
 import SelectDropDown from '../../ui/SelectDropDown';
@@ -29,7 +30,7 @@ function Settings(props) {
     setOption,
     edit = false
   } = props;
-  const maxHeight = edit ? 'max-h-[233px]' : 'max-h-[350px]';
+  const maxHeight = edit ? 'max-h-[305px]' : 'max-h-[350px]';
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   const setModel = setOption('model');
@@ -67,7 +68,7 @@ function Settings(props) {
               id="modelLabel"
               disabled={readonly}
               value={modelLabel || ''}
-              onChange={e => setModelLabel(e.target.value || null)}
+              onChange={(e) => setModelLabel(e.target.value || null)}
               placeholder="Set a custom name for PaLM2"
               className={cn(
                 defaultTextProps,
@@ -83,7 +84,7 @@ function Settings(props) {
               id="promptPrefix"
               disabled={readonly}
               value={promptPrefix || ''}
-              onChange={e => setPromptPrefix(e.target.value || null)}
+              onChange={(e) => setPromptPrefix(e.target.value || null)}
               placeholder="Set custom instructions or context. Ignored if empty."
               className={cn(
                 defaultTextProps,
@@ -103,7 +104,7 @@ function Settings(props) {
                   id="temp-int"
                   disabled={readonly}
                   value={temperature}
-                  onChange={value => setTemperature(value)}
+                  onChange={(value) => setTemperature(value)}
                   max={1}
                   min={0}
                   step={0.01}
@@ -120,7 +121,7 @@ function Settings(props) {
               <Slider
                 disabled={readonly}
                 value={[temperature]}
-                onValueChange={value => setTemperature(value[0])}
+                onValueChange={(value) => setTemperature(value[0])}
                 doubleClickHandler={() => setTemperature(1)}
                 max={1}
                 min={0}
@@ -140,7 +141,7 @@ function Settings(props) {
                   id="top-p-int"
                   disabled={readonly}
                   value={topP}
-                  onChange={value => setTopP(value)}
+                  onChange={(value) => setTopP(value)}
                   max={1}
                   min={0}
                   step={0.01}
@@ -157,7 +158,7 @@ function Settings(props) {
               <Slider
                 disabled={readonly}
                 value={[topP]}
-                onValueChange={value => setTopP(value[0])}
+                onValueChange={(value) => setTopP(value[0])}
                 doubleClickHandler={() => setTopP(1)}
                 max={1}
                 min={0}
@@ -178,7 +179,7 @@ function Settings(props) {
                   id="top-k-int"
                   disabled={readonly}
                   value={topK}
-                  onChange={value => setTopK(value)}
+                  onChange={(value) => setTopK(value)}
                   max={40}
                   min={1}
                   step={0.01}
@@ -195,7 +196,7 @@ function Settings(props) {
               <Slider
                 disabled={readonly}
                 value={[topK]}
-                onValueChange={value => setTopK(value[0])}
+                onValueChange={(value) => setTopK(value[0])}
                 doubleClickHandler={() => setTopK(0)}
                 max={40}
                 min={1}
@@ -216,7 +217,7 @@ function Settings(props) {
                   id="max-tokens-int"
                   disabled={readonly}
                   value={maxOutputTokens}
-                  onChange={value => setMaxOutputTokens(value)}
+                  onChange={(value) => setMaxOutputTokens(value)}
                   max={1024}
                   min={1}
                   step={1}
@@ -233,7 +234,7 @@ function Settings(props) {
               <Slider
                 disabled={readonly}
                 value={[maxOutputTokens]}
-                onValueChange={value => setMaxOutputTokens(value[0])}
+                onValueChange={(value) => setMaxOutputTokens(value[0])}
                 doubleClickHandler={() => setMaxOutputTokens(0)}
                 max={1024}
                 min={1}
