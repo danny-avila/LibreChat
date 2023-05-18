@@ -8,11 +8,7 @@ Thanks to @heathriel!
   - Install MongoDB (if not using Docker) by running `brew tap mongodb/brew` and `brew install mongodb-community`
   - Install Docker (optional) by following the instructions on https://docs.docker.com/desktop/mac/install/
   - Obtain an OpenAI API key, BingAI and ChatGPT access tokens as described in the original instructions
-
-  - Install Homebrew (if not already installed) by following the instructions on https://brew.sh/
-  - Install Node.js and npm by running brew install node
-  - Install MongoDB (if not using Docker) by running brew tap mongodb/brew and brew install mongodb-community
-
+  - 
  **Instructions:**
 
   - Open Terminal and clone the repository by running git clone https://github.com/danny-avila/chatgpt-clone.git
