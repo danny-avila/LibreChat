@@ -169,12 +169,13 @@ const ask = async ({
     };
     const abortKey = conversationId;
     abortControllers.set(abortKey, { abortController, ...endpointOption });
+    const oaiApiKey = req.body?.token ?? null;
 
     let response = await askClient({
       text,
       parentMessageId: userParentMessageId,
       conversationId,
-      oaiApiKey: req.body?.token ?? null,
+      oaiApiKey,
       ...endpointOption,
       onProgress: progressCallback.call(null, {
         res,
@@ -250,7 +251,7 @@ const ask = async ({
     res.end();
 
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
-      const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: responseMessage });
+      const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: responseMessage, oaiApiKey });
       await saveConvo(req.user.id, {
         conversationId: conversationId,
         title

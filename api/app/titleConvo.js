@@ -17,7 +17,7 @@ const proxyEnvToAxiosProxy = (proxyString) => {
   return proxyConfig;
 };
 
-const titleConvo = async ({ endpoint, text, response }) => {
+const titleConvo = async ({ endpoint, text, response, oaiApiKey }) => {
   let title = 'New Chat';
   const ChatGPTClient = (await import('@waylaidwanderer/chatgpt-api')).default;
 
@@ -50,7 +50,7 @@ const titleConvo = async ({ endpoint, text, response }) => {
       frequency_penalty: 0
     };
 
-    let apiKey = process.env.OPENAI_KEY;
+    let apiKey = oaiApiKey || process.env.OPENAI_KEY;
 
     if (azure) {
       apiKey = process.env.AZURE_OPENAI_API_KEY;
