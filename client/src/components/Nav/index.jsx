@@ -170,10 +170,10 @@ export default function Nav({ navVisible, setNavVisible }) {
         </div>
         <button
           type="button"
-          className="nav-close-button -ml-0.5 -mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-md md:light:text-gray-900 focus:outline-none focus:ring-white md:-ml-1 md:-mt-[9px] transition ease-in-out duration-150"
+          className="nav-close-button -ml-0.5 -mt-2.5 inline-flex h-10 w-10 items-center justify-center rounded-md dark:text-white focus:outline-none focus:ring-white md:-ml-1 md:-mt-[9px] transition ease-in-out duration-150"
           onClick={toggleNavVisible}
         >
-          <span className="sr-only">Open sidebar</span>
+          <span className="sr-only">Close sidebar</span>
           <svg
             stroke="currentColor"
             fill="none"
@@ -181,7 +181,7 @@ export default function Nav({ navVisible, setNavVisible }) {
             viewBox="0 0 24 24"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="h-7 w-7"
+            className="w-6 h-6 md:h-7 md:w-7"
             height="1em"
             width="1em"
             xmlns="http://www.w3.org/2000/svg"
