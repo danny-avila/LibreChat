@@ -78,7 +78,7 @@ const userSchema = mongoose.Schema(
 
 //Remove refreshToken from the response
 userSchema.set('toJSON', {
-  transform: function (doc, ret) {
+  transform: function (_doc, ret,) {
     delete ret.refreshToken;
     return ret;
   }
@@ -168,7 +168,7 @@ module.exports.validateUser = (user) => {
     password: Joi.string().min(8).max(60).allow('').allow(null)
   };
 
-  return Joi.validate(user, schema);
+  return schema.validate(user);
 };
 
 const User = mongoose.model('User', userSchema);

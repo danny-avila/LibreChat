@@ -4,7 +4,6 @@ const sendEmail = require('../../utils/sendEmail');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const DebugControl = require('../../utils/debug.js');
-const Joi = require('joi');
 const { registerSchema } = require('../../strategies/validators');
 const migrateDataToFirstUser = require('../../utils/migrateDataToFirstUser');
 
@@ -47,7 +46,7 @@ const logoutUser = async (user, refreshToken) => {
 
 const registerUser = async (user) => {
   let response = {};
-  const { error } = Joi.validate(user, registerSchema);
+  const { error } = registerSchema.validate(user);
   if (error) {
     log({
       title: 'Route: register - Joi Validation Error',
