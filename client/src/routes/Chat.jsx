@@ -53,6 +53,7 @@ export default function Chat() {
       // conversationId (in url) should always follow conversation?.conversationId, unless conversation is null
       navigate(`/chat/${conversation?.conversationId}`);
     }
+    document.title = conversation?.title || import.meta.env.VITE_APP_TITLE || 'Chat';
   }, [conversation, conversationId]);
 
   useEffect(() => {
