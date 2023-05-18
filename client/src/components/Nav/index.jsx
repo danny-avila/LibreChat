@@ -115,12 +115,22 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   };
 
+  const isMobile = () => {
+    const userAgent = typeof window.navigator === 'undefined' ? '' : navigator.userAgent;
+    const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS/i;
+    return mobileRegex.test(userAgent);
+  };
+
   const toggleNavVisible = () => {
     setNavVisible(prev => !prev);
   };
 
   useEffect(() => {
-    setNavVisible(false);
+    if (isMobile()) {
+      setNavVisible(false);
+    } else {
+      setNavVisible(true);
+    }
   }, [conversationId, setNavVisible]);
 
   const containerClasses =
@@ -205,7 +215,7 @@ export default function Nav({ navVisible, setNavVisible }) {
             viewBox="0 0 24 24"
             strokeWidth={1.5}
             stroke="currentColor"
-            className="h-[26px] w-[26px] hidden md:block"
+            className="hidden h-[26px] w-[26px] md:block"
           >
             <path
               strokeLinecap="round"
