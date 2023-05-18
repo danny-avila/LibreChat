@@ -1,6 +1,5 @@
 const passport = require('passport');
 const PassportLocalStrategy = require('passport-local').Strategy;
-const Joi = require('joi');
 
 const User = require('../models/User');
 const { loginSchema } = require('./validators');
@@ -14,7 +13,7 @@ const passportLogin = new PassportLocalStrategy(
     passReqToCallback: true
   },
   async (req, email, password, done) => {
-    const { error } = Joi.validate(req.body, loginSchema);
+    const { error } = loginSchema.validate(req.body);
     if (error) {
       log({
         title: 'Passport Local Strategy - Validation Error',
