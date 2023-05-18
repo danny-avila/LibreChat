@@ -33,7 +33,7 @@ function OpenAIOptions() {
 
   const models = endpointsConfig?.['openAI']?.['availableModels'] || [];
 
-  const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
+  const triggerAdvancedMode = () => setAdvancedMode((prev) => !prev);
 
   const switchToSimpleMode = () => {
     setAdvancedMode(false);
@@ -43,10 +43,10 @@ function OpenAIOptions() {
     setSaveAsDialogShow(true);
   };
 
-  const setOption = param => (newValue) => {
+  const setOption = (param) => (newValue) => {
     let update = {};
     update[param] = newValue;
-    setConversation(prevState => ({
+    setConversation((prevState) => ({
       ...prevState,
       ...update
     }));

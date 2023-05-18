@@ -27,7 +27,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
   };
 
   const availableModels = ['chat-bison', 'text-bison'];
-  if (availableModels.find(model => model === endpointOption.modelOptions.model) === undefined) {
+  if (availableModels.find((model) => model === endpointOption.modelOptions.model) === undefined) {
     return handleError(res, { text: `Illegal request: model` });
   }
 

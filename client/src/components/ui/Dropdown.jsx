@@ -5,7 +5,7 @@ import { cn } from '~/utils/';
 
 function Dropdown({ value, onChange, options, className, containerClassName }) {
   const currentOption =
-    options.find(element => element === value || element?.value === value) ?? value;
+    options.find((element) => element === value || element?.value === value) ?? value;
   return (
     <div className={cn('flex items-center justify-center gap-2', containerClassName)}>
       <div className="relative w-full">

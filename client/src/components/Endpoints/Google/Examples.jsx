@@ -29,7 +29,7 @@ function Examples({ readonly, examples, setExample, addExample, removeExample, e
                     id={`input-${idx}`}
                     disabled={readonly}
                     value={example?.input?.content || ''}
-                    onChange={e => setExample(idx, 'input', e.target.value || null)}
+                    onChange={(e) => setExample(idx, 'input', e.target.value || null)}
                     placeholder="Set example input. Example is ignored if empty."
                     className={cn(
                       defaultTextProps,
@@ -53,7 +53,7 @@ function Examples({ readonly, examples, setExample, addExample, removeExample, e
                     id={`output-${idx}`}
                     disabled={readonly}
                     value={example?.output?.content || ''}
-                    onChange={e => setExample(idx, 'output', e.target.value || null)}
+                    onChange={(e) => setExample(idx, 'output', e.target.value || null)}
                     placeholder={`Set example output. Example is ignored if empty.`}
                     className={cn(
                       defaultTextProps,

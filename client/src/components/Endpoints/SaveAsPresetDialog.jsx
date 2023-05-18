@@ -44,7 +44,7 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
             <Input
               id="chatGptLabel"
               value={title || ''}
-              onChange={e => setTitle(e.target.value || '')}
+              onChange={(e) => setTitle(e.target.value || '')}
               placeholder="Set a custom name, in case you can find this preset"
               className={cn(
                 defaultTextProps,

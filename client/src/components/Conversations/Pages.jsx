@@ -1,7 +1,7 @@
 import React from 'react';
 
 export default function Pages({ pageNumber, pages, nextPage, previousPage }) {
-  const clickHandler = func => async (e) => {
+  const clickHandler = (func) => async (e) => {
     e.preventDefault();
     await func();
   };

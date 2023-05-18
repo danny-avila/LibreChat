@@ -54,7 +54,7 @@ const createMeiliMongooseModel = function ({ index, indexName, client, attribute
         // Find objects into mongodb matching `objectID` from Meili search
         const query = {};
         // query[primaryKey] = { $in: _.map(data.hits, primaryKey) };
-        query[primaryKey] = _.map(data.hits, hit => cleanUpPrimaryKeyValue(hit[primaryKey]));
+        query[primaryKey] = _.map(data.hits, (hit) => cleanUpPrimaryKeyValue(hit[primaryKey]));
         // console.log('query', query);
         const hitsFromMongoose = await this.find(
           query,

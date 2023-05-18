@@ -64,7 +64,7 @@ let level = levels.INFO;
 
 module.exports = {
   levels,
-  setLevel: l => (level = l),
+  setLevel: (l) => (level = l),
   log: {
     trace: (msg) => {
       if (level <= levels.TRACE) return;

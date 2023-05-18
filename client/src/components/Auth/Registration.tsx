@@ -55,7 +55,7 @@ function Registration() {
           className="mt-6"
           aria-label="Registration form"
           method="POST"
-          onSubmit={handleSubmit(data => onRegisterUserFormSubmit(data))}
+          onSubmit={handleSubmit((data) => onRegisterUserFormSubmit(data))}
         >
           <div className="mb-2">
             <div className="relative">
@@ -225,7 +225,7 @@ function Registration() {
                   return false;
                 }}
                 {...register('confirm_password', {
-                  validate: value => value === password || 'Passwords do not match'
+                  validate: (value) => value === password || 'Passwords do not match'
                 })}
                 aria-invalid={!!errors.confirm_password}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"

@@ -159,7 +159,7 @@ const useMessageHandler = () => {
   };
 
   const regenerate = ({ parentMessageId }) => {
-    const parentMessage = messages?.find(element => element.messageId == parentMessageId);
+    const parentMessage = messages?.find((element) => element.messageId == parentMessageId);
 
     if (parentMessage && parentMessage.isCreatedByUser)
       ask({ ...parentMessage }, { isRegenerate: true });

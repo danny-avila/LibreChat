@@ -119,7 +119,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   };
 
   const toggleNavVisible = () => {
-    setNavVisible(prev => !prev);
+    setNavVisible((prev) => !prev);
   };
 
   useEffect(() => {

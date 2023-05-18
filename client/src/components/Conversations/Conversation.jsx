@@ -65,7 +65,7 @@ export default function Conversation({ conversation, retainView }) {
     if (updateConvoMutation.isSuccess) {
       refreshConversations();
       if (conversationId == currentConversation?.conversationId) {
-        setCurrentConversation(prevState => ({
+        setCurrentConversation((prevState) => ({
           ...prevState,
           title: titleInput
         }));
@@ -99,7 +99,7 @@ export default function Conversation({ conversation, retainView }) {
             type="text"
             className="m-0 mr-0 w-full border border-blue-500 bg-transparent p-0 text-sm leading-tight outline-none"
             value={titleInput}
-            onChange={e => setTitleInput(e.target.value)}
+            onChange={(e) => setTitleInput(e.target.value)}
             onBlur={onRename}
             onKeyDown={handleKeyDown}
           />

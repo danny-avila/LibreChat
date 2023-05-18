@@ -63,7 +63,7 @@ export default function Message({
     }
   }, [last, message]);
 
-  const enterEdit = cancel => setCurrentEditId(cancel ? -1 : message.messageId);
+  const enterEdit = (cancel) => setCurrentEditId(cancel ? -1 : message.messageId);
 
   const handleWheel = () => {
     if (blinker) {
