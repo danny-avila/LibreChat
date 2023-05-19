@@ -2,19 +2,8 @@ import React, { useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import EndpointOptionsDialog from '../Endpoints/EndpointOptionsDialog';
 import { cn } from '~/utils/';
-import { Button } from '../ui/Button.tsx';
 
 import store from '~/store';
-
-const clipPromptPrefix = (str) => {
-  if (typeof str !== 'string') {
-    return null;
-  } else if (str.length > 10) {
-    return str.slice(0, 10) + '...';
-  } else {
-    return str;
-  }
-};
 
 const MessageHeader = ({ isSearchView = false }) => {
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
@@ -56,7 +45,7 @@ const MessageHeader = ({ isSearchView = false }) => {
     <>
       <div
         className={cn(
-          'dark:text-gray-450 w-full gap-1 border-b border-black/10 bg-gray-50 text-sm text-gray-500 transition-all hover:bg-gray-100 hover:bg-opacity-30 dark:border-gray-900/50 dark:bg-gray-700 dark:hover:bg-gray-600 dark:hover:bg-opacity-100',
+          'dark:text-gray-450 w-full gap-1 border-b border-black/10 bg-gray-50 text-sm text-gray-600 transition-all hover:bg-gray-100 hover:bg-opacity-30 dark:border-gray-900/50 dark:bg-gray-700 dark:hover:bg-gray-600 dark:hover:bg-opacity-100 dark:text-gray-500',
           endpoint === 'chatGPTBrowser' ? '' : 'cursor-pointer '
         )}
         onClick={() => (endpoint === 'chatGPTBrowser' ? null : setSaveAsDialogShow(true))}
