@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import filenamify from 'filenamify';
 import exportFromJSON from 'export-from-json';
 import download from 'downloadjs';
 import DialogTemplate from '~/components/ui/DialogTemplate.jsx';
-import { Dialog, DialogClose, DialogButton } from '~/components/ui/Dialog.tsx';
+import { Dialog, DialogButton } from '~/components/ui/Dialog.tsx';
 import { Input } from '~/components/ui/Input.tsx';
 import { Label } from '~/components/ui/Label.tsx';
 import { Checkbox } from '~/components/ui/Checkbox.tsx';

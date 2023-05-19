@@ -1,6 +1,3 @@
-import { clsx } from 'clsx';
-import React from 'react';
-import { twMerge } from 'tailwind-merge';
 import GPTIcon from '../components/svg/GPTIcon';
 import BingIcon from '../components/svg/BingIcon';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -8,12 +5,13 @@ import { useAuthContext } from '~/hooks/AuthContext';
 const getIcon = (props) => {
   // { size = 30, isCreatedByUser, model, chatGptLabel, error, ...props }
   const { size = 30, isCreatedByUser, button, model } = props;
-  const { user, logout } = useAuthContext();
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const { user } = useAuthContext();
 
   if (isCreatedByUser)
     return (
       <div
-        title={user.name}
+        title={user?.name || 'User'}
         style={{
           width: size,
           height: size
@@ -24,7 +22,7 @@ const getIcon = (props) => {
           className="rounded-sm"
           src={
             user?.avatar ||
-            `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name}&fontFamily=Verdana&fontSize=36`
+            `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name || 'User'}&fontFamily=Verdana&fontSize=36`
           }
           alt="avatar"
         />

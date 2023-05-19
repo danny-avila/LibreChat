@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, forwardRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Download } from 'lucide-react';
 import { cn } from '~/utils/';
@@ -7,7 +7,7 @@ import ExportModel from './ExportModel';
 
 import store from '~/store';
 
-export default function ExportConversation() {
+const ExportConversation = forwardRef(() => {
   const [open, setOpen] = useState(false);
 
   const conversation = useRecoilValue(store.conversation) || {};
@@ -37,4 +37,6 @@ export default function ExportConversation() {
       <ExportModel open={open} onOpenChange={setOpen} />
     </>
   );
-}
+});
+
+export default ExportConversation;
