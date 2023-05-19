@@ -63,5 +63,6 @@ src/style - official.css
 
 # meilisearch
 meilisearch
+meilisearch.exe
 data.ms/*
 

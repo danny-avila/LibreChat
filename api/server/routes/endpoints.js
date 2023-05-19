@@ -42,7 +42,7 @@ router.get('/', async function (req, res) {
   const azureOpenAI = !!process.env.AZURE_OPENAI_KEY;
   const apiKey = process.env.OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY;
   const openAI = apiKey
-    ? { availableModels: getOpenAIModels(), userProvide: apiKey === 'user_provided' }
+    ? { availableModels: getOpenAIModels(), userProvide: process.env.OPENAI_USER_PROVIDED === 'true' }
     : false;
   const bingAI = process.env.BINGAI_TOKEN
     ? { userProvide: process.env.BINGAI_TOKEN == 'user_provided' }

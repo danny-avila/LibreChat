@@ -1,95 +1,101 @@
-.nav-mask {
-  position: fixed;
-  z-index: 996;
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  background-color: rgba(86, 88, 105, 0.75);
-  padding-left: 420px;
-  padding-top: 12px;
-  opacity: 0;
-  transition: all 0.5s;
-  pointer-events: none;
-}
-
 .nav {
   transition: all 0.5s;
 }
 
-.nav-close-button {
+.switch-container {
   display: none;
 }
 
-@media (min-width: 1024px) {
-  .switch-container {
-    display: none;
-  }
+.switch-result {
+  display: block !important;
+  visibility: visible;
 }
 
+/* .sibling-switch {
+          left: 114px;
+          top: unset;
+          bottom: 4px;
+          visibility: visible;
+          z-index: 2;
+      } */
+.sibling-switch {
+  display: none;
+}
 
-  .switch-result {
-    display: block !important;
-    visibility: visible;
-  }
+.hover-button {
+  display: block;
+  visibility: visible;
+}
 
-@media (max-width: 1024px) {
-  /* .sibling-switch {
-        left: 114px;
-        top: unset;
-        bottom: 4px;
-        visibility: visible;
-        z-index: 2;
-    } */
-  .sibling-switch {
-    display: none;
-  }
+.input-panel-button {
+  border: 0;
+}
 
-  .hover-button {
-    display: block;
-    visibility: visible;
-  }
+.input-panel-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.input-panel {
+}
+
+.nav-close-button {
+  display: block;
+  position: absolute;
+  left: 100%;
+  top: 12px;
+  margin-left: 20px;
+}
+
+.nav {
+  position: fixed;
+  z-index: 999;
+  left: calc(-100%);
+  top: 0;
+  width: calc(100% - 60px);
+
+  max-width: 260px;
+
+  bottom: 0;
+  opacity: 0;
+}
+
+.nav.active {
+  position: relative;
+  left: 0;
+  opacity: 1;
+}
+
+.nav-mask.active {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 @media (max-width: 767px) {
-  .input-panel-button {
-    border: 0;
-  }
-
-  .input-panel-button svg {
-    width: 16px;
-    height: 16px;
-  }
-
-  .input-panel {
-  }
-
-  .nav-close-button {
-    display: block;
-    position: absolute;
-    left: 100%;
-    top: 12px;
-    margin-left: 20px;
-  }
-
   .nav {
+    width: calc(100% - 60px);
+  }
+  .nav-mask {
     position: fixed;
-    z-index: 999;
-    left: calc(-100%);
+    z-index: 996;
+    left: 0;
+    right: 0;
     top: 0;
     bottom: 0;
-    max-width: 320px;
-    width: calc(100% - 60px);
+    background-color: rgba(86, 88, 105, 0.75);
+    padding-left: 420px;
+    padding-top: 12px;
     opacity: 0;
-  }
-
-  .nav.active {
-    left: 0;
-    opacity: 1;
+    transition: all 0.5s;
+    pointer-events: none;
   }
 
   .nav-mask.active {
     opacity: 1;
     pointer-events: auto;
+  }
+
+  .nav.active {
+    position: fixed;
   }
 }
