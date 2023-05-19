@@ -216,6 +216,7 @@ export type TPlugin = {
   pluginKey: string;
   description: string;
   icon: string;
+  requiresAuth: string | boolean;
 };
 
 export type TUpdateUserPlugins = {

@@ -60,7 +60,7 @@ function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPlugi
                 </div>
               </button>
             ) : (
-              <button className="btn relative bg-gray-50 hover:bg-gray-200">
+              <button className="btn relative bg-gray-50 hover:bg-gray-200" onClick={handleClick}>
                 <div className="flex w-full items-center justify-center gap-2">
                   Uninstall
                   <svg
