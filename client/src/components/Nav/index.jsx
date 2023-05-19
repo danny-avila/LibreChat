@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useContext } from 'react';
 import NewChat from './NewChat';
 import Spinner from '../svg/Spinner';
 import Pages from '../Conversations/Pages';
@@ -9,6 +9,8 @@ import { useGetConversationsQuery, useSearchQuery } from '~/data-provider';
 import useDebounce from '~/hooks/useDebounce';
 import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { ThemeContext } from '~/hooks/ThemeContext';
+import { cn } from '~/utils/';
 
 import resolveConfig from 'tailwindcss/resolveConfig';
 const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -33,6 +35,7 @@ export const getCurrentBreakpoint = () => {
 export default function Nav({ navVisible, setNavVisible }) {
   const [isHovering, setIsHovering] = useState(false);
   const { isAuthenticated } = useAuthContext();
+  const { theme, } = useContext(ThemeContext);
   const containerRef = useRef(null);
   const scrollPositionRef = useRef(null);
 
@@ -195,7 +198,7 @@ export default function Nav({ navVisible, setNavVisible }) {
         </div>
         <button
           type="button"
-          className="nav-close-button -ml-0.5 -mt-2.5 inline-flex h-10 w-10 items-center justify-center rounded-md focus:outline-none focus:ring-white dark:text-white md:-ml-1 md:-mt-2.5"
+          className={cn('nav-close-button -ml-0.5 -mt-2.5 inline-flex h-10 w-10 items-center justify-center rounded-md focus:outline-none focus:ring-white md:-ml-1 md:-mt-2.5', theme === 'dark' ? 'text-white hover:text-gray-200' : 'text-gray-900 hover:text-gray-800')}
           onClick={toggleNavVisible}
         >
           <span className="sr-only">Close sidebar</span>
