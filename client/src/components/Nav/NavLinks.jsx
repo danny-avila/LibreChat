@@ -69,9 +69,11 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
               leaveTo="transform opacity-0 scale-95"
             >
               <Menu.Items className="absolute bottom-full left-0 z-20 mb-2 w-full translate-y-0 overflow-hidden rounded-md bg-[#050509] py-1.5 opacity-100 outline-none">
-                <Menu.Item as="div">
-                  {!!isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
-                </Menu.Item>
+                {isSearchEnabled && (
+                  <Menu.Item>
+                    <SearchBar clearSearch={clearSearch} />
+                  </Menu.Item>
+                )}
                 <Menu.Item as="div">
                   <NavLink
                     className={cn(
