@@ -122,7 +122,7 @@ export default function NewConversationMenu() {
   });
 
   return (
-    <Dialog>
+    <Dialog className="z-[100]">
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <Button
@@ -136,7 +136,7 @@ export default function NewConversationMenu() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
-          className="min-w-[300px] dark:bg-gray-700"
+          className="min-w-[300px] dark:bg-gray-700 z-[100]"
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
           <DropdownMenuLabel
