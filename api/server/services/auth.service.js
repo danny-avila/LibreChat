@@ -24,25 +24,22 @@ const loginUser = async (user) => {
 };
 
 const logoutUser = async (user, refreshToken) => {
-  User.findById(user._id).then((user) => {
-    const tokenIndex = user.refreshToken.findIndex((item) => item.refreshToken === refreshToken);
+  try {
+    const userFound = await User.findById(user._id);
+    const tokenIndex = userFound.refreshToken.findIndex((item) => item.refreshToken === refreshToken);
 
     if (tokenIndex !== -1) {
-      user.refreshToken.id(user.refreshToken[tokenIndex]._id).remove();
+      userFound.refreshToken.id(userFound.refreshToken[tokenIndex]._id).remove();
     }
 
-    user.save((err) => {
-      if (err) {
-        return { status: 500, message: err.message };
-      } else {
-        //res.clearCookie('refreshToken', COOKIE_OPTIONS);
-        // removeTokenCookie(res);
-        return { status: 200, message: 'Logout successful' };
-      }
-    });
-  });
-  return { status: 200, message: 'Logout successful' };
-};
+    await userFound.save();
+    //res.clearCookie('refreshToken', COOKIE_OPTIONS);
+    // removeTokenCookie(res);
+    return { status: 200, message: 'Logout successful' };
+  } catch (err) {
+    return { status: 500, message: err.message };
+  }
+}
 
 const registerUser = async (user) => {
   let response = {};
