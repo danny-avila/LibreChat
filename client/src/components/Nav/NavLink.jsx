@@ -1,20 +1,25 @@
-import React from 'react';
+import { forwardRef } from 'react';
+import { cn } from '~/utils/';
 
-export default function NavLink({ svg, text, clickHandler }) {
-  const props = {
-    className:
-      'flex cursor-pointer items-center gap-3 rounded-md py-3 px-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10'
-  };
+const NavLink = forwardRef((props, ref) => {
+  const { svg, text, clickHandler, className = '' } = props;
+  const defaultProps = {};
+
+  defaultProps.className = cn(
+    'flex cursor-pointer items-center gap-3 rounded-md py-3 px-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10',
+    className
+  );
 
   if (clickHandler) {
-    props.onClick = clickHandler;
-    console.log('clickHandler: ', clickHandler);
+    defaultProps.onClick = clickHandler;
   }
 
   return (
-    <a {...props}>
+    <a {...defaultProps} ref={ref}>
       {svg()}
       {text}
     </a>
   );
-}
+});
+
+export default NavLink;
