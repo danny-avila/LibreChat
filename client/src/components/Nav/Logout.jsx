@@ -1,8 +1,8 @@
-import React from 'react';
+import { forwardRef } from 'react';
 import LogOutIcon from '../svg/LogOutIcon';
 import { useAuthContext } from '~/hooks/AuthContext';
 
-export default function Logout() {
+const Logout = forwardRef(() => {
   const { user, logout } = useAuthContext();
 
   const handleLogout = () => {
@@ -20,4 +20,6 @@ export default function Logout() {
       <small>Log out</small>
     </button>
   );
-}
+});
+
+export default Logout;

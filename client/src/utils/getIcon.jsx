@@ -11,7 +11,7 @@ const getIcon = (props) => {
   if (isCreatedByUser)
     return (
       <div
-        title={user.name}
+        title={user?.name || 'User'}
         style={{
           width: size,
           height: size
@@ -22,7 +22,7 @@ const getIcon = (props) => {
           className="rounded-sm"
           src={
             user?.avatar ||
-            `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name}&fontFamily=Verdana&fontSize=36`
+            `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name || 'User'}&fontFamily=Verdana&fontSize=36`
           }
           alt="avatar"
         />
