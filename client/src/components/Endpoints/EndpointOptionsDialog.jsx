@@ -45,7 +45,7 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
 
   useEffect(() => {
     setPreset(_preset);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   return (

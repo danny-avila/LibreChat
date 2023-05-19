@@ -26,7 +26,9 @@ const loginUser = async (user) => {
 const logoutUser = async (user, refreshToken) => {
   try {
     const userFound = await User.findById(user._id);
-    const tokenIndex = userFound.refreshToken.findIndex((item) => item.refreshToken === refreshToken);
+    const tokenIndex = userFound.refreshToken.findIndex(
+      (item) => item.refreshToken === refreshToken
+    );
 
     if (tokenIndex !== -1) {
       userFound.refreshToken.id(userFound.refreshToken[tokenIndex]._id).remove();
@@ -39,7 +41,7 @@ const logoutUser = async (user, refreshToken) => {
   } catch (err) {
     return { status: 500, message: err.message };
   }
-}
+};
 
 const registerUser = async (user) => {
   let response = {};

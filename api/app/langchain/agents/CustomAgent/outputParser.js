@@ -33,7 +33,9 @@ class OldOutputParser extends ZeroShotAgentOutputParser {
     }
     // const match = /Action: (.*)\nAction Input: (.*)/s.exec(text); // old
     // const match = /Action: ([\s\S]*?)(?:\nAction Input: ([\s\S]*?))?$/.exec(text); //old
-    const match = /(?:Action(?: 1)?:) ([\s\S]*?)(?:\n(?:Action Input(?: 1)?:) ([\s\S]*?))?$/.exec(text); //new
+    const match = /(?:Action(?: 1)?:) ([\s\S]*?)(?:\n(?:Action Input(?: 1)?:) ([\s\S]*?))?$/.exec(
+      text
+    ); //new
     if (!match || (match && match[1].trim().toLowerCase() === 'n/a') || (match && !match[2])) {
       console.log('\n\n<----------------------HIT PARSING ERROR---------------------->\n\n');
       const thought = text
@@ -42,7 +44,8 @@ class OldOutputParser extends ZeroShotAgentOutputParser {
         .trim();
       return {
         tool: 'self-reflection',
-        toolInput: thought + "\nI should finalize my reply as soon as I have satisfied the user's query.",
+        toolInput:
+          thought + "\nI should finalize my reply as soon as I have satisfied the user's query.",
         log: ''
       };
     }
@@ -115,7 +118,8 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
       }
     }
     this.finishToolNameRegex = /(?:the\s+)?final\s+answer[:\s]*\s*/i;
-    this.actionValues = /(?:Action(?: [1-9])?:) ([\s\S]*?)(?:\n(?:Action Input(?: [1-9])?:) ([\s\S]*?))?$/i;
+    this.actionValues =
+      /(?:Action(?: [1-9])?:) ([\s\S]*?)(?:\n(?:Action Input(?: [1-9])?:) ([\s\S]*?))?$/i;
     this.actionInputRegex = /(?:Action Input(?: *\d*):) ?([\s\S]*?)$/i;
     this.thoughtRegex = /(?:Thought(?: *\d*):) ?([\s\S]*?)$/i;
   }
@@ -155,7 +159,10 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
     const match = this.actionValues.exec(text); // old v2
 
     if (!match) {
-      console.log('\n\n<----------------------HIT NO MATCH PARSING ERROR---------------------->\n\n', match);
+      console.log(
+        '\n\n<----------------------HIT NO MATCH PARSING ERROR---------------------->\n\n',
+        match
+      );
       const thoughts = text.replace(/[tT]hought:/, '').split('\n');
       return {
         tool: 'self-reflection',
@@ -167,20 +174,29 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
     let selectedTool = match?.[1].trim().toLowerCase();
 
     if (match && selectedTool === 'n/a') {
-      console.log('\n\n<----------------------HIT N/A PARSING ERROR---------------------->\n\n', match);
+      console.log(
+        '\n\n<----------------------HIT N/A PARSING ERROR---------------------->\n\n',
+        match
+      );
       return {
         tool: 'self-reflection',
         toolInput: match[2]?.trim().replace(/^"+|"+$/g, '') ?? '',
         log: text
       };
     }
-    
+
     let selectedIsValid = this.getValidTool(selectedTool);
     if (match && selectedIsValid) {
-      console.log('\n\n<----------------------Re-assigning Selected Tool---------------------->\n\n', match);
+      console.log(
+        '\n\n<----------------------Re-assigning Selected Tool---------------------->\n\n',
+        match
+      );
       selectedTool = selectedIsValid;
-    } else  {
-      console.log('\n\n<----------------------HIT INVALID TOOL PARSING ERROR---------------------->\n\n', match);
+    } else {
+      console.log(
+        '\n\n<----------------------HIT INVALID TOOL PARSING ERROR---------------------->\n\n',
+        match
+      );
     }
 
     if (match && !match[2]) {
@@ -223,11 +239,14 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
           action = name;
         }
       }
-      
+
       // In case there is no action input, let's double-check if there is an action input in 'text' variable
       const actionInputMatch = this.actionInputRegex.exec(text);
       if (action && actionInputMatch) {
-        console.log('\n\n<------Matched Action Input in Long Parsing Error------>\n\n', actionInputMatch);
+        console.log(
+          '\n\n<------Matched Action Input in Long Parsing Error------>\n\n',
+          actionInputMatch
+        );
         return {
           tool: action,
           toolInput: actionInputMatch[1].trim().replaceAll('"', ''),

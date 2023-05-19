@@ -49,13 +49,12 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
         'text-davinci-002-render-sha',
       title: _preset?.title ?? 'New Preset'
     };
-  }  else if (endpoint === 'gptPlugins') {
+  } else if (endpoint === 'gptPlugins') {
     preset = {
       endpoint,
       presetId: _preset?.presetId ?? null,
       tools: _preset?.tools ?? [],
-      model:
-        _preset?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'gpt-3.5-turbo',
+      model: _preset?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'gpt-3.5-turbo',
       temperature: _preset?.temperature ?? 0,
       top_p: _preset?.top_p ?? 1,
       presence_penalty: _preset?.presence_penalty ?? 0,

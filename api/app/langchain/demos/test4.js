@@ -33,7 +33,7 @@ const openAIApiKey = process.env.OPENAI_KEY;
   //   conversationId: output2.conversationId,
   //   parentMessageId: output2.messageId,
   // };
-  
+
   // const input3 = "Whats the national Anthem of that nation?";
   // const output3 = await chatAgent.sendMessage(input3, options2);
   // console.dir(output3, { depth: null });
@@ -42,10 +42,8 @@ const openAIApiKey = process.env.OPENAI_KEY;
   //   conversationId: output3.conversationId,
   //   parentMessageId: output3.messageId,
   // };
-  
+
   // const input4 = "Thank you, you're awesome!";
   // const output4 = await chatAgent.sendMessage(input4, options3);
   // console.dir(output4, { depth: null });
-
-  
 })();

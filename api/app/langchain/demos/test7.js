@@ -18,7 +18,7 @@ function createWolframAlphaURL(query) {
   if (!appId) {
     throw new Error('Missing WOLFRAM_APP_ID environment variable.');
   }
-  
+
   const url = `${baseURL}?input=${encodedQuery}&appid=${appId}`;
   return url;
 }

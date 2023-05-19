@@ -1,4 +1,9 @@
-const { ChainStepExecutor, LLMPlanner, PlanOutputParser, PlanAndExecuteAgentExecutor } = require( "langchain/experimental/plan_and_execute");
+const {
+  ChainStepExecutor,
+  LLMPlanner,
+  PlanOutputParser,
+  PlanAndExecuteAgentExecutor
+} = require('langchain/experimental/plan_and_execute');
 const { LLMChain } = require('langchain/chains');
 const { ChatAgent, AgentExecutor } = require('langchain/agents');
 const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
@@ -24,18 +29,16 @@ const PLANNER_SYSTEM_PROMPT_MESSAGE_TEMPLATE = [
   `Your steps should be general, and should not require a specific method to solve a step. If the task is a question,`,
   `the final step in the plan must be the following: "Given the above steps taken,`,
   `please respond to the original query."`,
-  `At the end of your plan, say "<END_OF_PLAN>"`,
-].join(" ");
+  `At the end of your plan, say "<END_OF_PLAN>"`
+].join(' ');
 
-const PLANNER_CHAT_PROMPT =
-  /* #__PURE__ */ ChatPromptTemplate.fromPromptMessages([
-    /* #__PURE__ */ SystemMessagePromptTemplate.fromTemplate(
-      PLANNER_SYSTEM_PROMPT_MESSAGE_TEMPLATE
-    ),
-    /* #__PURE__ */ HumanMessagePromptTemplate.fromTemplate(`{input}`),
-  ]);
+const PLANNER_CHAT_PROMPT = /* #__PURE__ */ ChatPromptTemplate.fromPromptMessages([
+  /* #__PURE__ */ SystemMessagePromptTemplate.fromTemplate(PLANNER_SYSTEM_PROMPT_MESSAGE_TEMPLATE),
+  /* #__PURE__ */ HumanMessagePromptTemplate.fromTemplate(`{input}`)
+]);
 
-const initializePAEAgent = async ({ tools: _tools, model: llm, pastMessages, ...rest }) => { //removed currentDateString
+const initializePAEAgent = async ({ tools: _tools, model: llm, pastMessages, ...rest }) => {
+  //removed currentDateString
   const tools = _tools.filter((tool) => tool.name !== 'self-reflection');
 
   const memory = new BufferMemory({
@@ -51,12 +54,12 @@ const initializePAEAgent = async ({ tools: _tools, model: llm, pastMessages, ...
   const plannerLlmChain = new LLMChain({
     llm,
     prompt: PLANNER_CHAT_PROMPT,
-    memory,
+    memory
   });
   const planner = new LLMPlanner(plannerLlmChain, new PlanOutputParser());
 
   const agent = ChatAgent.fromLLMAndTools(llm, tools, {
-    humanMessageTemplate: DEFAULT_STEP_EXECUTOR_HUMAN_CHAT_MESSAGE_TEMPLATE,
+    humanMessageTemplate: DEFAULT_STEP_EXECUTOR_HUMAN_CHAT_MESSAGE_TEMPLATE
   });
 
   const stepExecutor = new ChainStepExecutor(
@@ -65,7 +68,7 @@ const initializePAEAgent = async ({ tools: _tools, model: llm, pastMessages, ...
 
   return new PlanAndExecuteAgentExecutor({
     planner,
-    stepExecutor,
+    stepExecutor
   });
 };
 

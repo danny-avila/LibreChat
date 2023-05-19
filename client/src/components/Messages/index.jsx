@@ -68,8 +68,6 @@ export default function Messages({ isSearchView = false }) {
     [messagesEndRef]
   );
 
-
-
   let timeoutId = null;
   const debouncedHandleScroll = () => {
     clearTimeout(timeoutId);

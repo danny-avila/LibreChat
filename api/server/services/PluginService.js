@@ -1,11 +1,6 @@
+const installPlugin = async () => {};
 
-const installPlugin = async () => {
-  
-};
-
-const uninstallPlugin = async () => {
-
-};
+const uninstallPlugin = async () => {};
 
 module.exports = {
   installPlugin,

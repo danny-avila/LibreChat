@@ -10,8 +10,8 @@ const { validateTools } = require('./tools');
     tools: validateTools(['calculator', 'dall-e']),
     debug: true,
     modelOptions: {
-      model: 'gpt-4',
-    },
+      model: 'gpt-4'
+    }
   });
 
   const input1 = `Write me a poem in the style of Ernest Hemingway and then generate an image based on the poem you wrote.`;
@@ -39,7 +39,7 @@ const { validateTools } = require('./tools');
   //   conversationId: output2.conversationId,
   //   parentMessageId: output2.messageId,
   // };
-  
+
   // const input3 = "Whats the national Anthem of that nation?";
   // const output3 = await chatAgent.sendMessage(input3, options2);
   // console.dir(output3, { depth: null });
@@ -48,10 +48,8 @@ const { validateTools } = require('./tools');
   //   conversationId: output3.conversationId,
   //   parentMessageId: output3.messageId,
   // };
-  
+
   // const input4 = "Thank you, you're awesome!";
   // const output4 = await chatAgent.sendMessage(input4, options3);
   // console.dir(output4, { depth: null });
-
-  
 })();

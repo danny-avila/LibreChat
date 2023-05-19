@@ -41,64 +41,63 @@ function PluginsOptions() {
         setAvailableTools([pluginStore]);
         return;
       }
-      const tools = [...user.plugins].map(el => {
-        return allPlugins.find(plugin => plugin.pluginKey === el);
+      const tools = [...user.plugins].map((el) => {
+        return allPlugins.find((plugin) => plugin.pluginKey === el);
       });
       setAvailableTools([...tools, pluginStore]);
     }
   }, [allPlugins, user]);
-  
-  const { endpoint, conversationId } = conversation;
+
+  const { endpoint } = conversation;
   const { model, temperature, top_p, presence_penalty, frequency_penalty } = conversation;
   // const { model, chatGptLabel, promptPrefix, temperature, top_p, presence_penalty, frequency_penalty } = conversation;
-
 
   if (endpoint !== 'gptPlugins') return null;
   // if (conversationId !== 'new') return null; // --> allows to change options during conversation
 
   const models = endpointsConfig?.['gptPlugins']?.['availableModels'] || [];
   // const availableTools = endpointsConfig?.['gptPlugins']?.['availableTools'] || [];
-    
-  const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
-  
+
+  const triggerAdvancedMode = () => setAdvancedMode((prev) => !prev);
+
   const switchToSimpleMode = () => {
     setAdvancedMode(false);
   };
-  
+
   const saveAsPreset = () => {
     setShowSavePresetDialog(true);
   };
-  
+
   function checkIfSelected(value) {
     if (!conversation.tools) return false;
-    return conversation.tools.find(el => el.pluginKey === value) ? true : false;
+    return conversation.tools.find((el) => el.pluginKey === value) ? true : false;
   }
-  
-  const setOption = param => newValue => {
+
+  const setOption = (param) => (newValue) => {
     let update = {};
     update[param] = newValue;
-    setConversation(prevState => ({
+    setConversation((prevState) => ({
       ...prevState,
       ...update
     }));
   };
-  
-  const setTools = newValue => {
-    if(newValue === 'pluginStore') {
+
+  const setTools = (newValue) => {
+    if (newValue === 'pluginStore') {
       setShowPluginStoreDialog(true);
       return;
     }
     let update = {};
     let current = conversation.tools || [];
     let isSelected = checkIfSelected(newValue);
-    let tool = availableTools[availableTools.findIndex(el => el.pluginKey === newValue)];
+    let tool = availableTools[availableTools.findIndex((el) => el.pluginKey === newValue)];
     if (isSelected) {
-      update.tools = current.filter(el => el.pluginKey !== newValue);
+      update.tools = current.filter((el) => el.pluginKey !== newValue);
     } else {
       update.tools = [...current, tool];
     }
     console.log('setOption', update);
-    setConversation(prevState => ({
+    setConversation((prevState) => ({
       ...prevState,
       ...update
     }));
@@ -130,9 +129,14 @@ function PluginsOptions() {
             cardStyle,
             'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-4 hover:bg-white focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700'
           )}
-          onClick={() => setVisibility(prev => !prev)}
+          onClick={() => setVisibility((prev) => !prev)}
         >
-          <ChevronDownIcon className={cn(!visibile ? 'rotate-180 transform' : '', 'w-4 text-gray-600 dark:text-white')} />
+          <ChevronDownIcon
+            className={cn(
+              !visibile ? 'rotate-180 transform' : '',
+              'w-4 text-gray-600 dark:text-white'
+            )}
+          />
         </Button>
         <SelectDropDown
           value={model}
@@ -185,9 +189,7 @@ function PluginsOptions() {
         onOpenChange={setShowSavePresetDialog}
         preset={conversation}
       />
-      <PluginStoreDialog 
-        isOpen={showPluginStoreDialog}
-        setIsOpen={setShowPluginStoreDialog}/>
+      <PluginStoreDialog isOpen={showPluginStoreDialog} setIsOpen={setShowPluginStoreDialog} />
     </>
   );
 }

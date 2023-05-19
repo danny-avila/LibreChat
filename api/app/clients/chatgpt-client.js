@@ -54,9 +54,9 @@ const askClient = async ({
 
   if (azure) {
     apiKey = oaiApiKey ? oaiApiKey : process.env.AZURE_OPENAI_API_KEY || null;
-    clientOptions.reverseProxyUrl = genAzureChatCompletion({ 
-      azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME, 
-      azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME, 
+    clientOptions.reverseProxyUrl = genAzureChatCompletion({
+      azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME,
+      azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME,
       azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION
     });
   }

@@ -173,7 +173,7 @@ export default function Message({
               </SubRow>
             )}
             <div className="flex flex-grow flex-col gap-3">
-              { message.plugin && <Plugin plugin={message.plugin}/>}
+              {message.plugin && <Plugin plugin={message.plugin} />}
               {error ? (
                 <div className="flex flex min-h-[20px] flex-grow flex-col items-start gap-2 gap-4  text-red-500">
                   <div className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-100">

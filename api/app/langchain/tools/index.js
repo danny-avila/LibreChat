@@ -32,7 +32,8 @@ const validateTools = (tools) => {
   validateAPIKey('WOLFRAM_APP_ID', 'wolfram');
 
   return tools.filter((tool) => {
-    if (!validTools.has(tool)) console.log('Invalid tool, are your tool credentials set? tool: ', tool);
+    if (!validTools.has(tool))
+      console.log('Invalid tool, are your tool credentials set? tool: ', tool);
     return validTools.has(tool);
   });
 };

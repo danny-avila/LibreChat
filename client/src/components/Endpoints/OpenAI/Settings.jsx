@@ -62,17 +62,14 @@ function Settings(props) {
           {endpoint === 'openAI' && (
             <>
               <div className="grid w-full items-center gap-2">
-                <Label
-                  htmlFor="chatGptLabel"
-                  className="text-left text-sm font-medium"
-                >
+                <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
                   Custom Name <small className="opacity-40">(default: blank)</small>
                 </Label>
                 <Input
                   id="chatGptLabel"
                   disabled={readonly}
                   value={chatGptLabel || ''}
-                  onChange={e => setChatGptLabel(e.target.value || null)}
+                  onChange={(e) => setChatGptLabel(e.target.value || null)}
                   placeholder="Set a custom name for ChatGPT"
                   className={cn(
                     defaultTextProps,
@@ -81,17 +78,14 @@ function Settings(props) {
                 />
               </div>
               <div className="grid w-full items-center gap-2">
-                <Label
-                  htmlFor="promptPrefix"
-                  className="text-left text-sm font-medium"
-                >
+                <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
                   Prompt Prefix <small className="opacity-40">(default: blank)</small>
                 </Label>
                 <TextareaAutosize
                   id="promptPrefix"
                   disabled={readonly}
                   value={promptPrefix || ''}
-                  onChange={e => setPromptPrefix(e.target.value || null)}
+                  onChange={(e) => setPromptPrefix(e.target.value || null)}
                   placeholder="Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
                   className={cn(
                     defaultTextProps,
@@ -107,7 +101,10 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="temp-int" className="text-left text-sm font-medium">
-                  Temperature <small className="opacity-40">(default: {endpoint === 'openAI' ? '1' : '0'})</small>
+                  Temperature{' '}
+                  <small className="opacity-40">
+                    (default: {endpoint === 'openAI' ? '1' : '0'})
+                  </small>
                 </Label>
                 <InputNumber
                   id="temp-int"

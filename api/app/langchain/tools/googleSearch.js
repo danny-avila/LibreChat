@@ -77,14 +77,16 @@ class GoogleSearchAPI extends Tool {
         q: input,
         cx: this.getCx(),
         auth: this.getApiKey(),
-        num: 5, // Limit the number of results to 5
+        num: 5 // Limit the number of results to 5
       });
 
       // return response.data;
       // console.log(response.data);
 
       if (!response.data.items || response.data.items.length === 0) {
-        return this.resultsToReadableFormat([{ title: 'No good Google Search Result was found', link: '' }]);
+        return this.resultsToReadableFormat([
+          { title: 'No good Google Search Result was found', link: '' }
+        ]);
       }
 
       // const results = response.items.slice(0, numResults);

@@ -1,4 +1,3 @@
-
 type TPluginStoreLinkButtonProps = {
   onClick: () => void;
   label: string;

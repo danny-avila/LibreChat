@@ -9,7 +9,13 @@ const {
   HumanMessagePromptTemplate
 } = require('langchain/prompts');
 
-const initializeCustomAgent = async ({ tools, model, pastMessages, currentDateString, ...rest }) => {
+const initializeCustomAgent = async ({
+  tools,
+  model,
+  pastMessages,
+  currentDateString,
+  ...rest
+}) => {
   let prompt = CustomAgent.createPrompt(tools, { currentDateString });
 
   const chatPrompt = ChatPromptTemplate.fromPromptMessages([

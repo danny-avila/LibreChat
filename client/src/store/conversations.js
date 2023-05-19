@@ -1,7 +1,4 @@
-import {
-  atom,
-  useSetRecoilState
-} from 'recoil';
+import { atom, useSetRecoilState } from 'recoil';
 
 const refreshConversationsHint = atom({
   key: 'refreshConversationsHint',

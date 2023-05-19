@@ -14,7 +14,10 @@ class CustomAgent extends ZeroShotAgent {
   static createPrompt(tools) {
     // const { currentDateString } = args;
     const inputVariables = ['input', 'chat_history', 'agent_scratchpad'];
-    const toolStrings = tools.filter((tool) => tool.name !== 'self-reflection').map((tool) => `${tool.name}: ${tool.description}`).join('\n');
+    const toolStrings = tools
+      .filter((tool) => tool.name !== 'self-reflection')
+      .map((tool) => `${tool.name}: ${tool.description}`)
+      .join('\n');
     const toolNames = tools.map((tool) => tool.name);
     const formatInstructions = (0, renderTemplate)(instructions, 'f-string', {
       tool_names: toolNames

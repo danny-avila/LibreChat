@@ -78,7 +78,7 @@ const userSchema = mongoose.Schema(
 
 //Remove refreshToken from the response
 userSchema.set('toJSON', {
-  transform: function (_doc, ret,) {
+  transform: function (_doc, ret) {
     delete ret.refreshToken;
     return ret;
   }

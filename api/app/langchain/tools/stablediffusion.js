@@ -40,7 +40,7 @@ class StableDiffusionAPI extends Tool {
     const payload = {
       prompt: input.split('|')[0],
       negative_prompt: input.split('|')[1],
-      steps: 20,
+      steps: 20
     };
     const response = await axios.post(`${url}/sdapi/v1/txt2img`, payload);
     const image = response.data.images[0];
@@ -60,14 +60,14 @@ class StableDiffusionAPI extends Tool {
       await sharp(buffer)
         .withMetadata({
           iptcpng: {
-            parameters: info,
-          },
+            parameters: info
+          }
         })
         .toFile(this.outputPath + '/' + imageName);
       this.result = this.getMarkdownImageUrl(imageName);
     } catch (error) {
       console.error('Error while saving the image:', error);
-      this.result = theImageUrl;
+      // this.result = theImageUrl;
     }
 
     return this.result;

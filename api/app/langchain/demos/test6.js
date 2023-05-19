@@ -10,8 +10,8 @@ const { validateTools } = require('./tools');
     tools: validateTools(['']),
     debug: true,
     modelOptions: {
-      model: 'gpt-4',
-    },
+      model: 'gpt-4'
+    }
   });
 
   const input1 = `Write me a poem in the style of Ezra Pound and then generate an image based on it.`;
@@ -20,5 +20,4 @@ const { validateTools } = require('./tools');
 
   console.log(`[1] Got output`);
   console.dir(output1, { depth: null });
-  
 })();

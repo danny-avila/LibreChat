@@ -39,7 +39,7 @@ function Settings(props) {
     };
 
     handleTextChange(debouncedContext);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedContext]);
 
   return (
@@ -113,7 +113,8 @@ function Settings(props) {
                 <a
                   href="https://github.com/danny-avila/chatgpt-clone/blob/main/guides/JAILBREAK_INFO.md"
                   target="_blank"
-                  className="text-blue-500 transition-colors duration-200 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-500" rel="noreferrer"
+                  className="text-blue-500 transition-colors duration-200 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-500"
+                  rel="noreferrer"
                 >
                   System Message
                 </a>{' '}

@@ -18,7 +18,9 @@ export default function HoverButtons({
 
   const branchingSupported =
     // azureOpenAI, openAI, chatGPTBrowser support branching, so edit enabled
-    !!['azureOpenAI', 'openAI', 'chatGPTBrowser', 'google', 'gptPlugins'].find((e) => e === endpoint) ||
+    !!['azureOpenAI', 'openAI', 'chatGPTBrowser', 'google', 'gptPlugins'].find(
+      (e) => e === endpoint
+    ) ||
     // Sydney in bingAI supports branching, so edit enabled
     (endpoint === 'bingAI' && jailbreak);
 

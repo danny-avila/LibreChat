@@ -17,16 +17,15 @@ class AIPluginTool extends Tool {
   }
 
   /** @ignore */
-  async _call(_input) {
+  // async _call(_input) {
+  async _call() {
     return this.apiSpec;
   }
 
   static async fromPluginUrl(url) {
     const aiPluginRes = await fetch(url);
     if (!aiPluginRes.ok) {
-      throw new Error(
-        `Failed to fetch plugin from ${url} with status ${aiPluginRes.status}`
-      );
+      throw new Error(`Failed to fetch plugin from ${url} with status ${aiPluginRes.status}`);
     }
     const aiPluginJson = await aiPluginRes.json();
 
@@ -43,7 +42,7 @@ class AIPluginTool extends Tool {
       description: `Call this tool to get the OpenAPI spec (and usage guide) for interacting with the ${aiPluginJson.name_for_human} API. You should only call this ONCE! What is the ${aiPluginJson.name_for_human} API useful for? ${aiPluginJson.description_for_human}`,
       apiSpec: `Usage Guide: ${aiPluginJson.description_for_model}
 
-OpenAPI Spec: ${apiUrlJson}`,
+OpenAPI Spec: ${apiUrlJson}`
     });
   }
 }

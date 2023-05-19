@@ -27,7 +27,7 @@ export default function MessageHandler() {
           parentMessageId: message?.overrideParentMessageId,
           messageId: message?.overrideParentMessageId + '_',
           plugin: plugin ? plugin : null,
-          submitting: true,
+          submitting: true
           // unfinished: true
         }
       ]);
@@ -41,7 +41,7 @@ export default function MessageHandler() {
           parentMessageId: message?.messageId,
           messageId: message?.messageId + '_',
           plugin: plugin ? plugin : null,
-          submitting: true,
+          submitting: true
           // unfinished: true
         }
       ]);
@@ -246,7 +246,7 @@ export default function MessageHandler() {
       }
       setIsSubmitting(false);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission]);
 
   return null;

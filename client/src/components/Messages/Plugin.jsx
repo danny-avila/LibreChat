@@ -35,16 +35,16 @@ export default function Plugin({ plugin }) {
     if (!loading && plugin.latest === 'Self Reflection') {
       return 'Finished';
     } else if (plugin.latest === 'Self Reflection') {
-      return 'I\'m  thinking...';
-     } else {
+      return "I'm  thinking...";
+    } else {
       return (
         <>
-        {loading ? 'Using' : 'Used'} <b>{plugin.latest}</b>
-        {loading ? '...' : ''}
+          {loading ? 'Using' : 'Used'} <b>{plugin.latest}</b>
+          {loading ? '...' : ''}
         </>
-      )
+      );
     }
-  }
+  };
 
   return (
     <div className="flex flex-col items-start">
@@ -59,9 +59,7 @@ export default function Plugin({ plugin }) {
             >
               <div>
                 <div className="flex items-center gap-3">
-                  <div>
-                    {generateStatus()}
-                  </div>
+                  <div>{generateStatus()}</div>
                 </div>
               </div>
               {loading && <Spinner classProp="ml-1" />}
@@ -75,18 +73,16 @@ export default function Plugin({ plugin }) {
                 lang={plugin.latest?.toUpperCase() || 'INPUTS'}
                 codeChildren={formatInputs(plugin.inputs)}
                 plugin={true}
-                classProp='max-h-[450px]'
+                classProp="max-h-[450px]"
               />
-              {
-                finished && (
-                  <CodeBlock
+              {finished && (
+                <CodeBlock
                   lang="OUTPUTS"
                   codeChildren={plugin.outputs}
                   plugin={true}
-                  classProp='max-h-[450px]'
+                  classProp="max-h-[450px]"
                 />
-                )
-              }
+              )}
             </Disclosure.Panel>
           </>
         )}

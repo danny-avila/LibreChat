@@ -11,12 +11,12 @@ export default function createPayload(submission: TSubmission) {
     google: '/api/ask/google',
     bingAI: '/api/ask/bingAI',
     chatGPTBrowser: '/api/ask/chatGPTBrowser',
-    gptPlugins: '/api/ask/gptPlugins',
+    gptPlugins: '/api/ask/gptPlugins'
   };
 
   const server = endpointUrlMap[endpoint];
 
-  let payload = {
+  const payload = {
     ...message,
     ...endpointOption,
     conversationId

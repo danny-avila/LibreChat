@@ -2,19 +2,23 @@ import { useState, useEffect, useCallback } from 'react';
 import { Dialog } from '@headlessui/react';
 import { X } from 'lucide-react';
 import { PluginStoreItem, PluginPagination, PluginStoreLinkButton } from '.';
-import { useAvailablePluginsQuery, useUpdateUserPluginsMutation, TUpdateUserPlugins } from '~/data-provider';
+import {
+  useAvailablePluginsQuery,
+  useUpdateUserPluginsMutation,
+  TUpdateUserPlugins
+} from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 type TPluginStoreDialogProps = {
-  isOpen: boolean,
-  setIsOpen: (open: boolean) => void
+  isOpen: boolean;
+  setIsOpen: (open: boolean) => void;
 };
 
 function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const { data } = useAvailablePluginsQuery();
   const { user } = useAuthContext();
   const updateUserPlugins = useUpdateUserPluginsMutation<TUpdateUserPlugins>();
-  const [currentPage, setCurrentPage] = useState  <number>(1);
+  const [currentPage, setCurrentPage] = useState<number>(1);
   const [itemsPerPage, setItemsPerPage] = useState<number>(1);
   const [maxPage, setMaxPage] = useState<number>(1);
   const [userPlugins, setUserPlugins] = useState<string[]>([]);
@@ -52,7 +56,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     setItemsPerPage(columns * 2); // 2 rows
   };
 
-  const gridRef = useCallback(node => {
+  const gridRef = useCallback((node) => {
     if (node !== null) {
       if (itemsPerPage === 1) {
         calculateColumns(node);
@@ -61,10 +65,10 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
       resizeObserver.observe(node);
     }
   }, []);
-  
+
   useEffect(() => {
     if (user) {
-      if(user.plugins) {
+      if (user.plugins) {
         setUserPlugins(user.plugins);
       }
     }
@@ -72,17 +76,13 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
       setMaxPage(Math.ceil(data.length / itemsPerPage));
     }
   }, [data, itemsPerPage, user]);
-  
+
   const handleChangePage = (page: number) => {
     setCurrentPage(page);
   };
-  
+
   return (
-    <Dialog
-      open={isOpen}
-      onClose={() => setIsOpen(false)}
-      className="relative z-50"
-    >
+    <Dialog open={isOpen} onClose={() => setIsOpen(false)} className="relative z-50">
       {/* The backdrop, rendered as a fixed sibling to the panel container */}
       <div className="fixed inset-0 bg-gray-500/90 transition-opacity dark:bg-gray-800/90" />
 
@@ -129,7 +129,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                     ))}
               </div>
             </div>
-            <div className="flex flex-col mt-2 items-center gap-2 sm:flex-row sm:justify-between">
+            <div className="mt-2 flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
               <div>
                 <PluginPagination
                   currentPage={currentPage}

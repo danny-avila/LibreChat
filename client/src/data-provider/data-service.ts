@@ -104,11 +104,10 @@ export const resetPassword = (payload: t.TResetPassword) => {
   return request.post(endpoints.resetPassword(), payload);
 };
 
-
-export const getAvailablePlugins = ():Promise<t.TPlugin[]> => {
+export const getAvailablePlugins = (): Promise<t.TPlugin[]> => {
   return request.get(endpoints.plugins());
-}
+};
 
 export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
   return request.post(endpoints.userPlugins(), payload);
-}
+};

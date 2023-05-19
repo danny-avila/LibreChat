@@ -50,7 +50,7 @@ export default function ExportModel({ open, onOpenChange }) {
     setIncludeOptions(true);
     setExportBranches(false);
     setRecursive(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const _setType = (newType) => {

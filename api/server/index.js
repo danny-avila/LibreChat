@@ -49,7 +49,7 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use('/api/prompts', routes.prompts);
   app.use('/api/tokenizer', routes.tokenizer);
   app.use('/api/endpoints', routes.endpoints);
-  app.use('/api/plugins', routes.plugins)
+  app.use('/api/plugins', routes.plugins);
 
   // static files
   app.get('/*', function (req, res) {

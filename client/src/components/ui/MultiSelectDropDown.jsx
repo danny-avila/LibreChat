@@ -16,14 +16,14 @@ function MultiSelectDropDown({
   containerClassName,
   isSelected,
   className,
-  optionValueKey = 'value',
+  optionValueKey = 'value'
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
   const excludeIds = ['select-plugin', 'plugins-label', 'selected-plugins'];
   useOnClickOutside(menuRef, () => setIsOpen(false), excludeIds);
-  
-  const handleSelect = option => {
+
+  const handleSelect = (option) => {
     setSelected(option);
     setIsOpen(true);
   };
@@ -31,11 +31,7 @@ function MultiSelectDropDown({
   return (
     <div className={cn('flex items-center justify-center gap-2', containerClassName)}>
       <div className="relative w-full">
-        <Listbox
-          value={value}
-          onChange={handleSelect}
-          disabled={disabled}
-        >
+        <Listbox value={value} onChange={handleSelect} disabled={disabled}>
           {() => (
             <>
               <Listbox.Button
@@ -44,7 +40,7 @@ function MultiSelectDropDown({
                   className
                 )}
                 id={excludeIds[0]}
-                onClick={() => setIsOpen(prev => !prev)}
+                onClick={() => setIsOpen((prev) => !prev)}
                 open={isOpen}
               >
                 {' '}
@@ -57,10 +53,7 @@ function MultiSelectDropDown({
                     {title}
                   </Listbox.Label>
                 )}
-                <span
-                  className="inline-flex w-full truncate"
-                  id={excludeIds[2]}
-                >
+                <span className="inline-flex w-full truncate" id={excludeIds[2]}>
                   <span
                     className={cn(
                       'flex h-6 items-center gap-1 truncate text-sm text-gray-900 dark:text-white',
@@ -134,23 +127,20 @@ function MultiSelectDropDown({
                       >
                         <span className="flex items-center gap-1.5 truncate">
                           {!option.isButton && (
-                          <span className="h-6 w-6 shrink-0">
-                            <div
-                              className="relative"
-                              style={{ width: '100%', height: '100%' }}
-                            >
-                              {option.icon ? (
-                                <img
-                                  src={option.icon}
-                                  alt={`${option.name} logo`}
-                                  className="h-full w-full rounded-sm bg-white"
-                                />
-                              ) : (
-                                <Wrench className="h-full w-full rounded-sm bg-white" />
-                              )}
-                              <div className="absolute inset-0 rounded-sm ring-1 ring-inset ring-black/10"></div>
-                            </div>
-                          </span>
+                            <span className="h-6 w-6 shrink-0">
+                              <div className="relative" style={{ width: '100%', height: '100%' }}>
+                                {option.icon ? (
+                                  <img
+                                    src={option.icon}
+                                    alt={`${option.name} logo`}
+                                    className="h-full w-full rounded-sm bg-white"
+                                  />
+                                ) : (
+                                  <Wrench className="h-full w-full rounded-sm bg-white" />
+                                )}
+                                <div className="absolute inset-0 rounded-sm ring-1 ring-inset ring-black/10"></div>
+                              </div>
+                            </span>
                           )}
                           <span
                             className={cn(

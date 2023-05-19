@@ -86,7 +86,7 @@ const useMessageHandler = () => {
         token: endpointsConfig[endpoint]?.userProvide ? getToken() : null
       };
       responseSender = 'ChatGPT';
-    }  else if (endpoint === 'gptPlugins') {
+    } else if (endpoint === 'gptPlugins') {
       endpointOption = {
         endpoint,
         tools: currentConversation?.tools ?? [],

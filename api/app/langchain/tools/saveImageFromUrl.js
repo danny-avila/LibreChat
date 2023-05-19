@@ -7,7 +7,7 @@ async function saveImageFromUrl(url, outputPath, outputFilename) {
     // Fetch the image from the URL
     const response = await axios({
       url,
-      responseType: 'stream',
+      responseType: 'stream'
     });
 
     // Check if the output directory exists, if not, create it
@@ -16,7 +16,9 @@ async function saveImageFromUrl(url, outputPath, outputFilename) {
     }
 
     // Ensure the output filename has a '.png' extension
-    const filenameWithPngExt = outputFilename.endsWith('.png') ? outputFilename : `${outputFilename}.png`;
+    const filenameWithPngExt = outputFilename.endsWith('.png')
+      ? outputFilename
+      : `${outputFilename}.png`;
 
     // Create a writable stream for the output path
     const outputFilePath = path.join(outputPath, filenameWithPngExt);

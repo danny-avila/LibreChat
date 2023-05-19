@@ -5,7 +5,13 @@ const { getOpenAIModels } = require('../endpoints');
 const ChatAgent = require('../../../app/langchain/ChatAgent');
 const { validateTools } = require('../../../app/langchain/tools');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress, formatSteps, formatAction } = require('./handlers');
+const {
+  handleError,
+  sendMessage,
+  createOnProgress,
+  formatSteps,
+  formatAction
+} = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 
 router.post('/', requireJwtAuth, async (req, res) => {
@@ -162,7 +168,12 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       conversationId,
       onAgentAction,
       onChainEnd,
-      onProgress: progressCallback.call(null, { res, text, plugin, parentMessageId: userMessageId }),
+      onProgress: progressCallback.call(null, {
+        res,
+        text,
+        plugin,
+        parentMessageId: userMessageId
+      }),
       abortController
     });
 

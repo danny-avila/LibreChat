@@ -19,7 +19,7 @@ export enum QueryKeys {
   presets = 'presets',
   searchResults = 'searchResults',
   tokenCount = 'tokenCount',
-  availablePlugins = "availablePlugins",
+  availablePlugins = 'availablePlugins'
 }
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
@@ -81,7 +81,8 @@ export const useGetConversationByIdQuery = (
 export const useGetConversationByIdMutation = (id: string): UseMutationResult<t.TConversation> => {
   const queryClient = useQueryClient();
   return useMutation(() => dataService.getConversationById(id), {
-    onSuccess: (res: t.TConversation) => {
+    // onSuccess: (res: t.TConversation) => {
+    onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.conversation, id]);
     }
   });
@@ -290,7 +291,7 @@ export const useLogoutUserMutation = (): UseMutationResult<unknown> => {
       queryClient.invalidateQueries([QueryKeys.user]);
     }
   });
-}
+};
 
 export const useRefreshTokenMutation = (): UseMutationResult<
   t.TRefreshTokenResponse,
@@ -310,24 +311,28 @@ export const useResetPasswordMutation = (): UseMutationResult<unknown> => {
   return useMutation((payload: t.TResetPassword) => dataService.resetPassword(payload));
 };
 
-
 export const useAvailablePluginsQuery = (): QueryObserverResult<t.TPlugin[]> => {
-  return useQuery<t.TPlugin[]>([QueryKeys.availablePlugins], () => dataService.getAvailablePlugins(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-  });
-}
-
-export const useUpdateUserPluginsMutation = (): UseMutationResult<t.TUser, unknown, t.TUpdateUserPlugins, unknown> => {
-  const queryClient = useQueryClient();
-  return useMutation(
-    (payload: t.TUpdateUserPlugins) =>
-      dataService.updateUserPlugins(payload),
+  return useQuery<t.TPlugin[]>(
+    [QueryKeys.availablePlugins],
+    () => dataService.getAvailablePlugins(),
     {
-      onSuccess: () => {
-        queryClient.invalidateQueries([QueryKeys.user]);
-      },
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false
     }
   );
-}
+};
+
+export const useUpdateUserPluginsMutation = (): UseMutationResult<
+  t.TUser,
+  unknown,
+  t.TUpdateUserPlugins,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: t.TUpdateUserPlugins) => dataService.updateUserPlugins(payload), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.user]);
+    }
+  });
+};

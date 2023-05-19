@@ -71,7 +71,7 @@ export default function Conversation({ conversation, retainView }) {
         }));
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [updateConvoMutation.isSuccess]);
 
   const handleKeyDown = (e) => {

@@ -8,7 +8,7 @@ const { validateTools } = require('./tools');
   const openAIApiKey = process.env.OPENAI_KEY;
   const tools = ['calculator', 'google'];
   const chatAgent = new ChatAgent(openAIApiKey, {
-    tools: validateTools(tools),
+    tools: validateTools(tools)
     // modelOptions: {
     //   model: 'gpt-4',
     // },
@@ -24,7 +24,7 @@ const { validateTools } = require('./tools');
   const input2 = 'can you divide that number in half and then multiply it by itself?';
   const options = {
     conversationId: output1.conversationId,
-    parentMessageId: output1.messageId,
+    parentMessageId: output1.messageId
     // conversationId: '165e8adb-67d9-4eea-afac-ab7df9ca7bc3',
     // parentMessageId: '3e6a8135-282d-4177-9c13-de8acc993218',
   };
@@ -39,7 +39,7 @@ const { validateTools } = require('./tools');
   //   conversationId: output2.conversationId,
   //   parentMessageId: output2.messageId,
   // };
-  
+
   // const input3 = "Whats the national Anthem of that nation?";
   // const output3 = await chatAgent.sendMessage(input3, options2);
   // console.dir(output3, { depth: null });
@@ -48,10 +48,8 @@ const { validateTools } = require('./tools');
   //   conversationId: output3.conversationId,
   //   parentMessageId: output3.messageId,
   // };
-  
+
   // const input4 = "Thank you, you're awesome!";
   // const output4 = await chatAgent.sendMessage(input4, options3);
   // console.dir(output4, { depth: null });
-
-  
 })();

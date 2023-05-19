@@ -119,7 +119,6 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   }, [pageNumber, conversationId, refreshConversationsHint]);
 
-
   const toggleNavVisible = () => {
     setNavVisible((prev) => !prev);
   };

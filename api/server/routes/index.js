@@ -23,5 +23,5 @@ module.exports = {
   user,
   tokenizer,
   endpoints,
-  plugins,
+  plugins
 };

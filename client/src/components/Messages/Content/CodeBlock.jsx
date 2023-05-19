@@ -4,29 +4,6 @@ import CheckMark from '~/components/svg/CheckMark';
 import { InfoIcon } from 'lucide-react';
 import { cn } from '~/utils/';
 
-const CodeBlock = ({ lang, codeChildren, classProp = '', plugin = null }) => {
-  const codeRef = useRef(null);
-  const language = plugin ? 'json' : lang;
-
-  return (
-    <div className="rounded-md bg-black">
-      <CodeBar
-        lang={lang}
-        codeRef={codeRef}
-        plugin={plugin}
-      />
-      <div className={cn(classProp,"overflow-y-auto p-4")} >
-        <code
-          ref={codeRef}
-          className={`hljs !whitespace-pre language-${language}`}
-        >
-          {codeChildren}
-        </code>
-      </div>
-    </div>
-  );
-};
-
 const CodeBar = React.memo(({ lang, codeRef, plugin = null }) => {
   const [isCopied, setIsCopied] = useState(false);
   return (
@@ -62,4 +39,21 @@ const CodeBar = React.memo(({ lang, codeRef, plugin = null }) => {
     </div>
   );
 });
+
+const CodeBlock = ({ lang, codeChildren, classProp = '', plugin = null }) => {
+  const codeRef = useRef(null);
+  const language = plugin ? 'json' : lang;
+
+  return (
+    <div className="rounded-md bg-black">
+      <CodeBar lang={lang} codeRef={codeRef} plugin={plugin} />
+      <div className={cn(classProp, 'overflow-y-auto p-4')}>
+        <code ref={codeRef} className={`hljs !whitespace-pre language-${language}`}>
+          {codeChildren}
+        </code>
+      </div>
+    </div>
+  );
+};
+
 export default CodeBlock;

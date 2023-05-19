@@ -23,7 +23,7 @@ export enum EModelEndpoint {
   chatGPT = 'chatGPT',
   chatGPTBrowser = 'chatGPTBrowser',
   google = 'google',
-  gptPlugins = 'gptPlugins',
+  gptPlugins = 'gptPlugins'
 }
 
 export type TSubmission = {
@@ -118,8 +118,8 @@ export type TUser = {
   name: string;
   avatar: string;
   role: string;
-  provider: string,
-  plugins: string[],  
+  provider: string;
+  plugins: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -211,15 +211,14 @@ export type TResetPassword = {
   password: string;
 };
 
-
 export type TPlugin = {
-  name: string,
-  pluginKey: string,
-  description: string,
-  icon: string,
-}
+  name: string;
+  pluginKey: string;
+  description: string;
+  icon: string;
+};
 
 export type TUpdateUserPlugins = {
-  pluginKey: string,
-  action: string,
-}
+  pluginKey: string;
+  action: string;
+};

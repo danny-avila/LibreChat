@@ -108,7 +108,7 @@ const resetPasswordController = async (req, res) => {
 };
 
 const refreshController = async () => {
-// const refreshController = async (req, res, next) => {
+  // const refreshController = async (req, res, next) => {
   // const { signedCookies = {} } = req;
   // const { refreshToken } = signedCookies;
   //TODO
@@ -121,7 +121,6 @@ const refreshController = async () => {
   //         if (user) {
   //           // Find the refresh token against the user record in database
   //           const tokenIndex = user.refreshToken.findIndex(item => item.refreshToken === refreshToken);
-
   //           if (tokenIndex === -1) {
   //             res.statusCode = 401;
   //             res.send('Unauthorized');

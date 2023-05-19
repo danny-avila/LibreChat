@@ -15,10 +15,7 @@ class TextStream extends Readable {
     if (this.currentIndex < this.text.length) {
       setTimeout(() => {
         const remainingChars = this.text.length - this.currentIndex;
-        const chunkSize = Math.min(
-          this.randomInt(minChunkSize, maxChunkSize + 1),
-          remainingChars
-        );
+        const chunkSize = Math.min(this.randomInt(minChunkSize, maxChunkSize + 1), remainingChars);
 
         const chunk = this.text.slice(this.currentIndex, this.currentIndex + chunkSize);
         this.push(chunk);

@@ -1,6 +1,9 @@
 const crypto = require('crypto');
 const { genAzureChatCompletion } = require('../../utils/genAzureEndpoints');
-const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('@dqbd/tiktoken');
+const {
+  encoding_for_model: encodingForModel,
+  get_encoding: getEncoding
+} = require('@dqbd/tiktoken');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
 const { Agent, ProxyAgent } = require('undici');
 const TextStream = require('./stream');
@@ -23,7 +26,8 @@ class CustomChatAgent {
     this.openAIApiKey = apiKey;
     this.azure = options.azure || false;
     if (this.azure) {
-      const { azureOpenAIApiInstanceName, azureOpenAIApiDeploymentName, azureOpenAIApiVersion } = this.azure;
+      const { azureOpenAIApiInstanceName, azureOpenAIApiDeploymentName, azureOpenAIApiVersion } =
+        this.azure;
       this.azureEndpoint = genAzureChatCompletion({
         azureOpenAIApiInstanceName,
         azureOpenAIApiDeploymentName,
@@ -75,7 +79,7 @@ class CustomChatAgent {
 
   buildPromptPrefix(result, message) {
     if ((result.output && result.output.includes('N/A')) || result.output === undefined) {
-    // if ((result.output && result.output.includes('N/A')) || !result.output) {
+      // if ((result.output && result.output.includes('N/A')) || !result.output) {
       return null;
     }
 
@@ -99,13 +103,22 @@ class CustomChatAgent {
       ? `\nYou encountered an error in attempting a response. The user is not aware of the error so you shouldn't mention it.\nReview the actions taken carefully in case there is a partial or complete answer within them.\nError Message: ${result.errorMessage}\n`
       : '';
 
-    const preliminaryAnswer = result.output?.length > 0 ? `Preliminary Answer: "${result.output.trim()}"` : '';
-    const prefix = preliminaryAnswer ? `review and improve the answer you generated using plugins in response to the User Message below. The answer hasn't been sent to the user yet.` : 'respond to the User Message below based on your preliminary thoughts & actions.'; 
+    const preliminaryAnswer =
+      result.output?.length > 0 ? `Preliminary Answer: "${result.output.trim()}"` : '';
+    const prefix = preliminaryAnswer
+      ? `review and improve the answer you generated using plugins in response to the User Message below. The answer hasn't been sent to the user yet.`
+      : 'respond to the User Message below based on your preliminary thoughts & actions.';
 
     return `As ChatGPT, ${prefix}${errorMessage}\n${internalActions}
 ${preliminaryAnswer}
-Reply conversationally to the User based on your ${preliminaryAnswer ? 'preliminary answer, ' : ''}internal actions, thoughts, and observations, making improvements wherever possible, but do not modify URLs.
-${preliminaryAnswer ? '' : '\nIf there is an incomplete thought or action, you are expected to complete it in your response now.\n'}You must cite sources if you are using any web links. ${toolBasedInstructions}
+Reply conversationally to the User based on your ${
+  preliminaryAnswer ? 'preliminary answer, ' : ''
+}internal actions, thoughts, and observations, making improvements wherever possible, but do not modify URLs.
+${
+  preliminaryAnswer
+    ? ''
+    : '\nIf there is an incomplete thought or action, you are expected to complete it in your response now.\n'
+}You must cite sources if you are using any web links. ${toolBasedInstructions}
 Only respond with your conversational reply to the following User Message:
 "${message}"`;
   }
@@ -151,7 +164,8 @@ Only respond with your conversational reply to the following User Message:
     // The max prompt tokens is determined by the max context tokens minus the max response tokens.
     // Earlier messages will be dropped until the prompt is within the limit.
     this.maxResponseTokens = this.modelOptions.max_tokens || 1024;
-    this.maxPromptTokens = this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
+    this.maxPromptTokens =
+      this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
 
     if (this.maxPromptTokens + this.maxResponseTokens > this.maxContextTokens) {
       throw new Error(
@@ -501,7 +515,11 @@ Only respond with your conversational reply to the following User Message:
         opts.abortController || new AbortController()
       );
     } else {
-      result = await this.getCompletion(payload, null, opts.abortController || new AbortController());
+      result = await this.getCompletion(
+        payload,
+        null,
+        opts.abortController || new AbortController()
+      );
       if (this.options.debug) {
         console.debug(JSON.stringify(result));
       }
@@ -689,7 +707,8 @@ Only respond with your conversational reply to the following User Message:
     let currentTokenCount;
     if (isChatGptModel) {
       currentTokenCount =
-        this.getTokenCountForMessage(instructionsPayload) + this.getTokenCountForMessage(messagePayload);
+        this.getTokenCountForMessage(instructionsPayload) +
+        this.getTokenCountForMessage(messagePayload);
     } else {
       currentTokenCount = this.getTokenCount(`${promptPrefix}${promptSuffix}`);
     }
