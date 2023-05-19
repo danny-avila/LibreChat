@@ -198,7 +198,7 @@ export default function Nav({ navVisible, setNavVisible }) {
         </div>
         <button
           type="button"
-          className={cn('nav-close-button -ml-0.5 -mt-2.5 inline-flex h-10 w-10 items-center justify-center rounded-md focus:outline-none focus:ring-white md:-ml-1 md:-mt-2.5', theme === 'dark' ? 'text-white hover:text-gray-200' : 'text-gray-900 hover:text-gray-600')}
+          className={cn('nav-close-button -ml-0.5 -mt-2.5 inline-flex h-10 w-10 items-center justify-center rounded-md focus:outline-none focus:ring-white md:-ml-1 md:-mt-2.5', theme === 'dark' ? 'text-gray-500 hover:text-gray-400' : 'text-gray-900 hover:text-gray-600')}
           onClick={toggleNavVisible}
         >
           <span className="sr-only">Close sidebar</span>
@@ -236,7 +236,7 @@ export default function Nav({ navVisible, setNavVisible }) {
       {!navVisible && (
         <button
           type="button"
-          className="nav-open-button fixed left-2 top-0.5 z-10 inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-900 hover:text-gray-600 focus:outline-none focus:ring-white dark:text-white dark:hover:text-gray-200"
+          className="nav-open-button fixed left-2 top-0.5 z-10 inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-900 hover:text-gray-600 focus:outline-none focus:ring-white dark:text-gray-500 dark:hover:text-gray-400"
           onClick={toggleNavVisible}
         >
           <span className="sr-only">Open sidebar</span>
