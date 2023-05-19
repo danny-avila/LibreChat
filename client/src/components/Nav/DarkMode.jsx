@@ -1,9 +1,9 @@
-import React, { useState, useContext } from 'react';
+import { forwardRef, useContext } from 'react';
 import DarkModeIcon from '../svg/DarkModeIcon';
 import LightModeIcon from '../svg/LightModeIcon';
 import { ThemeContext } from '~/hooks/ThemeContext';
 
-export default function DarkMode() {
+const DarkMode = forwardRef(() => {
   const { theme, setTheme } = useContext(ThemeContext);
 
   const clickHandler = () => setTheme(theme === 'dark' ? 'light' : 'dark');
@@ -18,4 +18,6 @@ export default function DarkMode() {
       {mode}
     </button>
   );
-}
+});
+
+export default DarkMode;
