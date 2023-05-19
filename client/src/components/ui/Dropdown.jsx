@@ -4,14 +4,12 @@ import { Listbox } from '@headlessui/react';
 import { cn } from '~/utils/';
 
 function Dropdown({ value, onChange, options, className, containerClassName }) {
-  const currentOption = options.find(element => element === value || element?.value === value) ?? value;
+  const currentOption =
+    options.find((element) => element === value || element?.value === value) ?? value;
   return (
     <div className={cn('flex items-center justify-center gap-2', containerClassName)}>
       <div className="relative w-full">
-        <Listbox
-          value={value}
-          onChange={onChange}
-        >
+        <Listbox value={value} onChange={onChange}>
           <Listbox.Button
             className={cn(
               'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:border-green-600 focus:outline-none focus:ring-1 focus:ring-green-600 dark:border-white/20 dark:bg-gray-800 sm:text-sm',

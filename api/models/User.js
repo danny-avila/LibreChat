@@ -78,7 +78,7 @@ const userSchema = mongoose.Schema(
 
 //Remove refreshToken from the response
 userSchema.set('toJSON', {
-  transform: function (doc, ret, options) {
+  transform: function (doc, ret) {
     delete ret.refreshToken;
     return ret;
   }
@@ -142,7 +142,6 @@ userSchema.methods.comparePassword = function (candidatePassword, callback) {
 };
 
 module.exports.hashPassword = async (password) => {
-
   const hashedPassword = await new Promise((resolve, reject) => {
     bcrypt.hash(password, 10, function (err, hash) {
       if (err) reject(err);

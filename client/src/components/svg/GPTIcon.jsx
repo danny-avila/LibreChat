@@ -1,16 +1,7 @@
-import React from 'react';
-
-export default function GPTIcon({ button = false, menu = false, size=25 }) {
+export default function GPTIcon({ size = 25 }) {
   let unit = '41';
   let height = size;
   let width = size;
-  let boxSize = '6';
-  if (button) {
-    // unit = '45';
-    // boxSize = '4'
-    // height = '1em';
-    // width = '1em';
-  }
 
   return (
     <svg

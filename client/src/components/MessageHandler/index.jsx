@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
-import { useRecoilValue, useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
+import { useEffect } from 'react';
+import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import { SSE } from '~/data-provider/sse.mjs';
 import createPayload from '~/data-provider/createPayload';
-import { useAbortRequestWithMessage } from '~/data-provider';
 import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
 
@@ -74,7 +73,7 @@ export default function MessageHandler() {
       }, 5000);
     }
 
-    setConversation(prevState => ({
+    setConversation((prevState) => ({
       ...prevState,
       ...conversation
     }));
@@ -106,7 +105,7 @@ export default function MessageHandler() {
       ]);
 
     const { conversationId } = message;
-    setConversation(prevState => ({
+    setConversation((prevState) => ({
       ...prevState,
       conversationId
     }));
@@ -135,7 +134,7 @@ export default function MessageHandler() {
       }, 5000);
     }
 
-    setConversation(prevState => ({
+    setConversation((prevState) => ({
       ...prevState,
       ...conversation
     }));
@@ -155,7 +154,7 @@ export default function MessageHandler() {
     return;
   };
 
-  const abortConversation = conversationId => {
+  const abortConversation = (conversationId) => {
     console.log(submission);
     const { endpoint } = submission?.conversation || {};
 
@@ -163,18 +162,18 @@ export default function MessageHandler() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+        Authorization: `Bearer ${token}`
       },
       body: JSON.stringify({
         abortKey: conversationId
       })
     })
-      .then(response => response.json())
-      .then(data => {
+      .then((response) => response.json())
+      .then((data) => {
         console.log('aborted', data);
         cancelHandler(data, submission);
       })
-      .catch(error => {
+      .catch((error) => {
         console.error('Error aborting request');
         console.error(error);
         // errorHandler({ text: 'Error aborting request' }, { ...submission, message });
@@ -192,10 +191,10 @@ export default function MessageHandler() {
 
     const events = new SSE(server, {
       payload: JSON.stringify(payload),
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`}
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
     });
 
-    events.onmessage = e => {
+    events.onmessage = (e) => {
       const data = JSON.parse(e.data);
 
       if (data.final) {
@@ -222,7 +221,8 @@ export default function MessageHandler() {
 
     events.onopen = () => console.log('connection is opened');
 
-    events.oncancel = () => abortConversation(message?.conversationId || submission?.conversationId);
+    events.oncancel = () =>
+      abortConversation(message?.conversationId || submission?.conversationId);
 
     events.onerror = function (e) {
       console.log('error in opening conn.');
@@ -246,6 +246,7 @@ export default function MessageHandler() {
       }
       setIsSubmitting(false);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission]);
 
   return null;

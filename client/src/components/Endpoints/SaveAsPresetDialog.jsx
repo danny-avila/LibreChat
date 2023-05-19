@@ -30,27 +30,22 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
 
   useEffect(() => {
     setTitle(preset?.title || 'My Preset');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title="Save As Preset"
         main={
           <div className="grid w-full items-center gap-2">
-            <Label
-              htmlFor="chatGptLabel"
-              className="text-left text-sm font-medium"
-            >
+            <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
               Preset Name
             </Label>
             <Input
               id="chatGptLabel"
               value={title || ''}
-              onChange={e => setTitle(e.target.value || '')}
+              onChange={(e) => setTitle(e.target.value || '')}
               placeholder="Set a custom name, in case you can find this preset"
               className={cn(
                 defaultTextProps,

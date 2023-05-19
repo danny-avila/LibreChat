@@ -57,7 +57,7 @@ module.exports = {
       // will handle a syncing solution soon
       const deletedConvoIds = [];
 
-      convoIds.forEach(convo =>
+      convoIds.forEach((convo) =>
         promises.push(
           Conversation.findOne({
             user,
@@ -120,7 +120,7 @@ module.exports = {
   },
   deleteConvos: async (user, filter) => {
     let toRemove = await Conversation.find({ ...filter, user }).select('conversationId');
-    const ids = toRemove.map(instance => instance.conversationId);
+    const ids = toRemove.map((instance) => instance.conversationId);
     let deleteCount = await Conversation.deleteMany({ ...filter, user }).exec();
     deleteCount.messages = await deleteMessages({ conversationId: { $in: ids } });
     return deleteCount;

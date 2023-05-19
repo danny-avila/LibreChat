@@ -153,7 +153,6 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
     }
 
     const match = this.actionValues.exec(text); // old v2
-    let selectedTool = match[1].trim().toLowerCase();
 
     if (!match) {
       console.log('\n\n<----------------------HIT NO MATCH PARSING ERROR---------------------->\n\n', match);
@@ -165,6 +164,8 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
       };
     }
 
+    let selectedTool = match?.[1].trim().toLowerCase();
+
     if (match && selectedTool === 'n/a') {
       console.log('\n\n<----------------------HIT N/A PARSING ERROR---------------------->\n\n', match);
       return {
@@ -172,6 +173,14 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
         toolInput: match[2]?.trim().replace(/^"+|"+$/g, '') ?? '',
         log: text
       };
+    }
+    
+    let selectedIsValid = this.getValidTool(selectedTool);
+    if (match && selectedIsValid) {
+      console.log('\n\n<----------------------Re-assigning Selected Tool---------------------->\n\n', match);
+      selectedTool = selectedIsValid;
+    } else  {
+      console.log('\n\n<----------------------HIT INVALID TOOL PARSING ERROR---------------------->\n\n', match);
     }
 
     if (match && !match[2]) {
@@ -200,7 +209,7 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
       }
     }
 
-    if (match && (selectedTool.length > this.longestToolName.length || !this.getValidTool(selectedTool))) {
+    if (match && selectedTool.length > this.longestToolName.length) {
       console.log('\n\n<----------------------HIT LONG PARSING ERROR---------------------->\n\n');
 
       let action, input, thought;
@@ -265,12 +274,6 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
       //   console.log('Input:', input);
       // }
     }
-
-    // let selectedIsValid = this.getValidTool(selectedTool);
-
-    // if (!selectedIsValid) {
-    //   //
-    // }
 
     return {
       tool: selectedTool,

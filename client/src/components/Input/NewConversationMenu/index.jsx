@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+/* eslint-disable react-hooks/exhaustive-deps */
+import { useState, useEffect } from 'react';
 import cleanupPreset from '~/utils/cleanupPreset.js';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import EditPresetDialog from '../../Endpoints/EditPresetDialog';
@@ -19,12 +20,14 @@ import {
 } from '../../ui/DropdownMenu.tsx';
 import { Dialog, DialogTrigger } from '../../ui/Dialog.tsx';
 import DialogTemplate from '../../ui/DialogTemplate';
+import { cn } from '~/utils/';
 
 import store from '~/store';
 
 export default function NewConversationMenu() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showPresets, setShowPresets] = useState(true);
+  const [showEndpoints, setShowEndpoints] = useState(true);
   const [presetModelVisible, setPresetModelVisible] = useState(false);
   const [preset, setPreset] = useState(false);
 
@@ -39,21 +42,21 @@ export default function NewConversationMenu() {
   const deletePresetsMutation = useDeletePresetMutation();
   const createPresetMutation = useCreatePresetMutation();
 
-  const importPreset = jsonData => {
+  const importPreset = (jsonData) => {
     createPresetMutation.mutate(
       { ...jsonData },
       {
-        onSuccess: data => {
+        onSuccess: (data) => {
           setPresets(data);
         },
-        onError: error => {
+        onError: (error) => {
           console.error('Error uploading the preset:', error);
         }
       }
     );
   };
 
-  const onFileSelected = jsonData => {
+  const onFileSelected = (jsonData) => {
     const jsonPreset = { ...cleanupPreset({ preset: jsonData, endpointsConfig }), presetId: null };
     importPreset(jsonPreset);
   };
@@ -61,7 +64,7 @@ export default function NewConversationMenu() {
   // update the default model when availableModels changes
   // typically, availableModels changes => modelsFilter or customGPTModels changes
   useEffect(() => {
-    const isInvalidConversation = !availableEndpoints.find(e => e === endpoint);
+    const isInvalidConversation = !availableEndpoints.find((e) => e === endpoint);
     if (conversationId == 'new' && isInvalidConversation) {
       newConversation();
     }
@@ -80,7 +83,7 @@ export default function NewConversationMenu() {
   }, [conversation]);
 
   // set the current model
-  const onSelectEndpoint = newEndpoint => {
+  const onSelectEndpoint = (newEndpoint) => {
     setMenuOpen(false);
 
     if (!newEndpoint) return;
@@ -90,7 +93,7 @@ export default function NewConversationMenu() {
   };
 
   // set the current model
-  const onSelectPreset = newPreset => {
+  const onSelectPreset = (newPreset) => {
     setMenuOpen(false);
     if (!newPreset) return;
     else {
@@ -98,7 +101,7 @@ export default function NewConversationMenu() {
     }
   };
 
-  const onChangePreset = preset => {
+  const onChangePreset = (preset) => {
     setPresetModelVisible(true);
     setPreset(preset);
   };
@@ -107,7 +110,7 @@ export default function NewConversationMenu() {
     deletePresetsMutation.mutate({ arg: {} });
   };
 
-  const onDeletePreset = preset => {
+  const onDeletePreset = (preset) => {
     deletePresetsMutation.mutate({ arg: preset });
   };
 
@@ -121,10 +124,7 @@ export default function NewConversationMenu() {
 
   return (
     <Dialog>
-      <DropdownMenu
-        open={menuOpen}
-        onOpenChange={setMenuOpen}
-      >
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
@@ -138,41 +138,42 @@ export default function NewConversationMenu() {
         </DropdownMenuTrigger>
         <DropdownMenuContent
           className="min-w-[300px] dark:bg-gray-700"
-          onCloseAutoFocus={event => event.preventDefault()}
+          onCloseAutoFocus={(event) => event.preventDefault()}
         >
-          <DropdownMenuLabel className="dark:text-gray-300">Select an Endpoint</DropdownMenuLabel>
+          <DropdownMenuLabel
+            className="cursor-pointer dark:text-gray-300"
+            onClick={() => setShowEndpoints((prev) => !prev)}
+          >
+            {showEndpoints ? 'Hide ' : 'Show '} Endpoints
+          </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
             value={endpoint}
             onValueChange={onSelectEndpoint}
             className="overflow-y-auto"
           >
-            {availableEndpoints.length ? (
-              <EndpointItems
-                endpoints={availableEndpoints}
-                onSelect={onSelectEndpoint}
-              />
-            ) : (
-              <DropdownMenuLabel className="dark:text-gray-300">No endpoint available.</DropdownMenuLabel>
-            )}
+            {showEndpoints &&
+              (availableEndpoints.length ? (
+                <EndpointItems endpoints={availableEndpoints} onSelect={onSelectEndpoint} />
+              ) : (
+                <DropdownMenuLabel className="dark:text-gray-300">
+                  No endpoint available.
+                </DropdownMenuLabel>
+              ))}
           </DropdownMenuRadioGroup>
 
-          <div className="mt-6 w-full" />
+          <div className="mt-2 w-full" />
 
           <DropdownMenuLabel className="flex items-center dark:text-gray-300">
-            <span
-              className="cursor-pointer"
-              onClick={() => setShowPresets(prev => !prev)}
-            >
+            <span className="cursor-pointer mr-auto " onClick={() => setShowPresets((prev) => !prev)}>
               {showPresets ? 'Hide ' : 'Show '} Presets
             </span>
-            <div className="flex-1" />
             <FileUpload onFileSelected={onFileSelected} />
             <Dialog>
               <DialogTrigger asChild>
                 <label
                   htmlFor="file-upload"
-                  className=" mr-1 flex h-[32px] h-auto cursor-pointer  items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal text-gray-600 transition-colors hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-green-500"
+                  className="mr-1 flex h-[32px] h-auto cursor-pointer  items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal text-gray-600 transition-colors hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-green-500"
                 >
                   {/* <Button
                   type="button"
@@ -197,7 +198,7 @@ export default function NewConversationMenu() {
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
             onValueChange={onSelectPreset}
-            className="max-h-[150px] overflow-y-auto"
+            className={cn('overflow-y-auto', showEndpoints ? 'max-h-[180px]' : 'max-h-[315px]')}
           >
             {showPresets &&
               (presets.length ? (

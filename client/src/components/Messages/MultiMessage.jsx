@@ -1,7 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
 import Message from './Message';
-
 import store from '~/store';
 
 export default function MultiMessage({
@@ -17,13 +16,14 @@ export default function MultiMessage({
 
   const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
 
-  const setSiblingIdxRev = value => {
+  const setSiblingIdxRev = (value) => {
     setSiblingIdx(messagesTree?.length - value - 1);
   };
 
   useEffect(() => {
     // reset siblingIdx when changes, mostly a new message is submitting.
     setSiblingIdx(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messagesTree?.length]);
 
   // if (!messageList?.length) return null;
@@ -41,19 +41,19 @@ export default function MultiMessage({
     return (
       <>
         {messagesTree
-          ? messagesTree.map(message => (
-              <Message
-                key={message.messageId}
-                conversation={conversation}
-                message={message}
-                scrollToBottom={scrollToBottom}
-                currentEditId={currentEditId}
-                setCurrentEditId={null}
-                siblingIdx={1}
-                siblingCount={1}
-                setSiblingIdx={null}
-              />
-            ))
+          ? messagesTree.map((message) => (
+            <Message
+              key={message.messageId}
+              conversation={conversation}
+              message={message}
+              scrollToBottom={scrollToBottom}
+              currentEditId={currentEditId}
+              setCurrentEditId={null}
+              siblingIdx={1}
+              siblingCount={1}
+              setSiblingIdx={null}
+            />
+          ))
           : null}
       </>
     );

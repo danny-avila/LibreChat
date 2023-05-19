@@ -1,18 +1,26 @@
-import React, { useEffect, useState } from 'react';
+/* eslint-disable react-hooks/exhaustive-deps */
+import { useEffect, useState } from 'react';
 import DialogTemplate from '../../ui/DialogTemplate';
 import { Dialog } from '../../ui/Dialog.tsx';
-import { Input } from '../../ui/Input.tsx';
-import { Label } from '../../ui/Label.tsx';
-import { cn } from '~/utils/';
+import * as Checkbox from '@radix-ui/react-checkbox';
+import { CheckIcon } from '@radix-ui/react-icons';
 import FileUpload from '../NewConversationMenu/FileUpload';
 import store from '~/store';
+import InputWithLabel from './InputWithLabel';
+
+function isJson(str) {
+  try {
+    JSON.parse(str);
+  } catch (e) {
+    return false;
+  }
+  return true;
+}
 
 const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
   const [token, setToken] = useState('');
+  const [showPanel, setShowPanel] = useState(false);
   const { getToken, saveToken } = store.useToken(endpoint);
-
-  const defaultTextProps =
-    'rounded-md border border-gray-300 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.10)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-400 dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
 
   const submit = () => {
     saveToken(token);
@@ -20,19 +28,29 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
   };
 
   useEffect(() => {
-    setToken(getToken() ?? '');
+    let oldToken = getToken();
+    if (isJson(token)) {
+      setShowPanel(true);
+    }
+    setToken(oldToken ?? '');
   }, [open]);
+
+  useEffect(() => {
+    if (!showPanel && isJson(token)) {
+      setToken('');
+    }
+  }, [showPanel]);
 
   const helpText = {
     bingAI: (
       <small className="break-all text-gray-600">
-        The Bing Access Token is the "_U" cookie from bing.com. Use dev tools or an extension while logged
-        into the site to view it.
+        {`The Bing Access Token is the "_U" cookie from bing.com. Use dev tools or an extension while
+        logged into the site to view it.`}
       </small>
     ),
     chatGPTBrowser: (
       <small className="break-all text-gray-600">
-        To get your Access token For ChatGPT 'Free Version', login to{' '}
+        {`To get your Access token For ChatGPT 'Free Version', login to `}
         <a
           target="_blank"
           href="https://chat.openai.com"
@@ -73,36 +91,45 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
         >
           Create a Service Account
         </a>
-        . Make sure to click 'Create and Continue' to give at least the 'Vertex AI User' role. Lastly, create
-        a JSON key to import here.
+        {`. Make sure to click 'Create and Continue' to give at least the 'Vertex AI User' role.
+        Lastly, create a JSON key to import here.`}
       </small>
     )
   };
 
+  function getAzure(name) {
+    if (isJson(token)) {
+      let newToken = JSON.parse(token);
+      return newToken[name];
+    } else {
+      return '';
+    }
+  }
+
+  function setAzure(name, value) {
+    let newToken = {};
+    if (isJson(token)) {
+      newToken = JSON.parse(token);
+    }
+    newToken[name] = value;
+
+    setToken(JSON.stringify(newToken));
+  }
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={`Set Token of ${endpoint}`}
         main={
           <div className="grid w-full items-center gap-2">
-            <Label
-              htmlFor="chatGptLabel"
-              className="text-left text-sm font-medium"
-            >
-              Token Name
-              <br />
-            </Label>
             {endpoint === 'google' ? (
               <FileUpload
-              id="googleKey"
+                id="googleKey"
                 className="w-full"
                 text="Import Service Account JSON Key"
                 successText="Successfully Imported Service Account JSON Key"
                 invalidText="Invalid Service Account JSON Key, Did you import the correct file?"
-                validator={credentials => {
+                validator={(credentials) => {
                   if (!credentials) {
                     return false;
                   }
@@ -133,23 +160,85 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
 
                   return true;
                 }}
-                onFileSelected={data => {
+                onFileSelected={(data) => {
                   setToken(JSON.stringify(data));
                 }}
               />
-            ) : (
-              <Input
-                id="chatGptLabel"
-                value={token || ''}
-                onChange={e => setToken(e.target.value || '')}
-                placeholder="Set the token."
-                className={cn(
-                  defaultTextProps,
-                  'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+            ) : endpoint === 'openAI' ? (
+              <>
+                {!showPanel ? (
+                  <>
+                    <InputWithLabel
+                      id={'chatGPTLabel'}
+                      value={token || ''}
+                      onChange={(e) => setToken(e.target.value || '')}
+                      label={'OpenAI API Key'}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <InputWithLabel
+                      id={'instanceNameLabel'}
+                      value={getAzure('instanceName') || ''}
+                      onChange={(e) => setAzure('instanceName', e.target.value || '')}
+                      label={'Azure OpenAI Instance Name'}
+                    />
+
+                    <InputWithLabel
+                      id={'deploymentNameLabel'}
+                      value={getAzure('deploymentName') || ''}
+                      onChange={(e) => setAzure('deploymentName', e.target.value || '')}
+                      label={'Azure OpenAI Deployment Name'}
+                    />
+
+                    <InputWithLabel
+                      id={'versionLabel'}
+                      value={getAzure('version') || ''}
+                      onChange={(e) => setAzure('version', e.target.value || '')}
+                      label={'Azure OpenAI API Version'}
+                    />
+
+                    <InputWithLabel
+                      id={'apiKeyLabel'}
+                      value={getAzure('apiKey') || ''}
+                      onChange={(e) => setAzure('apiKey', e.target.value || '')}
+                      label={'Azure OpenAI API Key'}
+                    />
+                  </>
                 )}
-              />
+                <div className="flex items-center">
+                  <Checkbox.Root
+                    className="flex h-[20px] w-[20px] appearance-none items-center justify-center rounded-[4px] bg-gray-100 text-white outline-none hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-900"
+                    id="azureOpenAI"
+                    checked={showPanel}
+                    onCheckedChange={() => setShowPanel(!showPanel)}
+                  >
+                    <Checkbox.Indicator className="flex h-[20px] w-[20px] items-center justify-center rounded-[3.5px] bg-green-600">
+                      <CheckIcon />
+                    </Checkbox.Indicator>
+                  </Checkbox.Root>
+
+                  <label
+                    className="pl-[8px] text-[15px] leading-none dark:text-white"
+                    htmlFor="azureOpenAI"
+                  >
+                    Use Azure OpenAI.
+                  </label>
+                </div>
+              </>
+            ) : (
+              <>
+                <InputWithLabel
+                  id={'chatGPTLabel'}
+                  value={token || ''}
+                  onChange={(e) => setToken(e.target.value || '')}
+                  label={'Token Name'}
+                />
+              </>
             )}
-            <small className="text-red-600">Your token will be sent to the server, but not saved.</small>
+            <small className="text-red-600">
+              Your token will be sent to the server, but not saved.
+            </small>
             {helpText?.[endpoint]}
           </div>
         }

@@ -18,7 +18,7 @@ export default function HoverButtons({
 
   const branchingSupported =
     // azureOpenAI, openAI, chatGPTBrowser support branching, so edit enabled
-    !!['azureOpenAI', 'openAI', 'chatGPTBrowser', 'google', 'gptPlugins'].find(e => e === endpoint) ||
+    !!['azureOpenAI', 'openAI', 'chatGPTBrowser', 'google', 'gptPlugins'].find((e) => e === endpoint) ||
     // Sydney in bingAI supports branching, so edit enabled
     (endpoint === 'bingAI' && jailbreak);
 
@@ -32,10 +32,14 @@ export default function HoverButtons({
   // for now, once branching is supported, regerate will be enabled
   const regenerateEnabled =
     // !message?.error &&
-    !message?.isCreatedByUser && !message?.searchResult && !isEditting && !isSubmitting && branchingSupported;
+    !message?.isCreatedByUser &&
+    !message?.searchResult &&
+    !isEditting &&
+    !isSubmitting &&
+    branchingSupported;
 
   return (
-    <div className="visible mt-2 flex justify-center gap-3 self-end text-gray-400 md:gap-4 lg:absolute lg:top-0 lg:right-0 lg:mt-0 lg:translate-x-full lg:gap-1 lg:self-center lg:pl-2">
+    <div className="visible mt-2 flex justify-center gap-3 self-end text-gray-400 md:gap-4 lg:absolute lg:right-0 lg:top-0 lg:mt-0 lg:translate-x-full lg:gap-1 lg:self-center lg:pl-2">
       {editEnabled ? (
         <button
           className="hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible"

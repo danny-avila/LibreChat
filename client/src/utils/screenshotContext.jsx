@@ -1,4 +1,4 @@
-import React, { createContext, useRef, useContext, useCallback } from 'react';
+import { createContext, useRef, useContext } from 'react';
 import html2canvas from 'html2canvas';
 
 const ScreenshotContext = createContext({});
@@ -6,11 +6,11 @@ const ScreenshotContext = createContext({});
 export const useScreenshot = () => {
   const { ref } = useContext(ScreenshotContext);
 
-  const takeScreenShot = node => {
+  const takeScreenShot = (node) => {
     if (!node) {
       throw new Error('You should provide correct html node.');
     }
-    return html2canvas(node).then(canvas => {
+    return html2canvas(node).then((canvas) => {
       const croppedCanvas = document.createElement('canvas');
       const croppedCanvasContext = croppedCanvas.getContext('2d');
       // init data

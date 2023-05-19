@@ -1,12 +1,15 @@
 require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
 const { genAzureChatCompletion } = require('../../utils/genAzureEndpoints');
+const tiktoken = require('@dqbd/tiktoken');
+const encoding_for_model = tiktoken.encoding_for_model;
 
 const askClient = async ({
   text,
   parentMessageId,
   conversationId,
   model,
+  oaiApiKey,
   chatGptLabel,
   promptPrefix,
   temperature,
@@ -23,6 +26,12 @@ const askClient = async ({
   };
 
   const azure = process.env.AZURE_OPENAI_API_KEY ? true : false;
+  let promptText;
+  if (promptPrefix == null) {
+    promptText = 'You are ChatGPT, a large language model trained by OpenAI.';
+  } else {
+    promptText = promptPrefix;
+  }
   const maxContextTokens = model === 'gpt-4' ? 8191 : model === 'gpt-4-32k' ? 32767 : 4095; // 1 less than maximum
   const clientOptions = {
     reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
@@ -37,14 +46,14 @@ const askClient = async ({
     },
     chatGptLabel,
     promptPrefix,
-    proxy: process.env.PROXY || null,
+    proxy: process.env.PROXY || null
     // debug: true
   };
 
-  let apiKey = process.env.OPENAI_KEY;
+  let apiKey = oaiApiKey ? oaiApiKey : process.env.OPENAI_KEY || null;
 
   if (azure) {
-    apiKey = process.env.AZURE_OPENAI_API_KEY;
+    apiKey = oaiApiKey ? oaiApiKey : process.env.AZURE_OPENAI_API_KEY || null;
     clientOptions.reverseProxyUrl = genAzureChatCompletion({ 
       azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME, 
       azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME, 
@@ -60,8 +69,25 @@ const askClient = async ({
     ...(parentMessageId && conversationId ? { parentMessageId, conversationId } : {})
   };
 
+  const enc = encoding_for_model(model);
+  const text_tokens = enc.encode(text);
+  const prompt_tokens = enc.encode(promptText);
+  // console.log("Prompt tokens = ", prompt_tokens.length);
+  // console.log("Message Tokens = ", text_tokens.length);
+
   const res = await client.sendMessage(text, { ...options, userId });
-  return res;
+  // return res;
+  // create a new response object that includes the token counts
+  const newRes = {
+    ...res,
+    usage: {
+      prompt_tokens: prompt_tokens.length,
+      completion_tokens: text_tokens.length,
+      total_tokens: prompt_tokens.length + text_tokens.length
+    }
+  };
+
+  return newRes;
 };
 
 module.exports = { askClient };

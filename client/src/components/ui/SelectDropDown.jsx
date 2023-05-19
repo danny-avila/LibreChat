@@ -17,11 +17,7 @@ function SelectDropDown({
   return (
     <div className={cn('flex items-center justify-center gap-2', containerClassName)}>
       <div className="relative w-full">
-        <Listbox
-          value={value}
-          onChange={setValue}
-          disabled={disabled}
-        >
+        <Listbox value={value} onChange={setValue} disabled={disabled}>
           {({ open }) => (
             <>
               <Listbox.Button
@@ -47,7 +43,9 @@ function SelectDropDown({
                       !showLabel ? 'text-xs' : ''
                     )}
                   >
-                    {!showLabel && <span className="text-xs text-gray-700 dark:text-gray-500">{title}:</span>}
+                    {!showLabel && (
+                      <span className="text-xs text-gray-700 dark:text-gray-500">{title}:</span>
+                    )}
                     {value}
                   </span>
                 </span>

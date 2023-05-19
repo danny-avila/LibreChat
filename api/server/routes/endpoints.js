@@ -37,13 +37,15 @@ router.get('/', async function (req, res) {
   }
 
   const google =
-    key || palmUser ? { userProvide: palmUser, availableModels: ['chat-bison', 'text-bison'] } : false;
+    key || palmUser
+      ? { userProvide: palmUser, availableModels: ['chat-bison', 'text-bison'] }
+      : false;
   const azureOpenAI = !!process.env.AZURE_OPENAI_KEY;
-  const authOpenAI =
-    process.env.OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY
-     ;
-  const openAI = authOpenAI ? { availableModels: getOpenAIModels() } : false;
-  const gptPlugins = authOpenAI ? { availableModels: ['gpt-4', 'gpt-3.5-turbo', 'gpt-3.5-turbo-0301'], availableTools } : false;
+  const apiKey = process.env.OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY;
+  const openAI = apiKey
+    ? { availableModels: getOpenAIModels(), userProvide: apiKey === 'user_provided' }
+    : false;
+  const gptPlugins = apiKey ? { availableModels: ['gpt-4', 'gpt-3.5-turbo', 'gpt-3.5-turbo-0301'], availableTools } : false;
   const bingAI = process.env.BINGAI_TOKEN
     ? { userProvide: process.env.BINGAI_TOKEN == 'user_provided' }
     : false;

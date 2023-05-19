@@ -8,7 +8,7 @@ const endpointsConfig = atom({
     bingAI: null,
     chatGPTBrowser: null,
     gptPlugins: null,
-    google: null,
+    google: null
   }
 });
 
@@ -28,7 +28,7 @@ const availableEndpoints = selector({
   get: ({ get }) => {
     const endpoints = ['azureOpenAI', 'openAI', 'chatGPTBrowser', 'gptPlugins', 'bingAI', 'google'];
     const f = get(endpointsFilter);
-    return endpoints.filter(endpoint => f[endpoint]);
+    return endpoints.filter((endpoint) => f[endpoint]);
   }
 });
 // const modelAvailable

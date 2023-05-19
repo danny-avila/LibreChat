@@ -1,4 +1,3 @@
-import React, { useEffect } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import SelectDropDown from '../../ui/SelectDropDown';
 import { cn } from '~/utils/';
@@ -17,10 +16,10 @@ function ChatGPTOptions() {
 
   const models = endpointsConfig?.['chatGPTBrowser']?.['availableModels'] || [];
 
-  const setOption = param => newValue => {
+  const setOption = (param) => (newValue) => {
     let update = {};
     update[param] = newValue;
-    setConversation(prevState => ({
+    setConversation((prevState) => ({
       ...prevState,
       ...update
     }));

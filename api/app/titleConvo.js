@@ -2,23 +2,22 @@
 const _ = require('lodash');
 const { genAzureChatCompletion } = require('../utils/genAzureEndpoints');
 
-const proxyEnvToAxiosProxy = (proxyString) => {
-  if (!proxyString) return null;
+// const proxyEnvToAxiosProxy = (proxyString) => {
+//   if (!proxyString) return null;
 
-  const regex = /^([^:]+):\/\/(?:([^:@]*):?([^:@]*)@)?([^:]+)(?::(\d+))?/;
-  const [, protocol, username, password, host, port] = proxyString.match(regex);
-  const proxyConfig = {
-    protocol,
-    host,
-    port: port ? parseInt(port) : undefined,
-    auth: username && password ? { username, password } : undefined
-  };
+//   const regex = /^([^:]+):\/\/(?:([^:@]*):?([^:@]*)@)?([^:]+)(?::(\d+))?/;
+//   const [, protocol, username, password, host, port] = proxyString.match(regex);
+//   const proxyConfig = {
+//     protocol,
+//     host,
+//     port: port ? parseInt(port) : undefined,
+//     auth: username && password ? { username, password } : undefined
+//   };
 
-  return proxyConfig;
-};
+//   return proxyConfig;
+// };
 
-// const titleConvo = async ({ endpoint, text, response }) => {
-const titleConvo = async ({ text, response }) => {
+const titleConvo = async ({ text, response, oaiApiKey }) => {
   let title = 'New Chat';
   const ChatGPTClient = (await import('@waylaidwanderer/chatgpt-api')).default;
 
@@ -51,7 +50,7 @@ const titleConvo = async ({ text, response }) => {
       frequency_penalty: 0
     };
 
-    let apiKey = process.env.OPENAI_KEY;
+    let apiKey = oaiApiKey || process.env.OPENAI_KEY;
 
     if (azure) {
       apiKey = process.env.AZURE_OPENAI_API_KEY;

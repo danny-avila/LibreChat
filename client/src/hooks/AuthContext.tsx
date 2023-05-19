@@ -1,4 +1,12 @@
-import { useState, useCallback, useEffect, useMemo, ReactNode, createContext, useContext } from 'react';
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  ReactNode,
+  createContext,
+  useContext
+} from 'react';
 import {
   TUser,
   TLoginResponse,
@@ -12,28 +20,28 @@ import {
 import { useNavigate, useLocation } from 'react-router-dom';
 
 export type TAuthContext = {
-  user: TUser | undefined,
-  token: string | undefined,
-  isAuthenticated: boolean,
-  isLoading: boolean,
-  error: string | undefined,
-  login: (data: TLoginUser) => void,
-  logout: () => void
+  user: TUser | undefined;
+  token: string | undefined;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  error: string | undefined;
+  login: (data: TLoginUser) => void;
+  logout: () => void;
 };
 
 export type TUserContext = {
-  user?: TUser | undefined,
-  token: string | undefined,
-  isAuthenticated: boolean,
-  redirect?: string
+  user?: TUser | undefined;
+  token: string | undefined;
+  isAuthenticated: boolean;
+  redirect?: string;
 };
 
-const AuthContext = createContext <TAuthContext | undefined>(undefined);
+const AuthContext = createContext<TAuthContext | undefined>(undefined);
 
 const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<TUser | undefined>(undefined);
-  const [token, setToken] = useState <string | undefined>(undefined);
-  const [error, setError] = useState <string | undefined>(undefined);
+  const [token, setToken] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
@@ -48,7 +56,7 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
 
   const setUserContext = (userContext: TUserContext) => {
     const { token, isAuthenticated, user, redirect } = userContext;
-    if(user) {
+    if (user) {
       setUser(user);
     }
     setToken(token);
@@ -59,7 +67,7 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const getCookieValue = key => {
+  const getCookieValue = (key) => {
     let keyValue = document.cookie.match('(^|;) ?' + key + '=([^;]*)(;|$)');
     return keyValue ? keyValue[2] : null;
   };
@@ -70,23 +78,28 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
         const { user, token } = data;
         setUserContext({ token, isAuthenticated: true, user, redirect: '/chat/new' });
       },
-      onError: error => {
+      onError: (error) => {
         setError(error.message);
-      },
+      }
     });
   };
 
   const logout = () => {
-    document.cookie.split(';').forEach(c => {
+    document.cookie.split(';').forEach((c) => {
       document.cookie = c
         .replace(/^ +/, '')
         .replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
     });
     logoutUser.mutate(undefined, {
       onSuccess: () => {
-        setUserContext({ token: undefined, isAuthenticated: false, user: undefined, redirect: '/login' });
+        setUserContext({
+          token: undefined,
+          isAuthenticated: false,
+          user: undefined,
+          redirect: '/login'
+        });
       },
-      onError: error => {
+      onError: (error) => {
         setError(error.message);
       }
     });
@@ -95,8 +108,7 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (userQuery.data) {
       setUser(userQuery.data);
-    } 
-    else if (userQuery.isError) {
+    } else if (userQuery.isError) {
       setError(userQuery.error.message);
       navigate('/login');
     }
@@ -107,9 +119,8 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
       const tokenFromCookie = getCookieValue('token');
       if (tokenFromCookie) {
         // debugger;
-        setUserContext({ token: tokenFromCookie, isAuthenticated: true, user: userQuery.data })
-      }
-      else {
+        setUserContext({ token: tokenFromCookie, isAuthenticated: true, user: userQuery.data });
+      } else {
         navigate('/login');
       }
     }

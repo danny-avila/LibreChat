@@ -98,7 +98,7 @@ const ask = async ({
 
   try {
     let lastSavedTimestamp = 0;
-    const { onProgress: progressCallback, getPartialText } = createOnProgress({
+    const { onProgress: progressCallback } = createOnProgress({
       onProgress: ({ text }) => {
         const currentTimestamp = Date.now();
         if (currentTimestamp - lastSavedTimestamp > 500) {
@@ -180,7 +180,11 @@ const ask = async ({
 
     // If response has parentMessageId, the fake userMessage.messageId should be updated to the real one.
     if (!overrideParentMessageId)
-      await saveMessage({ ...userMessage, messageId: userMessageId, newMessageId: newUserMassageId });
+      await saveMessage({
+        ...userMessage,
+        messageId: userMessageId,
+        newMessageId: newUserMassageId
+      });
     userMessageId = newUserMassageId;
 
     sendMessage(res, {

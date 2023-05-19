@@ -17,37 +17,37 @@ function Settings(props) {
   const setContext = setOption('context');
   const setSystemMessage = setOption('systemMessage');
   const setJailbreak = setOption('jailbreak');
-  const setToneStyle = value => setOption('toneStyle')(value.toLowerCase());
+  const setToneStyle = (value) => setOption('toneStyle')(value.toLowerCase());
   const debouncedContext = useDebounce(context, 250);
   const updateTokenCountMutation = useUpdateTokenCountMutation();
 
-  useEffect(() => { 
+  useEffect(() => {
     if (!debouncedContext || debouncedContext.trim() === '') {
       setTokenCount(0);
       return;
     }
 
-    const handleTextChange = context => {
-      updateTokenCountMutation.mutate({ text: context }, {
-        onSuccess: data => {
-          setTokenCount(data.count);
+    const handleTextChange = (context) => {
+      updateTokenCountMutation.mutate(
+        { text: context },
+        {
+          onSuccess: (data) => {
+            setTokenCount(data.count);
+          }
         }
-      });
+      );
     };
 
     handleTextChange(debouncedContext);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedContext]);
-
 
   return (
     <div className="max-h-[350px] overflow-y-auto">
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
-            <Label
-              htmlFor="toneStyle-dropdown"
-              className="text-left text-sm font-medium"
-            >
+            <Label htmlFor="toneStyle-dropdown" className="text-left text-sm font-medium">
               Tone Style <small className="opacity-40">(default: fast)</small>
             </Label>
             <SelectDropDown
@@ -65,17 +65,14 @@ function Settings(props) {
             />
           </div>
           <div className="grid w-full items-center gap-2">
-            <Label
-              htmlFor="context"
-              className="text-left text-sm font-medium"
-            >
+            <Label htmlFor="context" className="text-left text-sm font-medium">
               Context <small className="opacity-40">(default: blank)</small>
             </Label>
             <TextareaAutosize
               id="context"
               disabled={readonly}
               value={context || ''}
-              onChange={e => setContext(e.target.value || null)}
+              onChange={(e) => setContext(e.target.value || null)}
               placeholder="Bing can use up to 7k tokens for 'context', which it can reference for the conversation. The specific limit is not known but may run into errors exceeding 7k tokens"
               className={cn(
                 defaultTextProps,
@@ -87,10 +84,7 @@ function Settings(props) {
         </div>
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
-            <Label
-              htmlFor="jailbreak"
-              className="text-left text-sm font-medium"
-            >
+            <Label htmlFor="jailbreak" className="text-left text-sm font-medium">
               Enable Sydney <small className="opacity-40">(default: false)</small>
             </Label>
             <div className="flex h-[40px] w-full items-center space-x-3">
@@ -119,7 +113,7 @@ function Settings(props) {
                 <a
                   href="https://github.com/danny-avila/chatgpt-clone/blob/main/guides/JAILBREAK_INFO.md"
                   target="_blank"
-                  className="text-blue-500 transition-colors duration-200 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-500"
+                  className="text-blue-500 transition-colors duration-200 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-500" rel="noreferrer"
                 >
                   System Message
                 </a>{' '}
@@ -130,7 +124,7 @@ function Settings(props) {
                 id="systemMessage"
                 disabled={readonly}
                 value={systemMessage || ''}
-                onChange={e => setSystemMessage(e.target.value || null)}
+                onChange={(e) => setSystemMessage(e.target.value || null)}
                 placeholder="WARNING: Misuse of this feature can get you BANNED from using Bing! Click on 'System Message' for full instructions and the default message if omitted, which is the 'Sydney' preset that is considered safe."
                 className={cn(
                   defaultTextProps,

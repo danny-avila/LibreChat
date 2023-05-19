@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import filenamify from 'filenamify';
 import exportFromJSON from 'export-from-json';
 import download from 'downloadjs';
 import DialogTemplate from '~/components/ui/DialogTemplate.jsx';
-import { Dialog, DialogClose, DialogButton } from '~/components/ui/Dialog.tsx';
+import { Dialog, DialogButton } from '~/components/ui/Dialog.tsx';
 import { Input } from '~/components/ui/Input.tsx';
 import { Label } from '~/components/ui/Label.tsx';
 import { Checkbox } from '~/components/ui/Checkbox.tsx';
@@ -31,7 +31,7 @@ export default function ExportModel({ open, onOpenChange }) {
 
   const getSiblingIdx = useRecoilCallback(
     ({ snapshot }) =>
-      async messageId =>
+      async (messageId) =>
         await snapshot.getPromise(store.messagesSiblingIdxFamily(messageId)),
     []
   );
@@ -50,9 +50,10 @@ export default function ExportModel({ open, onOpenChange }) {
     setIncludeOptions(true);
     setExportBranches(false);
     setRecursive(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const _setType = newType => {
+  const _setType = (newType) => {
     const exportBranchesSupport = newType === 'json' || newType === 'csv' || newType === 'webpage';
     const exportOptionsSupport = newType !== 'csv' && newType !== 'screenshot';
 
@@ -66,7 +67,13 @@ export default function ExportModel({ open, onOpenChange }) {
 
   // return an object or an array based on branches and recursive option
   // messageId is used to get siblindIdx from recoil snapshot
-  const buildMessageTree = async ({ messageId, message, messages, branches = false, recursive = false }) => {
+  const buildMessageTree = async ({
+    messageId,
+    message,
+    messages,
+    branches = false,
+    recursive = false
+  }) => {
     let children = [];
     if (messages?.length)
       if (branches)
@@ -136,22 +143,40 @@ export default function ExportModel({ open, onOpenChange }) {
       fileName: filename,
       extension: 'csv',
       exportType: exportFromJSON.types.csv,
-      beforeTableEncode: entries => [
-        { fieldName: 'sender', fieldValues: entries.find(e => e.fieldName == 'sender').fieldValues },
-        { fieldName: 'text', fieldValues: entries.find(e => e.fieldName == 'text').fieldValues },
+      beforeTableEncode: (entries) => [
+        {
+          fieldName: 'sender',
+          fieldValues: entries.find((e) => e.fieldName == 'sender').fieldValues
+        },
+        { fieldName: 'text', fieldValues: entries.find((e) => e.fieldName == 'text').fieldValues },
         {
           fieldName: 'isCreatedByUser',
-          fieldValues: entries.find(e => e.fieldName == 'isCreatedByUser').fieldValues
+          fieldValues: entries.find((e) => e.fieldName == 'isCreatedByUser').fieldValues
         },
-        { fieldName: 'error', fieldValues: entries.find(e => e.fieldName == 'error').fieldValues },
-        { fieldName: 'unfinished', fieldValues: entries.find(e => e.fieldName == 'unfinished').fieldValues },
-        { fieldName: 'cancelled', fieldValues: entries.find(e => e.fieldName == 'cancelled').fieldValues },
-        { fieldName: 'messageId', fieldValues: entries.find(e => e.fieldName == 'messageId').fieldValues },
+        {
+          fieldName: 'error',
+          fieldValues: entries.find((e) => e.fieldName == 'error').fieldValues
+        },
+        {
+          fieldName: 'unfinished',
+          fieldValues: entries.find((e) => e.fieldName == 'unfinished').fieldValues
+        },
+        {
+          fieldName: 'cancelled',
+          fieldValues: entries.find((e) => e.fieldName == 'cancelled').fieldValues
+        },
+        {
+          fieldName: 'messageId',
+          fieldValues: entries.find((e) => e.fieldName == 'messageId').fieldValues
+        },
         {
           fieldName: 'parentMessageId',
-          fieldValues: entries.find(e => e.fieldName == 'parentMessageId').fieldValues
+          fieldValues: entries.find((e) => e.fieldName == 'parentMessageId').fieldValues
         },
-        { fieldName: 'createdAt', fieldValues: entries.find(e => e.fieldName == 'createdAt').fieldValues }
+        {
+          fieldName: 'createdAt',
+          fieldValues: entries.find((e) => e.fieldName == 'createdAt').fieldValues
+        }
       ]
     });
   };
@@ -284,10 +309,7 @@ export default function ExportModel({ open, onOpenChange }) {
     'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title="Export conversation"
         className="max-w-full sm:max-w-2xl"
@@ -295,16 +317,13 @@ export default function ExportModel({ open, onOpenChange }) {
           <div className="flex w-full flex-col items-center gap-6">
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
-                <Label
-                  htmlFor="filename"
-                  className="text-left text-sm font-medium"
-                >
+                <Label htmlFor="filename" className="text-left text-sm font-medium">
                   Filename
                 </Label>
                 <Input
                   id="filename"
                   value={filename}
-                  onChange={e => setFileName(filenamify(e.target.value || ''))}
+                  onChange={(e) => setFileName(filenamify(e.target.value || ''))}
                   placeholder="Set the filename"
                   className={cn(
                     defaultTextProps,
@@ -313,10 +332,7 @@ export default function ExportModel({ open, onOpenChange }) {
                 />
               </div>
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
-                <Label
-                  htmlFor="type"
-                  className="text-left text-sm font-medium"
-                >
+                <Label htmlFor="type" className="text-left text-sm font-medium">
                   Type
                 </Label>
                 <Dropdown
@@ -335,10 +351,7 @@ export default function ExportModel({ open, onOpenChange }) {
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <div className="grid w-full items-center gap-2">
-                  <Label
-                    htmlFor="includeOptions"
-                    className="text-left text-sm font-medium"
-                  >
+                  <Label htmlFor="includeOptions" className="text-left text-sm font-medium">
                     Include endpoint options
                   </Label>
                   <div className="flex h-[40px] w-full items-center space-x-3">
@@ -359,10 +372,7 @@ export default function ExportModel({ open, onOpenChange }) {
                 </div>
               </div>
               <div className="grid w-full items-center gap-2">
-                <Label
-                  htmlFor="exportBranches"
-                  className="text-left text-sm font-medium"
-                >
+                <Label htmlFor="exportBranches" className="text-left text-sm font-medium">
                   Export all message branches
                 </Label>
                 <div className="flex h-[40px] w-full items-center space-x-3">
@@ -383,10 +393,7 @@ export default function ExportModel({ open, onOpenChange }) {
               </div>
               {type === 'json' ? (
                 <div className="grid w-full items-center gap-2">
-                  <Label
-                    htmlFor="recursive"
-                    className="text-left text-sm font-medium"
-                  >
+                  <Label htmlFor="recursive" className="text-left text-sm font-medium">
                     Recursive or sequential?
                   </Label>
                   <div className="flex h-[40px] w-full items-center space-x-3">

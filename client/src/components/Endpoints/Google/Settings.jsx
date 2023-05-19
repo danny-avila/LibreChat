@@ -1,3 +1,4 @@
+import React from 'react';
 import { useRecoilValue } from 'recoil';
 import TextareaAutosize from 'react-textarea-autosize';
 import SelectDropDown from '../../ui/SelectDropDown';
@@ -17,8 +18,19 @@ const optionText =
 import store from '~/store';
 
 function Settings(props) {
-  const { readonly, model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens, setOption, edit = false } = props;
-  const maxHeight = edit ? 'max-h-[233px]' : 'max-h-[350px]';
+  const {
+    readonly,
+    model,
+    modelLabel,
+    promptPrefix,
+    temperature,
+    topP,
+    topK,
+    maxOutputTokens,
+    setOption,
+    edit = false
+  } = props;
+  const maxHeight = edit ? 'max-h-[305px]' : 'max-h-[350px]';
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   const setModel = setOption('model');
@@ -49,17 +61,14 @@ function Settings(props) {
             />
           </div>
           <div className="grid w-full items-center gap-2">
-            <Label
-              htmlFor="modelLabel"
-              className="text-left text-sm font-medium"
-            >
+            <Label htmlFor="modelLabel" className="text-left text-sm font-medium">
               Custom Name <small className="opacity-40">(default: blank)</small>
             </Label>
             <Input
               id="modelLabel"
               disabled={readonly}
               value={modelLabel || ''}
-              onChange={e => setModelLabel(e.target.value || null)}
+              onChange={(e) => setModelLabel(e.target.value || null)}
               placeholder="Set a custom name for PaLM2"
               className={cn(
                 defaultTextProps,
@@ -68,17 +77,14 @@ function Settings(props) {
             />
           </div>
           <div className="grid w-full items-center gap-2">
-            <Label
-              htmlFor="promptPrefix"
-              className="text-left text-sm font-medium"
-            >
+            <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
               Prompt Prefix <small className="opacity-40">(default: blank)</small>
             </Label>
             <TextareaAutosize
               id="promptPrefix"
               disabled={readonly}
               value={promptPrefix || ''}
-              onChange={e => setPromptPrefix(e.target.value || null)}
+              onChange={(e) => setPromptPrefix(e.target.value || null)}
               placeholder="Set custom instructions or context. Ignored if empty."
               className={cn(
                 defaultTextProps,
@@ -91,17 +97,14 @@ function Settings(props) {
           <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
-                <Label
-                  htmlFor="temp-int"
-                  className="text-left text-sm font-medium"
-                >
+                <Label htmlFor="temp-int" className="text-left text-sm font-medium">
                   Temperature <small className="opacity-40">(default: 0.2)</small>
                 </Label>
                 <InputNumber
                   id="temp-int"
                   disabled={readonly}
                   value={temperature}
-                  onChange={value => setTemperature(value)}
+                  onChange={(value) => setTemperature(value)}
                   max={1}
                   min={0}
                   step={0.01}
@@ -118,7 +121,7 @@ function Settings(props) {
               <Slider
                 disabled={readonly}
                 value={[temperature]}
-                onValueChange={value => setTemperature(value[0])}
+                onValueChange={(value) => setTemperature(value[0])}
                 doubleClickHandler={() => setTemperature(1)}
                 max={1}
                 min={0}
@@ -126,25 +129,19 @@ function Settings(props) {
                 className="flex h-4 w-full"
               />
             </HoverCardTrigger>
-            <OptionHover
-              type="temp"
-              side="left"
-            />
+            <OptionHover type="temp" side="left" />
           </HoverCard>
           <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
-                <Label
-                  htmlFor="top-p-int"
-                  className="text-left text-sm font-medium"
-                >
+                <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
                   Top P <small className="opacity-40">(default: 0.95)</small>
                 </Label>
                 <InputNumber
                   id="top-p-int"
                   disabled={readonly}
                   value={topP}
-                  onChange={value => setTopP(value)}
+                  onChange={(value) => setTopP(value)}
                   max={1}
                   min={0}
                   step={0.01}
@@ -161,7 +158,7 @@ function Settings(props) {
               <Slider
                 disabled={readonly}
                 value={[topP]}
-                onValueChange={value => setTopP(value[0])}
+                onValueChange={(value) => setTopP(value[0])}
                 doubleClickHandler={() => setTopP(1)}
                 max={1}
                 min={0}
@@ -169,26 +166,20 @@ function Settings(props) {
                 className="flex h-4 w-full"
               />
             </HoverCardTrigger>
-            <OptionHover
-              type="topp"
-              side="left"
-            />
+            <OptionHover type="topp" side="left" />
           </HoverCard>
 
           <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
-                <Label
-                  htmlFor="top-k-int"
-                  className="text-left text-sm font-medium"
-                >
+                <Label htmlFor="top-k-int" className="text-left text-sm font-medium">
                   Top K <small className="opacity-40">(default: 40)</small>
                 </Label>
                 <InputNumber
                   id="top-k-int"
                   disabled={readonly}
                   value={topK}
-                  onChange={value => setTopK(value)}
+                  onChange={(value) => setTopK(value)}
                   max={40}
                   min={1}
                   step={0.01}
@@ -205,7 +196,7 @@ function Settings(props) {
               <Slider
                 disabled={readonly}
                 value={[topK]}
-                onValueChange={value => setTopK(value[0])}
+                onValueChange={(value) => setTopK(value[0])}
                 doubleClickHandler={() => setTopK(0)}
                 max={40}
                 min={1}
@@ -213,26 +204,20 @@ function Settings(props) {
                 className="flex h-4 w-full"
               />
             </HoverCardTrigger>
-            <OptionHover
-              type="topk"
-              side="left"
-            />
+            <OptionHover type="topk" side="left" />
           </HoverCard>
 
           <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
-                <Label
-                  htmlFor="max-tokens-int"
-                  className="text-left text-sm font-medium"
-                >
+                <Label htmlFor="max-tokens-int" className="text-left text-sm font-medium">
                   Max Output Tokens <small className="opacity-40">(default: 1024)</small>
                 </Label>
                 <InputNumber
                   id="max-tokens-int"
                   disabled={readonly}
                   value={maxOutputTokens}
-                  onChange={value => setMaxOutputTokens(value)}
+                  onChange={(value) => setMaxOutputTokens(value)}
                   max={1024}
                   min={1}
                   step={1}
@@ -249,7 +234,7 @@ function Settings(props) {
               <Slider
                 disabled={readonly}
                 value={[maxOutputTokens]}
-                onValueChange={value => setMaxOutputTokens(value[0])}
+                onValueChange={(value) => setMaxOutputTokens(value[0])}
                 doubleClickHandler={() => setMaxOutputTokens(0)}
                 max={1024}
                 min={1}
@@ -257,10 +242,7 @@ function Settings(props) {
                 className="flex h-4 w-full"
               />
             </HoverCardTrigger>
-            <OptionHover
-              type="maxoutputtokens"
-              side="left"
-            />
+            <OptionHover type="maxoutputtokens" side="left" />
           </HoverCard>
         </div>
       </div>

@@ -4,9 +4,25 @@ import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw'
+import rehypeRaw from 'rehype-raw';
 import CodeBlock from './CodeBlock';
 import { langSubset } from '~/utils/languages.mjs';
+
+const code = React.memo((props) => {
+  const { inline, className, children } = props;
+  const match = /language-(\w+)/.exec(className || '');
+  const lang = match && match[1];
+
+  if (inline) {
+    return <code className={className}>{children}</code>;
+  } else {
+    return <CodeBlock lang={lang || 'text'} codeChildren={children} />;
+  }
+});
+
+const p = React.memo((props) => {
+  return <p className="mb-2 whitespace-pre-wrap">{props?.children}</p>;
+});
 
 const Content = React.memo(({ content }) => {
   let rehypePlugins = [
@@ -19,7 +35,7 @@ const Content = React.memo(({ content }) => {
         subset: langSubset
       }
     ],
-    [rehypeRaw],
+    [rehypeRaw]
   ];
 
   return (
@@ -29,34 +45,13 @@ const Content = React.memo(({ content }) => {
       linkTarget="_new"
       components={{
         code,
-        p,
+        p
         // em,
       }}
     >
       {content}
     </ReactMarkdown>
   );
-});
-
-const code = React.memo((props) => {
-  const { inline, className, children } = props;
-  const match = /language-(\w+)/.exec(className || '');
-  const lang = match && match[1];
-
-  if (inline) {
-    return <code className={className}>{children}</code>;
-  } else {
-    return (
-      <CodeBlock
-        lang={lang || 'text'}
-        codeChildren={children}
-      />
-    );
-  }
-});
-
-const p = React.memo((props) => {
-  return <p className="whitespace-pre-wrap mb-2">{props?.children}</p>;
 });
 
 // const blinker = ({ node }) => {

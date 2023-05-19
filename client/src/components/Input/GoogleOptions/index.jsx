@@ -29,8 +29,8 @@ function GoogleOptions() {
 
   const models = endpointsConfig?.['google']?.['availableModels'] || [];
 
-  const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
-  const triggerExamples = () => setShowExamples(prev => !prev);
+  const triggerAdvancedMode = () => setAdvancedMode((prev) => !prev);
+  const triggerExamples = () => setShowExamples((prev) => !prev);
 
   const switchToSimpleMode = () => {
     setAdvancedMode(false);
@@ -40,10 +40,10 @@ function GoogleOptions() {
     setSaveAsDialogShow(true);
   };
 
-  const setOption = param => newValue => {
+  const setOption = (param) => (newValue) => {
     let update = {};
     update[param] = newValue;
-    setConversation(prevState => ({
+    setConversation((prevState) => ({
       ...prevState,
       ...update
     }));
@@ -56,7 +56,7 @@ function GoogleOptions() {
     currentExample[type] = { content: newValue };
     current[i] = currentExample;
     update.examples = current;
-    setConversation(prevState => ({
+    setConversation((prevState) => ({
       ...prevState,
       ...update
     }));
@@ -67,7 +67,7 @@ function GoogleOptions() {
     let current = conversation?.examples.slice() || [];
     current.push({ input: { content: '' }, output: { content: '' } });
     update.examples = current;
-    setConversation(prevState => ({
+    setConversation((prevState) => ({
       ...prevState,
       ...update
     }));
@@ -78,7 +78,7 @@ function GoogleOptions() {
     let current = conversation?.examples.slice() || [];
     if (current.length <= 1) {
       update.examples = [{ input: { content: '' }, output: { content: '' } }];
-      setConversation(prevState => ({
+      setConversation((prevState) => ({
         ...prevState,
         ...update
       }));
@@ -86,7 +86,7 @@ function GoogleOptions() {
     }
     current.pop();
     update.examples = current;
-    setConversation(prevState => ({
+    setConversation((prevState) => ({
       ...prevState,
       ...update
     }));

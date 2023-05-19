@@ -1,5 +1,5 @@
 import { Menu, Transition } from '@headlessui/react';
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment } from 'react';
 import SearchBar from './SearchBar';
 import ClearConvos from './ClearConvos';
 import DarkMode from './DarkMode';
@@ -10,12 +10,9 @@ import { cn } from '~/utils/';
 import DotsIcon from '../svg/DotsIcon';
 
 export default function NavLinks({ clearSearch, isSearchEnabled }) {
-  const { user, logout } = useAuthContext();
+  const { user } = useAuthContext();
   return (
-    <Menu
-      as="div"
-      className="group relative"
-    >
+    <Menu as="div" className="group relative">
       {({ open }) => (
         <>
           <Menu.Button
@@ -28,7 +25,9 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
               <div className="relative flex">
                 <img
                   className="rounded-sm"
-                  src={user?.avatar || `https://avatars.dicebear.com/api/initials/${user?.name}.svg`}
+                  src={
+                    user?.avatar || `https://avatars.dicebear.com/api/initials/${user?.name}.svg`
+                  }
                   alt=""
                 />
               </div>
@@ -50,21 +49,15 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
           >
             <Menu.Items className="absolute bottom-full left-0 z-20 mb-2 w-full translate-y-0 overflow-hidden rounded-md bg-[#050509] py-1.5 opacity-100 outline-none">
               <Menu.Item>
-                {({}) => <>{!!isSearchEnabled && <SearchBar clearSearch={clearSearch} />}</>}
+                {() => <>{!!isSearchEnabled && <SearchBar clearSearch={clearSearch} />}</>}
               </Menu.Item>
-              <Menu.Item>{({}) => <ExportConversation />}</Menu.Item>
+              <Menu.Item>{() => <ExportConversation />}</Menu.Item>
 
-              <div
-                className="my-1.5 h-px bg-white/20"
-                role="none"
-              ></div>
-              <Menu.Item>{({}) => <DarkMode />}</Menu.Item>
-              <Menu.Item>{({}) => <ClearConvos />}</Menu.Item>
+              <div className="my-1.5 h-px bg-white/20" role="none"></div>
+              <Menu.Item>{() => <DarkMode />}</Menu.Item>
+              <Menu.Item>{() => <ClearConvos />}</Menu.Item>
 
-              <div
-                className="my-1.5 h-px bg-white/20"
-                role="none"
-              ></div>
+              <div className="my-1.5 h-px bg-white/20" role="none"></div>
               <Menu.Item>
                 <Logout />
               </Menu.Item>

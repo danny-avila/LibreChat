@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+/* eslint-disable react-hooks/exhaustive-deps */
+import { useState, useEffect, useRef } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import copy from 'copy-to-clipboard';
 import Plugin from './Plugin.jsx';
@@ -13,6 +14,15 @@ import { useGetConversationByIdQuery } from '~/data-provider';
 import { cn } from '~/utils/';
 import store from '~/store';
 
+function isJson(str) {
+  try {
+    JSON.parse(str);
+  } catch (e) {
+    return false;
+  }
+  return true;
+}
+
 export default function Message({
   conversation,
   message,
@@ -23,7 +33,7 @@ export default function Message({
   siblingCount,
   setSiblingIdx
 }) {
-  const { text, searchResult, isCreatedByUser, error, submitting, unfinished, cancelled } = message;
+  const { text, searchResult, isCreatedByUser, error, submitting, unfinished } = message;
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const setLatestMessage = useSetRecoilState(store.latestMessage);
   const [abortScroll, setAbort] = useState(false);
@@ -33,7 +43,9 @@ export default function Message({
   const { ask, regenerate } = useMessageHandler();
   const { switchToConversation } = store.useConversation();
   const blinker = submitting && isSubmitting;
-  const getConversationQuery = useGetConversationByIdQuery(message.conversationId, { enabled: false });
+  const getConversationQuery = useGetConversationByIdQuery(message.conversationId, {
+    enabled: false
+  });
 
   // debugging
   // useEffect(() => {
@@ -53,13 +65,30 @@ export default function Message({
     }
   }, [last, message]);
 
-  const enterEdit = cancel => setCurrentEditId(cancel ? -1 : message.messageId);
+  const enterEdit = (cancel) => setCurrentEditId(cancel ? -1 : message.messageId);
 
   const handleWheel = () => {
     if (blinker) {
       setAbort(true);
     } else {
       setAbort(false);
+    }
+  };
+
+  const getError = (text) => {
+    const match = text.match(/\{[^{}]*\}/);
+    var json = match ? match[0] : '';
+    if (isJson(json)) {
+      json = JSON.parse(json);
+      if (json.code === 'invalid_api_key') {
+        return 'Invalid API key. Please check your API key and try again. You can access your API key by clicking on the model logo in the top-left corner of the textbox.';
+      } else if (json.type === 'insufficient_quota') {
+        return "We're sorry, but the default API key has reached its limit. To continue using this service, please set up your own API key. You can do this by clicking on the model logo in the top-left corner of the textbox.";
+      } else {
+        return `Oops! Something went wrong. Please try again in a few moments. Here's the specific error message we encountered: ${text}`;
+      }
+    } else {
+      return `Oops! Something went wrong. Please try again in a few moments. Here's the specific error message we encountered: ${text}`;
     }
   };
 
@@ -110,17 +139,14 @@ export default function Message({
 
   const clickSearchResult = async () => {
     if (!searchResult) return;
-    getConversationQuery.refetch(message.conversationId).then(response => {
+    getConversationQuery.refetch(message.conversationId).then((response) => {
       switchToConversation(response.data);
     });
   };
 
   return (
     <>
-      <div
-        {...props}
-        onWheel={handleWheel}
-      >
+      <div {...props} onWheel={handleWheel}>
         <div className="relative m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
           <div className="relative flex h-[30px] w-[30px] flex-col items-end text-right text-xs md:text-sm">
             {typeof icon === 'string' && icon.match(/[^\\x00-\\x7F]+/) ? (
@@ -151,7 +177,7 @@ export default function Message({
               {error ? (
                 <div className="flex flex min-h-[20px] flex-grow flex-col items-start gap-2 gap-4  text-red-500">
                   <div className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-100">
-                    {`An error occurred. Please try again in a few moments.\n\nError message: ${text}`}
+                    {getError(text)}
                   </div>
                 </div>
               ) : edit ? (
@@ -173,10 +199,7 @@ export default function Message({
                     >
                       Save & Submit
                     </button>
-                    <button
-                      className="btn btn-neutral relative"
-                      onClick={() => enterEdit(true)}
-                    >
+                    <button className="btn btn-neutral relative" onClick={() => enterEdit(true)}>
                       Cancel
                     </button>
                   </div>

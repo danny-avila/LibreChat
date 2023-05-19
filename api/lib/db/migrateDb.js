@@ -110,7 +110,7 @@ async function migrateDb() {
   ret[0] = await migrateToStrictFollowParentMessageIdChain();
   ret[1] = await migrateToSupportBetterCustomization();
 
-  const isMigrated = !!ret.find(element => !element?.noNeed);
+  const isMigrated = !!ret.find((element) => !element?.noNeed);
 
   if (!isMigrated) console.log('[Migrate] Nothing to migrate');
 }

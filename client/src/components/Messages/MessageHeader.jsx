@@ -1,20 +1,19 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import EndpointOptionsDialog from '../Endpoints/EndpointOptionsDialog';
 import { cn } from '~/utils/';
-import { Button } from '../ui/Button.tsx';
 
 import store from '~/store';
 
-const clipPromptPrefix = str => {
-  if (typeof str !== 'string') {
-    return null;
-  } else if (str.length > 10) {
-    return str.slice(0, 10) + '...';
-  } else {
-    return str;
-  }
-};
+// const clipPromptPrefix = (str) => {
+//   if (typeof str !== 'string') {
+//     return null;
+//   } else if (str.length > 10) {
+//     return str.slice(0, 10) + '...';
+//   } else {
+//     return str;
+//   }
+// };
 
 const MessageHeader = ({ isSearchView = false }) => {
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
@@ -76,7 +75,9 @@ const MessageHeader = ({ isSearchView = false }) => {
         )}
         onClick={() => (isNotClickable ? null : setSaveAsDialogShow(true))}
       >
-        <div className="d-block flex w-full items-center justify-center p-3">{getConversationTitle()}</div>
+        <div className="d-block flex w-full items-center justify-center p-3">
+          {getConversationTitle()}
+        </div>
       </div>
 
       <EndpointOptionsDialog

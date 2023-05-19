@@ -27,12 +27,12 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
-  const triggerExamples = () => setShowExamples(prev => !prev);
+  const triggerExamples = () => setShowExamples((prev) => !prev);
 
-  const setOption = param => newValue => {
+  const setOption = (param) => (newValue) => {
     let update = {};
     update[param] = newValue;
-    setPreset(prevState =>
+    setPreset((prevState) =>
       cleanupPreset({
         preset: {
           ...prevState,
@@ -50,7 +50,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
     currentExample[type] = { content: newValue };
     current[i] = currentExample;
     update.examples = current;
-    setPreset(prevState =>
+    setPreset((prevState) =>
       cleanupPreset({
         preset: {
           ...prevState,
@@ -66,7 +66,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
     let current = preset?.examples.slice() || [];
     current.push({ input: { content: '' }, output: { content: '' } });
     update.examples = current;
-    setPreset(prevState =>
+    setPreset((prevState) =>
       cleanupPreset({
         preset: {
           ...prevState,
@@ -82,7 +82,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
     let current = preset?.examples.slice() || [];
     if (current.length <= 1) {
       update.examples = [{ input: { content: '' }, output: { content: '' } }];
-      setPreset(prevState =>
+      setPreset((prevState) =>
         cleanupPreset({
           preset: {
             ...prevState,
@@ -95,7 +95,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
     }
     current.pop();
     update.examples = current;
-    setPreset(prevState =>
+    setPreset((prevState) =>
       cleanupPreset({
         preset: {
           ...prevState,
@@ -115,7 +115,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
       url: '/api/presets',
       data: cleanupPreset({ preset, endpointsConfig }),
       withCredentials: true
-    }).then(res => {
+    }).then((res) => {
       setPresets(res?.data);
     });
   };
@@ -131,13 +131,11 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
 
   useEffect(() => {
     setPreset(_preset);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={`${title || 'Edit Preset'} - ${preset?.title}`}
         className="max-w-full sm:max-w-4xl"
@@ -145,16 +143,13 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
           <div className="flex w-full flex-col items-center gap-2">
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
-                <Label
-                  htmlFor="chatGptLabel"
-                  className="text-left text-sm font-medium"
-                >
+                <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
                   Preset Name
                 </Label>
                 <Input
                   id="chatGptLabel"
                   value={preset?.title || ''}
-                  onChange={e => setOption('title')(e.target.value || '')}
+                  onChange={(e) => setOption('title')(e.target.value || '')}
                   placeholder="Set a custom name, in case you can find this preset"
                   className={cn(
                     defaultTextProps,
@@ -163,10 +158,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
                 />
               </div>
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
-                <Label
-                  htmlFor="endpoint"
-                  className="text-left text-sm font-medium"
-                >
+                <Label htmlFor="endpoint" className="text-left text-sm font-medium">
                   Endpoint
                 </Label>
                 <Dropdown
@@ -194,11 +186,9 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
             </div>
             <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
             <div className="w-full p-0">
-              {((preset?.endpoint === 'google' && !showExamples) || preset?.endpoint !== 'google') && (
-                <Settings
-                  preset={_preset}
-                  setOption={setOption}
-                />
+              {((preset?.endpoint === 'google' && !showExamples) ||
+                preset?.endpoint !== 'google') && (
+                <Settings preset={preset} setOption={setOption} />
               )}
               {preset?.endpoint === 'google' && showExamples && (
                 <Examples
@@ -224,10 +214,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
         }
         leftButtons={
           <>
-            <DialogButton
-              onClick={exportPreset}
-              className="dark:hover:gray-400 border-gray-700"
-            >
+            <DialogButton onClick={exportPreset} className="dark:hover:gray-400 border-gray-700">
               Export
             </DialogButton>
           </>

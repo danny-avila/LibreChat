@@ -1,18 +1,21 @@
 const mongoose = require('mongoose');
 
-const promptSchema = mongoose.Schema({
-  title: {
-    type: String,
-    required: true
+const promptSchema = mongoose.Schema(
+  {
+    title: {
+      type: String,
+      required: true
+    },
+    prompt: {
+      type: String,
+      required: true
+    },
+    category: {
+      type: String
+    }
   },
-  prompt: {
-    type: String,
-    required: true
-  },
-  category: {
-    type: String,
-  },
-}, { timestamps: true });
+  { timestamps: true }
+);
 
 const Prompt = mongoose.models.Prompt || mongoose.model('Prompt', promptSchema);
 
@@ -31,7 +34,7 @@ module.exports = {
   },
   getPrompts: async (filter) => {
     try {
-      return await Prompt.find(filter).exec()
+      return await Prompt.find(filter).exec();
     } catch (error) {
       console.error(error);
       return { prompt: 'Error getting prompts' };
@@ -39,10 +42,10 @@ module.exports = {
   },
   deletePrompts: async (filter) => {
     try {
-      return await Prompt.deleteMany(filter).exec()
+      return await Prompt.deleteMany(filter).exec();
     } catch (error) {
       console.error(error);
       return { prompt: 'Error deleting prompts' };
     }
   }
-}
+};

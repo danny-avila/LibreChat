@@ -17,7 +17,7 @@ export default function SubmitButton({
 
   const isTokenProvided = endpointsConfig?.[endpoint]?.userProvide ? !!getToken() : true;
 
-  const clickHandler = e => {
+  const clickHandler = (e) => {
     e.preventDefault();
     submitMessage();
   };
@@ -33,7 +33,7 @@ export default function SubmitButton({
         type="button"
         className="group absolute bottom-0 right-0 flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500"
       >
-        <div className="m-1 mr-0 rounded-md p-2 pt-[10px] pb-[10px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
+        <div className="m-1 mr-0 rounded-md p-2 pb-[10px] pt-[10px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
           <StopGeneratingIcon />
         </div>
       </button>
@@ -61,7 +61,7 @@ export default function SubmitButton({
   //     </div>
   //   </button>
   // );
-  else if (!isTokenProvided) {
+  else if (!isTokenProvided && endpoint !== 'openAI') {
     return (
       <>
         <button
@@ -69,7 +69,7 @@ export default function SubmitButton({
           type="button"
           className="group absolute bottom-0 right-0 flex h-[100%] w-auto items-center justify-center bg-transparent p-1 text-gray-500"
         >
-          <div className="m-1 mr-0 rounded-md p-2 pt-[10px] pb-[10px] align-middle text-xs group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
+          <div className="m-1 mr-0 rounded-md p-2 pb-[10px] pt-[10px] align-middle text-xs group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
             <Settings className="mr-1 inline-block w-[18px]" />
             Set Token First
           </div>
@@ -88,7 +88,7 @@ export default function SubmitButton({
         disabled={disabled}
         className="group absolute bottom-0 right-0 flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500"
       >
-        <div className="m-1 mr-0 rounded-md p-2 pt-[10px] pb-[10px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
+        <div className="m-1 mr-0 rounded-md p-2 pb-[10px] pt-[10px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
           <svg
             stroke="currentColor"
             fill="none"
@@ -101,12 +101,7 @@ export default function SubmitButton({
             width="1em"
             xmlns="http://www.w3.org/2000/svg"
           >
-            <line
-              x1="22"
-              y1="2"
-              x2="11"
-              y2="13"
-            />
+            <line x1="22" y1="2" x2="11" y2="13" />
             <polygon points="22 2 15 22 11 13 2 9 22 2" />
           </svg>
         </div>

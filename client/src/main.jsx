@@ -7,7 +7,6 @@ import { ApiErrorBoundaryProvider } from './hooks/ApiErrorBoundaryContext';
 const container = document.getElementById('root');
 const root = createRoot(container);
 
-
 root.render(
   <ApiErrorBoundaryProvider>
     <App />

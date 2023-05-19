@@ -26,7 +26,7 @@ const loginUser = async (user) => {
 
 const logoutUser = async (user, refreshToken) => {
   User.findById(user._id).then((user) => {
-    const tokenIndex = user.refreshToken.findIndex(item => item.refreshToken === refreshToken);
+    const tokenIndex = user.refreshToken.findIndex((item) => item.refreshToken === refreshToken);
 
     if (tokenIndex !== -1) {
       user.refreshToken.id(user.refreshToken[tokenIndex]._id).remove();
@@ -78,7 +78,7 @@ const registerUser = async (user) => {
     }
 
     //determine if this is the first registered user (not counting anonymous_user)
-    const isFirstRegisteredUser = await User.countDocuments({}) === 0;
+    const isFirstRegisteredUser = (await User.countDocuments({})) === 0;
 
     try {
       const newUser = await new User({
@@ -88,7 +88,7 @@ const registerUser = async (user) => {
         username,
         name,
         avatar: null,
-        role: isFirstRegisteredUser ? 'ADMIN' : 'USER',
+        role: isFirstRegisteredUser ? 'ADMIN' : 'USER'
       });
 
       // todo: implement refresh token
@@ -104,9 +104,10 @@ const registerUser = async (user) => {
           newUser.save();
         });
       });
+      console.log('newUser', newUser);
       if (isFirstRegisteredUser) {
-        console.log('Migrating data to first registered user...');
         migrateDataToFirstUser(newUser);
+        // console.log(migrate);
       }
       response = { status: 200, user: newUser };
       return response;
@@ -185,12 +186,11 @@ const resetPassword = async (userId, token, password) => {
   return { message: 'Password reset was successful' };
 };
 
-
 module.exports = {
   // signup,
   registerUser,
   loginUser,
   logoutUser,
   requestPasswordReset,
-  resetPassword,
+  resetPassword
 };

@@ -14,26 +14,23 @@ export default function DeleteButton({ conversationId, renaming, cancelHandler, 
   const deleteConvoMutation = useDeleteConversationMutation(conversationId);
 
   useEffect(() => {
-    if(deleteConvoMutation.isSuccess) {
-      if (currentConversation?.conversationId == conversationId) newConversation(); 
-      
+    if (deleteConvoMutation.isSuccess) {
+      if (currentConversation?.conversationId == conversationId) newConversation();
+
       refreshConversations();
       retainView();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deleteConvoMutation.isSuccess]);
 
-
   const clickHandler = () => {
-    deleteConvoMutation.mutate({conversationId, source: 'button' });
+    deleteConvoMutation.mutate({ conversationId, source: 'button' });
   };
 
   const handler = renaming ? cancelHandler : clickHandler;
 
   return (
-    <button
-      className="p-1 hover:text-white"
-      onClick={handler}
-    >
+    <button className="p-1 hover:text-white" onClick={handler}>
       {renaming ? <CrossIcon /> : <TrashIcon />}
     </button>
   );

@@ -21,7 +21,7 @@ function BingAIOptions({ show }) {
   if (endpoint !== 'bingAI') return null;
   if (conversationId !== 'new' && !show) return null;
 
-  const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
+  const triggerAdvancedMode = () => setAdvancedMode((prev) => !prev);
 
   const switchToSimpleMode = () => {
     setAdvancedMode(false);
@@ -31,10 +31,10 @@ function BingAIOptions({ show }) {
     setSaveAsDialogShow(true);
   };
 
-  const setOption = param => newValue => {
+  const setOption = (param) => (newValue) => {
     let update = {};
     update[param] = newValue;
-    setConversation(prevState => ({
+    setConversation((prevState) => ({
       ...prevState,
       ...update
     }));
@@ -44,8 +44,11 @@ function BingAIOptions({ show }) {
     'transition-colors shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 hover:border-black/10 focus:border-black/10 dark:border-black/10 dark:hover:border-black/10 dark:focus:border-black/10 border dark:bg-gray-700 text-black dark:text-white';
   const defaultClasses =
     'p-2 rounded-md min-w-[75px] font-normal bg-white/[.60] dark:bg-gray-700 text-black text-xs';
-  const defaultSelected = cn(defaultClasses, 'font-medium data-[state=active]:text-white text-xs text-white');
-  const selectedClass = val => val + '-tab ' + defaultSelected;
+  const defaultSelected = cn(
+    defaultClasses,
+    'font-medium data-[state=active]:text-white text-xs text-white'
+  );
+  const selectedClass = (val) => val + '-tab ' + defaultSelected;
 
   return (
     <>
@@ -58,7 +61,7 @@ function BingAIOptions({ show }) {
         <SelectDropDown
           title="Mode"
           value={jailbreak ? 'Sydney' : 'BingAI'}
-          setValue={value => setOption('jailbreak')(value === 'Sydney')}
+          setValue={(value) => setOption('jailbreak')(value === 'Sydney')}
           availableValues={['BingAI', 'Sydney']}
           showAbove={true}
           showLabel={false}
@@ -75,7 +78,7 @@ function BingAIOptions({ show }) {
             cardStyle +
             ' z-50 flex h-[40px] flex-none items-center justify-center px-0 hover:bg-slate-50 dark:hover:bg-gray-600'
           }
-          onValueChange={value => setOption('toneStyle')(value.toLowerCase())}
+          onValueChange={(value) => setOption('toneStyle')(value.toLowerCase())}
         >
           <TabsList className="bg-white/[.60] dark:bg-gray-700">
             <TabsTrigger

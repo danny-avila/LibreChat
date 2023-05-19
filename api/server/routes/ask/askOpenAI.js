@@ -169,11 +169,13 @@ const ask = async ({
     };
     const abortKey = conversationId;
     abortControllers.set(abortKey, { abortController, ...endpointOption });
+    const oaiApiKey = req.body?.token ?? null;
 
     let response = await askClient({
       text,
       parentMessageId: userParentMessageId,
       conversationId,
+      oaiApiKey,
       ...endpointOption,
       onProgress: progressCallback.call(null, {
         res,
@@ -236,7 +238,11 @@ const ask = async ({
 
     // If response has parentMessageId, the fake userMessage.messageId should be updated to the real one.
     if (!overrideParentMessageId)
-      await saveMessage({ ...userMessage, messageId: userMessageId, newMessageId: newUserMassageId });
+      await saveMessage({
+        ...userMessage,
+        messageId: userMessageId,
+        newMessageId: newUserMassageId
+      });
     userMessageId = newUserMassageId;
 
     sendMessage(res, {
@@ -249,7 +255,12 @@ const ask = async ({
     res.end();
 
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
-      const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: responseMessage });
+      const title = await titleConvo({
+        endpoint: endpointOption?.endpoint,
+        text,
+        response: responseMessage,
+        oaiApiKey
+      });
       await saveConvo(req.user.id, {
         conversationId: conversationId,
         title

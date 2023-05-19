@@ -53,6 +53,7 @@ export default function Chat() {
       // conversationId (in url) should always follow conversation?.conversationId, unless conversation is null
       navigate(`/chat/${conversation?.conversationId}`);
     }
+    document.title = conversation?.title || import.meta.env.VITE_APP_TITLE || 'Chat';
   }, [conversation, conversationId]);
 
   useEffect(() => {
@@ -60,11 +61,11 @@ export default function Chat() {
       messagesQuery.refetch(conversation?.conversationId);
     }
   }, [conversation?.conversationId, messagesQuery, messagesTree]);
-  
+
   useEffect(() => {
     if (messagesQuery.data) {
       setMessages(messagesQuery.data);
-    } else if(messagesQuery.isError) {
+    } else if (messagesQuery.isError) {
       console.error('failed to fetch the messages');
       console.error(messagesQuery.error);
       setMessages(null);

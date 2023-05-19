@@ -13,7 +13,7 @@ export default function NewChat() {
   return (
     <a
       onClick={clickHandler}
-      className="mb-2 flex flex-shrink-0 cursor-pointer items-center gap-3 rounded-md border border-white/20 py-3 px-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10"
+      className="mb-2 flex flex-shrink-0 cursor-pointer items-center gap-3 rounded-md border border-white/20 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10"
     >
       <svg
         stroke="currentColor"
@@ -27,18 +27,8 @@ export default function NewChat() {
         width="1em"
         xmlns="http://www.w3.org/2000/svg"
       >
-        <line
-          x1="12"
-          y1="5"
-          x2="12"
-          y2="19"
-        />
-        <line
-          x1="5"
-          y1="12"
-          x2="19"
-          y2="12"
-        />
+        <line x1="12" y1="5" x2="12" y2="19" />
+        <line x1="5" y1="12" x2="19" y2="12" />
       </svg>
       New chat
     </a>

@@ -22,10 +22,10 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
     setEndpointName('PaLM');
   }
 
-  const setOption = param => newValue => {
+  const setOption = (param) => (newValue) => {
     let update = {};
     update[param] = newValue;
-    setPreset(prevState => ({
+    setPreset((prevState) => ({
       ...prevState,
       ...update
     }));
@@ -45,25 +45,19 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
 
   useEffect(() => {
     setPreset(_preset);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   return (
     <>
-      <Dialog
-        open={open}
-        onOpenChange={onOpenChange}
-      >
+      <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogTemplate
           title={`${title || 'View Options'} - ${endpointName}`}
           className="max-w-full sm:max-w-4xl"
           main={
             <div className="flex w-full flex-col items-center gap-2">
               <div className="w-full p-0">
-                <Settings
-                  preset={preset}
-                  readonly={true}
-                  setOption={setOption}
-                />
+                <Settings preset={preset} readonly={true} setOption={setOption} />
               </div>
             </div>
           }
@@ -79,10 +73,7 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
           }
           leftButtons={
             <>
-              <DialogButton
-                onClick={exportPreset}
-                className="dark:hover:gray-400 border-gray-700"
-              >
+              <DialogButton onClick={exportPreset} className="dark:hover:gray-400 border-gray-700">
                 Export
               </DialogButton>
             </>

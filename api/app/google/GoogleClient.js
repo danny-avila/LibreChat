@@ -3,7 +3,10 @@ const TextStream = require('../stream');
 const { google } = require('googleapis');
 const { Agent, ProxyAgent } = require('undici');
 const { getMessages, saveMessage, saveConvo } = require('../../models');
-const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('@dqbd/tiktoken');
+const {
+  encoding_for_model: encodingForModel,
+  get_encoding: getEncoding
+} = require('@dqbd/tiktoken');
 
 const tokenizersCache = {};
 
@@ -42,7 +45,7 @@ class GoogleAgent {
     }
 
     this.options.examples = this.options.examples.filter(
-      obj => obj.input.content !== '' && obj.output.content !== ''
+      (obj) => obj.input.content !== '' && obj.output.content !== ''
     );
 
     const modelOptions = this.options.modelOptions || {};
@@ -65,7 +68,8 @@ class GoogleAgent {
     // The max prompt tokens is determined by the max context tokens minus the max response tokens.
     // Earlier messages will be dropped until the prompt is within the limit.
     this.maxResponseTokens = this.modelOptions.maxOutputTokens || 1024;
-    this.maxPromptTokens = this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
+    this.maxPromptTokens =
+      this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
 
     if (this.maxPromptTokens + this.maxResponseTokens > this.maxContextTokens) {
       throw new Error(
@@ -291,7 +295,10 @@ class GoogleAgent {
     try {
       const result = await this.getCompletion(message, messages, opts.abortController);
       blocked = result?.predictions?.[0]?.safetyAttributes?.blocked;
-      reply = result?.predictions?.[0]?.candidates?.[0]?.content || result?.predictions?.[0]?.content || '';
+      reply =
+        result?.predictions?.[0]?.candidates?.[0]?.content ||
+        result?.predictions?.[0]?.content ||
+        '';
       if (blocked === true) {
         reply = `Google blocked a proper response to your message:\n${JSON.stringify(
           result.predictions[0].safetyAttributes
@@ -368,7 +375,7 @@ class GoogleAgent {
     let currentMessageId = parentMessageId;
     while (currentMessageId) {
       // eslint-disable-next-line no-loop-func
-      const message = messages.find(m => m.messageId === currentMessageId);
+      const message = messages.find((m) => m.messageId === currentMessageId);
       if (!message) {
         break;
       }
@@ -380,7 +387,7 @@ class GoogleAgent {
       return [];
     }
 
-    return orderedMessages.map(msg => ({
+    return orderedMessages.map((msg) => ({
       isCreatedByUser: msg.isCreatedByUser,
       content: msg.text
     }));

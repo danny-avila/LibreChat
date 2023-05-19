@@ -2,11 +2,7 @@
   "compilerOptions": {
     "target": "ESNext",
     "useDefineForClassFields": true,
-    "lib": [
-      "DOM",
-      "DOM.Iterable",
-      "ESNext"
-    ],
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "allowJs": true,
     "skipLibCheck": false,
     "esModuleInterop": true,
@@ -25,7 +21,5 @@
       "~/*": ["./src/*"]
     }
   },
-  "include": [
-    "src"
-  ],
+  "include": ["src", "vite.config.ts"]
 }

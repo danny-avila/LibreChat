@@ -14,9 +14,9 @@ const alternateName = {
   chatGPTBrowser: 'ChatGPT',
   gptPlugins: 'Plugins',
   google: 'PaLM',
-}
+};
 
-export default function ModelItem({ endpoint, value, onSelect }) {
+export default function ModelItem({ endpoint, value }) {
   const [setTokenDialogOpen, setSetTokenDialogOpen] = useState(false);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
@@ -38,13 +38,13 @@ export default function ModelItem({ endpoint, value, onSelect }) {
       >
         {icon}
         {alternateName[endpoint] || endpoint}
-        {!!['azureOpenAI', 'openAI'].find(e => e === endpoint) && <sup>$</sup>}
+        {!!['azureOpenAI', 'openAI'].find((e) => e === endpoint) && <sup>$</sup>}
         {endpoint === 'gptPlugins' && <span className="py-0.25 ml-1 rounded px-1 text-[10px] font-semibold uppercase bg-blue-200 text-[#4559A4]">alpha</span>}
         <div className="flex w-4 flex-1" />
         {isUserProvided ? (
           <button
             className="invisible m-0 mr-1 flex-initial rounded-md p-0 text-xs font-medium text-gray-400 hover:text-gray-700 group-hover:visible dark:font-normal dark:text-gray-400 dark:hover:text-gray-200"
-            onClick={e => {
+            onClick={(e) => {
               e.preventDefault();
               setSetTokenDialogOpen(true);
             }}

@@ -26,8 +26,16 @@ export default function Messages({ isSearchView = false }) {
 
   const { screenshotTargetRef } = useScreenshot();
 
-  // const models = useRecoilValue(store.models) || [];
-  // const modelName = models.find(element => element.model == model)?.name;
+  const handleScroll = () => {
+    const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
+    const diff = Math.abs(scrollHeight - scrollTop);
+    const percent = Math.abs(clientHeight - diff) / clientHeight;
+    if (percent <= 0.2) {
+      setShowScrollButton(false);
+    } else {
+      setShowScrollButton(true);
+    }
+  };
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -47,6 +55,7 @@ export default function Messages({ isSearchView = false }) {
     };
   }, [_messagesTree]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const scrollToBottom = useCallback(
     throttle(
       () => {
@@ -59,16 +68,7 @@ export default function Messages({ isSearchView = false }) {
     [messagesEndRef]
   );
 
-  const handleScroll = () => {
-    const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
-    const diff = Math.abs(scrollHeight - scrollTop);
-    const percent = Math.abs(clientHeight - diff) / clientHeight;
-    if (percent <= 0.2) {
-      setShowScrollButton(false);
-    } else {
-      setShowScrollButton(true);
-    }
-  };
+
 
   let timeoutId = null;
   const debouncedHandleScroll = () => {
@@ -76,7 +76,7 @@ export default function Messages({ isSearchView = false }) {
     timeoutId = setTimeout(handleScroll, 100);
   };
 
-  const scrollHandler = e => {
+  const scrollHandler = (e) => {
     e.preventDefault();
     scrollToBottom();
   };
@@ -87,10 +87,7 @@ export default function Messages({ isSearchView = false }) {
       ref={scrollableRef}
       onScroll={debouncedHandleScroll}
     >
-      <div
-        className="dark:gpt-dark-gray mb-32 h-auto md:mb-48"
-        ref={screenshotTargetRef}
-      >
+      <div className="dark:gpt-dark-gray mb-32 h-auto md:mb-48" ref={screenshotTargetRef}>
         <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
           <MessageHeader isSearchView={isSearchView} />
           {_messagesTree === null ? (

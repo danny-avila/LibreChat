@@ -31,13 +31,13 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use(passport.initialize());
   require('../strategies/jwtStrategy');
   require('../strategies/localStrategy');
-  if(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     require('../strategies/googleStrategy');
   }
-  if(process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
+  if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
     require('../strategies/facebookStrategy');
   }
-  app.use('/oauth', routes.oauth)
+  app.use('/oauth', routes.oauth);
   // api endpoint
   app.use('/api/auth', routes.auth);
   app.use('/api/user', routes.user);
@@ -61,14 +61,16 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
       console.log(
         `Server listening on all interface at port ${port}. Use http://localhost:${port} to access it`
       );
-    else console.log(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
+    else
+      console.log(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
   });
 })();
 
 let messageCount = 0;
 process.on('uncaughtException', (err) => {
   if (!err.message.includes('fetch failed')) {
-    console.error('There was an uncaught error:', err.message);
+    console.error('There was an uncaught error:');
+    console.error(err);
   }
 
   if (err.message.includes('fetch failed')) {

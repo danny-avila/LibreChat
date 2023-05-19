@@ -16,8 +16,15 @@ function OpenAIOptions() {
 
   const [conversation, setConversation] = useRecoilState(store.conversation) || {};
   const { endpoint, conversationId } = conversation;
-  const { model, chatGptLabel, promptPrefix, temperature, top_p, presence_penalty, frequency_penalty } =
-    conversation;
+  const {
+    model,
+    chatGptLabel,
+    promptPrefix,
+    temperature,
+    top_p,
+    presence_penalty,
+    frequency_penalty
+  } = conversation;
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
@@ -26,7 +33,7 @@ function OpenAIOptions() {
 
   const models = endpointsConfig?.['openAI']?.['availableModels'] || [];
 
-  const triggerAdvancedMode = () => setAdvancedMode(prev => !prev);
+  const triggerAdvancedMode = () => setAdvancedMode((prev) => !prev);
 
   const switchToSimpleMode = () => {
     setAdvancedMode(false);
@@ -36,10 +43,10 @@ function OpenAIOptions() {
     setSaveAsDialogShow(true);
   };
 
-  const setOption = param => newValue => {
+  const setOption = (param) => (newValue) => {
     let update = {};
     update[param] = newValue;
-    setConversation(prevState => ({
+    setConversation((prevState) => ({
       ...prevState,
       ...update
     }));

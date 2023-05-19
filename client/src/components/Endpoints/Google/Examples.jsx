@@ -12,10 +12,7 @@ function Examples({ readonly, examples, setExample, addExample, removeExample, e
   return (
     <>
       <div className={`${maxHeight} overflow-y-auto`}>
-        <div
-          id="examples-grid"
-          className="grid gap-6 sm:grid-cols-2"
-        >
+        <div id="examples-grid" className="grid gap-6 sm:grid-cols-2">
           {examples.map((example, idx) => (
             <React.Fragment key={idx}>
               {/* Input */}
@@ -25,17 +22,14 @@ function Examples({ readonly, examples, setExample, addExample, removeExample, e
                 } flex flex-col items-center justify-start gap-6 sm:col-span-1`}
               >
                 <div className="grid w-full items-center gap-2">
-                  <Label
-                    htmlFor={`input-${idx}`}
-                    className="text-left text-sm font-medium"
-                  >
+                  <Label htmlFor={`input-${idx}`} className="text-left text-sm font-medium">
                     Input <small className="opacity-40">(default: blank)</small>
                   </Label>
                   <TextareaAutosize
                     id={`input-${idx}`}
                     disabled={readonly}
                     value={example?.input?.content || ''}
-                    onChange={e => setExample(idx, 'input', e.target.value || null)}
+                    onChange={(e) => setExample(idx, 'input', e.target.value || null)}
                     placeholder="Set example input. Example is ignored if empty."
                     className={cn(
                       defaultTextProps,
@@ -52,17 +46,14 @@ function Examples({ readonly, examples, setExample, addExample, removeExample, e
                 } flex flex-col items-center justify-start gap-6 sm:col-span-1`}
               >
                 <div className="grid w-full items-center gap-2">
-                  <Label
-                    htmlFor={`output-${idx}`}
-                    className="text-left text-sm font-medium"
-                  >
+                  <Label htmlFor={`output-${idx}`} className="text-left text-sm font-medium">
                     Output <small className="opacity-40">(default: blank)</small>
                   </Label>
                   <TextareaAutosize
                     id={`output-${idx}`}
                     disabled={readonly}
                     value={example?.output?.content || ''}
-                    onChange={e => setExample(idx, 'output', e.target.value || null)}
+                    onChange={(e) => setExample(idx, 'output', e.target.value || null)}
                     placeholder={`Set example output. Example is ignored if empty.`}
                     className={cn(
                       defaultTextProps,

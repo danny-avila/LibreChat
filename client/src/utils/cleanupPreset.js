@@ -44,7 +44,9 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
       endpoint,
       presetId: _preset?.presetId ?? null,
       model:
-        _preset?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'text-davinci-002-render-sha',
+        _preset?.model ??
+        endpointsConfig[endpoint]?.availableModels?.[0] ??
+        'text-davinci-002-render-sha',
       title: _preset?.title ?? 'New Preset'
     };
   }  else if (endpoint === 'gptPlugins') {
