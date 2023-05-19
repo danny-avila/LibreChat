@@ -3,7 +3,8 @@ import { Search } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import store from '~/store';
 
-const SearchBar = forwardRef(({ clearSearch }) => {
+const SearchBar = forwardRef((props, ref) => {
+  const { clearSearch } = props;
   const [searchQuery, setSearchQuery] = useRecoilState(store.searchQuery);
 
   const handleKeyUp = (e) => {
@@ -20,7 +21,10 @@ const SearchBar = forwardRef(({ clearSearch }) => {
   };
 
   return (
-    <div className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700">
+    <div
+      ref={ref}
+      className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+    >
       {<Search className="h-4 w-4" />}
       <input
         type="text"
