@@ -10,6 +10,26 @@ import useDebounce from '~/hooks/useDebounce';
 import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
 
+import resolveConfig from 'tailwindcss/resolveConfig';
+const tailwindConfig = import('~/tailwind.config.js')
+const fullConfig = resolveConfig(tailwindConfig);
+
+export const getBreakpointValue = (value) =>
+  +fullConfig.theme.screens[value].slice(0, fullConfig.theme.screens[value].indexOf('px'));
+
+export const getCurrentBreakpoint = () => {
+  let currentBreakpoint;
+  let biggestBreakpointValue = 0;
+  for (const breakpoint of Object.keys(fullConfig.theme.screens)) {
+    const breakpointValue = getBreakpointValue(breakpoint);
+    if (breakpointValue > biggestBreakpointValue && window.innerWidth >= breakpointValue) {
+      biggestBreakpointValue = breakpointValue;
+      currentBreakpoint = breakpoint;
+    }
+  }
+  return currentBreakpoint;
+};
+
 export default function Nav({ navVisible, setNavVisible }) {
   const [isHovering, setIsHovering] = useState(false);
   const { isAuthenticated } = useAuthContext();
@@ -42,7 +62,8 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const debouncedSearchTerm = useDebounce(searchQuery, 750);
   const searchQueryFn = useSearchQuery(debouncedSearchTerm, pageNumber, {
-    enabled: !!debouncedSearchTerm && debouncedSearchTerm.length > 0 && isSearchEnabled && isSearching
+    enabled:
+      !!debouncedSearchTerm && debouncedSearchTerm.length > 0 && isSearchEnabled && isSearching
   });
 
   const onSearchSuccess = (data, expectedPage) => {
@@ -74,6 +95,13 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   };
 
+  const moveToTop = () => {
+    const container = containerRef.current;
+    if (container) {
+      scrollPositionRef.current = container.scrollTop;
+    }
+  };
+
   const nextPage = async () => {
     moveToTop();
     setPageNumber(pageNumber + 1);
@@ -94,7 +122,9 @@ export default function Nav({ navVisible, setNavVisible }) {
         setPageNumber(pages);
       } else {
         if (!isSearching) {
-          conversations = conversations.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          conversations = conversations.sort(
+            (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+          );
         }
         setConversations(conversations);
         setPages(pages);
@@ -108,25 +138,13 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   }, [pageNumber, conversationId, refreshConversationsHint]);
 
-  const moveToTop = () => {
-    const container = containerRef.current;
-    if (container) {
-      scrollPositionRef.current = container.scrollTop;
-    }
-  };
-
-  const isMobile = () => {
-    const userAgent = typeof window.navigator === 'undefined' ? '' : navigator.userAgent;
-    const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS/i;
-    return mobileRegex.test(userAgent);
-  };
-
   const toggleNavVisible = () => {
-    setNavVisible(prev => !prev);
+    setNavVisible((prev) => !prev);
   };
 
   useEffect(() => {
-    if (isMobile()) {
+    let currentBreakpoint = getCurrentBreakpoint();
+    if (currentBreakpoint === 'sm') {
       setNavVisible(false);
     } else {
       setNavVisible(true);
@@ -171,10 +189,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                   />
                 </div>
               </div>
-              <NavLinks
-                clearSearch={clearSearch}
-                isSearchEnabled={isSearchEnabled}
-              />
+              <NavLinks clearSearch={clearSearch} isSearchEnabled={isSearchEnabled} />
             </nav>
           </div>
         </div>
@@ -196,18 +211,8 @@ export default function Nav({ navVisible, setNavVisible }) {
             width="1em"
             xmlns="http://www.w3.org/2000/svg"
           >
-            <line
-              x1="3"
-              y1="6"
-              x2="15"
-              y2="18"
-            />
-            <line
-              x1="3"
-              y1="18"
-              x2="15"
-              y2="6"
-            />
+            <line x1="3" y1="6" x2="15" y2="18" />
+            <line x1="3" y1="18" x2="15" y2="6" />
           </svg>
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -249,10 +254,7 @@ export default function Nav({ navVisible, setNavVisible }) {
         </button>
       )}
 
-      <div
-        className={'nav-mask' + (navVisible ? ' active' : '')}
-        onClick={toggleNavVisible}
-      ></div>
+      <div className={'nav-mask' + (navVisible ? ' active' : '')} onClick={toggleNavVisible}></div>
     </>
   );
 }
