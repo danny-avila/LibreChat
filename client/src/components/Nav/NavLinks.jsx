@@ -69,10 +69,10 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
               leaveTo="transform opacity-0 scale-95"
             >
               <Menu.Items className="absolute bottom-full left-0 z-20 mb-2 w-full translate-y-0 overflow-hidden rounded-md bg-[#050509] py-1.5 opacity-100 outline-none">
-                <Menu.Item>
+                <Menu.Item as="div">
                   {!!isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                 </Menu.Item>
-                <Menu.Item>
+                <Menu.Item as="div">
                   <NavLink
                     className={cn(
                       'flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700',
@@ -84,10 +84,10 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                   />
                 </Menu.Item>
                 <div className="my-1.5 h-px bg-white/20" role="none" />
-                <Menu.Item>
+                <Menu.Item as="div">
                   <DarkMode />
                 </Menu.Item>
-                <Menu.Item>
+                <Menu.Item as="div">
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <TrashIcon />}
@@ -96,7 +96,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                   />
                 </Menu.Item>
                 <div className="my-1.5 h-px bg-white/20" role="none" />
-                <Menu.Item>
+                <Menu.Item as="div">
                   <Logout />
                 </Menu.Item>
               </Menu.Items>

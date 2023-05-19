@@ -13,25 +13,25 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { ThemeContext } from '~/hooks/ThemeContext';
 import { cn } from '~/utils/';
 
-import resolveConfig from 'tailwindcss/resolveConfig';
-const tailwindConfig = import('../../../tailwind.config.cjs');
-const fullConfig = resolveConfig(tailwindConfig);
+// import resolveConfig from 'tailwindcss/resolveConfig';
+// const tailwindConfig = import('../../../tailwind.config.cjs');
+// const fullConfig = resolveConfig(tailwindConfig);
 
-export const getBreakpointValue = (value) =>
-  +fullConfig.theme.screens[value].slice(0, fullConfig.theme.screens[value].indexOf('px'));
+// export const getBreakpointValue = (value) =>
+//   +fullConfig.theme.screens[value].slice(0, fullConfig.theme.screens[value].indexOf('px'));
 
-export const getCurrentBreakpoint = () => {
-  let currentBreakpoint;
-  let biggestBreakpointValue = 0;
-  for (const breakpoint of Object.keys(fullConfig.theme.screens)) {
-    const breakpointValue = getBreakpointValue(breakpoint);
-    if (breakpointValue > biggestBreakpointValue && window.innerWidth >= breakpointValue) {
-      biggestBreakpointValue = breakpointValue;
-      currentBreakpoint = breakpoint;
-    }
-  }
-  return currentBreakpoint;
-};
+// export const getCurrentBreakpoint = () => {
+//   let currentBreakpoint;
+//   let biggestBreakpointValue = 0;
+//   for (const breakpoint of Object.keys(fullConfig.theme.screens)) {
+//     const breakpointValue = getBreakpointValue(breakpoint);
+//     if (breakpointValue > biggestBreakpointValue && window.innerWidth >= breakpointValue) {
+//       biggestBreakpointValue = breakpointValue;
+//       currentBreakpoint = breakpoint;
+//     }
+//   }
+//   return currentBreakpoint;
+// };
 
 export default function Nav({ navVisible, setNavVisible }) {
   const [isHovering, setIsHovering] = useState(false);
@@ -146,9 +146,23 @@ export default function Nav({ navVisible, setNavVisible }) {
     setNavVisible((prev) => !prev);
   };
 
+  // useEffect(() => {
+  //   let currentBreakpoint = getCurrentBreakpoint();
+  //   if (currentBreakpoint === 'sm') {
+  //     setNavVisible(false);
+  //   } else {
+  //     setNavVisible(true);
+  //   }
+  // }, [conversationId, setNavVisible]);
+
+  const isMobile = () => {
+    const userAgent = typeof window.navigator === 'undefined' ? '' : navigator.userAgent;
+    const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS/i;
+    return mobileRegex.test(userAgent);
+  };
+
   useEffect(() => {
-    let currentBreakpoint = getCurrentBreakpoint();
-    if (currentBreakpoint === 'sm') {
+    if (isMobile()) {
       setNavVisible(false);
     } else {
       setNavVisible(true);
