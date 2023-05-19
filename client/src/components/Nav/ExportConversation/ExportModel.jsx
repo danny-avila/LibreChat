@@ -323,7 +323,6 @@ export default function ExportModel({ open, onOpenChange }) {
                   id="filename"
                   value={filename}
                   onChange={(e) => setFileName(filenamify(e.target.value || ''))}
-                  
                   placeholder="Set the filename"
                   className={cn(
                     defaultTextProps,
