@@ -1,8 +1,9 @@
+import { forwardRef } from 'react';
 import { Search } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import store from '~/store';
 
-export default function SearchBar({ clearSearch }) {
+const SearchBar = forwardRef(({ clearSearch }) => {
   const [searchQuery, setSearchQuery] = useRecoilState(store.searchQuery);
 
   const handleKeyUp = (e) => {
@@ -34,4 +35,6 @@ export default function SearchBar({ clearSearch }) {
       />
     </div>
   );
-}
+});
+
+export default SearchBar;

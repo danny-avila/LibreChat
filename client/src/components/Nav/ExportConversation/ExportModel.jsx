@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import filenamify from 'filenamify';
 import exportFromJSON from 'export-from-json';
 import download from 'downloadjs';
 import DialogTemplate from '~/components/ui/DialogTemplate.jsx';
-import { Dialog, DialogClose, DialogButton } from '~/components/ui/Dialog.tsx';
+import { Dialog, DialogButton } from '~/components/ui/Dialog.tsx';
 import { Input } from '~/components/ui/Input.tsx';
 import { Label } from '~/components/ui/Label.tsx';
 import { Checkbox } from '~/components/ui/Checkbox.tsx';
@@ -313,7 +313,7 @@ export default function ExportModel({ open, onOpenChange }) {
         title="Export conversation"
         className="max-w-full sm:max-w-2xl"
         main={
-          <div className="flex w-full flex-col items-center gap-6">
+          <div className="flex w-full flex-col items-center gap-6 z-50">
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="filename" className="text-left text-sm font-medium">
@@ -323,6 +323,7 @@ export default function ExportModel({ open, onOpenChange }) {
                   id="filename"
                   value={filename}
                   onChange={(e) => setFileName(filenamify(e.target.value || ''))}
+                  
                   placeholder="Set the filename"
                   className={cn(
                     defaultTextProps,

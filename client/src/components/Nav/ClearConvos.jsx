@@ -1,11 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, forwardRef } from 'react';
 import store from '~/store';
 import TrashIcon from '../svg/TrashIcon';
 import { Dialog, DialogTrigger } from '../ui/Dialog.tsx';
 import DialogTemplate from '../ui/DialogTemplate';
 import { useClearConversationsMutation } from '~/data-provider';
 
-export default function ClearConvos() {
+const ClearConvos = forwardRef(() => {
   const { newConversation } = store.useConversation();
   const { refreshConversations } = store.useConversations();
   const clearConvosMutation = useClearConversationsMutation();
@@ -41,4 +41,6 @@ export default function ClearConvos() {
       />
     </Dialog>
   );
-}
+});
+
+export default ClearConvos;
