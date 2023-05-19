@@ -313,7 +313,7 @@ export default function ExportModel({ open, onOpenChange }) {
         title="Export conversation"
         className="max-w-full sm:max-w-2xl"
         main={
-          <div className="flex w-full flex-col items-center gap-6 z-50">
+          <div className="flex w-full flex-col items-center gap-6">
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="filename" className="text-left text-sm font-medium">
