@@ -1,7 +1,3 @@
-.nav {
-  transition: all 0.5s;
-}
-
 .switch-container {
   display: none;
 }
@@ -73,7 +69,8 @@
 
 @media (max-width: 767px) {
   .nav {
-    width: calc(100% - 60px);
+    width: calc(100% - 60px)  ;
+    transition: all 0.5s;
   }
   .nav-mask {
     position: fixed;
