@@ -11,7 +11,7 @@ import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 import resolveConfig from 'tailwindcss/resolveConfig';
-const tailwindConfig = import('~/tailwind.config.js')
+const tailwindConfig = import('../../../tailwind.config.cjs');
 const fullConfig = resolveConfig(tailwindConfig);
 
 export const getBreakpointValue = (value) =>
