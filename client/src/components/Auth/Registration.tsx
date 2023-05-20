@@ -64,11 +64,6 @@ function Registration() {
                 type="text"
                 autoComplete="name"
                 aria-label="Name"
-                // uncomment to prevent pasting in confirm field
-                onPaste={(e) => {
-                  e.preventDefault();
-                  return false;
-                }}
                 {...register('name', {
                   required: 'Name is required',
                   minLength: {
@@ -171,7 +166,7 @@ function Registration() {
             </div>
             {errors.email && (
               <span role="alert" className="mt-1 text-sm text-red-600">
-                {/* @ts-ignore not sure why */}
+                {/* @ts-ignore - Type 'string | FieldError | Merge<FieldError, FieldErrorsImpl<any>> | undefined' is not assignable to type 'ReactNode' */}
                 {errors.email.message}
               </span>
             )}

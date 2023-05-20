@@ -4,111 +4,141 @@
     "pluginKey": "google",
     "description": "Use Google Search to find information about the weather, news, sports, and more.",
     "icon": "https://i.imgur.com/SMmVkNB.png",
-    "requiresAuth": "true"
+    "authConfig": [
+      {
+        "name": "GOOGLE_CSE_ID",
+        "label": "CSE ID",
+        "description": "This is your Google Custom Search Engine ID. For instructions on how to obtain this, see <a href='https://github.com/danny-avila/chatgpt-clone/blob/main/guides/GOOGLE_SEARCH.md'>Our Docs</a>."
+      },
+      {
+        "name": "GOOGLE_API_KEY",
+        "label": "API Key",
+        "description": "This is your Google Custom Search API Key. For instructions on how to obtain this, see <a href='https://github.com/danny-avila/chatgpt-clone/blob/main/guides/GOOGLE_SEARCH.md'>Our Docs</a>."
+      }
+    ]
   },
   {
     "name": "Wolfram",
     "pluginKey": "wolfram",
     "description": "Access computation, math, curated knowledge & real-time data through Wolfram|Alpha and Wolfram Language.",
     "icon": "https://www.wolframcdn.com/images/icons/Wolfram.png",
-    "requiresAuth": "true"
+    "authConfig": [
+      {
+        "name": "WOLFRAM_APP_ID",
+        "label": "Wolfram App ID",
+        "description": "An AppID must be supplied in all calls to the Wolfram|Alpha API. You can get one by registering at <a href='http://products.wolframalpha.com/api/'>Wolfram|Alpha</a> and going to the <a href='https://developer.wolframalpha.com/portal/myapps/'>Developer Portal</a>."
+      }
+    ]
   },
   {
     "name": "Browser",
     "pluginKey": "browser",
     "description": "Scrape and summarize webpage data",
     "icon": "",
-    "requiresAuth": "false"
+    "authConfig": []
   },
   {
     "name": "Serpapi",
     "pluginKey": "serpapi",
     "description": "SerpApi is a real-time API to access search engine results.",
     "icon": "https://i.imgur.com/5yQHUz4.png",
-    "requiresAuth": "true"
+    "authConfig": [
+      {
+        "name": "SERPAPI_API_KEY",
+        "label": "Serpapi Private API Key",
+        "description": "Private Key for Serpapi. Register at <a href='https://serpapi.com/'>Serpapi</a> to obtain a private key."
+      }
+    ]
   },
   {
     "name": "DALL-E",
     "pluginKey": "dall-e",
     "description": "Create realistic images and art from a description in natural language",
     "icon": "https://i.imgur.com/u2TzXzH.png",
-    "requiresAuth": "true"
+    "authConfig": [
+      {
+        "name": "OPENAI_API_KEY",
+        "label": "OpenAI API Key",
+        "description": "You can use DALL-E with your API Key from OpenAI."
+      }
+    ]
   },
   {
     "name": "Calculator",
     "pluginKey": "calculator",
     "description": "Perform simple and complex mathematical calculations.",
     "icon": "https://i.imgur.com/RHsSG5h.png",
-    "requiresAuth": "false"
+    "isAuthRequired": "false",
+    "authConfig": []
   },
   {
     "name": "Stable Diffusion",
     "pluginKey": "stable-diffusion",
     "description": "Generate photo-realistic images given any text input.",
     "icon": "https://i.imgur.com/Yr466dp.png",
-    "requiresAuth": "false"
+    "authConfig": []
   },
   {
     "name": "Zapier",
     "pluginKey": "zapier",
     "description": "Interact with over 5,000+ apps like Google Sheets, Gmail, HubSpot, Salesforce, and thousands more.",
     "icon": "https://cdn.zappy.app/8f853364f9b383d65b44e184e04689ed.png",
-    "requiresAuth": "true"
+    "authConfig": []
   },
   {
     "name": "Kayak",
     "pluginKey": "kayak",
     "description": "Search flights, stays & rental cars or get recommendations where you can go on your budget.",
     "icon": "https://content.r9cdn.net/images/apple-touch-icons/apple-touch-icon-120x120.png",
-    "requiresAuth": "true"
+    "authConfig": []
   },
   {
     "name": "Instacart",
     "pluginKey": "instacart",
     "description": "Ask about recipes and discover the ingredients you need—then get it all delivered from local stores.",
     "icon": "https://www.instacart.com/assets/beetstrap/brand/2022/carrotlogo-1286c257354036d178c09e815906198eb7f012b8cdc4f6f8ec86d3e64d799a5b.png",
-    "requiresAuth": "true"
+    "authConfig": []
   },
   {
     "name": "OpenTable",
     "pluginKey": "opentable",
     "description": "Allows you to search for restaurants available for booking dining experiences.",
     "icon": "https://cdn.otstatic.com/third-party/images/opentable-logo-512.png",
-    "requiresAuth": "true"
+    "authConfig": []
   },
   {
     "name": "FiscalNote",
     "pluginKey": "fiscalnote",
     "description": "FiscalNote enables access to select market-leading, real-time data sets for legal, political, and regulatory",
     "icon": "https://api.factba.se/static/fn-logo.png",
-    "requiresAuth": "false"
+    "authConfig": []
   },
   {
     "name": "DEV Community",
     "pluginKey": "dev-community",
     "description": "Plugin for recommending articles or users from DEV Community.",
     "icon": "https://dev.to/logo.png",
-    "requiresAuth": "false"
+    "authConfig": []
   },
   {
     "name": "Savvy Trader AI",
     "pluginKey": "savvy-trader-ai",
     "description": "Realtime stock, crypto and other investment data.",
     "icon": "https://savvytrader.com/android-chrome-192x192.png",
-    "requiresAuth": "false"
+    "authConfig": []
   },
   {
     "name": "Yabble",
     "pluginKey": "yabble",
     "description": "Your ultimate AI research assistant; create surveys, specify audiences, collect data & analyze.",
     "icon": "https://yabblezone.net/.well-known/logo.png",
-    "requiresAuth": "true"
+    "isAuthRequired": "true"
   },
   {
     "name": "Coupert",
     "pluginKey": "coupert",
     "description": "Search for the internet’s best coupons from thousands of online stores.",
     "icon": "https://www.coupert.com/img/favicon.svg",
-    "requiresAuth": "false"
+    "authConfig": []
   }
 ]

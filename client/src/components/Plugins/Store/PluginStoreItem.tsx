@@ -60,7 +60,7 @@ function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPlugi
                 </div>
               </button>
             ) : (
-              <button className="btn relative bg-gray-50 hover:bg-gray-200" onClick={handleClick}>
+              <button className="btn relative bg-gray-300 hover:bg-gray-400 dark:bg-gray-50 dark:hover:bg-gray-200" onClick={handleClick}>
                 <div className="flex w-full items-center justify-center gap-2">
                   Uninstall
                   <svg
@@ -82,7 +82,6 @@ function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPlugi
                 </div>
               </button>
             )}
-            ;
           </div>
         </div>
         <div className="line-clamp-3 h-[60px] text-sm text-black/70 dark:text-white/70">

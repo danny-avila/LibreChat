@@ -108,7 +108,7 @@ export default function Landing() {
           </div>
         )}
         {!!showingTemplates && <Templates showTemplates={showTemplates}/>} */}
-        <div className="group h-32 w-full flex-shrink-0 dark:border-gray-900/50 dark:bg-gray-800 md:h-48" />
+        {/* <div className="group h-32 w-full flex-shrink-0 dark:border-gray-900/50 dark:bg-gray-800 md:h-48" /> */}
       </div>
     </div>
   );

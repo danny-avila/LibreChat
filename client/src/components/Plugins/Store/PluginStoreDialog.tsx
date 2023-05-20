@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Dialog } from '@headlessui/react';
 import { X } from 'lucide-react';
-import { PluginStoreItem, PluginPagination, PluginStoreLinkButton, PluginAuthDialog, PluginAuthForm } from '.';
+import { PluginStoreItem, PluginPagination, PluginStoreLinkButton, PluginAuthForm } from '.';
 import {
   useAvailablePluginsQuery,
   useUpdateUserPluginsMutation,
   TUpdateUserPlugins,
-  TPluginAuthConfig,
   TPlugin
 } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -30,13 +29,20 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const [itemsPerPage, setItemsPerPage] = useState<number>(1);
   const [maxPage, setMaxPage] = useState<number>(1);
   const [userPlugins, setUserPlugins] = useState<string[]>([]);
-  const [isPluginAuthDialogOpen, setIsPluginAuthDialogOpen] = useState<boolean>(false);
   const [selectedPlugin, setSelectedPlugin] = useState<TPlugin | undefined>(undefined);
   const [showPluginAuthForm, setShowPluginAuthForm] = useState<boolean>(false);
+  const [error, setError] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   const handleInstall = (pluginAction: TPluginAction) => {
-    console.log(pluginAction)
-    // updateUserPlugins.mutate(pluginAction);
+    updateUserPlugins.mutate(pluginAction, {
+      onError: (error) => {
+        setError(true);
+        if (error.response?.data?.message) {
+          setErrorMessage(error.response?.data?.message);
+        }
+      }
+    });
     setShowPluginAuthForm(false);
   };
 
@@ -69,15 +75,18 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     setItemsPerPage(columns * 2); // 2 rows
   };
 
-  const gridRef = useCallback((node) => {
-    if (node !== null) {
-      if (itemsPerPage === 1) {
-        calculateColumns(node);
+  const gridRef = useCallback(
+    (node) => {
+      if (node !== null) {
+        if (itemsPerPage === 1) {
+          calculateColumns(node);
+        }
+        const resizeObserver = new ResizeObserver(() => calculateColumns(node));
+        resizeObserver.observe(node);
       }
-      const resizeObserver = new ResizeObserver(() => calculateColumns(node));
-      resizeObserver.observe(node);
-    }
-  }, [ itemsPerPage ]);
+    },
+    [itemsPerPage]
+  );
 
   useEffect(() => {
     if (user) {
@@ -122,11 +131,20 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
               </div>
             </div>
           </div>
-          { showPluginAuthForm && (
+          {error && (
+            <div
+              className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
+              role="alert"
+            >
+              There was an error attempting to authenticate this plugin. Please try again.{' '}
+              {errorMessage}
+            </div>
+          )}
+          {showPluginAuthForm && (
             <div className="p-4 sm:p-6 sm:pt-4">
               <PluginAuthForm
                 plugin={selectedPlugin}
-                onSubmit={(installActionData:TPluginAction) => handleInstall(installActionData)}
+                onSubmit={(installActionData: TPluginAction) => handleInstall(installActionData)}
               />
             </div>
           )}
@@ -176,13 +194,6 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
           </div>
         </Dialog.Panel>
       </div>
-      {selectedPlugin && (
-        <PluginAuthDialog
-          isOpen={isPluginAuthDialogOpen}
-          setIsOpen={setIsPluginAuthDialogOpen}
-          plugin={selectedPlugin}
-        />
-      )}
     </Dialog>
   );
 }

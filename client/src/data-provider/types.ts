@@ -211,15 +211,22 @@ export type TResetPassword = {
   password: string;
 };
 
+export type TPluginAuthConfig = {
+  name: string;
+  label: string;
+  description: string;
+};
+
 export type TPlugin = {
   name: string;
   pluginKey: string;
   description: string;
   icon: string;
-  requiresAuth: string | boolean;
+  authConfig: TPluginAuthConfig[];
 };
 
 export type TUpdateUserPlugins = {
   pluginKey: string;
   action: string;
+  auth?: unknown;
 };
