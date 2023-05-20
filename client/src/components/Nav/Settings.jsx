@@ -14,6 +14,7 @@ export default function ClearConvos({ open, onOpenChange }) {
   const { refreshConversations } = store.useConversations();
   const clearConvosMutation = useClearConversationsMutation();
   const [isMobile, setIsMobile] = useState(false);
+  const [isAutoTheme, setIsAutoTheme] = useState(false);
 
   const clearConvos = () => {
     console.log('Clearing conversations...');
@@ -23,6 +24,7 @@ export default function ClearConvos({ open, onOpenChange }) {
   const changeTheme = (e) => {
     if (e.target.value === 'system') {
       setTheme(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      setIsAutoTheme(true);
     } else {
       setTheme(e.target.value);
     }
@@ -40,6 +42,18 @@ export default function ClearConvos({ open, onOpenChange }) {
 
     checkMobile();
     window.addEventListener('resize', checkMobile);
+  }, []);
+
+  useEffect(() => {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+      if (isAutoTheme) setTheme(e.matches ? 'dark' : 'light');
+    });
+
+    return () => {
+      window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', (e) => {
+        if (isAutoTheme) setTheme(e.matches ? 'dark' : 'light');
+      });
+    };
   }, []);
 
   useEffect(() => {
