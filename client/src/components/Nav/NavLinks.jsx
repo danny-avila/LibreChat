@@ -9,7 +9,6 @@ import { Download } from 'lucide-react';
 import NavLink from './NavLink';
 import ExportModel from './ExportConversation/ExportModel';
 import ClearConvos from './ClearConvos';
-import DarkMode from './DarkMode';
 import Logout from './Logout';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { cn } from '~/utils/';
@@ -89,9 +88,6 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                   />
                 </Menu.Item>
                 <div className="my-1.5 h-px bg-white/20" role="none" />
-                <Menu.Item as="div">
-                  <DarkMode />
-                </Menu.Item>
                 <Menu.Item as="div">
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"

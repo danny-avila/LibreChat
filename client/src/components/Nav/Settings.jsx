@@ -2,12 +2,14 @@ import GearIcon from '../svg/GearIcon';
 import { Dialog } from '../ui/Dialog.tsx';
 import * as Tabs from '@radix-ui/react-tabs';
 import { DialogContent, DialogHeader, DialogTitle } from '../ui/Dialog.tsx';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useContext } from 'react';
 import { cn } from '~/utils/';
 import { useClearConversationsMutation } from '~/data-provider';
+import { ThemeContext } from '~/hooks/ThemeContext';
 import store from '~/store';
 
 export default function ClearConvos({ open, onOpenChange }) {
+  const { theme, setTheme } = useContext(ThemeContext);
   const { newConversation } = store.useConversation();
   const { refreshConversations } = store.useConversations();
   const clearConvosMutation = useClearConversationsMutation();
@@ -16,6 +18,14 @@ export default function ClearConvos({ open, onOpenChange }) {
   const clearConvos = () => {
     console.log('Clearing conversations...');
     clearConvosMutation.mutate();
+  };
+
+  const changeTheme = (e) => {
+    if (e.target.value === 'system') {
+      setTheme(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    } else {
+      setTheme(e.target.value);
+    }
   };
 
   // check if mobile dynamically and update
@@ -79,7 +89,11 @@ export default function ClearConvos({ open, onOpenChange }) {
                 <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
                   <div className="flex items-center justify-between">
                     <div>Theme</div>
-                    <select className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20">
+                    <select
+                      className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20"
+                      onChange={changeTheme}
+                      value={theme}
+                    >
                       <option value="system">System</option>
                       <option value="dark">Dark</option>
                       <option value="light">Light</option>
