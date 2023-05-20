@@ -3,6 +3,8 @@ import { Fragment, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import SearchBar from './SearchBar';
 import TrashIcon from '../svg/TrashIcon';
+import GearIcon from '../svg/GearIcon';
+import Settings from './Settings';
 import { Download } from 'lucide-react';
 import NavLink from './NavLink';
 import ExportModel from './ExportConversation/ExportModel';
@@ -18,6 +20,7 @@ import store from '~/store';
 export default function NavLinks({ clearSearch, isSearchEnabled }) {
   const [showExports, setShowExports] = useState(false);
   const [showClearConvos, setShowClearConvos] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const { user } = useAuthContext();
 
   const conversation = useRecoilValue(store.conversation) || {};
@@ -97,6 +100,14 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                     clickHandler={() => setShowClearConvos(true)}
                   />
                 </Menu.Item>
+                <Menu.Item as="div">
+                  <NavLink
+                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                    svg={() => <GearIcon />}
+                    text="Settings"
+                    clickHandler={() => setShowSettings(true)}
+                  />
+                </Menu.Item>
                 <div className="my-1.5 h-px bg-white/20" role="none" />
                 <Menu.Item as="div">
                   <Logout />
@@ -108,6 +119,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
       </Menu>
       {showExports && <ExportModel open={showExports} onOpenChange={setShowExports} />}
       {showClearConvos && <ClearConvos open={showClearConvos} onOpenChange={setShowClearConvos} />}
+      {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
     </>
   );
 }

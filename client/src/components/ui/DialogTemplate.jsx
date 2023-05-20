@@ -10,15 +10,7 @@ import {
 import { cn } from '~/utils/';
 
 const DialogTemplate = forwardRef((props, ref) => {
-  const {
-    title,
-    description,
-    main,
-    buttons,
-    leftButtons,
-    selection,
-    className
-  } = props;
+  const { title, description, main, buttons, leftButtons, selection, className } = props;
   const { selectHandler, selectClasses, selectText } = selection || {};
 
   const defaultSelect =
@@ -27,11 +19,13 @@ const DialogTemplate = forwardRef((props, ref) => {
     <DialogContent ref={ref} className={cn('shadow-2xl dark:bg-gray-800', className || '')}>
       <DialogHeader>
         <DialogTitle className="text-gray-800 dark:text-white">{title}</DialogTitle>
-        <DialogDescription className="text-gray-600 dark:text-gray-300">
-          {description}
-        </DialogDescription>
+        {description && (
+          <DialogDescription className="text-gray-600 dark:text-gray-300">
+            {description}
+          </DialogDescription>
+        )}
       </DialogHeader>
-      {main ? main : null}
+      <div className="px-6">{main ? main : null}</div>
       <DialogFooter>
         <div>{leftButtons ? leftButtons : null}</div>
         <div className="flex gap-2">
