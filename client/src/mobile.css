@@ -74,7 +74,7 @@
   }
   .nav-mask {
     position: fixed;
-    z-index: 996;
+    z-index: 30;
     left: 0;
     right: 0;
     top: 0;
