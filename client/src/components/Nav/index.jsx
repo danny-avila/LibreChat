@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useContext } from 'react';
 import NewChat from './NewChat';
 import Spinner from '../svg/Spinner';
 import Pages from '../Conversations/Pages';
@@ -9,10 +9,33 @@ import { useGetConversationsQuery, useSearchQuery } from '~/data-provider';
 import useDebounce from '~/hooks/useDebounce';
 import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { ThemeContext } from '~/hooks/ThemeContext';
+import { cn } from '~/utils/';
+
+import resolveConfig from 'tailwindcss/resolveConfig';
+const tailwindConfig = import('../../../tailwind.config.cjs');
+const fullConfig = resolveConfig(tailwindConfig);
+
+export const getBreakpointValue = (value) =>
+  +fullConfig.theme.screens[value].slice(0, fullConfig.theme.screens[value].indexOf('px'));
+
+export const getCurrentBreakpoint = () => {
+  let currentBreakpoint;
+  let biggestBreakpointValue = 0;
+  for (const breakpoint of Object.keys(fullConfig.theme.screens)) {
+    const breakpointValue = getBreakpointValue(breakpoint);
+    if (breakpointValue > biggestBreakpointValue && window.innerWidth >= breakpointValue) {
+      biggestBreakpointValue = breakpointValue;
+      currentBreakpoint = breakpoint;
+    }
+  }
+  return currentBreakpoint;
+};
 
 export default function Nav({ navVisible, setNavVisible }) {
   const [isHovering, setIsHovering] = useState(false);
   const { isAuthenticated } = useAuthContext();
+  const { theme, } = useContext(ThemeContext);
   const containerRef = useRef(null);
   const scrollPositionRef = useRef(null);
 
@@ -75,6 +98,13 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   };
 
+  const moveToTop = () => {
+    const container = containerRef.current;
+    if (container) {
+      scrollPositionRef.current = container.scrollTop;
+    }
+  };
+
   const nextPage = async () => {
     moveToTop();
     setPageNumber(pageNumber + 1);
@@ -111,19 +141,17 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   }, [pageNumber, conversationId, refreshConversationsHint]);
 
-  const moveToTop = () => {
-    const container = containerRef.current;
-    if (container) {
-      scrollPositionRef.current = container.scrollTop;
-    }
-  };
-
   const toggleNavVisible = () => {
     setNavVisible((prev) => !prev);
   };
 
   useEffect(() => {
-    setNavVisible(false);
+    let currentBreakpoint = getCurrentBreakpoint();
+    if (currentBreakpoint === 'sm') {
+      setNavVisible(false);
+    } else {
+      setNavVisible(true);
+    }
   }, [conversationId, setNavVisible]);
 
   const containerClasses =
@@ -133,12 +161,7 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   return (
     <>
-      <div
-        className={
-          'nav dark bg-gray-900 md:fixed md:inset-y-0 md:flex md:w-[260px] md:flex-col' +
-          (navVisible ? ' active' : '')
-        }
-      >
+      <div className={'nav dark bg-gray-900 md:inset-y-0' + (navVisible ? ' active' : '')}>
         <div className="flex h-full min-h-0 flex-col ">
           <div className="scrollbar-trigger relative flex h-full w-full flex-1 items-start border-white/20">
             <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
@@ -175,10 +198,10 @@ export default function Nav({ navVisible, setNavVisible }) {
         </div>
         <button
           type="button"
-          className="nav-close-button -ml-0.5 -mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-md text-white hover:text-gray-900 hover:text-white focus:outline-none focus:ring-white"
+          className={cn('nav-close-button -ml-0.5 -mt-2.5 inline-flex h-10 w-10 items-center justify-center rounded-md focus:outline-none focus:ring-white md:-ml-1 md:-mt-2.5', theme === 'dark' ? 'text-gray-500 hover:text-gray-400' : 'text-gray-900 hover:text-gray-600')}
           onClick={toggleNavVisible}
         >
-          <span className="sr-only">Open sidebar</span>
+          <span className="sr-only">Close sidebar</span>
           <svg
             stroke="currentColor"
             fill="none"
@@ -186,7 +209,7 @@ export default function Nav({ navVisible, setNavVisible }) {
             viewBox="0 0 24 24"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="h-6 w-6"
+            className="block h-6 w-6 md:hidden"
             height="1em"
             width="1em"
             xmlns="http://www.w3.org/2000/svg"
@@ -194,8 +217,46 @@ export default function Nav({ navVisible, setNavVisible }) {
             <line x1="3" y1="6" x2="15" y2="18" />
             <line x1="3" y1="18" x2="15" y2="6" />
           </svg>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={1.5}
+            stroke="currentColor"
+            className="hidden h-[26px] w-[26px] md:block"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75"
+            />
+          </svg>
         </button>
       </div>
+      {!navVisible && (
+        <button
+          type="button"
+          className="nav-open-button fixed left-2 top-0.5 z-10 inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-900 hover:text-gray-600 focus:outline-none focus:ring-white dark:text-gray-500 dark:hover:text-gray-400"
+          onClick={toggleNavVisible}
+        >
+          <span className="sr-only">Open sidebar</span>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={1.5}
+            stroke="currentColor"
+            className="h-6 w-6"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"
+            />
+          </svg>
+        </button>
+      )}
+
       <div className={'nav-mask' + (navVisible ? ' active' : '')} onClick={toggleNavVisible}></div>
     </>
   );
