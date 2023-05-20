@@ -9,22 +9,24 @@ import { ThemeContext } from '~/hooks/ThemeContext';
 import store from '~/store';
 
 export default function ClearConvos({ open, onOpenChange }) {
-  const { theme, setTheme } = useContext(ThemeContext);
+  const { setTheme } = useContext(ThemeContext);
   const { newConversation } = store.useConversation();
   const { refreshConversations } = store.useConversations();
   const clearConvosMutation = useClearConversationsMutation();
   const [isMobile, setIsMobile] = useState(false);
-  const [isAutoTheme, setIsAutoTheme] = useState(false);
+  const [selectedOption, setSelectedOption] = useState('system');
 
   const clearConvos = () => {
     console.log('Clearing conversations...');
     clearConvosMutation.mutate();
   };
 
+
   const changeTheme = (e) => {
+    setSelectedOption(e.target.value);
+
     if (e.target.value === 'system') {
       setTheme(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-      setIsAutoTheme(true);
     } else {
       setTheme(e.target.value);
     }
@@ -46,12 +48,12 @@ export default function ClearConvos({ open, onOpenChange }) {
 
   useEffect(() => {
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-      if (isAutoTheme) setTheme(e.matches ? 'dark' : 'light');
+      if (selectedOption === 'system') setTheme(e.matches ? 'dark' : 'light');
     });
 
     return () => {
       window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', (e) => {
-        if (isAutoTheme) setTheme(e.matches ? 'dark' : 'light');
+        if (selectedOption === 'system') setTheme(e.matches ? 'dark' : 'light');
       });
     };
   }, []);
@@ -106,7 +108,7 @@ export default function ClearConvos({ open, onOpenChange }) {
                     <select
                       className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20"
                       onChange={changeTheme}
-                      value={theme}
+                      value={selectedOption}
                     >
                       <option value="system">System</option>
                       <option value="dark">Dark</option>
