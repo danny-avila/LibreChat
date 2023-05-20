@@ -1,17 +1,25 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Dialog } from '@headlessui/react';
 import { X } from 'lucide-react';
-import { PluginStoreItem, PluginPagination, PluginStoreLinkButton } from '.';
+import { PluginStoreItem, PluginPagination, PluginStoreLinkButton, PluginAuthDialog, PluginAuthForm } from '.';
 import {
   useAvailablePluginsQuery,
   useUpdateUserPluginsMutation,
-  TUpdateUserPlugins
+  TUpdateUserPlugins,
+  TPluginAuthConfig,
+  TPlugin
 } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 type TPluginStoreDialogProps = {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
+};
+
+type TPluginAction = {
+  pluginKey: string;
+  action: 'install' | 'uninstall';
+  auth?: unknown;
 };
 
 function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
@@ -22,25 +30,30 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const [itemsPerPage, setItemsPerPage] = useState<number>(1);
   const [maxPage, setMaxPage] = useState<number>(1);
   const [userPlugins, setUserPlugins] = useState<string[]>([]);
+  const [isPluginAuthDialogOpen, setIsPluginAuthDialogOpen] = useState<boolean>(false);
+  const [selectedPlugin, setSelectedPlugin] = useState<TPlugin | undefined>(undefined);
+  const [showPluginAuthForm, setShowPluginAuthForm] = useState<boolean>(false);
 
-  const onPluginInstall = (plugin: string) => {
-    updateUserPlugins.mutate({ pluginKey: plugin, action: 'install' });
+  const handleInstall = (pluginAction: TPluginAction) => {
+    console.log(pluginAction)
+    // updateUserPlugins.mutate(pluginAction);
+    setShowPluginAuthForm(false);
   };
 
   const onPluginUninstall = (plugin: string) => {
     updateUserPlugins.mutate({ pluginKey: plugin, action: 'uninstall' });
   };
 
-  const onInstallUnverifiedPlugin = () => {
-    console.log('Installing unverified plugin');
-  };
+  const onPluginInstall = (pluginKey: string) => {
+    // use pluginKey arg to get the plugin from data
+    const getAvailablePluginFromKey = data?.find((p) => p.pluginKey === pluginKey);
+    setSelectedPlugin(getAvailablePluginFromKey);
 
-  const onDevelopPluginClick = () => {
-    console.log('Developing plugin');
-  };
-
-  const onAboutPluginsClick = () => {
-    console.log('About plugins');
+    if (getAvailablePluginFromKey.authConfig.length > 0) {
+      setShowPluginAuthForm(true);
+    } else {
+      handleInstall({ pluginKey, action: 'install' });
+    }
   };
 
   const calculateColumns = (node) => {
@@ -64,7 +77,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
       const resizeObserver = new ResizeObserver(() => calculateColumns(node));
       resizeObserver.observe(node);
     }
-  }, []);
+  }, [ itemsPerPage ]);
 
   useEffect(() => {
     if (user) {
@@ -109,6 +122,14 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
               </div>
             </div>
           </div>
+          { showPluginAuthForm && (
+            <div className="p-4 sm:p-6 sm:pt-4">
+              <PluginAuthForm
+                plugin={selectedPlugin}
+                onSubmit={(installActionData:TPluginAction) => handleInstall(installActionData)}
+              />
+            </div>
+          )}
           <div className="p-4 sm:p-6 sm:pt-4">
             <div className="mt-4 flex flex-col gap-4">
               <div
@@ -137,7 +158,8 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                   onChangePage={handleChangePage}
                 />
               </div>
-              <div className="flex flex-col items-center gap-2 sm:flex-row">
+              {/* API not yet implemented: */}
+              {/* <div className="flex flex-col items-center gap-2 sm:flex-row">
                 <PluginStoreLinkButton
                   label="Install an unverified plugin"
                   onClick={onInstallUnverifiedPlugin}
@@ -149,11 +171,18 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                 />
                 <div className="hidden h-4 border-l border-black/30 dark:border-white/30 sm:block"></div>
                 <PluginStoreLinkButton label="About plugins" onClick={onAboutPluginsClick} />
-              </div>
+              </div> */}
             </div>
           </div>
         </Dialog.Panel>
       </div>
+      {selectedPlugin && (
+        <PluginAuthDialog
+          isOpen={isPluginAuthDialogOpen}
+          setIsOpen={setIsPluginAuthDialogOpen}
+          plugin={selectedPlugin}
+        />
+      )}
     </Dialog>
   );
 }
