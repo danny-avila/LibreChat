@@ -9,7 +9,7 @@ const errorController = require('./controllers/error.controller');
 const passport = require('passport');
 
 const port = process.env.PORT || 3080;
-const host = process.env.HOST || 'localhost';
+const host = process.env.HOST || '0.0.0.0';
 const projectPath = path.join(__dirname, '..', '..', 'client');
 
 (async () => {
