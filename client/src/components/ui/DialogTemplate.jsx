@@ -1,5 +1,4 @@
-import React from 'react';
-
+import { forwardRef } from 'react';
 import {
   DialogClose,
   DialogContent,
@@ -10,21 +9,22 @@ import {
 } from './Dialog.tsx';
 import { cn } from '~/utils/';
 
-export default function DialogTemplate({
-  title,
-  description,
-  main,
-  buttons,
-  leftButtons,
-  selection,
-  className
-}) {
+const DialogTemplate = forwardRef((props, ref) => {
+  const {
+    title,
+    description,
+    main,
+    buttons,
+    leftButtons,
+    selection,
+    className
+  } = props;
   const { selectHandler, selectClasses, selectText } = selection || {};
 
   const defaultSelect =
     'bg-gray-900 text-white transition-colors hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900';
   return (
-    <DialogContent className={cn('shadow-2xl dark:bg-gray-800', className || '')}>
+    <DialogContent ref={ref} className={cn('shadow-2xl dark:bg-gray-800', className || '')}>
       <DialogHeader>
         <DialogTitle className="text-gray-800 dark:text-white">{title}</DialogTitle>
         <DialogDescription className="text-gray-600 dark:text-gray-300">
@@ -51,4 +51,6 @@ export default function DialogTemplate({
       </DialogFooter>
     </DialogContent>
   );
-}
+});
+
+export default DialogTemplate;

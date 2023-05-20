@@ -45,7 +45,7 @@
 
 .nav {
   position: fixed;
-  z-index: 999;
+  z-index: 40;
   left: calc(-100%);
   top: 0;
   width: calc(100% - 60px);
@@ -74,7 +74,7 @@
   }
   .nav-mask {
     position: fixed;
-    z-index: 996;
+    z-index: 35;
     left: 0;
     right: 0;
     top: 0;
