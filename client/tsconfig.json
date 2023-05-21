@@ -14,11 +14,13 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noImplicitAny": false,
+    "emitDeclarationOnly": true,
+    "outDir": "dist",
+    "declarationMap": true,
     "noEmit": false,
     "jsx": "react-jsx",
     "baseUrl": ".",
-    "declaration": true,
-    "declarationDir": "./types"
+    "declaration": true
   },
   "types": ["node", "jest", "@testing-library/jest-dom"],
   "exclude": ["node_modules"],
