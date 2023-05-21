@@ -35,7 +35,7 @@ function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPlugi
             </div>
           </div>
           <div className="flex min-w-0 flex-col items-start justify-between">
-            <div className="mb-2 line-clamp-1 max-w-full text-lg leading-5 text-white">
+            <div className="mb-2 line-clamp-1 max-w-full text-lg leading-5 text-gray-700/80 dark:text-gray-50">
               {plugin.name}
             </div>
             {!isInstalled ? (
