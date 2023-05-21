@@ -1,6 +1,8 @@
 ﻿# Windows Install
 
 ### Recommended:
+### **[Docker](docker.md)**
+or
 ### **[Automated Installer (Windows)](https://github.com/fuegovic/chatgpt-clone-local-installer)**
 (Includes a Startup and Update Utility)
 ##
