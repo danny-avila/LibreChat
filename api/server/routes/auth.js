@@ -2,11 +2,12 @@ const express = require('express');
 const {
   resetPasswordRequestController,
   resetPasswordController,
-  loginController,
-  logoutController,
+  getUserController,
   refreshController,
   registrationController
 } = require('../controllers/auth.controller');
+const loginController = require('../controllers/auth/login.controller');
+const logoutController = require('../controllers/auth/logout.controller');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 const requireLocalAuth = require('../../middleware/requireLocalAuth');
 
