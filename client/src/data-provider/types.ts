@@ -212,7 +212,7 @@ export type TResetPassword = {
 };
 
 export type TPluginAuthConfig = {
-  name: string;
+  authField: string;
   label: string;
   description: string;
 };

@@ -1,4 +1,5 @@
 import { TPlugin } from '~/data-provider';
+import { XCircle, DownloadCloud } from 'lucide-react';
 
 type TPluginStoreItemProps = {
   plugin: TPlugin;
@@ -41,50 +42,20 @@ function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPlugi
               <button className="btn btn-primary relative" onClick={handleClick}>
                 <div className="flex w-full items-center justify-center gap-2">
                   Install
-                  <svg
-                    stroke="currentColor"
-                    fill="none"
-                    strokeWidth="2"
-                    viewBox="0 0 24 24"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="h-4 w-4"
-                    height="1em"
-                    width="1em"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <polyline points="8 17 12 21 16 17"></polyline>
-                    <line x1="12" y1="12" x2="12" y2="21"></line>
-                    <path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"></path>
-                  </svg>
+                  <DownloadCloud className="flex h-4 w-4 items-center stroke-2" />
                 </div>
               </button>
             ) : (
               <button className="btn relative bg-gray-300 hover:bg-gray-400 dark:bg-gray-50 dark:hover:bg-gray-200" onClick={handleClick}>
                 <div className="flex w-full items-center justify-center gap-2">
                   Uninstall
-                  <svg
-                    stroke="currentColor"
-                    fill="none"
-                    strokeWidth="2"
-                    viewBox="0 0 24 24"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="h-4 w-4"
-                    height="1em"
-                    width="1em"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="15" y1="9" x2="9" y2="15"></line>
-                    <line x1="9" y1="9" x2="15" y2="15"></line>
-                  </svg>
+                  <XCircle className="flex h-4 w-4 items-center stroke-2" />
                 </div>
               </button>
             )}
           </div>
         </div>
-        <div className="line-clamp-3 h-[60px] text-sm text-black/70 dark:text-white/70">
+        <div className="line-clamp-3 h-[60px] text-sm text-slate-700/70 dark:text-slate-50/70">
           {plugin.description}
         </div>
       </div>

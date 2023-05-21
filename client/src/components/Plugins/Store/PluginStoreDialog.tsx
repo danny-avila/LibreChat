@@ -22,7 +22,7 @@ type TPluginAction = {
 };
 
 function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
-  const { data } = useAvailablePluginsQuery();
+  const { data: availablePlugins } = useAvailablePluginsQuery();
   const { user } = useAuthContext();
   const updateUserPlugins = useUpdateUserPluginsMutation<TUpdateUserPlugins>();
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -34,31 +34,43 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const [error, setError] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
+  const handleInstallError = (error:any) => {
+    setError(true);
+    if (error.response?.data?.message) {
+      setErrorMessage(error.response?.data?.message);
+    }
+    setTimeout(() => {
+      setError(false);
+      setErrorMessage('');
+    }, 5000);
+  };
+
   const handleInstall = (pluginAction: TPluginAction) => {
     updateUserPlugins.mutate(pluginAction, {
       onError: (error) => {
-        setError(true);
-        if (error.response?.data?.message) {
-          setErrorMessage(error.response?.data?.message);
-        }
+        handleInstallError(error);
       }
     });
     setShowPluginAuthForm(false);
   };
 
+
   const onPluginUninstall = (plugin: string) => {
-    updateUserPlugins.mutate({ pluginKey: plugin, action: 'uninstall' });
+    updateUserPlugins.mutate({ pluginKey: plugin, action: 'uninstall', auth: null }, {
+      onError: (error) => {
+        handleInstallError(error);
+      }
+    });
   };
 
   const onPluginInstall = (pluginKey: string) => {
-    // use pluginKey arg to get the plugin from data
-    const getAvailablePluginFromKey = data?.find((p) => p.pluginKey === pluginKey);
+    const getAvailablePluginFromKey = availablePlugins?.find((p) => p.pluginKey === pluginKey);
     setSelectedPlugin(getAvailablePluginFromKey);
 
     if (getAvailablePluginFromKey.authConfig.length > 0) {
       setShowPluginAuthForm(true);
     } else {
-      handleInstall({ pluginKey, action: 'install' });
+      handleInstall({ pluginKey, action: 'install', auth: null });
     }
   };
 
@@ -94,10 +106,10 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
         setUserPlugins(user.plugins);
       }
     }
-    if (data) {
-      setMaxPage(Math.ceil(data.length / itemsPerPage));
+    if (availablePlugins) {
+      setMaxPage(Math.ceil(availablePlugins.length / itemsPerPage));
     }
-  }, [data, itemsPerPage, user]);
+  }, [availablePlugins, itemsPerPage, user]);
 
   const handleChangePage = (page: number) => {
     setCurrentPage(page);
@@ -133,7 +145,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
           </div>
           {error && (
             <div
-              className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
+              className="relative m-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
               role="alert"
             >
               There was an error attempting to authenticate this plugin. Please try again.{' '}
@@ -154,8 +166,8 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                 ref={gridRef}
                 className="grid grid-cols-1 grid-rows-2 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
               >
-                {data &&
-                  data
+                {availablePlugins &&
+                  availablePlugins
                     .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                     .map((plugin, index) => (
                       <PluginStoreItem
