@@ -112,6 +112,7 @@
   * [Documentation Guidelines](documents/contributions/documentation_guidelines.md)
   * [Code Standards and Conventions](documents/contributions/coding_conventions.md)
   * [Testing](documents/contributions/testing.md)
+  * [Security](SECURITY.md)
   * [Contributors](CONTRIBUTORS.md)
   * [Trello Board](https://trello.com/b/17z094kq/chatgpt-clone)
 </details>
