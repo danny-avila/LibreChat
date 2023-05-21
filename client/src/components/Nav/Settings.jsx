@@ -8,12 +8,11 @@ import { ThemeContext } from '~/hooks/ThemeContext';
 import store from '~/store';
 
 export default function ClearConvos({ open, onOpenChange }) {
-  const { setTheme } = useContext(ThemeContext);
+  const { theme, setTheme } = useContext(ThemeContext);
   const { newConversation } = store.useConversation();
   const { refreshConversations } = store.useConversations();
   const clearConvosMutation = useClearConversationsMutation();
   const [isMobile, setIsMobile] = useState(false);
-  const [selectedOption, setSelectedOption] = useState('system');
 
   const clearConvos = () => {
     console.log('Clearing conversations...');
@@ -21,13 +20,7 @@ export default function ClearConvos({ open, onOpenChange }) {
   };
 
   const changeTheme = (e) => {
-    setSelectedOption(e.target.value);
-
-    if (e.target.value === 'system') {
-      setTheme(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    } else {
-      setTheme(e.target.value);
-    }
+    setTheme(e.target.value);
   };
 
   // check if mobile dynamically and update
@@ -42,18 +35,6 @@ export default function ClearConvos({ open, onOpenChange }) {
 
     checkMobile();
     window.addEventListener('resize', checkMobile);
-  }, []);
-
-  useEffect(() => {
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-      if (selectedOption === 'system') setTheme(e.matches ? 'dark' : 'light');
-    });
-
-    return () => {
-      window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', (e) => {
-        if (selectedOption === 'system') setTheme(e.matches ? 'dark' : 'light');
-      });
-    };
   }, []);
 
   useEffect(() => {
@@ -121,7 +102,7 @@ export default function ClearConvos({ open, onOpenChange }) {
                     <select
                       className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20"
                       onChange={changeTheme}
-                      value={selectedOption}
+                      value={theme}
                     >
                       <option value="system">System</option>
                       <option value="dark">Dark</option>
