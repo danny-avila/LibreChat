@@ -1,22 +1,24 @@
 ﻿# Windows Install
 
 ### Recommended:
+### **[Docker](docker.md)**
+or
 ### **[Automated Installer (Windows)](https://github.com/fuegovic/chatgpt-clone-local-installer)**
 (Includes a Startup and Update Utility)
 ##
 
-
+## Manual Installation
 ### Install the prerequisites on your machine
 
   - **Download chatgpt-clone**
-  - 
+   
     - Download the latest release here: https://github.com/danny-avila/chatgpt-clone/releases/
     - Or by clicking on the green code button in the top of the page and selecting "Download ZIP"
     - Or (Recommended if you have Git installed) pull the latest release from the main branch
     - If you downloaded a zip file, extract the content in "C:/chatgpt-clone/" 
     - **IMPORTANT : If you install the files somewhere else modify the instructions accordingly**
   
-  - ** **Enable the Conversation search feature:**** (optional)
+  - **Enable the Conversation search feature:** (optional)
 		
     - Download MeiliSearch latest release from : https://github.com/meilisearch/meilisearch/releases
     - Copy it to "C:/chatgpt-clone/"
@@ -81,25 +83,24 @@ To use the app:
 - **Make a batch file to automate the starting process**
   - Open a text editor
   - Paste the following code in a new document
+  - The meilisearch executable needs to be at the root of the chatgpt-clone directory
   - Put your MeiliSearch master key instead of "your_master_key_goes_here"
   - Save the file as "C:/chatgpt-clone/chatgpt-clone.bat"
   - you can make a shortcut of this batch file and put it anywhere
 
 ```
-REM the meilisearch executable needs to be at the root of the chatgpt-clone directory
-
 start "MeiliSearch" cmd /k "meilisearch --master-key your_master_key_goes_here
-
-REM ↑↑↑ meilisearch is the name of the meilisearch executable, put your own master key there
 
 start "ChatGPT-Clone" cmd /k "npm run backend"
 
 REM this batch file goes at the root of the chatgpt-clone directory (C:/chatgpt-clone/)
 ```
 
-### Update the app version
+### **Update**
+- run `git pull` from the root dir
+- Run npm ci from root directory `npm ci`
+- Build the client by running `npm run frontend`
 
-If you update the chatgpt-clone project files, mannually redo the `npm ci` and `npm run frontend` steps
 
 ##
 
