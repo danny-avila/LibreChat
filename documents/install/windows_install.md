@@ -7,7 +7,7 @@ or
 (Includes a Startup and Update Utility)
 ##
 
-
+## Manual Installation
 ### Install the prerequisites on your machine
 
   - **Download chatgpt-clone**
