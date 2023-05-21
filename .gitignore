@@ -64,4 +64,4 @@ src/style - official.css
 # meilisearch
 meilisearch
 data.ms/*
-
+auth.json
