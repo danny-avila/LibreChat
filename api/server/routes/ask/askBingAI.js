@@ -40,7 +40,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
       jailbreakConversationId: req.body?.jailbreakConversationId ?? null,
       systemMessage: req.body?.systemMessage ?? null,
       context: req.body?.context ?? null,
-      toneStyle: req.body?.toneStyle ?? 'fast',
+      toneStyle: req.body?.toneStyle ?? 'creative',
       token: req.body?.token ?? null
     };
   else
@@ -51,7 +51,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
       conversationSignature: req.body?.conversationSignature ?? null,
       clientId: req.body?.clientId ?? null,
       invocationId: req.body?.invocationId ?? null,
-      toneStyle: req.body?.toneStyle ?? 'fast',
+      toneStyle: req.body?.toneStyle ?? 'creative',
       token: req.body?.token ?? null
     };
 

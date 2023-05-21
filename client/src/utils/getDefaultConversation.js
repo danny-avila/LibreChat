@@ -48,7 +48,7 @@ const buildDefaultConversation = ({
       jailbreak: lastConversationSetup?.jailbreak ?? false,
       context: lastConversationSetup?.context ?? null,
       systemMessage: lastConversationSetup?.systemMessage ?? null,
-      toneStyle: lastConversationSetup?.toneStyle ?? 'fast',
+      toneStyle: lastConversationSetup?.toneStyle ?? 'creative',
       jailbreakConversationId: lastConversationSetup?.jailbreakConversationId ?? null,
       conversationSignature: null,
       clientId: null,

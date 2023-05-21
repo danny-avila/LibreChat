@@ -2,6 +2,7 @@ require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
 const { genAzureChatCompletion } = require('../../utils/genAzureEndpoints');
 const tiktoken = require('@dqbd/tiktoken');
+const tiktokenModels = require('../../utils/tiktokenModels');
 const encoding_for_model = tiktoken.encoding_for_model;
 
 const askClient = async ({
@@ -26,10 +27,8 @@ const askClient = async ({
   };
 
   const azure = process.env.AZURE_OPENAI_API_KEY ? true : false;
-  let promptText;
-  if (promptPrefix == null) {
-    promptText = 'You are ChatGPT, a large language model trained by OpenAI.';
-  } else {
+  let promptText = 'You are ChatGPT, a large language model trained by OpenAI.';
+  if (promptPrefix) {
     promptText = promptPrefix;
   }
   const maxContextTokens = model === 'gpt-4' ? 8191 : model === 'gpt-4-32k' ? 32767 : 4095; // 1 less than maximum
@@ -69,25 +68,18 @@ const askClient = async ({
     ...(parentMessageId && conversationId ? { parentMessageId, conversationId } : {})
   };
 
-  const enc = encoding_for_model(model);
-  const text_tokens = enc.encode(text);
-  const prompt_tokens = enc.encode(promptText);
-  // console.log("Prompt tokens = ", prompt_tokens.length);
-  // console.log("Message Tokens = ", text_tokens.length);
-
+  const enc = encoding_for_model(tiktokenModels.has(model) ? model : 'gpt-3.5-turbo');
+  const usage = {
+    prompt_tokens: (enc.encode(promptText)).length + (enc.encode(text)).length,
+  }
+  
   const res = await client.sendMessage(text, { ...options, userId });
-  // return res;
-  // create a new response object that includes the token counts
-  const newRes = {
+  usage.completion_tokens = (enc.encode(res.response)).length;
+  usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
+  return {
     ...res,
-    usage: {
-      prompt_tokens: prompt_tokens.length,
-      completion_tokens: text_tokens.length,
-      total_tokens: prompt_tokens.length + text_tokens.length
-    }
-  };
-
-  return newRes;
+    usage,
+  }
 };
 
 module.exports = { askClient };
