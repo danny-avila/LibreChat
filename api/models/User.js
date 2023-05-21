@@ -102,6 +102,11 @@ userSchema.methods.toJSON = function () {
 
 const isProduction = process.env.NODE_ENV === 'production';
 const secretOrKey = isProduction ? process.env.JWT_SECRET_PROD : process.env.JWT_SECRET_DEV;
+
+if (secretOrKey === 'secret') {
+  console.warn('Warning: JWT_SECRET is set to default value');
+}
+
 const refreshSecret = isProduction
   ? process.env.REFRESH_TOKEN_SECRET_PROD
   : process.env.REFRESH_TOKEN_SECRET_DEV;
