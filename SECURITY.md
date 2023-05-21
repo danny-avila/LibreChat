@@ -24,7 +24,7 @@ We will make every effort to acknowledge your report within 72 hours and keep yo
 ## Security Updates and Patching
 We are committed to maintaining the security of our open-source project named ChatGPT-Clone and promptly addressing any identified vulnerabilities. To ensure the security of our project, we follow these practices:
   - We prioritize security updates for the current major release of our software.
-  - We actively monitor the GitHub Security Advisory system and the `#security-reports` channel on Discord for any vulnerability reports.
+  - We actively monitor the GitHub Security Advisory system and the `#issues` channel on Discord for any vulnerability reports.
   - We promptly review and validate reported vulnerabilities and take appropriate actions to address them.
   - We release security patches and updates in a timely manner to mitigate any identified vulnerabilities.
 
