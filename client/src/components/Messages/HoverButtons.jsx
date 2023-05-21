@@ -53,7 +53,7 @@ export default function HoverButtons({
       ) : null}
       {regenerateEnabled ? (
         <button
-          className="hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible"
+          className="hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible"
           onClick={regenerate}
           type="button"
           title="regenerate"
@@ -64,7 +64,7 @@ export default function HoverButtons({
       ) : null}
 
       <button
-        className="hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible"
+        className="hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible"
         onClick={() => copyToClipboard(setIsCopied)}
         type="button"
         title={isCopied ? 'Copied to clipboard' : 'Copy to clipboard'}

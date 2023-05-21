@@ -48,7 +48,7 @@ const buildDefaultConversation = ({
       jailbreak: lastConversationSetup?.jailbreak ?? false,
       context: lastConversationSetup?.context ?? null,
       systemMessage: lastConversationSetup?.systemMessage ?? null,
-      toneStyle: lastConversationSetup?.toneStyle ?? 'fast',
+      toneStyle: lastConversationSetup?.toneStyle ?? 'creative',
       jailbreakConversationId: lastConversationSetup?.jailbreakConversationId ?? null,
       conversationSignature: null,
       clientId: null,
@@ -80,7 +80,7 @@ const buildDefaultConversation = ({
   return conversation;
 };
 
-const getDefaultConversation = ({ conversation, prevConversation, endpointsConfig, preset }) => {
+const getDefaultConversation = ({ conversation, endpointsConfig, preset }) => {
   const { endpoint: targetEndpoint } = preset || {};
 
   if (targetEndpoint) {
@@ -123,7 +123,9 @@ const getDefaultConversation = ({ conversation, prevConversation, endpointsConfi
       conversation = buildDefaultConversation({ conversation, endpoint, endpointsConfig });
       return conversation;
     }
-  } catch (error) {}
+  } catch (error) {
+    console.error(error);
+  }
 
   // if anything happens, reset to default model
 
