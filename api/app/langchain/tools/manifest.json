@@ -6,13 +6,13 @@
     "icon": "https://i.imgur.com/SMmVkNB.png",
     "authConfig": [
       {
-        "name": "GOOGLE_CSE_ID",
-        "label": "CSE ID",
+        "authField": "GOOGLE_CSE_ID",
+        "label": "Google CSE ID",
         "description": "This is your Google Custom Search Engine ID. For instructions on how to obtain this, see <a href='https://github.com/danny-avila/chatgpt-clone/blob/main/guides/GOOGLE_SEARCH.md'>Our Docs</a>."
       },
       {
-        "name": "GOOGLE_API_KEY",
-        "label": "API Key",
+        "authField": "GOOGLE_API_KEY",
+        "label": "Google API Key",
         "description": "This is your Google Custom Search API Key. For instructions on how to obtain this, see <a href='https://github.com/danny-avila/chatgpt-clone/blob/main/guides/GOOGLE_SEARCH.md'>Our Docs</a>."
       }
     ]
@@ -24,7 +24,7 @@
     "icon": "https://www.wolframcdn.com/images/icons/Wolfram.png",
     "authConfig": [
       {
-        "name": "WOLFRAM_APP_ID",
+        "authField": "WOLFRAM_APP_ID",
         "label": "Wolfram App ID",
         "description": "An AppID must be supplied in all calls to the Wolfram|Alpha API. You can get one by registering at <a href='http://products.wolframalpha.com/api/'>Wolfram|Alpha</a> and going to the <a href='https://developer.wolframalpha.com/portal/myapps/'>Developer Portal</a>."
       }
@@ -44,7 +44,7 @@
     "icon": "https://i.imgur.com/5yQHUz4.png",
     "authConfig": [
       {
-        "name": "SERPAPI_API_KEY",
+        "authField": "SERPAPI_API_KEY",
         "label": "Serpapi Private API Key",
         "description": "Private Key for Serpapi. Register at <a href='https://serpapi.com/'>Serpapi</a> to obtain a private key."
       }
@@ -57,7 +57,7 @@
     "icon": "https://i.imgur.com/u2TzXzH.png",
     "authConfig": [
       {
-        "name": "OPENAI_API_KEY",
+        "authField": "OPENAI_API_KEY",
         "label": "OpenAI API Key",
         "description": "You can use DALL-E with your API Key from OpenAI."
       }

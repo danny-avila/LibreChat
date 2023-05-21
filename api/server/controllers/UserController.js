@@ -1,4 +1,5 @@
 const { updateUserPluginsService } = require('../services/UserService');
+const { updateUserPluginAuth, deleteUserPluginAuth } = require('../services/PluginService');
 
 const getUserController = async (req, res) => {
   res.status(200).send(req.user);
@@ -6,16 +7,44 @@ const getUserController = async (req, res) => {
 
 const updateUserPluginsController = async (req, res) => {
   const { user } = req;
-  const { pluginKey, action } = req.body;
+  const { pluginKey, action, auth } = req.body;
+  let authService;
   try {
-    const response = await updateUserPluginsService(user, pluginKey, action);
-    if (response instanceof Error) {
-      console.log(response);
-      const { status, message } = response;
+    const userPluginsService = await updateUserPluginsService(user, pluginKey, action);
+    
+    if (userPluginsService instanceof Error ) {
+      console.log(userPluginsService);
+      const { status, message } = userPluginsService;
       res.status(status).send({ message });
-    } else {
-      res.status(200).send();
     }
+    const keys = Object.keys(auth);
+    const values = Object.values(auth);
+
+    if (auth) {
+      if (action === 'install') {
+        for(let i = 0; i < keys.length; i++) {
+          authService = await updateUserPluginAuth(user.id, keys[i], pluginKey, values[i]);
+          if (authService instanceof Error ) {
+            console.log(authService);
+            const { status, message } = authService;
+            res.status(status).send({ message });
+          }
+        }
+      }
+      if (action === 'uninstall') {
+        for(let i = 0; i < keys.length; i++) {
+          authService = await deleteUserPluginAuth(user.id, keys[i]);
+          if(authService instanceof Error ) {
+            console.log(authService);
+            const { status, message } = authService;
+            res.status(status).send({ message });
+          }
+        }
+      }
+    }
+
+    res.status(200).send();
+    
   } catch (err) {
     console.log(err);
     res.status(500).json({ message: err.message });
@@ -25,4 +54,4 @@ const updateUserPluginsController = async (req, res) => {
 module.exports = {
   getUserController,
   updateUserPluginsController
-};
+}
