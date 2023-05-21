@@ -112,21 +112,11 @@
   * [Documentation Guidelines](documents/contributions/documentation_guidelines.md)
   * [Code Standards and Conventions](documents/contributions/coding_conventions.md)
   * [Testing](documents/contributions/testing.md)
-  * [Pull Request Template](documents/contributions/pull_request_template.md)
+  * [Security](SECURITY.md)
   * [Contributors](CONTRIBUTORS.md)
   * [Trello Board](https://trello.com/b/17z094kq/chatgpt-clone)
 </details>
 
-<details>
-  <summary><strong>Report Templates</strong></summary>
-
-  * [Bug Report Template](documents/report_templates/bug_report_template.md)
-  * [Custom Issue Template](documents/report_templates/custom_issue_template.md)
-  * [Feature Request Template](documents/report_templates/feature_request_template.md)
-</details>
-
-##
-### [Alternative Documentation](https://chatgpt-clone.gitbook.io/chatgpt-clone-docs/get-started/docker)
 
 ##
 
