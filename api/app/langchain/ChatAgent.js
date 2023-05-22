@@ -404,7 +404,7 @@ Only respond with your conversational reply to the following User Message:
       console.debug(`<-----Agent Model: ${model.modelName} | Temp: ${model.temperature}----->`);
     }
 
-    this.availableTools = await loadTools({ user, model });
+    this.availableTools = await loadTools({ user, model, tools: this.options.tools });
     // load tools
     for (const tool of this.options.tools) {
       const validTool = this.availableTools[tool];

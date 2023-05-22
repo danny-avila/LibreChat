@@ -3,9 +3,10 @@ const axios = require('axios');
 const { Tool } = require('langchain/tools');
 
 class WolframAlphaAPI extends Tool {
-  constructor() {
+  constructor(fields) {
     super();
     this.name = 'wolfram';
+    this.apiKey = fields.apiKey || this.getAppId();
     this.description = `Access computation, math, curated knowledge & real-time data through wolframAlpha.
 - Understands natural language queries about entities in chemistry, physics, geography, history, art, astronomy, and more.
 - Performs mathematical calculations, date and unit conversions, formula solving, etc.
@@ -55,7 +56,7 @@ General guidelines:
     const formattedQuery = query.replaceAll(/\`/g, '');
     const baseURL = 'https://www.wolframalpha.com/api/v1/llm-api';
     const encodedQuery = encodeURIComponent(formattedQuery);
-    const appId = this.getAppId();
+    const appId = this.apiKey || this.getAppId();
     const url = `${baseURL}?input=${encodedQuery}&appid=${appId}`;
     return url;
   }
