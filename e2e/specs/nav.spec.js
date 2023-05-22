@@ -48,8 +48,8 @@ test.describe('Navigation suite', () => {
       await page.waitForTimeout(1000);
 
 
-      // Check if the HTML element has the 'dark' class
-      const html = await page.$eval('html', (element) => element.classList.contains(theme.toLowerCase()));
+      // Check if the HTML element has the theme class
+      const html = await page.$eval('html', (element) => element.classList.contains(theme.toLowerCase()), theme);
       expect(html).toBeTruthy();
     }
 
