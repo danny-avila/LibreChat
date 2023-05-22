@@ -43,7 +43,7 @@ Contains the logic for each route, including calling the appropriate service fun
 - Create a separate controller file for each route to handle the request/response logic.
 - Name controller files using the PascalCase convention and append "Controller" to the file name (e.g., UserController.js).
 - Use controller methods to encapsulate logic related to the route handling.
-- eep controllers thin by delegating complex operations to service or model files.
+- Keep controllers thin by delegating complex operations to service or model files.
 
 #### Services
 
