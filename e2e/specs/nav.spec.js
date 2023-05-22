@@ -12,6 +12,8 @@ test.describe('Navigation suite', () => {
   test('Navigation bar', async () => {
     const page = await myBrowser.newPage();
     await page.goto('http://localhost:3080/');
+    
+    await page.locator('[id="headlessui-menu-button-\\:r0\\:"]').click();
     const navBar = await page.locator('[id="headlessui-menu-button-\\:r0\\:"]').isVisible();
     expect(navBar).toBeTruthy();
   });
@@ -44,7 +46,7 @@ test.describe('Navigation suite', () => {
     // change the value to 'dark' and 'light' and see if the theme changes
     await modalTheme.selectOption({ label: 'Dark' });
     await page.waitForTimeout(1000);
-    
+
     // the html will have class dark if the theme is dark, use the class in html
     const html = await page.innerHTML('html');
     expect(html).toContain('dark');
