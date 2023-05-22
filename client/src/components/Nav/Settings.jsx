@@ -7,7 +7,7 @@ import { useClearConversationsMutation } from '~/data-provider';
 import { ThemeContext } from '~/hooks/ThemeContext';
 import store from '~/store';
 
-export default function ClearConvos({ open, onOpenChange }) {
+export default function Settings({ open, onOpenChange }) {
   const { theme, setTheme } = useContext(ThemeContext);
   const { newConversation } = store.useConversation();
   const { refreshConversations } = store.useConversations();
