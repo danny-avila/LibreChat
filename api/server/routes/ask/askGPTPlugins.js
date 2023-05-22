@@ -77,6 +77,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
   let userMessageId;
   let responseMessageId;
   let lastSavedTimestamp = 0;
+  const user = req.user.id;
 
   const plugin = {
     loading: true,
@@ -125,12 +126,13 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     const abortController = new AbortController();
 
     const clientOptions = {
-      tools: validateTools(tools || []),
       debug: true,
       reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
       proxy: process.env.PROXY || null,
       ...endpointOption
     };
+
+    clientOptions.tools = await validateTools(user, tools);
 
     if (process.env.AZURE_OPENAI_API_KEY) {
       clientOptions.azure = {
@@ -163,7 +165,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
 
     let response = await chatAgent.sendMessage(text, {
       getIds,
-      user: req.user.id,
+      user,
       parentMessageId,
       conversationId,
       onAgentAction,

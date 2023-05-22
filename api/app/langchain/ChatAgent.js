@@ -384,7 +384,7 @@ Only respond with your conversational reply to the following User Message:
     this.actions.push(action);
   }
 
-  async initialize({ message, onAgentAction, onChainEnd }) {
+  async initialize({ user, message, onAgentAction, onChainEnd }) {
     const modelOptions = {
       modelName: this.options.agentOptions.model,
       temperature: this.options.agentOptions.temperature
@@ -404,7 +404,7 @@ Only respond with your conversational reply to the following User Message:
       console.debug(`<-----Agent Model: ${model.modelName} | Temp: ${model.temperature}----->`);
     }
 
-    this.availableTools = loadTools({ model });
+    this.availableTools = await loadTools({ user, model });
 
     // load tools
     for (const tool of this.options.tools) {

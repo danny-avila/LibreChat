@@ -6,8 +6,10 @@ const { google } = require('googleapis');
  * @extends Tool
  */
 class GoogleSearchAPI extends Tool {
-  constructor() {
+  constructor(fields = {}) {
     super();
+    this.cx = fields.cx || this.getCx();
+    this.apiKey = fields.apiKey || this.getApiKey();
     this.customSearch = undefined;
   }
 

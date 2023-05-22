@@ -10,21 +10,27 @@ class OpenAICreateImage extends Tool {
   constructor(fields = {}) {
     super();
 
-    let apiKey = process.env.OPENAI_API_KEY;
+    let apiKey = fields.apiKey || process.env.OPENAI_API_KEY;
+    let azureKey = fields.azureKey || process.env.AZURE_OPENAI_API_KEY;
     let config = { apiKey };
 
-    if (process.env.AZURE_OPENAI_API_KEY && fields.azure) {
+    if (azureKey) {
       apiKey = process.env.AZURE_OPENAI_API_KEY;
+      const azureConfig = {
+        apiKey,
+        azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME || fields.azureOpenAIApiInstanceName,
+        azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME || fields.azureOpenAIApiDeploymentName,
+        azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION || fields.azureOpenAIApiVersion
+      };
       config = {
         apiKey,
         basePath: genAzureEndpoint({
-          azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME,
-          azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME
+          ...azureConfig,
         }),
         baseOptions: {
           headers: { 'api-key': apiKey },
           params: {
-            'api-version': process.env.AZURE_OPENAI_API_VERSION // this might change. I got the current value from the sample code at https://oai.azure.com/portal/chat
+            'api-version': azureConfig.azureOpenAIApiVersion // this might change. I got the current value from the sample code at https://oai.azure.com/portal/chat
           }
         }
       };

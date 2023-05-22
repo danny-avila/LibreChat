@@ -35,7 +35,13 @@
     "pluginKey": "browser",
     "description": "Scrape and summarize webpage data",
     "icon": "",
-    "authConfig": []
+    "authConfig": [
+      {
+        "authField": "OPENAI_API_KEY",
+        "label": "OpenAI API Key",
+        "description": "Browser makes use of OpenAI embeddings"
+      }
+    ]
   },
   {
     "name": "Serpapi",
@@ -57,7 +63,7 @@
     "icon": "https://i.imgur.com/u2TzXzH.png",
     "authConfig": [
       {
-        "authField": "OPENAI_API_KEY",
+        "authField": "DALLE_API_KEY",
         "label": "OpenAI API Key",
         "description": "You can use DALL-E with your API Key from OpenAI."
       }

@@ -15,56 +15,100 @@ const OpenAICreateImage = require('./openaiCreateImage');
 const StableDiffusionAPI = require('./stablediffusion');
 const WolframAlphaAPI = require('./wolfram');
 const availableTools = require('./manifest.json');
+const { getUserPluginAuthValue } = require('../../../server/services/PluginService');
 
-const validateTools = (tools) => {
-  const validTools = new Set(availableTools.map((tool) => tool.pluginKey));
-
-  const validateAPIKey = (apiKeyName, toolName) => {
-    if (!process.env[apiKeyName] || process.env[apiKeyName] === '') {
+const validateTools = async (user, tools = []) => {
+  try {
+    const validTools = new Set(availableTools.map((tool) => tool.pluginKey));
+    const validateCredentials = async (authField, toolName) => {
+      const adminAuth = process.env[authField];
+      if (adminAuth || adminAuth?.length > 0) {
+        return;
+      }
+      const userAuth = await getUserPluginAuthValue(user, authField);
+      if (userAuth || userAuth?.length > 0) {
+        return;
+      }
       validTools.delete(toolName);
+    };
+
+    for (const tool of availableTools) {
+      if (tool.authConfig.length === 0) {
+        continue;
+      }
+
+      for (const auth of tool.authConfig) {
+        await validateCredentials(auth.authField, tool.pluginKey);
+      }
     }
-  };
 
-  validateAPIKey('SERPAPI_API_KEY', 'serpapi');
-  validateAPIKey('ZAPIER_NLA_API_KEY', 'zapier');
-  validateAPIKey('GOOGLE_CSE_ID', 'google');
-  validateAPIKey('GOOGLE_API_KEY', 'google');
-  validateAPIKey('WOLFRAM_APP_ID', 'wolfram');
-
-  return tools.filter((tool) => {
-    if (!validTools.has(tool))
-      console.log('Invalid tool, are your tool credentials set? tool: ', tool);
-    return validTools.has(tool);
-  });
+    return tools.filter((tool) => validTools.has(tool));
+  } catch (err) {
+    console.log('There was a problem validating tools', err);
+    throw new Error(err);
+  }
 };
 
-const loadTools = ({ model }) => ({
+const loadTools = async ({ user, model }) => ({
   calculator: () => new Calculator(),
-  google: () => new GoogleSearchAPI(),
-  browser: () => new WebBrowser({ model, embeddings: new OpenAIEmbeddings() }),
-  serpapi: () =>
-    new SerpAPI(process.env.SERPAPI_API_KEY || '', {
+
+  google: async () => {
+    let cx = process.env.GOOGLE_CSE_ID;
+    let apiKey = process.env.GOOGLE_API_KEY;
+    if (!cx || !apiKey) {
+      cx = await getUserPluginAuthValue(user, 'GOOGLE_CSE_ID');
+      apiKey = await getUserPluginAuthValue(user, 'GOOGLE_API_KEY');
+    }
+    return new GoogleSearchAPI({ cx, apiKey });
+  },
+
+  browser: async () => {
+    let openAIApiKey = process.env.OPENAI_API_KEY;
+    if (!openAIApiKey) {
+      openAIApiKey = await getUserPluginAuthValue(user, 'OPENAI_API_KEY');
+    }
+    return new WebBrowser({ model, embeddings: new OpenAIEmbeddings({ openAIApiKey }) });
+  },
+
+  serpapi: async () => {
+    let apiKey = process.env.SERPAPI_API_KEY;
+    if (!apiKey) {
+      apiKey = await getUserPluginAuthValue(user, 'SERPAPI_API_KEY');
+    }
+    return new SerpAPI(apiKey, {
       location: 'Austin,Texas,United States',
       hl: 'en',
       gl: 'us'
-    }),
-  zapier: () => {
-    const zapier = new ZapierNLAWrapper({
-      apiKey: process.env.ZAPIER_NLA_API_KEY || ''
     });
+  },
+
+  zapier: async () => {
+    let apiKey = process.env.ZAPIER_NLA_API_KEY;
+    if (!apiKey) {
+      apiKey = await getUserPluginAuthValue(user, 'ZAPIER_NLA_API_KEY');
+    }
+    const zapier = new ZapierNLAWrapper({ apiKey });
 
     return ZapierToolKit.fromZapierNLAWrapper(zapier);
   },
-  'dall-e': () => new OpenAICreateImage(),
+
+  'dall-e': async () => {
+    let apiKey = process.env.DALLE_API_KEY;
+    if (!apiKey) {
+      apiKey = await getUserPluginAuthValue(user, 'DALLE_API_KEY');
+    }
+    return new OpenAICreateImage({ apiKey });
+  },
+
   'stable-diffusion': () => new StableDiffusionAPI(),
-  wolfram: () => new WolframAlphaAPI()
-  // plugins: async () => {
-  //   return [
-  //     new RequestsGetTool(),
-  //     new RequestsPostTool(),
-  //     await AIPluginTool.fromPluginUrl('https://www.wolframalpha.com/.well-known/ai-plugin.json')
-  //   ];
-  // }
+
+  wolfram: async () => {
+    let apiKey = process.env.WOLFRAM_APP_ID;
+    if (!apiKey) {
+      apiKey = await getUserPluginAuthValue(user, 'WOLFRAM_APP_ID');
+    }
+    return new WolframAlphaAPI({ apiKey });
+  }
 });
 
 module.exports = {
