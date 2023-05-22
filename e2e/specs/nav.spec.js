@@ -12,7 +12,7 @@ test.describe('Navigation suite', () => {
   test('Navigation bar', async () => {
     const page = await myBrowser.newPage();
     await page.goto('http://localhost:3080/');
-    
+
     await page.locator('[id="headlessui-menu-button-\\:r0\\:"]').click();
     const navBar = await page.locator('[id="headlessui-menu-button-\\:r0\\:"]').isVisible();
     expect(navBar).toBeTruthy();
@@ -40,14 +40,20 @@ test.describe('Navigation suite', () => {
     const modalClearConvos = await page.getByRole('button', { name: 'Clear' }).isVisible();
     expect(modalClearConvos).toBeTruthy();
 
-    const modalTheme = await page.getByRole('combobox');
-    expect(modalTheme.isVisible()).toBeTruthy();
-    // change the value to 'dark' and 'light' and see if the theme changes
-    await modalTheme.selectOption({ label: 'Dark' });
-    await page.waitForTimeout(1000);
+    async function changeMode(theme) {
+      const modalTheme = await page.getByRole('combobox');
+      expect(modalTheme.isVisible()).toBeTruthy();
+      // change the value to 'dark' and 'light' and see if the theme changes
+      await modalTheme.selectOption({ label: theme });
+      await page.waitForTimeout(1000);
 
-    // Check if the HTML element has the 'dark' class
-    const html = await page.$eval('html', (element) => element.classList.contains('dark'));
-    expect(html).toBeTruthy();
+
+      // Check if the HTML element has the 'dark' class
+      const html = await page.$eval('html', (element) => element.classList.contains(theme.toLowerCase()));
+      expect(html).toBeTruthy();
+    }
+
+    await changeMode('Dark');
+    await changeMode('Light');
   });
 });
