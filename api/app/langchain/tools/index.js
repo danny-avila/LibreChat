@@ -19,21 +19,24 @@ const { getUserPluginAuthValue } = require('../../../server/services/PluginServi
 
 const validateTools = async (user, tools = []) => {
   try {
-    const validTools = new Set(availableTools.map((tool) => tool.pluginKey));
+    const validToolsMap = new Map(tools.map((tool) => [tool.pluginKey, tool]));
+    const availableToolsToValidate = availableTools.filter((tool) => validToolsMap.has(tool.pluginKey));
+
     const validateCredentials = async (authField, toolName) => {
       const adminAuth = process.env[authField];
-      if (adminAuth || adminAuth?.length > 0) {
+      if (adminAuth && adminAuth.length > 0) {
         return;
       }
+
       const userAuth = await getUserPluginAuthValue(user, authField);
-      if (userAuth || userAuth?.length > 0) {
+      if (userAuth && userAuth.length > 0) {
         return;
       }
-      validTools.delete(toolName);
+      validToolsMap.delete(toolName);
     };
 
-    for (const tool of availableTools) {
-      if (tool.authConfig.length === 0) {
+    for (const tool of availableToolsToValidate) {
+      if (!tool.authConfig || tool.authConfig.length === 0) {
         continue;
       }
 
@@ -42,7 +45,7 @@ const validateTools = async (user, tools = []) => {
       }
     }
 
-    return tools.filter((tool) => validTools.has(tool));
+    return Array.from(validToolsMap.values());
   } catch (err) {
     console.log('There was a problem validating tools', err);
     throw new Error(err);

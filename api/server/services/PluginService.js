@@ -4,6 +4,9 @@ const { encrypt, decrypt } = require('../../utils/crypto');
 const getUserPluginAuthValue = async (user, authField) => {
   try {
     const pluginAuth = await PluginAuth.findOne({ user, authField });
+    if (!pluginAuth) {
+      return null;
+    }
     const decryptedValue = decrypt(pluginAuth.value);
     return decryptedValue;
   } catch (err) {
@@ -11,6 +14,32 @@ const getUserPluginAuthValue = async (user, authField) => {
     return err;
   }
 };
+
+// const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
+//   try {
+//     const encryptedValue = encrypt(value);
+
+//     const pluginAuth = await PluginAuth.findOneAndUpdate(
+//       { userId, authField },
+//       {
+//         $set: {
+//           value: encryptedValue,
+//           pluginKey
+//         }
+//       },
+//       {
+//         new: true,
+//         upsert: true
+//       }
+//     );
+
+//     return pluginAuth;
+//   } catch (err) {
+//     console.log(err);
+//     return err;
+//   }
+// };
+
 
 const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
   try {

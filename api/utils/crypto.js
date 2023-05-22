@@ -1,14 +1,12 @@
 const crypto = require('crypto');
-
+const isProduction = process.env.NODE_ENV === 'production';
+const key = Buffer.from(isProduction ? process.env.CREDS_KEY_PROD : process.env.CREDS_KEY_DEV, 'hex');
+const iv = Buffer.from(isProduction ? process.env.CREDS_IV_PROD : process.env.CREDS_IV_DEV, 'hex');
 const algorithm = 'aes-256-cbc';
-const key = crypto.randomBytes(32); // Generate a random encryption key
-const iv = crypto.randomBytes(16); // Generate a random initialization vector
 
 function encrypt(value) {
   const cipher = crypto.createCipheriv(algorithm, key, iv);
-  console.log('value', value);
   let encrypted = cipher.update(value, 'utf8', 'hex');
-  console.log('encrypted', encrypted);
   encrypted += cipher.final('hex');
   return encrypted;
 }

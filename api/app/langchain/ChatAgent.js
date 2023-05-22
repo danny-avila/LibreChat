@@ -405,7 +405,6 @@ Only respond with your conversational reply to the following User Message:
     }
 
     this.availableTools = await loadTools({ user, model });
-
     // load tools
     for (const tool of this.options.tools) {
       const validTool = this.availableTools[tool];
@@ -413,7 +412,7 @@ Only respond with your conversational reply to the following User Message:
       if (tool === 'plugins') {
         this.tools = [...this.tools, ...(await validTool())];
       } else if (validTool) {
-        this.tools.push(validTool());
+        this.tools.push(await validTool());
       }
     }
 
