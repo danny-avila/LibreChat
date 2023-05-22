@@ -6,6 +6,7 @@ import { cn } from '~/utils/';
 import { useClearConversationsMutation } from '~/data-provider';
 import { ThemeContext } from '~/hooks/ThemeContext';
 import store from '~/store';
+import { CheckIcon } from 'lucide-react';
 
 export default function Settings({ open, onOpenChange }) {
   const { theme, setTheme } = useContext(ThemeContext);
@@ -13,11 +14,15 @@ export default function Settings({ open, onOpenChange }) {
   const { refreshConversations } = store.useConversations();
   const clearConvosMutation = useClearConversationsMutation();
   const [isMobile, setIsMobile] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const clearConvos = () => {
-    if (window.confirm('Are you sure you want to clear all conversations? This is irreversible.')) {
+    if (confirmClear) {
       console.log('Clearing conversations...');
       clearConvosMutation.mutate();
+      setConfirmClear(false);
+    } else {
+      setConfirmClear(true);
     }
   };
 
@@ -45,6 +50,22 @@ export default function Settings({ open, onOpenChange }) {
       refreshConversations();
     }
   }, [clearConvosMutation.isSuccess]);
+
+  useEffect(() => {
+    // If the user clicks in the dialog when confirmClear is true, set it to false
+    const handleClick = (e) => {
+      if (confirmClear) {
+        if (e.target.id === 'clearConvosBtn' || e.target.id === 'clearConvosTxt') {
+          return;
+        }
+
+        setConfirmClear(false);
+      }
+    };
+
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, [confirmClear]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -118,9 +139,24 @@ export default function Settings({ open, onOpenChange }) {
                     <button
                       className="btn relative bg-red-600  text-white hover:bg-red-800"
                       type="button"
+                      id="clearConvosBtn"
                       onClick={clearConvos}
                     >
-                      <div className="flex w-full items-center justify-center gap-2">Clear</div>
+                      {confirmClear ? (
+                        <div
+                          className="flex w-full items-center justify-center gap-2"
+                          id="clearConvosTxt"
+                        >
+                          <CheckIcon className="h-5 w-5" /> Confirm Clear
+                        </div>
+                      ) : (
+                        <div
+                          className="flex w-full items-center justify-center gap-2"
+                          id="clearConvosTxt"
+                        >
+                          Clear
+                        </div>
+                      )}
                     </button>
                   </div>
                 </div>
