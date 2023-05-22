@@ -48,7 +48,7 @@
     "copy-to-clipboard": "^3.3.3",
     "crypto-browserify": "^3.12.0",
     "downloadjs": "^1.4.7",
-    "esbuild": "0.17.15",
+    "esbuild": "0.17.19",
     "export-from-json": "^1.7.2",
     "filenamify": "^6.0.0",
     "html2canvas": "^1.4.1",
