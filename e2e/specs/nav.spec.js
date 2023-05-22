@@ -40,13 +40,13 @@ test.describe('Navigation suite', () => {
     const modalClearConvos = await page.getByRole('button', { name: 'Clear' }).isVisible();
     expect(modalClearConvos).toBeTruthy();
 
+    const modalTheme = await page.getByRole('combobox');
+    expect(modalTheme.isVisible()).toBeTruthy();
+
     async function changeMode(theme) {
-      const modalTheme = await page.getByRole('combobox');
-      expect(modalTheme.isVisible()).toBeTruthy();
       // change the value to 'dark' and 'light' and see if the theme changes
       await modalTheme.selectOption({ label: theme });
       await page.waitForTimeout(1000);
-
 
       // Check if the HTML element has the theme class
       const html = await page.$eval('html', (element, theme) => element.classList.contains(theme.toLowerCase()), theme);
