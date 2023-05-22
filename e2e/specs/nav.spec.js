@@ -42,14 +42,12 @@ test.describe('Navigation suite', () => {
 
     const modalTheme = await page.getByRole('combobox');
     expect(modalTheme.isVisible()).toBeTruthy();
-
     // change the value to 'dark' and 'light' and see if the theme changes
     await modalTheme.selectOption({ label: 'Dark' });
     await page.waitForTimeout(1000);
 
-    // the html will have class dark if the theme is dark, use the class in html
-    const html = await page.innerHTML('html');
-    expect(html).toContain('dark');
-
+    // Check if the HTML element has the 'dark' class
+    const html = await page.$eval('html', (element) => element.classList.contains('dark'));
+    expect(html).toBeTruthy();
   });
 });
