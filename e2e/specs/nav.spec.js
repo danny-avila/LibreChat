@@ -42,9 +42,9 @@ test.describe('Navigation suite', () => {
     expect(modalTheme.isVisible()).toBeTruthy();
 
     // change the value to 'dark' and 'light' and see if the theme changes
-    await modalTheme.selectOption({ label: 'dark' });
+    await modalTheme.selectOption({ label: 'Dark' });
     await page.waitForTimeout(1000);
-
+    
     // the html will have class dark if the theme is dark, use the class in html
     const html = await page.innerHTML('html');
     expect(html).toContain('dark');
