@@ -15,13 +15,9 @@ export default function Settings({ open, onOpenChange }) {
   const [isMobile, setIsMobile] = useState(false);
 
   const clearConvos = () => {
-    console.log('Clearing conversations...');
-    clearConvosMutation.mutate();
-  };
-
-  const confirmClearConvos = () => {
     if (window.confirm('Are you sure you want to clear all conversations? This is irreversible.')) {
-      clearConvos();
+      console.log('Clearing conversations...');
+      clearConvosMutation.mutate();
     }
   };
 
@@ -122,7 +118,7 @@ export default function Settings({ open, onOpenChange }) {
                     <button
                       className="btn relative bg-red-600  text-white hover:bg-red-800"
                       type="button"
-                      onClick={confirmClearConvos}
+                      onClick={clearConvos}
                     >
                       <div className="flex w-full items-center justify-center gap-2">Clear</div>
                     </button>
