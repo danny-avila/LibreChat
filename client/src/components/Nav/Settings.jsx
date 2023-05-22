@@ -19,6 +19,12 @@ export default function ClearConvos({ open, onOpenChange }) {
     clearConvosMutation.mutate();
   };
 
+  const confirmClearConvos = () => {
+    if (window.confirm('Are you sure you want to clear all conversations? This is irreversible.')) {
+      clearConvos();
+    }
+  };
+
   const changeTheme = (e) => {
     setTheme(e.target.value);
   };
@@ -100,7 +106,7 @@ export default function ClearConvos({ open, onOpenChange }) {
                   <div className="flex items-center justify-between">
                     <div>Theme</div>
                     <select
-                      className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20"
+                      className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20 dark:bg-gray-900"
                       onChange={changeTheme}
                       value={theme}
                     >
@@ -113,13 +119,12 @@ export default function ClearConvos({ open, onOpenChange }) {
                 <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
                   <div className="flex items-center justify-between">
                     <div>Clear all chats</div>
-                    <button className="btn relative bg-red-600  text-white hover:bg-red-800">
-                      <div
-                        className="flex w-full items-center justify-center gap-2"
-                        onClick={clearConvos}
-                      >
-                        Clear
-                      </div>
+                    <button
+                      className="btn relative bg-red-600  text-white hover:bg-red-800"
+                      type="button"
+                      onClick={confirmClearConvos}
+                    >
+                      <div className="flex w-full items-center justify-center gap-2">Clear</div>
                     </button>
                   </div>
                 </div>
