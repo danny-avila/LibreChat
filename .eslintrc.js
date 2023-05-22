@@ -10,6 +10,7 @@ module.exports = {
     'eslint:recommended',
     'plugin:react/recommended',
     'plugin:react-hooks/recommended',
+    "plugin:jest/recommended",
     'prettier'
   ],
   parser: '@typescript-eslint/parser',
@@ -64,7 +65,7 @@ module.exports = {
     {
       files: ['rollup.config.js', '.eslintrc.js', 'jest.config.js'],
       env: {
-        node: true
+        node: true,
       }
     },
     {
@@ -95,7 +96,7 @@ module.exports = {
       parserOptions: {
         project: './client/tsconfig.json'
       },
-      plugins: ['@typescript-eslint/eslint-plugin'],
+      plugins: ['@typescript-eslint/eslint-plugin', 'jest'],
       extends: [
         'plugin:@typescript-eslint/eslint-recommended',
         'plugin:@typescript-eslint/recommended'
