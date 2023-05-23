@@ -118,8 +118,11 @@ export default function MessageHandler() {
     const { requestMessage, responseMessage, conversation } = data;
 
     // update the messages
-    if (isRegenerate) setMessages([...messages, responseMessage]);
-    else setMessages([...messages, requestMessage, responseMessage]);
+    if (isRegenerate) {
+      setMessages([...messages, responseMessage]);
+    } else {
+      setMessages([...messages, requestMessage, responseMessage]);
+    }
     setIsSubmitting(false);
 
     // refresh title
