@@ -14,10 +14,6 @@ export default defineConfig({
         target: 'http://localhost:3080',
         changeOrigin: true
       },
-      '/auth': {
-        target: 'http://localhost:3080',
-        changeOrigin: true
-      },
       '/oauth': {
         target: 'http://localhost:3080',
         changeOrigin: true
