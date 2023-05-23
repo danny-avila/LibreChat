@@ -49,3 +49,7 @@ We believe in the power of collaboration to improve the security of our project 
 ##
 
 ## [Go Back to ReadMe](README.md)
+
+
+**Reference**
+- https://cheatsheetseries.owasp.org/cheatsheets/Vulnerability_Disclosure_Cheat_Sheet.html
