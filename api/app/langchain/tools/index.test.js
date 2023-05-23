@@ -1,3 +1,4 @@
+/* eslint-disable jest/no-conditional-expect */
 require('dotenv').config({ path: '../../../.env' });
 const mongoose = require('mongoose');
 const User = require('../../../models/User');
@@ -63,6 +64,20 @@ describe('Tool Handlers', () => {
     it('returns an empty array when no authenticated tools are provided', async () => {
       const validTools = await validateTools(fakeUser._id, []);
       expect(validTools).toEqual([]);
+    });
+
+    it('should validate a tool from an Environment Variable', async () => {
+      const testPluginKey = 'wolfram';
+      const plugin = availableTools.find((tool) => tool.pluginKey === testPluginKey);
+      const authConfigs = plugin.authConfig;
+      for (const authConfig of authConfigs) {
+        process.env[authConfig.authField] = mockCredential;
+      }
+      const validTools = await validateTools(fakeUser._id, [testPluginKey]);
+      expect(validTools.length).toEqual(1);
+      for (const authConfig of authConfigs) {
+        delete process.env[authConfig.authField];
+      }
     });
   });
 
