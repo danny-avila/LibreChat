@@ -6,7 +6,7 @@ const {
 } = require('@dqbd/tiktoken');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
 const { Agent, ProxyAgent } = require('undici');
-const TextStream = require('./stream');
+const TextStream = require('../stream');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { CallbackManager } = require('langchain/callbacks');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
