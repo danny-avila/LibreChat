@@ -1,9 +1,9 @@
 import {
   useState,
-  useCallback,
   useEffect,
   useMemo,
   ReactNode,
+  useCallback,
   createContext,
   useContext
 } from 'react';
@@ -17,13 +17,12 @@ import {
   useRefreshTokenMutation,
   TLoginUser
 } from '~/data-provider';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 export type TAuthContext = {
   user: TUser | undefined;
   token: string | undefined;
   isAuthenticated: boolean;
-  isLoading: boolean;
   error: string | undefined;
   login: (data: TLoginUser) => void;
   logout: () => void;
@@ -42,7 +41,6 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<TUser | undefined>(undefined);
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
   const navigate = useNavigate();
@@ -52,20 +50,22 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   const userQuery = useGetUserQuery({ enabled: !!token });
   const refreshToken = useRefreshTokenMutation();
 
-  const location = useLocation();
-
-  const setUserContext = (userContext: TUserContext) => {
-    const { token, isAuthenticated, user, redirect } = userContext;
-    if (user) {
-      setUser(user);
-    }
-    setToken(token);
-    setTokenHeader(token);
-    setIsAuthenticated(isAuthenticated);
-    if (redirect) {
-      navigate(redirect);
-    }
-  };
+  const setUserContext = useCallback(
+    (userContext: TUserContext) => {
+      const { token, isAuthenticated, user, redirect } = userContext;
+      if (user) {
+        setUser(user);
+      }
+      setToken(token);
+      //@ts-ignore - ok for token to be undefined initially
+      setTokenHeader(token);
+      setIsAuthenticated(isAuthenticated);
+      if (redirect) {
+        navigate(redirect);
+      }
+    },
+    [navigate]
+  );
 
   const getCookieValue = (key) => {
     let keyValue = document.cookie.match('(^|;) ?' + key + '=([^;]*)(;|$)');
@@ -109,7 +109,8 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
     if (userQuery.data) {
       setUser(userQuery.data);
     } else if (userQuery.isError) {
-      setError(userQuery.error.message);
+      //@ts-ignore - userQuery.error is of type unknown
+      setError(userQuery?.error.message);
       navigate('/login');
     }
     if (error && isAuthenticated) {
@@ -118,13 +119,21 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
     if (!token || !isAuthenticated) {
       const tokenFromCookie = getCookieValue('token');
       if (tokenFromCookie) {
-        // debugger;
         setUserContext({ token: tokenFromCookie, isAuthenticated: true, user: userQuery.data });
       } else {
         navigate('/login');
       }
     }
-  }, [token, isAuthenticated, userQuery.data, userQuery.isError]);
+  }, [
+    token,
+    isAuthenticated,
+    userQuery.data,
+    userQuery.isError,
+    userQuery.error,
+    error,
+    navigate,
+    setUserContext
+  ]);
 
   // const silentRefresh = useCallback(() => {
   //   refreshToken.mutate(undefined, {
@@ -136,16 +145,8 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   //       setError(error.message);
   //     }
   //   });
-  //   setTimeout(silentRefresh, 5 * 60 * 1000);
+  //   
   // }, [setUserContext]);
-
-  useEffect(() => {
-    if (loginUser.isLoading || logoutUser.isLoading) {
-      setIsLoading(true);
-    } else {
-      setIsLoading(false);
-    }
-  }, [loginUser.isLoading, logoutUser.isLoading]);
 
   // useEffect(() => {
   //   if (token)
@@ -158,13 +159,12 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
       user,
       token,
       isAuthenticated,
-      isLoading,
       error,
       login,
       logout
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [user, isLoading, error, isAuthenticated, token]
+    [user, error, isAuthenticated, token]
   );
 
   return <AuthContext.Provider value={memoedValue}>{children}</AuthContext.Provider>;

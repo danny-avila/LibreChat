@@ -39,14 +39,22 @@ function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPlugi
               {plugin.name}
             </div>
             {!isInstalled ? (
-              <button className="btn btn-primary relative" onClick={handleClick}>
+              <button
+                className="btn btn-primary relative"
+                aria-label={`Install ${plugin.name}`}
+                onClick={handleClick}
+              >
                 <div className="flex w-full items-center justify-center gap-2">
                   Install
                   <DownloadCloud className="flex h-4 w-4 items-center stroke-2" />
                 </div>
               </button>
             ) : (
-              <button className="btn relative bg-gray-300 hover:bg-gray-400 dark:bg-gray-50 dark:hover:bg-gray-200" onClick={handleClick}>
+              <button
+                className="btn relative bg-gray-300 hover:bg-gray-400 dark:bg-gray-50 dark:hover:bg-gray-200"
+                onClick={handleClick}
+                aria-label={`Uninstall ${plugin.name}`}
+              >
                 <div className="flex w-full items-center justify-center gap-2">
                   Uninstall
                   <XCircle className="flex h-4 w-4 items-center stroke-2" />

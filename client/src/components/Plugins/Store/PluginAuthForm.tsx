@@ -39,6 +39,7 @@ function PluginAuthForm({ plugin, onSubmit }: TPluginAuthFormProps) {
                 <HoverCardTrigger className="grid w-full items-center gap-2">
                   <input
                     type="text"
+                    autoComplete="off"
                     id={config.authField}
                     aria-invalid={!!errors[config.authField]}
                     aria-describedby={`${config.authField}-error`}
