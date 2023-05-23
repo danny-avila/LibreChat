@@ -266,7 +266,7 @@ class GoogleAgent {
     const user = opts.user || null;
     const conversationId = opts.conversationId || crypto.randomUUID();
     const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
-    const userMessageId = crypto.randomUUID();
+    const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
     const responseMessageId = crypto.randomUUID();
     const messages = await this.loadHistory(conversationId, this.options?.parentMessageId);
 
