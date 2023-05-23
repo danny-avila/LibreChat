@@ -8,14 +8,17 @@ const PluginService = require('../../../server/services/PluginService');
 const { BaseChatModel } = require('langchain/chat_models/openai');
 const { Calculator } = require('langchain/tools/calculator');
 const OpenAICreateImage = require('./openaiCreateImage');
+const GoogleSearchAPI = require('./googleSearch');
 
 describe('Tool Handlers', () => {
   let fakeUser;
   let pluginKey = 'dall-e';
-  let authField = 'DALLE_API_KEY';
-  let sampleTools = [pluginKey, 'wolfram'];
+  let pluginKey2 = 'wolfram';
+  let sampleTools = [pluginKey, pluginKey2];
   let ToolClass = OpenAICreateImage;
   let mockCredential = 'mock-credential';
+  const mainPlugin = availableTools.find((tool) => tool.pluginKey === pluginKey);
+  const authConfigs = mainPlugin.authConfig;
 
   beforeAll(async () => {
     await connectDb();
@@ -33,7 +36,9 @@ describe('Tool Handlers', () => {
       refreshToken: []
     });
     await fakeUser.save();
-    await PluginService.updateUserPluginAuth(fakeUser._id, authField, pluginKey, mockCredential);
+    for (const authConfig of authConfigs) {
+      await PluginService.updateUserPluginAuth(fakeUser._id, authConfig.authField, pluginKey, mockCredential);
+    }
   });
 
   // afterEach(async () => {
@@ -43,7 +48,9 @@ describe('Tool Handlers', () => {
   afterAll(async () => {
     // Delete the fake user & plugin auth
     await User.findByIdAndDelete(fakeUser._id);
-    await PluginService.deleteUserPluginAuth(fakeUser._id, authField);
+    for (const authConfig of authConfigs) {
+      await PluginService.deleteUserPluginAuth(fakeUser._id, authConfig.authField);
+    }
     await mongoose.connection.close();
   });
 
@@ -51,14 +58,13 @@ describe('Tool Handlers', () => {
     it('returns valid tools given input tools and user authentication', async () => {
       const validTools = await validateTools(fakeUser._id, sampleTools);
       expect(validTools).toBeDefined();
-      expect(validTools.some((tool) => tool === 'dall-e')).toBeTruthy();
-      expect(validTools.some((tool) => tool === 'wolfram')).toBeFalsy();
+      expect(validTools.some((tool) => tool === pluginKey)).toBeTruthy();
       expect(validTools.length).toBeGreaterThan(0);
     });
 
     it('removes tools without valid credentials from the validTools array', async () => {
       const validTools = await validateTools(fakeUser._id, sampleTools);
-      expect(validTools.some((tool) => tool.pluginKey === 'wolfram')).toBeFalsy();
+      expect(validTools.some((tool) => tool.pluginKey === pluginKey2)).toBeFalsy();
     });
 
     it('returns an empty array when no authenticated tools are provided', async () => {
@@ -67,13 +73,12 @@ describe('Tool Handlers', () => {
     });
 
     it('should validate a tool from an Environment Variable', async () => {
-      const testPluginKey = 'wolfram';
-      const plugin = availableTools.find((tool) => tool.pluginKey === testPluginKey);
+      const plugin = availableTools.find((tool) => tool.pluginKey === pluginKey2);
       const authConfigs = plugin.authConfig;
       for (const authConfig of authConfigs) {
         process.env[authConfig.authField] = mockCredential;
       }
-      const validTools = await validateTools(fakeUser._id, [testPluginKey]);
+      const validTools = await validateTools(fakeUser._id, [pluginKey2]);
       expect(validTools.length).toEqual(1);
       for (const authConfig of authConfigs) {
         delete process.env[authConfig.authField];
@@ -85,8 +90,12 @@ describe('Tool Handlers', () => {
     let toolFunctions;
     let loadTool1;
     let loadTool2;
+    let loadTool3;
     sampleTools = [...sampleTools, 'calculator'];
-    let remainingTools = availableTools.filter((tool) => sampleTools.indexOf(tool.pluginKey) === -1);
+    let ToolClass2 = Calculator;
+    let remainingTools = availableTools.filter(
+      (tool) => sampleTools.indexOf(tool.pluginKey) === -1
+    );
 
     beforeAll(async () => {
       toolFunctions = await loadTools({
@@ -96,10 +105,12 @@ describe('Tool Handlers', () => {
       });
       loadTool1 = toolFunctions[sampleTools[0]];
       loadTool2 = toolFunctions[sampleTools[1]];
+      loadTool3 = toolFunctions[sampleTools[2]];
     });
     it('returns the expected load functions for requested tools', async () => {
       expect(loadTool1).toBeDefined();
       expect(loadTool2).toBeDefined();
+      expect(loadTool3).toBeDefined();
 
       for (const tool of remainingTools) {
         expect(toolFunctions[tool.pluginKey]).toBeUndefined();
@@ -108,9 +119,9 @@ describe('Tool Handlers', () => {
 
     it('should initialize an authenticated tool or one without authentication', async () => {
       const authTool = await loadTool1();
-      const calculator = toolFunctions.calculator();
+      const tool = await loadTool3();
       expect(authTool).toBeInstanceOf(ToolClass);
-      expect(calculator).toBeInstanceOf(Calculator);
+      expect(tool).toBeInstanceOf(ToolClass2);
     });
     it('should throw an error for an unauthenticated tool', async () => {
       try {
@@ -118,6 +129,22 @@ describe('Tool Handlers', () => {
       } catch (error) {
         expect(error).toBeDefined();
       }
+    });
+    it('should initialize an authenticated tool through Environment Variables', async () => {
+      let testPluginKey = 'google';
+      let TestClass = GoogleSearchAPI;
+      const plugin = availableTools.find((tool) => tool.pluginKey === testPluginKey);
+      const authConfigs = plugin.authConfig;
+      for (const authConfig of authConfigs) {
+        process.env[authConfig.authField] = mockCredential;
+      }
+      toolFunctions = await loadTools({
+        user: fakeUser._id,
+        model: BaseChatModel,
+        tools: [testPluginKey]
+      });
+      const Tool = await toolFunctions[testPluginKey]();
+      expect(Tool).toBeInstanceOf(TestClass);
     });
     it('returns an empty object when no tools are requested', async () => {
       toolFunctions = await loadTools({
