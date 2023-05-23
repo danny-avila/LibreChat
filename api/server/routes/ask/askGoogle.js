@@ -114,8 +114,9 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     let response = await client.sendMessage(text, {
       getIds,
       user: req.user.id,
-      parentMessageId,
       conversationId,
+      parentMessageId,
+      overrideParentMessageId,
       onProgress: progressCallback.call(null, {
         res,
         text,
