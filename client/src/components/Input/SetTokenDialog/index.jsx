@@ -44,8 +44,16 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
   const helpText = {
     bingAI: (
       <small className="break-all text-gray-600">
-        {`The Bing Access Token is the "_U" cookie from bing.com. Use dev tools or an extension while
-        logged into the site to view it.`}
+        {`As of 5/23/23, to use Bing, you will need your full cookie string from bing.com. Use dev tools or an extension while
+        logged into the site to view it in your network request Cookie header value. For full instructions, see my `}
+        <a
+          target="_blank"
+          href="https://github.com/waylaidwanderer/node-chatgpt-api/issues/378#issuecomment-1559868368"
+          rel="noreferrer"
+          className="text-blue-600 underline"
+        >
+          comment here
+        </a>
       </small>
     ),
     chatGPTBrowser: (
