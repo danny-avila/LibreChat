@@ -50,7 +50,7 @@ const useMessageHandler = () => {
           currentConversation?.model ??
           endpointsConfig[endpoint]?.availableModels?.[0] ??
           'chat-bison',
-        chatGptLabel: currentConversation?.chatGptLabel ?? null,
+        modelLabel: currentConversation?.modelLabel ?? null,
         promptPrefix: currentConversation?.promptPrefix ?? null,
         examples: currentConversation?.examples ?? [
           { input: { content: '' }, output: { content: '' } }
