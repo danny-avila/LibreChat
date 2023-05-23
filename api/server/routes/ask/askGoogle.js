@@ -54,6 +54,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
   let userMessageId;
   let responseMessageId;
   let lastSavedTimestamp = 0;
+  const { overrideParentMessageId = null } = req.body;
 
   try {
     const getIds = (data) => {
@@ -74,7 +75,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
             messageId: responseMessageId,
             sender: 'PaLM2',
             conversationId,
-            parentMessageId: userMessageId,
+            parentMessageId: overrideParentMessageId || userMessageId,
             text: partialText,
             unfinished: true,
             cancelled: false,
@@ -115,9 +116,17 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       user: req.user.id,
       parentMessageId,
       conversationId,
-      onProgress: progressCallback.call(null, { res, text, parentMessageId: userMessageId }),
+      onProgress: progressCallback.call(null, {
+        res,
+        text,
+        parentMessageId: overrideParentMessageId || userMessageId
+      }),
       abortController
     });
+
+    if (overrideParentMessageId) {
+      response.parentMessageId = overrideParentMessageId;
+    }
 
     await saveConvo(req.user.id, {
       ...endpointOption,

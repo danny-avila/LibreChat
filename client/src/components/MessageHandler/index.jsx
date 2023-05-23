@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
-import { useRecoilValue, useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
+import { useEffect } from 'react';
+import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import { SSE } from '~/data-provider/sse.mjs';
 import createPayload from '~/data-provider/createPayload';
-import { useAbortRequestWithMessage } from '~/data-provider';
 import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
 
@@ -117,8 +116,11 @@ export default function MessageHandler() {
     const { requestMessage, responseMessage, conversation } = data;
 
     // update the messages
-    if (isRegenerate) setMessages([...messages, responseMessage]);
-    else setMessages([...messages, requestMessage, responseMessage]);
+    if (isRegenerate) {
+      setMessages([...messages, responseMessage]);
+    } else {
+      setMessages([...messages, requestMessage, responseMessage]);
+    }
     setIsSubmitting(false);
 
     // refresh title
