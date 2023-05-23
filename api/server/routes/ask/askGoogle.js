@@ -119,6 +119,13 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       abortController
     });
 
+    await saveConvo(req.user.id, {
+      ...endpointOption,
+      ...endpointOption.modelOptions,
+      conversationId,
+      endpoint: 'google'
+    });
+
     await saveMessage(response);
     sendMessage(res, {
       title: await getConvoTitle(req.user.id, conversationId),
@@ -132,7 +139,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
       const title = await titleConvo({ text, response });
       await saveConvo(req.user.id, {
-        conversationId: conversationId,
+        conversationId,
         title
       });
     }
