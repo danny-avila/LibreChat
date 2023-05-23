@@ -11,7 +11,6 @@ const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { CallbackManager } = require('langchain/callbacks');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
 const { initializeCustomAgent } = require('./agents/CustomAgent/initializeCustomAgent');
-// const { initializePAEAgent } = require('./agents/PlanAndExecute/initializePAEAgent');
 const { getMessages, saveMessage, saveConvo } = require('../../models');
 const { loadTools, SelfReflectionTool } = require('./tools');
 
@@ -341,7 +340,6 @@ Only respond with your conversational reply to the following User Message:
   }
 
   async loadHistory(conversationId, parentMessageId = null) {
-    // const conversation = await Conversation.findOne({ _id: conversationId }).populate('messages');
     if (this.options.debug) {
       console.debug('Loading history for conversation', conversationId, parentMessageId);
     }
@@ -354,11 +352,6 @@ Only respond with your conversational reply to the following User Message:
     }
 
     const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
-
-    // if (this.options.debug) {
-    //   console.debug('orderedMessages', orderedMessages);
-    // }
-
     // Convert Message documents into appropriate ChatMessage instances
     const chatMessages = orderedMessages.map((msg) =>
       msg?.isCreatedByUser || msg?.role.toLowerCase() === 'user'
@@ -424,7 +417,6 @@ Only respond with your conversational reply to the following User Message:
     }
 
     if (this.tools.length > 0) {
-      // this.tools.push(new SelfReflectionTool({ message, isGpt3: this.agentIsGpt3 }));
       this.tools.push(new SelfReflectionTool({ message, isGpt3: false }));
     } else if (this.tools.length === 0) {
       return;
@@ -443,7 +435,6 @@ Only respond with your conversational reply to the following User Message:
     };
 
     // initialize agent
-    // this.executor = await initializePAEAgent({
     this.executor = await initializeCustomAgent({
       tools: this.tools,
       model,
@@ -453,11 +444,9 @@ Only respond with your conversational reply to the following User Message:
       returnIntermediateSteps: true,
       callbackManager: CallbackManager.fromHandlers({
         async handleAgentAction(action) {
-          // console.log('handleAgentAction ------>', action);
           handleAction(action, onAgentAction);
         },
         async handleChainEnd(action) {
-          // console.log('handleChainEnd ------>\n\n', action);
           if (typeof onChainEnd === 'function') {
             onChainEnd(action);
           }
