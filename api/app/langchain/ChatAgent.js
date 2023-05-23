@@ -13,8 +13,12 @@ const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
 const { initializeCustomAgent } = require('./agents/CustomAgent/initializeCustomAgent');
 const { getMessages, saveMessage, saveConvo } = require('../../models');
 const { loadTools, SelfReflectionTool } = require('./tools');
-
-const FORMAT_INSTRUCTIONS = `Remember, all your responses MUST be in the format described. Do not respond unless it's in the format described, using the structure of Action, Action Input, etc.`;
+const {
+  instructions,
+  imageInstructions,
+  errorInstructions,
+  completionInstructions
+} = require('./instructions');
 
 const tokenizersCache = {};
 
@@ -64,7 +68,7 @@ class CustomChatAgent {
 
   buildErrorInput(message, errorMessage) {
     const log = errorMessage.includes('Could not parse LLM output:')
-      ? `A formatting error occurred with your response to the human's last message. You didn't follow the formatting instructions. Remember to ${FORMAT_INSTRUCTIONS}`
+      ? `A formatting error occurred with your response to the human's last message. You didn't follow the formatting instructions. Remember to ${instructions}`
       : `You encountered an error while replying to the human's last message. Attempt to answer again or admit an answer cannot be given.\nError: ${errorMessage}`;
 
     return `
@@ -78,7 +82,6 @@ class CustomChatAgent {
 
   buildPromptPrefix(result, message) {
     if ((result.output && result.output.includes('N/A')) || result.output === undefined) {
-      // if ((result.output && result.output.includes('N/A')) || !result.output) {
       return null;
     }
 
@@ -95,12 +98,10 @@ class CustomChatAgent {
         : 'Internal Actions Taken: None';
 
     const toolBasedInstructions = internalActions.toLowerCase().includes('image')
-      ? 'You must include the exact image paths from above, formatted in Markdown syntax: ![alt-text](URL)'
+      ? imageInstructions
       : '';
 
-    const errorMessage = result.errorMessage
-      ? `\nYou encountered an error in attempting a response. The user is not aware of the error so you shouldn't mention it.\nReview the actions taken carefully in case there is a partial or complete answer within them.\nError Message: ${result.errorMessage}\n`
-      : '';
+    const errorMessage = result.errorMessage ? `${errorInstructions} ${result.errorMessage}\n` : '';
 
     const preliminaryAnswer =
       result.output?.length > 0 ? `Preliminary Answer: "${result.output.trim()}"` : '';
@@ -143,7 +144,6 @@ Only respond with your conversational reply to the following User Message:
     const modelOptions = this.options.modelOptions || {};
     this.modelOptions = {
       ...modelOptions,
-      // set some good defaults (check for undefined in some cases because they may be 0)
       model: modelOptions.model || 'gpt-3.5-turbo',
       // all langchain examples have temp set to 0
       temperature: typeof modelOptions.temperature === 'undefined' ? 0 : modelOptions.temperature,
@@ -157,9 +157,8 @@ Only respond with your conversational reply to the following User Message:
 
     this.isChatGptModel = this.modelOptions.model.startsWith('gpt-');
     this.isGpt3 = this.modelOptions.model.startsWith('gpt-3');
-    // Davinci models have a max context length of 4097 tokens.
     this.maxContextTokens = this.options.maxContextTokens || 4095;
-    // I decided to reserve 1024 tokens for the response.
+    // Reserve 1024 tokens for the response.
     // The max prompt tokens is determined by the max context tokens minus the max response tokens.
     // Earlier messages will be dropped until the prompt is within the limit.
     this.maxResponseTokens = this.modelOptions.max_tokens || 1024;
@@ -518,7 +517,6 @@ Only respond with your conversational reply to the following User Message:
       }
     }
 
-    // avoids some rendering issues when using the CLI app
     if (this.options.debug) {
       console.debug();
     }
@@ -667,7 +665,7 @@ Only respond with your conversational reply to the following User Message:
       }
       promptPrefix = `${this.startToken}Instructions:\n${promptPrefix}`;
     } else {
-      promptPrefix = `${this.startToken}Instructions:\nYou are ChatGPT, a large language model trained by OpenAI. Respond conversationally.\nCurrent date: ${this.currentDateString}${this.endToken}\n\n`;
+      promptPrefix = `${this.startToken}${completionInstructions} ${this.currentDateString}${this.endToken}\n\n`;
     }
 
     const promptSuffix = `${this.startToken}${this.chatGptLabel}:\n`; // Prompt ChatGPT to respond.
