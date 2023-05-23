@@ -22,7 +22,7 @@ const {
 
 const tokenizersCache = {};
 
-class CustomChatAgent {
+class ChatAgent {
   constructor(apiKey, options = {}) {
     this.tools = [];
     this.actions = [];
@@ -859,4 +859,4 @@ Only respond with your conversational reply to the following User Message:
   }
 }
 
-module.exports = CustomChatAgent;
+module.exports = ChatAgent;
