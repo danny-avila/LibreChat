@@ -135,6 +135,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
             conversationId,
             parentMessageId: overrideParentMessageId || userMessageId,
             text: partialText,
+            model: endpointOption.modelOptions.model,
             unfinished: false,
             cancelled: true,
             error: false
@@ -154,6 +155,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
         parentMessageId: overrideParentMessageId || userMessageId,
         text: getPartialText(),
         plugin: { ...plugin, loading: false },
+        model: endpointOption.modelOptions.model,
         unfinished: false,
         cancelled: true,
         error: false,
