@@ -5,6 +5,7 @@ const buildDefaultConversation = ({
   lastConversationSetup = {}
 }) => {
   const lastSelectedModel = JSON.parse(localStorage.getItem('lastSelectedModel')) || {};
+  const lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools')) || [];
 
   if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
     conversation = {
@@ -68,6 +69,7 @@ const buildDefaultConversation = ({
     conversation = {
       ...conversation,
       endpoint,
+      tools: lastSelectedTools ?? lastConversationSetup?.tools ?? [],
       model:
         lastConversationSetup?.model ??
         lastSelectedModel[endpoint] ??

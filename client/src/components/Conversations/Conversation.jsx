@@ -35,7 +35,12 @@ export default function Conversation({ conversation, retainView }) {
     document.title = title;
 
     // set conversation to the new conversation
-    switchToConversation(conversation);
+    if (conversation?.endpoint === 'gptPlugins') {
+      const lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools')) || [];
+      switchToConversation({ ...conversation, tools: lastSelectedTools });
+    } else {
+      switchToConversation(conversation);
+    }
   };
 
   const renameHandler = (e) => {

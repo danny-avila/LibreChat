@@ -70,15 +70,15 @@ export default function NewConversationMenu() {
     }
   }, [availableEndpoints]);
 
-  // save selected model to localstoreage
+  // save selected model to localStorage
   useEffect(() => {
     if (endpoint) {
       const lastSelectedModel = JSON.parse(localStorage.getItem('lastSelectedModel')) || {};
-      localStorage.setItem('lastConversationSetup', JSON.stringify(conversation));
       localStorage.setItem(
         'lastSelectedModel',
         JSON.stringify({ ...lastSelectedModel, [endpoint]: conversation.model })
       );
+      localStorage.setItem('lastConversationSetup', JSON.stringify(conversation));
     }
   }, [conversation]);
 
@@ -137,7 +137,7 @@ export default function NewConversationMenu() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
-          className="min-w-[300px] dark:bg-gray-700 z-[100]"
+          className="z-[100] min-w-[300px] dark:bg-gray-700"
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
           <DropdownMenuLabel

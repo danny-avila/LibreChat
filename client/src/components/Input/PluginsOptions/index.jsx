@@ -96,7 +96,7 @@ function PluginsOptions() {
     } else {
       update.tools = [...current, tool];
     }
-    console.log('setOption', update);
+    localStorage.setItem('lastSelectedTools', JSON.stringify(update.tools));
     setConversation((prevState) => ({
       ...prevState,
       ...update
