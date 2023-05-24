@@ -1,7 +1,6 @@
 const crypto = require('crypto');
-const isProduction = process.env.NODE_ENV === 'production';
-const key = Buffer.from(isProduction ? process.env.CREDS_KEY_PROD : process.env.CREDS_KEY_DEV, 'hex');
-const iv = Buffer.from(isProduction ? process.env.CREDS_IV_PROD : process.env.CREDS_IV_DEV, 'hex');
+const key = Buffer.from(process.env.CREDS_KEY, 'hex');
+const iv = Buffer.from(process.env.CREDS_IV, 'hex');
 const algorithm = 'aes-256-cbc';
 
 function encrypt(value) {
