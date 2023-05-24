@@ -14,6 +14,7 @@ const serverDomain = env.DOMAIN_SERVER || legacyServerDomain || 'http://localhos
 const jwtSecret = env.JWT_SECRET || legacyJwtSecret;
 
 module.exports = {
+  publicAccess: env.PUBLIC_ACCESS || true,
   isProduction,
   domains: {
     client: clientDomain,
