@@ -18,6 +18,7 @@ describe('ChatAgent', () => {
   };
   let parentMessageId;
   let conversationId;
+  const userMessage = 'Hello, ChatGPT!';
   const apiKey = process.env.OPENAI_API_KEY;
 
   beforeAll(async () => {
@@ -44,7 +45,6 @@ describe('ChatAgent', () => {
 
   describe('sendMessage', () => {
     test('sendMessage should return a response message', async () => {
-      const userMessage = 'Hello, ChatGPT!';
       const expectedResult = expect.objectContaining({
         sender: 'ChatGPT',
         text: expect.any(String),
@@ -56,7 +56,7 @@ describe('ChatAgent', () => {
 
       const response = await TestAgent.sendMessage(userMessage);
       console.log(response);
-      parentMessageId = response.parentMessageId;
+      parentMessageId = response.messageId;
       conversationId = response.conversationId;
       expect(response).toEqual(expectedResult);
     });
@@ -78,8 +78,15 @@ describe('ChatAgent', () => {
       });
 
       const response = await TestAgent.sendMessage(userMessage, opts);
+      parentMessageId = response.messageId;
       expect(response.conversationId).toEqual(conversationId);
       expect(response).toEqual(expectedResult);
+    });
+
+    test('should return chat history', async () => {
+      const chatMessages = await TestAgent.loadHistory(conversationId, parentMessageId);
+      expect(TestAgent.currentMessages).toHaveLength(4);
+      expect(chatMessages[0].text).toEqual(userMessage);
     });
   });
 });
