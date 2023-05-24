@@ -3,9 +3,6 @@ import { XCircle, DownloadCloud } from 'lucide-react';
 
 type TPluginStoreItemProps = {
   plugin: TPlugin;
-  name: string;
-  description: string;
-  icon: string;
   onInstall: () => void;
   onUninstall: () => void;
   isInstalled?: boolean;

@@ -11,6 +11,7 @@
     "backend-dev": "cd api && npm run server-dev",
     "frontend": "cd client && npm run build",
     "frontend-dev": "cd client && npm run dev",
+    "frontend-test": "cd client && npm run test",
     "test": "jest",
     "e2e": "playwright test --config=e2e/playwright.config.js",
     "e2e:update": "playwright test --config=e2e/playwright.config.js --update-snapshots",
