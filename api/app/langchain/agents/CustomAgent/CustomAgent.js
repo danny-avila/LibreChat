@@ -11,8 +11,8 @@ class CustomAgent extends ZeroShotAgent {
     return [`\nObservation:`, `\nObservation 1:`];
   }
 
-  static createPrompt(tools) {
-    // const { currentDateString } = args;
+  static createPrompt(tools, opts = {}) {
+    const { currentDateString } = opts;
     const inputVariables = ['input', 'chat_history', 'agent_scratchpad'];
     const toolStrings = tools
       .filter((tool) => tool.name !== 'self-reflection')
@@ -22,7 +22,7 @@ class CustomAgent extends ZeroShotAgent {
     const formatInstructions = (0, renderTemplate)(instructions, 'f-string', {
       tool_names: toolNames
     });
-    const template = [prefix, toolStrings, formatInstructions, suffix].join('\n\n');
+    const template = [`Date: ${currentDateString}\n${prefix}`, toolStrings, formatInstructions, suffix].join('\n\n');
     return new PromptTemplate({
       template,
       inputVariables
