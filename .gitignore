@@ -61,6 +61,7 @@ src/style - official.css
 .DS_Store
 *.code-workspace
 .idea
+junit.xml
 
 # meilisearch
 meilisearch

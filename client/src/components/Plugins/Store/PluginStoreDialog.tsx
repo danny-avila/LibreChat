@@ -34,7 +34,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const [error, setError] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-  const handleInstallError = (error:any) => {
+  const handleInstallError = (error: any) => {
     setError(true);
     if (error.response?.data?.message) {
       setErrorMessage(error.response?.data?.message);
@@ -54,20 +54,22 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     setShowPluginAuthForm(false);
   };
 
-
   const onPluginUninstall = (plugin: string) => {
-    updateUserPlugins.mutate({ pluginKey: plugin, action: 'uninstall', auth: null }, {
-      onError: (error) => {
-        handleInstallError(error);
+    updateUserPlugins.mutate(
+      { pluginKey: plugin, action: 'uninstall', auth: null },
+      {
+        onError: (error) => {
+          handleInstallError(error);
+        }
       }
-    });
+    );
   };
 
   const onPluginInstall = (pluginKey: string) => {
     const getAvailablePluginFromKey = availablePlugins?.find((p) => p.pluginKey === pluginKey);
     setSelectedPlugin(getAvailablePluginFromKey);
 
-    if (getAvailablePluginFromKey.authConfig.length > 0) {
+    if (getAvailablePluginFromKey!.authConfig.length > 0) {
       setShowPluginAuthForm(true);
     } else {
       handleInstall({ pluginKey, action: 'install', auth: null });
