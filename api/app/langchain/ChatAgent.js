@@ -592,9 +592,7 @@ Only respond with your conversational reply to the following User Message:
       opts.onStart(userMessage);
     }
 
-    if (!opts.overrideParentMessageId) {
-      await this.saveMessageToDatabase(userMessage, user);
-    }
+    await this.saveMessageToDatabase(userMessage, user);
 
     this.result = {};
 

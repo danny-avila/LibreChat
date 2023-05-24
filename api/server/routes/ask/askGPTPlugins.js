@@ -218,6 +218,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       user,
       parentMessageId,
       conversationId,
+      overrideParentMessageId,
       onAgentAction,
       onChainEnd,
       onStart,
