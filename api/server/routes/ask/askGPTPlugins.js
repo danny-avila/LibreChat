@@ -14,6 +14,25 @@ const {
 } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 
+const abortControllers = new Map();
+
+router.post('/abort', requireJwtAuth, async (req, res) => {
+  const { abortKey } = req.body;
+  console.log(`req.body`, req.body);
+  if (!abortControllers.has(abortKey)) {
+    return res.status(404).send('Request not found');
+  }
+
+  const { abortController } = abortControllers.get(abortKey);
+
+  abortControllers.delete(abortKey);
+  const ret = await abortController.abortAsk();
+  console.log('Aborted request', abortKey);
+  console.log('Aborted message:', ret);
+
+  res.send(JSON.stringify(ret));
+});
+
 router.post('/', requireJwtAuth, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
@@ -77,6 +96,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
   let userMessageId;
   let responseMessageId;
   let lastSavedTimestamp = 0;
+  const { overrideParentMessageId = null } = req.body;
   const user = req.user.id;
 
   const plugin = {
@@ -99,7 +119,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       }
     };
 
-    const { onProgress: progressCallback, sendIntermediateMessage } = createOnProgress({
+    const { onProgress: progressCallback, sendIntermediateMessage, getPartialText } = createOnProgress({
       onProgress: ({ text: partialText }) => {
         const currentTimestamp = Date.now();
 
@@ -113,10 +133,10 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
             messageId: responseMessageId,
             sender: 'ChatGPT',
             conversationId,
-            parentMessageId: userMessageId,
+            parentMessageId: overrideParentMessageId || userMessageId,
             text: partialText,
-            unfinished: true,
-            cancelled: false,
+            unfinished: false,
+            cancelled: true,
             error: false
           });
         }
@@ -124,6 +144,32 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     });
 
     const abortController = new AbortController();
+    abortController.abortAsk = async function () {
+      this.abort();
+
+      const responseMessage = {
+        messageId: responseMessageId,
+        sender: endpointOption?.chatGptLabel || 'ChatGPT',
+        conversationId,
+        parentMessageId: overrideParentMessageId || userMessageId,
+        text: getPartialText(),
+        unfinished: false,
+        cancelled: true,
+        error: false
+      };
+
+      saveMessage(responseMessage);
+
+      return {
+        title: await getConvoTitle(req.user.id, conversationId),
+        final: true,
+        conversation: await getConvo(req.user.id, conversationId),
+        requestMessage: userMessage,
+        responseMessage: responseMessage
+      };
+    };
+    const abortKey = conversationId;
+    abortControllers.set(abortKey, { abortController, ...endpointOption });
 
     const clientOptions = {
       debug: true,
@@ -174,10 +220,14 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
         res,
         text,
         plugin,
-        parentMessageId: userMessageId
+        parentMessageId: overrideParentMessageId || userMessageId
       }),
       abortController
     });
+
+    if (overrideParentMessageId) {
+      response.parentMessageId = overrideParentMessageId;
+    }
 
     // console.log('CLIENT RESPONSE');
     // console.dir(response, { depth: null });

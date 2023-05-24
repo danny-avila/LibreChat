@@ -541,7 +541,7 @@ Only respond with your conversational reply to the following User Message:
       }
 
       try {
-        this.result = await this.executor.call({ input });
+        this.result = await this.executor.call({ input, signal: this.options.abortController.signal });
         break; // Exit the loop if the function call is successful
       } catch (err) {
         console.error(err);
@@ -566,7 +566,7 @@ Only respond with your conversational reply to the following User Message:
     const { onAgentAction, onChainEnd } = opts;
     const conversationId = opts.conversationId || crypto.randomUUID();
     const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
-    const userMessageId = crypto.randomUUID();
+    const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
     const responseMessageId = crypto.randomUUID();
     this.pastMessages = await this.loadHistory(conversationId, this.options?.parentMessageId);
 
@@ -587,7 +587,9 @@ Only respond with your conversational reply to the following User Message:
       });
     }
 
-    await this.saveMessageToDatabase(userMessage, user);
+    if (!opts.overrideParentMessageId) {
+      await this.saveMessageToDatabase(userMessage, user);
+    }
 
     this.result = {};
 
