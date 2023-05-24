@@ -15,7 +15,7 @@ type TPluginStoreDialogProps = {
   setIsOpen: (open: boolean) => void;
 };
 
-type TPluginAction = {
+export type TPluginAction = {
   pluginKey: string;
   action: 'install' | 'uninstall';
   auth?: unknown;
