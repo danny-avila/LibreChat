@@ -7,9 +7,7 @@ import { faFacebook } from '@fortawesome/free-brands-svg-icons';
 import { faGoogle } from '@fortawesome/free-brands-svg-icons';
 
 function Registration() {
-  const SERVER_URL = import.meta.env.DEV
-    ? import.meta.env.VITE_SERVER_URL_DEV
-    : import.meta.env.VITE_SERVER_URL_PROD;
+  const SERVER_URL = import.meta.env.DOMAIN_SERVER;
   const showGoogleLogin = import.meta.env.VITE_SHOW_GOOGLE_LOGIN_OPTION === 'true';
 
   const navigate = useNavigate();

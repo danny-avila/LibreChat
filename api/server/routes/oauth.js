@@ -1,12 +1,12 @@
 const passport = require('passport');
 const express = require('express');
-
+const {isProduction, domains } = require('../../config/app');
 const router = express.Router();
 
-const isProduction = process.env.NODE_ENV === 'production';
-const clientUrl = isProduction ? process.env.CLIENT_URL_PROD : process.env.CLIENT_URL_DEV;
 
-// Social
+/**
+ * Google Routes
+ */
 router.get(
   '/google',
   passport.authenticate('google', {
@@ -18,7 +18,7 @@ router.get(
 router.get(
   '/google/callback',
   passport.authenticate('google', {
-    failureRedirect: `${clientUrl}/login`,
+    failureRedirect: `${domains.client}/login`,
     failureMessage: true,
     session: false,
     scope: ['openid', 'profile', 'email']
@@ -30,7 +30,7 @@ router.get(
       httpOnly: false,
       secure: isProduction
     });
-    res.redirect(clientUrl);
+    res.redirect(domains.client);
   }
 );
 

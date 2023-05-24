@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Joi = require('joi');
 const DebugControl = require('../utils/debug.js');
+const { jwt } = require('../config/app.js');
 
 function log({ title, parameters }) {
   DebugControl.log.functionName(title);
@@ -100,17 +101,6 @@ userSchema.methods.toJSON = function () {
   };
 };
 
-const isProduction = process.env.NODE_ENV === 'production';
-const secretOrKey = isProduction ? process.env.JWT_SECRET_PROD : process.env.JWT_SECRET_DEV;
-
-if (secretOrKey === 'secret') {
-  console.warn('Warning: JWT_SECRET is set to default value');
-}
-
-const refreshSecret = isProduction
-  ? process.env.REFRESH_TOKEN_SECRET_PROD
-  : process.env.REFRESH_TOKEN_SECRET_DEV;
-
 userSchema.methods.generateToken = function () {
   const token = jwt.sign(
     {
@@ -119,7 +109,7 @@ userSchema.methods.generateToken = function () {
       provider: this.provider,
       email: this.email
     },
-    secretOrKey,
+    jwt.secret,
     { expiresIn: eval(process.env.SESSION_EXPIRY) }
   );
   return token;
@@ -133,7 +123,7 @@ userSchema.methods.generateRefreshToken = function () {
       provider: this.provider,
       email: this.email
     },
-    refreshSecret,
+    jwt.refreshSecret,
     { expiresIn: eval(process.env.REFRESH_TOKEN_EXPIRY) }
   );
   return refreshToken;

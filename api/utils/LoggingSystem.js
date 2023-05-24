@@ -10,6 +10,7 @@ const logger = pino({
       'env.CHATGPT_TOKEN',
       'env.MEILI_MASTER_KEY',
       'env.GOOGLE_CLIENT_SECRET',
+      'env.JWT_SECRET',
       'env.JWT_SECRET_DEV',
       'env.JWT_SECRET_PROD',
       'newUser.password'
