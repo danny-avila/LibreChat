@@ -20,7 +20,8 @@
     "e2e:auth": "npx playwright codegen --save-storage=e2e/auth.json http://localhost:3080/",
     "e2e:test-auth": "npx playwright codegen --load-storage=e2e/auth.json http://localhost:3080/",
     "prepare": "husky install",
-    "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\""
+    "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\"",
+    "upgrade": "test ! -f .env && (mv api/.env .env && cat client/.env >> .env && rm client/.env && echo \"Upgraded\") || echo \"Already upgraded\""
   },
   "repository": {
     "type": "git",
