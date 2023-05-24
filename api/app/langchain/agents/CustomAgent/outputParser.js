@@ -69,9 +69,14 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
         match
       );
       const thoughts = text.replace(/[tT]hought:/, '').split('\n');
+      // return {
+      //   tool: 'self-reflection',
+      //   toolInput: thoughts[0],
+      //   log: thoughts.slice(1).join('\n')
+      // };
+
       return {
-        tool: 'self-reflection',
-        toolInput: thoughts[0],
+        returnValues: { output: thoughts[0] },
         log: thoughts.slice(1).join('\n')
       };
     }
