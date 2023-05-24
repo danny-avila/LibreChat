@@ -527,7 +527,7 @@ Only respond with your conversational reply to the following User Message:
 
   async executorCall(message, signal) {
     let errorMessage = '';
-    const maxAttempts = 2;
+    const maxAttempts = 1;
 
     for (let attempts = 1; attempts <= maxAttempts; attempts++) {
       const errorInput = this.buildErrorInput(message, errorMessage);
@@ -595,6 +595,14 @@ Only respond with your conversational reply to the following User Message:
     await this.saveMessageToDatabase(userMessage, user);
 
     this.result = {};
+    const responseMessage = {
+      messageId: responseMessageId,
+      conversationId,
+      parentMessageId: userMessage.messageId,
+      isCreatedByUser: false,
+      model: this.modelOptions.model,
+      sender: 'ChatGPT',
+    };
 
     if (this.options.debug) {
       console.debug('options');
@@ -608,29 +616,13 @@ Only respond with your conversational reply to the following User Message:
 
     // If message was aborted mid-generation
     if (this.result?.errorMessage?.length > 0 && this.result?.errorMessage?.includes('cancel')) {
-      const responseMessage = {
-        messageId: responseMessageId,
-        conversationId,
-        parentMessageId: userMessage.messageId,
-        sender: 'ChatGPT',
-        text: 'Cancelled.',
-        isCreatedByUser: false
-      };
-
+      responseMessage.text = 'Cancelled.';
       await this.saveMessageToDatabase(responseMessage, user);
       return { ...responseMessage, ...this.result };
     }
 
     if (!this.agentIsGpt3 && this.result.output) {
-      const responseMessage = {
-        messageId: responseMessageId,
-        conversationId,
-        parentMessageId: userMessage.messageId,
-        sender: 'ChatGPT',
-        text: this.result.output,
-        isCreatedByUser: false
-      };
-
+      responseMessage.text = this.result.output;
       await this.saveMessageToDatabase(responseMessage, user);
       const textStream = new TextStream(this.result.output);
       await textStream.processTextStream(onProgress);
@@ -653,16 +645,7 @@ Only respond with your conversational reply to the following User Message:
     };
 
     const finalReply = await this.sendApiMessage(this.currentMessages, userMessage, opts);
-
-    const responseMessage = {
-      messageId: responseMessageId,
-      conversationId,
-      parentMessageId: userMessage.messageId,
-      sender: 'ChatGPT',
-      text: finalReply,
-      isCreatedByUser: false
-    };
-
+    responseMessage.text = finalReply;
     await this.saveMessageToDatabase(responseMessage, user);
     return { ...responseMessage, ...this.result };
   }

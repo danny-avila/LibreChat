@@ -14,6 +14,9 @@ const messageSchema = mongoose.Schema(
       required: true,
       meiliIndex: true
     },
+    model: {
+      type: String
+    },
     conversationSignature: {
       type: String
       // required: true
@@ -75,11 +78,6 @@ const messageSchema = mongoose.Schema(
         required: false
       }
     }
-    // plugin: {
-    //   type: mongoose.Schema.Types.Mixed,
-    //   required: false,
-    //   default: null
-    // }
   },
   { timestamps: true }
 );

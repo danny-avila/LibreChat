@@ -10,11 +10,12 @@ module.exports = {
     parentMessageId,
     sender,
     text,
-    plugin = null,
     isCreatedByUser = false,
     error,
     unfinished,
-    cancelled
+    cancelled,
+    plugin = null,
+    model = null,
   }) {
     try {
       // may also need to update the conversation here
@@ -26,11 +27,12 @@ module.exports = {
           parentMessageId,
           sender,
           text,
-          plugin,
           isCreatedByUser,
           error,
           unfinished,
-          cancelled
+          cancelled,
+          plugin,
+          model
         },
         { upsert: true, new: true }
       );

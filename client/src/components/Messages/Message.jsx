@@ -100,7 +100,8 @@ export default function Message({
 
   const icon = getIcon({
     ...conversation,
-    ...message
+    ...message,
+    model: message?.model || conversation?.model
   });
 
   if (!isCreatedByUser)
