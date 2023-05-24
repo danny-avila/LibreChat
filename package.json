@@ -16,7 +16,8 @@
     "e2e:debug": "cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.js",
     "e2e:report": "npx playwright show-report e2e/playwright-report",
     "prepare": "husky install",
-    "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\""
+    "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\"",
+    "upgrade": "test ! -f .env && (mv api/.env .env && cat client/.env >> .env && rm client/.env && echo \"Upgraded\") || echo \"Already upgraded\""
   },
   "repository": {
     "type": "git",
