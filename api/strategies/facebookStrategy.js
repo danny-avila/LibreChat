@@ -1,16 +1,14 @@
 const passport = require('passport');
 const FacebookStrategy = require('passport-facebook').Strategy;
 const User = require('../models/User');
-
-const serverUrl =
-  process.env.NODE_ENV === 'production' ? process.env.SERVER_URL_PROD : process.env.SERVER_URL_DEV;
+const {domains} = require('../../config/app');
 
 // facebook strategy
 const facebookLogin = new FacebookStrategy(
   {
     clientID: process.env.FACEBOOK_APP_ID,
     clientSecret: process.env.FACEBOOK_SECRET,
-    callbackURL: `${serverUrl}${process.env.FACEBOOK_CALLBACK_URL}`,
+    callbackURL: `${domains.server}${process.env.FACEBOOK_CALLBACK_URL}`,
     proxy: true
     // profileFields: [
     //   'id',
