@@ -72,7 +72,8 @@ General guidelines:
         return error.response.data;
       } else {
         console.log(`Error querying Wolfram Alpha`, error.message);
-        throw error;
+        // throw error;
+        return 'There was an error querying Wolfram Alpha.';
       }
     }
   }

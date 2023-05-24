@@ -77,8 +77,8 @@ class GoogleSearchAPI extends Tool {
       const metadataResults = [];
       const response = await this.getCustomSearch().cse.list({
         q: input,
-        cx: this.getCx(),
-        auth: this.getApiKey(),
+        cx: this.cx,
+        auth: this.apiKey,
         num: 5 // Limit the number of results to 5
       });
 
@@ -108,7 +108,8 @@ class GoogleSearchAPI extends Tool {
       return this.resultsToReadableFormat(metadataResults);
     } catch (error) {
       console.log(`Error searching Google: ${error}`);
-      throw error;
+      // throw error;
+      return 'There was an error searching Google.';
     }
   }
 }
