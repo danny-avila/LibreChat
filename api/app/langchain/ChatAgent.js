@@ -376,7 +376,7 @@ Only respond with your conversational reply to the following User Message:
     this.actions.push(action);
   }
 
-  async initialize({ user, message, onAgentAction, onChainEnd }) {
+  async initialize({ user, message, onAgentAction, onChainEnd, signal }) {
     const modelOptions = {
       modelName: this.options.agentOptions.model,
       temperature: this.options.agentOptions.temperature
@@ -435,8 +435,9 @@ Only respond with your conversational reply to the following User Message:
 
     // initialize agent
     this.executor = await initializeCustomAgent({
-      tools: this.tools,
       model,
+      signal,
+      tools: this.tools,
       pastMessages: this.pastMessages,
       currentDateString: this.currentDateString,
       verbose: this.options.debug,
@@ -524,9 +525,9 @@ Only respond with your conversational reply to the following User Message:
     return reply.trim();
   }
 
-  async executorCall(message) {
+  async executorCall(message, signal) {
     let errorMessage = '';
-    const maxAttempts = 2;
+    const maxAttempts = 1;
 
     for (let attempts = 1; attempts <= maxAttempts; attempts++) {
       const errorInput = this.buildErrorInput(message, errorMessage);
@@ -541,7 +542,7 @@ Only respond with your conversational reply to the following User Message:
       }
 
       try {
-        this.result = await this.executor.call({ input, signal: this.options.abortController.signal });
+        this.result = await this.executor.call({ input, signal });
         break; // Exit the loop if the function call is successful
       } catch (err) {
         console.error(err);
@@ -563,7 +564,7 @@ Only respond with your conversational reply to the following User Message:
     console.log('sendMessage', message, opts);
 
     const user = opts.user || null;
-    const { onAgentAction, onChainEnd } = opts;
+    const { onAgentAction, onChainEnd, onProgress } = opts;
     const conversationId = opts.conversationId || crypto.randomUUID();
     const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
     const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
@@ -587,6 +588,10 @@ Only respond with your conversational reply to the following User Message:
       });
     }
 
+    if (typeof opts?.onStart === 'function') {
+      opts.onStart(userMessage);
+    }
+
     if (!opts.overrideParentMessageId) {
       await this.saveMessageToDatabase(userMessage, user);
     }
@@ -599,8 +604,23 @@ Only respond with your conversational reply to the following User Message:
     }
 
     if (this.options.tools.length > 0) {
-      await this.initialize({ user, message, onAgentAction, onChainEnd });
-      await this.executorCall(message);
+      await this.initialize({ user, message, onAgentAction, onChainEnd, signal: opts.abortController.signal });
+      await this.executorCall(message, opts.abortController.signal);
+    }
+
+    // If message was aborted mid-generation
+    if (this.result?.errorMessage?.length > 0) {
+      const responseMessage = {
+        messageId: responseMessageId,
+        conversationId,
+        parentMessageId: userMessage.messageId,
+        sender: 'ChatGPT',
+        text: this.result.errorMessage.includes('cancel') ? 'Cancelled.' : this.result.errorMessage,
+        isCreatedByUser: false
+      };
+
+      await this.saveMessageToDatabase(responseMessage, user);
+      return { ...responseMessage, ...this.result };
     }
 
     if (!this.agentIsGpt3 && this.result.output) {
@@ -615,7 +635,7 @@ Only respond with your conversational reply to the following User Message:
 
       await this.saveMessageToDatabase(responseMessage, user);
       const textStream = new TextStream(this.result.output);
-      await textStream.processTextStream(opts.onProgress);
+      await textStream.processTextStream(onProgress);
       return { ...responseMessage, ...this.result };
     }
 

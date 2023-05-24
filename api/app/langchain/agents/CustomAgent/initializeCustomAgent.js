@@ -21,8 +21,8 @@ const initializeCustomAgent = async ({
   const chatPrompt = ChatPromptTemplate.fromPromptMessages([
     new SystemMessagePromptTemplate(prompt),
     HumanMessagePromptTemplate.fromTemplate(`{chat_history}
-    Query: {input}
-    {agent_scratchpad}`)
+Query: {input}
+{agent_scratchpad}`)
   ]);
 
   const outputParser = new CustomOutputParser({ tools });

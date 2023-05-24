@@ -153,9 +153,10 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
         conversationId,
         parentMessageId: overrideParentMessageId || userMessageId,
         text: getPartialText(),
+        plugin: { ...plugin, loading: false },
         unfinished: false,
         cancelled: true,
-        error: false
+        error: false,
       };
 
       saveMessage(responseMessage);
@@ -168,8 +169,11 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
         responseMessage: responseMessage
       };
     };
-    const abortKey = conversationId;
-    abortControllers.set(abortKey, { abortController, ...endpointOption });
+
+    const onStart = (userMessage) => {
+      sendMessage(res, { message: userMessage, created: true });
+      abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
+    }
 
     const clientOptions = {
       debug: true,
@@ -216,6 +220,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       conversationId,
       onAgentAction,
       onChainEnd,
+      onStart,
       onProgress: progressCallback.call(null, {
         res,
         text,

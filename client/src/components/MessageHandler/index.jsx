@@ -224,8 +224,7 @@ export default function MessageHandler() {
 
     events.onopen = () => console.log('connection is opened');
 
-    events.oncancel = () =>
-      abortConversation(message?.conversationId || submission?.conversationId);
+    events.oncancel = () => abortConversation(message?.conversationId || submission?.conversationId);
 
     events.onerror = function (e) {
       console.log('error in opening conn.');
