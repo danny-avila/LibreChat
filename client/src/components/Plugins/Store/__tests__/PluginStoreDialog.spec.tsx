@@ -1,4 +1,4 @@
-import { render } from 'layout-test-utils';
+import { render, screen } from 'layout-test-utils';
 import PluginStoreDialog from '../PluginStoreDialog';
 import userEvent from '@testing-library/user-event';
 import * as mockDataProvider from '~/data-provider';
@@ -19,6 +19,92 @@ class ResizeObserver {
 
 window.ResizeObserver = ResizeObserver;
 
+const pluginsQueryResult = [
+  {
+    name: 'Google',
+    pluginKey: 'google',
+    description: 'Use Google Search to find information',
+    icon: 'https://i.imgur.com/SMmVkNB.png',
+    authConfig: [
+      {
+        authField: 'GOOGLE_CSE_ID',
+        label: 'Google CSE ID',
+        description: 'This is your Google Custom Search Engine ID.'
+      }
+    ]
+  },
+  {
+    name: 'Wolfram',
+    pluginKey: 'wolfram',
+    description:
+      'Access computation, math, curated knowledge & real-time data through Wolfram|Alpha and Wolfram Language.',
+    icon: 'https://www.wolframcdn.com/images/icons/Wolfram.png',
+    authConfig: [
+      {
+        authField: 'WOLFRAM_APP_ID',
+        label: 'Wolfram App ID',
+        description: 'An AppID must be supplied in all calls to the Wolfram|Alpha API.'
+      }
+    ]
+  },
+  {
+    name: 'Calculator',
+    pluginKey: 'calculator',
+    description: 'A simple calculator plugin',
+    icon: 'https://i.imgur.com/SMmVkNB.png',
+    authConfig: []
+  },
+  {
+    name: 'Plugin 1',
+    pluginKey: 'plugin1',
+    description: 'description for Plugin 1.',
+    icon: 'mock-icon',
+    authConfig: [ ],
+  },
+  {
+    name: 'Plugin 2',
+    pluginKey: 'plugin2',
+    description: 'description for Plugin 2.',
+    icon: 'mock-icon',
+    authConfig: []
+  },
+  {
+    name: 'Plugin 3',
+    pluginKey: 'plugin3',
+    description: 'description for Plugin 3.',
+    icon: 'mock-icon',
+    authConfig: []
+  },
+  {
+    name: 'Plugin 4',
+    pluginKey: 'plugin4',
+    description: 'description for Plugin 4.',
+    icon: 'mock-icon',
+    authConfig: []
+  },
+  {
+    name: 'Plugin 5',
+    pluginKey: 'plugin5',
+    description: 'description for Plugin 5.',
+    icon: 'mock-icon',
+    authConfig: []
+  },
+  {
+    name: 'Plugin 6',
+    pluginKey: 'plugin6',
+    description: 'description for Plugin 6.',
+    icon: 'mock-icon',
+    authConfig: []
+  },
+  {
+    name: 'Plugin 7',
+    pluginKey: 'plugin7',
+    description: 'description for Plugin 7.',
+    icon: 'mock-icon',
+    authConfig: []
+  },
+]
+
 const setup = ({
   useGetUserQueryReturnValue = {
     isLoading: false,
@@ -30,42 +116,7 @@ const setup = ({
   useAvailablePluginsQueryReturnValue = {
     isLoading: false,
     isError: false,
-    data: [
-      {
-        name: 'Google',
-        pluginKey: 'google',
-        description: 'Use Google Search to find information',
-        icon: 'https://i.imgur.com/SMmVkNB.png',
-        authConfig: [
-          {
-            authField: 'GOOGLE_CSE_ID',
-            label: 'Google CSE ID',
-            description: 'This is your Google Custom Search Engine ID.'
-          }
-        ]
-      },
-      {
-        name: 'Wolfram',
-        pluginKey: 'wolfram',
-        description:
-          'Access computation, math, curated knowledge & real-time data through Wolfram|Alpha and Wolfram Language.',
-        icon: 'https://www.wolframcdn.com/images/icons/Wolfram.png',
-        authConfig: [
-          {
-            authField: 'WOLFRAM_APP_ID',
-            label: 'Wolfram App ID',
-            description: 'An AppID must be supplied in all calls to the Wolfram|Alpha API.'
-          }
-        ]
-      },
-      {
-        name: 'Calculator',
-        pluginKey: 'calculator',
-        description: 'A simple calculator plugin',
-        icon: 'https://i.imgur.com/SMmVkNB.png',
-        authConfig: []
-      }
-    ]
+    data: pluginsQueryResult
   },
   useUpdateUserPluginsMutationReturnValue = {
     isLoading: false,
@@ -112,4 +163,27 @@ test('Displays the plugin auth form when installing a plugin with auth', async (
   await userEvent.click(googleButton);
   expect(getByText(/Google CSE ID/i)).toBeInTheDocument();
   expect(getByRole('button', { name: 'Save' })).toBeInTheDocument();
+});
+
+test('allows the user to navigate between pages', async () => {
+  const { getByRole, getByText } = setup();
+  screen.debug(undefined, 30000)
+
+  expect(getByText('Google')).toBeInTheDocument();
+  expect(getByText('Wolfram')).toBeInTheDocument();
+  expect(getByText('Plugin 1')).toBeInTheDocument();
+
+  const nextPageButton = getByRole('button', { name: 'Next page' });
+  await userEvent.click(nextPageButton);
+
+  expect(getByText('Plugin 3')).toBeInTheDocument();
+  expect(getByText('Plugin 4')).toBeInTheDocument();
+  expect(getByText('Plugin 5')).toBeInTheDocument();
+
+  const previousPageButton = getByRole('button', { name: 'Previous page' });
+  await userEvent.click(previousPageButton);
+
+  expect(getByText('Google')).toBeInTheDocument();
+  expect(getByText('Wolfram')).toBeInTheDocument();
+  expect(getByText('Plugin 1')).toBeInTheDocument();
 });
