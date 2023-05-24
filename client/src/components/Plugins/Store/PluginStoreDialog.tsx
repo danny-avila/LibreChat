@@ -183,13 +183,15 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
               </div>
             </div>
             <div className="mt-2 flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
-              <div>
-                <PluginPagination
-                  currentPage={currentPage}
-                  maxPage={maxPage}
-                  onChangePage={handleChangePage}
-                />
-              </div>
+              {maxPage > 1 && (
+                <div>
+                  <PluginPagination
+                    currentPage={currentPage}
+                    maxPage={maxPage}
+                    onChangePage={handleChangePage}
+                  />
+                </div>
+              )}
               {/* API not yet implemented: */}
               {/* <div className="flex flex-col items-center gap-2 sm:flex-row">
                 <PluginStoreLinkButton
