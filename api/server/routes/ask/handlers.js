@@ -114,6 +114,10 @@ function formatSteps(steps) {
     const actionInput = step.action.toolInput;
     const observation = step.observation;
 
+    if (actionInput === 'N/A' || observation?.trim()?.length === 0) {
+      continue;
+    }
+
     output += `Input: ${actionInput}\nOutput: ${observation}`;
 
     if (steps.length > 1 && i !== steps.length - 1) {
@@ -146,11 +150,12 @@ function formatAction(action) {
   };
 
   if (action.tool.toLowerCase() === 'self-reflection' || formattedAction.plugin === 'N/A') {
-    formattedAction.inputStr = `{\n\tthoughts: ${formattedAction.input}${
+    formattedAction.inputStr = `{\n\tthought: ${formattedAction.input}${
       !formattedAction.thought.includes(formattedAction.input)
         ? ' - ' + formattedAction.thought
         : ''
     }\n}`;
+    formattedAction.inputStr = formattedAction.inputStr.replace('N/A - ', '');
   } else {
     formattedAction.inputStr = `{\n\tplugin: ${formattedAction.plugin}\n\tinput: ${formattedAction.input}\n\tthought: ${formattedAction.thought}\n}`;
   }
