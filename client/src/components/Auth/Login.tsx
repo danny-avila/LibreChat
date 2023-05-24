@@ -20,9 +20,7 @@ function Login() {
     }
   }, [isAuthenticated, navigate]);
 
-  const SERVER_URL = import.meta.env.DEV
-    ? import.meta.env.VITE_SERVER_URL_DEV
-    : import.meta.env.VITE_SERVER_URL_PROD;
+  const SERVER_URL = import.meta.env.DOMAIN_SERVER;
   const showGoogleLogin = import.meta.env.VITE_SHOW_GOOGLE_LOGIN_OPTION === 'true';
 
   return (

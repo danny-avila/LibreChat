@@ -5,9 +5,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const { registerSchema } = require('../../strategies/validators');
 const migrateDataToFirstUser = require('../../utils/migrateDataToFirstUser');
-
-const isProduction = process.env.NODE_ENV === 'production';
-const clientUrl = isProduction ? process.env.CLIENT_URL_PROD : process.env.CLIENT_URL_DEV;
+const { isProduction, domains } = require('../../config/app');
 
 /**
  * Logout user
@@ -127,7 +125,7 @@ const requestPasswordReset = async (email) => {
     createdAt: Date.now()
   }).save();
 
-  const link = `${clientUrl}/reset-password?token=${resetToken}&userId=${user._id}`;
+  const link = `${domains.client}/reset-password?token=${resetToken}&userId=${user._id}`;
 
   sendEmail(
     user.email,
