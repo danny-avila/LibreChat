@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Spinner from '../svg/Spinner';
 import CodeBlock from './Content/CodeBlock.jsx';
 import { Disclosure } from '@headlessui/react';
