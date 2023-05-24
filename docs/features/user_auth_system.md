@@ -6,25 +6,19 @@ In order for the auth system to function properly, there are some environment va
 
 In /api/.env, you will need to set the following variables:
 ```bash
-JWT_SECRET_DEV=secret
-# Add a secure secret for production if deploying to live domain.
-JWT_SECRET_PROD=secret
+# Change this to a secure string
+JWT_SECRET=secret
 # Set the expiration delay for the secure cookie with the JWT token
 # Delay is in millisecond e.g. 7 days is 1000*60*60*24*7
 SESSION_EXPIRY=1000 * 60 * 60 * 24 * 7
 # Note: NODE_ENV should be set to 'development' in the Server configuration section if you want to run in dev mode
-CLIENT_URL_DEV=http://localhost:3090
-SERVER_URL_DEV=http://localhost:3080
-# Change these values to domain if deploying:
-CLIENT_URL_PROD=http://localhost:3080
-SERVER_URL_PROD=http://localhost:3080
+DOMAIN_SERVER=http://localhost:3080
+DOMAIN_CLIENT=http://localhost:3080
 ```
 
 In /client/.env, you will need to set the following variables:
 ```bash
-VITE_SERVER_URL_DEV=http://localhost:3080
-# Change this to domain if deploying:
-VITE_SERVER_URL_PROD=http://localhost:3080
+DOMAIN_SERVER=http://localhost:3080
 ```
 
 The first time you run the application, you should register a new account by clicking the "Sign up" link on the login page. The first account registered will be recieve an admin role. The admin account does not currently have extended functionality, but is valuable should you choose to create an admin dashboard for user management. 

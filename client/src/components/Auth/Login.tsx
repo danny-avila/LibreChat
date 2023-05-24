@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import LoginForm from './LoginForm';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { SHOW_GOOGLE_LOGIN_OPTION, DOMAIN_SERVER } from '~/utils/envConstants';
 
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();
@@ -14,6 +13,10 @@ function Login() {
       navigate('/chat/new');
     }
   }, [isAuthenticated, navigate]);
+
+
+  const DOMAIN_SERVER = import.meta.env.DOMAIN_SERVER;
+  const SHOW_GOOGLE_LOGIN_OPTION = import.meta.env.VITE_SHOW_GOOGLE_LOGIN_OPTION === 'true';
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
