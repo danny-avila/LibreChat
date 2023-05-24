@@ -527,7 +527,7 @@ Only respond with your conversational reply to the following User Message:
 
   async executorCall(message, signal) {
     let errorMessage = '';
-    const maxAttempts = 1;
+    const maxAttempts = 2;
 
     for (let attempts = 1; attempts <= maxAttempts; attempts++) {
       const errorInput = this.buildErrorInput(message, errorMessage);
@@ -607,13 +607,13 @@ Only respond with your conversational reply to the following User Message:
     }
 
     // If message was aborted mid-generation
-    if (this.result?.errorMessage?.length > 0) {
+    if (this.result?.errorMessage?.length > 0 && this.result?.errorMessage?.includes('cancel')) {
       const responseMessage = {
         messageId: responseMessageId,
         conversationId,
         parentMessageId: userMessage.messageId,
         sender: 'ChatGPT',
-        text: this.result.errorMessage.includes('cancel') ? 'Cancelled.' : this.result.errorMessage,
+        text: 'Cancelled.',
         isCreatedByUser: false
       };
 

@@ -50,8 +50,8 @@ Guidelines:
   // "Details": "Mona Lisa should have long hair, a silk dress, holding a fan. The background should have mountains and trees.",
   // "Emotion": "Serene and elegant"
 
-  replaceNewLinesWithSpaces(inputString) {
-    return inputString.replace(/\r\n|\r|\n/g, ' ');
+  replaceUnwantedChars(inputString) {
+    return inputString.replace(/\r\n|\r|\n/g, ' ').replace('"', '').trim();
   }
 
   getMarkdownImageUrl(imageName) {
@@ -61,7 +61,7 @@ Guidelines:
 
   async _call(input) {
     const resp = await this.openaiApi.createImage({
-      prompt: this.replaceNewLinesWithSpaces(input),
+      prompt: this.replaceUnwantedChars(input),
       // TODO: Future idea -- could we ask an LLM to extract these arguments from an input that might contain them?
       n: 1,
       // size: '1024x1024'

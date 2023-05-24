@@ -145,7 +145,7 @@ function formatAction(action) {
       : action.log.split('\n')[0]
   };
 
-  if (action.tool === 'self-reflection' || formattedAction.plugin === 'N/A') {
+  if (action.tool.toLowerCase() === 'self-reflection' || formattedAction.plugin === 'N/A') {
     formattedAction.inputStr = `{\n\tthoughts: ${formattedAction.input}${
       !formattedAction.thought.includes(formattedAction.input)
         ? ' - ' + formattedAction.thought
