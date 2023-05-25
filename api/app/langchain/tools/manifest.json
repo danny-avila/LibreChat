@@ -83,5 +83,18 @@
     "description": "Generate photo-realistic images given any text input.",
     "icon": "https://i.imgur.com/Yr466dp.png",
     "authConfig": []
+  },
+  {
+    "name": "Zapier",
+    "pluginKey": "zapier",
+    "description": "Interact with over 5,000+ apps like Google Sheets, Gmail, HubSpot, Salesforce, and thousands more.",
+    "icon": "https://cdn.zappy.app/8f853364f9b383d65b44e184e04689ed.png",
+    "authConfig": [
+      {
+        "authField": "ZAPIER_NLA_API_KEY",
+        "label": "Zapier API Key",
+        "description": "You can use Zapier with your API Key from Zapier."
+      }
+    ]
   }
 ]
