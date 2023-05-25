@@ -16,6 +16,15 @@ export type TExample = {
   output: string;
 };
 
+export enum EModelEndpoint {
+  azureOpenAI = 'azureOpenAI',
+  openAI = 'openAI',
+  bingAI = 'bingAI',
+  chatGPT = 'chatGPT',
+  chatGPTBrowser = 'chatGPTBrowser',
+  google = 'google'
+}
+
 export type TSubmission = {
   clientId?: string;
   context?: string;
@@ -41,15 +50,6 @@ export type TSubmission = {
   presence_penalty?: number;
   frequence_penalty?: number;
 };
-
-export enum EModelEndpoint {
-  azureOpenAI = 'azureOpenAI',
-  openAI = 'openAI',
-  bingAI = 'bingAI',
-  chatGPT = 'chatGPT',
-  chatGPTBrowser = 'chatGPTBrowser',
-  google = 'google'
-}
 
 export type TConversation = {
   conversationId: string;
@@ -157,7 +157,7 @@ export type TSearchResults = {
   pageNumber: string;
   pageSize: string | number;
   pages: string | number;
-  filter: {};
+  filter: object;
 };
 
 export type TEndpoints = {
@@ -175,11 +175,11 @@ export type TUpdateTokenCountResponse = {
   count: number;
 };
 
-export type TMessageTreeNode = {};
+export type TMessageTreeNode = object;
 
-export type TSearchMessage = {};
+export type TSearchMessage = object;
 
-export type TSearchMessageTreeNode = {};
+export type TSearchMessageTreeNode = object;
 
 export type TRegisterUser = {
   name: string;

@@ -47,7 +47,7 @@ function Settings(props) {
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
             <Label htmlFor="toneStyle-dropdown" className="text-left text-sm font-medium">
-              Tone Style <small className="opacity-40">(default: fast)</small>
+              Tone Style <small className="opacity-40">(default: creative)</small>
             </Label>
             <SelectDropDown
               id="toneStyle-dropdown"
@@ -112,7 +112,7 @@ function Settings(props) {
                 <a
                   href="https://github.com/danny-avila/chatgpt-clone/blob/main/client/defaultSystemMessage.md"
                   target="_blank"
-                  className="text-blue-500 transition-colors duration-200 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-500"
+                  className="text-blue-500 transition-colors duration-200 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-500" rel="noreferrer"
                 >
                   System Message
                 </a>{' '}

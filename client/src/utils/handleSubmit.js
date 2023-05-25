@@ -50,7 +50,7 @@ const useMessageHandler = () => {
           currentConversation?.model ??
           endpointsConfig[endpoint]?.availableModels?.[0] ??
           'chat-bison',
-        chatGptLabel: currentConversation?.chatGptLabel ?? null,
+        modelLabel: currentConversation?.modelLabel ?? null,
         promptPrefix: currentConversation?.promptPrefix ?? null,
         examples: currentConversation?.examples ?? [
           { input: { content: '' }, output: { content: '' } }
@@ -68,7 +68,7 @@ const useMessageHandler = () => {
         jailbreak: currentConversation?.jailbreak ?? false,
         systemMessage: currentConversation?.systemMessage ?? null,
         context: currentConversation?.context ?? null,
-        toneStyle: currentConversation?.toneStyle ?? 'fast',
+        toneStyle: currentConversation?.toneStyle ?? 'creative',
         jailbreakConversationId: currentConversation?.jailbreakConversationId ?? null,
         conversationSignature: currentConversation?.conversationSignature ?? null,
         clientId: currentConversation?.clientId ?? null,

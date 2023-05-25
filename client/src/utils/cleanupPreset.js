@@ -36,7 +36,7 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
       jailbreak: _preset?.jailbreak ?? false,
       context: _preset?.context ?? null,
       systemMessage: _preset?.systemMessage ?? null,
-      toneStyle: _preset?.toneStyle ?? 'fast',
+      toneStyle: _preset?.toneStyle ?? 'creative',
       title: _preset?.title ?? 'New Preset'
     };
   } else if (endpoint === 'chatGPTBrowser') {

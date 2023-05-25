@@ -54,6 +54,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
   let userMessageId;
   let responseMessageId;
   let lastSavedTimestamp = 0;
+  const { overrideParentMessageId = null } = req.body;
 
   try {
     const getIds = (data) => {
@@ -74,7 +75,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
             messageId: responseMessageId,
             sender: 'PaLM2',
             conversationId,
-            parentMessageId: userMessageId,
+            parentMessageId: overrideParentMessageId || userMessageId,
             text: partialText,
             unfinished: true,
             cancelled: false,
@@ -113,10 +114,26 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     let response = await client.sendMessage(text, {
       getIds,
       user: req.user.id,
-      parentMessageId,
       conversationId,
-      onProgress: progressCallback.call(null, { res, text, parentMessageId: userMessageId }),
+      parentMessageId,
+      overrideParentMessageId,
+      onProgress: progressCallback.call(null, {
+        res,
+        text,
+        parentMessageId: overrideParentMessageId || userMessageId
+      }),
       abortController
+    });
+
+    if (overrideParentMessageId) {
+      response.parentMessageId = overrideParentMessageId;
+    }
+
+    await saveConvo(req.user.id, {
+      ...endpointOption,
+      ...endpointOption.modelOptions,
+      conversationId,
+      endpoint: 'google'
     });
 
     await saveMessage(response);
@@ -132,7 +149,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
       const title = await titleConvo({ text, response });
       await saveConvo(req.user.id, {
-        conversationId: conversationId,
+        conversationId,
         title
       });
     }
