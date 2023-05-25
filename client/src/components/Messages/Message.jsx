@@ -80,9 +80,9 @@ export default function Message({
     if (isJson(json)) {
       json = JSON.parse(json);
       if (json.code === 'invalid_api_key') {
-        return 'Invalid API key. Please check your API key and try again. You can access your API key by clicking on the model logo in the top-left corner of the textbox.';
+        return 'Invalid API key. Please check your API key and try again. You can do this by clicking on the model logo in the left corner of the textbox and selecting "Set Token" for the current selected endpoint. Thank you for your understanding.';
       } else if (json.type === 'insufficient_quota') {
-        return "We're sorry, but the default API key has reached its limit. To continue using this service, please set up your own API key. You can do this by clicking on the model logo in the top-left corner of the textbox.";
+        return 'We apologize for any inconvenience caused. The default API key has reached its limit. To continue using this service, please set up your own API key. You can do this by clicking on the model logo in the left corner of the textbox and selecting "Set Token" for the current selected endpoint. Thank you for your understanding.';
       } else {
         return `Oops! Something went wrong. Please try again in a few moments. Here's the specific error message we encountered: ${errorMessage}`;
       }
