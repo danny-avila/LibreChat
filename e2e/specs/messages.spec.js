@@ -14,13 +14,14 @@ test.describe('Messaging suite', () => {
   test('textbox should be focused after receiving message', async () => {
     test.setTimeout(120000);
     const page = await myBrowser.newPage();
+    const message = 'hi';
     const endpoint = endpoints[0];
 
     await page.goto('http://localhost:3080/chat/new');
     await page.locator('#new-conversation-menu').click();
     await page.locator(`#${endpoint}`).click();
     await page.locator('form').getByRole('textbox').click();
-    await page.locator('form').getByRole('textbox').fill('hi');
+    await page.locator('form').getByRole('textbox').fill(message);
 
     const responsePromise = [
       page.waitForResponse(async (response) => {
