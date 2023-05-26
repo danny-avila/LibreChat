@@ -76,7 +76,6 @@ const ask = async ({
   userMessage,
   endpointOption,
   conversationId,
-  preSendRequest = true,
   overrideParentMessageId = null,
   req,
   res
@@ -92,10 +91,8 @@ const ask = async ({
     'X-Accel-Buffering': 'no'
   });
 
-  if (preSendRequest) sendMessage(res, { message: userMessage, created: true });
-
   let responseMessageId = crypto.randomUUID();
-
+  let getPartialMessage = null;
   try {
     let lastSavedTimestamp = 0;
     const { onProgress: progressCallback, getPartialText } = createOnProgress({
@@ -116,15 +113,30 @@ const ask = async ({
         }
       }
     });
+
+    getPartialMessage = getPartialText;
     const abortController = new AbortController();
     let response = await browserClient({
       text,
       parentMessageId: userParentMessageId,
       conversationId,
       ...endpointOption,
-      onProgress: progressCallback.call(null, { res, text }),
       abortController,
-      userId
+      userId,
+      onProgress: progressCallback.call(null, { res, text }),
+      onEventMessage: (eventMessage) => {
+        let data = null;
+        try {
+          data = JSON.parse(eventMessage.data);
+        } catch (e) {
+          return;
+        }
+
+        sendMessage(res, {
+          message: { ...userMessage, conversationId: data.conversation_id },
+          created: true
+        });
+      }
     });
 
     console.log('CLIENT RESPONSE', response);
@@ -212,8 +224,8 @@ const ask = async ({
       parentMessageId: overrideParentMessageId || userMessageId,
       unfinished: false,
       cancelled: false,
-      error: true,
-      text: error.message
+      // error: true,
+      text: `${getPartialMessage() ?? ''}\n\nError message: "${error.message}"`
     };
     await saveMessage(errorMessage);
     handleError(res, errorMessage);
