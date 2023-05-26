@@ -68,13 +68,11 @@ const askClient = async ({
     ...(parentMessageId && conversationId ? { parentMessageId, conversationId } : {})
   };
 
-  let usage = null;
+  let usage = {};
   let enc = null;
   try {
     enc = encoding_for_model(tiktokenModels.has(model) ? model : 'gpt-3.5-turbo');
-    usage = {
-      prompt_tokens: (enc.encode(promptText)).length + (enc.encode(text)).length,
-    }
+    usage.prompt_tokens = (enc.encode(promptText)).length + (enc.encode(text)).length;
   } catch (e) {
     console.log('Error encoding prompt text', e);
   }
