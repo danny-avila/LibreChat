@@ -35,6 +35,7 @@ export default function ModelItem({ endpoint, value }) {
     <>
       <DropdownMenuRadioItem
         value={value}
+        id={endpoint}
         className="group dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800"
       >
         {icon}
