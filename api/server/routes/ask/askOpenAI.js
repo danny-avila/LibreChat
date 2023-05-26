@@ -190,7 +190,7 @@ const ask = async ({
     console.log('CLIENT RESPONSE', response);
 
     const newConversationId = response.conversationId || conversationId;
-    const newUserMassageId = response.parentMessageId || userMessageId;
+    const newUserMessageId = response.parentMessageId || userMessageId;
     const newResponseMessageId = response.messageId;
 
     // STEP1 generate response message
@@ -200,7 +200,7 @@ const ask = async ({
       conversationId: newConversationId,
       messageId: responseMessageId,
       newMessageId: newResponseMessageId,
-      parentMessageId: overrideParentMessageId || newUserMassageId,
+      parentMessageId: overrideParentMessageId || newUserMessageId,
       text: await handleText(response),
       sender: endpointOption?.chatGptLabel || 'ChatGPT',
       unfinished: false,
@@ -234,16 +234,16 @@ const ask = async ({
 
     // STEP3 update the user message
     userMessage.conversationId = newConversationId;
-    userMessage.messageId = newUserMassageId;
+    userMessage.messageId = newUserMessageId;
 
     // If response has parentMessageId, the fake userMessage.messageId should be updated to the real one.
     if (!overrideParentMessageId)
       await saveMessage({
         ...userMessage,
         messageId: userMessageId,
-        newMessageId: newUserMassageId
+        newMessageId: newUserMessageId
       });
-    userMessageId = newUserMassageId;
+    userMessageId = newUserMessageId;
 
     sendMessage(res, {
       title: await getConvoTitle(req.user.id, conversationId),

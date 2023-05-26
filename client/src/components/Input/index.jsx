@@ -5,7 +5,6 @@ import OpenAIOptions from './OpenAIOptions';
 import ChatGPTOptions from './ChatGPTOptions';
 import BingAIOptions from './BingAIOptions';
 import GoogleOptions from './GoogleOptions';
-// import BingStyles from './BingStyles';
 import NewConversationMenu from './NewConversationMenu';
 import AdjustToneButton from './AdjustToneButton';
 import Footer from './Footer';
@@ -21,7 +20,6 @@ export default function TextChat({ isSearchView = false }) {
   const conversation = useRecoilValue(store.conversation);
   const latestMessage = useRecoilValue(store.latestMessage);
   const [text, setText] = useRecoilState(store.text);
-  // const [text, setText] = useState('');
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const isSubmitting = useRecoilValue(store.isSubmitting);
@@ -30,8 +28,6 @@ export default function TextChat({ isSearchView = false }) {
   const disabled = false;
 
   const { ask, stopGenerating } = useMessageHandler();
-
-  // const bingStylesRef = useRef(null);
   const [showBingToneSetting, setShowBingToneSetting] = useState(false);
 
   const isNotAppendable = latestMessage?.unfinished & !isSubmitting || latestMessage?.error;
@@ -39,25 +35,15 @@ export default function TextChat({ isSearchView = false }) {
   // auto focus to input, when enter a conversation.
   useEffect(() => {
     if (conversation?.conversationId !== 'search') inputRef.current?.focus();
-    // setText('');
   }, [conversation?.conversationId]);
 
-  // // controls the height of Bing tone style tabs
-  // useEffect(() => {
-  //   if (!inputRef.current) {
-  //     return; // wait for the ref to be available
-  //   }
-
-  //   const resizeObserver = new ResizeObserver(() => {
-  //     const newHeight = inputRef.current.clientHeight;
-  //     if (newHeight >= 24) {
-  //       // 24 is the default height of the input
-  //       bingStylesRef.current.style.bottom = 15 + newHeight + 'px';
-  //     }
-  //   });
-  //   resizeObserver.observe(inputRef.current);
-  //   return () => resizeObserver.disconnect();
-  // }, [inputRef]);
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 100);
+    
+    return () => clearTimeout(timeoutId);
+  }, [isSubmitting]);  
 
   const submitMessage = () => {
     ask({ text });

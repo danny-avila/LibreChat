@@ -8,6 +8,7 @@ const browserClient = async ({
   model,
   token,
   onProgress,
+  onEventMessage,
   abortController,
   userId
 }) => {
@@ -30,7 +31,7 @@ const browserClient = async ({
   };
 
   const client = new ChatGPTBrowserClient(clientOptions, store);
-  let options = { onProgress, abortController };
+  let options = { onProgress, onEventMessage, abortController };
 
   if (!!parentMessageId && !!conversationId) {
     options = { ...options, parentMessageId, conversationId };

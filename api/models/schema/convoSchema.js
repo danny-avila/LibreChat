@@ -24,6 +24,10 @@ const convoSchema = mongoose.Schema(
     examples: [{ type: mongoose.Schema.Types.Mixed }],
     ...conversationPreset,
     // for bingAI only
+    bingConversationId: {
+      type: String,
+      default: null
+    },
     jailbreakConversationId: {
       type: String,
       default: null
