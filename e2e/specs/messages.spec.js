@@ -1,40 +1,44 @@
-import { test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+
+const endpoints = ['google', 'openAI', 'azureOpenAI', 'bingAI', 'chatGPTBrowser', 'gptPlugins'];
 
 test.describe('Messaging suite', () => {
   let myBrowser;
 
   test.beforeEach(async ({ browser }) => {
     myBrowser = await browser.newContext({
-      storageState: 'e2e/auth.json',
+      storageState: 'e2e/auth.json'
     });
   });
 
   test('textbox should be focused after receiving message', async () => {
     test.setTimeout(120000);
     const page = await myBrowser.newPage();
+    const endpoint = endpoints[0];
+
     await page.goto('http://localhost:3080/chat/new');
-    await page.locator("#new-conversation-menu").click();
-    await page.locator('#google').click();
+    await page.locator('#new-conversation-menu').click();
+    await page.locator(`#${endpoint}`).click();
     await page.locator('form').getByRole('textbox').click();
     await page.locator('form').getByRole('textbox').fill('hi');
-    // await page.waitForSelector('button', { name: 'regenerate' });
-    
+
     const responsePromise = [
       page.waitForResponse(async (response) => {
-        return response.url().includes('/api/ask/google') && response.status() === 200;
+        return response.url().includes(`/api/ask/${endpoint}`) && response.status() === 200;
       }),
-      page.locator('form').getByRole('textbox').press('Enter'),
+      page.locator('form').getByRole('textbox').press('Enter')
     ];
 
     const [response] = await Promise.all(responsePromise);
     const responseBody = await response.body();
-  
-    if (responseBody.includes(`"final":true`)) {
-      console.log("Message is final!");
-      // Continue with the test logic
-    }
+    const messageSuccess = responseBody.includes(`"final":true`);
+    expect(messageSuccess).toBe(true);
 
+    // Check if textbox is focused
+    await page.waitForTimeout(250);
+    const isTextboxFocused = await page.evaluate(() => {
+      return document.activeElement === document.querySelector('[data-testid="text-input"]');
+    });
+    expect(isTextboxFocused).toBeTruthy();
   });
-
-
 });
