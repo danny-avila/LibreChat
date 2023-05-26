@@ -68,18 +68,28 @@ const askClient = async ({
     ...(parentMessageId && conversationId ? { parentMessageId, conversationId } : {})
   };
 
-  const enc = encoding_for_model(tiktokenModels.has(model) ? model : 'gpt-3.5-turbo');
-  const usage = {
-    prompt_tokens: (enc.encode(promptText)).length + (enc.encode(text)).length,
+  let usage = null;
+  let enc = null;
+  try {
+    enc = encoding_for_model(tiktokenModels.has(model) ? model : 'gpt-3.5-turbo');
+    usage = {
+      prompt_tokens: (enc.encode(promptText)).length + (enc.encode(text)).length,
+    }
+  } catch (e) {
+    console.log('Error encoding prompt text', e);
   }
   
   const res = await client.sendMessage(text, { ...options, userId });
-  usage.completion_tokens = (enc.encode(res.response)).length;
-  usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
-  return {
-    ...res,
-    usage,
+
+  try {
+    usage.completion_tokens = (enc.encode(res.response)).length;
+    usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
+    res.usage = usage;
+  } catch (e) {
+    console.log('Error encoding response text', e);
   }
+  
+  return res;
 };
 
 module.exports = { askClient };
