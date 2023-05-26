@@ -129,10 +129,15 @@ const ask = async ({
       }
     });
     const abortController = new AbortController();
+    let bingConversationId = null;
+    if (!isNewConversation) {
+      const convo = await getConvo(req.user.id, conversationId);
+      bingConversationId = convo.bingConversationId;
+    }
     let response = await askBing({
       text,
       parentMessageId: userParentMessageId,
-      conversationId,
+      conversationId: bingConversationId ?? conversationId,
       ...endpointOption,
       onProgress: progressCallback.call(null, {
         res,
@@ -156,7 +161,8 @@ const ask = async ({
       response.response || response.details.spokenText || '**Bing refused to answer.**';
 
     let responseMessage = {
-      conversationId: newConversationId,
+      conversationId,
+      bingConversationId: newConversationId,
       messageId: responseMessageId,
       newMessageId: newResponseMessageId,
       parentMessageId: overrideParentMessageId || newUserMessageId,
@@ -173,31 +179,7 @@ const ask = async ({
     await saveMessage(responseMessage);
     responseMessage.messageId = newResponseMessageId;
 
-    // STEP2 update the convosation.
-
-    // First update conversationId if needed
-    // Note!
-    // Bing API will not use our conversationId at the first time,
-    // so change the placeholder conversationId to the real one.
-    // Attition: the api will also create new conversationId while using invalid userMessage.parentMessageId,
-    // but in this situation, don't change the conversationId, but create new convo.
-
-    let conversationUpdate = { conversationId: newConversationId, endpoint: 'bingAI' };
-    if (conversationId != newConversationId)
-      if (isNewConversation) {
-        // change the conversationId to new one
-        conversationUpdate = {
-          ...conversationUpdate,
-          conversationId: conversationId,
-          newConversationId: newConversationId
-        };
-      } else {
-        // create new conversation
-        conversationUpdate = {
-          ...conversationUpdate,
-          ...endpointOption
-        };
-      }
+    let conversationUpdate = { conversationId, bingConversationId: newConversationId, endpoint: 'bingAI' };
 
     if (endpointOption?.jailbreak) {
       conversationUpdate.jailbreak = true;
@@ -210,10 +192,6 @@ const ask = async ({
     }
 
     await saveConvo(req.user.id, conversationUpdate);
-    conversationId = newConversationId;
-
-    // STEP3 update the user message
-    userMessage.conversationId = newConversationId;
     userMessage.messageId = newUserMessageId;
 
     // If response has parentMessageId, the fake userMessage.messageId should be updated to the real one.
