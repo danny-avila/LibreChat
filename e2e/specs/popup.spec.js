@@ -5,7 +5,7 @@ test.describe('Endpoints Presets suite', () => {
 
   test.beforeEach(async ({ browser }) => {
     myBrowser = await browser.newContext({
-      storageState: './auth.json',
+      storageState: 'e2e/auth.json',
     });
   });
 
