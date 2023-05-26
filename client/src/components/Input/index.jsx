@@ -142,6 +142,8 @@ export default function TextChat({ isSearchView = false }) {
               >
                 <NewConversationMenu />
                 <TextareaAutosize
+                // set test id for e2e testing
+                  data-testid="text-input"
                   tabIndex="0"
                   autoFocus
                   ref={inputRef}
