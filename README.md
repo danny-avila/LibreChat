@@ -83,6 +83,7 @@
 <details>
   <summary><strong>General Information</strong></summary>
 
+  * [Code of Conduct](CODE_OF_CONDUCT.md)
   * [Project Origin](docs/general_info/project_origin.md)
   * [Multilingual Information](docs/general_info/multilingual_information.md)
   * [Roadmap](docs/general_info/roadmap.md)
@@ -107,13 +108,11 @@
 <details>
   <summary><strong>Contributions</strong></summary>
 
-  * [Code of Conduct](CODE_OF_CONDUCT.md)
-  * [Contributor Guidelines](docs/contributions/contributor_guidelines.md)
+  * [Contributor Guidelines](CONTRIBUTING.md)
   * [Documentation Guidelines](docs/contributions/documentation_guidelines.md)
   * [Code Standards and Conventions](docs/contributions/coding_conventions.md)
   * [Testing](docs/contributions/testing.md)
   * [Security](SECURITY.md)
-  * [Contributors](CONTRIBUTORS.md)
   * [Trello Board](https://trello.com/b/17z094kq/chatgpt-clone)
 </details>
 
