@@ -32,15 +32,16 @@
   
  **Create a MongoDB database**
  
-   - Navigate to https://www.mongodb.com/ and Sign In or Create an account
-    - Create a new project
-    - Build a Database using the free plan and name the cluster (example: chatgpt-clone)
-    - Use the "Username and Password" method for authentication
-    - Add your current IP to the access list
-    - In the Database Deployment tab, click on Connect
-    - "Choose a connection method" select "Connect your application"
-    - Driver = Node.js / Version = 4.1 or later
-    - Copy the connection string, fill in your password and remove `&w=majority` from default connection string.
+Navigate to https://www.mongodb.com/ and Sign In or Create an account
+
+- Create a new project
+- Build a Database using the free plan and name the cluster (example: chatgpt-clone)
+- Use the "Username and Password" method for authentication
+- Add your current IP to the access list
+- In the Database Deployment tab, click on Connect
+- "Choose a connection method" select "Connect your application"
+- Driver = Node.js / Version = 4.1 or later
+- Copy the connection string, fill in your password and remove `&w=majority` from default connection string.
 
 
 ##
@@ -52,12 +53,14 @@
 
    **Get your Bing Access Token**
    
-   - Using MS Edge, navigate to bing.com
-    - Make sure you are logged in
-    - Open the DevTools by pressing F12 on your keyboard
-    - Click on the tab "Application" (On the left of the DevTools)
-    - Expand the "Cookies" (Under "Storage")
-    - Copy the value of the "\_U" cookie
+  Please follow the **[updated instructions.](https://github.com/danny-avila/chatgpt-clone/issues/370#issuecomment-1560382302)**
+  
+  ~~Using MS Edge, navigate to bing.com~~
+   - ~~Make sure you are logged in~~
+   - ~~Open the DevTools by pressing F12 on your keyboard~~
+   - ~~Click on the tab "Application" (On the left of the DevTools)~~
+   - ~~Expand the "Cookies" (Under "Storage")~~
+   - ~~Copy the value of the "\_U" cookie~~
 
 ##
 

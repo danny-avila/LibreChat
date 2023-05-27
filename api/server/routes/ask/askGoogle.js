@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const { titleConvo } = require('../../../app/');
 const GoogleClient = require('../../../app/google/GoogleClient');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
@@ -7,7 +8,7 @@ const { handleError, sendMessage, createOnProgress } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 
 router.post('/', requireJwtAuth, async (req, res) => {
-  const { endpoint, text, parentMessageId, conversationId } = req.body;
+  const { endpoint, text, parentMessageId, conversationId: oldConversationId } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   if (endpoint !== 'google') return handleError(res, { text: 'Illegal request' });
 
@@ -30,6 +31,8 @@ router.post('/', requireJwtAuth, async (req, res) => {
   if (availableModels.find((model) => model === endpointOption.modelOptions.model) === undefined) {
     return handleError(res, { text: `Illegal request: model` });
   }
+
+  const conversationId = oldConversationId || crypto.randomUUID();
 
   // eslint-disable-next-line no-use-before-define
   return await ask({
@@ -64,6 +67,8 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       if (!conversationId) {
         conversationId = data.conversationId;
       }
+
+      sendMessage(res, { message: userMessage, created: true });
     };
 
     const { onProgress: progressCallback } = createOnProgress({

@@ -38,6 +38,7 @@ export default function ModelItem({ endpoint, value, isSelected }) {
           'group dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800',
           isSelected && 'dark:bg-gray-900 bg-gray-50 active'
         )}
+        id={endpoint}
       >
         {icon}
         {alternateName[endpoint] || endpoint}

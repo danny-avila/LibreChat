@@ -1,0 +1,57 @@
+name: Feature Request
+description: File a feature request
+title: "Enhancement]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill this!
+  - type: input
+    id: contact
+    attributes:
+      label: Contact Details
+      description: How can we get in touch with you if we need more info?
+      placeholder: ex. email@example.com
+    validations:
+      required: false
+  - type: textarea
+    id: what
+    attributes:
+      label: What functionality would you like to see added?
+      description: Please give as many details as possible
+      placeholder: Please give as many details as possible
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: More details
+      description: Please provide more details if you need to
+      placeholder: Please provide more details if you need to
+    validations:
+      required: true
+  - type: dropdown
+    id: subject
+    attributes:
+      label: What components are affected by your request?
+      multiple: true
+      options:
+        - General
+        - UI
+        - Endpoints
+        - Plugins
+        - Other
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Pictures
+      description: If applicable, add pictures to help explain your request. You can drag and drop, paste images directly here or link to them.
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/danny-avila/chatgpt-clone/blob/main/documents/contributions/code_of_conduct.md)
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true
