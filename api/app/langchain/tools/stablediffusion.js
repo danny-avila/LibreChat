@@ -1,4 +1,5 @@
 // Generates image using stable diffusion webui's api (automatic1111)
+const fs = require('fs');
 const { Tool } = require('langchain/tools');
 const path = require('path');
 const axios = require('axios');
@@ -54,6 +55,11 @@ class StableDiffusionAPI extends Tool {
     this.outputPath = path.resolve(__dirname, '..', '..', '..', '..', 'client', 'dist', 'images');
     const appRoot = path.resolve(__dirname, '..', '..', '..', '..', 'client');
     this.relativeImageUrl = path.relative(appRoot, this.outputPath);
+
+    // Check if directory exists, if not create it
+    if (!fs.existsSync(this.outputPath)) {
+      fs.mkdirSync(this.outputPath, { recursive: true });
+    }
 
     try {
       const buffer = Buffer.from(image.split(',', 1)[0], 'base64');

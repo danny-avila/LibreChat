@@ -1,5 +1,6 @@
 // From https://platform.openai.com/docs/api-reference/images/create
 // To use this tool, you must pass in a configured OpenAIApi object.
+const fs = require('fs');
 const { Configuration, OpenAIApi } = require('openai');
 const { genAzureEndpoint } = require('../../../utils/genAzureEndpoints');
 const { Tool } = require('langchain/tools');
@@ -88,6 +89,11 @@ Guidelines:
     this.outputPath = path.resolve(__dirname, '..', '..', '..', '..', 'client', 'dist', 'images');
     const appRoot = path.resolve(__dirname, '..', '..', '..', '..', 'client');
     this.relativeImageUrl = path.relative(appRoot, this.outputPath);
+
+    // Check if directory exists, if not create it
+    if (!fs.existsSync(this.outputPath)) {
+      fs.mkdirSync(this.outputPath, { recursive: true });
+    }
 
     try {
       await saveImageFromUrl(theImageUrl, this.outputPath, imageName);

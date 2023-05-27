@@ -7,7 +7,7 @@ const { validateTools, loadTools, availableTools } = require('./index');
 const PluginService = require('../../../server/services/PluginService');
 const { BaseChatModel } = require('langchain/chat_models/openai');
 const { Calculator } = require('langchain/tools/calculator');
-const OpenAICreateImage = require('./openaiCreateImage');
+const OpenAICreateImage = require('./DALL-E');
 const GoogleSearchAPI = require('./googleSearch');
 
 describe('Tool Handlers', () => {

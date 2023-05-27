@@ -10,8 +10,8 @@ const {
 const { Calculator } = require('langchain/tools/calculator');
 const { WebBrowser } = require('langchain/tools/webbrowser');
 const GoogleSearchAPI = require('./googleSearch');
-const OpenAICreateImage = require('./openaiCreateImage');
-const StableDiffusionAPI = require('./stablediffusion');
+const OpenAICreateImage = require('./DALL-E');
+const StableDiffusionAPI = require('./StableDiffusion');
 const WolframAlphaAPI = require('./wolfram');
 const availableTools = require('./manifest.json');
 const { getUserPluginAuthValue } = require('../../../server/services/PluginService');
