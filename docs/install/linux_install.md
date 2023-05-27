@@ -65,7 +65,8 @@ sudo apt-get install -y nodejs
 - Driver = Node.js / Version = 4.1 or later.
 - Copy the connection string and save it somewhere (you will need it later).
 
-## 6. Get your OpenAI API key - Visit https://platform.openai.com/account/api-keys and save your API key somewhere safe (you will need it later)
+## 6. Get your OpenAI API key 
+- Visit https://platform.openai.com/account/api-keys and save your API key somewhere safe (you will need it later)
 
 ## 7. Get your Bing Access Token
    
