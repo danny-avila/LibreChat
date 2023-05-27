@@ -109,6 +109,7 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
         '\n\n<----------------------HIT INVALID TOOL PARSING ERROR---------------------->\n\n',
         match
       );
+      selectedTool = 'self-reflection';
     }
 
     if (match && !match[2]) {

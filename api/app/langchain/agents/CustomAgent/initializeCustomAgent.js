@@ -16,7 +16,7 @@ const initializeCustomAgent = async ({
   currentDateString,
   ...rest
 }) => {
-  let prompt = CustomAgent.createPrompt(tools, { currentDateString });
+  let prompt = CustomAgent.createPrompt(tools, { currentDateString, model: model.modelName });
 
   const chatPrompt = ChatPromptTemplate.fromPromptMessages([
     new SystemMessagePromptTemplate(prompt),
