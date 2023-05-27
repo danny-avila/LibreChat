@@ -130,7 +130,7 @@ Please read the documentation before you do!
 
 For new features, components, or extensions, please open an issue and discuss before sending a PR. 
 
-- Join the [Discord community](https://discord.gg/NGaa9RPCft)
+- Join the [Discord community](https://discord.gg/uDyZ5Tzhct)
 
 This project exists in its current state thanks to all the people who contribute
 ---
