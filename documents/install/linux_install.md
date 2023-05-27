@@ -1,6 +1,9 @@
 # Linux Installation
-Thanks to @DavidDev1334 !
+## **Recommended : [Docker Install](docker_install.md)**
+
 ##
+
+## **Manual Installation**
 
 ## Prerequisites
 
@@ -12,13 +15,13 @@ Before installing ChatGPT-Clone, make sure your machine has the following prereq
 
 ## Installation Steps
 
-1. Clone the repository:
+## 1. Clone the repository:
 
 ```bash
 git clone https://github.com/danny-avila/chatgpt-clone.git
 ```
 
-2. Extract the content in your desired location:
+## 2. Extract the content in your desired location:
 
 ```bash
 cd chatgpt-clone
@@ -27,7 +30,7 @@ unzip chatgpt-clone.zip -d /usr/local/
 
 Note: The above command extracts the files to "/usr/local/chatgpt-clone". If you want to install the files to a different location, modify the instructions accordingly.
 
-3. Enable the Conversation search feature: (optional)
+## 3. Enable the Conversation search feature: (optional)
 
 - Download MeiliSearch latest release from: https://github.com/meilisearch/meilisearch/releases
 - Copy it to "/usr/local/chatgpt-clone/"
@@ -41,7 +44,7 @@ Note: The above command extracts the files to "/usr/local/chatgpt-clone". If you
 
 Note: Replace "YOUR_MASTER_KEY" with the generated master key, which you saved earlier.
 
-4. Install Node.js:
+## 4. Install Node.js:
 
 Open a terminal and run the following commands:
 
@@ -50,7 +53,7 @@ curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
 sudo apt-get install -y nodejs
 ```
 
-5. Create a MongoDB database:
+## 5. Create a MongoDB database:
 
 - Navigate to https://www.mongodb.com/ and sign in or create an account.
 - Create a new project.
@@ -62,18 +65,20 @@ sudo apt-get install -y nodejs
 - Driver = Node.js / Version = 4.1 or later.
 - Copy the connection string and save it somewhere (you will need it later).
 
-6. Get your OpenAI API key - Visit https://platform.openai.com/account/api-keys and save your API key somewhere safe (you will need it later)
+## 6. Get your OpenAI API key - Visit https://platform.openai.com/account/api-keys and save your API key somewhere safe (you will need it later)
 
-7. Get your Bing Access Token
+## 7. Get your Bing Access Token
+   
+  Please follow the **[updated instructions.](https://github.com/danny-avila/chatgpt-clone/issues/370#issuecomment-1560382302)**
+  
+  ~~Using MS Edge, navigate to bing.com~~
+   - ~~Make sure you are logged in~~
+   - ~~Open the DevTools by pressing F12 on your keyboard~~
+   - ~~Click on the tab "Application" (On the left of the DevTools)~~
+   - ~~Expand the "Cookies" (Under "Storage")~~
+   - ~~Copy the value of the "\_U" cookie~~
 
-- Using a web browser, navigate to bing.com
-- Make sure you are logged in
-- Open the browser DevTools by pressing F12 on your keyboard
-- Click on the tab "Application" (On the left of the DevTools)
-- Expand the "Cookies" (Under "Storage")
-- You need to copy the value of the "_U" cookie, save it somewhere, you will need it later
-
-8. Create the ".env" File
+## 8. Create the ".env" File
 
 You will need all your credentials, (API keys, access tokens, and MongoDB Connection String, MeiliSearch Master Key)
 
@@ -93,7 +98,7 @@ Setup the app:
 1. Run `npm ci`
 2. Run `npm run frontend`
 
-Start the app:
+## Start the app:
 1. Run `npm run backend`
 2. Run `meilisearch --master-key put_your_meilesearch_Master_Key_here` (Only if SEARCH=TRUE)
 3. Visit http://localhost:3080 (default port) & enjoy
