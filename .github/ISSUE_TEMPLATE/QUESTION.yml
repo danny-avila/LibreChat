@@ -28,7 +28,7 @@ body:
     attributes:
       label: More Details
       description: Please provide more details if needed.
-      placeholder: ""
+      placeholder: Please provide more details if needed.
     validations:
       required: true
   - type: dropdown
