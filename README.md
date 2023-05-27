@@ -107,7 +107,7 @@
 <details>
   <summary><strong>Contributions</strong></summary>
 
-  * [Code of Conduct](docs/contributions/code_of_conduct.md)
+  * [Code of Conduct](CODE_OF_CONDUCT.md)
   * [Contributor Guidelines](docs/contributions/contributor_guidelines.md)
   * [Documentation Guidelines](docs/contributions/documentation_guidelines.md)
   * [Code Standards and Conventions](docs/contributions/coding_conventions.md)
