@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to fill this up!
+        Thanks for taking the time to fill this!
   - type: input
     id: contact
     attributes:
