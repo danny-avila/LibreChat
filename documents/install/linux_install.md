@@ -1,6 +1,9 @@
 # Linux Installation
-Thanks to @DavidDev1334 !
+## **Recommended : [Docker Install](docker_install.md)**
+
 ##
+
+## **Manual Installation**
 
 ## Prerequisites
 
