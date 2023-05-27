@@ -1,7 +1,7 @@
 name: Bug Report
 description: File a bug report
 title: "[Bug]: "
-labels: ["bug", "dependencies", "documentation ", "duplicate", "enhancement", "good first issue", "help wanted", "invalid", "question", "tech debt", "wontfix"]
+labels: ["bug"]
 body:
   - type: markdown
     attributes:
@@ -20,8 +20,15 @@ body:
     attributes:
       label: What happened?
       description: Also tell us, what did you expect to happen?
-      placeholder: Tell us what you see!
-      value: "A bug happened!"
+      placeholder: Please give as many details as possible
+    validations:
+      required: true
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Please list the steps needed to reproduce the issue.
+      placeholder: "1. Step 1\n2. Step 2\n3. Step 3"
     validations:
       required: true
   - type: dropdown
@@ -42,6 +49,11 @@ body:
       label: Relevant log output
       description: Please copy and paste any relevant log output. This will be automatically formatted into code, so no need for backticks.
       render: shell
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: If applicable, add screenshots to help explain your problem. You can drag and drop, paste images directly here or link to them.
   - type: checkboxes
     id: terms
     attributes:
