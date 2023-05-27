@@ -1,5 +1,5 @@
-name: Bug Report
-description: File a bug report
+name: Question
+description: Ask your question
 title: "[Question]: "
 labels: ["question"]
 body:
@@ -43,7 +43,7 @@ body:
         - Endpoints
         - User System/OAuth
         - Other
-   - type: textarea
+  - type: textarea
     id: screenshots
     attributes:
       label: Screenshots
