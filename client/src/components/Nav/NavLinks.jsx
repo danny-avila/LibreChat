@@ -49,7 +49,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                   <img
                     className="rounded-sm"
                     src={
-                      user?.avatar || `https://avatars.dicebear.com/api/initials/${user?.name}.svg`
+                      user?.avatar || `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name || 'User'}&fontFamily=Verdana&fontSize=36`
                     }
                     alt=""
                   />
