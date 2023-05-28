@@ -38,10 +38,10 @@ class OpenAICreateImage extends Tool {
     }
     this.openaiApi = new OpenAIApi(new Configuration(config));
     this.name = 'dall-e';
-    this.description = `You can generate images with 'dall-e'.
+    this.description = `You can generate images with 'dall-e'. This tool is exclusively for visual content.
 Guidelines:
-- Visually describe the moods, details, structures, styles, and/or proportions of the image
-- Craft your input by "showing" and not "telling" the imagery.
+- Visually describe the moods, details, structures, styles, and/or proportions of the image. Remember, the focus is on visual attributes.
+- Craft your input by "showing" and not "telling" the imagery. Think in terms of what you'd want to see in a photograph or a painting.
 - It's best to follow this format for image creation. Come up with the optional inputs yourself if none are given:
 "Subject: [subject], Style: [style], Color: [color], Details: [details], Emotion: [emotion]"
 - Generate images only once per human query unless explicitly requested by the user`;

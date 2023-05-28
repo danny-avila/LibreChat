@@ -9,10 +9,10 @@ class StableDiffusionAPI extends Tool {
   constructor() {
     super();
     this.name = 'stable-diffusion';
-    this.description = `You can generate images with 'stable-diffusion'.
+    this.description = `You can generate images with 'stable-diffusion'. This tool is exclusively for visual content.
 Guidelines:
-- Visually describe the moods, details, structures, styles, and/or proportions of the image
-- Craft your input by "showing" and not "telling" the imagery.
+- Visually describe the moods, details, structures, styles, and/or proportions of the image. Remember, the focus is on visual attributes.
+- Craft your input by "showing" and not "telling" the imagery. Think in terms of what you'd want to see in a photograph or a painting.
 - It's best to follow this format for image creation:
 "detailed keywords to describe the subject, separated by comma | keywords we want to exclude from the final image"
 - Here's an example prompt for generating a realistic portrait photo of a man:
