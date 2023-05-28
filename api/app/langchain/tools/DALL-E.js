@@ -41,6 +41,7 @@ class OpenAICreateImage extends Tool {
     this.description = `You can generate images with 'dall-e'.
 Guidelines:
 - Visually describe the moods, details, structures, styles, and/or proportions of the image
+- Craft your input by "showing" and not "telling" the imagery.
 - It's best to follow this format for image creation. Come up with the optional inputs yourself if none are given:
 "Subject: [subject], Style: [style], Color: [color], Details: [details], Emotion: [emotion]"
 - Generate images only once per human query unless explicitly requested by the user`;
