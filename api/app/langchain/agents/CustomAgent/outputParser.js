@@ -10,7 +10,7 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
         this.longestToolName = tool.name;
       }
     }
-    this.finishToolNameRegex = /(?:the\s+)?final\s+answer[:\s]*\s*/i;
+    this.finishToolNameRegex = /(?:the\s+)?final\s+answer:\s*/i;
     this.actionValues =
       /(?:Action(?: [1-9])?:) ([\s\S]*?)(?:\n(?:Action Input(?: [1-9])?:) ([\s\S]*?))?$/i;
     this.actionInputRegex = /(?:Action Input(?: *\d*):) ?([\s\S]*?)$/i;

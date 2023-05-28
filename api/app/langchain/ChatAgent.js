@@ -184,8 +184,9 @@ Only respond with your conversational reply to the following User Message:
     this.gptEncoder = this.constructor.getTokenizer('cl100k_base');
     this.completionsUrl = 'https://api.openai.com/v1/chat/completions';
 
-    if (this.options.reverseProxyUrl) {
-      this.completionsUrl = this.options.reverseProxyUrl;
+    // if (this.options.reverseProxyUrl) {
+    if (process.env.OPENAI_REVERSE_PROXY) {
+      this.completionsUrl = process.env.OPENAI_REVERSE_PROXY;
     }
 
     if (this.azureEndpoint) {
@@ -387,10 +388,15 @@ Only respond with your conversational reply to the following User Message:
         ...this.azure,
         ...modelOptions
       })
-      : new ChatOpenAI({
-        openAIApiKey: this.openAIApiKey,
-        ...modelOptions
-      });
+      : new ChatOpenAI(
+        {
+          openAIApiKey: this.openAIApiKey,
+          ...modelOptions
+        }
+        // {
+        //   basePath: 'http://localhost:8080/v1'
+        // }
+      );
 
     if (this.options.debug) {
       console.debug(`<-----Agent Model: ${model.modelName} | Temp: ${model.temperature}----->`);
@@ -601,7 +607,7 @@ Only respond with your conversational reply to the following User Message:
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
       model: this.modelOptions.model,
-      sender: 'ChatGPT',
+      sender: 'ChatGPT'
     };
 
     if (this.options.debug) {
@@ -610,7 +616,13 @@ Only respond with your conversational reply to the following User Message:
     }
 
     if (this.options.tools.length > 0) {
-      await this.initialize({ user, message, onAgentAction, onChainEnd, signal: opts.abortController.signal });
+      await this.initialize({
+        user,
+        message,
+        onAgentAction,
+        onChainEnd,
+        signal: opts.abortController.signal
+      });
       await this.executorCall(message, opts.abortController.signal);
     }
 
