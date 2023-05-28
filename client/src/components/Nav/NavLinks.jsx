@@ -79,7 +79,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                 <Menu.Item as="div">
                   <NavLink
                     className={cn(
-                      'flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700',
+                      'flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none',
                       exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-white/50'
                     )}
                     svg={() => <Download size={16} />}
@@ -90,7 +90,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                 <div className="my-1.5 h-px bg-white/20" role="none" />
                 <Menu.Item as="div">
                   <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none"
                     svg={() => <TrashIcon />}
                     text="Clear conversations"
                     clickHandler={() => setShowClearConvos(true)}
@@ -98,7 +98,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                 </Menu.Item>
                 <Menu.Item as="div">
                   <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none"
                     svg={() => <GearIcon />}
                     text="Settings"
                     clickHandler={() => setShowSettings(true)}
