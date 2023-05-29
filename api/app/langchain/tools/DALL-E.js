@@ -11,12 +11,12 @@ class OpenAICreateImage extends Tool {
   constructor(fields = {}) {
     super();
 
-    let apiKey = fields.apiKey || process.env.OPENAI_API_KEY;
-    let azureKey = fields.azureKey || process.env.AZURE_OPENAI_API_KEY;
+    let apiKey = fields.OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+    let azureKey = fields.AZURE_OPENAI_API_KEY || process.env.AZURE_OPENAI_API_KEY;
     let config = { apiKey };
 
     if (azureKey) {
-      apiKey = process.env.AZURE_OPENAI_API_KEY;
+      apiKey = azureKey;
       const azureConfig = {
         apiKey,
         azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME || fields.azureOpenAIApiInstanceName,

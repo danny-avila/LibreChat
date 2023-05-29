@@ -6,9 +6,10 @@ const axios = require('axios');
 const sharp = require('sharp');
 
 class StableDiffusionAPI extends Tool {
-  constructor() {
+  constructor(fields) {
     super();
     this.name = 'stable-diffusion';
+    this.url = fields.SD_WEBUI_URL || this.getServerURL();
     this.description = `You can generate images with 'stable-diffusion'. This tool is exclusively for visual content.
 Guidelines:
 - Visually describe the moods, details, structures, styles, and/or proportions of the image. Remember, the focus is on visual attributes.
@@ -38,7 +39,7 @@ Guidelines:
   }
 
   async _call(input) {
-    const url = this.getServerURL();
+    const url = this.url;
     const payload = {
       prompt: input.split('|')[0],
       negative_prompt: input.split('|')[1],

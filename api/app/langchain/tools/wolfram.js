@@ -6,7 +6,7 @@ class WolframAlphaAPI extends Tool {
   constructor(fields) {
     super();
     this.name = 'wolfram';
-    this.apiKey = fields.apiKey || this.getAppId();
+    this.apiKey = fields.WOLFRAM_APP_ID || this.getAppId();
     this.description = `Access computation, math, curated knowledge & real-time data through wolframAlpha.
 - Understands natural language queries about entities in chemistry, physics, geography, history, art, astronomy, and more.
 - Performs mathematical calculations, date and unit conversions, formula solving, etc.

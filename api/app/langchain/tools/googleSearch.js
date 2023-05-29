@@ -8,8 +8,8 @@ const { google } = require('googleapis');
 class GoogleSearchAPI extends Tool {
   constructor(fields = {}) {
     super();
-    this.cx = fields.cx || this.getCx();
-    this.apiKey = fields.apiKey || this.getApiKey();
+    this.cx = fields.GOOGLE_CSE_ID || this.getCx();
+    this.apiKey = fields.GOOGLE_API_KEY || this.getApiKey();
     this.customSearch = undefined;
   }
 
