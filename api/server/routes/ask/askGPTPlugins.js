@@ -38,8 +38,6 @@ router.post('/', requireJwtAuth, async (req, res) => {
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   if (endpoint !== 'gptPlugins') return handleError(res, { text: 'Illegal request' });
 
-  // build user message --> handled by client
-
   // build endpoint option
   const endpointOption = {
     modelOptions: {
@@ -96,6 +94,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
   let userMessageId;
   let responseMessageId;
   let lastSavedTimestamp = 0;
+  const newConvo = !conversationId;
   const { overrideParentMessageId = null } = req.body;
   const user = req.user.id;
 
@@ -251,7 +250,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     });
     res.end();
 
-    if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
+    if (parentMessageId == '00000000-0000-0000-0000-000000000000' && newConvo) {
       const title = await titleConvo({ text, response });
       await saveConvo(req.user.id, {
         conversationId: conversationId,

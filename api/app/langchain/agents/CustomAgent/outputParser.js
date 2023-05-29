@@ -209,7 +209,7 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
 
     return {
       tool: selectedTool,
-      toolInput: match[2].trim().replace(/^"+|"+$/g, '') ?? '',
+      toolInput: match[2]?.trim()?.replace(/^"+|"+$/g, '') ?? '',
       log: text
     };
   }
