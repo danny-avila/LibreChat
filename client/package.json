@@ -54,7 +54,7 @@
     "filenamify": "^6.0.0",
     "html2canvas": "^1.4.1",
     "lodash": "^4.17.21",
-    "lucide-react": "^0.220.0",
+    "lucide-react": "^0.223.0",
     "pino": "^8.12.1",
     "rc-input-number": "^7.4.2",
     "react": "^18.2.0",
