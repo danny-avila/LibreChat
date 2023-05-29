@@ -1,4 +1,4 @@
-const SelfReflectionTool = require('./selfReflection');
+const SelfReflectionTool = require('./SelfReflection');
 const availableTools = require('./manifest.json');
 const { validateTools, loadTools } = require('./handleTools');
 

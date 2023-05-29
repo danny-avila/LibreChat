@@ -9,7 +9,7 @@ const { WebBrowser } = require('langchain/tools/webbrowser');
 const GoogleSearchAPI = require('./GoogleSearch');
 const OpenAICreateImage = require('./DALL-E');
 const StableDiffusionAPI = require('./StableDiffusion');
-const WolframAlphaAPI = require('./wolfram');
+const WolframAlphaAPI = require('./Wolfram');
 const availableTools = require('./manifest.json');
 const { getUserPluginAuthValue } = require('../../../server/services/PluginService');
 
