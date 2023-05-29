@@ -114,7 +114,7 @@
     "jest-file-loader": "^1.0.3",
     "jest-junit": "^16.0.0",
     "path": "^0.12.7",
-    "postcss": "^8.4.21",
+    "postcss": "^8.4.24",
     "postcss-loader": "^7.1.0",
     "postcss-preset-env": "^8.2.0",
     "source-map-loader": "^4.0.1",
