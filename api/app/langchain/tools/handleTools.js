@@ -4,9 +4,12 @@ const {
   SerpAPI,
   ZapierNLAWrapper
 } = require('langchain/tools');
+const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { Calculator } = require('langchain/tools/calculator');
 const { WebBrowser } = require('langchain/tools/webbrowser');
 const GoogleSearchAPI = require('./GoogleSearch');
+const HttpRequestTool = require('./HttpRequestTool');
+const AIPluginTool = require('./AIPluginTool');
 const OpenAICreateImage = require('./DALL-E');
 const StableDiffusionAPI = require('./StableDiffusion');
 const WolframAlphaAPI = require('./Wolfram');
@@ -66,7 +69,7 @@ const loadToolWithAuth = async (user, authFields, ToolConstructor, options = {})
   };
 };
 
-const loadTools = async ({ user, model, tools = [] }) => {
+const loadTools = async ({ user, model, tools = [], options = {} }) => {
   const toolConstructors = {
     calculator: Calculator,
     google: GoogleSearchAPI,
@@ -101,6 +104,14 @@ const loadTools = async ({ user, model, tools = [] }) => {
       }
       const zapier = new ZapierNLAWrapper({ apiKey });
       return ZapierToolKit.fromZapierNLAWrapper(zapier);
+    },
+    plugins: async () => {
+      return [
+        new HttpRequestTool(),
+        await AIPluginTool.fromPluginUrl(
+          "https://www.klarna.com/.well-known/ai-plugin.json", new ChatOpenAI({ openAIApiKey: options.openAIApiKey, temperature: 0 })
+        ),
+      ]
     }
   };
 

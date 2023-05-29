@@ -402,13 +402,21 @@ Only respond with your conversational reply to the following User Message:
       console.debug(`<-----Agent Model: ${model.modelName} | Temp: ${model.temperature}----->`);
     }
 
-    this.availableTools = await loadTools({ user, model, tools: this.options.tools });
+    this.availableTools = await loadTools({
+      user,
+      model,
+      tools: this.options.tools,
+      options: {
+        openAIApiKey: this.openAIApiKey
+      }
+    });
     // load tools
     for (const tool of this.options.tools) {
       const validTool = this.availableTools[tool];
 
       if (tool === 'plugins') {
-        this.tools = [...this.tools, ...(await validTool())];
+        const plugins = await validTool();
+        this.tools = [...this.tools, ...plugins];
       } else if (validTool) {
         this.tools.push(await validTool());
       }

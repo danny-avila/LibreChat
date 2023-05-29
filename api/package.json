@@ -10,7 +10,7 @@
     "test3": "node --inspect app/langchain/test3.js",
     "test4": "node --inspect app/langchain/test4.js",
     "test5": "node --inspect app/langchain/test5.js",
-    "test6": "node --inspect app/langchain/test6.js",
+    "test8": "node --inspect app/langchain/test8.js",
     "langchain": "node app/langchain/test2.js"
   },
   "repository": {
@@ -41,6 +41,7 @@
     "handlebars": "^4.7.7",
     "html": "^1.0.0",
     "joi": "^17.9.2",
+    "js-yaml": "^4.1.0",
     "jsonwebtoken": "^9.0.0",
     "keyv": "^4.5.2",
     "keyv-file": "^0.2.0",
