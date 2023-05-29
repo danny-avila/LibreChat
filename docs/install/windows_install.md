@@ -1,7 +1,7 @@
 # Windows Install
 
 ### Recommended:
-### **[Docker](docker.md)**
+### **[Docker](docker_install.md)**
 or
 ### **[Automated Installer (Windows)](https://github.com/fuegovic/chatgpt-clone-local-installer)**
 (Includes a Startup and Update Utility)
@@ -46,13 +46,16 @@ or
   - **Get your OpenAI API key** 
 	  - here: https://platform.openai.com/account/api-keys and save it somewhere safe (you will need it later)
 
-  - **Get your Bing Access Token**
-    - Using MS Edge, navigate to bing.com
-    - Make sure you are logged in
-    - Open the DevTools by pressing F12 on your keyboard
-    - Click on the tab "Application" (On the left of the DevTools)
-    - Expand the "Cookies" (Under "Storage")
-    - You need to copy the value of the "\_U" cookie, save it somewhere, you will need it later
+   **Get your Bing Access Token**
+   
+  Please follow the **[updated instructions.](https://github.com/danny-avila/chatgpt-clone/issues/370#issuecomment-1560382302)**
+  
+  ~~Using MS Edge, navigate to bing.com~~
+   - ~~Make sure you are logged in~~
+   - ~~Open the DevTools by pressing F12 on your keyboard~~
+   - ~~Click on the tab "Application" (On the left of the DevTools)~~
+   - ~~Expand the "Cookies" (Under "Storage")~~
+   - ~~Copy the value of the "\_U" cookie~~
 
 - **Create the ".env" File** 
 You will need all your credentials, (API keys, access tokens, and Mongo Connection String, MeileSearch Master Key)
