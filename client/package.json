@@ -94,7 +94,7 @@
     "@testing-library/react": "^14.0.0",
     "@testing-library/user-event": "^14.4.3",
     "@types/jest": "^29.5.1",
-    "@types/node": "^18.16.13",
+    "@types/node": "^20.2.5",
     "@types/react": "^18.2.6",
     "@types/react-dom": "^18.0.11",
     "@vitejs/plugin-react": "^4.0.0",
