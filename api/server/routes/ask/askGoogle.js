@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const { titleConvo } = require('../../../app/');
 const GoogleClient = require('../../../app/google/GoogleClient');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
@@ -7,7 +8,7 @@ const { handleError, sendMessage, createOnProgress } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 
 router.post('/', requireJwtAuth, async (req, res) => {
-  const { endpoint, text, parentMessageId, conversationId } = req.body;
+  const { endpoint, text, parentMessageId, conversationId: oldConversationId } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   if (endpoint !== 'google') return handleError(res, { text: 'Illegal request' });
 
@@ -30,6 +31,8 @@ router.post('/', requireJwtAuth, async (req, res) => {
   if (availableModels.find((model) => model === endpointOption.modelOptions.model) === undefined) {
     return handleError(res, { text: `Illegal request: model` });
   }
+
+  const conversationId = oldConversationId || crypto.randomUUID();
 
   // eslint-disable-next-line no-use-before-define
   return await ask({
@@ -54,6 +57,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
   let userMessageId;
   let responseMessageId;
   let lastSavedTimestamp = 0;
+  const { overrideParentMessageId = null } = req.body;
 
   try {
     const getIds = (data) => {
@@ -63,6 +67,8 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       if (!conversationId) {
         conversationId = data.conversationId;
       }
+
+      sendMessage(res, { message: userMessage, created: true });
     };
 
     const { onProgress: progressCallback } = createOnProgress({
@@ -74,7 +80,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
             messageId: responseMessageId,
             sender: 'PaLM2',
             conversationId,
-            parentMessageId: userMessageId,
+            parentMessageId: overrideParentMessageId || userMessageId,
             text: partialText,
             unfinished: true,
             cancelled: false,
@@ -113,10 +119,26 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     let response = await client.sendMessage(text, {
       getIds,
       user: req.user.id,
-      parentMessageId,
       conversationId,
-      onProgress: progressCallback.call(null, { res, text, parentMessageId: userMessageId }),
+      parentMessageId,
+      overrideParentMessageId,
+      onProgress: progressCallback.call(null, {
+        res,
+        text,
+        parentMessageId: overrideParentMessageId || userMessageId
+      }),
       abortController
+    });
+
+    if (overrideParentMessageId) {
+      response.parentMessageId = overrideParentMessageId;
+    }
+
+    await saveConvo(req.user.id, {
+      ...endpointOption,
+      ...endpointOption.modelOptions,
+      conversationId,
+      endpoint: 'google'
     });
 
     await saveMessage(response);
@@ -132,7 +154,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
       const title = await titleConvo({ text, response });
       await saveConvo(req.user.id, {
-        conversationId: conversationId,
+        conversationId,
         title
       });
     }

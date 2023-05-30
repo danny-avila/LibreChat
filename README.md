@@ -74,59 +74,48 @@
 <details open>
   <summary><strong>Getting Started</strong></summary>
 
-  * [Docker Install](/documents/install/docker_install.md)
-  * [Linux Install](documents/install/linux_install.md)
-  * [Mac Install](documents/install/mac_install.md)
-  * [Windows Install](documents/install/windows_install.md)
+  * [Docker Install](/docs/install/docker_install.md)
+  * [Linux Install](docs/install/linux_install.md)
+  * [Mac Install](docs/install/mac_install.md)
+  * [Windows Install](docs/install/windows_install.md)
 </details>
 
 <details>
   <summary><strong>General Information</strong></summary>
 
-  * [Project Origin](documents/general_info/project_origin.md)
-  * [Multilingual Information](documents/general_info/multilingual_information.md)
-  * [Roadmap](documents/general_info/roadmap.md)
-  * [Tech Stack](documents/general_info/tech_stack.md)
+  * [Code of Conduct](CODE_OF_CONDUCT.md)
+  * [Project Origin](docs/general_info/project_origin.md)
+  * [Multilingual Information](docs/general_info/multilingual_information.md)
+  * [Roadmap](docs/general_info/roadmap.md)
+  * [Tech Stack](docs/general_info/tech_stack.md)
   * [Changelog](CHANGELOG.md)
-  * [Bing Jailbreak Info](documents/general_info/bing_jailbreak_info.md)
+  * [Bing Jailbreak Info](docs/general_info/bing_jailbreak_info.md)
 </details>
 
 <details>
   <summary><strong>Features</strong></summary>
 
-  * [User Auth System](documents/features/user_auth_system.md)
-  * [Proxy](documents/features/proxy.md)
+  * [User Auth System](docs/features/user_auth_system.md)
+  * [Proxy](docs/features/proxy.md)
 </details>
 
 <details>
   <summary><strong>Cloud Deployment</strong></summary>
 
-  * [Heroku](documents/deployment/heroku.md)
+  * [Heroku](docs/deployment/heroku.md)
 </details>
 
 <details>
   <summary><strong>Contributions</strong></summary>
 
-  * [Code of Conduct](documents/contributions/code_of_conduct.md)
-  * [Contributor Guidelines](documents/contributions/contributor_guidelines.md)
-  * [Documentation Guidelines](documents/contributions/documentation_guidelines.md)
-  * [Code Standards and Conventions](documents/contributions/coding_conventions.md)
-  * [Testing](documents/contributions/testing.md)
-  * [Pull Request Template](documents/contributions/pull_request_template.md)
-  * [Contributors](CONTRIBUTORS.md)
+  * [Contributor Guidelines](CONTRIBUTING.md)
+  * [Documentation Guidelines](docs/contributions/documentation_guidelines.md)
+  * [Code Standards and Conventions](docs/contributions/coding_conventions.md)
+  * [Testing](docs/contributions/testing.md)
+  * [Security](SECURITY.md)
   * [Trello Board](https://trello.com/b/17z094kq/chatgpt-clone)
 </details>
 
-<details>
-  <summary><strong>Report Templates</strong></summary>
-
-  * [Bug Report Template](documents/report_templates/bug_report_template.md)
-  * [Custom Issue Template](documents/report_templates/custom_issue_template.md)
-  * [Feature Request Template](documents/report_templates/feature_request_template.md)
-</details>
-
-##
-### [Alternative Documentation](https://chatgpt-clone.gitbook.io/chatgpt-clone-docs/get-started/docker)
 
 ##
 
@@ -140,7 +129,7 @@ Please read the documentation before you do!
 
 For new features, components, or extensions, please open an issue and discuss before sending a PR. 
 
-- Join the [Discord community](https://discord.gg/NGaa9RPCft)
+- Join the [Discord community](https://discord.gg/uDyZ5Tzhct)
 
 This project exists in its current state thanks to all the people who contribute
 ---

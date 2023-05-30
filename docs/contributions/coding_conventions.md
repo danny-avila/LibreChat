@@ -43,7 +43,7 @@ Contains the logic for each route, including calling the appropriate service fun
 - Create a separate controller file for each route to handle the request/response logic.
 - Name controller files using the PascalCase convention and append "Controller" to the file name (e.g., UserController.js).
 - Use controller methods to encapsulate logic related to the route handling.
-- eep controllers thin by delegating complex operations to service or model files.
+- Keep controllers thin by delegating complex operations to service or model files.
 
 #### Services
 
@@ -102,3 +102,6 @@ Use the conventions found in the `data-provider` directory for handling data ser
 
 Use [Recoil](https://recoiljs.org/) for state management, but *DO NOT pollute the global state with unnecessary data*. Instead, use local state or props for data that is only used within a component or passed down from parent to child.
   
+##
+
+## [Go Back to ReadMe](../../README.md)

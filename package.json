@@ -1,6 +1,6 @@
 {
   "name": "chatgpt-clone",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "",
   "workspaces": [
     "api",
@@ -15,6 +15,8 @@
     "e2e:update": "playwright test --config=e2e/playwright.config.js --update-snapshots",
     "e2e:debug": "cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.js",
     "e2e:report": "npx playwright show-report e2e/playwright-report",
+    "e2e:auth": "npx playwright codegen --save-storage=e2e/auth.json http://localhost:3080/",
+    "e2e:test-auth": "npx playwright codegen --load-storage=e2e/auth.json http://localhost:3080/",
     "prepare": "husky install",
     "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\""
   },
@@ -34,7 +36,7 @@
     "@typescript-eslint/parser": "^5.59.6",
     "babel-eslint": "^10.1.0",
     "cross-env": "^7.0.3",
-    "eslint": "^8.40.0",
+    "eslint": "^8.41.0",
     "eslint-config-airbnb-base": "^15.0.0",
     "eslint-config-prettier": "^8.8.0",
     "eslint-plugin-jest": "^27.2.1",

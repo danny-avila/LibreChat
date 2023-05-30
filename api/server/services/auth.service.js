@@ -2,7 +2,8 @@ const User = require('../../models/User');
 const Token = require('../../models/schema/tokenSchema');
 const sendEmail = require('../../utils/sendEmail');
 const crypto = require('crypto');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
+const DebugControl = require('../../utils/debug.js');
 const { registerSchema } = require('../../strategies/validators');
 const migrateDataToFirstUser = require('../../utils/migrateDataToFirstUser');
 
@@ -84,10 +85,10 @@ const registerUser = async (user) => {
     });
 
     // todo: implement refresh token
-
-    // Perform synchronously to prevent a race condition
-    const salt = await bcrypt.genSalt(10);
-    const hash = await bcrypt.hash(newUser.password, salt);
+    // const refreshToken = newUser.generateRefreshToken();
+    // newUser.refreshToken.push({ refreshToken });
+    const salt = bcrypt.genSaltSync(10);
+    const hash = bcrypt.hashSync(newUser.password, salt);
     newUser.password = hash;
     newUser.save();
 
@@ -95,7 +96,6 @@ const registerUser = async (user) => {
     if (isFirstRegisteredUser) {
       migrateDataToFirstUser(newUser);
     }
-
     return { status: 200, user: newUser };
   
   } catch (err) {
@@ -119,7 +119,7 @@ const requestPasswordReset = async (email) => {
   if (token) await token.deleteOne();
 
   let resetToken = crypto.randomBytes(32).toString('hex');
-  const hash = await bcrypt.hash(resetToken, 10);
+  const hash = await bcrypt.hashSync(resetToken, 10);
 
   await new Token({
     userId: user._id,
@@ -156,13 +156,13 @@ const resetPassword = async (userId, token, password) => {
     return new Error('Invalid or expired password reset token');
   }
 
-  const isValid = await bcrypt.compare(token, passwordResetToken.token);
+  const isValid = bcrypt.compareSync(token, passwordResetToken.token);
 
   if (!isValid) {
     return new Error('Invalid or expired password reset token');
   }
 
-  const hash = await bcrypt.hash(password, 10);
+  const hash = bcrypt.hashSync(password, 10);
 
   await User.updateOne({ _id: userId }, { $set: { password: hash } }, { new: true });
 

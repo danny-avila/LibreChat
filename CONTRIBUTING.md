@@ -12,11 +12,11 @@ If the feature you would like to contribute has not already received prior appro
  
 *Please note that a pull request involving a feature that has not been reviewed and approved by the project maintainers may be rejected.*
 
-If you would like to discuss the changes you wish to make, join our [Discord community](https://discord.gg/NGaa9RPCft).
+If you would like to discuss the changes you wish to make, join our [Discord community](https://discord.gg/uDyZ5Tzhct).
 
 ## Our Standards
 
-Please read our [Coding Standards and Conventions](coding_conventions.md) before beginning on a contribution.
+Please read our [Coding Standards and Conventions](docs/contributions/coding_conventions.md) before beginning on a contribution.
 
 Examples of behavior that contributes to creating a positive environment
 include:
@@ -180,6 +180,6 @@ Apply the following naming conventions to branches, labels, and other Git-relate
 
 ##
 
-## [Go Back to ReadMe](../../README.md)
+## [Go Back to ReadMe](README.md)
 
 

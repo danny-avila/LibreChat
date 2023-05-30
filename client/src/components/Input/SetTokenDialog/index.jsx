@@ -1,9 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import DialogTemplate from '../../ui/DialogTemplate';
 import { Dialog } from '../../ui/Dialog.tsx';
-import { Input } from '../../ui/Input.tsx';
-import { Label } from '../../ui/Label.tsx';
-import { cn } from '~/utils/';
 import * as Checkbox from '@radix-ui/react-checkbox';
 import { CheckIcon } from '@radix-ui/react-icons';
 import FileUpload from '../NewConversationMenu/FileUpload';
@@ -23,9 +20,6 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
   const [token, setToken] = useState('');
   const [showPanel, setShowPanel] = useState(false);
   const { getToken, saveToken } = store.useToken(endpoint);
-
-  const defaultTextProps =
-    'rounded-md border border-gray-300 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.10)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-400 dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
 
   const submit = () => {
     saveToken(token);
@@ -49,13 +43,23 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
   const helpText = {
     bingAI: (
       <small className="break-all text-gray-600">
-        The Bing Access Token is the "_U" cookie from bing.com. Use dev tools or an extension while
-        logged into the site to view it.
+        {`To get your Access token for Bing, login to https://www.bing.com.
+        Use dev tools or an extension while logged into the site to copy the content of the _U cookie.
+        If this fails, follow these `}
+        <a
+          target="_blank"
+          href="https://github.com/waylaidwanderer/node-chatgpt-api/issues/378#issuecomment-1559868368"
+          rel="noreferrer"
+          className="text-blue-600 underline"
+        >
+          instructions
+        </a>
+        {` to provide the full cookie strings.`}
       </small>
     ),
     chatGPTBrowser: (
       <small className="break-all text-gray-600">
-        To get your Access token For ChatGPT 'Free Version', login to{' '}
+        {`To get your Access token For ChatGPT 'Free Version', login to `}
         <a
           target="_blank"
           href="https://chat.openai.com"
@@ -96,8 +100,8 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
         >
           Create a Service Account
         </a>
-        . Make sure to click 'Create and Continue' to give at least the 'Vertex AI User' role.
-        Lastly, create a JSON key to import here.
+        {`. Make sure to click 'Create and Continue' to give at least the 'Vertex AI User' role.
+        Lastly, create a JSON key to import here.`}
       </small>
     )
   };
