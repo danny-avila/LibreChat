@@ -3,13 +3,11 @@ import { Dialog } from '@headlessui/react';
 import { useRecoilState } from 'recoil';
 import { X } from 'lucide-react';
 import store from '~/store';
-import { PluginStoreItem, PluginPagination, PluginStoreLinkButton, PluginAuthForm } from '.';
+import { PluginStoreItem, PluginPagination, PluginAuthForm } from '.';
 import {
   useAvailablePluginsQuery,
   useUpdateUserPluginsMutation,
-  TUpdateUserPlugins,
   TPlugin,
-  TConversation
 } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 
@@ -27,7 +25,7 @@ export type TPluginAction = {
 function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const { data: availablePlugins } = useAvailablePluginsQuery();
   const { user } = useAuthContext();
-  const updateUserPlugins = useUpdateUserPluginsMutation<TUpdateUserPlugins>();
+  const updateUserPlugins = useUpdateUserPluginsMutation();
   const [conversation, setConversation] = useRecoilState(store.conversation) || {};
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [itemsPerPage, setItemsPerPage] = useState<number>(1);
@@ -67,7 +65,9 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
         },
         onSuccess: () => {
           let { tools } = conversation;
-          tools = tools.filter((t) => userPlugins?.findIndex((p) => p.pluginKey === t.pluginKey) !== -1);
+          tools = tools.filter((t: TPlugin) => {
+            return t.pluginKey !== plugin;
+          });
           localStorage.setItem('lastSelectedTools', JSON.stringify(tools));
           setConversation((prevState: any) => ({
             ...prevState,
