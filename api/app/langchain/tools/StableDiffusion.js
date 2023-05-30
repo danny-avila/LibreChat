@@ -26,7 +26,7 @@ Guidelines:
   }
 
   getMarkdownImageUrl(imageName) {
-    const imageUrl = path.join(this.relativeImageUrl, imageName).replace(/\\/g, '/').replace('dist/', '');
+    const imageUrl = path.join(this.relativeImageUrl, imageName).replace(/\\/g, '/').replace('public/', '');
     return `![generated image](/${imageUrl})`;
   }
 
@@ -54,7 +54,7 @@ Guidelines:
 
     // Generate unique name
     const imageName = `${Date.now()}.png`;
-    this.outputPath = path.resolve(__dirname, '..', '..', '..', '..', 'client', 'dist', 'images');
+    this.outputPath = path.resolve(__dirname, '..', '..', '..', '..', 'client', 'public', 'images');
     const appRoot = path.resolve(__dirname, '..', '..', '..', '..', 'client');
     this.relativeImageUrl = path.relative(appRoot, this.outputPath);
 
