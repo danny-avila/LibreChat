@@ -57,7 +57,7 @@ Guidelines:
   }
 
   getMarkdownImageUrl(imageName) {
-    const imageUrl = path.join(this.relativeImageUrl, imageName).replace(/\\/g, '/');
+    const imageUrl = path.join(this.relativeImageUrl, imageName).replace(/\\/g, '/').replace('dist/', '');
     return `![generated image](/${imageUrl})`;
   }
 
