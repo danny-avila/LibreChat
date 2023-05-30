@@ -52,6 +52,26 @@ export type TSubmission = {
   frequence_penalty?: number;
 };
 
+export type TPluginAuthConfig = {
+  authField: string;
+  label: string;
+  description: string;
+};
+
+export type TPlugin = {
+  name: string;
+  pluginKey: string;
+  description: string;
+  icon: string;
+  authConfig: TPluginAuthConfig[];
+};
+
+export type TUpdateUserPlugins = {
+  pluginKey: string;
+  action: string;
+  auth?: unknown;
+};
+
 export type TConversation = {
   conversationId: string;
   title: string;
@@ -59,6 +79,7 @@ export type TConversation = {
   endpoint: EModelEndpoint;
   suggestions?: string[];
   messages?: TMessage[];
+  tools?: TPlugin[];
   createdAt: string;
   updatedAt: string;
   // google only
@@ -209,24 +230,4 @@ export type TResetPassword = {
   userId: string;
   token: string;
   password: string;
-};
-
-export type TPluginAuthConfig = {
-  authField: string;
-  label: string;
-  description: string;
-};
-
-export type TPlugin = {
-  name: string;
-  pluginKey: string;
-  description: string;
-  icon: string;
-  authConfig: TPluginAuthConfig[];
-};
-
-export type TUpdateUserPlugins = {
-  pluginKey: string;
-  action: string;
-  auth?: unknown;
 };

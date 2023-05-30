@@ -41,9 +41,11 @@ function PluginsOptions() {
         setAvailableTools([pluginStore]);
         return;
       }
-      const tools = [...user.plugins].map((el) => {
-        return allPlugins.find((plugin) => plugin.pluginKey === el);
-      });
+      const tools = [...user.plugins]
+        .map((el) => {
+          return allPlugins.find((plugin) => plugin.pluginKey === el);
+        })
+        .filter((el) => el);
       setAvailableTools([...tools, pluginStore]);
     }
   }, [allPlugins, user]);
