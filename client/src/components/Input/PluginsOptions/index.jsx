@@ -4,7 +4,7 @@ import { Settings2, ChevronDownIcon } from 'lucide-react';
 import { SelectDropDown, MultiSelectDropDown, Button } from '~/components';
 import EndpointOptionsPopover from '../../Endpoints/EndpointOptionsPopover';
 import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
-import Settings from '../../Endpoints/OpenAI/Settings.jsx';
+import Settings from '../../Endpoints/Plugins/Settings.jsx';
 import { cn } from '~/utils/';
 import store from '~/store';
 import { PluginStoreDialog } from '~/components';
@@ -179,6 +179,7 @@ function PluginsOptions() {
               freqP={presence_penalty}
               presP={frequency_penalty}
               setOption={setOption}
+              tools={conversation.tools}
             />
           </div>
         }
