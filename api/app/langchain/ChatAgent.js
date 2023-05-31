@@ -145,8 +145,8 @@ Only respond with your conversational reply to the following User Message:
       this.options = options;
     }
 
-    this.agentIsGpt3 = this.options.agentOptions.model.startsWith('gpt-3');
     this.agentOptions = this.options.agentOptions || {};
+    this.agentIsGpt3 = this.agentOptions.model.startsWith('gpt-3');
     const modelOptions = this.options.modelOptions || {};
     this.modelOptions = {
       ...modelOptions,
@@ -385,8 +385,8 @@ Only respond with your conversational reply to the following User Message:
 
   async initialize({ user, message, onAgentAction, onChainEnd, signal }) {
     const modelOptions = {
-      modelName: this.options.agentOptions.model,
-      temperature: this.options.agentOptions.temperature
+      modelName: this.agentOptions.model,
+      temperature: this.agentOptions.temperature
     };
 
     const model = this.azure

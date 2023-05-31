@@ -50,10 +50,11 @@ router.post('/', requireJwtAuth, async (req, res) => {
   const tools = req.body?.tools.map((tool) => tool.pluginKey) ?? [];
   // build endpoint option
   const endpointOption = {
+    chatGptLabel: tools.length === 0 ? req.body?.chatGptLabel ?? null : null,
+    promptPrefix: tools.length === 0 ? req.body?.promptPrefix ?? null : null,
+    tools,
     modelOptions: {
       model: req.body?.model ?? 'gpt-4',
-      chatGptLabel: tools.length === 0 ? req.body?.chatGptLabel ?? null : null,
-      promptPrefix: tools.length === 0 ? req.body?.promptPrefix ?? null : null,
       temperature: req.body?.temperature ?? 0,
       top_p: req.body?.top_p ?? 1,
       presence_penalty: req.body?.presence_penalty ?? 0,
