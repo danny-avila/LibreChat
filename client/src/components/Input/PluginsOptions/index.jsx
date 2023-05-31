@@ -1,27 +1,33 @@
 import { useState, useEffect, memo } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { Settings2, ChevronDownIcon } from 'lucide-react';
-import { SelectDropDown, MultiSelectDropDown, Button } from '~/components';
+import {
+  SelectDropDown,
+  PluginStoreDialog,
+  MultiSelectDropDown,
+  Button,
+  GPTIcon
+} from '~/components';
 import EndpointOptionsPopover from '../../Endpoints/EndpointOptionsPopover';
 import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
-import Settings from '../../Endpoints/Plugins/Settings.jsx';
+import { Settings, AgentSettings } from '../../Endpoints/Plugins/';
 import { cn } from '~/utils/';
 import store from '~/store';
-import { PluginStoreDialog } from '~/components';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useAvailablePluginsQuery } from '~/data-provider';
 
 function PluginsOptions() {
   const { data: allPlugins } = useAvailablePluginsQuery();
+  const [visibile, setVisibility] = useState(true);
   const [advancedMode, setAdvancedMode] = useState(false);
+  const [availableTools, setAvailableTools] = useState([]);
+  const [showAgentSettings, setShowAgentSettings] = useState(false);
   const [showSavePresetDialog, setShowSavePresetDialog] = useState(false);
   const [showPluginStoreDialog, setShowPluginStoreDialog] = useState(false);
-  const [availableTools, setAvailableTools] = useState([]);
-  const [visibile, setVisibility] = useState(true);
   const [opacityClass, setOpacityClass] = useState('full-opacity');
-  const messagesTree = useRecoilValue(store.messagesTree);
   const [conversation, setConversation] = useRecoilState(store.conversation) || {};
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
+  const messagesTree = useRecoilValue(store.messagesTree);
   const { user } = useAuthContext();
 
   useEffect(() => {
@@ -50,13 +56,10 @@ function PluginsOptions() {
     }
   }, [allPlugins, user]);
 
-  const { endpoint } = conversation;
-  const { model, temperature, top_p, presence_penalty, frequency_penalty } = conversation;
-  // const { model, chatGptLabel, promptPrefix, temperature, top_p, presence_penalty, frequency_penalty } = conversation;
+  const triggerAgentSettings = () => setShowAgentSettings((prev) => !prev);
+  const { endpoint, agentOptions } = conversation;
 
   if (endpoint !== 'gptPlugins') return null;
-  // if (conversationId !== 'new') return null; // --> allows to change options during conversation
-
   const models = endpointsConfig?.['gptPlugins']?.['availableModels'] || [];
   // const availableTools = endpointsConfig?.['gptPlugins']?.['availableTools'] || [];
 
@@ -81,6 +84,17 @@ function PluginsOptions() {
     setConversation((prevState) => ({
       ...prevState,
       ...update
+    }));
+  };
+
+  const setAgentOption = (param) => (newValue) => {
+    const editableConvo = JSON.stringify(conversation);
+    const convo = JSON.parse(editableConvo);
+    let { agentOptions } = convo;
+    agentOptions[param] = newValue;
+    setConversation((prevState) => ({
+      ...prevState,
+      agentOptions
     }));
   };
 
@@ -141,7 +155,7 @@ function PluginsOptions() {
           />
         </Button>
         <SelectDropDown
-          value={model}
+          value={conversation.model}
           setValue={setOption('model')}
           availableValues={models}
           showAbove={true}
@@ -171,21 +185,41 @@ function PluginsOptions() {
       <EndpointOptionsPopover
         content={
           <div className="px-4 py-4">
-            <Settings
-              model={model}
-              endpoint={endpoint}
-              temperature={temperature}
-              topP={top_p}
-              freqP={presence_penalty}
-              presP={frequency_penalty}
-              setOption={setOption}
-              tools={conversation.tools}
-            />
+            {showAgentSettings ? (
+              <AgentSettings
+                model={agentOptions.model}
+                endpoint={agentOptions.endpoint}
+                temperature={agentOptions.temperature}
+                topP={agentOptions.top_p}
+                freqP={agentOptions.presence_penalty}
+                presP={agentOptions.frequency_penalty}
+                setOption={setAgentOption}
+                tools={conversation.tools}
+              />
+            ) : (
+              <Settings
+                model={conversation.model}
+                endpoint={endpoint}
+                chatGptLabel={conversation.chatGptLabel}
+                promptPrefix={conversation.promptPrefix}
+                temperature={conversation.temperature}
+                topP={conversation.top_p}
+                freqP={conversation.presence_penalty}
+                presP={conversation.frequency_penalty}
+                setOption={setOption}
+                tools={conversation.tools}
+              />
+            )}
           </div>
         }
         visible={advancedMode}
         saveAsPreset={saveAsPreset}
         switchToSimpleMode={switchToSimpleMode}
+        additionalButton={{
+          label: `Show ${showAgentSettings ? 'Completion' : 'Agent'} Settings`,
+          handler: triggerAgentSettings,
+          icon: <GPTIcon className="mr-1 mt-[2px] w-[14px]" size={14} />
+        }}
       />
       <SaveAsPresetDialog
         open={showSavePresetDialog}
