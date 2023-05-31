@@ -43,7 +43,8 @@ const setup = ({
 };
 
 test('renders login form', () => {
-  const { getByLabelText, getByRole } = setup();
+  const { getByLabelText, getByRole, getByText } = setup();
+  expect(getByText(/Welcom back/i)).toBeInTheDocument();
   expect(getByLabelText(/email/i)).toBeInTheDocument();
   expect(getByLabelText(/password/i)).toBeInTheDocument();
   expect(getByRole('button', { name: /Sign in/i })).toBeInTheDocument();
@@ -99,3 +100,15 @@ test('Navigates to / on successful login', async () => {
 
   waitFor(() => expect(history.location.pathname).toBe('/'));
 });
+
+// test('navigates to /register on sign up link click', async () => {
+//   const { getByRole, history } = setup();
+
+//   const signUpLink = getByRole('link', { name: /Sign up/i });
+
+//   await userEvent.click(signUpLink);
+
+//   waitFor(() => expect(history.location.pathname).toBe('/register'));
+// });
+
+//note: need to add tests for google button 
