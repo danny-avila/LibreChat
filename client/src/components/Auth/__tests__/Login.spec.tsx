@@ -49,9 +49,11 @@ test('renders login form', () => {
   expect(getByRole('link', { name: /Sign up/i })).toBeInTheDocument();
   expect(getByRole('link', { name: /Sign up/i })).toHaveAttribute('href', '/register');
   expect(getByRole('link', { name: /Login with Google/i })).toBeInTheDocument();
-  expect(getByRole('link', { name: /Login with Google/i })).toHaveAttribute('href', 'mock-server/oauth/google');
+  expect(getByRole('link', { name: /Login with Google/i })).toHaveAttribute(
+    'href',
+    'mock-server/oauth/google'
+  );
 });
-
 
 test('calls loginUser.mutate on login', async () => {
   const mutate = jest.fn();
@@ -60,8 +62,8 @@ test('calls loginUser.mutate on login', async () => {
     useLoginUserReturnValue: {
       isLoading: false,
       mutate: mutate,
-      isError: false,
-    },
+      isError: false
+    }
   });
 
   const emailInput = getByLabelText(/email/i);
@@ -83,7 +85,7 @@ test('Navigates to / on successful login', async () => {
       mutate: jest.fn(),
       isError: false,
       isSuccess: true
-    },
+    }
   });
 
   const emailInput = getByLabelText(/email/i);
