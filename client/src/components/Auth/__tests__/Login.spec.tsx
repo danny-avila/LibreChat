@@ -50,7 +50,10 @@ test('renders login form', () => {
   expect(getByRole('link', { name: /Sign up/i })).toBeInTheDocument();
   expect(getByRole('link', { name: /Sign up/i })).toHaveAttribute('href', '/register');
   expect(getByRole('link', { name: /Login with Google/i })).toBeInTheDocument();
-  expect(getByRole('link', { name: /Login with Google/i })).toHaveAttribute('href', 'mock-server/oauth/google');
+  expect(getByRole('link', { name: /Login with Google/i })).toHaveAttribute(
+    'href',
+    'mock-server/oauth/google'
+  );
 });
 
 test('calls loginUser.mutate on login', async () => {
