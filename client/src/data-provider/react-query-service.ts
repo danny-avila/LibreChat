@@ -257,13 +257,13 @@ export const useUpdateTokenCountMutation = (): UseMutationResult<
 };
 
 export const useLoginUserMutation = (): UseMutationResult<
-  t.TLoginUserResponse,
+  t.TLoginResponse,
   unknown,
-  t.TLoginUserRequest,
+  t.TLoginUser,
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation((payload: t.TLoginUserRequest) => dataService.login(payload), {
+  return useMutation((payload: t.TLoginUser) => dataService.login(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.user]);
     }
@@ -271,7 +271,7 @@ export const useLoginUserMutation = (): UseMutationResult<
 };
 
 export const useRegisterUserMutation = (): UseMutationResult<
-  t.TRegisterUserResponse,
+  unknown,
   unknown,
   t.TRegisterUser,
   unknown
