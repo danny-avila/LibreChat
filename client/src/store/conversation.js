@@ -11,36 +11,37 @@ import buildTree from '~/utils/buildTree';
 import getDefaultConversation from '~/utils/getDefaultConversation';
 import submission from './submission.js';
 
-const defaultConversation = {
-  conversationId: 'new',
-  title: 'New Chat',
-  user: null,
-  // endpoint: [azureOpenAI, openAI, bingAI, chatGPTBrowser]
-  endpoint: 'azureOpenAI',
-  // for azureOpenAI, openAI, chatGPTBrowser only
-  model: 'gpt-3.5-turbo',
-  // for azureOpenAI, openAI only
-  chatGptLabel: null,
-  promptPrefix: null,
-  temperature: 1,
-  top_p: 1,
-  presence_penalty: 0,
-  frequency_penalty: 0,
-  // for bingAI only
-  jailbreak: false,
-  context: null,
-  systemMessage: null,
-  jailbreakConversationId: null,
-  conversationSignature: null,
-  clientId: null,
-  invocationId: 1,
-  toneStyle: null,
-  tools: [],
-};
+// current conversation, can be null (need to be fetched from server)
+// sample structure
+// {
+//   conversationId: 'new',
+//   title: 'New Chat',
+//   user: null,
+//   // endpoint: [azureOpenAI, openAI, bingAI, chatGPTBrowser]
+//   endpoint: 'azureOpenAI',
+//   // for azureOpenAI, openAI, chatGPTBrowser only
+//   model: 'gpt-3.5-turbo',
+//   // for azureOpenAI, openAI only
+//   chatGptLabel: null,
+//   promptPrefix: null,
+//   temperature: 1,
+//   top_p: 1,
+//   presence_penalty: 0,
+//   frequency_penalty: 0,
+//   // for bingAI only
+//   jailbreak: false,
+//   context: null,
+//   systemMessage: null,
+//   jailbreakConversationId: null,
+//   conversationSignature: null,
+//   clientId: null,
+//   invocationId: 1,
+//   toneStyle: null,
+// };
 
 const conversation = atom({
   key: 'conversation',
-  default: defaultConversation
+  default: null
 });
 
 // current messages of the conversation, must be an array
