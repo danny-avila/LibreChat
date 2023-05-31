@@ -64,6 +64,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
           handleInstallError(error);
         },
         onSuccess: () => {
+          //@ts-ignore - can't set a default convo or it will break routing
           let { tools } = conversation;
           tools = tools.filter((t: TPlugin) => {
             return t.pluginKey !== plugin;
