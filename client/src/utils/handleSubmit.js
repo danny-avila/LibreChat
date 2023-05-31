@@ -87,6 +87,13 @@ const useMessageHandler = () => {
       };
       responseSender = 'ChatGPT';
     } else if (endpoint === 'gptPlugins') {
+      const agentOptions = currentConversation?.agentOptions ?? {
+        model: 'gpt-3.5-turbo',
+        temperature: 0,
+        top_p: 1,
+        presence_penalty: 0,
+        frequency_penalty: 0
+      };
       endpointOption = {
         endpoint,
         tools: currentConversation?.tools ?? [],
@@ -94,10 +101,13 @@ const useMessageHandler = () => {
           currentConversation?.model ??
           endpointsConfig[endpoint]?.availableModels?.[0] ??
           'gpt-3.5-turbo',
-        temperature: currentConversation?.temperature ?? 0,
+        chatGptLabel: currentConversation?.chatGptLabel ?? null,
+        promptPrefix: currentConversation?.promptPrefix ?? null,
+        temperature: currentConversation?.temperature ?? 0.8,
         top_p: currentConversation?.top_p ?? 1,
         presence_penalty: currentConversation?.presence_penalty ?? 0,
-        frequency_penalty: currentConversation?.frequency_penalty ?? 0
+        frequency_penalty: currentConversation?.frequency_penalty ?? 0,
+        agentOptions
       };
       responseSender = 'ChatGPT';
     } else if (endpoint === null) {

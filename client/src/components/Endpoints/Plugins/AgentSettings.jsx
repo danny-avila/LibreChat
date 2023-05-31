@@ -1,9 +1,7 @@
 import { cn } from '~/utils/';
 import { useRecoilValue } from 'recoil';
-import TextareaAutosize from 'react-textarea-autosize';
 import {
   SelectDropDown,
-  Input,
   Label,
   Slider,
   InputNumber,
@@ -23,36 +21,32 @@ function Settings(props) {
   const {
     readonly,
     model,
-    chatGptLabel,
-    promptPrefix,
     temperature,
     topP,
     freqP,
     presP,
     setOption,
-    tools
+    // tools
   } = props;
   const endpoint = 'gptPlugins';
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const setModel = setOption('model');
-  const setChatGptLabel = setOption('chatGptLabel');
-  const setPromptPrefix = setOption('promptPrefix');
   const setTemperature = setOption('temperature');
   const setTopP = setOption('top_p');
   const setFreqP = setOption('presence_penalty');
   const setPresP = setOption('frequency_penalty');
 
-  const toolsSelected = tools?.length > 0;
+  // const toolsSelected = tools?.length > 0;
   const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
 
   return (
-    <div className="max-h-[350px] overflow-y-auto">
+    <div className="max-h-[350px] min-h-[303px] overflow-y-auto">
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
             <SelectDropDown
-              title="Completion Model (Recommended: GPT-4)"
+              title="Agent Model (Recommended: GPT-3.5)"
               value={model}
               setValue={setModel}
               availableValues={models}
@@ -64,53 +58,13 @@ function Settings(props) {
               containerClassName="flex w-full resize-none"
             />
           </div>
-          <>
-            <div className="grid w-full items-center gap-2">
-              <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-                Custom Name <small className="opacity-40">(default: empty | disabled with tools)</small>
-              </Label>
-              <Input
-                id="chatGptLabel"
-                disabled={readonly || toolsSelected}
-                value={chatGptLabel || ''}
-                onChange={(e) => setChatGptLabel(e.target.value || null)}
-                placeholder={
-                  toolsSelected ? 'Disabled with Tools Selected' : 'Set a custom name for ChatGPT.'
-                }
-                className={cn(
-                  defaultTextProps,
-                  'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
-                )}
-              />
-            </div>
-            <div className="grid w-full items-center gap-2">
-              <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
-                Prompt Prefix <small className="opacity-40">(default: empty | disabled with tools)</small>
-              </Label>
-              <TextareaAutosize
-                id="promptPrefix"
-                disabled={readonly || toolsSelected}
-                value={promptPrefix || ''}
-                onChange={(e) => setPromptPrefix(e.target.value || null)}
-                placeholder={
-                  toolsSelected
-                    ? 'Disabled with Tools Selected'
-                    : "Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
-                }
-                className={cn(
-                  defaultTextProps,
-                  'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 '
-                )}
-              />
-            </div>
-          </>
         </div>
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="temp-int" className="text-left text-sm font-medium">
-                  Temperature <small className="opacity-40">{'(default: 0.8)'}</small>
+                  Temperature <small className="opacity-40">{'(default: 0)'}</small>
                 </Label>
                 <InputNumber
                   id="temp-int"
@@ -134,7 +88,7 @@ function Settings(props) {
                 disabled={readonly}
                 value={[temperature]}
                 onValueChange={(value) => setTemperature(value[0])}
-                doubleClickHandler={() => setTemperature(0.8)}
+                doubleClickHandler={() => setTemperature(1)}
                 max={2}
                 min={0}
                 step={0.01}

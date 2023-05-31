@@ -38,23 +38,28 @@ router.post('/', requireJwtAuth, async (req, res) => {
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   if (endpoint !== 'gptPlugins') return handleError(res, { text: 'Illegal request' });
 
+  const agentOptions = req.body?.agentOptions ?? {
+    model: 'gpt-3.5-turbo',
+    // model: 'gpt-4', // for agent model
+    temperature: 0,
+    top_p: 1,
+    presence_penalty: 0,
+    frequency_penalty: 0
+  };
+  
+  const tools = req.body?.tools.map((tool) => tool.pluginKey) ?? [];
   // build endpoint option
   const endpointOption = {
     modelOptions: {
       model: req.body?.model ?? 'gpt-4',
-      // chatGptLabel: req.body?.chatGptLabel ?? null,
-      // promptPrefix: req.body?.promptPrefix ?? null,
+      chatGptLabel: tools.length === 0 ? req.body?.chatGptLabel ?? null : null,
+      promptPrefix: tools.length === 0 ? req.body?.promptPrefix ?? null : null,
       temperature: req.body?.temperature ?? 0,
       top_p: req.body?.top_p ?? 1,
       presence_penalty: req.body?.presence_penalty ?? 0,
       frequency_penalty: req.body?.frequency_penalty ?? 0
     },
-    agentOptions: {
-      model: 'gpt-3.5-turbo', // for agent model
-      // model: 'gpt-4', // for agent model
-      tools: req.body?.tools.map((tool) => tool.pluginKey) ?? [],
-      temperature: req.body?.temperature ?? 0
-    }
+    agentOptions
   };
 
   const availableModels = getOpenAIModels();
@@ -105,8 +110,8 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     outputs: null
   };
 
-  const { tools } = endpointOption.agentOptions;
-  delete endpointOption.agentOptions.tools;
+  const { tools } = endpointOption;
+  delete endpointOption.tools;
 
   try {
     const getIds = (data) => {

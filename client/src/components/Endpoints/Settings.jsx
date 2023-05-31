@@ -1,8 +1,7 @@
-import React from 'react';
-
 import OpenAISettings from './OpenAI/Settings.jsx';
 import BingAISettings from './BingAI/Settings.jsx';
 import GoogleSettings from './Google/Settings.jsx';
+import PluginsSettings from './Plugins/Settings.jsx';
 
 // A preset dialog to show readonly preset values.
 const Settings = ({ preset, ...props }) => {
@@ -45,6 +44,19 @@ const Settings = ({ preset, ...props }) => {
           topK={preset?.topK}
           maxOutputTokens={preset?.maxOutputTokens}
           edit={true}
+          {...props}
+        />
+      );
+    }  else if (endpoint === 'gptPlugins') {
+      return (
+        <PluginsSettings
+          model={preset?.model}
+          chatGptLabel={preset?.chatGptLabel}
+          promptPrefix={preset?.promptPrefix}
+          temperature={preset?.temperature}
+          topP={preset?.top_p}
+          freqP={preset?.presence_penalty}
+          presP={preset?.frequency_penalty}
           {...props}
         />
       );

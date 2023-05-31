@@ -130,7 +130,12 @@ Only respond with your conversational reply to the following User Message:
         ...this.options.modelOptions,
         ...options.modelOptions
       };
+      this.options.agentOptions = {
+        ...this.options.agentOptions,
+        ...options.agentOptions
+      };
       delete options.modelOptions;
+      delete options.agentOptions;
       // now we can merge options
       this.options = {
         ...this.options,
@@ -141,12 +146,12 @@ Only respond with your conversational reply to the following User Message:
     }
 
     this.agentIsGpt3 = this.options.agentOptions.model.startsWith('gpt-3');
+    this.agentOptions = this.options.agentOptions || {};
     const modelOptions = this.options.modelOptions || {};
     this.modelOptions = {
       ...modelOptions,
       model: modelOptions.model || 'gpt-3.5-turbo',
-      // all langchain examples have temp set to 0
-      temperature: typeof modelOptions.temperature === 'undefined' ? 0 : modelOptions.temperature,
+      temperature: typeof modelOptions.temperature === 'undefined' ? 0.8 : modelOptions.temperature,
       top_p: typeof modelOptions.top_p === 'undefined' ? 1 : modelOptions.top_p,
       presence_penalty:
         typeof modelOptions.presence_penalty === 'undefined' ? 0 : modelOptions.presence_penalty,
@@ -216,7 +221,8 @@ Only respond with your conversational reply to the following User Message:
     if (!abortController) {
       abortController = new AbortController();
     }
-    const modelOptions = { ...this.modelOptions, temperature: 0.8 };
+
+    const modelOptions = this.modelOptions;
     if (typeof onProgress === 'function') {
       modelOptions.stream = true;
     }
