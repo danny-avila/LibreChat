@@ -249,7 +249,7 @@ function Registration() {
               }
               type="submit"
               aria-label="Submit registration"
-              className="w-full transform rounded-sm bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none"
+              className="w-full transform rounded-sm bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-green-500"
             >
               Continue
             </button>
@@ -303,17 +303,6 @@ function Registration() {
                 </svg>
                 <p>Login with Google</p>
               </a>
-              {/* <button
-                  aria-label="Login with Facebook"
-                  role="button"
-                  className="flex w-full items-center justify-center space-x-3 rounded-md border p-4 focus:ring-2 focus:ring-violet-400 focus:ring-offset-1 dark:border-gray-400"
-                >
-                  <FontAwesomeIcon
-                    icon={faFacebook} 
-                    size={'lg'}
-                  />
-                  <p>Login with Facebook</p>
-                </button> */}
             </div>
           </>
         )}
