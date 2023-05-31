@@ -111,9 +111,6 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     outputs: null
   };
 
-  const { tools } = endpointOption;
-  delete endpointOption.tools;
-
   try {
     const getIds = (data) => {
       userMessage = data.userMessage;
@@ -182,14 +179,13 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
     }
 
+    endpointOption.tools = await validateTools(user, endpointOption.tools);
     const clientOptions = {
       debug: true,
       reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
       proxy: process.env.PROXY || null,
       ...endpointOption
     };
-
-    clientOptions.tools = await validateTools(user, tools);
 
     if (process.env.AZURE_OPENAI_API_KEY) {
       clientOptions.azure = {
