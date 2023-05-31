@@ -375,7 +375,8 @@ Only respond with your conversational reply to the following User Message:
     await saveConvo(user, {
       conversationId: message.conversationId,
       endpoint: 'gptPlugins',
-      ...this.modelOptions
+      ...this.modelOptions,
+      agentOptions: this.agentOptions
     });
   }
 
