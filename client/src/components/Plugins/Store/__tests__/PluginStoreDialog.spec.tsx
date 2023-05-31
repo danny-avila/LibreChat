@@ -1,4 +1,4 @@
-import { render, screen } from 'layout-test-utils';
+import { render } from 'layout-test-utils';
 import PluginStoreDialog from '../PluginStoreDialog';
 import userEvent from '@testing-library/user-event';
 import * as mockDataProvider from '~/data-provider';
@@ -59,7 +59,7 @@ const pluginsQueryResult = [
     pluginKey: 'plugin1',
     description: 'description for Plugin 1.',
     icon: 'mock-icon',
-    authConfig: [ ],
+    authConfig: []
   },
   {
     name: 'Plugin 2',
@@ -102,8 +102,8 @@ const pluginsQueryResult = [
     description: 'description for Plugin 7.',
     icon: 'mock-icon',
     authConfig: []
-  },
-]
+  }
+];
 
 const setup = ({
   useGetUserQueryReturnValue = {
@@ -167,7 +167,6 @@ test('Displays the plugin auth form when installing a plugin with auth', async (
 
 test('allows the user to navigate between pages', async () => {
   const { getByRole, getByText } = setup();
-  screen.debug(undefined, 30000)
 
   expect(getByText('Google')).toBeInTheDocument();
   expect(getByText('Wolfram')).toBeInTheDocument();
