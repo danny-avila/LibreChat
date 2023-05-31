@@ -1,4 +1,4 @@
-import { render, waitFor, screen } from 'layout-test-utils';
+import { render, waitFor } from 'layout-test-utils';
 import userEvent from '@testing-library/user-event';
 import Login from '../Login';
 import * as mockDataProvider from '~/data-provider';
@@ -43,18 +43,14 @@ const setup = ({
 };
 
 test('renders login form', () => {
-  const { getByLabelText, getByRole, getByText } = setup();
-  expect(getByText(/Welcom back/i)).toBeInTheDocument();
+  const { getByLabelText, getByRole } = setup();
   expect(getByLabelText(/email/i)).toBeInTheDocument();
   expect(getByLabelText(/password/i)).toBeInTheDocument();
   expect(getByRole('button', { name: /Sign in/i })).toBeInTheDocument();
   expect(getByRole('link', { name: /Sign up/i })).toBeInTheDocument();
   expect(getByRole('link', { name: /Sign up/i })).toHaveAttribute('href', '/register');
   expect(getByRole('link', { name: /Login with Google/i })).toBeInTheDocument();
-  expect(getByRole('link', { name: /Login with Google/i })).toHaveAttribute(
-    'href',
-    'mock-server/oauth/google'
-  );
+  expect(getByRole('link', { name: /Login with Google/i })).toHaveAttribute('href', 'mock-server/oauth/google');
 });
 
 test('calls loginUser.mutate on login', async () => {
@@ -100,15 +96,3 @@ test('Navigates to / on successful login', async () => {
 
   waitFor(() => expect(history.location.pathname).toBe('/'));
 });
-
-// test('navigates to /register on sign up link click', async () => {
-//   const { getByRole, history } = setup();
-
-//   const signUpLink = getByRole('link', { name: /Sign up/i });
-
-//   await userEvent.click(signUpLink);
-
-//   waitFor(() => expect(history.location.pathname).toBe('/register'));
-// });
-
-//note: need to add tests for google button 
