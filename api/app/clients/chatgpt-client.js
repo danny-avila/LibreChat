@@ -81,6 +81,7 @@ const askClient = async ({
 
   try {
     usage.completion_tokens = (enc.encode(res.response)).length;
+    enc.free();
     usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
     res.usage = usage;
   } catch (e) {
