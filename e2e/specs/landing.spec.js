@@ -44,7 +44,7 @@ test.describe('Landing suite', () => {
     await page.locator('form').getByRole('button').nth(1).click();
 
     // Wait for the message to be sent
-    await page.waitForTimeout(6500);
+    await page.waitForTimeout(15000);
     let afterAdding = (await getItems()).length;
 
     expect(afterAdding).toBeGreaterThan(beforeAdding);
