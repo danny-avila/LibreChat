@@ -188,10 +188,10 @@ Only respond with your conversational reply to the following User Message:
     this.endToken = '';
     this.gptEncoder = this.constructor.getTokenizer('cl100k_base');
     this.completionsUrl = 'https://api.openai.com/v1/chat/completions';
+    this.reverseProxyUrl = this.options.reverseProxyUrl || process.env.OPENAI_REVERSE_PROXY;
 
-    // if (this.options.reverseProxyUrl) {
-    if (process.env.OPENAI_REVERSE_PROXY) {
-      this.completionsUrl = process.env.OPENAI_REVERSE_PROXY;
+    if (this.reverseProxyUrl) {
+      this.completionsUrl = this.reverseProxyUrl;
     }
 
     if (this.azureEndpoint) {
@@ -375,6 +375,8 @@ Only respond with your conversational reply to the following User Message:
     await saveConvo(user, {
       conversationId: message.conversationId,
       endpoint: 'gptPlugins',
+      chatGptLabel: this.options.chatGptLabel,
+      promptPrefix: this.options.promptPrefix,
       ...this.modelOptions,
       agentOptions: this.agentOptions
     });
@@ -481,11 +483,10 @@ Only respond with your conversational reply to the following User Message:
   }
 
   async sendApiMessage(messages, userMessage, opts = {}) {
-    let payload;
     // Doing it this way instead of having each message be a separate element in the array seems to be more reliable,
     // especially when it comes to keeping the AI in character. It also seems to improve coherency and context retention.
-    if (!this.options.promptPrefix) {
-      payload = await this.buildPrompt([
+    let payload = await this.buildPrompt({
+      messages: [
         ...messages,
         {
           messageId: userMessage.messageId,
@@ -493,10 +494,9 @@ Only respond with your conversational reply to the following User Message:
           role: 'User',
           text: userMessage.text
         }
-      ]);
-    } else {
-      payload = await this.buildPrompt(messages);
-    }
+      ],
+      ...opts
+    });
 
     let reply = '';
     let result = {};
@@ -630,7 +630,8 @@ Only respond with your conversational reply to the following User Message:
       console.debug(this.options);
     }
 
-    if (this.options.tools.length > 0) {
+    const completionMode = this.options.tools.length === 0;
+    if (!completionMode) {
       await this.initialize({
         user,
         message,
@@ -660,7 +661,10 @@ Only respond with your conversational reply to the following User Message:
       console.debug('this.result', this.result);
     }
 
-    const promptPrefix = this.buildPromptPrefix(this.result, message);
+    const userProvidedPrefix = completionMode && this.options?.promptPrefix?.length > 0;
+    const promptPrefix = userProvidedPrefix
+      ? this.options.promptPrefix
+      : this.buildPromptPrefix(this.result, message);
 
     if (this.options.debug) {
       console.debug('promptPrefix', promptPrefix);
@@ -671,13 +675,13 @@ Only respond with your conversational reply to the following User Message:
       promptPrefix
     };
 
-    const finalReply = await this.sendApiMessage(this.currentMessages, userMessage, opts);
+    const finalReply = await this.sendApiMessage(this.currentMessages, userMessage, { ...opts, completionMode });
     responseMessage.text = finalReply;
     await this.saveMessageToDatabase(responseMessage, user);
     return { ...responseMessage, ...this.result };
   }
 
-  async buildPrompt(messages, userMessage, isChatGptModel = true) {
+  async buildPrompt({ messages, completionMode = false, isChatGptModel = true }) {
     if (this.options.debug) {
       console.debug('buildPrompt messages', messages);
     }
@@ -685,9 +689,7 @@ Only respond with your conversational reply to the following User Message:
     const orderedMessages = messages;
 
     let promptPrefix;
-    let usedPlugins = false;
     if (this.options.promptPrefix) {
-      usedPlugins = true;
       promptPrefix = this.options.promptPrefix.trim();
       // If the prompt prefix doesn't end with the end token, add it.
       if (!promptPrefix.endsWith(`${this.endToken}`)) {
@@ -716,8 +718,13 @@ Only respond with your conversational reply to the following User Message:
       messagePayload.role = 'user';
     }
 
-    if (this.isGpt3 && usedPlugins) {
+    if (this.isGpt3 && completionMode) {
       instructionsPayload.content += `\n${promptSuffix}`;
+    }
+
+    // testing if this works with browser endpoint
+    if (!this.isGpt3 && this.reverseProxyUrl) {
+      instructionsPayload.role = 'user';
     }
 
     let currentTokenCount;
@@ -793,7 +800,7 @@ Only respond with your conversational reply to the following User Message:
       this.maxResponseTokens
     );
 
-    if (this.isGpt3 && !usedPlugins) {
+    if (this.isGpt3 && !completionMode) {
       messagePayload.content += promptSuffix;
       return [instructionsPayload, messagePayload];
     }
