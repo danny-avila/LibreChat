@@ -1,40 +1,40 @@
 name: Feature Request
 description: File a feature request
-title: "Enhancement]: "
+title: "Enhancement: "
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to fill this!
+        Thank you for taking the time to fill this out!
   - type: input
     id: contact
     attributes:
       label: Contact Details
-      description: How can we get in touch with you if we need more info?
+      description: How can we contact you if we need more information?
       placeholder: ex. email@example.com
     validations:
       required: false
   - type: textarea
     id: what
     attributes:
-      label: What functionality would you like to see added?
-      description: Please give as many details as possible
-      placeholder: Please give as many details as possible
+      label: What features would you like to see added?
+      description: Please provide as many details as possible.
+      placeholder: Please provide as many details as possible.
     validations:
       required: true
   - type: textarea
     id: details
     attributes:
       label: More details
-      description: Please provide more details if you need to
-      placeholder: Please provide more details if you need to
+      description: Please provide additional details if needed.
+      placeholder: Please provide additional details if needed.
     validations:
       required: true
   - type: dropdown
     id: subject
     attributes:
-      label: What components are affected by your request?
+      label: Which components are impacted by your request?
       multiple: true
       options:
         - General
@@ -46,7 +46,7 @@ body:
     id: screenshots
     attributes:
       label: Pictures
-      description: If applicable, add pictures to help explain your request. You can drag and drop, paste images directly here or link to them.
+      description: If relevant, please include images to help clarify your request. You can drag and drop images directly here, paste them, or provide a link to them.
   - type: checkboxes
     id: terms
     attributes:
