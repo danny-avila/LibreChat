@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useContext } from 'react';
 import NewChat from './NewChat';
 import Panel from '../svg/Panel';
 import Spinner from '../svg/Spinner';
-import Pages from '../Conversations/Pages';
 import Conversations from '../Conversations';
 import NavLinks from './NavLinks';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
@@ -12,26 +11,6 @@ import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { ThemeContext } from '~/hooks/ThemeContext';
 import { cn } from '~/utils/';
-
-// import resolveConfig from 'tailwindcss/resolveConfig';
-// const tailwindConfig = import('../../../tailwind.config.cjs');
-// const fullConfig = resolveConfig(tailwindConfig);
-
-// export const getBreakpointValue = (value) =>
-//   +fullConfig.theme.screens[value].slice(0, fullConfig.theme.screens[value].indexOf('px'));
-
-// export const getCurrentBreakpoint = () => {
-//   let currentBreakpoint;
-//   let biggestBreakpointValue = 0;
-//   for (const breakpoint of Object.keys(fullConfig.theme.screens)) {
-//     const breakpointValue = getBreakpointValue(breakpoint);
-//     if (breakpointValue > biggestBreakpointValue && window.innerWidth >= breakpointValue) {
-//       biggestBreakpointValue = breakpointValue;
-//       currentBreakpoint = breakpoint;
-//     }
-//   }
-//   return currentBreakpoint;
-// };
 
 export default function Nav({ navVisible, setNavVisible }) {
   const [isHovering, setIsHovering] = useState(false);
@@ -106,16 +85,6 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   };
 
-  const nextPage = async () => {
-    moveToTop();
-    setPageNumber(pageNumber + 1);
-  };
-
-  const previousPage = async () => {
-    moveToTop();
-    setPageNumber(pageNumber - 1);
-  };
-
   useEffect(() => {
     if (getConversationsQuery.data) {
       if (isSearching) {
@@ -130,7 +99,7 @@ export default function Nav({ navVisible, setNavVisible }) {
             (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
           );
         }
-        setConversations(conversations);
+        setConversations(prevConversations => [...prevConversations, ...conversations]);
         setPages(pages);
       }
     }
@@ -146,28 +115,13 @@ export default function Nav({ navVisible, setNavVisible }) {
     setNavVisible((prev) => !prev);
   };
 
-  // useEffect(() => {
-  //   let currentBreakpoint = getCurrentBreakpoint();
-  //   if (currentBreakpoint === 'sm') {
-  //     setNavVisible(false);
-  //   } else {
-  //     setNavVisible(true);
-  //   }
-  // }, [conversationId, setNavVisible]);
-
-  const isMobile = () => {
-    const userAgent = typeof window.navigator === 'undefined' ? '' : navigator.userAgent;
-    const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS/i;
-    return mobileRegex.test(userAgent);
-  };
-
-  useEffect(() => {
-    if (isMobile()) {
-      setNavVisible(false);
-    } else {
-      setNavVisible(true);
+  const handleScroll = (e) => {
+    const bottom = e.target.scrollHeight - e.target.scrollTop === e.target.clientHeight;
+    if (bottom && !isFetching && pageNumber < pages) {
+      setPageNumber(pageNumber + 1);
+      setIsFetching(true);
     }
-  }, [conversationId, setNavVisible]);
+  };
 
   const containerClasses =
     getConversationsQuery.isLoading && pageNumber === 1
@@ -188,6 +142,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                 onMouseEnter={() => setIsHovering(true)}
                 onMouseLeave={() => setIsHovering(false)}
                 ref={containerRef}
+                onScroll={handleScroll}
               >
                 <div className={containerClasses}>
                   {(getConversationsQuery.isLoading && pageNumber === 1) || isFetching ? (
@@ -199,12 +154,6 @@ export default function Nav({ navVisible, setNavVisible }) {
                       moveToTop={moveToTop}
                     />
                   )}
-                  <Pages
-                    pageNumber={pageNumber}
-                    pages={pages}
-                    nextPage={nextPage}
-                    previousPage={previousPage}
-                  />
                 </div>
               </div>
               <NavLinks clearSearch={clearSearch} isSearchEnabled={isSearchEnabled} />
