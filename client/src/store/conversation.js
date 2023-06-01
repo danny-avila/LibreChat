@@ -134,7 +134,7 @@ const useConversation = () => {
     );
   };
 
-  return { newConversation, switchToConversation, searchPlaceholderConversation };
+  return { _switchToConversation, newConversation, switchToConversation, searchPlaceholderConversation };
 };
 
 export default {

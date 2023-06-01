@@ -8,6 +8,7 @@ import PresetItems from './PresetItems';
 import { Trash2 } from 'lucide-react';
 import FileUpload from './FileUpload';
 import getIcon from '~/utils/getIcon';
+import getDefaultConversation from '~/utils/getDefaultConversation';
 import { useDeletePresetMutation, useCreatePresetMutation } from '~/data-provider';
 import { Button } from '../../ui/Button.tsx';
 import {
@@ -30,12 +31,13 @@ export default function NewConversationMenu() {
   const [showEndpoints, setShowEndpoints] = useState(true);
   const [presetModelVisible, setPresetModelVisible] = useState(false);
   const [preset, setPreset] = useState(false);
-
+  const [conversation, setConversation] = useRecoilState(store.conversation) || {};
+  const [messages, setMessages] = useRecoilState(store.messages);
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const [presets, setPresets] = useRecoilState(store.presets);
 
-  const conversation = useRecoilValue(store.conversation) || {};
+  // const conversation = useRecoilValue(store.conversation) || {};
   const { endpoint, conversationId } = conversation;
   const { newConversation } = store.useConversation();
 
@@ -85,8 +87,7 @@ export default function NewConversationMenu() {
   // set the current model
   const onSelectEndpoint = (newEndpoint) => {
     setMenuOpen(false);
-
-    if (!newEndpoint) return;
+    if (!newEndpoint) { return; }
     else {
       newConversation({}, { endpoint: newEndpoint });
     }
@@ -95,10 +96,24 @@ export default function NewConversationMenu() {
   // set the current model
   const onSelectPreset = (newPreset) => {
     setMenuOpen(false);
-    if (!newPreset) return;
-    else {
-      newConversation({}, newPreset);
+    
+    if (endpoint === 'gptPlugins' && newPreset?.endpoint === 'gptPlugins') {
+      const currentConvo = getDefaultConversation({
+        conversation,
+        endpointsConfig,
+        preset: newPreset,
+      });
+
+      setConversation(currentConvo);
+      setMessages(messages);
+      return;
     }
+
+    if (!newPreset) {
+      return;
+    }
+
+    newConversation({}, newPreset);
   };
 
   const onChangePreset = (preset) => {
