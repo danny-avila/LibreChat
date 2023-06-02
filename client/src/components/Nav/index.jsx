@@ -115,6 +115,20 @@ export default function Nav({ navVisible, setNavVisible }) {
     setNavVisible((prev) => !prev);
   };
 
+  const isMobile = () => {
+    const userAgent = typeof window.navigator === 'undefined' ? '' : navigator.userAgent;
+    const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS/i;
+    return mobileRegex.test(userAgent);
+  };
+
+  useEffect(() => {
+    if (isMobile()) {
+      setNavVisible(false);
+    } else {
+      setNavVisible(true);
+    }
+  }, [conversationId, setNavVisible]);
+
   const handleScroll = (e) => {
     const bottom = e.target.scrollHeight - e.target.scrollTop === e.target.clientHeight;
     if (bottom && !isFetching && pageNumber < pages) {
