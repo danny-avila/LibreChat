@@ -44,8 +44,16 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
   const helpText = {
     bingAI: (
       <small className="break-all text-gray-600">
-        {`To get your Access token for Bing, login to https://www.bing.com.
-        Use dev tools or an extension while logged into the site to copy the content of the _U cookie.
+        {`To get your Access token for Bing, login to `}
+        <a
+          target="_blank"
+          href="https://www.bing.com"
+          rel="noreferrer"
+          className="text-blue-600 underline"
+        >
+          https://www.bing.com
+        </a>
+        {`. Use dev tools or an extension while logged into the site to copy the content of the _U cookie.
         If this fails, follow these `}
         <a
           target="_blank"
