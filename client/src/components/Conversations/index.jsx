@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDistanceToNow } from 'date-fns';
 import Conversation from './Conversation';
 
 export default function Conversations({ conversations, moveToTop }) {
@@ -13,30 +14,23 @@ export default function Conversations({ conversations, moveToTop }) {
     conversations.forEach((convo) => {
       const date = new Date(convo.updatedAt);
       const today = new Date();
-      const diffTime = Math.abs(today - date);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const diffDays = Math.ceil((today - date) / (1000 * 60 * 60 * 24));
       let groupTitle = '';
-      if (diffDays === 1) {
-        groupTitle = 'Yesterday';
-      } else if (diffDays <= 7) {
-        groupTitle = `${diffDays} days ago`;
-      } else if (diffDays <= 30) {
-        groupTitle = `${Math.floor(diffDays / 7)} weeks ago`;
-      } else if (diffDays <= 365) {
-        groupTitle = `${Math.floor(diffDays / 30)} months ago`;
-      } else if (diffDays <= 365 * 2) {
-        groupTitle = `Last year`;
-      } else if (diffDays <= 365 * 3) {
-        groupTitle = `2 years ago`;
-      } else if (diffDays <= 365 * 4) {
-        groupTitle = `3 years ago`;
+      if (diffDays === 0) {
+        groupTitle = 'Today';
       } else {
-        groupTitle = `${Math.floor(diffDays / 365)} years ago`;
+        groupTitle = formatDistanceToNow(date, { addSuffix: true });
       }
       if (!groups[groupTitle]) {
         groups[groupTitle] = [];
       }
-      groups[groupTitle].push(convo);
+      // Check if conversation already exists in the group
+      const existingConvo = groups[groupTitle].find(
+        (c) => c.conversationId === convo.conversationId
+      );
+      if (!existingConvo) {
+        groups[groupTitle].push(convo);
+      }
     });
     return groups;
   };
