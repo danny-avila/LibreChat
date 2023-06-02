@@ -42,13 +42,21 @@ export default function Conversations({ conversations, moveToTop }) {
       {Object.entries(groupedConversations).map(([groupTitle, groupConversations]) => (
         <div key={groupTitle} className="relative">
           <div className="sticky top-0 z-[16]">
-            <h2 className="h-9 overflow-hidden text-ellipsis break-all bg-gray-900 px-3 pb-2 pt-3 text-xs font-medium text-gray-500">
+            <h3 className="h-9 overflow-hidden text-ellipsis break-all bg-gray-900 px-3 pb-2 pt-3 text-xs font-medium text-gray-500 ">
               {groupTitle}
-            </h2>
+            </h3>
           </div>
-          {groupConversations.map((convo) => (
-            <Conversation key={convo.conversationId} conversation={convo} retainView={moveToTop} />
-          ))}
+          <ol>
+            {groupConversations.map((convo) => (
+              <li className="relative z-[15]" key={convo.conversationId}>
+                <Conversation
+                  key={convo.conversationId}
+                  conversation={convo}
+                  retainView={moveToTop}
+                />
+              </li>
+            ))}
+          </ol>
         </div>
       ))}
     </>
