@@ -150,11 +150,11 @@ export default function NewConversationMenu() {
           <DropdownMenuRadioGroup
             value={endpoint}
             onValueChange={onSelectEndpoint}
-            className="overflow-y-auto"
+            className="overflow-y-auto gap-1 flex flex-col"
           >
             {showEndpoints &&
               (availableEndpoints.length ? (
-                <EndpointItems endpoints={availableEndpoints} onSelect={onSelectEndpoint} />
+                <EndpointItems selectedEndpoint={endpoint} endpoints={availableEndpoints} onSelect={onSelectEndpoint} />
               ) : (
                 <DropdownMenuLabel className="dark:text-gray-300">
                   No endpoint available.

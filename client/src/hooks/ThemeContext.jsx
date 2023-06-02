@@ -26,10 +26,14 @@ export const ThemeProvider = ({ initialTheme, children }) => {
 
   const rawSetTheme = (rawTheme) => {
     const root = window.document.documentElement;
-    const isDark = rawTheme === 'dark';
+    let isDark = rawTheme === 'dark';
+
+    if (rawTheme === 'system') {
+      isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
 
     root.classList.remove(isDark ? 'light' : 'dark');
-    root.classList.add(rawTheme);
+    root.classList.add(isDark ? 'dark' : 'light');
 
     localStorage.setItem('color-theme', rawTheme);
   };
