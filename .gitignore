@@ -48,7 +48,7 @@ bower_components/
 
 # Environment
 .npmrc
-.env
+.env*
 cache.json
 api/data/
 owner.yml
@@ -61,6 +61,9 @@ src/style - official.css
 .DS_Store
 *.code-workspace
 .idea
+*.pem
+config.local.ts
+storageState.json
 
 # meilisearch
 meilisearch

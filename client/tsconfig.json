@@ -25,7 +25,7 @@
   },
   "types": ["node", "jest", "@testing-library/jest-dom"],
   "exclude": ["node_modules"],
-  "include": ["src/**/*", "setupTests.js", "vite.config.ts", "env.d.ts"],
+  "include": ["src/**/*", "../e2e/**/*", "setupTests.js", "vite.config.ts", "env.d.ts"],
   "references": [
     {
       "path": "./tsconfig.node.json"

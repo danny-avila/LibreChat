@@ -1,9 +1,9 @@
 name: Playwright Tests
 on:
   push:
-    branches: [ main ]
+    branches: [ feat/playwright-jest-cicd ]
   pull_request:
-    branches: [ main ]
+    branches: [ feat/playwright-jest-cicd ]
 jobs:
   tests_e2e:
     name: Run end-to-end tests
@@ -14,6 +14,9 @@ jobs:
       CHATGPT_TOKEN: ${{ secrets.CHATGPT_TOKEN }}
       MONGO_URI: ${{ secrets.MONGO_URI }}
       OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+      # CREDS_KEY: ${{ secrets.CREDS_KEY }}
+      # CREDS_IV: ${{ secrets.CREDS_IV }}
+      # PALM_KEY: ${{ secrets.PALM_KEY }}
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-node@v3
@@ -31,7 +34,7 @@ jobs:
 
     - name: Install API dependencies
       working-directory: ./api
-      run: npm ci
+      run: npm install
 
     - name: Cache Client dependencies
       uses: actions/cache@v2
@@ -43,14 +46,14 @@ jobs:
 
     - name: Install Client dependencies
       working-directory: ./client
-      run: npm ci
+      run: npm install
 
     - name: Build Client
       working-directory: ./client
       run: npm run build
 
     - name: Install global dependencies
-      run: npm ci
+      run: npm install
 
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
@@ -62,7 +65,7 @@ jobs:
         sleep 10 # Wait for the server to start
 
     - name: Run Playwright tests
-      run: npx playwright test
+      run: npx playwright test --config=e2e/playwright.config.ts
 
     - uses: actions/upload-artifact@v3
       if: always()
