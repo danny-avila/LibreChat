@@ -49,7 +49,7 @@ const askClient = async ({
     // debug: true
   };
 
-  let apiKey = oaiApiKey ? oaiApiKey : process.env.OPENAI_KEY || null;
+  let apiKey = oaiApiKey ? oaiApiKey : process.env.OPENAI_API_KEY || null;
 
   if (azure) {
     apiKey = oaiApiKey ? oaiApiKey : process.env.AZURE_OPENAI_API_KEY || null;

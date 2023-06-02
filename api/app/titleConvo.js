@@ -50,7 +50,7 @@ const titleConvo = async ({ endpoint, text, response, oaiApiKey }) => {
       frequency_penalty: 0
     };
 
-    let apiKey = oaiApiKey || process.env.OPENAI_KEY;
+    let apiKey = oaiApiKey || process.env.OPENAI_API_KEY;
 
     if (azure) {
       apiKey = process.env.AZURE_OPENAI_API_KEY;

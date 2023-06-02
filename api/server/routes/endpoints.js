@@ -40,7 +40,7 @@ router.get('/', async function (req, res) {
       ? { userProvide: palmUser, availableModels: ['chat-bison', 'text-bison'] }
       : false;
   const azureOpenAI = !!process.env.AZURE_OPENAI_KEY;
-  const apiKey = process.env.OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_API_KEY;
   const openAI = apiKey
     ? { availableModels: getOpenAIModels(), userProvide: apiKey === 'user_provided' }
     : false;
