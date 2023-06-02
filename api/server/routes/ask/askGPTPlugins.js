@@ -196,7 +196,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       };
     }
 
-    const chatAgent = new ChatAgent(process.env.OPENAI_KEY, clientOptions);
+    const chatAgent = new ChatAgent(process.env.OPENAI_API_KEY, clientOptions);
 
     const onAgentAction = (action) => {
       const formattedAction = formatAction(action);

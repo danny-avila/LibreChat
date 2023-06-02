@@ -5,7 +5,7 @@ const logger = pino({
   redact: {
     paths: [
       // List of Paths to redact from the logs (https://getpino.io/#/docs/redaction)
-      'env.OPENAI_KEY',
+      'env.OPENAI_API_KEY',
       'env.BINGAI_TOKEN',
       'env.CHATGPT_TOKEN',
       'env.MEILI_MASTER_KEY',

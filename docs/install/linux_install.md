@@ -86,7 +86,7 @@ You will need all your credentials, (API keys, access tokens, and MongoDB Connec
 - Open "~/chatgpt-clone/api/.env.example" in a text editor
 - At this line MONGO_URI="mongodb://127.0.0.1:27017/chatgpt-clone", replace mongodb://127.0.0.1:27017/chatgpt-clone with the MongoDB connection string you saved earlier, remove "&w=majority" at the end
   - It should look something like this: "MONGO_URI="mongodb+srv://username:password@chatgpt-clone.lfbcwz3.mongodb.net/?retryWrites=true"
-- At this line OPENAI_KEY= you need to add your OpenAI API key
+- At this line OPENAI_API_KEY= you need to add your OpenAI API key
   - Add your Bing token to this line BINGAI_TOKEN= (needed for BingChat & Sydney)
   - If you want to enable Search, SEARCH=TRUE if you do not want to enable search SEARCH=FALSE
   - Add your previously saved MeiliSearch Master key to this line MEILI_MASTER_KEY= (the key is needed if search is enabled even on local install or you may encounter errors)

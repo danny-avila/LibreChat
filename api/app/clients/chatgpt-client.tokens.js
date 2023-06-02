@@ -31,7 +31,7 @@ const run = async () => {
     debug: true
   };
 
-  let apiKey = process.env.OPENAI_KEY;
+  let apiKey = process.env.OPENAI_API_KEY;
 
   const maxMemory = 0.05 * 1024 * 1024 * 1024;
 
