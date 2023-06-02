@@ -77,7 +77,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                 <Menu.Item as="div">
                   <NavLink
                     className={cn(
-                      'flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700',
+                      'flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none',
                       exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-gray-400'
                     )}
                     svg={() => <Download size={16} />}
@@ -91,7 +91,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                 </Menu.Item>
                 <Menu.Item as="div">
                   <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none"
                     svg={() => <TrashIcon />}
                     text="Clear conversations"
                     clickHandler={() => setShowClearConvos(true)}
