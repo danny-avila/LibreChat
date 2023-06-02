@@ -6,6 +6,7 @@ import { useRecoilValue } from 'recoil';
 import SetTokenDialog from '../SetTokenDialog';
 
 import store from '../../../store';
+import { cn } from '~/utils/index.jsx';
 
 const alternateName = {
   openAI: 'OpenAI',
@@ -15,7 +16,7 @@ const alternateName = {
   google: 'PaLM'
 };
 
-export default function ModelItem({ endpoint, value }) {
+export default function ModelItem({ endpoint, value, isSelected }) {
   const [setTokenDialogOpen, setSetTokenDialogOpen] = useState(false);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
@@ -33,8 +34,11 @@ export default function ModelItem({ endpoint, value }) {
     <>
       <DropdownMenuRadioItem
         value={value}
+        className={cn(
+          'group dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800',
+          isSelected && 'dark:bg-gray-800 bg-gray-50 active'
+        )}
         id={endpoint}
-        className="group dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800"
       >
         {icon}
         {alternateName[endpoint] || endpoint}
@@ -42,7 +46,10 @@ export default function ModelItem({ endpoint, value }) {
         <div className="flex w-4 flex-1" />
         {isUserProvided ? (
           <button
-            className="invisible m-0 mr-1 flex-initial rounded-md p-0 text-xs font-medium text-gray-400 hover:text-gray-700 group-hover:visible dark:font-normal dark:text-gray-400 dark:hover:text-gray-200"
+            className={cn(
+              'invisible m-0 mr-1 flex-initial rounded-md p-0 text-xs font-medium text-gray-400 hover:text-gray-700 group-hover:visible dark:font-normal dark:text-gray-400 dark:hover:text-gray-200',
+              isSelected && 'visible text-gray-700 dark:text-gray-200'
+            )}
             onClick={(e) => {
               e.preventDefault();
               setSetTokenDialogOpen(true);
