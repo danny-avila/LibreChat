@@ -15,33 +15,26 @@ import { cn } from '~/utils/';
 export default function Nav({ navVisible, setNavVisible }) {
   const [isHovering, setIsHovering] = useState(false);
   const { isAuthenticated } = useAuthContext();
-  const { theme, } = useContext(ThemeContext);
+  const { theme } = useContext(ThemeContext);
   const containerRef = useRef(null);
-  const scrollPositionRef = useRef(null);
 
   const [conversations, setConversations] = useState([]);
-  // current page
   const [pageNumber, setPageNumber] = useState(1);
-  // total pages
-  const [pages, setPages] = useState(1);
+  const [isFetching, setIsFetching] = useState(false);
+  const [hasMorePages, setHasMorePages] = useState(true);
 
-  // data provider
   const getConversationsQuery = useGetConversationsQuery(pageNumber, { enabled: isAuthenticated });
 
-  // search
   const searchQuery = useRecoilValue(store.searchQuery);
   const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
   const isSearching = useRecoilValue(store.isSearching);
   const { newConversation, searchPlaceholderConversation } = store.useConversation();
 
-  // current conversation
   const conversation = useRecoilValue(store.conversation);
   const { conversationId } = conversation || {};
   const setSearchResultMessages = useSetRecoilState(store.searchResultMessages);
   const refreshConversationsHint = useRecoilValue(store.refreshConversationsHint);
   const { refreshConversations } = store.useConversations();
-
-  const [isFetching, setIsFetching] = useState(false);
 
   const debouncedSearchTerm = useDebounce(searchQuery, 750);
   const searchQueryFn = useSearchQuery(debouncedSearchTerm, pageNumber, {
@@ -55,14 +48,12 @@ export default function Nav({ navVisible, setNavVisible }) {
     if (expectedPage) {
       setPageNumber(expectedPage);
     }
-    setPages(res.pages);
     setIsFetching(false);
     searchPlaceholderConversation();
     setSearchResultMessages(res.messages);
   };
 
   useEffect(() => {
-    //we use isInitialLoading here instead of isLoading because query is disabled by default
     if (searchQueryFn.isInitialLoading) {
       setIsFetching(true);
     } else if (searchQueryFn.data) {
@@ -81,7 +72,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const moveToTop = () => {
     const container = containerRef.current;
     if (container) {
-      scrollPositionRef.current = container.scrollTop;
+      container.scrollTop = 0;
     }
   };
 
@@ -90,20 +81,17 @@ export default function Nav({ navVisible, setNavVisible }) {
       if (isSearching) {
         return;
       }
-      let { conversations, pages } = getConversationsQuery.data;
-      if (pageNumber > pages) {
-        setPageNumber(pages);
-      } else {
-        if (!isSearching) {
-          conversations = conversations.sort(
-            (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-          );
-        }
-        setConversations(prevConversations => [...prevConversations, ...conversations]);
-        setPages(pages);
+      let { conversations } = getConversationsQuery.data;
+      if (!isSearching) {
+        conversations = conversations.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      }
+      setConversations((prevConversations) => [...prevConversations, ...conversations]);
+      setIsFetching(false);
+      if (conversations.length === 0) {
+        setHasMorePages(false);
       }
     }
-  }, [getConversationsQuery.isSuccess, getConversationsQuery.data, isSearching, pageNumber]);
+  }, [getConversationsQuery.isSuccess, getConversationsQuery.data, isSearching]);
 
   useEffect(() => {
     if (!isSearching) {
@@ -117,7 +105,8 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const isMobile = () => {
     const userAgent = typeof window.navigator === 'undefined' ? '' : navigator.userAgent;
-    const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS/i;
+    const mobileRegex =
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS/i;
     return mobileRegex.test(userAgent);
   };
 
@@ -129,18 +118,30 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   }, [conversationId, setNavVisible]);
 
-  const handleScroll = (e) => {
-    const bottom = e.target.scrollHeight - e.target.scrollTop === e.target.clientHeight;
-    if (bottom && !isFetching && pageNumber < pages) {
-      setPageNumber(pageNumber + 1);
-      setIsFetching(true);
-    }
-  };
-
   const containerClasses =
     getConversationsQuery.isLoading && pageNumber === 1
       ? 'flex flex-col gap-2 text-gray-100 text-sm h-full justify-center items-center'
       : 'flex flex-col gap-2 text-gray-100 text-sm';
+
+  const handleScroll = () => {
+    const container = containerRef.current;
+    if (container) {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      if (scrollTop + clientHeight >= scrollHeight && !isFetching && hasMorePages) {
+        console.log('fetching more conversations');
+        setPageNumber((prevPageNumber) => prevPageNumber + 1);
+        setIsFetching(true);
+      }
+      if (scrollTop + clientHeight < scrollHeight && isFetching) {
+        setIsFetching(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    containerRef.current.addEventListener('scroll', handleScroll);
+    return () => containerRef.current.removeEventListener('scroll', handleScroll);
+  }, []);
 
   return (
     <>
@@ -156,17 +157,29 @@ export default function Nav({ navVisible, setNavVisible }) {
                 onMouseEnter={() => setIsHovering(true)}
                 onMouseLeave={() => setIsHovering(false)}
                 ref={containerRef}
-                onScroll={handleScroll}
               >
                 <div className={containerClasses}>
-                  {(getConversationsQuery.isLoading && pageNumber === 1) || isFetching ? (
+                  {getConversationsQuery.isLoading && pageNumber === 1 ? (
                     <Spinner />
                   ) : (
-                    <Conversations
-                      conversations={conversations}
-                      conversationId={conversationId}
-                      moveToTop={moveToTop}
-                    />
+                    <>
+                      <Conversations
+                        conversations={conversations}
+                        conversationId={conversationId}
+                        moveToTop={moveToTop}
+                      />
+                      <div className="flex justify-center">
+                        {isFetching && <Spinner />}
+                        {!isFetching && hasMorePages && (
+                          <button
+                            className="my-2 rounded-md bg-gray-800 px-4 py-2 text-white border border-gray-700 hover:bg-gray-700"
+                            onClick={() => setPageNumber((prevPageNumber) => prevPageNumber + 1)}
+                          >
+                            Show More
+                          </button>
+                        )}
+                      </div>
+                    </>
                   )}
                 </div>
               </div>
@@ -176,11 +189,16 @@ export default function Nav({ navVisible, setNavVisible }) {
         </div>
         <button
           type="button"
-          className={cn('nav-close-button -ml-0.5 -mt-2.5 inline-flex h-10 w-10 items-center justify-center rounded-md focus:outline-none focus:ring-white md:-ml-1 md:-mt-2.5', theme === 'dark' ? 'text-gray-500 hover:text-gray-400' : 'text-gray-400 hover:text-gray-500')}
+          className={cn(
+            'nav-close-button -ml-0.5 -mt-2.5 inline-flex h-10 w-10 items-center justify-center rounded-md focus:outline-none focus:ring-white md:-ml-1 md:-mt-2.5',
+            theme === 'dark'
+              ? 'text-gray-500 hover:text-gray-400'
+              : 'text-gray-400 hover:text-gray-500'
+          )}
           onClick={toggleNavVisible}
         >
           <span className="sr-only">Close sidebar</span>
-          <Panel/>
+          <Panel />
         </button>
       </div>
       {!navVisible && (
@@ -190,7 +208,7 @@ export default function Nav({ navVisible, setNavVisible }) {
           onClick={toggleNavVisible}
         >
           <span className="sr-only">Open sidebar</span>
-          <Panel open={true}/>
+          <Panel open={true} />
         </button>
       )}
 
