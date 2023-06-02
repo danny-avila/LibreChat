@@ -86,7 +86,7 @@ export default function Conversation({ conversation, retainView }) {
 
   if (currentConversation?.conversationId !== conversationId) {
     aProps.className =
-      'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-[#2A2B32] hover:pr-4';
+      'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-gray-800 hover:pr-4';
   }
 
   return (
