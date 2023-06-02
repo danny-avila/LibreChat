@@ -3,11 +3,12 @@ import { Fragment, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import SearchBar from './SearchBar';
 import TrashIcon from '../svg/TrashIcon';
+import GearIcon from '../svg/GearIcon';
+import Settings from './Settings';
 import { Download } from 'lucide-react';
 import NavLink from './NavLink';
 import ExportModel from './ExportConversation/ExportModel';
 import ClearConvos from './ClearConvos';
-import DarkMode from './DarkMode';
 import Logout from './Logout';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { cn } from '~/utils/';
@@ -18,6 +19,7 @@ import store from '~/store';
 export default function NavLinks({ clearSearch, isSearchEnabled }) {
   const [showExports, setShowExports] = useState(false);
   const [showClearConvos, setShowClearConvos] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const { user } = useAuthContext();
 
   const conversation = useRecoilValue(store.conversation) || {};
@@ -47,7 +49,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                   <img
                     className="rounded-sm"
                     src={
-                      user?.avatar || `https://avatars.dicebear.com/api/initials/${user?.name}.svg`
+                      user?.avatar || `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name || 'User'}&fontFamily=Verdana&fontSize=36`
                     }
                     alt=""
                   />
@@ -78,7 +80,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                   <NavLink
                     className={cn(
                       'flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none',
-                      exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-gray-400'
+                      exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-white/50'
                     )}
                     svg={() => <Download size={16} />}
                     text="Export conversation"
@@ -87,14 +89,19 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                 </Menu.Item>
                 <div className="my-1.5 h-px bg-white/20" role="none" />
                 <Menu.Item as="div">
-                  <DarkMode />
-                </Menu.Item>
-                <Menu.Item as="div">
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none"
                     svg={() => <TrashIcon />}
                     text="Clear conversations"
                     clickHandler={() => setShowClearConvos(true)}
+                  />
+                </Menu.Item>
+                <Menu.Item as="div">
+                  <NavLink
+                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none"
+                    svg={() => <GearIcon />}
+                    text="Settings"
+                    clickHandler={() => setShowSettings(true)}
                   />
                 </Menu.Item>
                 <div className="my-1.5 h-px bg-white/20" role="none" />
@@ -108,6 +115,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
       </Menu>
       {showExports && <ExportModel open={showExports} onOpenChange={setShowExports} />}
       {showClearConvos && <ClearConvos open={showClearConvos} onOpenChange={setShowClearConvos} />}
+      {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
     </>
   );
 }
