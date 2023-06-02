@@ -7,7 +7,7 @@ test.describe.only('Messaging suite', () => {
   test('textbox should be focused after receiving message', async ({page}) => {
     test.setTimeout(120000);
     const message = 'hi';
-    const endpoint = endpoints[0];
+    const endpoint = endpoints[1];
 
     await page.goto('http://localhost:3080/chat/new');
     await page.locator('#new-conversation-menu').click();

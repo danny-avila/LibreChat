@@ -14,6 +14,8 @@ jobs:
       CHATGPT_TOKEN: ${{ secrets.CHATGPT_TOKEN }}
       MONGO_URI: ${{ secrets.MONGO_URI }}
       OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+      E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
+      E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
       # CREDS_KEY: ${{ secrets.CREDS_KEY }}
       # CREDS_IV: ${{ secrets.CREDS_IV }}
       # PALM_KEY: ${{ secrets.PALM_KEY }}
@@ -34,7 +36,7 @@ jobs:
 
     - name: Install API dependencies
       working-directory: ./api
-      run: npm install
+      run: npm ci
 
     - name: Cache Client dependencies
       uses: actions/cache@v2
@@ -46,22 +48,22 @@ jobs:
 
     - name: Install Client dependencies
       working-directory: ./client
-      run: npm install
+      run: npm ci
 
     - name: Build Client
       working-directory: ./client
       run: npm run build
 
     - name: Install global dependencies
-      run: npm install
+      run: npm ci
 
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
 
     - name: Start API server
-      working-directory: ./api
+      working-directory: ./
       run: |
-        npm run start &
+        npm run backend &
         sleep 10 # Wait for the server to start
 
     - name: Run Playwright tests
