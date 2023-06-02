@@ -1,10 +1,10 @@
 import EndpointItem from './EndpointItem.jsx';
 
-export default function EndpointItems({ endpoints, onSelect }) {
+export default function EndpointItems({ endpoints, onSelect, selectedEndpoint }) {
   return (
     <>
       {endpoints.map((endpoint) => (
-        <EndpointItem key={endpoint} value={endpoint} onSelect={onSelect} endpoint={endpoint} />
+        <EndpointItem isSelected={selectedEndpoint === endpoint} key={endpoint} value={endpoint} onSelect={onSelect} endpoint={endpoint} />
       ))}
     </>
   );
