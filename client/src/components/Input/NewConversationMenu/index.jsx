@@ -137,7 +137,7 @@ export default function NewConversationMenu() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
-          className="min-w-[300px] dark:bg-gray-700 z-[100]"
+          className="min-w-[300px] dark:bg-gray-900 z-[100]"
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
           <DropdownMenuLabel
