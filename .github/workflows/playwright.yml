@@ -36,7 +36,7 @@ jobs:
 
     - name: Install API dependencies
       working-directory: ./api
-      run: npm ci
+      run: npm ci --omit=dev --ignore-scripts
 
     - name: Cache Client dependencies
       uses: actions/cache@v2
@@ -48,14 +48,14 @@ jobs:
 
     - name: Install Client dependencies
       working-directory: ./client
-      run: npm ci
+      run: npm ci --ignore-scripts
 
     - name: Build Client
       working-directory: ./client
       run: npm run build
 
     - name: Install global dependencies
-      run: npm ci
+      run: npm ci --omit=dev --ignore-scripts
 
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
