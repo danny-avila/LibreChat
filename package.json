@@ -15,7 +15,7 @@
     "e2e:ci": "playwright test --config=e2e/playwright.config.ts",
     "e2e:debug": "cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
     "e2e:report": "npx playwright show-report e2e/playwright-report",
-    "prepare": "is-ci || husky install",
+    "prepare": "husky install",
     "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\""
   },
   "repository": {
