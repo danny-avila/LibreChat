@@ -81,13 +81,13 @@ export default function Nav({ navVisible, setNavVisible }) {
       if (isSearching) {
         return;
       }
-      let { conversations } = getConversationsQuery.data;
+      let { conversations, pages } = getConversationsQuery.data;
       if (!isSearching) {
         conversations = conversations.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       }
       setConversations((prevConversations) => [...prevConversations, ...conversations]);
       setIsFetching(false);
-      if (conversations.length === 0) {
+      if (pages === pageNumber) {
         setHasMorePages(false);
       }
     }
