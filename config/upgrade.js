@@ -72,7 +72,7 @@ function refactorSingleEnvVar(oldVarName, newVarName) {
 if (fs.existsSync(apiEnvPath)) {
   fs.copyFileSync(apiEnvPath, rootEnvPath);
   fs.copyFileSync(apiEnvPath, rootEnvPath + '.api.bak');
-  // fs.unlinkSync(apiEnvPath);
+  fs.unlinkSync(apiEnvPath);
 }
 
 // Clean up Domain variables
@@ -126,5 +126,7 @@ if (fs.existsSync(devEnvPath)) {
 if (fs.existsSync(prodEnvPath)) {
   fs.appendFileSync(prodEnvPath, '\n');
 }
+// Remove client file
+fs.unlinkSync(clientEnvPath);
 
 console.log('Upgrade complete.');
