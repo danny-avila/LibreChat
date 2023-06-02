@@ -13,11 +13,8 @@
     "frontend-dev": "cd client && npm run dev",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
     "e2e:ci": "playwright test --config=e2e/playwright.config.ts",
-    "e2e:update": "playwright test --config=e2e/playwright.config.local.ts --update-snapshots",
     "e2e:debug": "cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
     "e2e:report": "npx playwright show-report e2e/playwright-report",
-    "e2e:auth": "npx playwright codegen --save-storage=e2e/auth.json http://localhost:3080/",
-    "e2e:test-auth": "npx playwright codegen --load-storage=e2e/auth.json http://localhost:3080/",
     "prepare": "husky install",
     "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\""
   },
