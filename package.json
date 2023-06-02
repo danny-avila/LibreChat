@@ -7,6 +7,8 @@
     "client"
   ],
   "scripts": {
+    "install": "node config/install.js",
+    "upgrade": "node config/upgrade.js",
     "backend": "cd api && npm run start",
     "backend-dev": "cd api && npm run server-dev",
     "frontend": "cd client && npm run build",
@@ -20,8 +22,7 @@
     "e2e:auth": "npx playwright codegen --save-storage=e2e/auth.json http://localhost:3080/",
     "e2e:test-auth": "npx playwright codegen --load-storage=e2e/auth.json http://localhost:3080/",
     "prepare": "husky install",
-    "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\"",
-    "upgrade": "test ! -f .env && (mv api/.env .env && cat client/.env >> .env && rm client/.env && echo \"Upgraded\") || echo \"Already upgraded\""
+    "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\""
   },
   "repository": {
     "type": "git",
