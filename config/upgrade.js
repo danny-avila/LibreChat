@@ -83,6 +83,7 @@ refactorPairedEnvVar('SERVER_URL_DEV', 'SERVER_URL_PROD', 'DOMAIN_SERVER');
 // Remove the old vars
 const removeEnvs = {
   'NODE_ENV': 'remove',
+  'OPENAI_KEY': 'remove',
   'CLIENT_URL_DEV': 'remove',
   'CLIENT_URL_PROD': 'remove',
   'SERVER_URL_DEV': 'remove',
@@ -110,6 +111,9 @@ fs.appendFileSync(rootEnvPath, '\n\n##########################\n# Secure Keys:\n
 loader.addSecureEnvVar(rootEnvPath, 'CREDS_KEY', 32);
 loader.addSecureEnvVar(rootEnvPath, 'CREDS_IV', 16);
 loader.addSecureEnvVar(rootEnvPath, 'JWT_SECRET', 32);
+
+// Lets update the openai key name, not the best spot in the env file but who cares ¯\_(ツ)_/¯
+loader.writeEnvFile(rootEnvPath, {'OPENAI_API_KEY': initEnv['OPENAI_KEY']})
 
 // TODO: we need to copy over the value of: VITE_SHOW_GOOGLE_LOGIN_OPTION & VITE_APP_TITLE
 fs.appendFileSync(rootEnvPath, '\n\n##########################\n# Frontend Vite Variables:\n##########################\n');

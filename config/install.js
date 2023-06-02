@@ -58,10 +58,9 @@ const askQuestion = (query) => {
   const key = await askQuestion(
     'Enter your OPENAI_API_KEY (default: "user_provided"): '
   );
-  // TODO: Should we change this to OPENAI_API_KEY ?
-  env['OPENAI_KEY'] = key || 'user_provided';
+  env['OPENAI_API_KEY'] = key || 'user_provided';
 
-
+  // GPT4???
   const gpt4 = await askQuestion(
     'Do you have access to the GPT4 api (y/n)? Default: n'
   );
