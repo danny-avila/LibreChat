@@ -1,4 +1,4 @@
-import loader from "./loader";
+const loader = require('./loader')
 const env = loader.all();
 
 const sessionExpiry = eval(env.SESSION_EXPIRY);
@@ -38,7 +38,7 @@ if (!isLegacy && missingKeys.length) {
   const message = `
     The following required env variables are missing:
         ${missingKeys.toString()}.
-    Please add them to your ${envFile} file
+    Please add them to your env file
   `;
   throw new Error(message);
 }
