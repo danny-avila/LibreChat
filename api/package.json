@@ -2,10 +2,9 @@
   "name": "chat-backend",
   "version": "0.4.7",
   "description": "",
-  "main": "server/index.js",
   "scripts": {
-    "start": "node server/index.js",
-    "server-dev": "npx nodemon server/index.js",
+    "start": "echo 'please run this from the root directory'",
+    "server-dev": "echo 'please run this from the root directory'",
     "test2": "node --inspect app/langchain/test2.js",
     "test3": "node --inspect app/langchain/test3.js",
     "test4": "node --inspect app/langchain/test4.js",
