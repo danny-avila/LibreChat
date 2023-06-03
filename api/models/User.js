@@ -3,7 +3,6 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Joi = require('joi');
 const DebugControl = require('../utils/debug.js');
-const { jwt } = require('../config/app.js');
 
 function log({ title, parameters }) {
   DebugControl.log.functionName(title);
@@ -109,7 +108,7 @@ userSchema.methods.generateToken = function () {
       provider: this.provider,
       email: this.email
     },
-    jwt.secret,
+    process.env.JWT_SECRET,
     { expiresIn: eval(process.env.SESSION_EXPIRY) }
   );
   return token;
@@ -123,7 +122,7 @@ userSchema.methods.generateRefreshToken = function () {
       provider: this.provider,
       email: this.email
     },
-    jwt.refreshSecret,
+    process.env.JWT_REFRESH_SECRET,
     { expiresIn: eval(process.env.REFRESH_TOKEN_EXPIRY) }
   );
   return refreshToken;

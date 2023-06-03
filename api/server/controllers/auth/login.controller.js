@@ -1,7 +1,6 @@
-import { isProduction, jwt } from '../../config';
-import User from '../../../models/User';
+const User = require('../../../models/User');
 
-export default async (req, res) => {
+const loginController = async (req, res) => {
   try {
     const user = await User.findById(
       req.user._id
@@ -19,9 +18,9 @@ export default async (req, res) => {
       'token',
       token,
       {
-        expires: new Date(Date.now() + jwt.sessionExpiry),
+        expires: new Date(Date.now() + process.env.JWT_SECRET),
         httpOnly: false,
-        secure: isProduction
+        secure: process.env.NODE_ENV === 'production'
       }
     );
 
@@ -32,4 +31,8 @@ export default async (req, res) => {
 
   // Generic error messages are safer
   return res.status(500).json({ message: 'Something went wrong' });
+};
+
+module.exports = {
+  loginController
 };

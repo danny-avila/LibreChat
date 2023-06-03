@@ -1,8 +1,9 @@
 const passport = require('passport');
 const express = require('express');
-const {isProduction, domains } = require('../../config/app');
 const router = express.Router();
-
+const config = require('../../../config/loader');
+const domains = config.domains;
+const isProduction = process.env.NODE_ENV;
 
 /**
  * Google Routes
@@ -45,7 +46,7 @@ router.get(
 router.get(
   '/facebook/callback',
   passport.authenticate('facebook', {
-    failureRedirect: `${clientUrl}/login`,
+    failureRedirect: `${domains.client}/login`,
     failureMessage: true,
     session: false,
     scope: ['public_profile', 'email']
@@ -57,7 +58,7 @@ router.get(
       httpOnly: false,
       secure: isProduction
     });
-    res.redirect(clientUrl);
+    res.redirect(domains.client);
   }
 );
 

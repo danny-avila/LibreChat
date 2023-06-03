@@ -18,6 +18,12 @@ class Env {
     }
 
     this.init();
+
+    this.isProduction = process.env.NODE_ENV === 'production';
+    this.domains = {
+      client: process.env.DOMAIN_CLIENT,
+      server: process.env.DOMAIN_SERVER,
+    };
   }
 
   /**
@@ -47,6 +53,40 @@ class Env {
       });
     } else if (!hasDefault) {
       console.warn('No env files found, have you completed the install process?');
+    }
+  }
+
+  /**
+   * Validate Config
+   */
+  validate() {
+    const requiredKeys = [
+      'NODE_ENV',
+      'JWT_SECRET',
+      'DOMAIN_CLIENT',
+      'DOMAIN_SERVER',
+    ];
+
+    const missingKeys = requiredKeys.map(key => {
+      const variable = process.env[key];
+      if (variable === undefined || variable === null) {
+        return key;
+      }
+    }).filter(value => value !== undefined);
+
+    // Throw an error if any required keys are missing
+    if (missingKeys.length) {
+      const message = `
+        The following required env variables are missing:
+            ${missingKeys.toString()}.
+        Please add them to your env file or run 'npm run install'
+      `;
+      throw new Error(message);
+    }
+
+    // Check JWT secret for default
+    if (process.env.JWT_SECRET === 'secret') {
+      console.warn('Warning: JWT_SECRET is set to default value');
     }
   }
 

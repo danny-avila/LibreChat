@@ -1,6 +1,6 @@
-import { logoutUser } from '../../services/auth.service';
+const logoutUser = require('../../services/auth.service');
 
-export default async (req, res) => {
+const logoutController = async (req, res) => {
   const { signedCookies = {} } = req;
   const { refreshToken } = signedCookies;
   try {
@@ -8,10 +8,14 @@ export default async (req, res) => {
     const { status, message } = logout;
     res.clearCookie('token');
     res.clearCookie('refreshToken');
-    res.status(status).send({ message });
+    return res.status(status).send({ message });
 
   } catch (err) {
     console.log(err);
     return res.status(500).json({ message: err.message });
   }
+};
+
+module.exports = {
+  logoutController
 };
