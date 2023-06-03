@@ -16,6 +16,8 @@ jobs:
       OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
       E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
       E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
+      NODE_ENV: ${{ secrets.NODE_ENV }}
+      JWT_SECRET_PROD: ${{ secrets.JWT_SECRET_PROD }}
       # CREDS_KEY: ${{ secrets.CREDS_KEY }}
       # CREDS_IV: ${{ secrets.CREDS_IV }}
       # PALM_KEY: ${{ secrets.PALM_KEY }}
@@ -26,37 +28,37 @@ jobs:
         node-version: 18
         cache: 'npm'
 
-    - name: Cache API dependencies
-      uses: actions/cache@v2
-      with:
-        path: ./api/node_modules
-        key: api-${{ runner.os }}-node-${{ hashFiles('./api/package-lock.json') }}
-        restore-keys: |
-          api-${{ runner.os }}-node-
+    # - name: Cache API dependencies
+    #   uses: actions/cache@v2
+    #   with:
+    #     path: ./api/node_modules
+    #     key: api-${{ runner.os }}-node-${{ hashFiles('./api/package-lock.json') }}
+    #     restore-keys: |
+    #       api-${{ runner.os }}-node-
+
+            
+    - name: Install global dependencies
+      run: npm install --ignore-scripts
 
     - name: Install API dependencies
       working-directory: ./api
-      run: npm ci --ignore-scripts
+      run: npm install --ignore-scripts
 
-    - name: Cache Client dependencies
-      uses: actions/cache@v2
-      with:
-        path: ./client/node_modules
-        key: client-${{ runner.os }}-node-${{ hashFiles('./client/package-lock.json') }}
-        restore-keys: |
-          client-${{ runner.os }}-node-
+    # - name: Cache Client dependencies
+    #   uses: actions/cache@v2
+    #   with:
+    #     path: ./client/node_modules
+    #     key: client-${{ runner.os }}-node-${{ hashFiles('./client/package-lock.json') }}
+    #     restore-keys: |
+    #       client-${{ runner.os }}-node-
 
     - name: Install Client dependencies
       working-directory: ./client
-      run: npm ci --ignore-scripts
-      
-    - name: Install global dependencies
-      run: npm ci --ignore-scripts
+      run: npm install --ignore-scripts
 
     - name: Build Client
       working-directory: ./client
       run: npm run build
-
 
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
