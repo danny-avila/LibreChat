@@ -24,8 +24,6 @@ class Env {
       client: process.env.DOMAIN_CLIENT,
       server: process.env.DOMAIN_SERVER,
     };
-
-    this.validate();
   }
 
   /**
