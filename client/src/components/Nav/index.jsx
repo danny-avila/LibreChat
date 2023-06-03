@@ -119,7 +119,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const containerClasses =
     getConversationsQuery.isLoading && pageNumber === 1
       ? 'flex flex-col text-gray-100 text-sm h-full justify-center items-center'
-      : 'flex flex-col text-gray-100 text-sm';
+      : 'flex flex-col text-gray-100 text-sm h-full';
 
   return (
     <>
