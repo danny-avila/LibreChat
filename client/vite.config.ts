@@ -21,7 +21,7 @@ export default defineConfig({
     }
   },
   // All other env variables are filtered out
-  envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_'],
+  envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],
   plugins: [react(), sourcemapExclude({ excludeNodeModules: true })],
   publicDir: './public',
   build: {

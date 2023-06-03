@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import LoginForm from './LoginForm';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { SHOW_GOOGLE_LOGIN_OPTION, ALLOW_REGISTRATION, DOMAIN_SERVER } from "~/utils/envConstants";
 
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();
@@ -13,10 +14,6 @@ function Login() {
       navigate('/chat/new');
     }
   }, [isAuthenticated, navigate]);
-
-
-  const DOMAIN_SERVER = import.meta.env.DOMAIN_SERVER;
-  const SHOW_GOOGLE_LOGIN_OPTION = import.meta.env.VITE_SHOW_GOOGLE_LOGIN_OPTION === 'true';
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
@@ -32,13 +29,15 @@ function Login() {
           </div>
         )}
         <LoginForm onSubmit={login} />
-        <p className="my-4 text-center text-sm font-light text-gray-700">
-          {' '}
-          Don&apos;t have an account?{' '}
-          <a href="/register" className="p-1 text-green-500 hover:underline">
-            Sign up
-          </a>
-        </p>
+        {ALLOW_REGISTRATION && (
+          <p className="my-4 text-center text-sm font-light text-gray-700">
+            {' '}
+            Don&apos;t have an account?{' '}
+            <a href="/register" className="p-1 text-green-500 hover:underline">
+              Sign up
+            </a>
+          </p>
+        )}
         {SHOW_GOOGLE_LOGIN_OPTION && (
           <>
             <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
