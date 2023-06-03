@@ -8,7 +8,7 @@ const PluginService = require('../../../server/services/PluginService');
 const { BaseChatModel } = require('langchain/chat_models/openai');
 const { Calculator } = require('langchain/tools/calculator');
 const OpenAICreateImage = require('./DALL-E');
-const GoogleSearchAPI = require('./googleSearch');
+const GoogleSearchAPI = require('./GoogleSearch');
 
 describe('Tool Handlers', () => {
   let fakeUser;
@@ -58,6 +58,7 @@ describe('Tool Handlers', () => {
     it('returns valid tools given input tools and user authentication', async () => {
       const validTools = await validateTools(fakeUser._id, sampleTools);
       expect(validTools).toBeDefined();
+      console.log('validateTools: validTools', validTools);
       expect(validTools.some((tool) => tool === pluginKey)).toBeTruthy();
       expect(validTools.length).toBeGreaterThan(0);
     });
