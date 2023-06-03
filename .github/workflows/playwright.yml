@@ -56,6 +56,10 @@ jobs:
       working-directory: ./client
       run: npm install --ignore-scripts
 
+    - name: install vite
+      working-directory: ./client
+      run: npm install vite
+
     - name: Build Client
       working-directory: ./client
       run: npm run build
