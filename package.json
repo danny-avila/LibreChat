@@ -49,5 +49,8 @@
     "prettier-eslint": "^15.0.1",
     "prettier-eslint-cli": "^7.1.0",
     "prettier-plugin-tailwindcss": "^0.2.2"
+  },
+  "dependencies": {
+    "react-infinite-scroll-component": "^6.1.0"
   }
 }

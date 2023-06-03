@@ -11,6 +11,23 @@
   margin-left: 20px;
 }
 
+.scrollbar-trigger::-webkit-scrollbar {
+  width: 8px; /* Adjust width as needed */
+}
+
+.scrollbar-trigger::-webkit-scrollbar-thumb {
+  background-color: #555; /* Adjust color as needed */
+  border-radius: 4px;
+}
+
+.scrollbar-trigger::-webkit-scrollbar-thumb:hover {
+  background-color: #888; /* Adjust color as needed */
+}
+
+.scrollbar-trigger::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
 .nav {
   position: fixed;
   z-index: 40;

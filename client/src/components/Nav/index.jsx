@@ -11,6 +11,7 @@ import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { ThemeContext } from '~/hooks/ThemeContext';
 import { cn } from '~/utils/';
+import InfiniteScroll from 'react-infinite-scroll-component';
 
 export default function Nav({ navVisible, setNavVisible }) {
   const [isHovering, setIsHovering] = useState(false);
@@ -20,7 +21,6 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const [conversations, setConversations] = useState([]);
   const [pageNumber, setPageNumber] = useState(1);
-  const [isFetching, setIsFetching] = useState(false);
   const [hasMorePages, setHasMorePages] = useState(true);
 
   const getConversationsQuery = useGetConversationsQuery(pageNumber, { enabled: isAuthenticated });
@@ -48,14 +48,13 @@ export default function Nav({ navVisible, setNavVisible }) {
     if (expectedPage) {
       setPageNumber(expectedPage);
     }
-    setIsFetching(false);
     searchPlaceholderConversation();
     setSearchResultMessages(res.messages);
   };
 
   useEffect(() => {
     if (searchQueryFn.isInitialLoading) {
-      setIsFetching(true);
+      setConversations([]);
     } else if (searchQueryFn.data) {
       onSearchSuccess(searchQueryFn.data);
     }
@@ -86,7 +85,6 @@ export default function Nav({ navVisible, setNavVisible }) {
         conversations = conversations.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       }
       setConversations((prevConversations) => [...prevConversations, ...conversations]);
-      setIsFetching(false);
       if (pages === pageNumber) {
         setHasMorePages(false);
       }
@@ -123,26 +121,6 @@ export default function Nav({ navVisible, setNavVisible }) {
       ? 'flex flex-col text-gray-100 text-sm h-full justify-center items-center'
       : 'flex flex-col text-gray-100 text-sm';
 
-  const handleScroll = () => {
-    const container = containerRef.current;
-    if (container) {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      if (scrollTop + clientHeight >= scrollHeight && !isFetching && hasMorePages) {
-        console.log('fetching more conversations');
-        setPageNumber((prevPageNumber) => prevPageNumber + 1);
-        setIsFetching(true);
-      }
-      if (scrollTop + clientHeight < scrollHeight && isFetching) {
-        setIsFetching(false);
-      }
-    }
-  };
-
-  useEffect(() => {
-    containerRef.current.addEventListener('scroll', handleScroll);
-    return () => containerRef.current.removeEventListener('scroll', handleScroll);
-  }, []);
-
   return (
     <>
       <div className={'nav dark bg-gray-900 md:inset-y-0' + (navVisible ? ' active' : '')}>
@@ -157,31 +135,27 @@ export default function Nav({ navVisible, setNavVisible }) {
                 onMouseEnter={() => setIsHovering(true)}
                 onMouseLeave={() => setIsHovering(false)}
                 ref={containerRef}
+                id="scrollableDiv"
               >
-                <div className={containerClasses}>
-                  {getConversationsQuery.isLoading && pageNumber === 1 ? (
-                    <Spinner />
-                  ) : (
-                    <>
-                      <Conversations
-                        conversations={conversations}
-                        conversationId={conversationId}
-                        moveToTop={moveToTop}
-                      />
-                      <div className="flex justify-center">
-                        {isFetching && <Spinner />}
-                        {!isFetching && hasMorePages && (
-                          <button
-                            className="my-2 rounded-md bg-gray-800 px-4 py-2 text-white border border-gray-700 hover:bg-gray-700"
-                            onClick={() => setPageNumber((prevPageNumber) => prevPageNumber + 1)}
-                          >
-                            Show More
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
+                <InfiniteScroll
+                  dataLength={conversations.length}
+                  next={() => setPageNumber((prevPageNumber) => prevPageNumber + 1)}
+                  className={containerClasses}
+                  hasMore={hasMorePages}
+                  loader={<Spinner />}
+                  scrollThreshold={0.8} // Adjust the scroll threshold value as needed
+                  endMessage={null} // Optionally, provide a custom end message if desired
+                  scrollableTarget="scrollableDiv"
+                  style={{ overflow: 'visible' }} // Add this style to ensure proper rendering
+                >
+                  <div style={{ position: 'relative', width: '100%', minHeight: '100%' }}>
+                    <Conversations
+                      conversations={conversations}
+                      conversationId={conversationId}
+                      moveToTop={moveToTop}
+                    />
+                  </div>
+                </InfiniteScroll>
               </div>
               <NavLinks clearSearch={clearSearch} isSearchEnabled={isSearchEnabled} />
             </nav>
