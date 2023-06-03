@@ -12,7 +12,8 @@ const host = process.env.HOST || 'localhost';
 const projectPath = path.join(__dirname, '..', '..', 'client');
 
 // Init the config and validate it
-require('../../config/loader');
+const config = require('../../config/loader');
+config.validate(); // Validate the config
 
 (async () => {
   await connectDb();
