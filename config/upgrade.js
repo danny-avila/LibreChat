@@ -120,6 +120,7 @@ fs.appendFileSync(rootEnvPath, '\n\n##########################\n# Frontend Vite 
 const frontend = {
   'VITE_APP_TITLE': initEnv['VITE_APP_TITLE'] || '"ChatGPT NOOO"',
   'VITE_SHOW_GOOGLE_LOGIN_OPTION': initEnv['VITE_SHOW_GOOGLE_LOGIN_OPTION'] || 'false',
+  'ALLOW_REGISTRATION': 'true'
 }
 loader.writeEnvFile(rootEnvPath, frontend)
 

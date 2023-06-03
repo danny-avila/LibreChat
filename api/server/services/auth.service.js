@@ -6,7 +6,8 @@ const bcrypt = require('bcryptjs');
 const DebugControl = require('../../utils/debug.js');
 const { registerSchema } = require('../../strategies/validators');
 const migrateDataToFirstUser = require('../../utils/migrateDataToFirstUser');
-const { isProduction, domains } = require('../../config/app');
+const config = require('../../../config/loader');
+const domains = config.domains;
 
 /**
  * Logout user

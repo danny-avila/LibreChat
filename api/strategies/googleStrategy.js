@@ -1,6 +1,7 @@
 const passport = require('passport');
 const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
-const { domains } = require('../../config/app');
+const config = require('../../config/loader');
+const domains = config.domains;
 
 const User = require('../models/User');
 
