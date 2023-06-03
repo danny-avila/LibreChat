@@ -61,7 +61,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.43.9",
-    "react-infinite-scroll-component": "git+https://github.com/Stacrypt/react-infinite-scroll-component.git",
+    "react-infinite-scroll-component": "^6.1.0",
     "react-lazy-load": "^4.0.1",
     "react-markdown": "^8.0.6",
     "react-router-dom": "^6.11.2",
