@@ -36,6 +36,16 @@ if (fs.existsSync(rootEnvPath)) {
   exit(1);
 }
 
+// Validate old configs
+if (!fs.existsSync(apiEnvPath)) {
+  console.error('Api env doesn\'t exit! Did you mean to run install?');
+  exit(1);
+}
+if (!fs.existsSync(clientEnvPath)) {
+  console.error('Client env doesn\'t exit! But api/.env does. Manual upgrade required');
+  exit(1);
+}
+
 /**
  * Refactor the ENV if it has a prod_/dev_ version
  *
@@ -44,7 +54,14 @@ if (fs.existsSync(rootEnvPath)) {
  * @param {*} varName 
  */
 function refactorPairedEnvVar(varDev, varProd, varName) {
-  if (initEnv[varDev] === initEnv[varProd]) {
+  // Lets validate if either of these are undefined, if so lets use the non-unefined one
+  if (initEnv[varDev] === undefined && initEnv[varProd] === undefined) {
+    console.error(`Both ${varDev} and ${varProd} are undefined! Manual intervention required!`);
+  } else if (initEnv[varDev] === undefined) {
+    fs.appendFileSync(rootEnvPath, `\n${varName}=${initEnv[varProd]}`);
+  } else if (initEnv[varProd] === undefined) {
+    fs.appendFileSync(rootEnvPath, `\n${varName}=${initEnv[varDev]}`);
+  } else if (initEnv[varDev] === initEnv[varProd]) {
     fs.appendFileSync(rootEnvPath, `\n${varName}=${initEnv[varDev]}`);
   } else {
     fs.appendFileSync(rootEnvPath, `${varName}=${initEnv[varDev]}\n`);
@@ -132,6 +149,7 @@ if (fs.existsSync(prodEnvPath)) {
   fs.appendFileSync(prodEnvPath, '\n');
 }
 // Remove client file
+fs.copyFileSync(clientEnvPath, rootEnvPath + '.client.bak');
 fs.unlinkSync(clientEnvPath);
 
 console.log('Upgrade complete.');

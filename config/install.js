@@ -19,6 +19,12 @@ if (fs.existsSync(rootEnvPath)) {
   exit(0);
 }
 
+if (fs.existsSync(loader.resolve('api/.env'))) {
+  console.warn('Upgrade script has yet to run, lets do that!');
+  require('./upgrade');
+  exit(0);
+}
+
 // Copy the example file
 fs.copyFileSync(rootEnvPath + '.example', rootEnvPath);
 
