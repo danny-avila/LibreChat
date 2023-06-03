@@ -15,8 +15,6 @@ import InfiniteScroll from 'react-infinite-scroll-component';
 
 export default function Nav({ navVisible, setNavVisible }) {
   const [isHovering, setIsHovering] = useState(false);
-  const [isFetching, setIsFetching] = useState(false);
-
   const { isAuthenticated } = useAuthContext();
   const { theme } = useContext(ThemeContext);
   const containerRef = useRef(null);
@@ -50,7 +48,6 @@ export default function Nav({ navVisible, setNavVisible }) {
     if (expectedPage) {
       setPageNumber(expectedPage);
     }
-    setIsFetching(false);
     searchPlaceholderConversation();
     setSearchResultMessages(res.messages);
   };
@@ -58,7 +55,6 @@ export default function Nav({ navVisible, setNavVisible }) {
   useEffect(() => {
     if (searchQueryFn.isInitialLoading) {
       setConversations([]);
-      setIsFetching(true);
     } else if (searchQueryFn.data) {
       onSearchSuccess(searchQueryFn.data);
     }
@@ -89,7 +85,6 @@ export default function Nav({ navVisible, setNavVisible }) {
         conversations = conversations.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       }
       setConversations((prevConversations) => [...prevConversations, ...conversations]);
-      setIsFetching(false);
       if (pages === pageNumber) {
         setHasMorePages(false);
       }
@@ -120,13 +115,6 @@ export default function Nav({ navVisible, setNavVisible }) {
       setNavVisible(true);
     }
   }, [conversationId, setNavVisible]);
-
-  useEffect(() => {
-    const root = document.getElementById('root');
-    if (!isFetching && hasMorePages && root.scrollHeight <= root.clientHeight) {
-      setPageNumber((prevPageNumber) => prevPageNumber + 1);
-    }
-  }, [isFetching, hasMorePages]);
 
   const containerClasses =
     getConversationsQuery.isLoading && pageNumber === 1
