@@ -1,11 +1,11 @@
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
-import Root from './routes/Root';
-import Chat from './routes/Chat';
-import Search from './routes/Search';
-import { Login, Registration, RequestPasswordReset, ResetPassword } from './components/Auth';
-import { AuthContextProvider } from './hooks/AuthContext';
-import ApiErrorWatcher from './components/Auth/ApiErrorWatcher';
-import { publicAccess } from '../../config';
+import Root from './Root';
+import Chat from './Chat';
+import Search from './Search';
+import { Login, Registration, RequestPasswordReset, ResetPassword } from '../components/Auth';
+import { AuthContextProvider } from '../hooks/AuthContext';
+import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
+const publicAccess = process.env['ALLOW_REGISTRATION'];
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -14,7 +14,7 @@ const AuthLayout = () => (
   </AuthContextProvider>
 );  
 
-const router = createBrowserRouter([
+export const router = createBrowserRouter([
     /**
      * Guest Routes
      */

@@ -1,7 +1,8 @@
 const passport = require('passport');
 const FacebookStrategy = require('passport-facebook').Strategy;
 const User = require('../models/User');
-const {domains} = require('../../config/app');
+const config = require('../../config/loader');
+const domains = config.domains;
 
 // facebook strategy
 const facebookLogin = new FacebookStrategy(
