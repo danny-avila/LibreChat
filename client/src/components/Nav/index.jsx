@@ -142,7 +142,11 @@ export default function Nav({ navVisible, setNavVisible }) {
                   next={() => setPageNumber((prevPageNumber) => prevPageNumber + 1)}
                   className={containerClasses}
                   hasMore={hasMorePages}
-                  loader={<Spinner />}
+                  loader={
+                    <div className="mx-4 my-6">
+                      <Spinner />
+                    </div>
+                  }
                   scrollThreshold={0.8} // Adjust the scroll threshold value as needed
                   endMessage={null} // Optionally, provide a custom end message if desired
                   scrollableTarget="scrollableDiv"
