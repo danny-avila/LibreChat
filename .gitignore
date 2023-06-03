@@ -50,6 +50,7 @@ bower_components/
 .npmrc
 .env
 !.env.example
+!.env.test.example
 .env*
 cache.json
 api/data/

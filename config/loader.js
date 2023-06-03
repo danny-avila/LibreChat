@@ -24,6 +24,8 @@ class Env {
       client: process.env.DOMAIN_CLIENT,
       server: process.env.DOMAIN_SERVER,
     };
+
+    this.validate();
   }
 
   /**
@@ -65,6 +67,8 @@ class Env {
       'JWT_SECRET',
       'DOMAIN_CLIENT',
       'DOMAIN_SERVER',
+      'CREDS_KEY',
+      'CREDS_IV',
     ];
 
     const missingKeys = requiredKeys.map(key => {

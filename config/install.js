@@ -15,8 +15,8 @@ console.warn = originalConsoleWarn;
 const rootEnvPath = loader.resolve('.env');
 
 if (fs.existsSync(rootEnvPath)) {
-  console.error('Root env file already exists! Aborting');
-  exit(1);
+  console.error('Looks like we\'ve already run the first install, skipping env changes.');
+  exit(0);
 }
 
 // Copy the example file

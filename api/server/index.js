@@ -7,10 +7,12 @@ const cors = require('cors');
 const routes = require('./routes');
 const errorController = require('./controllers/error.controller');
 const passport = require('passport');
-
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
 const projectPath = path.join(__dirname, '..', '..', 'client');
+
+// Init the config and validate it
+require('../../config/loader');
 
 (async () => {
   await connectDb();
