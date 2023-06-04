@@ -48,4 +48,7 @@ Clicking on **"Show Agent Settings"** will allow you to modify parameters for th
 
 ### Showcase
 
+![image](https://github.com/danny-avila/chatgpt-clone/assets/110412045/c5d3aba8-8ab5-4f41-a1fa-202ece5849db)
+
+
 ![image](https://github.com/danny-avila/chatgpt-clone/assets/110412045/9ddeb874-4323-45a3-b2aa-5492bc324716)
