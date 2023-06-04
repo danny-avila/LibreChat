@@ -38,7 +38,7 @@ jobs:
 
             
     - name: Install global dependencies
-      run: npm ci 
+      run: npm ci --ignore-scripts
 
     # - name: Install API dependencies
     #   working-directory: ./api
@@ -61,7 +61,7 @@ jobs:
     #   run: npm install vite
 
     - name: Build Client
-      run: npm run frontend
+      run: npm run frontend:build
 
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
