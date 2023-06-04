@@ -5,7 +5,8 @@ import * as mockDataProvider from '~/data-provider';
 
 jest.mock('~/utils/envConstants', () => ({
   DOMAIN_SERVER: 'mock-server',
-  SHOW_GOOGLE_LOGIN_OPTION: true
+  SHOW_GOOGLE_LOGIN_OPTION: true,
+  ALLOW_REGISTRATION: true
 }));
 
 jest.mock('~/data-provider');

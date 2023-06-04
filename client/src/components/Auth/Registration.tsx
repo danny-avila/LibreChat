@@ -2,11 +2,9 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useRegisterUserMutation, TRegisterUser } from '~/data-provider';
+import { DOMAIN_SERVER, SHOW_GOOGLE_LOGIN_OPTION } from "~/utils/envConstants";
 
 function Registration() {
-  const DOMAIN_SERVER = import.meta.env.DOMAIN_SERVER;
-  const SHOW_GOOGLE_LOGIN_OPTION = import.meta.env.VITE_SHOW_GOOGLE_LOGIN_OPTION === 'true';
-
   const navigate = useNavigate();
 
   const {
