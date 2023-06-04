@@ -11,6 +11,17 @@ const filterUniquePlugins = (plugins) => {
   });
 };
 
+const isPluginAuthenticated = (plugin) => {
+  if (!plugin.authConfig || plugin.authConfig.length === 0) {
+    return false;
+  }
+
+  return plugin.authConfig.every((authFieldObj) => {
+    const envValue = process.env[authFieldObj.authField];
+    return envValue && envValue.trim() !== '';
+  });
+};
+
 const getAvailablePluginsController = async (req, res) => {
   try {
     fs.readFile(
@@ -22,7 +33,14 @@ const getAvailablePluginsController = async (req, res) => {
         } else {
           const jsonData = JSON.parse(data);
           const uniquePlugins = filterUniquePlugins(jsonData);
-          res.status(200).json(uniquePlugins);
+          const authenticatedPlugins = uniquePlugins.map((plugin) => {
+            if (isPluginAuthenticated(plugin)) {
+              return { ...plugin, authenticated: true };
+            } else {
+              return plugin;
+            }
+          });
+          res.status(200).json(authenticatedPlugins);
         }
       }
     );

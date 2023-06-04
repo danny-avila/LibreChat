@@ -64,6 +64,7 @@ export type TPlugin = {
   description: string;
   icon: string;
   authConfig: TPluginAuthConfig[];
+  authenticated: boolean;
 };
 
 export type TUpdateUserPlugins = {
