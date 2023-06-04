@@ -79,7 +79,8 @@
     "tailwindcss-animate": "^1.0.5",
     "tailwindcss-radix": "^2.8.0",
     "url": "^0.11.0",
-    "uuidv4": "^6.2.13"
+    "uuidv4": "^6.2.13",
+    "yarn": "^1.22.19"
   },
   "devDependencies": {
     "@babel/cli": "^7.20.7",
