@@ -53,7 +53,7 @@ General guidelines:
 
   createWolframAlphaURL(query) {
     // Clean up query
-    const formattedQuery = query.replaceAll(/`|\n/g, '');
+    const formattedQuery = query.replaceAll(/`/g, '').replaceAll(/\n/g, ' ');
     const baseURL = 'https://www.wolframalpha.com/api/v1/llm-api';
     const encodedQuery = encodeURIComponent(formattedQuery);
     const appId = this.apiKey || this.getAppId();
