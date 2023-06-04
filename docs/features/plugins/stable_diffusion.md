@@ -49,4 +49,10 @@ To use Stable Diffusion with this project, you will need to download and install
     - Alternatively: you (the admin) can set the value in `api\.env` to bypass the prompt
         - `SD_WEBUI_URL=http://127.0.0.1:7860`
 
+![image](https://github.com/danny-avila/chatgpt-clone/assets/110412045/e33e0133-66c1-4781-9ca8-bbd8c174579c)
+![image](https://github.com/danny-avila/chatgpt-clone/assets/110412045/a075e5b9-d648-405d-96cf-178af792aabc)
+
+
 5. Select the plugin and enjoy!
+
+![image](https://github.com/danny-avila/chatgpt-clone/assets/110412045/bbdffdc7-57b0-459e-87c2-c3c2871b74cb)
