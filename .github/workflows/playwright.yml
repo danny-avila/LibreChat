@@ -38,11 +38,11 @@ jobs:
 
             
     - name: Install global dependencies
-      run: npm install --ignore-scripts
+      run: npm ci 
 
-    - name: Install API dependencies
-      working-directory: ./api
-      run: npm install --ignore-scripts
+    # - name: Install API dependencies
+    #   working-directory: ./api
+    #   run: npm install --ignore-scripts
 
     # - name: Cache Client dependencies
     #   uses: actions/cache@v2
@@ -52,26 +52,23 @@ jobs:
     #     restore-keys: |
     #       client-${{ runner.os }}-node-
 
-    - name: Install Client dependencies
-      working-directory: ./client
-      run: npm install --ignore-scripts
+    # - name: Install Client dependencies
+    #   working-directory: ./client
+    #   run: npm install --ignore-scripts
 
-    - name: install vite
-      working-directory: ./client
-      run: npm install vite
+    # - name: install vite
+    #   working-directory: ./client
+    #   run: npm install vite
 
     - name: Build Client
-      working-directory: ./client
-      run: npm run build
+      run: npm run frontend
 
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
 
-    - name: Start API server
-      working-directory: ./
+    - name: Start server
       run: |
-        npm run backend &
-        sleep 10 # Wait for the server to start
+        npm run backend & sleep 10 
 
     - name: Run Playwright tests
       run: npx playwright test --config=e2e/playwright.config.ts
