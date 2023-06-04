@@ -3,7 +3,6 @@
  */
 const dotenv = require('dotenv');
 const fs = require('fs');
-const path = require('path');
 const { exit } = require('process');
 
 // Suppress default warnings
@@ -71,16 +70,6 @@ function refactorPairedEnvVar(varDev, varProd, varName) {
 }
 
 /**
- * Change the name of a single var
- * 
- * @param {*} oldVarName 
- * @param {*} newVarName 
- */
-function refactorSingleEnvVar(oldVarName, newVarName) {
-  fs.appendFileSync(rootEnvPath, `\n${newVarName}=${initEnv[oldVarName]}`);
-}
-
-/**
  * Upgrade the env files!
  * 1. /api/.env will merge into /.env
  * 2. /client/.env will merge into /.env
@@ -135,7 +124,7 @@ loader.writeEnvFile(rootEnvPath, {'OPENAI_API_KEY': initEnv['OPENAI_KEY']})
 // TODO: we need to copy over the value of: VITE_SHOW_GOOGLE_LOGIN_OPTION & VITE_APP_TITLE
 fs.appendFileSync(rootEnvPath, '\n\n##########################\n# Frontend Vite Variables:\n##########################\n');
 const frontend = {
-  'VITE_APP_TITLE': initEnv['VITE_APP_TITLE'] || '"ChatGPT NOOO"',
+  'VITE_APP_TITLE': initEnv['VITE_APP_TITLE'] || '"ChatGPT Clone"',
   'VITE_SHOW_GOOGLE_LOGIN_OPTION': initEnv['VITE_SHOW_GOOGLE_LOGIN_OPTION'] || 'false',
   'ALLOW_REGISTRATION': 'true'
 }

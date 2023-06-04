@@ -132,7 +132,7 @@ class Env {
       }
 
       const [key, value] = line.split('=');
-      if (key && value && env.hasOwnProperty(key.trim())) {
+      if (key && value && Object.prototype.hasOwnProperty.call(env, key.trim())) {
         if (env[key.trim()] === 'remove') {
           return null; // Mark the line for removal
         }
@@ -150,7 +150,8 @@ class Env {
 
     // Loop through updatedLines and wrap values with spaces in double quotes
     const fixedLines = updatedLines.map(line => {
-      const [key, value] = line.split('=');
+      // lets only split the first = sign
+      const [key, value] = line.split(/=(.+)/);
       if (typeof value === 'undefined' || line.trim().startsWith('#')) {
         return line;
       }
