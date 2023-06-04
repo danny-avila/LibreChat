@@ -162,7 +162,8 @@ Only respond with your conversational reply to the following User Message:
 
     this.isChatGptModel = this.modelOptions.model.startsWith('gpt-');
     this.isGpt3 = this.modelOptions.model.startsWith('gpt-3');
-    this.maxContextTokens = this.options.maxContextTokens || 4095;
+    this.maxContextTokens = this.modelOptions.model === 'gpt-4-32k' ? 32767 : this.modelOptions.model.startsWith('gpt-4') ? 8191 : 4095,
+
     // Reserve 1024 tokens for the response.
     // The max prompt tokens is determined by the max context tokens minus the max response tokens.
     // Earlier messages will be dropped until the prompt is within the limit.
@@ -670,27 +671,21 @@ Only respond with your conversational reply to the following User Message:
       console.debug('promptPrefix', promptPrefix);
     }
 
-    this.options = {
-      ...this.options,
-      promptPrefix
-    };
-
-    const finalReply = await this.sendApiMessage(this.currentMessages, userMessage, { ...opts, completionMode });
+    const finalReply = await this.sendApiMessage(this.currentMessages, userMessage, { ...opts, completionMode, promptPrefix });
     responseMessage.text = finalReply;
     await this.saveMessageToDatabase(responseMessage, user);
     return { ...responseMessage, ...this.result };
   }
 
-  async buildPrompt({ messages, completionMode = false, isChatGptModel = true }) {
+  async buildPrompt({ messages, promptPrefix: _promptPrefix, completionMode = false, isChatGptModel = true }) {
     if (this.options.debug) {
       console.debug('buildPrompt messages', messages);
     }
 
     const orderedMessages = messages;
-
-    let promptPrefix;
-    if (this.options.promptPrefix) {
-      promptPrefix = this.options.promptPrefix.trim();
+    let promptPrefix = _promptPrefix;
+    if (promptPrefix) {
+      promptPrefix = promptPrefix.trim();
       // If the prompt prefix doesn't end with the end token, add it.
       if (!promptPrefix.endsWith(`${this.endToken}`)) {
         promptPrefix = `${promptPrefix.trim()}${this.endToken}\n\n`;
@@ -809,6 +804,8 @@ Only respond with your conversational reply to the following User Message:
       const result = [messagePayload, instructionsPayload];
       return result.filter((message) => message.content.length > 0);
     }
+
+    this.completionPromptTokens = currentTokenCount;
     return prompt;
   }
 
