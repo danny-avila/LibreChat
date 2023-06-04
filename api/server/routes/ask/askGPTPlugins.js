@@ -265,7 +265,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       messageId: responseMessageId,
       sender: 'ChatGPT',
       conversationId,
-      parentMessageId,
+      parentMessageId: userMessageId,
       unfinished: false,
       cancelled: false,
       error: true,

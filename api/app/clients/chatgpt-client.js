@@ -31,7 +31,7 @@ const askClient = async ({
   if (promptPrefix) {
     promptText = promptPrefix;
   }
-  const maxContextTokens = model === 'gpt-4' ? 8191 : model === 'gpt-4-32k' ? 32767 : 4095; // 1 less than maximum
+  const maxContextTokens = model === 'gpt-4-32k' ? 32767 : model.startsWith('gpt-4') ? 8191 : 4095; // 1 less than maximum
   const clientOptions = {
     reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
     azure,
