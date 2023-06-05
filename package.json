@@ -10,7 +10,6 @@
     "backend": "cd api && npm run start",
     "backend-dev": "cd api && npm run server-dev",
     "frontend": "cd client && npm run build",
-    "frontend:build": "vite build",
     "frontend-dev": "cd client && npm run dev",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
     "e2e:ci": "playwright test --config=e2e/playwright.config.ts",
@@ -47,8 +46,6 @@
     "prettier": "^2.8.8",
     "prettier-eslint": "^15.0.1",
     "prettier-eslint-cli": "^7.1.0",
-    "prettier-plugin-tailwindcss": "^0.2.2",
-    "vite": "^4.3.9",
-    "vite-plugin-html": "^3.2.0"
+    "prettier-plugin-tailwindcss": "^0.2.2"
   }
 }
