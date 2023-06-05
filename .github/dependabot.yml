@@ -20,6 +20,8 @@ updates:
       include: "scope"
   - package-ecosystem: "npm" # See documentation for possible values
     directory: "/client" # Location of package manifests
+    target-branch: "develop"
+    versioning-strategy: increase-if-necessary
     schedule:
       interval: "weekly"
     allow:
@@ -31,6 +33,8 @@ updates:
       include: "scope"
   - package-ecosystem: "npm" # See documentation for possible values
     directory: "/" # Location of package manifests
+    target-branch: "develop"
+    versioning-strategy: increase-if-necessary
     schedule:
       interval: "weekly"
     allow:
