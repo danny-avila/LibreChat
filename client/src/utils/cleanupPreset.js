@@ -53,9 +53,9 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
     const agentOptions = _preset?.agentOptions ?? {
       model: 'gpt-3.5-turbo',
       temperature: 0,
-      top_p: 1,
-      presence_penalty: 0,
-      frequency_penalty: 0
+      // top_p: 1,
+      // presence_penalty: 0,
+      // frequency_penalty: 0
     };
     preset = {
       endpoint,

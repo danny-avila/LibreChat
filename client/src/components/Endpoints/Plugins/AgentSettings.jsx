@@ -22,9 +22,9 @@ function Settings(props) {
     readonly,
     model,
     temperature,
-    topP,
-    freqP,
-    presP,
+    // topP,
+    // freqP,
+    // presP,
     setOption,
     // tools
   } = props;
@@ -33,9 +33,9 @@ function Settings(props) {
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const setModel = setOption('model');
   const setTemperature = setOption('temperature');
-  const setTopP = setOption('top_p');
-  const setFreqP = setOption('presence_penalty');
-  const setPresP = setOption('frequency_penalty');
+  // const setTopP = setOption('top_p');
+  // const setFreqP = setOption('presence_penalty');
+  // const setPresP = setOption('frequency_penalty');
 
   // const toolsSelected = tools?.length > 0;
   const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
@@ -97,7 +97,7 @@ function Settings(props) {
             </HoverCardTrigger>
             <OptionHover type="temp" side="left" />
           </HoverCard>
-          <HoverCard openDelay={300}>
+          {/* <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
@@ -209,7 +209,7 @@ function Settings(props) {
               />
             </HoverCardTrigger>
             <OptionHover type="pres" side="left" />
-          </HoverCard>
+          </HoverCard> */}
         </div>
       </div>
     </div>

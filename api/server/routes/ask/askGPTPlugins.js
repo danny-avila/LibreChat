@@ -42,9 +42,9 @@ router.post('/', requireJwtAuth, async (req, res) => {
     model: 'gpt-3.5-turbo',
     // model: 'gpt-4', // for agent model
     temperature: 0,
-    top_p: 1,
-    presence_penalty: 0,
-    frequency_penalty: 0
+    // top_p: 1,
+    // presence_penalty: 0,
+    // frequency_penalty: 0
   };
   
   const tools = req.body?.tools.map((tool) => tool.pluginKey) ?? [];
