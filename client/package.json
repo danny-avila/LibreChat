@@ -59,7 +59,7 @@
     "rc-input-number": "^7.4.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-hook-form": "^7.43.9",
+    "react-hook-form": "^7.44.3",
     "react-lazy-load": "^4.0.1",
     "react-markdown": "^8.0.6",
     "react-router-dom": "^6.11.2",
