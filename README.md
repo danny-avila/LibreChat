@@ -5,7 +5,7 @@
       <source media="(prefers-color-scheme: dark)" srcset="https://user-images.githubusercontent.com/110412045/228325485-9d3e618f-a980-44fe-89e9-d6d39164680e.png">
       <img src="https://user-images.githubusercontent.com/110412045/228325485-9d3e618f-a980-44fe-89e9-d6d39164680e.png" height="128">
     </picture>
-    <h1 align="center">Libre Chat</h1>
+    <h1 align="center">LibreChat</h1>
   </a>
 </p>
 
