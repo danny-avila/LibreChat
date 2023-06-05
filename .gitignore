@@ -47,7 +47,6 @@ bower_components/
 .flooignore
 
 # Environment
-.npmrc
 .env*
 cache.json
 api/data/
