@@ -49,7 +49,9 @@ bower_components/
 # Environment
 .npmrc
 .env
-.env.test
+!.env.example
+!.env.test.example
+.env*
 cache.json
 api/data/
 owner.yml

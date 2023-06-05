@@ -7,12 +7,14 @@
     "client"
   ],
   "scripts": {
-    "backend": "cd api && npm run start",
-    "backend-dev": "cd api && npm run server-dev",
+    "install": "node config/install.js",
+    "upgrade": "node config/upgrade.js",
+    "backend": "cross-env NODE_ENV=production node api/server/index.js",
+    "backend-dev": "cross-env NODE_ENV=dev npx nodemon api/server/index.js",
     "frontend": "cd client && npm run build",
     "frontend-dev": "cd client && npm run dev",
     "frontend-test": "cd client && npm run test",
-    "test": "jest",
+    "test": "cross-env NODE_ENV=test jest",
     "e2e": "playwright test --config=e2e/playwright.config.js",
     "e2e:update": "playwright test --config=e2e/playwright.config.js --update-snapshots",
     "e2e:debug": "cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.js",
