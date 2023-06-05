@@ -1,6 +1,6 @@
 {
   "name": "chat-backend",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "description": "",
   "scripts": {
     "start": "echo 'please run this from the root directory'",
@@ -14,15 +14,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danny-avila/chatgpt-clone.git"
+    "url": "git+https://github.com/danny-avila/LibreChat.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/danny-avila/chatgpt-clone/issues"
+    "url": "https://github.com/danny-avila/LibreChat/issues"
   },
-  "homepage": "https://github.com/danny-avila/chatgpt-clone#readme",
+  "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "dependencies": {
     "@dqbd/tiktoken": "^1.0.2",
     "@keyv/mongo": "^2.1.8",
@@ -46,7 +46,7 @@
     "keyv-file": "^0.2.0",
     "langchain": "^0.0.90",
     "lodash": "^4.17.21",
-    "meilisearch": "^0.32.3",
+    "meilisearch": "^0.33.0",
     "mongoose": "^7.1.1",
     "nodemailer": "^6.9.1",
     "openai": "^3.2.1",

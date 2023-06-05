@@ -1,6 +1,6 @@
 {
   "name": "chat-frontend",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "description": "",
   "scripts": {
     "build": "cross-env NODE_ENV=production dotenv -e ../.env -- vite build",
@@ -11,15 +11,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danny-avila/chatgpt-clone.git"
+    "url": "git+https://github.com/danny-avila/LibreChat.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/danny-avila/chatgpt-clone/issues"
+    "url": "https://github.com/danny-avila/LibreChat/issues"
   },
-  "homepage": "https://github.com/danny-avila/chatgpt-clone#readme",
+  "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^6.4.0",
     "@fortawesome/free-brands-svg-icons": "^6.4.0",
