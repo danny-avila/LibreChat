@@ -14,7 +14,7 @@ services:
   #   depends_on:
   #     - api
   api:
-    container_name: chat-clone
+    container_name: LibreChat
     ports:
       - 3080:3080               # Change it to 9000:3080 to use nginx
     depends_on:
@@ -32,7 +32,7 @@ services:
     environment:
       - HOST=0.0.0.0
       - NODE_ENV=production
-      - MONGO_URI=mongodb://mongodb:27017/chatgpt-clone
+      - MONGO_URI=mongodb://mongodb:27017/LibreChat
       # - CHATGPT_REVERSE_PROXY=http://host.docker.internal:8080/api/conversation # if you are hosting your own chatgpt reverse proxy with docker
       # - OPENAI_REVERSE_PROXY=http://host.docker.internal:8070/v1/chat/completions # if you are hosting your own chatgpt reverse proxy with docker
       - MEILI_HOST=http://meilisearch:7700

@@ -1,6 +1,6 @@
 ﻿# Roadmap
 
-## For the most up to date information: [chatgpt-clone | Trello](https://trello.com/b/17z094kq/chatgpt-clone)
+## For the most up to date information: [LibreChat | Trello](https://trello.com/b/17z094kq/chatgpt-clone)
 
 <summary><strong>Here are my recently completed and planned features:</strong></summary>
 
