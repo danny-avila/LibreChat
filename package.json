@@ -1,5 +1,5 @@
 {
-  "name": "chatgpt-clone",
+  "name": "LibreChat",
   "version": "0.4.7",
   "description": "",
   "workspaces": [
@@ -22,14 +22,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danny-avila/chatgpt-clone.git"
+    "url": "git+https://github.com/danny-avila/LibreChat.git"
   },
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/danny-avila/chatgpt-clone/issues"
+    "url": "https://github.com/danny-avila/LibreChat/issues"
   },
-  "homepage": "https://github.com/danny-avila/chatgpt-clone#readme",
+  "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "devDependencies": {
     "@playwright/test": "^1.32.1",
     "@typescript-eslint/eslint-plugin": "^5.59.6",
