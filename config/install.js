@@ -2,7 +2,6 @@
  * Install script: WIP
  */
 const fs = require('fs');
-const path = require('path');
 const readline = require('readline');
 const { exit } = require('process');
 
@@ -15,7 +14,8 @@ console.warn = originalConsoleWarn;
 const rootEnvPath = loader.resolve('.env');
 
 if (fs.existsSync(rootEnvPath)) {
-  console.error('Looks like we\'ve already run the first install, skipping env changes.');
+  console.info('Note: it looks like we\'ve already run the first install, skipping env changes.');
+  // lets close this script without causing an error
   exit(0);
 }
 
@@ -54,6 +54,27 @@ const askQuestion = (query) => {
 
 
 (async () => {
+  // If the terminal accepts questions, lets ask for the env vars
+  if (!process.stdin.isTTY) {
+    // We could use this to pass in env vars but its untested
+    /*if (process.argv.length > 2) {
+      console.log('Using passed in env vars');
+      process.argv.slice(2).forEach((arg) => {
+        const [key, value] = arg.split('=');
+        env[key] = value;
+      });
+
+      // Write the env file
+      loader.writeEnvFile(rootEnvPath, env);
+      console.log('Env file written successfully!');
+      exit(0);
+    }*/
+    console.log('This terminal does not accept user input, skipping env setup.');
+    exit(0);
+  }
+
+  console.log('Welcome to the ChatGPT Clone install script!');
+  console.log('Please answer the following questions to setup your environment.');
   // Ask for the app title
   const title = await askQuestion(
     'Enter the app title (default: "ChatGPT Clone"): '
@@ -79,7 +100,7 @@ const askQuestion = (query) => {
   // Update the env file
   loader.writeEnvFile(rootEnvPath, env);
 
-  // More???????
+  // We can ask for more here if we want
 
   console.log('Environment setup complete.');
 })();
