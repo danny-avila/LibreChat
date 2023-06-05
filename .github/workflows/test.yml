@@ -1,0 +1,60 @@
+name: Playwright Tests
+on:
+  push:
+    branches: [ feat/playwright-jest-cicd ]
+  pull_request:
+    branches: [ feat/playwright-jest-cicd ]
+jobs:
+  tests_e2e:
+    name: E2E
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    # env:
+    #   BINGAI_TOKEN: ${{ secrets.BINGAI_TOKEN }}
+    #   CHATGPT_TOKEN: ${{ secrets.CHATGPT_TOKEN }}
+    #   MONGO_URI: ${{ secrets.MONGO_URI }}
+    #   OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+    #   E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
+    #   E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
+    #   NODE_ENV: ${{ secrets.NODE_ENV }}
+    #   JWT_SECRET_PROD: ${{ secrets.JWT_SECRET_PROD }}
+      # CREDS_KEY: ${{ secrets.CREDS_KEY }}
+      # CREDS_IV: ${{ secrets.CREDS_IV }}
+      # PALM_KEY: ${{ secrets.PALM_KEY }}
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-node@v3
+      with:
+        node-version: 18
+        cache: 'npm'
+            
+    - name: Install global dependencies
+      run: npm install --ignore-scripts
+
+    - name: Install API dependencies
+      working-directory: ./api
+      run: npm install --ignore-scripts
+
+    - name: Install Client dependencies
+      working-directory: ./client
+      run: npm install --ignore-scripts
+
+    - name: Build Client
+      run: npm run build --workspace=client
+
+    - name: Install Playwright Browsers
+      run: npx playwright install --with-deps
+
+    - name: Start server
+      run: |
+        npm run backend & sleep 10 
+
+    - name: Run Playwright tests
+      run: npx playwright test --config=e2e/playwright.config.ts
+
+    - uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: playwright-report
+        path: e2e/playwright-report/
+        retention-days: 30
