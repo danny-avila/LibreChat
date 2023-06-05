@@ -3,11 +3,11 @@
   "version": "0.4.7",
   "description": "",
   "scripts": {
-    "build": "NODE_ENV=production dotenv -e ../.env -- vite build",
-    "dev": "NODE_ENV=dev dotenv -e ../.env -- vite",
-    "preview-prod": "NODE_ENV=dev dotenv -e ../.env -- vite preview",
-    "test": "NODE_ENV=test jest --watch",
-    "test:ci": "NODE_ENV=test jest --ci"
+    "build": "cross-env NODE_ENV=production dotenv -e ../.env -- vite build",
+    "dev": "cross-env NODE_ENV=dev dotenv -e ../.env -- vite",
+    "preview-prod": "cross-env NODE_ENV=dev dotenv -e ../.env -- vite preview",
+    "test": "cross-env NODE_ENV=test jest --watch",
+    "test:ci": "cross-env NODE_ENV=test jest --ci"
   },
   "repository": {
     "type": "git",
