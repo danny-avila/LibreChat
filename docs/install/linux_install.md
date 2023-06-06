@@ -18,7 +18,7 @@ Before installing ChatGPT-Clone, make sure your machine has the following prereq
 ## 1. Clone the repository:
 
 ```bash
-git clone https://github.com/danny-avila/chatgpt-clone.git
+git clone https://github.com/danny-avila/LibreChat.git
 ```
 
 ## 2. Extract the content in your desired location:
@@ -69,15 +69,17 @@ sudo apt-get install -y nodejs
 - Visit https://platform.openai.com/account/api-keys and save your API key somewhere safe (you will need it later)
 
 ## 7. Get your Bing Access Token
+
+  ⚠️**For better results, please follow these [new instructions](https://github.com/danny-avila/LibreChat/issues/370#issuecomment-1560382302)**   
+
+  or 
    
-  Please follow the **[updated instructions.](https://github.com/danny-avila/chatgpt-clone/issues/370#issuecomment-1560382302)**
-  
-  ~~Using MS Edge, navigate to bing.com~~
-   - ~~Make sure you are logged in~~
-   - ~~Open the DevTools by pressing F12 on your keyboard~~
-   - ~~Click on the tab "Application" (On the left of the DevTools)~~
-   - ~~Expand the "Cookies" (Under "Storage")~~
-   - ~~Copy the value of the "\_U" cookie~~
+  Using MS Edge, navigate to bing.com
+   - Make sure you are logged in
+   - Open the DevTools by pressing F12 on your keyboard
+   - Click on the tab "Application" (On the left of the DevTools)
+   - Expand the "Cookies" (Under "Storage")
+   - Copy the value of the "\_U" cookiee
 
 ## 8. Create the ".env" File
 

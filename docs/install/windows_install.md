@@ -1,63 +1,64 @@
 ﻿# Windows Install
 
-### Recommended:
-### **[Docker](docker_install.md)**
+### Recommended: **[Docker](docker_install.md)**
 or
-### **[Automated Installer (Windows)](https://github.com/fuegovic/chatgpt-clone-local-installer)**
+### **[Windows Installer](https://github.com/fuegovic/LibreChat-Windows-Installer)**
 (Includes a Startup and Update Utility)
 ##
 
 ## Manual Installation
 ### Install the prerequisites on your machine
 
-  - **Download chatgpt-clone**
+### **Download chatgpt-clone**
    
-    - Download the latest release here: https://github.com/danny-avila/chatgpt-clone/releases/
-    - Or by clicking on the green code button in the top of the page and selecting "Download ZIP"
-    - Or (Recommended if you have Git installed) pull the latest release from the main branch
-    - If you downloaded a zip file, extract the content in "C:/chatgpt-clone/" 
-    - **IMPORTANT : If you install the files somewhere else modify the instructions accordingly**
+  - Download the latest release here: https://github.com/danny-avila/LibreChat/releases/
+  - Or by clicking on the green code button in the top of the page and selecting "Download ZIP"
+  - Open Terminal (command prompt) and clone the repository by running `git clone https://github.com/danny-avila/LibreChat.git`
+  - If you downloaded a zip file, extract the content in "C:/chatgpt-clone/" 
+  - **IMPORTANT : If you install the files somewhere else modify the instructions accordingly**
   
-  - **Enable the Conversation search feature:** (optional)
+### **Enable the Conversation search feature:** (optional)
 		
-    - Download MeiliSearch latest release from : https://github.com/meilisearch/meilisearch/releases
-    - Copy it to "C:/chatgpt-clone/"
-    - Rename the file to "meilisearch.exe"
-    - Open it by double clicking on it
-    - Copy the generated Master Key and save it somewhere (You will need it later)
+  - Download MeiliSearch latest release from : https://github.com/meilisearch/meilisearch/releases
+  - Copy it to "C:/chatgpt-clone/"
+  - Rename the file to "meilisearch.exe"
+  - Open it by double clicking on it
+  - Copy the generated Master Key and save it somewhere (You will need it later)
 
-  - **Download and Install Node.js**
+### **Download and Install Node.js**
     
-    - Navigate to https://nodejs.org/en/download and to download the latest Node.js version for your OS (The Node.js installer includes the NPM package manager.)
+  - Navigate to https://nodejs.org/en/download and to download the latest Node.js version for your OS (The Node.js installer includes the NPM package manager.)
     
-  - **Create a MongoDB database**
+### **Create a MongoDB database**
     
-    - Navigate to https://www.mongodb.com/ and Sign In or Create an account
-    - Create a new project
-    - Build a Database using the free plan and name the cluster (example: chatgpt-clone)
-    - Use the "Username and Password" method for authentication
-    - Add your current IP to the access list
-    - Then in the Database Deployment tab click on Connect
-    - In "Choose a connection method" select "Connect your application"
-    - Driver = Node.js / Version = 4.1 or later
-    - Copy the connection string and save it somewhere(you will need it later)
+  - Navigate to https://www.mongodb.com/ and Sign In or Create an account
+  - Create a new project
+  - Build a Database using the free plan and name the cluster (example: chatgpt-clone)
+  - Use the "Username and Password" method for authentication
+  - Add your current IP to the access list
+  - Then in the Database Deployment tab click on Connect
+  - In "Choose a connection method" select "Connect your application"
+  - Driver = Node.js / Version = 4.1 or later
+  - Copy the connection string and save it somewhere(you will need it later)
     
      
-  - **Get your OpenAI API key** 
-	  - here: https://platform.openai.com/account/api-keys and save it somewhere safe (you will need it later)
+### **Get your OpenAI API key** 
+  - here: https://platform.openai.com/account/api-keys and save it somewhere safe (you will need it later)
 
-   **Get your Bing Access Token**
+### **Get your Bing Access Token**
+
+  ⚠️**For better results, please follow these [new instructions](https://github.com/danny-avila/LibreChat/issues/370#issuecomment-1560382302)**   
+
+  or 
    
-  Please follow the **[updated instructions.](https://github.com/danny-avila/chatgpt-clone/issues/370#issuecomment-1560382302)**
-  
-  ~~Using MS Edge, navigate to bing.com~~
-   - ~~Make sure you are logged in~~
-   - ~~Open the DevTools by pressing F12 on your keyboard~~
-   - ~~Click on the tab "Application" (On the left of the DevTools)~~
-   - ~~Expand the "Cookies" (Under "Storage")~~
-   - ~~Copy the value of the "\_U" cookie~~
+  Using MS Edge, navigate to bing.com
+   - Make sure you are logged in
+   - Open the DevTools by pressing F12 on your keyboard
+   - Click on the tab "Application" (On the left of the DevTools)
+   - Expand the "Cookies" (Under "Storage")
+   - Copy the value of the "\_U" cookie
 
-- **Create the ".env" File** 
+### **Create the ".env" File** 
 You will need all your credentials, (API keys, access tokens, and Mongo Connection String, MeileSearch Master Key)
   - Open "C:/chatgpt-clone/api/.env.example" in a text editor
   - At this line **MONGO_URI="mongodb://127.0.0.1:27017/chatgpt-clone"**
