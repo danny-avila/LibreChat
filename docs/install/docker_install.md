@@ -26,7 +26,7 @@
 
 - **Clone/download** the repo down where desired
 ```bash
-  git clone https://github.com/danny-avila/chatgpt-clone.git
+  git clone https://github.com/danny-avila/LibreChat.git
 ```
 ##
   
@@ -49,18 +49,18 @@ Navigate to https://www.mongodb.com/ and Sign In or Create an account
   - To get your Access token for ChatGPT 'Free Version', log in to chat.openai.com, then visit https://chat.openai.com/api/auth/session.
   - Warning: There may be a high chance of your account being banned with this method. Continue doing so at your own risk.
 
-##
+### **Get your Bing Access Token**
 
-   **Get your Bing Access Token**
+  ⚠️**For better results, please follow these [new instructions](https://github.com/danny-avila/LibreChat/issues/370#issuecomment-1560382302)**   
+
+  or 
    
-  Please follow the **[updated instructions.](https://github.com/danny-avila/chatgpt-clone/issues/370#issuecomment-1560382302)**
-  
-  ~~Using MS Edge, navigate to bing.com~~
-   - ~~Make sure you are logged in~~
-   - ~~Open the DevTools by pressing F12 on your keyboard~~
-   - ~~Click on the tab "Application" (On the left of the DevTools)~~
-   - ~~Expand the "Cookies" (Under "Storage")~~
-   - ~~Copy the value of the "\_U" cookie~~
+  Using MS Edge, navigate to bing.com
+   - Make sure you are logged in
+   - Open the DevTools by pressing F12 on your keyboard
+   - Click on the tab "Application" (On the left of the DevTools)
+   - Expand the "Cookies" (Under "Storage")
+   - Copy the value of the "\_U" cookie
 
 ##
 

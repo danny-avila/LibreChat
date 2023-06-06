@@ -18,3 +18,7 @@ An AppID must be supplied in all calls to the Wolfram|Alpha API.
 5. Select the plugin and enjoy!
 
 ![image](https://github.com/danny-avila/chatgpt-clone/assets/110412045/fe5626ce-dfc5-4b0f-b203-e954975ff551)
+
+##
+
+## [Go Back to ReadMe](../../../README.md)
