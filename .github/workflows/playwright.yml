@@ -16,7 +16,6 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
       E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
-      # NODE_ENV: ${{ secrets.NODE_ENV }}
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
     # CREDS_KEY: ${{ secrets.CREDS_KEY }}
     # CREDS_IV: ${{ secrets.CREDS_IV }}
