@@ -56,3 +56,6 @@ To use Stable Diffusion with this project, you will need to download and install
 5. Select the plugin and enjoy!
 
 ![image](https://github.com/danny-avila/chatgpt-clone/assets/110412045/bbdffdc7-57b0-459e-87c2-c3c2871b74cb)
+##
+
+## [Go Back to ReadMe](../../../README.md)
