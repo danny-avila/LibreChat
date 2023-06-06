@@ -25,32 +25,34 @@
 
  ## Instructions:
 
-  - Open Terminal and clone the repository by running git clone https://github.com/danny-avila/chatgpt-clone.git
-  - Change into the cloned directory by running cd chatgpt-clone
+  - Open Terminal and clone the repository by running `git clone https://github.com/danny-avila/LibreChat.git`
+  - Change into the cloned directory by running cd LibreChat
   - If using MongoDB Atlas, remove &w=majority from the default connection string
 Follow the instructions for setting up proxies, access tokens, and user system:
 
-### Access Tokens:
+## Access Tokens:
 
-**Get your OpenAI API key** 
+### **Get your OpenAI API key** 
 
   - here: https://platform.openai.com/account/api-keys and save it somewhere safe (you will need it later)
 
-**ChatGPT Free Instructions:**
+### **ChatGPT Free Instructions:**
 
   - To get your Access token for ChatGPT 'Free Version', log in to chat.openai.com, then visit https://chat.openai.com/api/auth/session.
   - Warning: There may be a high chance of your account being banned with this method. Continue doing so at your own risk.
 
-**Get your Bing Access Token**
+### **Get your Bing Access Token**
+
+  ⚠️**For better results, please follow these [new instructions](https://github.com/danny-avila/LibreChat/issues/370#issuecomment-1560382302)**   
+
+  or 
    
-  Please follow the **[updated instructions.](https://github.com/danny-avila/chatgpt-clone/issues/370#issuecomment-1560382302)**
-  
-  ~~Using MS Edge, navigate to bing.com~~
-   - ~~Make sure you are logged in~~
-   - ~~Open the DevTools by pressing F12 on your keyboard~~
-   - ~~Click on the tab "Application" (On the left of the DevTools)~~
-   - ~~Expand the "Cookies" (Under "Storage")~~
-   - ~~Copy the value of the "\_U" cookie~~
+  Using MS Edge, navigate to bing.com
+   - Make sure you are logged in
+   - Open the DevTools by pressing F12 on your keyboard
+   - Click on the tab "Application" (On the left of the DevTools)
+   - Expand the "Cookies" (Under "Storage")
+   - Copy the value of the "\_U" cookie
 
 
 ## Setup Instruction
@@ -58,17 +60,17 @@ Follow the instructions for setting up proxies, access tokens, and user system:
   - Run npm ci from root directory `npm ci`
   - Build the client by running `npm run frontend`
 
-**Download MeiliSearch for macOS (optional):**
+### **Download MeiliSearch for macOS (optional):**
   - You can download the latest MeiliSearch binary for macOS from their GitHub releases page: https://github.com/meilisearch/MeiliSearch/releases. Look for the file named meilisearch-macos-amd64 (or the equivalent for your system architecture) and download it.
 
-**Make the binary executable:**
+### **Make the binary executable:**
   - Open Terminal and navigate to the directory where you downloaded the MeiliSearch binary. Run the following command to make it executable:
 
 ```
 chmod +x meilisearch-macos-amd64
 ```
 
-**Run MeiliSearch:**
+### **Run MeiliSearch:**
   - Now that the binary is executable, you can start MeiliSearch by running the following command, replacing your_master_key_goes_here with your desired master key:
 
 ```
@@ -102,13 +104,13 @@ fi
 npm run backend
 ```
 
-**Make the script executable by running** 
+### **Make the script executable by running** 
 
 ```
   chmod +x start_chatgpt.sh
 ```
 
-  **Start ChatGPT-Clone by running** 
+### **Start ChatGPT-Clone by running** 
 ```
   ./start_chatgpt.sh
 ```
