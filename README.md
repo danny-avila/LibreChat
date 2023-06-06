@@ -95,6 +95,12 @@
 <details>
   <summary><strong>Features</strong></summary>
 
+  * **Plugins**
+    * [Introduction](docs/features/plugins/introduction.md)
+    * [Google](docs/features/plugins/google_search.md)
+    * [Stable Diffusion](docs/features/plugins/stable_diffusion.md)
+    * [Wolfram](docs/features/plugins/wolfram.md)
+
   * [User Auth System](docs/features/user_auth_system.md)
   * [Proxy](docs/features/proxy.md)
 </details>
