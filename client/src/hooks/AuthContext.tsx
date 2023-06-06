@@ -35,6 +35,7 @@ export type TUserContext = {
   redirect?: string;
 };
 
+window['errorTimeout'] = undefined;
 const AuthContext = createContext<TAuthContext | undefined>(undefined);
 
 const AuthContextProvider = ({ children }: { children: ReactNode }) => {
@@ -49,6 +50,17 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   const logoutUser = useLogoutUserMutation();
   const userQuery = useGetUserQuery({ enabled: !!token });
   const refreshToken = useRefreshTokenMutation();
+
+  // This seems to prevent the error flashing issue
+  const doSetError = (error: string | undefined) => {
+    if (error) {
+      console.log(error);
+      // set timeout to ensure we don't get a flash of the error message
+      window['errorTimeout'] = setTimeout(() => {
+        setError(error);
+      }, 400);
+    }
+  }
 
   const setUserContext = useCallback(
     (userContext: TUserContext) => {
@@ -79,7 +91,7 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
         setUserContext({ token, isAuthenticated: true, user, redirect: '/chat/new' });
       },
       onError: (error) => {
-        setError(error.message);
+        doSetError(error.message);
       }
     });
   };
@@ -100,7 +112,7 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
         });
       },
       onError: (error) => {
-        setError(error.message);
+        doSetError(error.message);
       }
     });
   };
@@ -110,11 +122,11 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
       setUser(userQuery.data);
     } else if (userQuery.isError) {
       //@ts-ignore - userQuery.error is of type unknown
-      setError(userQuery?.error.message);
+      doSetError(userQuery?.error.message);
       navigate('/login');
     }
     if (error && isAuthenticated) {
-      setError(undefined);
+      doSetError(undefined);
     }
     if (!token || !isAuthenticated) {
       const tokenFromCookie = getCookieValue('token');
