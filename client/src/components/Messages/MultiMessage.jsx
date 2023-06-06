@@ -1,7 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
 import Message from './Message';
-
 import store from '~/store';
 
 export default function MultiMessage({
@@ -24,6 +23,7 @@ export default function MultiMessage({
   useEffect(() => {
     // reset siblingIdx when changes, mostly a new message is submitting.
     setSiblingIdx(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messagesTree?.length]);
 
   // if (!messageList?.length) return null;

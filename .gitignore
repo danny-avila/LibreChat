@@ -47,6 +47,10 @@ bower_components/
 .flooignore
 
 # Environment
+.npmrc
+.env
+!.env.example
+!.env.test.example
 .env*
 cache.json
 api/data/
@@ -63,6 +67,7 @@ src/style - official.css
 *.pem
 config.local.ts
 storageState.json
+junit.xml
 
 # meilisearch
 meilisearch

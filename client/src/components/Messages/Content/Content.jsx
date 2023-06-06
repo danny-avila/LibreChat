@@ -8,6 +8,22 @@ import rehypeRaw from 'rehype-raw';
 import CodeBlock from './CodeBlock';
 import { langSubset } from '~/utils/languages.mjs';
 
+const code = React.memo((props) => {
+  const { inline, className, children } = props;
+  const match = /language-(\w+)/.exec(className || '');
+  const lang = match && match[1];
+
+  if (inline) {
+    return <code className={className}>{children}</code>;
+  } else {
+    return <CodeBlock lang={lang || 'text'} codeChildren={children} />;
+  }
+});
+
+const p = React.memo((props) => {
+  return <p className="mb-2 whitespace-pre-wrap">{props?.children}</p>;
+});
+
 const Content = React.memo(({ content }) => {
   let rehypePlugins = [
     [rehypeKatex, { output: 'mathml' }],
@@ -36,22 +52,6 @@ const Content = React.memo(({ content }) => {
       {content}
     </ReactMarkdown>
   );
-});
-
-const code = React.memo((props) => {
-  const { inline, className, children } = props;
-  const match = /language-(\w+)/.exec(className || '');
-  const lang = match && match[1];
-
-  if (inline) {
-    return <code className={className}>{children}</code>;
-  } else {
-    return <CodeBlock lang={lang || 'text'} codeChildren={children} />;
-  }
-});
-
-const p = React.memo((props) => {
-  return <p className="mb-2 whitespace-pre-wrap">{props?.children}</p>;
 });
 
 // const blinker = ({ node }) => {

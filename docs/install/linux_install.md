@@ -18,7 +18,7 @@ Before installing ChatGPT-Clone, make sure your machine has the following prereq
 ## 1. Clone the repository:
 
 ```bash
-git clone https://github.com/danny-avila/chatgpt-clone.git
+git clone https://github.com/danny-avila/LibreChat.git
 ```
 
 ## 2. Extract the content in your desired location:
@@ -69,15 +69,17 @@ sudo apt-get install -y nodejs
 - Visit https://platform.openai.com/account/api-keys and save your API key somewhere safe (you will need it later)
 
 ## 7. Get your Bing Access Token
+
+  ⚠️**For better results, please follow these [new instructions](https://github.com/danny-avila/LibreChat/issues/370#issuecomment-1560382302)**   
+
+  or 
    
-  Please follow the **[updated instructions.](https://github.com/danny-avila/chatgpt-clone/issues/370#issuecomment-1560382302)**
-  
-  ~~Using MS Edge, navigate to bing.com~~
-   - ~~Make sure you are logged in~~
-   - ~~Open the DevTools by pressing F12 on your keyboard~~
-   - ~~Click on the tab "Application" (On the left of the DevTools)~~
-   - ~~Expand the "Cookies" (Under "Storage")~~
-   - ~~Copy the value of the "\_U" cookie~~
+  Using MS Edge, navigate to bing.com
+   - Make sure you are logged in
+   - Open the DevTools by pressing F12 on your keyboard
+   - Click on the tab "Application" (On the left of the DevTools)
+   - Expand the "Cookies" (Under "Storage")
+   - Copy the value of the "\_U" cookiee
 
 ## 8. Create the ".env" File
 
@@ -86,7 +88,7 @@ You will need all your credentials, (API keys, access tokens, and MongoDB Connec
 - Open "~/chatgpt-clone/api/.env.example" in a text editor
 - At this line MONGO_URI="mongodb://127.0.0.1:27017/chatgpt-clone", replace mongodb://127.0.0.1:27017/chatgpt-clone with the MongoDB connection string you saved earlier, remove "&w=majority" at the end
   - It should look something like this: "MONGO_URI="mongodb+srv://username:password@chatgpt-clone.lfbcwz3.mongodb.net/?retryWrites=true"
-- At this line OPENAI_KEY= you need to add your OpenAI API key
+- At this line OPENAI_API_KEY= you need to add your OpenAI API key
   - Add your Bing token to this line BINGAI_TOKEN= (needed for BingChat & Sydney)
   - If you want to enable Search, SEARCH=TRUE if you do not want to enable search SEARCH=FALSE
   - Add your previously saved MeiliSearch Master key to this line MEILI_MASTER_KEY= (the key is needed if search is enabled even on local install or you may encounter errors)

@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect, useState } from 'react';
 import DialogTemplate from '../../ui/DialogTemplate';
 import { Dialog } from '../../ui/Dialog.tsx';

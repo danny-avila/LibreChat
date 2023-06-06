@@ -1,0 +1,79 @@
+openapi: 3.0.1
+servers:
+  - url: https://www.klarna.com/us/shopping
+info:
+  title: Open AI Klarna product Api
+  version: v0
+  x-apisguru-categories:
+    - ecommerce
+  x-logo:
+    url: https://www.klarna.com/static/img/social-prod-imagery-blinds-beauty-default.jpg
+  x-origin:
+    - format: openapi
+      url: https://www.klarna.com/us/shopping/public/openai/v0/api-docs/
+      version: "3.0"
+  x-providerName: klarna.com
+  x-serviceName: openai
+tags:
+  - description: Open AI Product Endpoint. Query for products.
+    name: open-ai-product-endpoint
+paths:
+  /public/openai/v0/products:
+    get:
+      deprecated: false
+      operationId: productsUsingGET
+      parameters:
+        - description: A precise query that matches one very small category or product that needs to be searched for to find the products the user is looking for. If the user explicitly stated what they want, use that as a query. The query is as specific as possible to the product name or category mentioned by the user in its singular form, and don't contain any clarifiers like latest, newest, cheapest, budget, premium, expensive or similar. The query is always taken from the latest topic, if there is a new topic a new query is started.
+          in: query
+          name: q
+          required: true
+          schema:
+            type: string
+        - description: number of products returned
+          in: query
+          name: size
+          required: false
+          schema:
+            type: integer
+        - description: maximum price of the matching product in local currency, filters results
+          in: query
+          name: budget
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductResponse"
+          description: Products found
+        "503":
+          description: one or more services are unavailable
+      summary: API for fetching Klarna product information
+      tags:
+        - open-ai-product-endpoint
+components:
+  schemas:
+    Product:
+      properties:
+        attributes:
+          items:
+            type: string
+          type: array
+        name:
+          type: string
+        price:
+          type: string
+        url:
+          type: string
+      title: Product
+      type: object
+    ProductResponse:
+      properties:
+        products:
+          items:
+            $ref: "#/components/schemas/Product"
+          type: array
+      title: ProductResponse
+      type: object

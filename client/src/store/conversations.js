@@ -1,12 +1,4 @@
-import React from 'react';
-import {
-  RecoilRoot,
-  atom,
-  selector,
-  useRecoilState,
-  useRecoilValue,
-  useSetRecoilState
-} from 'recoil';
+import { atom, useSetRecoilState } from 'recoil';
 
 const refreshConversationsHint = atom({
   key: 'refreshConversationsHint',

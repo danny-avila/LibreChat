@@ -1,16 +1,11 @@
-import React, { useState } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
-import Templates from '../ui/Templates';
 import SunIcon from '../svg/SunIcon';
 import LightningIcon from '../svg/LightningIcon';
 import CautionIcon from '../svg/CautionIcon';
-import ChatIcon from '../svg/ChatIcon';
-
 import store from '~/store';
 
 export default function Landing() {
-  const [showingTemplates, setShowingTemplates] = useState(false);
   const setText = useSetRecoilState(store.text);
   const conversation = useRecoilValue(store.conversation);
   const { title = 'New Chat' } = conversation || {};
@@ -24,11 +19,6 @@ export default function Landing() {
     setText(quote);
   };
 
-  const showTemplates = (e) => {
-    e.preventDefault();
-    setShowingTemplates(!showingTemplates);
-  };
-
   return (
     <div className="flex h-full flex-col items-center overflow-y-auto pt-0 text-sm dark:bg-gray-800">
       <div className="w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
@@ -36,7 +26,7 @@ export default function Landing() {
           id="landing-title"
           className="mb-10 ml-auto mr-auto mt-6 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-16 md:mt-[10vh]"
         >
-          {import.meta.env.VITE_APP_TITLE || 'ChatGPT Clone'}
+          {import.meta.env.VITE_APP_TITLE || 'LibreChat'}
         </h1>
         <div className="items-start gap-3.5 text-center md:flex">
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
@@ -112,7 +102,7 @@ export default function Landing() {
           </div>
         )}
         {!!showingTemplates && <Templates showTemplates={showTemplates}/>} */}
-        <div className="group h-32 w-full flex-shrink-0 dark:border-gray-900/50 dark:bg-gray-800 md:h-48" />
+        {/* <div className="group h-32 w-full flex-shrink-0 dark:border-gray-900/50 dark:bg-gray-800 md:h-48" /> */}
       </div>
     </div>
   );

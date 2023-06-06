@@ -14,6 +14,9 @@ const messageSchema = mongoose.Schema(
       required: true,
       meiliIndex: true
     },
+    model: {
+      type: String
+    },
     conversationSignature: {
       type: String
       // required: true
@@ -60,6 +63,20 @@ const messageSchema = mongoose.Schema(
       required: false,
       select: false,
       default: false
+    },
+    plugin: {
+      latest: {
+        type: String,
+        required: false
+      },
+      inputs: {
+        type: [mongoose.Schema.Types.Mixed],
+        required: false
+      },
+      outputs: {
+        type: String,
+        required: false
+      }
     }
   },
   { timestamps: true }

@@ -1,16 +1,9 @@
-import React from 'react';
 import { DropdownMenuRadioItem } from '../../ui/DropdownMenu.tsx';
 import EditIcon from '../../svg/EditIcon.jsx';
 import TrashIcon from '../../svg/TrashIcon.jsx';
 import getIcon from '~/utils/getIcon';
 
-export default function PresetItem({
-  preset = {},
-  value,
-  onSelect,
-  onChangePreset,
-  onDeletePreset
-}) {
+export default function PresetItem({ preset = {}, value, onChangePreset, onDeletePreset }) {
   const { endpoint } = preset;
 
   const icon = getIcon({
@@ -37,6 +30,9 @@ export default function PresetItem({
       if (toneStyle) _title += `: ${toneStyle}`;
       if (jailbreak) _title += ` as Sydney`;
     } else if (endpoint === 'chatGPTBrowser') {
+      const { model } = preset;
+      if (model) _title += `: ${model}`;
+    } else if (endpoint === 'gptPlugins') {
       const { model } = preset;
       if (model) _title += `: ${model}`;
     } else if (endpoint === null) {

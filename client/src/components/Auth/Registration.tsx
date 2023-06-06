@@ -2,23 +2,18 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useRegisterUserMutation, TRegisterUser } from '~/data-provider';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faFacebook } from '@fortawesome/free-brands-svg-icons';
-import { faGoogle } from '@fortawesome/free-brands-svg-icons';
+import { DOMAIN_SERVER, SHOW_GOOGLE_LOGIN_OPTION } from "~/utils/envConstants";
 
 function Registration() {
-  const SERVER_URL = import.meta.env.DEV
-    ? import.meta.env.VITE_SERVER_URL_DEV
-    : import.meta.env.VITE_SERVER_URL_PROD;
-  const showGoogleLogin = import.meta.env.VITE_SHOW_GOOGLE_LOGIN_OPTION === 'true';
-
   const navigate = useNavigate();
+
   const {
     register,
     watch,
     handleSubmit,
     formState: { errors }
   } = useForm<TRegisterUser>({ mode: 'onChange' });
+
   const [error, setError] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const registerUser = useRegisterUserMutation();
@@ -63,12 +58,7 @@ function Registration() {
                 id="name"
                 type="text"
                 autoComplete="name"
-                aria-label="Name"
-                // uncomment to prevent pasting in confirm field
-                onPaste={(e) => {
-                  e.preventDefault();
-                  return false;
-                }}
+                aria-label="Full name"
                 {...register('name', {
                   required: 'Name is required',
                   minLength: {
@@ -88,13 +78,13 @@ function Registration() {
                 htmlFor="name"
                 className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
               >
-                Full Name
+                Full name
               </label>
             </div>
 
             {errors.name && (
               <span role="alert" className="mt-1 text-sm text-red-600">
-                {/* @ts-ignore */}
+                {/* @ts-ignore not sure why*/}
                 {errors.name.message}
               </span>
             )}
@@ -131,7 +121,7 @@ function Registration() {
 
             {errors.username && (
               <span role="alert" className="mt-1 text-sm text-red-600">
-                {/* @ts-ignore */}
+                {/* @ts-ignore not sure why */}
                 {errors.username.message}
               </span>
             )}
@@ -171,7 +161,7 @@ function Registration() {
             </div>
             {errors.email && (
               <span role="alert" className="mt-1 text-sm text-red-600">
-                {/* @ts-ignore */}
+                {/* @ts-ignore - Type 'string | FieldError | Merge<FieldError, FieldErrorsImpl<any>> | undefined' is not assignable to type 'ReactNode' */}
                 {errors.email.message}
               </span>
             )}
@@ -181,6 +171,7 @@ function Registration() {
               <input
                 type="password"
                 id="password"
+                data-testid="password"
                 autoComplete="current-password"
                 aria-label="Password"
                 {...register('password', {
@@ -208,7 +199,7 @@ function Registration() {
 
             {errors.password && (
               <span role="alert" className="mt-1 text-sm text-red-600">
-                {/* @ts-ignore */}
+                {/* @ts-ignore not sure why */}
                 {errors.password.message}
               </span>
             )}
@@ -218,7 +209,8 @@ function Registration() {
               <input
                 type="password"
                 id="confirm_password"
-                aria-label="Confirm Password"
+                data-testid="confirm_password"
+                aria-label="Confirm password"
                 // uncomment to prevent pasting in confirm field
                 onPaste={(e) => {
                   e.preventDefault();
@@ -235,13 +227,13 @@ function Registration() {
                 htmlFor="confirm_password"
                 className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
               >
-                Confirm Password
+                Confirm password
               </label>
             </div>
 
             {errors.confirm_password && (
               <span role="alert" className="mt-1 text-sm text-red-600">
-                {/* @ts-ignore */}
+                {/* @ts-ignore not sure why */}
                 {errors.confirm_password.message}
               </span>
             )}
@@ -257,7 +249,7 @@ function Registration() {
               }
               type="submit"
               aria-label="Submit registration"
-              className="w-full transform rounded-sm bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none"
+              className="w-full transform rounded-sm bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-green-500"
             >
               Continue
             </button>
@@ -266,11 +258,15 @@ function Registration() {
         <p className="my-4 text-center text-sm font-light text-gray-700">
           {' '}
           Already have an account?{' '}
-          <a href="/login" className="p-1 font-medium text-green-500 hover:underline">
+          <a
+            href="/login"
+            aria-label="Login"
+            className="p-1 font-medium text-green-500 hover:underline"
+          >
             Login
           </a>
         </p>
-        {showGoogleLogin && (
+        {SHOW_GOOGLE_LOGIN_OPTION && (
           <>
             <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
               <div className="absolute bg-white px-3 text-xs">Or</div>
@@ -279,7 +275,7 @@ function Registration() {
             <div className="mt-4 flex gap-x-2">
               <a
                 aria-label="Login with Google"
-                href={`${SERVER_URL}/oauth/google`}
+                href={`${DOMAIN_SERVER}/oauth/google`}
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
               >
                 <svg
@@ -307,17 +303,6 @@ function Registration() {
                 </svg>
                 <p>Login with Google</p>
               </a>
-              {/* <button
-                  aria-label="Login with Facebook"
-                  role="button"
-                  className="flex w-full items-center justify-center space-x-3 rounded-md border p-4 focus:ring-2 focus:ring-violet-400 focus:ring-offset-1 dark:border-gray-400"
-                >
-                  <FontAwesomeIcon
-                    icon={faFacebook} 
-                    size={'lg'}
-                  />
-                  <p>Login with Facebook</p>
-                </button> */}
             </div>
           </>
         )}

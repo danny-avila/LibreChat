@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+/* eslint-disable react-hooks/exhaustive-deps */
+import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import MessageHandler from '../components/MessageHandler';
 import Nav from '../components/Nav';

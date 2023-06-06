@@ -49,7 +49,7 @@ export function updatePreset(payload: t.TPreset): Promise<t.TPreset[]> {
   return request.post(endpoints.presets(), payload);
 }
 
-export function deletePreset(arg: t.TPreset | {}): Promise<t.TPreset[]> {
+export function deletePreset(arg: t.TPreset | object): Promise<t.TPreset[]> {
   return request.post(endpoints.deletePreset(), arg);
 }
 
@@ -102,4 +102,12 @@ export const requestPasswordReset = (payload: t.TRequestPasswordReset) => {
 
 export const resetPassword = (payload: t.TResetPassword) => {
   return request.post(endpoints.resetPassword(), payload);
+};
+
+export const getAvailablePlugins = (): Promise<t.TPlugin[]> => {
+  return request.get(endpoints.plugins());
+};
+
+export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
+  return request.post(endpoints.userPlugins(), payload);
 };
