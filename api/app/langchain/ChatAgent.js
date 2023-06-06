@@ -193,6 +193,7 @@ Only respond with your conversational reply to the following User Message:
 
     if (this.reverseProxyUrl) {
       this.completionsUrl = this.reverseProxyUrl;
+      this.langchainProxy = this.reverseProxyUrl.substring(0, this.reverseProxyUrl.indexOf('v1') + 'v1'.length)
     }
 
     if (this.azureEndpoint) {
@@ -393,6 +394,12 @@ Only respond with your conversational reply to the following User Message:
       temperature: this.agentOptions.temperature
     };
 
+    const configOptions = {};
+
+    if (this.langchainProxy) {
+      configOptions.basePath = this.langchainProxy;
+    }
+
     const model = this.azure
       ? new ChatOpenAI({
         ...this.azure,
@@ -402,7 +409,8 @@ Only respond with your conversational reply to the following User Message:
         {
           openAIApiKey: this.openAIApiKey,
           ...modelOptions
-        }
+        },
+        configOptions
         // {
         //   basePath: 'http://localhost:8080/v1'
         // }
