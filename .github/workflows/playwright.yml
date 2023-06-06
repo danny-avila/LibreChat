@@ -12,13 +12,13 @@ jobs:
     env:
       #   BINGAI_TOKEN: ${{ secrets.BINGAI_TOKEN }}
       #   CHATGPT_TOKEN: ${{ secrets.CHATGPT_TOKEN }}
-      # MONGO_URI: ${{ secrets.MONGO_URI }}
-      # OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      # E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
-      # E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
-      # JWT_SECRET: ${{ secrets.JWT_SECRET }}
-    # CREDS_KEY: ${{ secrets.CREDS_KEY }}
-    # CREDS_IV: ${{ secrets.CREDS_IV }}
+      MONGO_URI: ${{ secrets.MONGO_URI }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
+      E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      CREDS_KEY: ${{ secrets.CREDS_KEY }}
+      CREDS_IV: ${{ secrets.CREDS_IV }}
     # PALM_KEY: ${{ secrets.PALM_KEY }}
     steps:
       - uses: actions/checkout@v3
@@ -39,7 +39,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Build Client
-        run: npm run build --workspace=client
+        run: cd client && vite build
 
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
