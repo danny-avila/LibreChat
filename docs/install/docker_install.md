@@ -10,7 +10,7 @@
 
 ##
 
-**[chatgptclone/app Tags | Docker Hub](https://hub.docker.com/r/chatgptclone/app/tags)**
+**[LibreChat on Docker Hub](https://hub.docker.com/r/chatgptclone/app/tags)**
 
 ##
 
@@ -35,7 +35,7 @@
 Navigate to https://www.mongodb.com/ and Sign In or Create an account
 
 - Create a new project
-- Build a Database using the free plan and name the cluster (example: chatgpt-clone)
+- Build a Database using the free plan and name the cluster (example: LibreChat)
 - Use the "Username and Password" method for authentication
 - Add your current IP to the access list
 - In the Database Deployment tab, click on Connect
@@ -50,6 +50,12 @@ Navigate to https://www.mongodb.com/ and Sign In or Create an account
 
 ## [User/Auth System](../features/user_auth_system.md) (Optional)
 - How to set up the user/auth system and Google login.
+
+## Update
+to update LibreChat. enter these commands one after the other from the root dir:
+- git pull
+- docker-compose build
+- docker-compose up
 
 ##
 
