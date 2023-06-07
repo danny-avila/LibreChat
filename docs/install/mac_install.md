@@ -1,4 +1,4 @@
-﻿# Mac Install
+# Mac Install
 ## **Recommended : [Docker Install](docker_install.md)**
 
 ##
@@ -30,30 +30,11 @@
   - If using MongoDB Atlas, remove &w=majority from the default connection string
 Follow the instructions for setting up proxies, access tokens, and user system:
 
-## Access Tokens:
+## [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
+- You must set up at least one of these tokens or APIs to run the app.
 
-### **Get your OpenAI API key** 
-
-  - here: https://platform.openai.com/account/api-keys and save it somewhere safe (you will need it later)
-
-### **ChatGPT Free Instructions:**
-
-  - To get your Access token for ChatGPT 'Free Version', log in to chat.openai.com, then visit https://chat.openai.com/api/auth/session.
-  - Warning: There may be a high chance of your account being banned with this method. Continue doing so at your own risk.
-
-### **Get your Bing Access Token**
-
-  ⚠️**For better results, please follow these [new instructions](https://github.com/danny-avila/LibreChat/issues/370#issuecomment-1560382302)**   
-
-  or 
-   
-  Using MS Edge, navigate to bing.com
-   - Make sure you are logged in
-   - Open the DevTools by pressing F12 on your keyboard
-   - Click on the tab "Application" (On the left of the DevTools)
-   - Expand the "Cookies" (Under "Storage")
-   - Copy the value of the "\_U" cookie
-
+## [User/Auth System](../features/user_auth_system.md) (Optional)
+- How to set up the user/auth system and Google login.
 
 ## Setup Instruction
   - Create a .env file in the api directory by running cp api/.env.example api/.env and edit the file with your preferred text editor, adding the required API keys, access tokens, and MongoDB connection string
