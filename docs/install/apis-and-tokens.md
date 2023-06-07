@@ -1,6 +1,6 @@
 # How to setup various tokens and APIs for the project
 
-This doc explains how to setup various tokens and APIs for the project. You will need some of these tokens and APIs to run the app and use its features.
+This doc explains how to setup various tokens and APIs for the project. You will need some of these tokens and APIs to run the app and use its features. You must set up at least one of these tokens or APIs to run the app.
 
 ## OpenAI API key
 
