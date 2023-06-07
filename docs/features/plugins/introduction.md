@@ -37,7 +37,7 @@ Clicking on **"Show Agent Settings"** will allow you to modify parameters for th
 - Every additional plugin selected will increase your token usage as there are detailed instructions the LLM needs for each one
 - For best use, be selective with plugins per message and narrow your requests as much as possible
 - If you need help coming up with a good plugin prompt, ask the LLM for suggestions before using one!
-- Chain-of-thought prompting (plugin use) will always be more expensive than regular input/output prompting, so be sure
+- Chain-of-thought prompting (plugin use) will always be more expensive than regular input/output prompting, so be sure it meets your need.
 - Currently, the cheapest use will be to use gpt-3.5 for both phases
 - From my testing, the best "bang for your buck" will be to use gpt-3.5 for the thinking phase, and gpt-4 for completion.
 - Adding to above, if you ask for a poem and an image at the same time, it may work, but both may suffer in quality
@@ -45,6 +45,7 @@ Clicking on **"Show Agent Settings"** will allow you to modify parameters for th
   - Then, ask for a good prompt for Stable Diffusion based on the poem
   - Finally, use the Stable Diffusion plugin by referencing the pre-generated prompt
 - Presets are only available when no Plugins are selected as the final review of the thinking phase has a specific system message.
+- ⚠️ The Browser/Scraper, Serpapi, and Zapier NLA plugins are official langchain integrations and don't work the best. Improvements to them will be made
 
 ### Showcase
 
