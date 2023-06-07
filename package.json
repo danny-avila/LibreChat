@@ -21,7 +21,9 @@
     "e2e:update": "playwright test --config=e2e/playwright.config.js --update-snapshots",
     "e2e:report": "npx playwright show-report e2e/playwright-report",
     "prepare": "husky install",
-    "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\""
+    "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\"",
+    "e2e:auth": "npx playwright codegen --save-storage=e2e/auth.json http://localhost:3080/",
+    "e2e:test-auth": "npx playwright codegen --load-storage=e2e/auth.json http://localhost:3080/"
   },
   "repository": {
     "type": "git",

@@ -39,7 +39,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Build Client
-        run: cd client && vite build
+        run: cd client && npm run build
 
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
@@ -49,7 +49,7 @@ jobs:
           npm run backend & sleep 10
 
       - name: Run Playwright tests
-        run: npx playwright test --config=e2e/playwright.config.ts
+        run: npm run e2e:ci
 
       - uses: actions/upload-artifact@v3
         if: always()
