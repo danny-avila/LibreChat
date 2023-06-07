@@ -1,4 +1,4 @@
-﻿# Docker
+# Docker
 
 
 
@@ -43,24 +43,13 @@ Navigate to https://www.mongodb.com/ and Sign In or Create an account
 - Driver = Node.js / Version = 4.1 or later
 - Copy the connection string, fill in your password and remove `&w=majority` from default connection string.
 
-
 ##
-**ChatGPT Free Instructions:**
-  - To get your Access token for ChatGPT 'Free Version', log in to chat.openai.com, then visit https://chat.openai.com/api/auth/session.
-  - Warning: There may be a high chance of your account being banned with this method. Continue doing so at your own risk.
 
-### **Get your Bing Access Token**
+## [Get Your API keys and Tokens](apis-and-tokens.md) (Required)
+- You must set up at least one of these tokens or APIs to run the app.
 
-  ⚠️**For better results, please follow these [new instructions](https://github.com/danny-avila/LibreChat/issues/370#issuecomment-1560382302)**   
-
-  or 
-   
-  Using MS Edge, navigate to bing.com
-   - Make sure you are logged in
-   - Open the DevTools by pressing F12 on your keyboard
-   - Click on the tab "Application" (On the left of the DevTools)
-   - Expand the "Cookies" (Under "Storage")
-   - Copy the value of the "\_U" cookie
+## [User/Auth System](/../features/user_auth_system.md) (Optional)
+- How to set up the user/auth system and Google login.
 
 ##
 
