@@ -49,7 +49,7 @@ jobs:
           npm run backend & sleep 10
 
       - name: Run Playwright tests
-        run: npm run e2e:ci
+        run: npx playwright test --config=e2e/playwright.config.ts
 
       - uses: actions/upload-artifact@v3
         if: always()

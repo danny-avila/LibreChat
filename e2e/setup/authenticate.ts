@@ -17,7 +17,7 @@ async function authenticate(config: FullConfig, user: User) {
   console.log('🤖: 🗝  authenticating user:', user.username);
   await page.goto(baseURL);
   await login(page, user);
-  await page.locator('h1:has-text("ChatGPT Clone")').waitFor();
+  await page.locator('h1:has-text("LibreChat")').waitFor();
   console.log('🤖: ✔️  user successfully authenticated');
   await page.context().storageState({path: storageState as string});
   console.log('🤖: ✔️  authentication state successfully saved in', storageState);
