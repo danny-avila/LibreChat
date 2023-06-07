@@ -45,7 +45,7 @@ Navigate to https://www.mongodb.com/ and Sign In or Create an account
 
 ##
 
-## [Get Your API keys and Tokens](apis-and-tokens.md) (Required)
+## [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
 - You must set up at least one of these tokens or APIs to run the app.
 
 ## [User/Auth System](/../features/user_auth_system.md) (Optional)
