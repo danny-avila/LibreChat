@@ -15,6 +15,8 @@ DOMAIN_SERVER=http://localhost:3080
 DOMAIN_CLIENT=http://localhost:3080
 ```
 
+*Please Note: If you are wanting this to work in development mode, you will need to create a file called `.env.development` in the root directory and set `DOMAIN_CLIENT` to `http://localhost:3090` or whatever port  is provided by vite when runnning `npm run frontend-dev`*
+
 The first time you run the application, you should register a new account by clicking the "Sign up" link on the login page. The first account registered will receive an admin role. The admin account does not currently have extended functionality, but is valuable should you choose to create an admin dashboard for user management. 
 
 **Migrating Previous Conversations and Presets to new User Account**
@@ -47,6 +49,10 @@ To enable Google login, you must create an application in the [Google Cloud Cons
 **Email and Password Reset** 
 
 Most of the code is in place for sending password reset emails, but is not yet feature-complete as I have not setup an email server to test it. Currently, submitting a password reset request will then display a link with the one-time reset token that can then be used to reset the password. Understanding that this is a considerable security hazard, email integration will be included in the next release.
+
+**Disable User Registration**
+
+To disable or re-enable registration, open up the root `.env` file and set `ALLOW_REGISTRATION=true` or `ALLOW_REGISTRATION=false` depending on if you want registration open or closed.
 
 ***Warning***
 
