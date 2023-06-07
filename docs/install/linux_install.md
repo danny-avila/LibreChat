@@ -63,7 +63,7 @@ sudo apt-get install -y nodejs
 - Driver = Node.js / Version = 4.1 or later.
 - Copy the connection string and save it somewhere (you will need it later).
 
-## [Get Your API keys and Tokens](apis-and-tokens.md) (Required)
+## [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
 - You must set up at least one of these tokens or APIs to run the app.
 
 ## [User/Auth System](/../features/user_auth_system.md) (Optional)
