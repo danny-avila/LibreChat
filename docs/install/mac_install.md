@@ -56,7 +56,7 @@ Follow the instructions for setting up proxies, access tokens, and user system:
 
 
 ## Setup Instruction
-  - Create a .env file in the api directory by running cp api/.env.example api/.env and edit the file with your preferred text editor, adding the required API keys, access tokens, and MongoDB connection string
+  - Create a .env file in the api directory by running `cp .env.example .env` and edit the file with your preferred text editor, adding the required API keys, access tokens, and MongoDB connection string
   - Run npm ci from root directory `npm ci`
   - Build the client by running `npm run frontend`
 

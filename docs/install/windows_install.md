@@ -60,7 +60,7 @@ or
 
 ### **Create the ".env" File** 
 You will need all your credentials, (API keys, access tokens, and Mongo Connection String, MeileSearch Master Key)
-  - Open "C:/chatgpt-clone/api/.env.example" in a text editor
+  - Open "C:/chatgpt-clone/.env.example" in a text editor
   - At this line **MONGO_URI="mongodb://127.0.0.1:27017/chatgpt-clone"**
     Replace mongodb://127.0.0.1:27017/chatgpt-clone with the MondoDB connection string you saved earlier, **remove "&w=majority" at the end**
     - It should look something like this: "MONGO_URI="mongodb+srv://username:password@chatgpt-clone.lfbcwz3.mongodb.net/?retryWrites=true"
@@ -68,7 +68,7 @@ You will need all your credentials, (API keys, access tokens, and Mongo Connecti
   - Add your Bing token to this line **BINGAI_TOKEN=** (needed for BingChat & Sydney)
   - If you want to enable Search, **SEARCH=TRUE** if you do not want to enable search **SEARCH=FALSE**
   - Add your previously saved MeiliSearch Master key to this line **MEILI_MASTER_KEY=** (the key is needed if search is enabled even on local install or you may encounter errors)
-  - Save the file as **"C:/chatgpt-clone/api/.env"**
+  - Save the file as **"C:/chatgpt-clone/.env"**
 
 ### Run the app
 
