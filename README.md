@@ -55,7 +55,7 @@
 
 **Alternatively**
 
-- In your ./api/.env file, set PALM_KEY as "user_provided" to allow the user to provide a Service Account key JSON from the UI.
+- In your /.env file, set PALM_KEY as "user_provided" to allow the user to provide a Service Account key JSON from the UI.
 - They will follow the steps above except for renaming the file, simply importing the JSON when prompted.
 - The key is sent to the server but never saved except in your local storage
 

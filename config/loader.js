@@ -12,9 +12,9 @@ class Env {
   constructor() {
     this.envMap = {
       default: '.env',
-      development: '.env.dev',
+      development: '.env.development',
       test: '.env.test',
-      production: '.env.prod',
+      production: '.env.production',
     }
 
     this.init();

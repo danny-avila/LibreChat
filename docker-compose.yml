@@ -28,7 +28,7 @@ services:
     # extra_hosts: # if you are running APIs on docker you need access to, you will need to uncomment this line and next
     # - "host.docker.internal:host-gateway"
     env_file:
-      - ./api/.env
+      - .env
     environment:
       - HOST=0.0.0.0
       - NODE_ENV=production
@@ -56,7 +56,7 @@ services:
     ports:
       - 7700:7700
     env_file:
-      - ./api/.env
+      - .env
     environment:
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_HTTP_ADDR=meilisearch:7700

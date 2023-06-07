@@ -3,7 +3,7 @@
 
 
 -   **Edit**  the credentials you see in  [docker-compose.yml](https://stackedit.io/docker-compose.yml) under api service as needed
-    - **Provide** all necessary credentials in the ./api/.env and client/.env files before the next step
+    - **Provide** all necessary credentials in the /.env file before the next step
     - Docker will read those env files. See their respective `.env.example` files for reference
 -   **Run**  `docker-compose up`  to start the app
 -   Note: MongoDB does not support older ARM CPUs like those found in Raspberry Pis. However, you can make it work by setting MongoDB’s version to mongo:4.4.18 in docker-compose.yml, the most recent version compatible with

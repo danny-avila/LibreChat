@@ -27,8 +27,8 @@ const initEnv = JSON.parse(JSON.stringify(process.env));
 
 // New Paths
 const rootEnvPath = loader.resolve('.env');
-const devEnvPath = loader.resolve('.env.dev');
-const prodEnvPath = loader.resolve('.env.prod');
+const devEnvPath = loader.resolve('.env.development');
+const prodEnvPath = loader.resolve('.env.production');
 
 if (fs.existsSync(rootEnvPath)) {
   console.error('Root env file already exists! Aborting');
@@ -53,12 +53,7 @@ if (!fs.existsSync(clientEnvPath)) {
  * @param {*} varName 
  */
 function refactorPairedEnvVar(varDev, varProd, varName) {
-  // Manual fix for PROD DOMAIN_CLIENT as it was incorrect in the old env
-  if (varName === 'DOMAIN_CLIENT') {
-    initEnv[varProd] = initEnv[varProd] ? initEnv[varProd].replace('3080', '3090') : 'http://localhost:3090'
-    initEnv[varDev] = initEnv[varDev] ? initEnv[varDev].replace('3080', '3090') : 'http://localhost:3090'
-  }
-  // Lets validate if either of these are undefined, if so lets use the non-unefined one
+  // Lets validate if either of these are undefined, if so lets use the non-undefined one
   if (initEnv[varDev] === undefined && initEnv[varProd] === undefined) {
     console.error(`Both ${varDev} and ${varProd} are undefined! Manual intervention required!`);
   } else if (initEnv[varDev] === undefined) {
@@ -68,9 +63,8 @@ function refactorPairedEnvVar(varDev, varProd, varName) {
   } else if (initEnv[varDev] === initEnv[varProd]) {
     fs.appendFileSync(rootEnvPath, `\n${varName}=${initEnv[varDev]}`);
   } else {
-    fs.appendFileSync(rootEnvPath, `${varName}=${initEnv[varDev]}\n`);
+    fs.appendFileSync(rootEnvPath, `${varName}=${initEnv[varProd]}\n`);
     fs.appendFileSync(devEnvPath, `${varName}=${initEnv[varDev]}\n`);
-    fs.appendFileSync(prodEnvPath, `${varName}=${initEnv[varProd]}\n`);
   }
 }
 
@@ -78,7 +72,7 @@ function refactorPairedEnvVar(varDev, varProd, varName) {
  * Upgrade the env files!
  * 1. /api/.env will merge into /.env
  * 2. /client/.env will merge into /.env
- * 3. Any prod_/dev_ keys will be split up into .env.dev / .env.prod files (if they are different)
+ * 3. Any prod_/dev_ keys will be split up into .env.development / .env.production files (if they are different)
  */
 if (fs.existsSync(apiEnvPath)) {
   fs.copyFileSync(apiEnvPath, rootEnvPath);
@@ -129,13 +123,13 @@ loader.writeEnvFile(rootEnvPath, {'OPENAI_API_KEY': initEnv['OPENAI_KEY']})
 // TODO: we need to copy over the value of: VITE_SHOW_GOOGLE_LOGIN_OPTION & VITE_APP_TITLE
 fs.appendFileSync(rootEnvPath, '\n\n##########################\n# Frontend Vite Variables:\n##########################\n');
 const frontend = {
-  'VITE_APP_TITLE': initEnv['VITE_APP_TITLE'] || '"ChatGPT Clone"',
+  'VITE_APP_TITLE': initEnv['VITE_APP_TITLE'] || '"LibreChat"',
   'VITE_SHOW_GOOGLE_LOGIN_OPTION': initEnv['VITE_SHOW_GOOGLE_LOGIN_OPTION'] || 'false',
   'ALLOW_REGISTRATION': 'true'
 }
 loader.writeEnvFile(rootEnvPath, frontend)
 
-// Ensure .env.dev and .env.prod files end with a newline
+// Ensure .env.development and .env.production files end with a newline
 if (fs.existsSync(devEnvPath)) {
   fs.appendFileSync(devEnvPath, '\n');
 }
@@ -146,4 +140,12 @@ if (fs.existsSync(prodEnvPath)) {
 fs.copyFileSync(clientEnvPath, rootEnvPath + '.client.bak');
 fs.unlinkSync(clientEnvPath);
 
-console.log('Upgrade complete.');
+console.log('###############################################')
+console.log('Upgrade completed! Please review the new .env file and make any changes as needed.');
+console.log('###############################################')
+
+// if the .env.development file exists, lets tell the user
+if (fs.existsSync(devEnvPath)) {
+  console.log('NOTE: A .env.development file was created. This will take precedence over the .env file when running in dev mode.');
+  console.log('###############################################')
+}

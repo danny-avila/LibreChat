@@ -46,7 +46,7 @@ To use Stable Diffusion with this project, you will need to download and install
 
 4. In the app, select the plugins endpoint, open the plugins store, and install Stable Diffusion
     - You will need the stable diffusion webui API URL, which should be `http://127.0.0.1:7860`
-    - Alternatively: you (the admin) can set the value in `api\.env` to bypass the prompt
+    - Alternatively: you (the admin) can set the value in `\.env` to bypass the prompt
         - `SD_WEBUI_URL=http://127.0.0.1:7860`
 
 ![image](https://github.com/danny-avila/chatgpt-clone/assets/110412045/e33e0133-66c1-4781-9ca8-bbd8c174579c)

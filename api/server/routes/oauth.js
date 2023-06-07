@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const config = require('../../../config/loader');
 const domains = config.domains;
-const isProduction = process.env.NODE_ENV;
+const isProduction = config.isProduction;
 
 /**
  * Google Routes

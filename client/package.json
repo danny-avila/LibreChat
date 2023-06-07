@@ -3,9 +3,9 @@
   "version": "0.4.8",
   "description": "",
   "scripts": {
-    "build": "cross-env NODE_ENV=production dotenv -e ../.env -- vite build",
-    "dev": "cross-env NODE_ENV=dev dotenv -e ../.env -- vite",
-    "preview-prod": "cross-env NODE_ENV=dev dotenv -e ../.env -- vite preview",
+    "build": "cross-env NODE_ENV=production vite build",
+    "dev": "cross-env NODE_ENV=development vite",
+    "preview-prod": "cross-env NODE_ENV=dev vite preview",
     "test": "cross-env NODE_ENV=test jest --watch",
     "test:ci": "cross-env NODE_ENV=test jest --ci"
   },
