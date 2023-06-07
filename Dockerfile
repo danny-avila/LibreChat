@@ -1,11 +1,9 @@
 # Base node image
 FROM node:19-alpine AS base
-WORKDIR /api
-COPY /api/package*.json /api/
-WORKDIR /client
-COPY /client/package*.json /client/
+# Lets copy our application code
 WORKDIR /
-COPY /package*.json /
+COPY . .
+# Install dependencies
 RUN npm ci
 
 # React client build
@@ -22,7 +20,9 @@ COPY /api/ /api/
 COPY --from=react-client /client/dist /client/dist
 EXPOSE 3080
 ENV HOST=0.0.0.0
-CMD ["npm", "start"]
+# Start the backend
+WORKDIR /
+RUN npm run backend
 
 # Optional: for client with nginx routing
 FROM nginx:stable-alpine AS nginx-client
