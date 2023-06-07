@@ -53,7 +53,7 @@ if (!fs.existsSync(clientEnvPath)) {
  * @param {*} varName 
  */
 function refactorPairedEnvVar(varDev, varProd, varName) {
-  // Lets validate if either of these are undefined, if so lets use the non-unefined one
+  // Lets validate if either of these are undefined, if so lets use the non-undefined one
   if (initEnv[varDev] === undefined && initEnv[varProd] === undefined) {
     console.error(`Both ${varDev} and ${varProd} are undefined! Manual intervention required!`);
   } else if (initEnv[varDev] === undefined) {
@@ -140,4 +140,12 @@ if (fs.existsSync(prodEnvPath)) {
 fs.copyFileSync(clientEnvPath, rootEnvPath + '.client.bak');
 fs.unlinkSync(clientEnvPath);
 
-console.log('Upgrade complete.');
+console.log('###############################################')
+console.log('Upgrade completed! Please review the new .env file and make any changes as needed.');
+console.log('###############################################')
+
+// if the .env.dev file exists, lets tell the user
+if (fs.existsSync(devEnvPath)) {
+  console.log('NOTE: A .env.dev file was created. This will take precedence over the .env file when running in dev mode.');
+  console.log('###############################################')
+}
