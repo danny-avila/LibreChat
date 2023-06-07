@@ -65,6 +65,14 @@ That's it! You're all set. 🎉
 
 ##
 
+## Go Back to Your Install Documentation:
+- [Docker Install](docker_install.md)
+- [Linux Install](linux_install.md)
+- [Mac Install](mac_install.md)
+- [Windows Install](windows_install.md)
+
+##
+
 ## [Go Back to ReadMe](../../README.md)
 
 
