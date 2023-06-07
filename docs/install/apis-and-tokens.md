@@ -59,6 +59,8 @@ To setup PaLM 2 (via Google Cloud Vertex AI API), you need to:
   - Download the key file and rename it as 'auth.json'
   - Save it in /api/data/
 
+##
+
 That's it! You're all set. 🎉
 
 ##
