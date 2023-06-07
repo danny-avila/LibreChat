@@ -48,9 +48,9 @@ Clicking on **"Show Agent Settings"** will allow you to modify parameters for th
 - ⚠️ The **Browser/Scraper, Serpapi, and Zapier NLA plugins** are official langchain integrations and don't work the best. Improvements to them will be made
 
 ### Plugins Setup Instructions
-- [Google Search](docs/features/plugins/google_search.md)
-- [Stable Diffusion](docs/features/plugins/stable_diffusion.md)
-- [Wolfram](docs/features/plugins/wolfram.md)
+- [Google Search](./google_search.md)
+- [Stable Diffusion](./stable_diffusion.md)
+- [Wolfram](./wolfram.md)
 - DALL-E - same setup as above, you just need an OpenAI key, and it's made distinct from your main API key to make Chats but it can be the same one
 - Zapier - You need a Zapier account. Get your [API key from here](https://nla.zapier.com/credentials/) after you've made an account
   - Create allowed actions - Follow step 3 in this [getting start guide](https://nla.zapier.com/start/) from Zapier
