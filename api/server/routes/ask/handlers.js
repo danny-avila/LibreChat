@@ -1,8 +1,5 @@
 const _ = require('lodash');
 const citationRegex = /\[\^\d+?\^]/g;
-const backtick = /(?<!`)[`](?!`)/g;
-// const singleBacktick = /(?<!`)[`](?!`)/;
-const cursorDefault = '<span className="result-streaming">█</span>';
 const { getCitations, citeText } = require('../../../app');
 
 const handleError = (res, message) => {
@@ -22,9 +19,7 @@ const createOnProgress = ({ onProgress: _onProgress }) => {
   let code = '';
   let tokens = '';
   let precode = '';
-  let blockCount = 0;
   let codeBlock = false;
-  let cursor = cursorDefault;
 
   const progressCallback = async (partial, { res, text, plugin, bing = false, ...rest }) => {
     let chunk = partial === text ? '' : partial;
@@ -38,7 +33,6 @@ const createOnProgress = ({ onProgress: _onProgress }) => {
 
     if (precode.includes('```') && codeBlock) {
       codeBlock = false;
-      cursor = cursorDefault;
       precode = precode.replace(/```/g, '');
       code = '';
     }
@@ -46,14 +40,6 @@ const createOnProgress = ({ onProgress: _onProgress }) => {
     if (precode.includes('```') && code === '') {
       precode = precode.replace(/```/g, '');
       codeBlock = true;
-      blockCount++;
-      cursor = blockCount > 1 ? '█\n\n```' : '█\n\n';
-    }
-
-    const backticks = precode.match(backtick);
-    if (backticks && !codeBlock && cursor === cursorDefault) {
-      precode = precode.replace(backtick, '');
-      cursor = '█';
     }
 
     if (tokens.match(/^\n/)) {
@@ -68,13 +54,13 @@ const createOnProgress = ({ onProgress: _onProgress }) => {
     if (plugin) {
       payload.plugin = plugin;
     }
-    sendMessage(res, { ...payload, text: tokens + cursor });
+    sendMessage(res, { ...payload, text: tokens });
     _onProgress && _onProgress(payload);
     i++;
   };
 
   const sendIntermediateMessage = (res, payload) => {
-    sendMessage(res, { text: tokens + cursor, message: true, initial: i === 0, ...payload });
+    sendMessage(res, { text: tokens, message: true, initial: i === 0, ...payload });
     i++;
   };
 
@@ -91,16 +77,14 @@ const createOnProgress = ({ onProgress: _onProgress }) => {
 
 const handleText = async (response, bing = false) => {
   let { text } = response;
-  // text = await detectCode(text);
   response.text = text;
 
   if (bing) {
-    // const hasCitations = response.response.match(citationRegex)?.length > 0;
     const links = getCitations(response);
     if (response.text.match(citationRegex)?.length > 0) {
       text = citeText(response);
     }
-    text += links?.length > 0 ? `\n<small>${links}</small>` : '';
+    text += links?.length > 0 ? `\n${links}` : '';
   }
 
   return text;

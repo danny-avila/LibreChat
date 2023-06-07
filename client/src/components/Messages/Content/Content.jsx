@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { useRecoilValue } from 'recoil';
 import ReactMarkdown from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
@@ -6,6 +7,7 @@ import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import CodeBlock from './CodeBlock';
+import store from '~/store';
 import { langSubset } from '~/utils/languages.mjs';
 
 const code = React.memo((props) => {
@@ -24,7 +26,34 @@ const p = React.memo((props) => {
   return <p className="mb-2 whitespace-pre-wrap">{props?.children}</p>;
 });
 
-const Content = React.memo(({ content }) => {
+const Content = React.memo(({ content, message }) => {
+  const [cursor, setCursor] = useState('█');
+  const isSubmitting = useRecoilValue(store.isSubmitting);
+  const latestMessage = useRecoilValue(store.latestMessage);
+  const initializing = content === '<span className="result-streaming">█</span>';
+  const isLatestMessage = message?.messageId === latestMessage?.messageId;
+
+  useEffect(() => {
+    let timer1, timer2;
+
+    if (isSubmitting && isLatestMessage) {
+      timer1 = setInterval(() => {
+        setCursor('');
+        timer2 = setTimeout(() => {
+          setCursor('█');
+        }, 200);
+      }, 1000);
+    } else {
+      setCursor('');
+    }
+
+    // This is the cleanup function that React will run when the component unmounts
+    return () => {
+      clearInterval(timer1);
+      clearTimeout(timer2);
+    };
+  }, [isSubmitting, isLatestMessage]);
+
   let rehypePlugins = [
     [rehypeKatex, { output: 'mathml' }],
     [
@@ -38,6 +67,10 @@ const Content = React.memo(({ content }) => {
     [rehypeRaw]
   ];
 
+  if (!initializing || !isLatestMessage) {
+    rehypePlugins.pop();
+  }
+
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
@@ -46,38 +79,11 @@ const Content = React.memo(({ content }) => {
       components={{
         code,
         p
-        // em,
       }}
     >
-      {content}
+      {initializing && isLatestMessage ? content : content + cursor}
     </ReactMarkdown>
   );
 });
-
-// const blinker = ({ node }) => {
-//   if (node.type === 'text' && node.value === '█') {
-//     return <span className="result-streaming">{node.value}</span>;
-//   }
-
-//   return null;
-// };
-
-// const em = React.memo(({ node, ...props }) => {
-//   if (
-//     props.children[0] &&
-//     typeof props.children[0] === 'string' &&
-//     props.children[0].startsWith('^')
-//   ) {
-//     return <sup>{props.children[0].substring(1)}</sup>;
-//   }
-//   if (
-//     props.children[0] &&
-//     typeof props.children[0] === 'string' &&
-//     props.children[0].startsWith('~')
-//   ) {
-//     return <sub>{props.children[0].substring(1)}</sub>;
-//   }
-//   return <i {...props} />;
-// });
 
 export default Content;

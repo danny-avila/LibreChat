@@ -192,7 +192,7 @@ export default function Message({
                     <div className="markdown prose dark:prose-invert light w-full break-words">
                       {!isCreatedByUser ? (
                         <>
-                          <Content content={text} />
+                          <Content content={text} message={message}/>
                         </>
                       ) : (
                         <>{text}</>
