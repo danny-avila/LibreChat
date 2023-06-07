@@ -7,7 +7,7 @@
 
 ## Prerequisites
 
-Before installing ChatGPT-Clone, make sure your machine has the following prerequisites installed:
+Before installing LibreChat, make sure your machine has the following prerequisites installed:
 
 - Git: To clone the repository.
 - Node.js: To run the application.
@@ -22,18 +22,18 @@ git clone https://github.com/danny-avila/LibreChat.git
 ## Extract the content in your desired location:
 
 ```bash
-cd chatgpt-clone
-unzip chatgpt-clone.zip -d /usr/local/
+cd LibreChat
+unzip LibreChat.zip -d /usr/local/
 ```
 
-Note: The above command extracts the files to "/usr/local/chatgpt-clone". If you want to install the files to a different location, modify the instructions accordingly.
+Note: The above command extracts the files to "/usr/local/LibreChat". If you want to install the files to a different location, modify the instructions accordingly.
 
 ## Enable the Conversation search feature: (optional)
 
 - Download MeiliSearch latest release from: https://github.com/meilisearch/meilisearch/releases
-- Copy it to "/usr/local/chatgpt-clone/"
+- Copy it to "/usr/local/LibreChat/"
 - Rename the file to "meilisearch"
-- Open a terminal and navigate to "/usr/local/chatgpt-clone/"
+- Open a terminal and navigate to "/usr/local/LibreChat/"
 - Run the following command:
 
 ```bash
@@ -55,7 +55,7 @@ sudo apt-get install -y nodejs
 
 - Navigate to https://www.mongodb.com/ and sign in or create an account.
 - Create a new project.
-- Build a Database using the free plan and name the cluster (example: chatgpt-clone).
+- Build a Database using the free plan and name the cluster (example: LibreChat).
 - Use the "Username and Password" method for authentication.
 - Add your current IP to the access list.
 - Then in the Database Deployment tab click on Connect.
