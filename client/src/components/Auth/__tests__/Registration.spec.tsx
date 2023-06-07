@@ -1,4 +1,4 @@
-import { render, waitFor, screen } from 'layout-test-utils';
+import { render, waitFor } from 'layout-test-utils';
 import userEvent from '@testing-library/user-event';
 import Registration from '../Registration';
 import * as mockDataProvider from '~/data-provider';

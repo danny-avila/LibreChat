@@ -74,16 +74,6 @@ function Login() {
                 </svg>
                 <p>Login with Google</p>
               </a>
-
-              {/* <a 
-                aria-label="Login with Facebook"
-                className="flex w-full items-center justify-center rounded-md border border-gray-600 p-2 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href="http://localhost:3080/auth/facebook">
-                <FontAwesomeIcon
-                  icon={faFacebook} 
-                  size={'lg'}
-                />
-              </a> */}
             </div>
           </>
         )}

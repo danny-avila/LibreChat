@@ -37,7 +37,7 @@ Clicking on **"Show Agent Settings"** will allow you to modify parameters for th
 - Every additional plugin selected will increase your token usage as there are detailed instructions the LLM needs for each one
 - For best use, be selective with plugins per message and narrow your requests as much as possible
 - If you need help coming up with a good plugin prompt, ask the LLM for suggestions before using one!
-- Chain-of-thought prompting (plugin use) will always be more expensive than regular input/output prompting, so be sure
+- Chain-of-thought prompting (plugin use) will always be more expensive than regular input/output prompting, so be sure it meets your need.
 - Currently, the cheapest use will be to use gpt-3.5 for both phases
 - From my testing, the best "bang for your buck" will be to use gpt-3.5 for the thinking phase, and gpt-4 for completion.
 - Adding to above, if you ask for a poem and an image at the same time, it may work, but both may suffer in quality
@@ -45,6 +45,26 @@ Clicking on **"Show Agent Settings"** will allow you to modify parameters for th
   - Then, ask for a good prompt for Stable Diffusion based on the poem
   - Finally, use the Stable Diffusion plugin by referencing the pre-generated prompt
 - Presets are only available when no Plugins are selected as the final review of the thinking phase has a specific system message.
+- ⚠️ The **Browser/Scraper, Serpapi, and Zapier NLA plugins** are official langchain integrations and don't work the best. Improvements to them will be made
+
+### Plugins Setup Instructions
+- [Google Search](./google_search.md)
+- [Stable Diffusion](./stable_diffusion.md)
+- [Wolfram](./wolfram.md)
+- DALL-E - same setup as above, you just need an OpenAI key, and it's made distinct from your main API key to make Chats but it can be the same one
+- Zapier - You need a Zapier account. Get your [API key from here](https://nla.zapier.com/credentials/) after you've made an account
+  - Create allowed actions - Follow step 3 in this [getting start guide](https://nla.zapier.com/start/) from Zapier
+    - ⚠️ NOTE: zapier is known to be finicky with certain actions. I found that writing email drafts is probably the best use of it
+    -  there are improvements that can be made to override the official NLA integration and that is TBD
+- Browser/Scraper - This is not to be confused with 'browsing' on chat.openai.com (which is technically a plugin suite or multiple plugins)
+  - This plugin uses OpenAI embeddings so an OpenAI key is necessary, similar to DALL-E, and it's made distinct from your main API key to make Chats but it can be the same one
+  - This plugin will simply scrape html, and will not work with dynamic Javascript pages as that would require a more involved solution
+  - A better solution for 'browsing' is planned but can't guarantuee when
+  - This plugin is best used in combination with google so it doesn't hallucinate webpages to visit
+- Serpapi - an alternative to Google search but not as performant in my opinion
+  - You can get an API key here: https://serpapi.com/dashboard
+  - For free tier, you are limited to 100 queries/month
+  - With google, you are limited to 100/day for free, which is a better deal, and any after may cost you a few pennies
 
 ### Showcase
 
