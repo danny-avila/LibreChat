@@ -27,8 +27,8 @@ const initEnv = JSON.parse(JSON.stringify(process.env));
 
 // New Paths
 const rootEnvPath = loader.resolve('.env');
-const devEnvPath = loader.resolve('.env.dev');
-const prodEnvPath = loader.resolve('.env.prod');
+const devEnvPath = loader.resolve('.env.development');
+const prodEnvPath = loader.resolve('.env.production');
 
 if (fs.existsSync(rootEnvPath)) {
   console.error('Root env file already exists! Aborting');
@@ -72,7 +72,7 @@ function refactorPairedEnvVar(varDev, varProd, varName) {
  * Upgrade the env files!
  * 1. /api/.env will merge into /.env
  * 2. /client/.env will merge into /.env
- * 3. Any prod_/dev_ keys will be split up into .env.dev / .env.prod files (if they are different)
+ * 3. Any prod_/dev_ keys will be split up into .env.development / .env.production files (if they are different)
  */
 if (fs.existsSync(apiEnvPath)) {
   fs.copyFileSync(apiEnvPath, rootEnvPath);
@@ -129,7 +129,7 @@ const frontend = {
 }
 loader.writeEnvFile(rootEnvPath, frontend)
 
-// Ensure .env.dev and .env.prod files end with a newline
+// Ensure .env.development and .env.production files end with a newline
 if (fs.existsSync(devEnvPath)) {
   fs.appendFileSync(devEnvPath, '\n');
 }
@@ -144,8 +144,8 @@ console.log('###############################################')
 console.log('Upgrade completed! Please review the new .env file and make any changes as needed.');
 console.log('###############################################')
 
-// if the .env.dev file exists, lets tell the user
+// if the .env.development file exists, lets tell the user
 if (fs.existsSync(devEnvPath)) {
-  console.log('NOTE: A .env.dev file was created. This will take precedence over the .env file when running in dev mode.');
+  console.log('NOTE: A .env.development file was created. This will take precedence over the .env file when running in dev mode.');
   console.log('###############################################')
 }
