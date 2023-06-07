@@ -63,9 +63,8 @@ function refactorPairedEnvVar(varDev, varProd, varName) {
   } else if (initEnv[varDev] === initEnv[varProd]) {
     fs.appendFileSync(rootEnvPath, `\n${varName}=${initEnv[varDev]}`);
   } else {
-    fs.appendFileSync(rootEnvPath, `${varName}=${initEnv[varDev]}\n`);
+    fs.appendFileSync(rootEnvPath, `${varName}=${initEnv[varProd]}\n`);
     fs.appendFileSync(devEnvPath, `${varName}=${initEnv[varDev]}\n`);
-    fs.appendFileSync(prodEnvPath, `${varName}=${initEnv[varProd]}\n`);
   }
 }
 
