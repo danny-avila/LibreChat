@@ -53,11 +53,6 @@ if (!fs.existsSync(clientEnvPath)) {
  * @param {*} varName 
  */
 function refactorPairedEnvVar(varDev, varProd, varName) {
-  // Manual fix for PROD DOMAIN_CLIENT as it was incorrect in the old env
-  if (varName === 'DOMAIN_CLIENT') {
-    initEnv[varProd] = initEnv[varProd] ? initEnv[varProd].replace('3080', '3090') : 'http://localhost:3090'
-    initEnv[varDev] = initEnv[varDev] ? initEnv[varDev].replace('3080', '3090') : 'http://localhost:3090'
-  }
   // Lets validate if either of these are undefined, if so lets use the non-unefined one
   if (initEnv[varDev] === undefined && initEnv[varProd] === undefined) {
     console.error(`Both ${varDev} and ${varProd} are undefined! Manual intervention required!`);
@@ -129,7 +124,7 @@ loader.writeEnvFile(rootEnvPath, {'OPENAI_API_KEY': initEnv['OPENAI_KEY']})
 // TODO: we need to copy over the value of: VITE_SHOW_GOOGLE_LOGIN_OPTION & VITE_APP_TITLE
 fs.appendFileSync(rootEnvPath, '\n\n##########################\n# Frontend Vite Variables:\n##########################\n');
 const frontend = {
-  'VITE_APP_TITLE': initEnv['VITE_APP_TITLE'] || '"ChatGPT Clone"',
+  'VITE_APP_TITLE': initEnv['VITE_APP_TITLE'] || '"LibreChat"',
   'VITE_SHOW_GOOGLE_LOGIN_OPTION': initEnv['VITE_SHOW_GOOGLE_LOGIN_OPTION'] || 'false',
   'ALLOW_REGISTRATION': 'true'
 }
