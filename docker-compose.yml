@@ -19,28 +19,30 @@ services:
       - 3080:3080               # Change it to 9000:3080 to use nginx
     depends_on:
       - mongodb
-    image: node-api            # Comment this & uncomment below to build from docker hub image
+    image: node                # Comment this & uncomment below to build from docker hub image
     build:
       context: .
-      target: node-api
+      target: node
     # image: chatgptclone/app:latest # Uncomment this & comment above to build from docker hub image
     restart: always
     # extra_hosts: # if you are running APIs on docker you need access to, you will need to uncomment this line and next
     # - "host.docker.internal:host-gateway"
     env_file:
-      - ./api/.env
+      - .env
     environment:
       - HOST=0.0.0.0
-      - NODE_ENV=production
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
       # - CHATGPT_REVERSE_PROXY=http://host.docker.internal:8080/api/conversation # if you are hosting your own chatgpt reverse proxy with docker
       # - OPENAI_REVERSE_PROXY=http://host.docker.internal:8070/v1/chat/completions # if you are hosting your own chatgpt reverse proxy with docker
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_HTTP_ADDR=meilisearch:7700
     volumes:
-      - /client/node_modules
-      - ./api:/api
-      - /api/node_modules
+      - /app/client/node_modules
+      - ./api:/app/api
+      - ./.env:/app/.env
+      - ./.env.development:/app/.env.development
+      - ./.env.production:/app/.env.production
+      - /app/api/node_modules
   mongodb:
     container_name: chat-mongodb
     ports:
@@ -56,7 +58,7 @@ services:
     ports:
       - 7700:7700
     env_file:
-      - ./api/.env
+      - .env
     environment:
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_HTTP_ADDR=meilisearch:7700
