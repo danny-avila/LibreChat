@@ -37,33 +37,25 @@
 # Sponsors
 
   Sponsored by <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a>, & <a href="https://github.com/fuegovic"><b>@fuegovic</b></a>
+---
+# ⚠️ **Breaking Changes** ⚠️
+Note: These changes only apply to users who are updating from a previous version of the app.
 
-##
+- We have simplified the configuration process by using a single `.env` file in the root folder instead of separate `/api/.env` and `/client/.env` files.
+- By running `npm ci` the upgrade script should automatically copy the content of both files to the new `.env` file and backup the old ones in the root dir.
+- The upgrade script requires both `/api/.env` and `/client/.env` files to run properly. If you get an error about a missing client env file, just rename the `/client/.env.example` file to `/client/.env` and run the script again.
+- We have renamed the `OPENAI_KEY` variable to `OPENAI_API_KEY` to match the official documentation. The upgrade script should do this automatically for you, but please double-check that your key is correct in the new `.env` file.
+- After running the upgrade script, the `OPENAI_API_KEY` variable might be placed in a different section in the new `.env` file than before. This does not affect the functionality of the app, but if you want to keep it organized, you can look for it near the bottom of the file and move it to its usual section.
+---
+- For enhanced security, we are now asking for crypto keys for securely storing credentials in the `.env` file. Crypto keys are used to encrypt and decrypt sensitive data such as passwords and access keys. If you don't set them, the app will crash on startup.
+- You need to fill the following variables in the `.env` file with 32-byte (64 characters in hex) or 16-byte (32 characters in hex) values:
+  - `CREDS_KEY` (32-byte)
+  - `CREDS_IV` (16-byte)
+  - `JWT_SECRET` (32-byte, optional but recommended)
+- You can use this replit to generate some crypto keys quickly: https://replit.com/@daavila/crypto#index.js
+- Make sure you keep your crypto keys safe and don't share them with anyone.
 
-## **Google's PaLM 2 is now supported as of [v0.4.3](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.3)**
-  
-  ![image](https://github.com/danny-avila/chatgpt-clone/assets/110412045/ec5e8ff3-6c3a-4f25-9687-d8558435d094)
- 
-<details>
-<summary><strong>How to Setup PaLM 2 (via Google Cloud Vertex AI API)</strong></summary>
-- Enable the Vertex AI API on Google Cloud:
-- - https://console.cloud.google.com/vertex-ai
-- Create a Service Account:
-- - https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts/create?walkthrough_id=iam--create-service-account#step_index=1
-- Make sure to click 'Create and Continue' to give at least the 'Vertex AI User' role.
-- Create a JSON key, rename as 'auth.json' and save it in /api/data/.
-
-**Alternatively**
-
-- In your /.env file, set PALM_KEY as "user_provided" to allow the user to provide a Service Account key JSON from the UI.
-- They will follow the steps above except for renaming the file, simply importing the JSON when prompted.
-- The key is sent to the server but never saved except in your local storage
-
-**Note:**
-
-- Vertex AI does not (yet) support response streaming for text generations, so response may seem to take long when generating a lot of text.
-- Text streaming is simulated
-</details>
+We apologize for any inconvenience caused by these changes. We hope you enjoy the new and improved version of our app!
 
 ---
 

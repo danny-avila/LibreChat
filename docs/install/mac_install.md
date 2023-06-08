@@ -1,4 +1,4 @@
-﻿# Mac Install
+# Mac Install
 ## **Recommended : [Docker Install](docker_install.md)**
 
 ##
@@ -14,7 +14,7 @@
     
     - Navigate to https://www.mongodb.com/ and Sign In or Create an account
     - Create a new project
-    - Build a Database using the free plan and name the cluster (example: chatgpt-clone)
+    - Build a Database using the free plan and name the cluster (example: LibreChat)
     - Use the "Username and Password" method for authentication
     - Add your current IP to the access list
     - Then in the Database Deployment tab click on Connect
@@ -30,30 +30,11 @@
   - If using MongoDB Atlas, remove &w=majority from the default connection string
 Follow the instructions for setting up proxies, access tokens, and user system:
 
-## Access Tokens:
+## [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
+- You must set up at least one of these tokens or APIs to run the app.
 
-### **Get your OpenAI API key** 
-
-  - here: https://platform.openai.com/account/api-keys and save it somewhere safe (you will need it later)
-
-### **ChatGPT Free Instructions:**
-
-  - To get your Access token for ChatGPT 'Free Version', log in to chat.openai.com, then visit https://chat.openai.com/api/auth/session.
-  - Warning: There may be a high chance of your account being banned with this method. Continue doing so at your own risk.
-
-### **Get your Bing Access Token**
-
-  ⚠️**For better results, please follow these [new instructions](https://github.com/danny-avila/LibreChat/issues/370#issuecomment-1560382302)**   
-
-  or 
-   
-  Using MS Edge, navigate to bing.com
-   - Make sure you are logged in
-   - Open the DevTools by pressing F12 on your keyboard
-   - Click on the tab "Application" (On the left of the DevTools)
-   - Expand the "Cookies" (Under "Storage")
-   - Copy the value of the "\_U" cookie
-
+## [User/Auth System](../features/user_auth_system.md) (Optional)
+- How to set up the user/auth system and Google login.
 
 ## Setup Instruction
   - Create a .env file in the api directory by running `cp .env.example .env` and edit the file with your preferred text editor, adding the required API keys, access tokens, and MongoDB connection string
@@ -77,7 +58,7 @@ chmod +x meilisearch-macos-amd64
 ./meilisearch-macos-amd64 --master-key your_master_key_goes_here
 ```
 
-  - MeiliSearch will start running on the default port, which is 7700. You can now use MeiliSearch in your ChatGPT-Clone project.
+  - MeiliSearch will start running on the default port, which is 7700. You can now use MeiliSearch in your LibreChat project.
 
   - Remember to include the MeiliSearch URL and Master Key in your .env file in the api directory. Your .env file should include the following lines:
 
@@ -86,14 +67,14 @@ MEILISEARCH_URL=http://127.0.0.1:7700
 MEILISEARCH_KEY=your_master_key_goes_here
 ```
 
-  - With MeiliSearch running and configured, the ChatGPT-Clone project should now have the Conversation search feature enabled.
+  - With MeiliSearch running and configured, the LibreChat project should now have the Conversation search feature enabled.
 
-  - In the chatgpt-clone directory, start the application by running `npm run backend`
+  - In the LibreChat directory, start the application by running `npm run backend`
 Visit http://localhost:3080 (default port) & enjoy
 
 ## Optional but recommended:
 
-  - Create a script to automate the starting process by creating a new file named start_chatgpt.sh in the chatgpt-clone directory and pasting the following code:
+  - Create a script to automate the starting process by creating a new file named start_chatgpt.sh in the LibreChat directory and pasting the following code:
 
 ```
 #!/bin/bash
@@ -110,7 +91,7 @@ npm run backend
   chmod +x start_chatgpt.sh
 ```
 
-### **Start ChatGPT-Clone by running** 
+### **Start LibreChat by running** 
 ```
   ./start_chatgpt.sh
 ```
