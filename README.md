@@ -93,6 +93,7 @@ We apologize for any inconvenience caused by these changes. We hope you enjoy th
     * [Google](docs/features/plugins/google_search.md)
     * [Stable Diffusion](docs/features/plugins/stable_diffusion.md)
     * [Wolfram](docs/features/plugins/wolfram.md)
+    * [Make Your Own Plugin](docs/features/plugins/make_your_own.md)
 
   * [User Auth System](docs/features/user_auth_system.md)
   * [Proxy](docs/features/proxy.md)
