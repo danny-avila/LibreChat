@@ -2,6 +2,10 @@
 
 Docker installation is recommended for most use cases. It's the easiest, simplest, and most reliable method to get started.
 
+- **Clone/download** the repo down where desired
+```bash
+  git clone https://github.com/danny-avila/LibreChat.git
+```
 - Install **Docker:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) is recommended for managing your docker container
 -   **Edit**  the credentials you see in  [docker-compose.yml](https://stackedit.io/docker-compose.yml) under api service as needed
     - **Provide** all necessary credentials in the /.env file before the next step
@@ -12,6 +16,20 @@ Docker installation is recommended for most use cases. It's the easiest, simples
 -   **That's it!** If you need more detailed information on configuring your compose file, see my notes below. 
 
 -   **If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/new?category=troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.**
+
+## [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
+- You must set up at least one of these tokens or APIs to run the app.
+
+## [User/Auth System](../features/user_auth_system.md) (Optional)
+- How to set up the user/auth system and Google login.
+
+## Update
+to update LibreChat. enter these commands one after the other from the root dir:
+- git pull
+- docker-compose build
+- docker-compose up
+
+##
 
 ## Config notes for docker-compose.yml file
 
@@ -82,52 +100,6 @@ Docker installation is recommended for most use cases. It's the easiest, simples
 ##
 
 **[LibreChat on Docker Hub](https://hub.docker.com/r/chatgptclone/app/tags)**
-
-##
-
-### Prerequisites
-- **Docker:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) is recommended for managing your docker container
-- Node.js will be installed within the docker container.
-- MongoDB will be installed by docker, but you can also use [MongoDB Atlas](https://account.mongodb.com/account/login) and providethe connection string in the compose file.
-    - MongoDB does not support older ARM CPUs like those found in Raspberry Pis. However, you can make it work by setting MongoDB's version to mongo:4.4.18 in docker-compose.yml, the most recent version compatible with.
-    -  If using MongoDB Atlas, remove `&w=majority` from default connection string.
-- [OpenAI API key](https://platform.openai.com/account/api-keys)
-- BingAI, ChatGPT access tokens (optional, free AIs)
-
-### Usage
-
-- **Clone/download** the repo down where desired
-```bash
-  git clone https://github.com/danny-avila/LibreChat.git
-```
-##
-  
- **Create a MongoDB database** (Not required if you'd like to use the local database installed by Docker)
- 
-Navigate to https://www.mongodb.com/ and Sign In or Create an account
-
-- Create a new project
-- Build a Database using the free plan and name the cluster (example: LibreChat)
-- Use the "Username and Password" method for authentication
-- Add your current IP to the access list
-- In the Database Deployment tab, click on Connect
-- "Choose a connection method" select "Connect your application"
-- Driver = Node.js / Version = 4.1 or later
-- Copy the connection string, fill in your password and remove `&w=majority` from default connection string.
-
-##
-
-## [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
-- You must set up at least one of these tokens or APIs to run the app.
-
-## [User/Auth System](../features/user_auth_system.md) (Optional)
-- How to set up the user/auth system and Google login.
-
-## Update
-to update LibreChat. enter these commands one after the other from the root dir:
-- git pull
-- docker-compose build
-- docker-compose up
 
 ##
 
