@@ -42,7 +42,7 @@ jobs:
         run: cd client && npm run build
 
       - name: Install Playwright Browsers
-        run: npx playwright install --with-deps
+        run: npx playwright install --with-deps && npm install -D @playwright/test
 
       - name: Start server
         run: |
