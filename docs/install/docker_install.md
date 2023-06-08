@@ -31,13 +31,13 @@ Docker installation is recommended for most use cases. It's the easiest, simples
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_HTTP_ADDR=meilisearch:7700
  ```
-- If you'd like to change the app title or disable/enable google login, edit the following lines
+- If you'd like to change the app title or disable/enable google login, edit the following lines (the ones in your .env file are not read during building)
 ```yaml
       args:
         VITE_APP_TITLE: LibreChat # default, change to your desired app name
         VITE_SHOW_GOOGLE_LOGIN_OPTION: false # default, change to true if you have google auth setup
 ```
-- If for some reason you're not able to build the app image, you can pull the image from dockerhub.
+- If for some reason you're not able to build the app image, you can pull the latest image from **Dockerhub**.
     - Comment out the following lines (CTRL+/ on most IDEs, or put a `#` in front each line)
     ```yaml
     image: node                # Comment this & uncomment below to build from docker hub image
@@ -52,6 +52,8 @@ Docker installation is recommended for most use cases. It's the easiest, simples
      ```yaml
      # image: chatgptclone/app:latest # Uncomment this & comment above to build from docker hub image
      ```
+     - **Note:** The latest Dockerhub image is only updated with new release tags, so it may not have the latest changes to the main branch
+     - You also can't edit the title or toggle google login off as shown above, as these variables are set during build time.
 - If you are running APIs in other docker containers that you need access to, you will need to uncomment the following lines
 ```yaml
     # extra_hosts: # if you are running APIs on docker you need access to, you will need to uncomment this line and next
