@@ -39,7 +39,6 @@ services:
     volumes:
       - /app/client/node_modules
       - ./api:/app/api
-      - ./client:/app/client
       - ./.env:/app/.env
       - ./.env.development:/app/.env.development
       - ./.env.production:/app/.env.production
