@@ -10,6 +10,31 @@ This guide will walk you through the process of creating your own custom plugins
 
 The most common implementation is to make an API call based on the natural language input from the AI.
 
+---
+
+
+## Key Takeaways
+
+Here are the key takeaways for creating your own plugin:
+
+1. [**Import Required Modules:**](make_your_own.md#step-1-import-required-modules) Import the necessary modules for your plugin, including the `Tool` class from `langchain/tools` and any other modules your plugin might need.
+
+2. [**Define Your Plugin Class:**](make_your_own.md#step-2-define-your-tool-class) Define a class for your plugin that extends the `Tool` class. Set the `name` and `description` properties in the constructor. If your plugin requires credentials or other variables, set them from the fields parameter or from a method that retrieves them from your process environment.
+
+3. [**Define Helper Methods:**](make_your_own.md#step-3-define-helper-methods) Define helper methods within your class to handle specific tasks if needed.
+
+4. [**Implement the `_call` Method:**](make_your_own.md#step-4-implement-the-_call-method) Implement the `_call` method where the main functionality of your plugin is defined. This method is called when the language model decides to use your plugin. It should take an `input` parameter and return a result. If an error occurs, the function should return a string representing an error, rather than throwing an error.
+
+5. [**Export Your Plugin and Import into handleTools.js:**](make_your_own.md#step-5-export-your-plugin-and-import-into-handletoolsjs) Export your plugin and import it into `handleTools.js`. Add your plugin to the `toolConstructors` object in the `loadTools` function. If your plugin requires more advanced initialization, add it to the `customConstructors` object.
+
+6. [**Add Your Plugin to manifest.json:**](make_your_own.md#step-6-add-your-plugin-to-manifestjson) Add your plugin to `manifest.json`. Follow the strict format for each of the fields of the "plugin" object. If your plugin requires authentication, add those details under `authConfig` as an array. The `pluginKey` should match the class `name` of the Tool class you made, and the `authField` prop must match the process.env variable name.
+
+Remember, the key to creating a custom plugin is to extend the `Tool` class and implement the `_call` method. The `_call` method is where you define what your plugin does. You can also define helper methods and properties in your class to support the functionality of your plugin.
+
+**Note: You can find all the files mentioned in this guide in the `.\api\app\langchain\tools` folder.**
+
+---
+
 ## Step 1: Import Required Modules
 
 Start by importing the necessary modules. This will include the `Tool` class from `langchain/tools` and any other modules your tool might need. For example:
@@ -259,20 +284,6 @@ module.exports = WolframAlphaAPI;
 
 In this example, the `WolframAlphaAPI` class has helper methods like `fetchRawText`, `getAppId`, and `createWolframAlphaURL` to handle specific tasks. The `_call` method makes an HTTP request to the Wolfram Alpha API and returns the response.
 
-## Key Takeaways
+##
 
-Here are the key takeaways for creating your own plugin:
-
-1. **Import Required Modules:** Import the necessary modules for your plugin, including the `Tool` class from `langchain/tools` and any other modules your plugin might need.
-
-2. **Define Your Plugin Class:** Define a class for your plugin that extends the `Tool` class. Set the `name` and `description` properties in the constructor. If your plugin requires credentials or other variables, set them from the fields parameter or from a method that retrieves them from your process environment.
-
-3. **Define Helper Methods:** Define helper methods within your class to handle specific tasks if needed.
-
-4. **Implement the `_call` Method:** Implement the `_call` method where the main functionality of your plugin is defined. This method is called when the language model decides to use your plugin. It should take an `input` parameter and return a result. If an error occurs, the function should return a string representing an error, rather than throwing an error.
-
-5. **Export Your Plugin and Import into handleTools.js:** Export your plugin and import it into `handleTools.js`. Add your plugin to the `toolConstructors` object in the `loadTools` function. If your plugin requires more advanced initialization, add it to the `customConstructors` object.
-
-6. **Add Your Plugin to manifest.json:** Add your plugin to `manifest.json`. Follow the strict format for each of the fields of the "plugin" object. If your plugin requires authentication, add those details under `authConfig` as an array. The `pluginKey` should match the class `name` of the Tool class you made, and the `authField` prop must match the process.env variable name.
-
-Remember, the key to creating a custom plugin is to extend the `Tool` class and implement the `_call` method. The `_call` method is where you define what your plugin does. You can also define helper methods and properties in your class to support the functionality of your plugin.
+## [Go Back to ReadMe](../../../README.md)
