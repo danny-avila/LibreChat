@@ -38,7 +38,7 @@
 
   Sponsored by <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a>, & <a href="https://github.com/fuegovic"><b>@fuegovic</b></a>
 ---
-## ⚠️ **Breaking Changes** ⚠️
+# ⚠️ **Breaking Changes** ⚠️
 Note: These changes only apply to users who are updating from a previous version of the app.
 
 - We have simplified the configuration process by using a single `.env` file in the root folder instead of separate `/api/.env` and `/client/.env` files.
