@@ -30,7 +30,7 @@ const Content = React.memo(({ content, message }) => {
   const [cursor, setCursor] = useState('█');
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const latestMessage = useRecoilValue(store.latestMessage);
-  const initializing = content === '<span className="result-streaming">█</span>';
+  const isInitializing = content === '<span className="result-streaming">█</span>';
   const isLatestMessage = message?.messageId === latestMessage?.messageId;
 
   useEffect(() => {
@@ -67,7 +67,7 @@ const Content = React.memo(({ content, message }) => {
     [rehypeRaw]
   ];
 
-  if (!initializing || !isLatestMessage) {
+  if (!isInitializing || !isLatestMessage) {
     rehypePlugins.pop();
   }
 
@@ -81,7 +81,7 @@ const Content = React.memo(({ content, message }) => {
         p
       }}
     >
-      {initializing && isLatestMessage ? content : content + cursor}
+      {isLatestMessage && isSubmitting && !isInitializing ? content + cursor : content}
     </ReactMarkdown>
   );
 });
