@@ -10,7 +10,7 @@ Docker installation is recommended for most use cases. It's the easiest, simples
 -   **Run**  `docker-compose up`  to start the app
 -   Note: MongoDB does not support older ARM CPUs like those found in Raspberry Pis. However, you can make it work by setting MongoDB’s version to mongo:4.4.18 in docker-compose.yml, the most recent version compatible with
 -   **That's it!** If you need more detailed information on configuring your compose file, see my notes below. 
--   If you're still having trouble, you can create an [#issues thread on our discord](https://discord.gg/weqZFtD9C4), or a [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/new?category=troubleshooting) on our Discussions page.
+-   **If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/new?category=troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.**
 
 ## Config notes for docker-compose.yml file
 
