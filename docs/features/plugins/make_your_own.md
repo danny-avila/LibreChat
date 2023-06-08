@@ -4,7 +4,7 @@ Creating custom plugins for this project involves extending the `Tool` class fro
 
 **Note:** I will use the word plugin interchangeably with tool, as the latter is specific to langchain, and we are mainly conforming to the library in this implementation.
 
-You are essentially creating DynamicTools in Langchain speak.
+You are essentially creating DynamicTools in Langchain speak. See the [langchainjs docs](https://js.langchain.com/docs/modules/agents/tools/dynamic) for more info.
 
 This guide will walk you through the process of creating your own custom plugins, using the `StableDiffusionAPI` and `WolframAlphaAPI` tools as examples.
 
