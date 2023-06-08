@@ -107,5 +107,8 @@ If you update the chatgpt-clone project files, manually redo the npm ci and npm 
 
 ##
 
+### Note: If you're still having trouble, you can create an [#issues thread on our discord](https://discord.gg/weqZFtD9C4), or a [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/new?category=troubleshooting) on our Discussions page.
+
+##
 
 ## [Go Back to ReadMe](../../README.md)
