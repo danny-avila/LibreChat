@@ -36,7 +36,10 @@ class StableDiffusionAPI extends Tool {
 }
 ```
 
-Note that we're getting the necessary variable from the process env with this method
+Note that we're getting the necessary variable from the process env with this method if it isn't passed in the fields object.
+
+A distinction has to be made. The credentials are passed through `fields` when the user provides it from the frontend; otherwise, the admin can "authorize" the plugin through environment variables.
+
 ```js
   getServerURL() {
     const url = process.env.SD_WEBUI_URL || '';
