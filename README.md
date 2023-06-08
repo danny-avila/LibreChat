@@ -70,6 +70,7 @@ We apologize for any inconvenience caused by these changes. We hope you enjoy th
   * [Linux Install](docs/install/linux_install.md)
   * [Mac Install](docs/install/mac_install.md)
   * [Windows Install](docs/install/windows_install.md)
+  * [APIs and Tokens](docs/install/apis_and_tokens.md)
 </details>
 
 <details>
