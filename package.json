@@ -35,6 +35,9 @@
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
+  "dependencies": {
+    "langchain": "^0.0.91"
+  },
   "devDependencies": {
     "@playwright/test": "^1.32.1",
     "@typescript-eslint/eslint-plugin": "^5.59.6",
