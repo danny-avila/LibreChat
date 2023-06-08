@@ -24,7 +24,7 @@ Docker installation is recommended for most use cases. It's the easiest, simples
 - How to set up the user/auth system and Google login.
 
 ## Update
-to update LibreChat. enter these commands one after the other from the root dir:
+To update LibreChat. enter these commands one after the other from the root dir:
 - git pull
 - docker-compose build
 - docker-compose up
