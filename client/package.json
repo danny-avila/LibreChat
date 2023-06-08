@@ -4,6 +4,7 @@
   "description": "",
   "scripts": {
     "build": "cross-env NODE_ENV=production dotenv -e ../.env -- vite build",
+    "build:ci": "cross-env NODE_ENV=dev vite build --mode ci",
     "dev": "cross-env NODE_ENV=dev dotenv -e ../.env -- vite",
     "preview-prod": "cross-env NODE_ENV=dev dotenv -e ../.env -- vite preview",
     "test": "cross-env NODE_ENV=test jest --watch",

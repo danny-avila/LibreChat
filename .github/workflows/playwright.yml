@@ -19,6 +19,9 @@ jobs:
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
       CREDS_KEY: ${{ secrets.CREDS_KEY }}
       CREDS_IV: ${{ secrets.CREDS_IV }}
+      # NODE_ENV: ${{ vars.NODE_ENV }}
+      DOMAIN_CLIENT: ${{ vars.DOMAIN_CLIENT }}
+      DOMAIN_SERVER: ${{ vars.DOMAIN_SERVER }}
     # PALM_KEY: ${{ secrets.PALM_KEY }}
     steps:
       - uses: actions/checkout@v3
@@ -39,7 +42,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Build Client
-        run: cd client && npm run build
+        run: cd client && npm run build:ci
 
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps && npm install -D @playwright/test
