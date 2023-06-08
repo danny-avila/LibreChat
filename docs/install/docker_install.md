@@ -39,7 +39,7 @@ Docker installation is recommended for most use cases. It's the easiest, simples
 ```
 - If for some reason you're not able to build the app image, you can pull the latest image from **Dockerhub**.
     - Comment out the following lines (CTRL+/ on most IDEs, or put a `#` in front each line)
-    ```yaml
+```yaml
     image: node                # Comment this & uncomment below to build from docker hub image
     build:
       context: .
@@ -47,11 +47,11 @@ Docker installation is recommended for most use cases. It's the easiest, simples
       args:
         VITE_APP_TITLE: LibreChat # default, change to your desired app name
         VITE_SHOW_GOOGLE_LOGIN_OPTION: false # default, change to true if you have google auth setup
-        ```
+```
      - Comment this line in (remove the `#` key)
-     ```yaml
+```yaml
      # image: chatgptclone/app:latest # Uncomment this & comment above to build from docker hub image
-     ```
+```
      - **Note:** The latest Dockerhub image is only updated with new release tags, so it may not have the latest changes to the main branch
      - You also can't edit the title or toggle google login off as shown above, as these variables are set during build time.
 - If you are running APIs in other docker containers that you need access to, you will need to uncomment the following lines
@@ -66,7 +66,7 @@ Docker installation is recommended for most use cases. It's the easiest, simples
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
       - CHATGPT_REVERSE_PROXY=http://host.docker.internal:8080/api/conversation # if you are hosting your own chatgpt reverse proxy with docker
       - OPENAI_REVERSE_PROXY=http://host.docker.internal:8070/v1/chat/completions # if you are hosting your own chatgpt reverse proxy with docker
-      ```
+```
 
 ##
 
