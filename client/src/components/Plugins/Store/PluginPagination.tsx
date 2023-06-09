@@ -13,12 +13,19 @@ const PluginPagination: React.FC<TPluginPaginationProps> = ({
 }) => {
   const pages = [...Array(maxPage).keys()].map((i) => i + 1);
 
+  const handlePageChange = (page: number) => {
+    if (page < 1 || page > maxPage) {
+      return;
+    }
+    onChangePage(page);
+  };
+
   return (
     <div className="flex gap-2 text-sm text-black/60 dark:text-white/70">
       <div
         role="button"
         aria-label="Previous page"
-        onClick={() => onChangePage(currentPage - 1)}
+        onClick={() => handlePageChange(currentPage - 1)}
         className={`flex cursor-default items-center text-sm ${
           currentPage === 1
             ? 'text-black/70 opacity-50 dark:text-white/70'
@@ -58,7 +65,7 @@ const PluginPagination: React.FC<TPluginPaginationProps> = ({
       <div
         role="button"
         aria-label="Next page"
-        onClick={() => onChangePage(currentPage + 1)}
+        onClick={() => handlePageChange(currentPage + 1)}
         className={`flex cursor-default items-center text-sm ${
           currentPage === maxPage
             ? 'text-black/70 opacity-50 dark:text-white/70'

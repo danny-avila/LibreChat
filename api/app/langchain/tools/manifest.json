@@ -34,7 +34,7 @@
     "name": "Browser",
     "pluginKey": "browser",
     "description": "Scrape and summarize webpage data",
-    "icon": "",
+    "icon": "/assets/web-browser.png",
     "authConfig": [
       {
         "authField": "OPENAI_API_KEY",
