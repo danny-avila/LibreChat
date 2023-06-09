@@ -11,19 +11,11 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
-      #   BINGAI_TOKEN: ${{ secrets.BINGAI_TOKEN }}
-      #   CHATGPT_TOKEN: ${{ secrets.CHATGPT_TOKEN }}
       MONGO_URI: ${{ secrets.MONGO_URI }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
-      E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
       CREDS_KEY: ${{ secrets.CREDS_KEY }}
       CREDS_IV: ${{ secrets.CREDS_IV }}
-      # NODE_ENV: ${{ vars.NODE_ENV }}
-      DOMAIN_CLIENT: ${{ vars.DOMAIN_CLIENT }}
-      DOMAIN_SERVER: ${{ vars.DOMAIN_SERVER }}
-    # PALM_KEY: ${{ secrets.PALM_KEY }}
     steps:
       - uses: actions/checkout@v2
       - name: Use Node.js 18.x
@@ -40,4 +32,4 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Run unit tests
-        run: npm run test
+        run: npm run test:ci

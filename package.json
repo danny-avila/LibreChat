@@ -18,6 +18,7 @@
     "e2e:debug": "cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
     "frontend-test": "cd client && npm run test",
     "test": "cross-env NODE_ENV=test jest",
+    "test:ci": "jest --ci --coverage",
     "e2e:update": "playwright test --config=e2e/playwright.config.js --update-snapshots",
     "e2e:report": "npx playwright show-report e2e/playwright-report",
     "prepare": "husky install",
