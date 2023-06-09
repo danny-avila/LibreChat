@@ -61,7 +61,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.43.9",
-    "react-infinite-scroll-component": "github:techwithanirudh/react-infinite-scroll-component",
+    "react-infinite-scroll-component": "^6.1.0",
     "react-lazy-load": "^4.0.1",
     "react-markdown": "^8.0.6",
     "react-router-dom": "^6.11.2",
@@ -79,8 +79,7 @@
     "tailwindcss-animate": "^1.0.5",
     "tailwindcss-radix": "^2.8.0",
     "url": "^0.11.0",
-    "uuidv4": "^6.2.13",
-    "yarn": "^1.22.19"
+    "uuidv4": "^6.2.13"
   },
   "devDependencies": {
     "@babel/cli": "^7.20.7",
