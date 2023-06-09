@@ -5,6 +5,7 @@
   "scripts": {
     "start": "echo 'please run this from the root directory'",
     "server-dev": "echo 'please run this from the root directory'",
+    "test": "cross-env NODE_ENV=test jest",
     "test:ci": "jest --ci",
     "test2": "node --inspect app/langchain/test2.js",
     "test3": "node --inspect app/langchain/test3.js",

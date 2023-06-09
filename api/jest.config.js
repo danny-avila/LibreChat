@@ -3,6 +3,5 @@ module.exports = {
   clearMocks: true,
   roots: ['<rootDir>'],
   coverageDirectory: 'coverage',
-  // testMatch: ['<rootDir>/api/**/*.test.js'],
-  testPathIgnorePatterns: ['<rootDir>/client/'],
+  setupFiles: ['./test/jestSetup.js']
 };
