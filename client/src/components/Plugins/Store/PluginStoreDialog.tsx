@@ -4,11 +4,7 @@ import { useRecoilState } from 'recoil';
 import { X } from 'lucide-react';
 import store from '~/store';
 import { PluginStoreItem, PluginPagination, PluginAuthForm } from '.';
-import {
-  useAvailablePluginsQuery,
-  useUpdateUserPluginsMutation,
-  TPlugin,
-} from '~/data-provider';
+import { useAvailablePluginsQuery, useUpdateUserPluginsMutation, TPlugin } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 type TPluginStoreDialogProps = {
@@ -72,18 +68,21 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
           localStorage.setItem('lastSelectedTools', JSON.stringify(tools));
           setConversation((prevState: any) => ({
             ...prevState,
-            tools,
+            tools
           }));
         }
       }
     );
   };
-  
+
   const onPluginInstall = (pluginKey: string) => {
     const getAvailablePluginFromKey = availablePlugins?.find((p) => p.pluginKey === pluginKey);
     setSelectedPlugin(getAvailablePluginFromKey);
 
-    if (getAvailablePluginFromKey!.authConfig.length > 0 && !getAvailablePluginFromKey?.authenticated) {
+    if (
+      getAvailablePluginFromKey!.authConfig.length > 0 &&
+      !getAvailablePluginFromKey?.authenticated
+    ) {
       setShowPluginAuthForm(true);
     } else {
       handleInstall({ pluginKey, action: 'install', auth: null });
@@ -93,6 +92,10 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const calculateColumns = (node) => {
     const width = node.offsetWidth;
     let columns;
+    if (width < 501) {
+      setItemsPerPage(8);
+      return;
+    } else
     if (width < 640) {
       columns = 2;
     } else if (width < 1024) {
@@ -135,10 +138,9 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     <Dialog open={isOpen} onClose={() => setIsOpen(false)} className="relative z-50">
       {/* The backdrop, rendered as a fixed sibling to the panel container */}
       <div className="fixed inset-0 bg-gray-500/90 transition-opacity dark:bg-gray-800/90" />
-
       {/* Full-screen container to center the panel */}
       <div className="fixed inset-0 flex items-center justify-center p-4">
-        <Dialog.Panel className="relative w-full transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-900 sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl">
+        <Dialog.Panel className="relative w-full max-sm:h-full overflow-y-auto transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-900 sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl">
           <div className="flex items-center justify-between border-b-[1px] border-black/10 px-4 pb-4 pt-5 dark:border-white/10 sm:p-6">
             <div className="flex items-center">
               <div className="text-center sm:text-left">

@@ -5,7 +5,7 @@ import { RecoilRoot } from 'recoil';
 import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
 import { ThemeProvider } from './hooks/ThemeContext';
 import { useApiErrorBoundary } from './hooks/ApiErrorBoundaryContext';
-import { router} from './routes';
+import { router } from './routes';
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
@@ -25,7 +25,7 @@ const App = () => {
       <RecoilRoot>
         <ThemeProvider>
           <RouterProvider router={router} />
-          <ReactQueryDevtools initialIsOpen={false} />
+          <ReactQueryDevtools initialIsOpen={false} position="top-right" />
         </ThemeProvider>
       </RecoilRoot>
     </QueryClientProvider>
