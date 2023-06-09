@@ -143,7 +143,7 @@ function PluginsOptions() {
           type="button"
           className={cn(
             cardStyle,
-            'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-4 hover:bg-white focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700'
+            'min-w-4 z-40 flex h-[40px] flex-none items-center justify-center px-4 hover:bg-white focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700'
           )}
           onClick={() => setVisibility((prev) => !prev)}
         >
@@ -159,7 +159,7 @@ function PluginsOptions() {
           setValue={setOption('model')}
           availableValues={models}
           showAbove={true}
-          className={cn(cardStyle, 'min-w-60 z-49 flex w-60', !visibile && 'hidden')}
+          className={cn(cardStyle, 'min-w-60 z-40 flex w-60', !visibile && 'hidden')}
         />
         <MultiSelectDropDown
           value={conversation.tools || []}

@@ -18,7 +18,7 @@ function EndpointOptionsPopover({
     <>
       <div
         className={
-          ' endpointOptionsPopover-container absolute bottom-[-10px] flex w-full flex-col items-center md:px-4' +
+          ' endpointOptionsPopover-container absolute bottom-[-10px] flex w-full flex-col items-center md:px-4 z-50' +
           (visible ? ' show' : '')
         }
       >
