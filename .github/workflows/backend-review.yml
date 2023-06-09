@@ -27,9 +27,8 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
-      - name: Install API dependencies
-        working-directory: ./api
-        run: npm ci --ignore-scripts
+      - name: Install Linux X64 Sharp
+        run: npm install --platform=linux --arch=x64 sharp
 
       - name: Run unit tests
         run: cd api && npm run test:ci
