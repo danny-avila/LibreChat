@@ -1,6 +1,7 @@
 const _ = require('lodash');
 const citationRegex = /\[\^\d+?\^]/g;
 const { getCitations, citeText } = require('../../../app');
+const cursor = '<span className="result-streaming">█</span>';
 
 const handleError = (res, message) => {
   res.write(`event: error\ndata: ${JSON.stringify(message)}\n\n`);
@@ -60,7 +61,7 @@ const createOnProgress = ({ onProgress: _onProgress }) => {
   };
 
   const sendIntermediateMessage = (res, payload) => {
-    sendMessage(res, { text: tokens, message: true, initial: i === 0, ...payload });
+    sendMessage(res, { text: tokens?.length === 0 ? cursor : tokens, message: true, initial: i === 0, ...payload });
     i++;
   };
 

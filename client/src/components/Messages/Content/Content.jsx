@@ -38,13 +38,13 @@ const Content = React.memo(({ content, message }) => {
 
     if (isSubmitting && isLatestMessage) {
       timer1 = setInterval(() => {
-        setCursor('');
+        setCursor(' ');
         timer2 = setTimeout(() => {
           setCursor('█');
         }, 200);
       }, 1000);
     } else {
-      setCursor('');
+      setCursor(' ');
     }
 
     // This is the cleanup function that React will run when the component unmounts
@@ -81,7 +81,7 @@ const Content = React.memo(({ content, message }) => {
         p
       }}
     >
-      {isLatestMessage && isSubmitting && !isInitializing ? content + cursor : content}
+      {isLatestMessage && isSubmitting && !isInitializing ? (content ?? '') + cursor : content}
     </ReactMarkdown>
   );
 });
