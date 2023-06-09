@@ -44,7 +44,9 @@ Note: These changes only apply to users who are updating from a previous version
 - The upgrade script requires both `/api/.env` and `/client/.env` files to run properly. If you get an error about a missing client env file, just rename the `/client/.env.example` file to `/client/.env` and run the script again.
 - We have renamed the `OPENAI_KEY` variable to `OPENAI_API_KEY` to match the official documentation. The upgrade script should do this automatically for you, but please double-check that your key is correct in the new `.env` file.
 - After running the upgrade script, the `OPENAI_API_KEY` variable might be placed in a different section in the new `.env` file than before. This does not affect the functionality of the app, but if you want to keep it organized, you can look for it near the bottom of the file and move it to its usual section.
----
+
+##
+
 - For enhanced security, we are now asking for crypto keys for securely storing credentials in the `.env` file. Crypto keys are used to encrypt and decrypt sensitive data such as passwords and access keys. If you don't set them, the app will crash on startup.
 - You need to fill the following variables in the `.env` file with 32-byte (64 characters in hex) or 16-byte (32 characters in hex) values:
   - `CREDS_KEY` (32-byte)
@@ -57,7 +59,10 @@ We apologize for any inconvenience caused by these changes. We hope you enjoy th
 
 ---
 
-## [Read all Latest Updates here](CHANGELOG.md)
+## Changelog 
+- Keep up with the latest updates by visiting the releases page - [Releases](https://github.com/danny-avila/LibreChat/releases)
+
+---
 
 <h1>Table of Contents</h1>
 
