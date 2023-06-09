@@ -23,7 +23,7 @@ class GoogleSearchAPI extends Tool {
    * A description for the agent to use
    * @type {string}
    */
-  description = `Use the 'google' tool to search for information on the web.`;
+  description = `Use the 'google' tool to retrieve internet search results relevant to your input. The results will return links and snippets of text from the webpages`;
 
   getCx() {
     const cx = process.env.GOOGLE_CSE_ID || '';
