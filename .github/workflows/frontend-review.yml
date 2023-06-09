@@ -2,9 +2,9 @@
 name: Frontend Unit Tests
 on:
   push:
-    branches: [feat/playwright-jest-cicd]
+    branches: [main]
   pull_request:
-    branches: [ feat/playwright-jest-cicd ]
+    branches: [main]
 jobs:
   tests_frontend:
     name: Run frontend unit tests
