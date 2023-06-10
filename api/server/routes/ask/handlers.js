@@ -85,7 +85,7 @@ const handleText = async (response, bing = false) => {
     if (response.text.match(citationRegex)?.length > 0) {
       text = citeText(response);
     }
-    text += links?.length > 0 ? `\n${links}` : '';
+    text += links?.length > 0 ? `\n- ${links}` : '';
   }
 
   return text;
