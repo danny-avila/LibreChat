@@ -28,7 +28,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Install Linux X64 Sharp
-        run: npm install --platform=linux --arch=x64 sharp --verbose
+        run: npm install --platform=linux --arch=x64 --ignore-scripts=false --foreground-scripts --verbose sharp
 
       - name: Run unit tests
         run: cd api && npm run test:ci
