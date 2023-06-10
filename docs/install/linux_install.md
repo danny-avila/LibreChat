@@ -17,6 +17,7 @@ Before installing LibreChat, make sure your machine has the following prerequisi
 
 ```bash
 git clone https://github.com/danny-avila/LibreChat.git
+git clone https://github.com/danny-avila/LibreChat.git
 ```
 
 ## Extract the content in your desired location:
