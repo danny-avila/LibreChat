@@ -1,7 +1,6 @@
-import React from 'react';
 import Conversation from './Conversation';
 
-export default function Conversations({ conversations, conversationId, moveToTop }) {
+export default function Conversations({ conversations, moveToTop }) {
   return (
     <>
       {conversations &&

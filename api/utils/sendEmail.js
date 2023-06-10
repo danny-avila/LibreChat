@@ -1,3 +1,5 @@
+/* eslint-disable no-unused-vars */
+/* eslint-disable no-undef */
 const nodemailer = require('nodemailer');
 const handlebars = require('handlebars');
 const fs = require('fs');

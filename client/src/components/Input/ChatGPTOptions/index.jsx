@@ -1,4 +1,3 @@
-import React, { useEffect } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import SelectDropDown from '../../ui/SelectDropDown';
 import { cn } from '~/utils/';

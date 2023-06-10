@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const conversationPreset = require('./conversationPreset');
+const { conversationPreset } = require('./defaults');
 const presetSchema = mongoose.Schema(
   {
     presetId: {
@@ -19,7 +19,11 @@ const presetSchema = mongoose.Schema(
     },
     // google only
     examples: [{ type: mongoose.Schema.Types.Mixed }],
-    ...conversationPreset
+    ...conversationPreset,
+    agentOptions: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    }
   },
   { timestamps: true }
 );

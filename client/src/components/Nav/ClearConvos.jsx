@@ -19,6 +19,7 @@ const ClearConvos = ({ open, onOpenChange}) => {
       newConversation();
       refreshConversations();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearConvosMutation.isSuccess]);
 
   return (

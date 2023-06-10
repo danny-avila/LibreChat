@@ -20,6 +20,7 @@ export default function DeleteButton({ conversationId, renaming, cancelHandler, 
       refreshConversations();
       retainView();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deleteConvoMutation.isSuccess]);
 
   const clickHandler = () => {

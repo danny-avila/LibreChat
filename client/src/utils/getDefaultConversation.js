@@ -5,6 +5,7 @@ const buildDefaultConversation = ({
   lastConversationSetup = {}
 }) => {
   const lastSelectedModel = JSON.parse(localStorage.getItem('lastSelectedModel')) || {};
+  const lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools')) || [];
 
   if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
     conversation = {
@@ -63,6 +64,31 @@ const buildDefaultConversation = ({
         lastSelectedModel[endpoint] ??
         endpointsConfig[endpoint]?.availableModels?.[0] ??
         'text-davinci-002-render-sha'
+    };
+  } else if (endpoint === 'gptPlugins') {
+    const agentOptions = lastConversationSetup?.agentOptions ?? {
+      model: 'gpt-3.5-turbo',
+      temperature: 0,
+      // top_p: 1,
+      // presence_penalty: 0,
+      // frequency_penalty: 0
+    };
+    conversation = {
+      ...conversation,
+      endpoint,
+      tools: lastSelectedTools ?? lastConversationSetup?.tools ?? [],
+      model:
+        lastConversationSetup?.model ??
+        lastSelectedModel[endpoint] ??
+        endpointsConfig[endpoint]?.availableModels?.[0] ??
+        'gpt-3.5-turbo',
+      chatGptLabel: lastConversationSetup?.chatGptLabel ?? null,
+      promptPrefix: lastConversationSetup?.promptPrefix ?? null,
+      temperature: lastConversationSetup?.temperature ?? 0.8,
+      top_p: lastConversationSetup?.top_p ?? 1,
+      presence_penalty: lastConversationSetup?.presence_penalty ?? 0,
+      frequency_penalty: lastConversationSetup?.frequency_penalty ?? 0,
+      agentOptions
     };
   } else if (endpoint === null) {
     conversation = {
@@ -129,9 +155,14 @@ const getDefaultConversation = ({ conversation, endpointsConfig, preset }) => {
 
   // if anything happens, reset to default model
 
-  const endpoint = ['openAI', 'azureOpenAI', 'bingAI', 'chatGPTBrowser', 'google'].find(
-    (e) => endpointsConfig?.[e]
-  );
+  const endpoint = [
+    'openAI',
+    'azureOpenAI',
+    'bingAI',
+    'chatGPTBrowser',
+    'gptPlugins',
+    'google'
+  ].find((e) => endpointsConfig?.[e]);
   if (endpoint) {
     conversation = buildDefaultConversation({ conversation, endpoint, endpointsConfig });
     return conversation;

@@ -13,7 +13,9 @@ module.exports = {
     isCreatedByUser = false,
     error,
     unfinished,
-    cancelled
+    cancelled,
+    plugin = null,
+    model = null,
   }) {
     try {
       // may also need to update the conversation here
@@ -28,7 +30,9 @@ module.exports = {
           isCreatedByUser,
           error,
           unfinished,
-          cancelled
+          cancelled,
+          plugin,
+          model
         },
         { upsert: true, new: true }
       );

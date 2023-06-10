@@ -13,7 +13,7 @@ jobs:
       BINGAI_TOKEN: ${{ secrets.BINGAI_TOKEN }}
       CHATGPT_TOKEN: ${{ secrets.CHATGPT_TOKEN }}
       MONGO_URI: ${{ secrets.MONGO_URI }}
-      OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-node@v3

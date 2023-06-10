@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { useRecoilValue } from 'recoil';
 import exportFromJSON from 'export-from-json';
-import DialogTemplate from '../ui/DialogTemplate.jsx';
-import { Dialog, DialogButton } from '../ui/Dialog.tsx';
+import { useEffect, useState } from 'react';
+import { useRecoilValue } from 'recoil';
+import { Dialog, DialogButton, DialogTemplate } from '~/components/';
 import SaveAsPresetDialog from './SaveAsPresetDialog';
 import cleanupPreset from '~/utils/cleanupPreset';
 
@@ -20,6 +19,10 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
 
   if (endpointName === 'google') {
     setEndpointName('PaLM');
+  }
+
+  if (endpointName === 'gptPlugins') {
+    setEndpointName('Plugins');
   }
 
   const setOption = (param) => (newValue) => {
@@ -45,6 +48,7 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
 
   useEffect(() => {
     setPreset(_preset);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   return (

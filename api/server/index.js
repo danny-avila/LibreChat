@@ -7,10 +7,13 @@ const cors = require('cors');
 const routes = require('./routes');
 const errorController = require('./controllers/error.controller');
 const passport = require('passport');
-
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
 const projectPath = path.join(__dirname, '..', '..', 'client');
+
+// Init the config and validate it
+const config = require('../../config/loader');
+config.validate(); // Validate the config
 
 (async () => {
   await connectDb();
@@ -23,6 +26,8 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
   app.use(express.static(path.join(projectPath, 'dist')));
+  app.use(express.static(path.join(projectPath, 'public')));
+
   app.set('trust proxy', 1); // trust first proxy
   app.use(cors());
 
@@ -39,6 +44,7 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use('/oauth', routes.oauth);
   // api endpoint
   app.use('/api/auth', routes.auth);
+  app.use('/api/user', routes.user);
   app.use('/api/search', routes.search);
   app.use('/api/ask', routes.ask);
   app.use('/api/messages', routes.messages);
@@ -47,6 +53,7 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use('/api/prompts', routes.prompts);
   app.use('/api/tokenizer', routes.tokenizer);
   app.use('/api/endpoints', routes.endpoints);
+  app.use('/api/plugins', routes.plugins);
 
   // static files
   app.get('/*', function (req, res) {
@@ -66,7 +73,8 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
 let messageCount = 0;
 process.on('uncaughtException', (err) => {
   if (!err.message.includes('fetch failed')) {
-    console.error('There was an uncaught error:', err.message);
+    console.error('There was an uncaught error:');
+    console.error(err);
   }
 
   if (err.message.includes('fetch failed')) {
