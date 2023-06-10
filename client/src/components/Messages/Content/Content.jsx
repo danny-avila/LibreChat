@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
 import remarkMath from 'remark-math';
+import supersub from 'remark-supersub'
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import CodeBlock from './CodeBlock';
@@ -38,13 +39,13 @@ const Content = React.memo(({ content, message }) => {
 
     if (isSubmitting && isLatestMessage) {
       timer1 = setInterval(() => {
-        setCursor(' ');
+        setCursor('&nbsp;');
         timer2 = setTimeout(() => {
           setCursor('█');
         }, 200);
       }, 1000);
     } else {
-      setCursor(' ');
+      setCursor('&nbsp;');
     }
 
     // This is the cleanup function that React will run when the component unmounts
@@ -73,7 +74,7 @@ const Content = React.memo(({ content, message }) => {
 
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+      remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
       rehypePlugins={rehypePlugins}
       linkTarget="_new"
       components={{
