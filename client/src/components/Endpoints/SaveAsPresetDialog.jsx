@@ -30,6 +30,7 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
 
   useEffect(() => {
     setTitle(preset?.title || 'My Preset');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   return (

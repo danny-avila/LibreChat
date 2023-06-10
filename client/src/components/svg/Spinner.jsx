@@ -1,6 +1,7 @@
 import React from 'react';
+import { cn } from '~/utils/';
 
-export default function Spinner() {
+export default function Spinner({ classProp = 'm-auto' }) {
   return (
     <svg
       stroke="currentColor"
@@ -9,7 +10,7 @@ export default function Spinner() {
       viewBox="0 0 24 24"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="m-auto animate-spin text-center"
+      className={cn(classProp, 'animate-spin text-center')}
       height="1em"
       width="1em"
       xmlns="http://www.w3.org/2000/svg"

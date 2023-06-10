@@ -1,11 +1,9 @@
 import { useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import MessagesSquared from '~/components/svg/MessagesSquared.jsx';
-import SelectDropDown from '../../ui/SelectDropDown';
+import { SelectDropDown, Button, MessagesSquared } from '~/components';
 import EndpointOptionsPopover from '../../Endpoints/EndpointOptionsPopover';
 import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
-import { Button } from '../../ui/Button.tsx';
 import Settings from '../../Endpoints/Google/Settings.jsx';
 import Examples from '../../Endpoints/Google/Examples.jsx';
 import { cn } from '~/utils/';

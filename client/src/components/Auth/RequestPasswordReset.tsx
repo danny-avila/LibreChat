@@ -95,7 +95,7 @@ function RequestPasswordReset() {
             </div>
             {errors.email && (
               <span role="alert" className="mt-1 text-sm text-red-600">
-                {/* @ts-ignore */}
+                {/* @ts-ignore not sure why */}
                 {errors.email.message}
               </span>
             )}

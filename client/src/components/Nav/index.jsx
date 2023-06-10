@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import { useState, useEffect, useRef, useContext } from 'react';
 import NewChat from './NewChat';
 import Panel from '../svg/Panel';
