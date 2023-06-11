@@ -58,6 +58,6 @@ We currently do not have a bug bounty program in place. However, we welcome and 
 **Reference**
 - https://cheatsheetseries.owasp.org/cheatsheets/Vulnerability_Disclosure_Cheat_Sheet.html
 
-##
+---
 
 ## [Go Back to ReadMe](README.md)
