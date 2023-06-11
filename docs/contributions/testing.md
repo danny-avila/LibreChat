@@ -1,4 +1,4 @@
-﻿# Locally test the app during development
+# Locally test the app during development
 
 ### Run the app
 
@@ -64,6 +64,6 @@ If everything goes well, you should see a `passed` message.
 
 <img src="https://user-images.githubusercontent.com/22865959/235321489-9be48fd6-77d4-4e21-97ad-0254e140b934.png">
 
-##
+---
 
 ## [Go Back to ReadMe](../../README.md)
