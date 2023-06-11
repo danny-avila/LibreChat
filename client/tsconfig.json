@@ -17,7 +17,7 @@
     "noEmit": false,
     "declaration": true,
     "declarationDir": "./types",
-    "jsx": "react-jsx",
+    "jsx": "preserve",
     "baseUrl": ".",
     "paths": {
       "~/*": ["./src/*"]

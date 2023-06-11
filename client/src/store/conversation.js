@@ -1,4 +1,5 @@
 import endpoints from './endpoints';
+import { useCallback } from 'react';
 import {
   atom,
   selector,
@@ -112,7 +113,7 @@ const useConversation = () => {
   );
 
 
-  const newConversation = (template = {}, preset) => {
+  const newConversation = useCallback((template = {}, preset) => {
     switchToConversation(
       {
         conversationId: 'new',
@@ -122,7 +123,7 @@ const useConversation = () => {
       [],
       preset
     );
-  };
+  }, [switchToConversation]);
 
   const searchPlaceholderConversation = () => {
     switchToConversation(
