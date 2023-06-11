@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useRegisterUserMutation, TRegisterUser } from '~/data-provider';
-import { SHOW_GOOGLE_LOGIN_OPTION, DOMAIN_SERVER } from '~/utils/envConstants';
+import { SHOW_GOOGLE_LOGIN_OPTION, SHOW_OPENID_LOGIN_OPTION, SHOW_OPENID_LOGIN_NAME, DOMAIN_SERVER } from '~/utils/envConstants';
 
 function Registration() {
   const navigate = useNavigate();
@@ -302,6 +302,22 @@ function Registration() {
                   ></path>
                 </svg>
                 <p>Login with Google</p>
+              </a>
+            </div>
+          </>
+        )}
+        {SHOW_OPENID_LOGIN_OPTION && (
+          <>
+            <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
+              <div className="absolute bg-white px-3 text-xs">Or</div>
+            </div>
+            <div className="mt-4 flex gap-x-2">
+              <a
+                aria-label="Login with OpenID"
+                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
+                href={`${DOMAIN_SERVER}/oauth/openid`}
+              >
+              <p>{SHOW_OPENID_LOGIN_NAME}</p>
               </a>
             </div>
           </>
