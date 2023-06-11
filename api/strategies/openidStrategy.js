@@ -57,19 +57,19 @@ Issuer.discover(process.env.OPENID_ISSUER)
       }
     );
 
-    passport.use('openid', openidLogin);
-
-    passport.serializeUser((user, done) => {
-      done(null, user.id);
-    });
-
-    passport.deserializeUser(async (id, done) => {
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const user = await User.findById(decoded.userId);
-        done(null, user);
-      } catch (err) {
-        done(err);
+    app.use((req, res, next) => {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        try {
+          const decoded = jwt.verify(token, process.env.JWT_SECRET);
+          req.user = decoded;
+          next();
+        } catch (err) {
+          res.sendStatus(401);
+        }
+      } else {
+        res.sendStatus(401);
       }
     });
   })
