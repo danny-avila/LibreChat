@@ -2,7 +2,7 @@
 name: Frontend Unit Tests
 on:
   push:
-    branches: [main]
+    branches: [main, jest]
   pull_request:
     branches: [main]
 jobs:

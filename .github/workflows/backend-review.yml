@@ -2,9 +2,9 @@
 name: Backend Unit Tests
 on:
   push:
-    branches: [feat/playwright-jest-cicd]
+    branches: [feat/playwright-jest-cicd, jest]
   pull_request:
-    branches: [ feat/playwright-jest-cicd ]
+    branches: [ feat/playwright-jest-cicd, jest ]
 jobs:
   tests_Backend:
     name: Run Backend unit tests
