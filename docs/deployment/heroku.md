@@ -1,16 +1,14 @@
-﻿# Heroku Deployment
-
-##
+# Heroku Deployment
  
  ⚠️ If you have issues, see this discussion first: https://github.com/danny-avila/LibreChat/discussions/339
  
- - To run the ChatGPT-Clone project on a server, you can use cloud hosting platforms like Heroku, DigitalOcean, or AWS. In this response, I'll provide instructions for deploying the project on Heroku. Other platforms will have slightly different deployment processes.
+ - To run LibreChat on a server, you can use cloud hosting platforms like Heroku, DigitalOcean, or AWS. In this response, I'll provide instructions for deploying the project on Heroku. Other platforms will have slightly different deployment processes.
 
   - Sign up for a Heroku account: If you don't already have a Heroku account, sign up at https://signup.heroku.com/.
   - Install the Heroku CLI: Download and install the Heroku CLI from https://devcenter.heroku.com/articles/heroku-cli.
   - Login to Heroku: Open Terminal and run ***heroku login***. Follow the instructions to log in to your Heroku account.
 
-  - Prepare the repository: You need to create a Procfile in the root directory of the ChatGPT-Clone project to specify the commands that will be executed to start the application. Create a new file named Procfile (without any file extension) and add the following line:
+  - Prepare the repository: You need to create a Procfile in the root directory of LibreChat to specify the commands that will be executed to start the application. Create a new file named Procfile (without any file extension) and add the following line:
 
 ```
 web: npm start --prefix api
@@ -37,7 +35,7 @@ heroku config:set KEY_NAME=KEY_VALUE --app your-app-name
 
 **Using Heroku Dashboard:**
   - Go to your app's settings page in the Heroku Dashboard. Under the "Config Vars" section, add the required environment variables.
-  - Deploy the app to Heroku: Run the following commands to deploy the ChatGPT-Clone project to Heroku:
+  - Deploy the app to Heroku: Run the following commands to deploy LibreChat to Heroku:
 
 ```
 git remote add heroku https://git.heroku.com/your-app-name.git
@@ -96,17 +94,17 @@ git push heroku master
 
   - Get the MeiliSearch URL: After deployment, you can find the MeiliSearch URL by visiting your app's settings page in the Heroku Dashboard. The URL will be displayed under the "Domains" section.
 
-**Update environment variables in your ChatGPT-Clone app:**
+**Update environment variables in LibreChat:**
 
-  - Now that you have your MongoDB Atlas connection string and MeiliSearch URL, update the following environment variables in your Heroku app for ChatGPT-Clone:
+  - Now that you have your MongoDB Atlas connection string and MeiliSearch URL, update the following environment variables in your Heroku app for LibreChat:
 
   - `MONGODB_URI`: Set the value to the MongoDB Atlas connection string you obtained earlier.
   - `MEILISEARCH_URL`: Set the value to the MeiliSearch URL you obtained from your MeiliSearch app on Heroku.
   - `MEILISEARCH_KEY`: Set the value to the MeiliSearch master key you used when setting up the MeiliSearch app.
   - You can set these environment variables using the Heroku CLI or through the Heroku Dashboard, as described in the previous response.
 
-  - Once you've updated the environment variables, your ChatGPT-Clone app should be able to connect to MongoDB Atlas and MeiliSearch on Heroku.
+  - Once you've updated the environment variables, LibreChat should be able to connect to MongoDB Atlas and MeiliSearch on Heroku.
 
-##
+---
 
 ## [Go Back to ReadMe](../../README.md)
