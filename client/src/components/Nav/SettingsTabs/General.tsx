@@ -19,9 +19,9 @@ const ThemeSelector = ({ theme, onChange }: { theme: string, onChange: (value: s
   </div>
 );
 
-const ClearChatsButton = ({ confirmClear, onClick }: { confirmClear: boolean, onClick: () => void }) => (
+export const ClearChatsButton = ({ confirmClear, showText = true, onClick }: { confirmClear: boolean, showText: boolean, onClick: () => void }) => (
   <div className="flex items-center justify-between">
-    <div>Clear all chats</div>
+    {showText && <div>Clear all chats</div>}
     <button
       className="btn relative bg-red-600  text-white hover:bg-red-800"
       type="button"
@@ -67,7 +67,7 @@ function General() {
           <ThemeSelector theme={theme} onChange={changeTheme} />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <ClearChatsButton confirmClear={confirmClear} onClick={clearConvos} />
+          <ClearChatsButton confirmClear={confirmClear} onClick={clearConvos} showText={true}/>
         </div>
       </div>
     </Tabs.Content>
