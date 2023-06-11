@@ -1,8 +1,8 @@
-﻿# User/Auth System
+# User/Auth System
 
 ## **First Time Setup**
 
-In order for the auth system to function properly, there are some environment variables that are needed. Note that this information is also included in the [/.env.example](https://github.com/danny-avila/chatgpt-clone/blob/main/.env.example) file.
+In order for the auth system to function properly, there are some environment variables that are needed. Note that this information is also included in the [/.env.example](/.env.example) file.
 
 In /.env, you will need to set the following variables:
 ```bash
@@ -29,7 +29,7 @@ When the first account is registered, the application will automatically migrate
 
 The application is setup to support OAuth2/Social Login with Google. All of the code is in place for Facebook login as well, but this has not been tested because the setup process with Facebook was honestly just too painful for me to deal with. I plan to add support for other OAuth2 providers including Github and Discord at a later time.
 
-To enable Google login, you must create an application in the [Google Cloud Console](https://cloud.google.com) and provide the client ID and client secret in the [/.env](https://github.com/danny-avila/chatgpt-clone/blob/main/.env.example) file, then set `VITE_SHOW_GOOGLE_LOGIN_OPTION=true`. 
+To enable Google login, you must create an application in the [Google Cloud Console](https://cloud.google.com) and provide the client ID and client secret in the `/.env` file, then set `VITE_SHOW_GOOGLE_LOGIN_OPTION=true`. 
 
 ### *Instructions for setting up Google login are provided below.*
 ```
@@ -54,10 +54,10 @@ Most of the code is in place for sending password reset emails, but is not yet f
 
 To disable or re-enable registration, open up the root `.env` file and set `ALLOW_REGISTRATION=true` or `ALLOW_REGISTRATION=false` depending on if you want registration open or closed.
 
-### ***Warning***
+### ⚠️***Warning***
 
 If you previously implemented your own user system using the original scaffolding that was provided, you will no longer see conversations and presets by switching to the new user system. This is because of a design flaw in the scaffolding implementation that was problematic for the inclusion of social login.
 
-##
+---
 
 ## [Go Back to ReadMe](../../README.md)
