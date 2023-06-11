@@ -12,12 +12,11 @@ const GoogleSearchAPI = require('./GoogleSearch');
 
 describe('Tool Handlers', () => {
   let fakeUser;
-  let pluginKey = 'dall-e';
-  let pluginKey2 = 'wolfram';
-  let initialTools = [pluginKey, pluginKey2];
-  let sampleTools = initialTools;
-  let ToolClass = OpenAICreateImage;
-  let mockCredential = 'mock-credential';
+  const pluginKey = 'dall-e';
+  const pluginKey2 = 'wolfram';
+  const initialTools = [pluginKey, pluginKey2];
+  const ToolClass = OpenAICreateImage;
+  const mockCredential = 'mock-credential';
   const mainPlugin = availableTools.find((tool) => tool.pluginKey === pluginKey);
   const authConfigs = mainPlugin.authConfig;
 
@@ -93,7 +92,7 @@ describe('Tool Handlers', () => {
     let loadTool1;
     let loadTool2;
     let loadTool3;
-    sampleTools = [...sampleTools, 'calculator'];
+    const sampleTools = [...initialTools, 'calculator'];
     let ToolClass2 = Calculator;
     let remainingTools = availableTools.filter(
       (tool) => sampleTools.indexOf(tool.pluginKey) === -1
