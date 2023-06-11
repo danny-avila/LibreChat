@@ -1,19 +1,19 @@
-import { Download } from 'lucide-react';
+import { Download, FileText } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Fragment, useState } from 'react';
 import { Menu, Transition } from '@headlessui/react';
-import { SearchBar, ClearConvos, Settings, NavLink, Logout, ExportModel } from './';
-import { LinkIcon, DotsIcon, GearIcon, TrashIcon } from '~/components';
-import { localize } from '~/localization/Translation';
+import { TrashIcon, GearIcon, DotsIcon, LinkIcon } from '~/components/svg/';
+import { SearchBar, ClearConvos, Files, Settings, NavLink, Logout, ExportModel } from './';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { localize } from '~/localization/Translation';
 import { cn } from '~/utils/';
-
 import store from '~/store';
 
 export default function NavLinks({ clearSearch, isSearchEnabled }) {
   const [showExports, setShowExports] = useState(false);
   const [showClearConvos, setShowClearConvos] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showFiles, setShowFiles] = useState(false);
   const { user } = useAuthContext();
   const lang = useRecoilValue(store.lang);
 
@@ -98,6 +98,22 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                 </Menu.Item>
                 <Menu.Item as="div">
                   <NavLink
+                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none"
+                    svg={() => <FileText className="h-4 w-4" />}
+                    text="My Files"
+                    clickHandler={() => setShowFiles(true)}
+                  />
+                </Menu.Item>
+                <Menu.Item as="div">
+                  <NavLink
+                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none"
+                    svg={() => <FileText className="h-4 w-4" />}
+                    text="My Files"
+                    clickHandler={() => setShowFiles(true)}
+                  />
+                </Menu.Item>
+                <Menu.Item as="div">
+                  <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <LinkIcon />}
                     text={localize(lang, 'com_nav_help_faq')}
@@ -123,6 +139,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
       </Menu>
       {showExports && <ExportModel open={showExports} onOpenChange={setShowExports} />}
       {showClearConvos && <ClearConvos open={showClearConvos} onOpenChange={setShowClearConvos} />}
+      {showFiles && <Files open={showFiles} onOpenChange={setShowFiles} />}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
     </>
   );
