@@ -1,4 +1,4 @@
-const logoutUser = require('../../services/auth.service');
+const { logoutUser } = require('../../services/auth.service');
 
 const logoutController = async (req, res) => {
   const { signedCookies = {} } = req;
