@@ -4,7 +4,7 @@ on:
   push:
     branches: [feat/playwright-jest-cicd, jest]
   pull_request:
-    branches: [ feat/playwright-jest-cicd, jest ]
+    branches: [ feat/playwright-jest-cicd ]
 jobs:
   tests_Backend:
     name: Run Backend unit tests
@@ -18,10 +18,10 @@ jobs:
       CREDS_IV: ${{ secrets.CREDS_IV }}
     steps:
       - uses: actions/checkout@v2
-      - name: Use Node.js 18.x
+      - name: Use Node.js 19.x
         uses: actions/setup-node@v3
         with:
-          node-version: 18.x
+          node-version: 19.x
           cache: 'npm'
 
       - name: Install dependencies
