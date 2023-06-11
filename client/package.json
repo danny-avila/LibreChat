@@ -1,11 +1,12 @@
 {
   "name": "chat-frontend",
-  "version": "0.4.8",
+  "version": "0.5.0",
   "description": "",
   "scripts": {
-    "build": "cross-env NODE_ENV=production vite build",
-    "dev": "cross-env NODE_ENV=development vite",
-    "preview-prod": "cross-env NODE_ENV=dev vite preview",
+    "build": "cross-env NODE_ENV=production dotenv -e ../.env -- vite build",
+    "build:ci": "cross-env NODE_ENV=dev vite build --mode ci",
+    "dev": "cross-env NODE_ENV=dev dotenv -e ../.env -- vite",
+    "preview-prod": "cross-env NODE_ENV=dev dotenv -e ../.env -- vite preview",
     "test": "cross-env NODE_ENV=test jest --watch",
     "test:ci": "cross-env NODE_ENV=test jest --ci"
   },
@@ -47,6 +48,7 @@
     "class-variance-authority": "^0.6.0",
     "clsx": "^1.2.1",
     "copy-to-clipboard": "^3.3.3",
+    "cross-env": "^7.0.3",
     "crypto-browserify": "^3.12.0",
     "downloadjs": "^1.4.7",
     "esbuild": "0.17.19",
@@ -76,8 +78,7 @@
     "tailwind-merge": "^1.9.1",
     "tailwindcss-animate": "^1.0.5",
     "tailwindcss-radix": "^2.8.0",
-    "url": "^0.11.0",
-    "uuidv4": "^6.2.13"
+    "url": "^0.11.0"
   },
   "devDependencies": {
     "@babel/cli": "^7.20.7",
@@ -125,7 +126,7 @@
     "ts-jest": "^29.1.0",
     "ts-loader": "^9.4.2",
     "typescript": "^5.0.4",
-    "vite": "^4.2.1",
+    "vite": "^4.3.9",
     "vite-plugin-html": "^3.2.0"
   }
 }
