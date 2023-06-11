@@ -1,9 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useRecoilValue } from 'recoil';
-import DialogTemplate from '../ui/DialogTemplate';
-import { Dialog } from '../ui/Dialog.tsx';
-import { Input } from '../ui/Input.tsx';
-import { Label } from '../ui/Label.tsx';
+import {Dialog, DialogTemplate, Input, Label} from '../ui/';
 import { cn } from '~/utils/';
 import cleanupPreset from '~/utils/cleanupPreset';
 import { useCreatePresetMutation } from '~/data-provider';
