@@ -65,59 +65,59 @@ const resetPasswordController = async (req, res) => {
   }
 };
 
-const refreshController = async (req, res, next) => {
-  const { signedCookies = {} } = req;
-  const { refreshToken } = signedCookies;
-  //TODO
-  // if (refreshToken) {
-  //   try {
-  //     const payload = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
-  //     const userId = payload._id;
-  //     User.findOne({ _id: userId }).then(
-  //       (user) => {
-  //         if (user) {
-  //           // Find the refresh token against the user record in database
-  //           const tokenIndex = user.refreshToken.findIndex(item => item.refreshToken === refreshToken);
+// const refreshController = async (req, res, next) => {
+//   const { signedCookies = {} } = req;
+//   const { refreshToken } = signedCookies;
+//   TODO
+//   if (refreshToken) {
+//     try {
+//       const payload = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+//       const userId = payload._id;
+//       User.findOne({ _id: userId }).then(
+//         (user) => {
+//           if (user) {
+//             // Find the refresh token against the user record in database
+//             const tokenIndex = user.refreshToken.findIndex(item => item.refreshToken === refreshToken);
 
-  //           if (tokenIndex === -1) {
-  //             res.statusCode = 401;
-  //             res.send('Unauthorized');
-  //           } else {
-  //             const token = req.user.generateToken();
-  //             // If the refresh token exists, then create new one and replace it.
-  //             const newRefreshToken = req.user.generateRefreshToken();
-  //             user.refreshToken[tokenIndex] = { refreshToken: newRefreshToken };
-  //             user.save((err) => {
-  //               if (err) {
-  //                 res.statusCode = 500;
-  //                 res.send(err);
-  //               } else {
-  //               //  setTokenCookie(res, newRefreshToken);
-  //                 const user = req.user.toJSON();
-  //                 res.status(200).send({ token, user });
-  //               }
-  //             });
-  //           }
-  //         } else {
-  //           res.statusCode = 401;
-  //           res.send('Unauthorized');
-  //         }
-  //       },
-  //       err => next(err)
-  //     );
-  //   } catch (err) {
-  //     res.statusCode = 401;
-  //     res.send('Unauthorized');
-  //   }
-  // } else {
-  //   res.statusCode = 401;
-  //   res.send('Unauthorized');
-  // }
-};
+//             if (tokenIndex === -1) {
+//               res.statusCode = 401;
+//               res.send('Unauthorized');
+//             } else {
+//               const token = req.user.generateToken();
+//               // If the refresh token exists, then create new one and replace it.
+//               const newRefreshToken = req.user.generateRefreshToken();
+//               user.refreshToken[tokenIndex] = { refreshToken: newRefreshToken };
+//               user.save((err) => {
+//                 if (err) {
+//                   res.statusCode = 500;
+//                   res.send(err);
+//                 } else {
+//                 //  setTokenCookie(res, newRefreshToken);
+//                   const user = req.user.toJSON();
+//                   res.status(200).send({ token, user });
+//                 }
+//               });
+//             }
+//           } else {
+//             res.statusCode = 401;
+//             res.send('Unauthorized');
+//           }
+//         },
+//         err => next(err)
+//       );
+//     } catch (err) {
+//       res.statusCode = 401;
+//       res.send('Unauthorized');
+//     }
+//   } else {
+//     res.statusCode = 401;
+//     res.send('Unauthorized');
+//   }
+// };
 
 module.exports = {
   getUserController,
-  refreshController,
+  // refreshController,
   registrationController,
   resetPasswordRequestController,
   resetPasswordController

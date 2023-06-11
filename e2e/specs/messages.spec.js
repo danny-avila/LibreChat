@@ -2,20 +2,12 @@ import { expect, test } from '@playwright/test';
 
 const endpoints = ['google', 'openAI', 'azureOpenAI', 'bingAI', 'chatGPTBrowser', 'gptPlugins'];
 
-test.describe('Messaging suite', () => {
-  let myBrowser;
+test.describe.only('Messaging suite', () => {
 
-  test.beforeEach(async ({ browser }) => {
-    myBrowser = await browser.newContext({
-      storageState: 'e2e/auth.json'
-    });
-  });
-
-  test('textbox should be focused after receiving message', async () => {
+  test('textbox should be focused after receiving message', async ({page}) => {
     test.setTimeout(120000);
-    const page = await myBrowser.newPage();
     const message = 'hi';
-    const endpoint = endpoints[0];
+    const endpoint = endpoints[1];
 
     await page.goto('http://localhost:3080/chat/new');
     await page.locator('#new-conversation-menu').click();
@@ -41,5 +33,8 @@ test.describe('Messaging suite', () => {
       return document.activeElement === document.querySelector('[data-testid="text-input"]');
     });
     expect(isTextboxFocused).toBeTruthy();
+
+    //cleanup the conversation
+    await page.getByRole('navigation').getByRole('button').nth(1).click();
   });
 });

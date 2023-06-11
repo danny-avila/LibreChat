@@ -39,13 +39,13 @@ const Content = React.memo(({ content, message }) => {
 
     if (isSubmitting && isLatestMessage) {
       timer1 = setInterval(() => {
-        setCursor('&nbsp;');
+        setCursor('ㅤ');
         timer2 = setTimeout(() => {
           setCursor('█');
         }, 200);
       }, 1000);
     } else {
-      setCursor('&nbsp;');
+      setCursor('ㅤ');
     }
 
     // This is the cleanup function that React will run when the component unmounts
