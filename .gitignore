@@ -52,6 +52,9 @@ bower_components/
 !.env.example
 !.env.test.example
 .env*
+!.env.example
+!.env.test.example
+.env*
 cache.json
 api/data/
 owner.yml
