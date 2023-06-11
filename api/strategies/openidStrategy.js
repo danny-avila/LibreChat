@@ -32,6 +32,7 @@ Issuer.discover(process.env.OPENID_ISSUER)
               email: userinfo.email,
               emailVerified: userinfo.email_verified,
               name: userinfo.name,
+              avatar: ''
               // avatar: userinfo.picture
             });
           } else {
@@ -39,6 +40,7 @@ Issuer.discover(process.env.OPENID_ISSUER)
             user.openidId = userinfo.sub;
             user.username = userinfo.given_name;
             user.name = userinfo.name;
+            user.avatar = '';
             // user.avatar = userinfo.picture;
           }  
 
