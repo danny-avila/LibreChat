@@ -32,14 +32,14 @@ Issuer.discover(process.env.OPENID_ISSUER)
               email: userinfo.email,
               emailVerified: userinfo.email_verified,
               name: userinfo.name,
-              avatar: userinfo.picture
+              // avatar: userinfo.picture
             });
           } else {
             user.provider = 'openid';
             user.openidId = userinfo.sub;
             user.username = userinfo.given_name;
             user.name = userinfo.name;
-            user.avatar = userinfo.picture;
+            // user.avatar = userinfo.picture;
           }  
 
           await user.save();
