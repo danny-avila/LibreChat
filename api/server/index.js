@@ -1,5 +1,4 @@
 const express = require('express');
-const session = require('express-session');
 const connectDb = require('../lib/db/connectDb');
 const migrateDb = require('../lib/db/migrateDb');
 const indexSync = require('../lib/db/indexSync');
@@ -43,12 +42,6 @@ config.validate(); // Validate the config
     require('../strategies/facebookStrategy');
   }
   if (process.env.OPENID_CLIENT_ID && process.env.OPENID_CLIENT_SECRET && process.env.OPENID_ISSUER && process.env.OPENID_SCOPE  && process.env.OPENID_SESSION_SECRET) {
-    app.use(session({
-      secret: process.env.OPENID_SESSION_SECRET,
-      resave: false,
-      saveUninitialized: false
-     }));
-    app.use(passport.session());
     require('../strategies/openidStrategy');
   }
   app.use('/oauth', routes.oauth);
