@@ -112,6 +112,6 @@ Navigate to https://www.mongodb.com/ and Sign In or Create an account
 - Driver = Node.js / Version = 4.1 or later
 - Copy the connection string, fill in your password and remove `&w=majority` from default connection string.
 
-##
+---
 
 ## [Go Back to ReadMe](../../README.md)

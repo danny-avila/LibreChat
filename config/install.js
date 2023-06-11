@@ -77,9 +77,9 @@ const askQuestion = (query) => {
   console.log('Please answer the following questions to setup your environment.');
   // Ask for the app title
   const title = await askQuestion(
-    'Enter the app title (default: "ChatGPT Clone"): '
+    'Enter the app title (default: "LibreChat"): '
   );
-  env['VITE_APP_TITLE'] = title || 'ChatGPT Clone';
+  env['VITE_APP_TITLE'] = title || 'LibreChat';
 
   // Ask for OPENAI_API_KEY
   const key = await askQuestion(

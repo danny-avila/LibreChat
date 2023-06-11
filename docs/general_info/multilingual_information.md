@@ -30,7 +30,8 @@ Om het project op te zetten, volg de instructies in de documentatie. De document
 A projekt beállításához kövesse a használati útmutatót. Az útmutató csak angolul érhető el, így ha nehézséget okoz a megértése, szükség lehet fordító eszközre vagy AI-asszisztensre (pl. ChatGPT).
 #
 Aby skonfigurować projekt, należy postępować zgodnie z instrukcjami zawartymi w dokumentacji. Dokumentacja jest dostępna tylko w języku angielskim, więc w razie trudności w zrozumieniu, może być konieczne użycie narzędzia do tłumaczenia lub asystenta AI (np. ChatGPT).
-##
+
+---
 
 ## [Go Back to ReadMe](../../README.md)
 
