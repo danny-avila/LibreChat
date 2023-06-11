@@ -3,6 +3,8 @@ interface ImportMetaEnv {
   readonly VITE_SERVER_URL_DEV: string;
   readonly VITE_SERVER_URL_PROD: string;
   readonly VITE_SHOW_GOOGLE_LOGIN_OPTION: string;
+  readonly VITE_SHOW_OPENID_LOGIN_OPTION: string;
+  readonly VITE_SHOW_OPENID_LOGIN_NAME: string;
   readonly VITE_CLIENT_URL_DEV: string;
   readonly VITE_CLIENT_URL_PROD: string;
 }
