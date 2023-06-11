@@ -1,7 +1,8 @@
 ﻿# Heroku Deployment
 
- *Thanks to @heathriel!*
 ##
+ 
+ ⚠️ If you have issues, see this discussion first: https://github.com/danny-avila/LibreChat/discussions/339
  
  - To run the ChatGPT-Clone project on a server, you can use cloud hosting platforms like Heroku, DigitalOcean, or AWS. In this response, I'll provide instructions for deploying the project on Heroku. Other platforms will have slightly different deployment processes.
 
