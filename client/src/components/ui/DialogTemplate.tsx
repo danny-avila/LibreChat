@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+import { forwardRef, ReactNode, Ref } from 'react';
 import {
   DialogClose,
   DialogContent,
@@ -6,10 +6,26 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle
-} from './Dialog.tsx';
+} from './';
 import { cn } from '~/utils/';
 
-const DialogTemplate = forwardRef((props, ref) => {
+type SelectionProps = {
+  selectHandler?: () => void;
+  selectClasses?: string;
+  selectText?: string;
+};
+
+type DialogTemplateProps = {
+  title: string;
+  description?: string;
+  main?: ReactNode;
+  buttons?: ReactNode;
+  leftButtons?: ReactNode;
+  selection?: SelectionProps;
+  className?: string;
+};
+
+const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivElement>) => {
   const { title, description, main, buttons, leftButtons, selection, className } = props;
   const { selectHandler, selectClasses, selectText } = selection || {};
 
@@ -18,7 +34,7 @@ const DialogTemplate = forwardRef((props, ref) => {
   return (
     <DialogContent ref={ref} className={cn('shadow-2xl dark:bg-gray-900', className || '')}>
       <DialogHeader>
-        <DialogTitle className="text-gray-800 dark:text-white">{title}</DialogTitle>
+        <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">{title}</DialogTitle>
         {description && (
           <DialogDescription className="text-gray-600 dark:text-gray-300">
             {description}
