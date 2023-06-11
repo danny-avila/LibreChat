@@ -1,72 +1,62 @@
 name: Playwright Tests
 on:
   push:
-    branches: [ main ]
+    branches: [feat/playwright-jest-cicd]
   pull_request:
-    branches: [ main ]
+    branches: [feat/playwright-jest-cicd]
 jobs:
   tests_e2e:
-    name: Run end-to-end tests
+    name: Run Playwright tests
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
-      BINGAI_TOKEN: ${{ secrets.BINGAI_TOKEN }}
-      CHATGPT_TOKEN: ${{ secrets.CHATGPT_TOKEN }}
+      #   BINGAI_TOKEN: ${{ secrets.BINGAI_TOKEN }}
+      #   CHATGPT_TOKEN: ${{ secrets.CHATGPT_TOKEN }}
       MONGO_URI: ${{ secrets.MONGO_URI }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
+      E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      CREDS_KEY: ${{ secrets.CREDS_KEY }}
+      CREDS_IV: ${{ secrets.CREDS_IV }}
+      # NODE_ENV: ${{ vars.NODE_ENV }}
+      DOMAIN_CLIENT: ${{ vars.DOMAIN_CLIENT }}
+      DOMAIN_SERVER: ${{ vars.DOMAIN_SERVER }}
+    # PALM_KEY: ${{ secrets.PALM_KEY }}
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions/setup-node@v3
-      with:
-        node-version: 18
-        cache: 'npm'
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: 'npm'
 
-    - name: Cache API dependencies
-      uses: actions/cache@v2
-      with:
-        path: ./api/node_modules
-        key: api-${{ runner.os }}-node-${{ hashFiles('./api/package-lock.json') }}
-        restore-keys: |
-          api-${{ runner.os }}-node-
+      - name: Install global dependencies
+        run: npm ci --ignore-scripts
 
-    - name: Install API dependencies
-      working-directory: ./api
-      run: npm ci
+      - name: Install API dependencies
+        working-directory: ./api
+        run: npm ci --ignore-scripts
 
-    - name: Cache Client dependencies
-      uses: actions/cache@v2
-      with:
-        path: ./client/node_modules
-        key: client-${{ runner.os }}-node-${{ hashFiles('./client/package-lock.json') }}
-        restore-keys: |
-          client-${{ runner.os }}-node-
+      - name: Install Client dependencies
+        working-directory: ./client
+        run: npm ci --ignore-scripts
 
-    - name: Install Client dependencies
-      working-directory: ./client
-      run: npm ci
+      - name: Build Client
+        run: cd client && npm run build:ci
 
-    - name: Build Client
-      working-directory: ./client
-      run: npm run build
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps && npm install -D @playwright/test
 
-    - name: Install global dependencies
-      run: npm ci
+      - name: Start server
+        run: |
+          npm run backend & sleep 10
 
-    - name: Install Playwright Browsers
-      run: npx playwright install --with-deps
+      - name: Run Playwright tests
+        run: npx playwright test --config=e2e/playwright.config.ts
 
-    - name: Start API server
-      working-directory: ./api
-      run: |
-        npm run start &
-        sleep 10 # Wait for the server to start
-
-    - name: Run Playwright tests
-      run: npx playwright test
-
-    - uses: actions/upload-artifact@v3
-      if: always()
-      with:
-        name: playwright-report
-        path: e2e/playwright-report/
-        retention-days: 30
+      - uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 30

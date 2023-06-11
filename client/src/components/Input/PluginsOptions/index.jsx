@@ -38,7 +38,7 @@ function PluginsOptions() {
     } else {
       setOpacityClass('full-opacity');
     }
-  }, [messagesTree]);
+  }, [messagesTree, advancedMode]);
 
   useEffect(() => {
     if (allPlugins && user) {
