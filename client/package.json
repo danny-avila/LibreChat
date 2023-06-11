@@ -48,6 +48,7 @@
     "class-variance-authority": "^0.6.0",
     "clsx": "^1.2.1",
     "copy-to-clipboard": "^3.3.3",
+    "cross-env": "^7.0.3",
     "crypto-browserify": "^3.12.0",
     "downloadjs": "^1.4.7",
     "esbuild": "0.17.19",
@@ -77,9 +78,7 @@
     "tailwind-merge": "^1.9.1",
     "tailwindcss-animate": "^1.0.5",
     "tailwindcss-radix": "^2.8.0",
-    "url": "^0.11.0",
-    "uuidv4": "^6.2.13",
-    "cross-env": "^7.0.3"
+    "url": "^0.11.0"
   },
   "devDependencies": {
     "@babel/cli": "^7.20.7",
