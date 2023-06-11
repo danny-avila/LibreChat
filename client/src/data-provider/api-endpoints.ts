@@ -74,6 +74,10 @@ export const loginGoogle = () => {
   return '/api/auth/google';
 };
 
+export const loginOpenID = () => {
+  return '/api/auth/openid';
+};
+
 export const refreshToken = () => {
   return '/api/auth/refresh';
 };
