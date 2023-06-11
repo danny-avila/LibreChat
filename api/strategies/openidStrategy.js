@@ -31,7 +31,7 @@ Issuer.discover(process.env.OPENID_ISSUER)
               username: userinfo.given_name,
               email: userinfo.email,
               emailVerified: userinfo.email_verified,
-              name: userinfo.given_name + userinfo.family_name,
+              name: userinfo.given_name + ' ' + userinfo.family_name,
               avatar: ''
               // avatar: userinfo.picture
             });
@@ -39,7 +39,7 @@ Issuer.discover(process.env.OPENID_ISSUER)
             user.provider = 'openid';
             user.openidId = userinfo.sub;
             user.username = userinfo.given_name;
-            user.name = userinfo.given_name + userinfo.family_name;
+            user.name = userinfo.given_name + ' ' + userinfo.family_name;
             user.avatar = '';
             // user.avatar = userinfo.picture;
           }  
