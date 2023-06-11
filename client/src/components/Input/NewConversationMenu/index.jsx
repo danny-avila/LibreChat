@@ -10,17 +10,17 @@ import FileUpload from './FileUpload';
 import getIcon from '~/utils/getIcon';
 import getDefaultConversation from '~/utils/getDefaultConversation';
 import { useDeletePresetMutation, useCreatePresetMutation } from '~/data-provider';
-import { Button } from '../../ui/Button.tsx';
 import {
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuSeparator,
-  DropdownMenuTrigger
-} from '../../ui/DropdownMenu.tsx';
-import { Dialog, DialogTrigger } from '../../ui/Dialog.tsx';
-import DialogTemplate from '../../ui/DialogTemplate';
+  DropdownMenuTrigger,
+  DialogTemplate,
+  Dialog, DialogTrigger
+} from '../../ui/';
 import { cn } from '~/utils/';
 
 import store from '~/store';
