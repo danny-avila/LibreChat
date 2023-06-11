@@ -1,4 +1,5 @@
 export * from './ExportConversation';
+export * from './FileTable/';
 export * from './SettingsTabs/';
 export { default as ClearConvos } from './ClearConvos';
 export { default as Logout } from './Logout';
