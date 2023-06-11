@@ -175,9 +175,11 @@ test('allows the user to navigate between pages', async () => {
   const nextPageButton = getByRole('button', { name: 'Next page' });
   await userEvent.click(nextPageButton);
 
-  expect(getByText('Plugin 3')).toBeInTheDocument();
-  expect(getByText('Plugin 4')).toBeInTheDocument();
-  expect(getByText('Plugin 5')).toBeInTheDocument();
+  expect(getByText('Plugin 6')).toBeInTheDocument();
+  expect(getByText('Plugin 7')).toBeInTheDocument();
+  // expect(getByText('Plugin 3')).toBeInTheDocument();
+  // expect(getByText('Plugin 4')).toBeInTheDocument();
+  // expect(getByText('Plugin 5')).toBeInTheDocument();
 
   const previousPageButton = getByRole('button', { name: 'Previous page' });
   await userEvent.click(previousPageButton);

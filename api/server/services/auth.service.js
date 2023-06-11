@@ -3,7 +3,6 @@ const Token = require('../../models/schema/tokenSchema');
 const sendEmail = require('../../utils/sendEmail');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const DebugControl = require('../../utils/debug.js');
 const { registerSchema } = require('../../strategies/validators');
 const migrateDataToFirstUser = require('../../utils/migrateDataToFirstUser');
 const config = require('../../../config/loader');
