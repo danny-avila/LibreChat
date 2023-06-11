@@ -4,7 +4,7 @@ import { ThemeContext } from '~/hooks/ThemeContext';
 import React, { useState, useContext, useCallback } from 'react';
 import { useClearConversationsMutation } from '~/data-provider';
 
-const ThemeSelector = ({ theme, onChange }: { theme: string, onChange: (value: string) => void }) => (
+export const ThemeSelector = ({ theme, onChange }: { theme: string, onChange: (value: string) => void }) => (
   <div className="flex items-center justify-between">
     <div>Theme</div>
     <select
