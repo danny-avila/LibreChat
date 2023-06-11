@@ -1,4 +1,4 @@
-﻿# Google Search Plugin
+# Google Search Plugin
 Through the plugins endpoint, you can use google search for answers to your questions with assistance from GPT! To get started, you need to get a Google Custom Search API key, and a Google Custom Search Engine ID. You can then define these as follows in your `.env` file:  
 ```env  
 GOOGLE_API_KEY="...."  
@@ -49,7 +49,7 @@ Fill in a name, select to "Search the entire web" and hit "Create":
 ## 6\. Go to [custom-search docs](https://developers.google.com/custom-search/v1/introduction) to get a Google search API key
 
 
-Click "Get a Key":
+## 7\. Click "Get a Key":
 
 ![image](https://user-images.githubusercontent.com/23362597/233267659-f82621f4-1f0b-46bf-8994-be443dd79932.png)
 
@@ -64,6 +64,7 @@ Click "Get a Key":
 
 
 ![image](https://user-images.githubusercontent.com/23362597/233268067-5a6cfaf1-bec0-48b3-8add-70b218fb4264.png)
-##
+
+---
 
 ## [Go Back to ReadMe](../../../README.md)

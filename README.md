@@ -85,7 +85,6 @@ We apologize for any inconvenience caused by these changes. We hope you enjoy th
   * [Project Origin](docs/general_info/project_origin.md)
   * [Multilingual Information](docs/general_info/multilingual_information.md)
   * [Tech Stack](docs/general_info/tech_stack.md)
-  * [Changelog](CHANGELOG.md)
   * [Bing Jailbreak Info](docs/general_info/bing_jailbreak_info.md)
 </details>
 
