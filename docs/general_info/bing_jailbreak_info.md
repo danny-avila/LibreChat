@@ -29,6 +29,6 @@ https://github.com/waylaidwanderer/node-chatgpt-api
 
 https://www.make-safe-ai.com/is-bing-chat-safe/
 
-##
+---
 
 ## [Go Back to ReadMe](../../README.md)
