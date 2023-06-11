@@ -29,6 +29,7 @@ export default defineConfig({
     sourcemap: true,
     outDir: './dist',
     rollupOptions: {
+      external: ['uuid'],
       output: {
         manualChunks: (id) => {
           if (id.includes('node_modules')) {
