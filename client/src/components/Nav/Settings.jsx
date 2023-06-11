@@ -1,8 +1,8 @@
+import { useEffect, useState } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui';
 import { General } from './';
 import { CogIcon } from '~/components/svg';
-import { useEffect, useState } from 'react';
 import { cn } from '~/utils/';
 import { useRecoilValue } from 'recoil';
 import { localize } from '~/localization/Translation';
