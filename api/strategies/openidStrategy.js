@@ -1,5 +1,6 @@
 const passport = require('passport');
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
 const config = require('../../config/loader');
 const domains = config.domains;
@@ -45,6 +46,10 @@ Issuer.discover(process.env.OPENID_ISSUER)
           }  
 
           await user.save();
+          
+          // Generate JWT token
+          const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET);
+          
           done(null, user);
         } catch (err) {
           done(err);
@@ -60,7 +65,8 @@ Issuer.discover(process.env.OPENID_ISSUER)
 
     passport.deserializeUser(async (id, done) => {
       try {
-        const user = await User.findById(id);
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded.userId);
         done(null, user);
       } catch (err) {
         done(err);
