@@ -14,7 +14,8 @@ describe('Tool Handlers', () => {
   let fakeUser;
   let pluginKey = 'dall-e';
   let pluginKey2 = 'wolfram';
-  let sampleTools = [pluginKey, pluginKey2];
+  let initialTools = [pluginKey, pluginKey2];
+  let sampleTools = initialTools;
   let ToolClass = OpenAICreateImage;
   let mockCredential = 'mock-credential';
   const mainPlugin = availableTools.find((tool) => tool.pluginKey === pluginKey);
@@ -56,7 +57,7 @@ describe('Tool Handlers', () => {
 
   describe('validateTools', () => {
     it('returns valid tools given input tools and user authentication', async () => {
-      const validTools = await validateTools(fakeUser._id, sampleTools);
+      const validTools = await validateTools(fakeUser._id, initialTools);
       expect(validTools).toBeDefined();
       console.log('validateTools: validTools', validTools);
       expect(validTools.some((tool) => tool === pluginKey)).toBeTruthy();
@@ -64,7 +65,7 @@ describe('Tool Handlers', () => {
     });
 
     it('removes tools without valid credentials from the validTools array', async () => {
-      const validTools = await validateTools(fakeUser._id, sampleTools);
+      const validTools = await validateTools(fakeUser._id, initialTools);
       expect(validTools.some((tool) => tool.pluginKey === pluginKey2)).toBeFalsy();
     });
 

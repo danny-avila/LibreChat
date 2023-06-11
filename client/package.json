@@ -1,6 +1,6 @@
 {
   "name": "chat-frontend",
-  "version": "0.4.8",
+  "version": "0.5.0",
   "description": "",
   "scripts": {
     "build": "cross-env NODE_ENV=production dotenv -e ../.env -- vite build",

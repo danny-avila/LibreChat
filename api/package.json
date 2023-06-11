@@ -1,6 +1,6 @@
 {
   "name": "chat-backend",
-  "version": "0.4.8",
+  "version": "0.5.0",
   "description": "",
   "scripts": {
     "start": "echo 'please run this from the root directory'",
