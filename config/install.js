@@ -97,6 +97,12 @@ const askQuestion = (query) => {
     env['OPENAI_MODELS'] = "gpt-3.5-turbo,gpt-3.5-turbo-0301,text-davinci-003"
   }
 
+  // Ask about mongodb
+  const mongodb = await askQuestion(
+    'What is your mongodb url? (default: mongodb://127.0.0.1:27017/LibreChat)'
+  );
+  env['MONGO_URI'] = mongodb || 'mongodb://127.0.0.1:27017/LibreChat';
+
   // Update the env file
   loader.writeEnvFile(rootEnvPath, env);
 
