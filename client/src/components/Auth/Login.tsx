@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import LoginForm from './LoginForm';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { SHOW_GOOGLE_LOGIN_OPTION, SHOW_OPENID_LOGIN_OPTION, SHOW_OPENID_LOGIN_NAME, ALLOW_REGISTRATION, DOMAIN_SERVER } from "~/utils/envConstants";
+import { SHOW_GOOGLE_LOGIN_OPTION, ALLOW_OPENID, ALLOW_REGISTRATION, DOMAIN_SERVER } from "~/utils/envConstants";
 
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();
