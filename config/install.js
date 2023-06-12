@@ -5,6 +5,12 @@ const fs = require('fs');
 const { exit } = require('process');
 const { askQuestion } = require('./helpers');
 
+// If we are not in a TTY, lets exit
+if (!process.stdin.isTTY) {
+  console.log('Note: we are not in a TTY, skipping install script.')
+  exit(0);
+}
+
 // Save the original console.log function
 const originalConsoleWarn = console.warn;
 console.warn = () => {};
@@ -13,22 +19,29 @@ console.warn = originalConsoleWarn;
 
 const rootEnvPath = loader.resolve('.env');
 
+// Skip if the env file exists
 if (fs.existsSync(rootEnvPath)) {
-  console.info('Note: it looks like we\'ve already run the first install, skipping env changes.');
-  // lets close this script without causing an error
   exit(0);
 }
 
+// Run the upgrade script if the legacy api/env file exists
+// Todo: remove this in a future version
 if (fs.existsSync(loader.resolve('api/.env'))) {
   console.warn('Upgrade script has yet to run, lets do that!');
   require('./upgrade');
   exit(0);
 }
 
+// Check the example file exists
+if (!fs.existsSync(rootEnvPath + '.example')) {
+  console.red('It looks like the example env file is missing, please complete setup manually.');
+  exit(0);
+}
+
 // Copy the example file
 fs.copyFileSync(rootEnvPath + '.example', rootEnvPath);
 
-// Lets update the secure keys!
+// Update the secure keys!
 loader.addSecureEnvVar(rootEnvPath, 'CREDS_KEY', 32);
 loader.addSecureEnvVar(rootEnvPath, 'CREDS_IV', 16);
 loader.addSecureEnvVar(rootEnvPath, 'JWT_SECRET', 32);
@@ -38,25 +51,6 @@ loader.addSecureEnvVar(rootEnvPath, 'MEILI_MASTER_KEY', 32);
 let env = {};
 
 (async () => {
-  // If the terminal accepts questions, lets ask for the env vars
-  if (!process.stdin.isTTY) {
-    // We could use this to pass in env vars but its untested
-    /*if (process.argv.length > 2) {
-      console.log('Using passed in env vars');
-      process.argv.slice(2).forEach((arg) => {
-        const [key, value] = arg.split('=');
-        env[key] = value;
-      });
-
-      // Write the env file
-      loader.writeEnvFile(rootEnvPath, env);
-      console.log('Env file written successfully!');
-      exit(0);
-    }*/
-    console.log('This terminal does not accept user input, skipping env setup.');
-    exit(0);
-  }
-
   // Lets colour the console
   console.purple('=== LibreChat First Install ===');
   console.blue('Note: Leave blank to use the default value.');
