@@ -1,5 +1,5 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
-import { TemplateTable } from './';
+import { DataTable, columns, files } from './FileTable';
 import { cn } from '~/utils/';
 
 export default function Files({ open, onOpenChange }) {
@@ -12,10 +12,8 @@ export default function Files({ open, onOpenChange }) {
           </DialogTitle>
         </DialogHeader>
         <div className="p-4 sm:p-6 sm:pt-4">
-          <div className="max-h-[28rem] overflow-y-auto rounded-md border border-black/10 dark:border-white/10">
-            <TemplateTable />
-          </div>
-          <div className="mt-5 sm:mt-4"></div>
+          <DataTable columns={columns} data={files} />
+          <div className="mt-5 sm:mt-4" />
         </div>
       </DialogContent>
     </Dialog>

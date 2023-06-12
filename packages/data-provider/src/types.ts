@@ -267,3 +267,9 @@ export type TRefreshTokenResponse = {
 export type TRequestPasswordResetResponse = {
   link: string;
 };
+
+export type File = {
+  name: string;
+  date: number;
+  size: number;
+}

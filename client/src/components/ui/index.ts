@@ -12,6 +12,7 @@ export * from './ModelSelect';
 export * from './Prompt';
 export * from './Slider';
 export * from './Switch';
+export * from './Table';
 export * from './Tabs';
 export * from './Templates';
 export * from './Textarea';
