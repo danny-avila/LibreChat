@@ -4,6 +4,7 @@
 const fs = require('fs');
 const readline = require('readline');
 const { exit } = require('process');
+require('./color-console');
 
 // Save the original console.log function
 const originalConsoleWarn = console.warn;
@@ -45,7 +46,7 @@ const askQuestion = (query) => {
   });
 
   return new Promise((resolve) =>
-    rl.question(query, (ans) => {
+    rl.question("\x1b[34m" + query + "\n> " + "\x1b[0m", (ans) => {
       rl.close();
       resolve(ans);
     })
@@ -73,8 +74,11 @@ const askQuestion = (query) => {
     exit(0);
   }
 
-  console.log('Welcome to the ChatGPT Clone install script!');
-  console.log('Please answer the following questions to setup your environment.');
+  // Lets colour the console
+  console.purple('=== LibreChat First Install ===');
+  console.cyan('Note: Leave blank to use the default value.');
+  console.log(''); // New line
+
   // Ask for the app title
   const title = await askQuestion(
     'Enter the app title (default: "LibreChat"): '
@@ -104,14 +108,15 @@ const askQuestion = (query) => {
   env['MONGO_URI'] = mongodb || 'mongodb://127.0.0.1:27017/LibreChat';
   // Very basic check to make sure they entered a url
   if (!env['MONGO_URI'].includes('://')) {
-    console.warn('Warning: Your mongodb url looks incorrect, please double check it in the `.env` file.');
+    console.orange('Warning: Your mongodb url looks incorrect, please double check it in the `.env` file.');
   }
 
   // Update the env file
   loader.writeEnvFile(rootEnvPath, env);
 
   // We can ask for more here if we want
-
-  console.log('Environment setup complete.');
+  console.log(''); // New line
+  console.green('Success! Please read our docs if you need help setting up the rest of the app.');
+  console.log(''); // New line
 })();
 
