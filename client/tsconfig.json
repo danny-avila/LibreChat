@@ -10,14 +10,14 @@
     "strict": true,
     "forceConsistentCasingInFileNames": false,
     "module": "ESNext",
-    "moduleResolution": "nodenext",
+    "moduleResolution": "node",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noImplicitAny": false,
     "noEmit": false,
     "declaration": true,
     "declarationDir": "./types",
-    "jsx": "react-jsx",
+    "jsx": "preserve",
     "baseUrl": ".",
     "paths": {
       "~/*": ["./src/*"]
@@ -25,7 +25,14 @@
   },
   "types": ["node", "jest", "@testing-library/jest-dom"],
   "exclude": ["node_modules"],
-  "include": ["src/**/*", "setupTests.js", "vite.config.ts", "env.d.ts"],
+  "include": [
+    "src/**/*",
+    "../e2e/**/*",
+    "setupTests.js",
+    "vite.config.ts",
+    "env.d.ts",
+    "../vite.config.ts"
+  ],
   "references": [
     {
       "path": "./tsconfig.node.json"

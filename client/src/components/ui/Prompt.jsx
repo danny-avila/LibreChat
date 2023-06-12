@@ -1,6 +1,4 @@
-import React from 'react';
-
-export default function Prompt({ title, prompt, id }) {
+export default function Prompt({ title, prompt }) {
   return (
     <div
       // onclick="selectPromptTemplate(0)"

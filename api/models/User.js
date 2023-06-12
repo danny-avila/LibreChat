@@ -65,10 +65,9 @@ const userSchema = mongoose.Schema(
       unique: true,
       sparse: true
     },
-    facebookId: {
-      type: String,
-      unique: true,
-      sparse: true
+    plugins: {
+      type: Array,
+      default: []
     },
     refreshToken: {
       type: [Session]
@@ -79,7 +78,7 @@ const userSchema = mongoose.Schema(
 
 //Remove refreshToken from the response
 userSchema.set('toJSON', {
-  transform: function (_doc, ret,) {
+  transform: function (_doc, ret) {
     delete ret.refreshToken;
     return ret;
   }
@@ -95,16 +94,11 @@ userSchema.methods.toJSON = function () {
     avatar: this.avatar,
     role: this.role,
     emailVerified: this.emailVerified,
+    plugins: this.plugins,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt
   };
 };
-
-const isProduction = process.env.NODE_ENV === 'production';
-const secretOrKey = isProduction ? process.env.JWT_SECRET_PROD : process.env.JWT_SECRET_DEV;
-const refreshSecret = isProduction
-  ? process.env.REFRESH_TOKEN_SECRET_PROD
-  : process.env.REFRESH_TOKEN_SECRET_DEV;
 
 userSchema.methods.generateToken = function () {
   const token = jwt.sign(
@@ -114,7 +108,7 @@ userSchema.methods.generateToken = function () {
       provider: this.provider,
       email: this.email
     },
-    secretOrKey,
+    process.env.JWT_SECRET,
     { expiresIn: eval(process.env.SESSION_EXPIRY) }
   );
   return token;
@@ -128,7 +122,7 @@ userSchema.methods.generateRefreshToken = function () {
       provider: this.provider,
       email: this.email
     },
-    refreshSecret,
+    process.env.JWT_REFRESH_SECRET,
     { expiresIn: eval(process.env.REFRESH_TOKEN_EXPIRY) }
   );
   return refreshToken;

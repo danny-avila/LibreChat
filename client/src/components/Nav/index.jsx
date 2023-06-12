@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useContext } from 'react';
+/* eslint-disable react-hooks/exhaustive-deps */
+import { useState, useEffect, useRef, useContext, useCallback } from 'react';
 import NewChat from './NewChat';
 import Panel from '../svg/Panel';
 import Spinner from '../svg/Spinner';
@@ -99,12 +100,12 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   };
 
-  const moveToTop = () => {
+  const moveToTop = useCallback(() => {
     const container = containerRef.current;
     if (container) {
       scrollPositionRef.current = container.scrollTop;
     }
-  };
+  }, [containerRef, scrollPositionRef]);
 
   const nextPage = async () => {
     moveToTop();

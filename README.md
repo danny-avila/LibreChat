@@ -1,4 +1,3 @@
-﻿
 <p align="center">
   <a href="https://discord.gg/NGaa9RPCft">
     <picture>
@@ -10,64 +9,62 @@
 </p>
 
 <p align="center">
-  <a aria-label="Join the community on Discord" href="https://discord.gg/NGaa9RPCft">
-    <img alt="" src="https://img.shields.io/badge/Join%20the%20community-blueviolet.svg?style=for-the-badge&logo=DISCORD&labelColor=000000&logoWidth=20">
+  <a href="https://discord.gg/NGaa9RPCft"> 
+    <img src="https://img.shields.io/discord/1086345563026489514?label=&logo=discord&style=for-the-badge&logoWidth=20&labelColor=000000&color=blueviolet">
   </a>
   <a aria-label="Sponsors" href="#sponsors">
     <img alt="" src="https://img.shields.io/badge/SPONSORS-brightgreen.svg?style=for-the-badge&labelColor=000000&logoWidth=20">
   </a>
 </p>
 
-## All AI Conversations under One Roof. ##
-  Assistant AIs are the future and OpenAI revolutionized this movement with ChatGPT. While numerous UIs exist, this app commemorates the original styling of ChatGPT, with the ability to integrate any current/future AI models, while integrating and improving upon original client features, such as conversation/message search and prompt templates (currently WIP). Through this clone, you can avoid ChatGPT Plus in favor of free or pay-per-call APIs. I will soon deploy a demo of this app. Feel free to contribute, clone, or fork. Currently dockerized.
+## All-In-One AI Conversations with LibreChat ##
+LibreChat brings together the future of assistant AIs with the revolutionary technology of OpenAI's ChatGPT. Celebrating the original styling, LibreChat gives you the ability to integrate multiple AI models. It also integrates and enhances original client features such as conversation and message search, prompt templates and plugins.
+
+With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use free or pay-per-call APIs. We welcome contributions, cloning, and forking to enhance the capabilities of this advanced chatbot platform.
   
-  ![clone3](https://user-images.githubusercontent.com/110412045/230538752-9b99dc6e-cd02-483a-bff0-6c6e780fa7ae.gif)
+<!--   ![clone3](https://user-images.githubusercontent.com/110412045/230538752-9b99dc6e-cd02-483a-bff0-6c6e780fa7ae.gif) -->
+https://github.com/danny-avila/LibreChat/assets/110412045/c1eb0c0f-41f6-4335-b982-84b278b53d59
 
 # Features
 
 - Response streaming identical to ChatGPT through server-sent events
 - UI from original ChatGPT, including Dark mode
-- AI model selection (through 3 endpoints: OpenAI API, BingAI, and ChatGPT Browser)
-- Create, Save, & Share custom presets for OpenAI and BingAI endpoints - [More info on customization here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.3.0)
-- Edit and Resubmit messages just like the official site (with conversation branching)
+- AI model selection (through 5 endpoints: OpenAI API, BingAI, ChatGPT Browser, PaLM2, Plugins)
+- Create, Save, & Share custom presets - [More info on prompt presets here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.3.0)
+- Edit and Resubmit messages with conversation branching
 - Search all messages/conversations - [More info here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.1.0)
-- Integrating plugins soon
+- Plugins now available (including web access, image generation and more)
+
+---
+# ⚠️ **Breaking Changes** ⚠️
+Note: These changes only apply to users who are updating from a previous version of the app.
+
+- We have simplified the configuration process by using a single `.env` file in the root folder instead of separate `/api/.env` and `/client/.env` files.
+- If you had installed a previous version, you can run `npm run upgrade` to automatically copy the content of both files to the new `.env` file and backup the old ones in the root dir.
+- If you are installing the project for the first time, it's recommend you run the installation script `npm run install` to guide your local setup (otherwise continue to use docker)
+- The docker-compose file had some change. Review the [new docker instructions](docs\install\docker_install.md) to make sure you are setup properly. This is still the simplest and most effective method.
+- The upgrade script requires both `/api/.env` and `/client/.env` files to run properly. If you get an error about a missing client env file, just rename the `/client/.env.example` file to `/client/.env` and run the script again.
+- We have renamed the `OPENAI_KEY` variable to `OPENAI_API_KEY` to match the official documentation. The upgrade script should do this automatically for you, but please double-check that your key is correct in the new `.env` file.
+- After running the upgrade script, the `OPENAI_API_KEY` variable might be placed in a different section in the new `.env` file than before. This does not affect the functionality of the app, but if you want to keep it organized, you can look for it near the bottom of the file and move it to its usual section.
 
 ##
-# Sponsors
 
-  Sponsored by <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a>, & <a href="https://github.com/fuegovic"><b>@fuegovic</b></a>
+- For enhanced security, we are now asking for crypto keys for securely storing credentials in the `.env` file. Crypto keys are used to encrypt and decrypt sensitive data such as passwords and access keys. If you don't set them, the app will crash on startup.
+- You need to fill the following variables in the `.env` file with 32-byte (64 characters in hex) or 16-byte (32 characters in hex) values:
+  - `CREDS_KEY` (32-byte)
+  - `CREDS_IV` (16-byte)
+  - `JWT_SECRET` (32-byte, optional but recommended)
+- You can use this replit to generate some crypto keys quickly: https://replit.com/@daavila/crypto#index.js
+- Make sure you keep your crypto keys safe and don't share them with anyone.
 
-##
-
-## **Google's PaLM 2 is now supported as of [v0.4.3](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.3)**
-  
-  ![image](https://github.com/danny-avila/chatgpt-clone/assets/110412045/ec5e8ff3-6c3a-4f25-9687-d8558435d094)
- 
-<details>
-<summary><strong>How to Setup PaLM 2 (via Google Cloud Vertex AI API)</strong></summary>
-- Enable the Vertex AI API on Google Cloud:
-- - https://console.cloud.google.com/vertex-ai
-- Create a Service Account:
-- - https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts/create?walkthrough_id=iam--create-service-account#step_index=1
-- Make sure to click 'Create and Continue' to give at least the 'Vertex AI User' role.
-- Create a JSON key, rename as 'auth.json' and save it in /api/data/.
-
-**Alternatively**
-
-- In your ./api/.env file, set PALM_KEY as "user_provided" to allow the user to provide a Service Account key JSON from the UI.
-- They will follow the steps above except for renaming the file, simply importing the JSON when prompted.
-- The key is sent to the server but never saved except in your local storage
-
-**Note:**
-
-- Vertex AI does not (yet) support response streaming for text generations, so response may seem to take long when generating a lot of text.
-- Text streaming is simulated
-</details>
+We apologize for any inconvenience caused by these changes. We hope you enjoy the new and improved version of our app!
 
 ---
 
-## [Read all Latest Updates here](CHANGELOG.md)
+## Changelog 
+- Keep up with the latest updates by visiting the releases page - [Releases](https://github.com/danny-avila/LibreChat/releases)
+
+---
 
 <h1>Table of Contents</h1>
 
@@ -78,6 +75,7 @@
   * [Linux Install](docs/install/linux_install.md)
   * [Mac Install](docs/install/mac_install.md)
   * [Windows Install](docs/install/windows_install.md)
+  * [APIs and Tokens](docs/install/apis_and_tokens.md)
 </details>
 
 <details>
@@ -86,14 +84,19 @@
   * [Code of Conduct](CODE_OF_CONDUCT.md)
   * [Project Origin](docs/general_info/project_origin.md)
   * [Multilingual Information](docs/general_info/multilingual_information.md)
-  * [Roadmap](docs/general_info/roadmap.md)
   * [Tech Stack](docs/general_info/tech_stack.md)
-  * [Changelog](CHANGELOG.md)
   * [Bing Jailbreak Info](docs/general_info/bing_jailbreak_info.md)
 </details>
 
 <details>
   <summary><strong>Features</strong></summary>
+
+  * **Plugins**
+    * [Introduction](docs/features/plugins/introduction.md)
+    * [Google](docs/features/plugins/google_search.md)
+    * [Stable Diffusion](docs/features/plugins/stable_diffusion.md)
+    * [Wolfram](docs/features/plugins/wolfram.md)
+    * [Make Your Own Plugin](docs/features/plugins/make_your_own.md)
 
   * [User Auth System](docs/features/user_auth_system.md)
   * [Proxy](docs/features/proxy.md)
@@ -117,15 +120,25 @@
 </details>
 
 
-##
+---
 
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=danny-avila/chatgpt-clone&type=Date)](https://star-history.com/#danny-avila/chatgpt-clone&Date)
 
+---
+
+## Sponsors
+
+  Sponsored by <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a>, & <a href="https://github.com/fuegovic"><b>@fuegovic</b></a>
+
+---
+
 ## Contributors
 Contributions and suggestions bug reports and fixes are welcome!
 Please read the documentation before you do!
+
+---
 
 For new features, components, or extensions, please open an issue and discuss before sending a PR. 
 

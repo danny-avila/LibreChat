@@ -26,8 +26,16 @@ export default function Messages({ isSearchView = false }) {
 
   const { screenshotTargetRef } = useScreenshot();
 
-  // const models = useRecoilValue(store.models) || [];
-  // const modelName = models.find(element => element.model == model)?.name;
+  const handleScroll = () => {
+    const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
+    const diff = Math.abs(scrollHeight - scrollTop);
+    const percent = Math.abs(clientHeight - diff) / clientHeight;
+    if (percent <= 0.2) {
+      setShowScrollButton(false);
+    } else {
+      setShowScrollButton(true);
+    }
+  };
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -47,6 +55,7 @@ export default function Messages({ isSearchView = false }) {
     };
   }, [_messagesTree]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const scrollToBottom = useCallback(
     throttle(
       () => {
@@ -58,17 +67,6 @@ export default function Messages({ isSearchView = false }) {
     ),
     [messagesEndRef]
   );
-
-  const handleScroll = () => {
-    const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
-    const diff = Math.abs(scrollHeight - scrollTop);
-    const percent = Math.abs(clientHeight - diff) / clientHeight;
-    if (percent <= 0.2) {
-      setShowScrollButton(false);
-    } else {
-      setShowScrollButton(true);
-    }
-  };
 
   let timeoutId = null;
   const debouncedHandleScroll = () => {

@@ -6,6 +6,7 @@ const tokenRefreshHints = atom({
 });
 
 const useToken = (endpoint) => {
+  // eslint-disable-next-line no-unused-vars
   const [hints, setHints] = useRecoilState(tokenRefreshHints);
   const getToken = () => localStorage.getItem(`${endpoint}_token`);
   const saveToken = (value) => {

@@ -1,22 +1,25 @@
 {
   "name": "LibreChat",
-  "version": "0.4.8",
+  "version": "0.5.0",
   "description": "",
   "workspaces": [
     "api",
     "client"
   ],
   "scripts": {
-    "backend": "cd api && npm run start",
-    "backend-dev": "cd api && npm run server-dev",
+    "install": "node config/install.js",
+    "upgrade": "node config/upgrade.js",
+    "backend": "cross-env NODE_ENV=production node api/server/index.js",
+    "backend-dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
     "frontend": "cd client && npm run build",
     "frontend-dev": "cd client && npm run dev",
-    "e2e": "playwright test --config=e2e/playwright.config.js",
+    "e2e": "playwright test --config=e2e/playwright.config.local.ts",
+    "e2e:ci": "playwright test --config=e2e/playwright.config.ts",
+    "e2e:debug": "cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
+    "test:client": "cd client && npm run test",
+    "test:api": "cd api && npm run test",
     "e2e:update": "playwright test --config=e2e/playwright.config.js --update-snapshots",
-    "e2e:debug": "cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.js",
     "e2e:report": "npx playwright show-report e2e/playwright-report",
-    "e2e:auth": "npx playwright codegen --save-storage=e2e/auth.json http://localhost:3080/",
-    "e2e:test-auth": "npx playwright codegen --load-storage=e2e/auth.json http://localhost:3080/",
     "prepare": "husky install",
     "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\""
   },
@@ -30,6 +33,9 @@
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
+  "dependencies": {
+    "langchain": "^0.0.91"
+  },
   "devDependencies": {
     "@playwright/test": "^1.32.1",
     "@typescript-eslint/eslint-plugin": "^5.59.6",
@@ -44,6 +50,7 @@
     "eslint-plugin-react": "^7.32.2",
     "eslint-plugin-react-hooks": "^4.6.0",
     "husky": "^8.0.0",
+    "jest": "^29.5.0",
     "lint-staged": "^13.2.2",
     "prettier": "^2.8.8",
     "prettier-eslint": "^15.0.1",
