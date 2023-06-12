@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useRegisterUserMutation, TRegisterUser } from '~/data-provider';
-import { SHOW_GOOGLE_LOGIN_OPTION, SHOW_OPENID_LOGIN_OPTION, SHOW_OPENID_LOGIN_NAME, DOMAIN_SERVER } from '~/utils/envConstants';
+import { SHOW_GOOGLE_LOGIN_OPTION, ALLOW_OPENID, DOMAIN_SERVER } from '~/utils/envConstants';
 
 function Registration() {
   const navigate = useNavigate();
