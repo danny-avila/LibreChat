@@ -102,6 +102,10 @@ const askQuestion = (query) => {
     'What is your mongodb url? (default: mongodb://127.0.0.1:27017/LibreChat)'
   );
   env['MONGO_URI'] = mongodb || 'mongodb://127.0.0.1:27017/LibreChat';
+  // Very basic check to make sure they entered a url
+  if (!env['MONGO_URI'].includes('://')) {
+    console.warn('Warning: Your mongodb url looks incorrect, please double check it in the `.env` file.');
+  }
 
   // Update the env file
   loader.writeEnvFile(rootEnvPath, env);
