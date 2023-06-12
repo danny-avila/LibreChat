@@ -2,9 +2,8 @@
  * Install script: WIP
  */
 const fs = require('fs');
-const readline = require('readline');
 const { exit } = require('process');
-require('./color-console');
+const { askQuestion } = require('./helpers');
 
 // Save the original console.log function
 const originalConsoleWarn = console.warn;
@@ -38,22 +37,6 @@ loader.addSecureEnvVar(rootEnvPath, 'MEILI_MASTER_KEY', 32);
 // Init env
 let env = {};
 
-// Function to ask for user input
-const askQuestion = (query) => {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) =>
-    rl.question("\x1b[34m" + query + "\n> " + "\x1b[0m", (ans) => {
-      rl.close();
-      resolve(ans);
-    })
-  );
-};
-
-
 (async () => {
   // If the terminal accepts questions, lets ask for the env vars
   if (!process.stdin.isTTY) {
@@ -76,7 +59,7 @@ const askQuestion = (query) => {
 
   // Lets colour the console
   console.purple('=== LibreChat First Install ===');
-  console.cyan('Note: Leave blank to use the default value.');
+  console.blue('Note: Leave blank to use the default value.');
   console.log(''); // New line
 
   // Ask for the app title
@@ -111,6 +94,18 @@ const askQuestion = (query) => {
     console.orange('Warning: Your mongodb url looks incorrect, please double check it in the `.env` file.');
   }
 
+  // Lets ask about open registration
+  const openReg = await askQuestion(
+    'Do you want to allow user registration (y/n)? Default: y'
+  );
+  if (openReg === 'n' || openReg === 'no') {
+    env['ALLOW_REGISTRATION'] = 'false';
+    // Lets tell them about how to create an account:
+    console.red('Note: You can create an account by running: `npm run create-user <email> <name> <username>`');
+    // sleep for 1 second so they can read this
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+
   // Update the env file
   loader.writeEnvFile(rootEnvPath, env);
 
@@ -119,4 +114,3 @@ const askQuestion = (query) => {
   console.green('Success! Please read our docs if you need help setting up the rest of the app.');
   console.log(''); // New line
 })();
-
