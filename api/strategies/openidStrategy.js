@@ -55,7 +55,7 @@ Issuer.discover(process.env.OPENID_ISSUER)
 
     passport.use('openid', openidLogin);
   
-    const requireJwtAuth = passport.authenticate('openid', { session: false });
+    const requireJwtAuth = passport.authenticate('openid', { session: true });
 
     module.exports = requireJwtAuth;
   })
