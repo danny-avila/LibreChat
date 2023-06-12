@@ -77,7 +77,7 @@ function Login() {
             </div>
           </>
         )}
-        {SHOW_OPENID_LOGIN_OPTION && (
+        {ALLOW_OPENID && (
           <>
             <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
               <div className="absolute bg-white px-3 text-xs">Or</div>
@@ -88,7 +88,7 @@ function Login() {
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
                 href={`${DOMAIN_SERVER}/oauth/openid`}
               >
-              <p>{SHOW_OPENID_LOGIN_NAME}</p>
+              <p>{ALLOW_OPENID}</p>
               </a>
             </div>
           </>
