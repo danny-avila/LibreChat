@@ -57,6 +57,8 @@ Issuer.discover(process.env.OPENID_ISSUER)
       }
     );
 
+    passport.use('openid', openidLogin);
+
     app.use((req, res, next) => {
       const authHeader = req.headers.authorization;
       if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -76,5 +78,3 @@ Issuer.discover(process.env.OPENID_ISSUER)
   .catch(err => {
     console.error(err);
   });
-
-passport.use('openid', openidLogin);
