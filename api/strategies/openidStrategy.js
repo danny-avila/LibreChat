@@ -47,9 +47,6 @@ Issuer.discover(process.env.OPENID_ISSUER)
 
           await user.save();
           
-          // Generate JWT token
-          const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET);
-          
           done(null, user);
         } catch (err) {
           done(err);
@@ -59,21 +56,6 @@ Issuer.discover(process.env.OPENID_ISSUER)
 
     passport.use('openid', openidLogin);
 
-    app.use((req, res, next) => {
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.substring(7);
-        try {
-          const decoded = jwt.verify(token, process.env.JWT_SECRET);
-          req.user = decoded;
-          next();
-        } catch (err) {
-          res.sendStatus(401);
-        }
-      } else {
-        res.sendStatus(401);
-      }
-    });
   })
   .catch(err => {
     console.error(err);
