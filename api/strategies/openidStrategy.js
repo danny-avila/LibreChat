@@ -76,3 +76,5 @@ Issuer.discover(process.env.OPENID_ISSUER)
   .catch(err => {
     console.error(err);
   });
+
+passport.use('openid', openidLogin);
