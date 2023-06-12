@@ -1,0 +1,13 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "pipeline": {
+    "build": {
+      "outputs": ["dist/**"]
+    },
+    "watch": {
+      "outputs": ["dist/**", "client/dist/**"]
+    },
+
+    "lint": {}
+  }
+}

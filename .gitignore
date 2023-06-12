@@ -39,6 +39,7 @@ meili_data/
 api/node_modules/
 client/node_modules/
 bower_components/
+.turbo
 
 # Floobits
 .floo

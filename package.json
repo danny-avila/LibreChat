@@ -13,6 +13,7 @@
     "backend-dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
     "frontend": "cd client && npm run build",
     "frontend-dev": "cd client && npm run dev",
+    "turbo": "dotenv -- turbo watch --parallel",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
     "e2e:ci": "playwright test --config=e2e/playwright.config.ts",
     "e2e:debug": "cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
