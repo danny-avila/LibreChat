@@ -9,6 +9,7 @@
   "scripts": {
     "install": "node config/install.js",
     "upgrade": "node config/upgrade.js",
+    "create-user": "node config/create-user.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
     "backend-dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
     "frontend": "cd client && npm run build",
