@@ -13,6 +13,9 @@ import Logout from './Logout';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { cn } from '~/utils/';
 import DotsIcon from '../svg/DotsIcon';
+import SubscribeForm from "../Stripe/SubscribeForm.tsx";
+import { DialogOverlay, DialogContent } from "@reach/dialog";
+import "@reach/dialog/styles.css";
 
 import store from '~/store';
 
@@ -21,6 +24,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
   const [showClearConvos, setShowClearConvos] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const { user } = useAuthContext();
+  const [showSubscribeModal, setShowSubscribeModal] = useState(false);
 
   const conversation = useRecoilValue(store.conversation) || {};
 
@@ -33,11 +37,36 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
     if (exportable) setShowExports(true);
   };
 
+  console.log(user)
+  
   return (
     <>
       <Menu as="div" className="group relative">
         {({ open }) => (
           <>
+            {/* Add the "Go Pro" button */}
+            <button
+              className="bg-indigo-600 text-white px-3 py-2 rounded w-full"
+              onClick={() => setShowSubscribeModal(true)}
+            >
+              Go Pro
+            </button>
+
+            {/* Add the SubscribeForm dialog */}
+            {showSubscribeModal && (
+              <DialogOverlay isOpen={showSubscribeModal} onDismiss={() => setShowSubscribeModal(false)} className="z-50">
+                <DialogContent className="w-full max-w-lg p-6 mx-auto my-20 bg-white dark:bg-black-500 rounded-lg">
+                  <button
+                    className="float-right text-xl font-bold"
+                    onClick={() => setShowSubscribeModal(false)}
+                  >
+                    &times;
+                  </button>
+                  <h2 className="text-2xl font-bold mb-6">Upgrade to Pro</h2>
+                  <SubscribeForm />
+                </DialogContent>
+              </DialogOverlay>
+            )}
             <Menu.Button
               className={cn(
                 'group-ui-open:bg-gray-800 flex w-full items-center gap-2.5 rounded-md px-3 py-3 text-sm transition-colors duration-200 hover:bg-gray-800',

@@ -17,7 +17,6 @@ config.validate(); // Validate the config
 
 (async () => {
   await connectDb();
-  console.log('Connected to MongoDB');
   await migrateDb();
   await indexSync();
 

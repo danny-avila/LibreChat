@@ -1,15 +1,40 @@
 require("dotenv").config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+const User = require('../models/User');
 
 async function updateSubscriptionStatus(subscription) {
-  // Add your logic to update subscription status in your database
-  console.log(`Updating subscription status for ${subscription.id}`);
+  // Find the user with the given subscription ID
+  const user = await User.findOne({ stripeSubscriptionId: subscription.id });
+
+  // Update the user's subscription status
+  if (user) {
+    await User.findByIdAndUpdate(user._id, {
+      subscriptionStatus: subscription.status,
+    });
+    console.log(`Updated subscription status for User ${user.id}`);
+  } else {
+    console.log("User not found with the given subscription ID.");
+  }
 }
 
 async function handleSuccessfulPayment(paymentInvoice) {
-  // Add your logic to handle successful payments, e.g., update the database, send confirmation emails, etc.
-  console.log(`Payment succeeded for invoice ID: ${paymentInvoice.id}`);
+  // Get Subscription details linked with this invoice
+  const subscription = await stripe.subscriptions.retrieve(paymentInvoice.subscription);
+
+  // Get the user to update
+  const user = await User.findOne({ stripeSubscriptionId: subscription.id });
+
+  // Update the user's subscription status
+  if (user) {
+    await User.findByIdAndUpdate(user._id, {
+      subscriptionStatus: subscription.status,
+    });
+
+    console.log(`Payment succeeded for invoice ID: ${paymentInvoice.id}`);
+  } else {
+    console.log("User not found with the given subscription ID.");
+  }
 }
 
 function handleStripeWebhook() {

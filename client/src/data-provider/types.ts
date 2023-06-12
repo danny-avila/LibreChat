@@ -144,6 +144,7 @@ export type TUser = {
   plugins: string[];
   createdAt: string;
   updatedAt: string;
+  subscriptionStatus: 'active' | 'canceled' | 'paused' | 'unsubscribed'; // Add this line
 };
 
 export type TGetConversationsResponse = {

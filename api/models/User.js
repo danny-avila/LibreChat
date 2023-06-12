@@ -71,7 +71,22 @@ const userSchema = mongoose.Schema(
     },
     refreshToken: {
       type: [Session]
-    }
+    },
+    stripeCustomerId: {
+      type: String,
+      unique: true,
+      sparse: true
+    },
+    stripeSubscriptionId: {
+      type: String,
+      unique: true,
+      sparse: true
+    },
+    subscriptionStatus: {
+      type: String,
+      enum: ['active', 'canceled', 'paused', 'unsubscribed'],
+      default: 'unsubscribed'
+    },
   },
   { timestamps: true }
 );
@@ -96,7 +111,10 @@ userSchema.methods.toJSON = function () {
     emailVerified: this.emailVerified,
     plugins: this.plugins,
     createdAt: this.createdAt,
-    updatedAt: this.updatedAt
+    updatedAt: this.updatedAt,
+    stripeCustomerId: this.stripeCustomerId, // Add this line
+    stripeSubscriptionId: this.stripeSubscriptionId, // Add this line
+    subscriptionStatus: this.subscriptionStatus // Add this line
   };
 };
 
