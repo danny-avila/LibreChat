@@ -66,7 +66,7 @@ Ok, now that you have set up the SERVER, you will need to get all your tokens/ap
 
 # PreReqs:
 - Make sure you have all the needed variables for the following before moving forward
-## [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
+## [Get Your API keys and Tokens](../install/apis_and_tokens.md) (Required)
 - You must set up at least one of these tokens or APIs to run the app.
 ## [User/Auth System](../features/user_auth_system.md) (Optional)
 - How to set up the user/auth system and Google login.
@@ -75,7 +75,7 @@ Ok, now that you have set up the SERVER, you will need to get all your tokens/ap
 
 # Using Docker to Install the Service
 
-1. **Recommended: [Docker Install](docker_install.md)**
+1. **Recommended: [Docker Install](../install/docker_install.md)**
 From the *server* commandline (as your user, not root):
 
 ```
