@@ -57,5 +57,11 @@
     "prettier-eslint": "^15.0.1",
     "prettier-eslint-cli": "^7.1.0",
     "prettier-plugin-tailwindcss": "^0.2.2"
+  },
+  "nodemonConfig": {
+    "ignore": [
+      "api/data/",
+      "data"
+    ]
   }
 }
