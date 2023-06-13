@@ -1,7 +1,6 @@
 const mongoose = require('mongoose');
 const { Conversation } = require('../../models/Conversation');
 const { getMessages } = require('../../models/');
-const User = require('../../models/User');
 
 const migrateToStrictFollowParentMessageIdChain = async () => {
   try {
@@ -106,33 +105,12 @@ const migrateToSupportBetterCustomization = async () => {
   }
 };
 
-async function updateUserSubscriptionStatus() {
-  try {
-    await User.updateMany(
-      {}, // Update all documents
-      { $set: { subscriptionStatus: 'unsubscribed' } }, // Set subscriptionStatus field to 'unsubscribed'
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-
-    // Log the newly added fields
-    const users = await User.find({});
-    console.log('Updated user subscription fields:');
-    users.forEach((user) => {
-      console.log(`UserID: ${user._id}, Stripe Customer ID: ${user.stripeCustomerId}, Stripe Subscription ID: ${user.stripeSubscriptionId}, Subscription Status: ${user.subscriptionStatus}`);
-    });
-  } catch (error) {
-    console.error('Error updating user subscription status:', error);
-    throw error;
-  }
-}
-
 async function migrateDb() {
   let ret = [];
   ret[0] = await migrateToStrictFollowParentMessageIdChain();
   ret[1] = await migrateToSupportBetterCustomization();
 
   const isMigrated = !!ret.find((element) => !element?.noNeed);
-  await updateUserSubscriptionStatus(); 
 
   if (!isMigrated) console.log('[Migrate] Nothing to migrate');
 }
