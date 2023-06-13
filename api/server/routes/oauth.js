@@ -62,4 +62,29 @@ router.get(
   }
 );
 
+router.get(
+  '/openid',
+  passport.authenticate('openid', {
+    session: false
+  })
+);
+
+router.get(
+  '/openid/callback',
+  passport.authenticate('openid', {
+    failureRedirect: `${domains.client}/login`,
+    failureMessage: true,
+    session: false
+  }),
+  (req, res) => {
+    const token = req.authInfo; 
+    res.cookie('token', token, {
+      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
+      httpOnly: false,
+      secure: isProduction
+    });
+    res.redirect(domains.client);
+  }
+);
+
 module.exports = router;
