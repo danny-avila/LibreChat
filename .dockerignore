@@ -1,5 +1,3 @@
 **/node_modules
-api/.env
-.env
 client/dist/images
 data-node

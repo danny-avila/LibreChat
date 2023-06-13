@@ -1,21 +1,18 @@
 # Base node image
 FROM node:19-alpine AS node
 COPY . /app
+# Copy .env file
+COPY .env .env
 # Install dependencies
 WORKDIR /app
 RUN npm ci
 
-# Frontend variables as build args
-ARG VITE_APP_TITLE
-ARG VITE_SHOW_GOOGLE_LOGIN_OPTION
-
-# You will need to add your VITE variables to the docker-compose file
-ENV VITE_APP_TITLE=$VITE_APP_TITLE
-ENV VITE_SHOW_GOOGLE_LOGIN_OPTION=$VITE_SHOW_GOOGLE_LOGIN_OPTION
-
 # React client build
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 RUN npm run frontend
+
+# Remove .env file after build
+RUN rm .env
 
 # Node API setup
 EXPOSE 3080
