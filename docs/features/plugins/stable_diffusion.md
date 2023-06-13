@@ -45,9 +45,17 @@ To use Stable Diffusion with this project, you will need to download and install
 ## 3. Run Stable Diffusion (either .sh or .bat file according to your operating system)
 
 ## 4. In the app, select the plugins endpoint, open the plugins store, and install Stable Diffusion
-    - You will need the stable diffusion webui API URL, which should be `http://127.0.0.1:7860`
-    - Alternatively: you (the admin) can set the value in `\.env` to bypass the prompt
-        - `SD_WEBUI_URL=http://127.0.0.1:7860`
+### Local Install
+- You will need the stable diffusion webui API URL, which should be `http://127.0.0.1:7860`
+- Alternatively: you (the admin) can set the value in `\.env` to bypass the prompt
+  - `SD_WEBUI_URL=http://127.0.0.1:7860`
+### Docker Install
+- Use `SD_WEBUI_URL=http://host.docker.internal:7860` in the `.env` file or in the plugins store
+- Uncomment the following in `docker-compose.yml` file:
+```yaml
+ extra_hosts: # if you are running APIs on docker you need access to, you will need to uncomment this line and next
+     - "host.docker.internal:host-gateway"
+```
 
 ![image](https://github.com/danny-avila/chatgpt-clone/assets/110412045/e33e0133-66c1-4781-9ca8-bbd8c174579c)
 ![image](https://github.com/danny-avila/chatgpt-clone/assets/110412045/a075e5b9-d648-405d-96cf-178af792aabc)
