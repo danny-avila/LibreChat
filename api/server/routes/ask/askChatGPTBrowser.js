@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { getChatGPTBrowserModels } = require('../endpoints');
+// const { getChatGPTBrowserModels } = require('../endpoints');
 const { browserClient } = require('../../../app/');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
@@ -38,9 +38,9 @@ router.post('/', requireJwtAuth, async (req, res) => {
     token: req.body?.token ?? null
   };
 
-  const availableModels = getChatGPTBrowserModels();
-  if (availableModels.find((model) => model === endpointOption.model) === undefined)
-    return handleError(res, { text: 'Illegal request: model' });
+  // const availableModels = getChatGPTBrowserModels();
+  // if (availableModels.find((model) => model === endpointOption.model) === undefined)
+  //   return handleError(res, { text: 'Illegal request: model' });
 
   console.log('ask log', {
     userMessage,
