@@ -45,7 +45,7 @@ To use Stable Diffusion with this project, you will need to download and install
 ## 3. Run Stable Diffusion (either .sh or .bat file according to your operating system)
 
 ## 4. In the app, select the plugins endpoint, open the plugins store, and install Stable Diffusion
-**Note: The default port for Gradio is 7860. If you changed it, please update the value accordingly.**
+### **Note: The default port for Gradio is `7860`. If you changed it, please update the value accordingly.**
 ### Docker Install
 - Use `SD_WEBUI_URL=http://host.docker.internal:7860` in the `.env` file 
 - Or `http://host.docker.internal:7860` from the webui
