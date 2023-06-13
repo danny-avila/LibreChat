@@ -9,6 +9,7 @@
   "scripts": {
     "install": "node config/install.js",
     "upgrade": "node config/upgrade.js",
+    "create-user": "node config/create-user.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
     "backend-dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
     "frontend": "cd client && npm run build",
@@ -20,7 +21,7 @@
     "test:api": "cd api && npm run test",
     "e2e:update": "playwright test --config=e2e/playwright.config.js --update-snapshots",
     "e2e:report": "npx playwright show-report e2e/playwright-report",
-    "prepare": "husky install",
+    "prepare": "node config/prepare.js",
     "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\""
   },
   "repository": {
@@ -61,5 +62,11 @@
     "axios": "^1.4.0",
     "stripe": "^12.9.0",
     "langchain": "^0.0.91"
+  },
+  "nodemonConfig": {
+    "ignore": [
+      "api/data/",
+      "data"
+    ]
   }
 }

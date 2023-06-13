@@ -3,7 +3,7 @@ const router = express.Router();
 const { availableTools } = require('../../app/langchain/tools');
 
 const getOpenAIModels = () => {
-  let models = ['gpt-4', 'text-davinci-003', 'gpt-3.5-turbo', 'gpt-3.5-turbo-0301'];
+  let models = ['gpt-4', 'gpt-4-0613', 'gpt-3.5-turbo', 'gpt-3.5-turbo-16k', 'gpt-3.5-turbo-0613', 'gpt-3.5-turbo-0301', 'text-davinci-003' ];
   if (process.env.OPENAI_MODELS) models = String(process.env.OPENAI_MODELS).split(',');
 
   return models;
@@ -12,6 +12,13 @@ const getOpenAIModels = () => {
 const getChatGPTBrowserModels = () => {
   let models = ['text-davinci-002-render-sha', 'gpt-4'];
   if (process.env.CHATGPT_MODELS) models = String(process.env.CHATGPT_MODELS).split(',');
+
+  return models;
+};
+
+const getPluginModels = () => {
+  let models = ['gpt-4', 'gpt-4-0613', 'gpt-3.5-turbo', 'gpt-3.5-turbo-16k', 'gpt-3.5-turbo-0613', 'gpt-3.5-turbo-0301'];
+  if (process.env.PLUGIN_MODELS) models = String(process.env.PLUGIN_MODELS).split(',');
 
   return models;
 };
@@ -38,7 +45,7 @@ router.get('/', async function (req, res) {
 
   const google =
     key || palmUser
-      ? { userProvide: palmUser, availableModels: ['chat-bison', 'text-bison'] }
+      ? { userProvide: palmUser, availableModels: ['chat-bison', 'text-bison', 'codechat-bison'] }
       : false;
   const azureOpenAI = !!process.env.AZURE_OPENAI_API_KEY;
   const apiKey = process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_API_KEY;
@@ -46,7 +53,7 @@ router.get('/', async function (req, res) {
     ? { availableModels: getOpenAIModels(), userProvide: apiKey === 'user_provided' }
     : false;
   const gptPlugins = apiKey
-    ? { availableModels: ['gpt-4', 'gpt-3.5-turbo', 'gpt-3.5-turbo-0301'], availableTools }
+    ? { availableModels: getPluginModels(), availableTools }
     : false;
   const bingAI = process.env.BINGAI_TOKEN
     ? { userProvide: process.env.BINGAI_TOKEN == 'user_provided' }

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { titleConvo } = require('../../../app/');
-const { getOpenAIModels } = require('../endpoints');
+// const { getOpenAIModels } = require('../endpoints');
 const ChatAgent = require('../../../app/langchain/ChatAgent');
 const { validateTools } = require('../../../app/langchain/tools');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
@@ -63,10 +63,10 @@ router.post('/', requireJwtAuth, async (req, res) => {
     agentOptions
   };
 
-  const availableModels = getOpenAIModels();
-  if (availableModels.find((model) => model === endpointOption.modelOptions.model) === undefined) {
-    return handleError(res, { text: `Illegal request: model` });
-  }
+  // const availableModels = getOpenAIModels();
+  // if (availableModels.find((model) => model === endpointOption.modelOptions.model) === undefined) {
+  //   return handleError(res, { text: `Illegal request: model` });
+  // }
 
   // console.log('ask log', {
   //   text,

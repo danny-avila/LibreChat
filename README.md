@@ -105,6 +105,7 @@ We apologize for any inconvenience caused by these changes. We hope you enjoy th
 <details>
   <summary><strong>Cloud Deployment</strong></summary>
 
+  * [Hetzner](docs/deployment/HetznerUbuntuSetup.md)
   * [Heroku](docs/deployment/heroku.md)
 </details>
 
@@ -130,7 +131,7 @@ We apologize for any inconvenience caused by these changes. We hope you enjoy th
 
 ## Sponsors
 
-  Sponsored by <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a>, & <a href="https://github.com/fuegovic"><b>@fuegovic</b></a>
+  Sponsored by <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a>, <a href="https://github.com/fuegovic"><b>@fuegovic</b></a> & <a href="https://github.com/SphaeroX"><b>@SphaeroX</b></a>
 
 ---
 
