@@ -21,7 +21,7 @@
     "test:api": "cd api && npm run test",
     "e2e:update": "playwright test --config=e2e/playwright.config.js --update-snapshots",
     "e2e:report": "npx playwright show-report e2e/playwright-report",
-    "prepare": "husky install",
+    "prepare": "test \"$NODE_ENV\" != \"CI\" && husky install",
     "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\""
   },
   "repository": {
