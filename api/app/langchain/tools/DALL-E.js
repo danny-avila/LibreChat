@@ -2,7 +2,7 @@
 // To use this tool, you must pass in a configured OpenAIApi object.
 const fs = require('fs');
 const { Configuration, OpenAIApi } = require('openai');
-const { genAzureEndpoint } = require('../../../utils/genAzureEndpoints');
+// const { genAzureEndpoint } = require('../../../utils/genAzureEndpoints');
 const { Tool } = require('langchain/tools');
 const saveImageFromUrl = require('./saveImageFromUrl');
 const path = require('path');
@@ -11,31 +11,31 @@ class OpenAICreateImage extends Tool {
   constructor(fields = {}) {
     super();
 
-    let apiKey = fields.OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-    let azureKey = fields.AZURE_OPENAI_API_KEY || process.env.AZURE_OPENAI_API_KEY;
+    let apiKey = fields.DALLE_API_KEY || this.getApiKey();
+    // let azureKey = fields.AZURE_OPENAI_API_KEY || process.env.AZURE_OPENAI_API_KEY;
     let config = { apiKey };
 
-    if (azureKey) {
-      apiKey = azureKey;
-      const azureConfig = {
-        apiKey,
-        azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME || fields.azureOpenAIApiInstanceName,
-        azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME || fields.azureOpenAIApiDeploymentName,
-        azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION || fields.azureOpenAIApiVersion
-      };
-      config = {
-        apiKey,
-        basePath: genAzureEndpoint({
-          ...azureConfig,
-        }),
-        baseOptions: {
-          headers: { 'api-key': apiKey },
-          params: {
-            'api-version': azureConfig.azureOpenAIApiVersion // this might change. I got the current value from the sample code at https://oai.azure.com/portal/chat
-          }
-        }
-      };
-    }
+    // if (azureKey) {
+    //   apiKey = azureKey;
+    //   const azureConfig = {
+    //     apiKey,
+    //     azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME || fields.azureOpenAIApiInstanceName,
+    //     azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME || fields.azureOpenAIApiDeploymentName,
+    //     azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION || fields.azureOpenAIApiVersion
+    //   };
+    //   config = {
+    //     apiKey,
+    //     basePath: genAzureEndpoint({
+    //       ...azureConfig,
+    //     }),
+    //     baseOptions: {
+    //       headers: { 'api-key': apiKey },
+    //       params: {
+    //         'api-version': azureConfig.azureOpenAIApiVersion // this might change. I got the current value from the sample code at https://oai.azure.com/portal/chat
+    //       }
+    //     }
+    //   };
+    // }
     this.openaiApi = new OpenAIApi(new Configuration(config));
     this.name = 'dall-e';
     this.description = `You can generate images with 'dall-e'. This tool is exclusively for visual content.
@@ -46,11 +46,14 @@ Guidelines:
 "Subject: [subject], Style: [style], Color: [color], Details: [details], Emotion: [emotion]"
 - Generate images only once per human query unless explicitly requested by the user`;
   }
-  // "Subject": "Mona Lisa",
-  // "Style": "Chinese traditional painting",
-  // "Color": "Mainly wash tones of ink, with small color blocks in some parts",
-  // "Details": "Mona Lisa should have long hair, a silk dress, holding a fan. The background should have mountains and trees.",
-  // "Emotion": "Serene and elegant"
+
+  getApiKey() {
+    const apiKey = process.env.DALLE_API_KEY || '';
+    if (!apiKey) {
+      throw new Error('Missing DALLE_API_KEY environment variable.');
+    }
+    return apiKey;
+  }
 
   replaceUnwantedChars(inputString) {
     return inputString.replace(/\r\n|\r|\n/g, ' ').replace('"', '').trim();
