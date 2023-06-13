@@ -16,6 +16,13 @@ const getChatGPTBrowserModels = () => {
   return models;
 };
 
+const getPluginModels = () => {
+  let models = ['gpt-4', 'gpt-4-0613', 'gpt-3.5-turbo', 'gpt-3.5-turbo-16k', 'gpt-3.5-turbo-0613', 'gpt-3.5-turbo-0301'];
+  if (process.env.PLUGIN_MODELS) models = String(process.env.PLUGIN_MODELS).split(',');
+
+  return models;
+};
+
 let i = 0;
 router.get('/', async function (req, res) {
   let key, palmUser;
@@ -46,7 +53,7 @@ router.get('/', async function (req, res) {
     ? { availableModels: getOpenAIModels(), userProvide: apiKey === 'user_provided' }
     : false;
   const gptPlugins = apiKey
-    ? { availableModels: ['gpt-4', 'gpt-4-0613', 'gpt-3.5-turbo', 'gpt-3.5-turbo-16k', 'gpt-3.5-turbo-0613', 'gpt-3.5-turbo-0301'], availableTools }
+    ? { availableModels: getPluginModels(), availableTools }
     : false;
   const bingAI = process.env.BINGAI_TOKEN
     ? { userProvide: process.env.BINGAI_TOKEN == 'user_provided' }
