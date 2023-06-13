@@ -44,14 +44,17 @@ router.post('/create-subscription', async (req, res) => {
   
 
 router.post('/cancel-subscription', async (req, res) => {
-  const { subscriptionId } = req.body;
+  const { subscriptionId } = req.body; // Make sure to pass necessary data from frontend
   try {
+    console.log("Request Body:", req.body); // Log request body
     const canceledSubscription = await cancelSubscription(subscriptionId);
     res.status(200).send(canceledSubscription);
   } catch (error) {
+    console.error("Error:", error); // Log error details
     res.status(400).send({ error: error.message });
   }
 });
+
 
 router.post('/update-payment-method', async (req, res) => {
   const { customerId, paymentMethodId } = req.body;
