@@ -2,3 +2,4 @@
 api/.env
 .env
 client/dist/images
+data-node
