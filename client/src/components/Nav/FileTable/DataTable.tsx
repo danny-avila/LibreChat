@@ -27,7 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/"
 
-import { ToggleRight } from "lucide-react";
+import { ListFilter } from "lucide-react";
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
@@ -73,7 +73,7 @@ export default function DataTable<TData, TValue>({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" className="ml-auto">
-              <ToggleRight className="h-4 w-4 mr-2" /> Columns
+              <ListFilter className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="z-[1001]">
