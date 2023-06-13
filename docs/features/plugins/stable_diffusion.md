@@ -51,7 +51,7 @@ To use Stable Diffusion with this project, you will need to download and install
   - `SD_WEBUI_URL=http://127.0.0.1:7860`
 ### Docker Install
 - Use `SD_WEBUI_URL=http://host.docker.internal:7860` in the `.env` file or in the plugins store
-- Uncomment the following in `docker-compose.yml` file:
+- Uncomment the following two lines in `docker-compose.yml` file:
 ```yaml
  extra_hosts: # if you are running APIs on docker you need access to, you will need to uncomment this line and next
      - "host.docker.internal:host-gateway"
