@@ -1,7 +1,16 @@
-const mongoose = require('mongoose');
+const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
 const ChatAgent = require('./ChatAgent');
-const connectDb = require('../../lib/db/connectDb');
-const Conversation = require('../../models/Conversation');
+const crypto = require('crypto');
+
+jest.mock('../../lib/db/connectDb');
+jest.mock('../../models/Conversation', () => {
+  return function () {
+    return {
+      save: jest.fn(),
+      deleteConvos: jest.fn()
+    };
+  };
+});
 
 describe('ChatAgent', () => {
   let TestAgent;
@@ -13,26 +22,72 @@ describe('ChatAgent', () => {
       max_tokens: 2
     },
     agentOptions: {
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-3.5-turbo'
     }
   };
   let parentMessageId;
   let conversationId;
+  const fakeMessages = [];
   const userMessage = 'Hello, ChatGPT!';
-  const apiKey = process.env.OPENAI_API_KEY;
-
-  beforeAll(async () => {
-    await connectDb();
-  });
+  const apiKey = 'fake-api-key';
 
   beforeEach(() => {
     TestAgent = new ChatAgent(apiKey, options);
-  });
+    TestAgent.loadHistory = jest
+      .fn()
+      .mockImplementation((conversationId, parentMessageId = null) => {
+        if (!conversationId) {
+          TestAgent.currentMessages = [];
+          return Promise.resolve([]);
+        }
 
-  afterAll(async () => {
-    // Delete the messages and conversation created by the test
-    await Conversation.deleteConvos(null, { conversationId });
-    await mongoose.connection.close();
+        const orderedMessages = TestAgent.constructor.getMessagesForConversation(
+          fakeMessages,
+          parentMessageId
+        );
+        const chatMessages = orderedMessages.map((msg) =>
+          msg?.isCreatedByUser || msg?.role.toLowerCase() === 'user'
+            ? new HumanChatMessage(msg.text)
+            : new AIChatMessage(msg.text)
+        );
+
+        TestAgent.currentMessages = orderedMessages;
+        return Promise.resolve(chatMessages);
+      });
+    TestAgent.sendMessage = jest.fn().mockImplementation(async (message, opts = {}) => {
+      if (opts && typeof opts === 'object') {
+        TestAgent.setOptions(opts);
+      }
+      const conversationId = opts.conversationId || crypto.randomUUID();
+      const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
+      const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
+      this.pastMessages = await TestAgent.loadHistory(
+        conversationId,
+        TestAgent.options?.parentMessageId
+      );
+
+      const userMessage = {
+        text: message,
+        sender: 'ChatGPT',
+        isCreatedByUser: true,
+        messageId: userMessageId,
+        parentMessageId,
+        conversationId
+      };
+
+      const response = {
+        sender: 'ChatGPT',
+        text: 'Hello, User!',
+        isCreatedByUser: false,
+        messageId: crypto.randomUUID(),
+        parentMessageId: userMessage.messageId,
+        conversationId
+      };
+
+      fakeMessages.push(userMessage);
+      fakeMessages.push(response);
+      return response;
+    });
   });
 
   test('initializes ChatAgent without crashing', () => {

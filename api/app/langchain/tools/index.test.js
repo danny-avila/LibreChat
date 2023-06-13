@@ -1,8 +1,25 @@
-/* eslint-disable jest/no-conditional-expect */
-require('dotenv').config({ path: '../../../.env' });
-const mongoose = require('mongoose');
+const mockUser = {
+  _id: 'fakeId',
+  save: jest.fn(),
+  findByIdAndDelete: jest.fn(),
+};
+
+var mockPluginService = {
+  updateUserPluginAuth: jest.fn(),
+  deleteUserPluginAuth: jest.fn(),
+  getUserPluginAuthValue: jest.fn()
+};
+
+
+jest.mock('../../../models/User', () => {
+  return function() {
+    return mockUser;
+  };
+});
+
+jest.mock('../../../server/services/PluginService', () => mockPluginService);
+
 const User = require('../../../models/User');
-const connectDb = require('../../../lib/db/connectDb');
 const { validateTools, loadTools, availableTools } = require('./index');
 const PluginService = require('../../../server/services/PluginService');
 const { BaseChatModel } = require('langchain/chat_models/openai');
@@ -21,7 +38,16 @@ describe('Tool Handlers', () => {
   const authConfigs = mainPlugin.authConfig;
 
   beforeAll(async () => {
-    await connectDb();
+    mockUser.save.mockResolvedValue(undefined);
+  
+    const userAuthValues = {};
+    mockPluginService.getUserPluginAuthValue.mockImplementation((userId, authField) => {
+      return userAuthValues[`${userId}-${authField}`];
+    });
+    mockPluginService.updateUserPluginAuth.mockImplementation((userId, authField, _pluginKey, credential) => {
+      userAuthValues[`${userId}-${authField}`] = credential;
+    });
+  
     fakeUser = new User({
       name: 'Fake User',
       username: 'fakeuser',
@@ -39,19 +65,13 @@ describe('Tool Handlers', () => {
     for (const authConfig of authConfigs) {
       await PluginService.updateUserPluginAuth(fakeUser._id, authConfig.authField, pluginKey, mockCredential);
     }
-  });
-
-  // afterEach(async () => {
-  //   // Clean up any test-specific data.
-  // });
+  });  
 
   afterAll(async () => {
-    // Delete the fake user & plugin auth
-    await User.findByIdAndDelete(fakeUser._id);
+    await mockUser.findByIdAndDelete(fakeUser._id);
     for (const authConfig of authConfigs) {
       await PluginService.deleteUserPluginAuth(fakeUser._id, authConfig.authField);
     }
-    await mongoose.connection.close();
   });
 
   describe('validateTools', () => {
@@ -128,6 +148,7 @@ describe('Tool Handlers', () => {
       try {
         await loadTool2();
       } catch (error) {
+        // eslint-disable-next-line jest/no-conditional-expect
         expect(error).toBeDefined();
       }
     });
