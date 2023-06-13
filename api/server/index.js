@@ -15,6 +15,12 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
 const config = require('../../config/loader');
 config.validate(); // Validate the config
 
+const rawBodyBuffer = (req, res, buf, encoding) => {
+  if (buf && buf.length) {
+    req.rawBody = buf.toString(encoding || 'utf8');
+  }
+};
+
 (async () => {
   await connectDb();
   await migrateDb();
@@ -22,8 +28,8 @@ config.validate(); // Validate the config
 
   const app = express();
   app.use(errorController);
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ verify: rawBodyBuffer }));
+  app.use(express.urlencoded({ verify: rawBodyBuffer, extended: true }));
   app.use(express.static(path.join(projectPath, 'dist')));
   app.use(express.static(path.join(projectPath, 'public')));
 
