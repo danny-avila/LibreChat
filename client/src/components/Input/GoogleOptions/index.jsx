@@ -93,6 +93,7 @@ function GoogleOptions() {
   const cardStyle =
     'transition-colors shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 hover:border-black/10 focus:border-black/10 dark:border-black/10 dark:hover:border-black/10 dark:focus:border-black/10 border dark:bg-gray-700 text-black dark:text-white';
 
+  const isCodeChat = model?.startsWith('codechat-');
   return (
     <>
       <div
@@ -126,7 +127,7 @@ function GoogleOptions() {
       <EndpointOptionsPopover
         content={
           <div className="px-4 py-4">
-            {showExamples ? (
+            {showExamples && !isCodeChat ? (
               <Examples
                 examples={examples}
                 setExample={setExample}
@@ -152,6 +153,7 @@ function GoogleOptions() {
         switchToSimpleMode={switchToSimpleMode}
         additionalButton={{
           label: (showExamples ? 'Hide' : 'Show') + ' Examples',
+          buttonClass: isCodeChat ? 'disabled' : '',
           handler: triggerExamples,
           icon: <MessagesSquared className="mr-1 w-[14px]" />
         }}

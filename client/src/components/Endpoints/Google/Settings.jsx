@@ -43,8 +43,10 @@ function Settings(props) {
 
   const models = endpointsConfig?.['google']?.['availableModels'] || [];
 
+  const codeChat = model.startsWith('codechat-');
+
   return (
-    <div className={`${maxHeight} overflow-y-auto`}>
+    <div className={`${maxHeight} min-h-[200px] overflow-y-auto`}>
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
@@ -55,43 +57,47 @@ function Settings(props) {
               disabled={readonly}
               className={cn(
                 defaultTextProps,
-                'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                'flex w-full z-50 resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
               )}
               containerClassName="flex w-full resize-none"
             />
           </div>
-          <div className="grid w-full items-center gap-2">
-            <Label htmlFor="modelLabel" className="text-left text-sm font-medium">
-              Custom Name <small className="opacity-40">(default: blank)</small>
-            </Label>
-            <Input
-              id="modelLabel"
-              disabled={readonly}
-              value={modelLabel || ''}
-              onChange={(e) => setModelLabel(e.target.value || null)}
-              placeholder="Set a custom name for PaLM2"
-              className={cn(
-                defaultTextProps,
-                'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
-              )}
-            />
-          </div>
-          <div className="grid w-full items-center gap-2">
-            <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
-              Prompt Prefix <small className="opacity-40">(default: blank)</small>
-            </Label>
-            <TextareaAutosize
-              id="promptPrefix"
-              disabled={readonly}
-              value={promptPrefix || ''}
-              onChange={(e) => setPromptPrefix(e.target.value || null)}
-              placeholder="Set custom instructions or context. Ignored if empty."
-              className={cn(
-                defaultTextProps,
-                'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 '
-              )}
-            />
-          </div>
+          {!codeChat && (
+            <>
+              <div className="grid w-full items-center gap-2">
+                <Label htmlFor="modelLabel" className="text-left text-sm font-medium">
+                  Custom Name <small className="opacity-40">(default: blank)</small>
+                </Label>
+                <Input
+                  id="modelLabel"
+                  disabled={readonly}
+                  value={modelLabel || ''}
+                  onChange={(e) => setModelLabel(e.target.value || null)}
+                  placeholder="Set a custom name for PaLM2"
+                  className={cn(
+                    defaultTextProps,
+                    'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                  )}
+                />
+              </div>
+              <div className="grid w-full items-center gap-2">
+                <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
+                  Prompt Prefix <small className="opacity-40">(default: blank)</small>
+                </Label>
+                <TextareaAutosize
+                  id="promptPrefix"
+                  disabled={readonly}
+                  value={promptPrefix || ''}
+                  onChange={(e) => setPromptPrefix(e.target.value || null)}
+                  placeholder="Set custom instructions or context. Ignored if empty."
+                  className={cn(
+                    defaultTextProps,
+                    'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 '
+                  )}
+                />
+              </div>
+            </>
+          )}
         </div>
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <HoverCard openDelay={300}>
@@ -131,87 +137,91 @@ function Settings(props) {
             </HoverCardTrigger>
             <OptionHover type="temp" side="left" />
           </HoverCard>
-          <HoverCard openDelay={300}>
-            <HoverCardTrigger className="grid w-full items-center gap-2">
-              <div className="flex justify-between">
-                <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
+          {!codeChat && (
+            <>
+              <HoverCard openDelay={300}>
+                <HoverCardTrigger className="grid w-full items-center gap-2">
+                  <div className="flex justify-between">
+                    <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
                   Top P <small className="opacity-40">(default: 0.95)</small>
-                </Label>
-                <InputNumber
-                  id="top-p-int"
-                  disabled={readonly}
-                  value={topP}
-                  onChange={(value) => setTopP(value)}
-                  max={1}
-                  min={0}
-                  step={0.01}
-                  controls={false}
-                  className={cn(
-                    defaultTextProps,
-                    cn(
-                      optionText,
-                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
-                    )
-                  )}
-                />
-              </div>
-              <Slider
-                disabled={readonly}
-                value={[topP]}
-                onValueChange={(value) => setTopP(value[0])}
-                doubleClickHandler={() => setTopP(1)}
-                max={1}
-                min={0}
-                step={0.01}
-                className="flex h-4 w-full"
-              />
-            </HoverCardTrigger>
-            <OptionHover type="topp" side="left" />
-          </HoverCard>
+                    </Label>
+                    <InputNumber
+                      id="top-p-int"
+                      disabled={readonly}
+                      value={topP}
+                      onChange={(value) => setTopP(value)}
+                      max={1}
+                      min={0}
+                      step={0.01}
+                      controls={false}
+                      className={cn(
+                        defaultTextProps,
+                        cn(
+                          optionText,
+                          'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
+                        )
+                      )}
+                    />
+                  </div>
+                  <Slider
+                    disabled={readonly}
+                    value={[topP]}
+                    onValueChange={(value) => setTopP(value[0])}
+                    doubleClickHandler={() => setTopP(1)}
+                    max={1}
+                    min={0}
+                    step={0.01}
+                    className="flex h-4 w-full"
+                  />
+                </HoverCardTrigger>
+                <OptionHover type="topp" side="left" />
+              </HoverCard>
 
-          <HoverCard openDelay={300}>
-            <HoverCardTrigger className="grid w-full items-center gap-2">
-              <div className="flex justify-between">
-                <Label htmlFor="top-k-int" className="text-left text-sm font-medium">
+              <HoverCard openDelay={300}>
+                <HoverCardTrigger className="grid w-full items-center gap-2">
+                  <div className="flex justify-between">
+                    <Label htmlFor="top-k-int" className="text-left text-sm font-medium">
                   Top K <small className="opacity-40">(default: 40)</small>
-                </Label>
-                <InputNumber
-                  id="top-k-int"
-                  disabled={readonly}
-                  value={topK}
-                  onChange={(value) => setTopK(value)}
-                  max={40}
-                  min={1}
-                  step={0.01}
-                  controls={false}
-                  className={cn(
-                    defaultTextProps,
-                    cn(
-                      optionText,
-                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
-                    )
-                  )}
-                />
-              </div>
-              <Slider
-                disabled={readonly}
-                value={[topK]}
-                onValueChange={(value) => setTopK(value[0])}
-                doubleClickHandler={() => setTopK(0)}
-                max={40}
-                min={1}
-                step={0.01}
-                className="flex h-4 w-full"
-              />
-            </HoverCardTrigger>
-            <OptionHover type="topk" side="left" />
-          </HoverCard>
+                    </Label>
+                    <InputNumber
+                      id="top-k-int"
+                      disabled={readonly}
+                      value={topK}
+                      onChange={(value) => setTopK(value)}
+                      max={40}
+                      min={1}
+                      step={0.01}
+                      controls={false}
+                      className={cn(
+                        defaultTextProps,
+                        cn(
+                          optionText,
+                          'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
+                        )
+                      )}
+                    />
+                  </div>
+                  <Slider
+                    disabled={readonly}
+                    value={[topK]}
+                    onValueChange={(value) => setTopK(value[0])}
+                    doubleClickHandler={() => setTopK(0)}
+                    max={40}
+                    min={1}
+                    step={0.01}
+                    className="flex h-4 w-full"
+                  />
+                </HoverCardTrigger>
+                <OptionHover type="topk" side="left" />
+              </HoverCard>
 
+            </>
+          )}
           <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="max-tokens-int" className="text-left text-sm font-medium">
-                  Max Output Tokens <small className="opacity-40">(default: 1024)</small>
+              Max Output Tokens <small className="opacity-40">(default: 1024)</small>
                 </Label>
                 <InputNumber
                   id="max-tokens-int"

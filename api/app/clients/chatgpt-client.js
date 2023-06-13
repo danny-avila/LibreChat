@@ -31,7 +31,19 @@ const askClient = async ({
   if (promptPrefix) {
     promptText = promptPrefix;
   }
-  const maxContextTokens = model === 'gpt-4-32k' ? 32767 : model.startsWith('gpt-4') ? 8191 : 4095; // 1 less than maximum
+
+  const maxTokensMap = {
+    'gpt-4': 8191,
+    'gpt-4-0613': 8191,
+    'gpt-4-32k': 32767,
+    'gpt-4-32k-0613': 32767,
+    'gpt-3.5-turbo': 4095,
+    'gpt-3.5-turbo-0613': 4095,
+    'gpt-3.5-turbo-0301': 4095,
+    'gpt-3.5-turbo-16k': 15999,
+  };
+
+  const maxContextTokens = maxTokensMap[model] ?? 4095; // 1 less than maximum
   const clientOptions = {
     reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
     azure,
