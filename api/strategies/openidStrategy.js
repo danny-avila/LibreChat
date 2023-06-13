@@ -9,6 +9,13 @@ const domains = config.domains;
 
 const User = require('../models/User');
 
+let crypto;
+try {
+  crypto = require('node:crypto');
+} catch (err) {
+  console.error('crypto support is disabled!');
+}
+
 const downloadImage = async (url, imagePath, accessToken) => {
   const response = await axios.get(url, {
     headers: {
@@ -59,13 +66,22 @@ Issuer.discover(process.env.OPENID_ISSUER)
 
           if (userinfo.picture) {
             const imageUrl = userinfo.picture;
-            const randomFileName = Date.now() + '.png';
-            const imagePath = path.join(__dirname, '..', '..', 'client', 'public', 'images', 'openid', randomFileName);
+
+            let fileName;
+            if (crypto) {
+              const hash = crypto.createHash('sha256');
+              hash.update(userinfo.sub);
+              fileName = hash.digest('hex') + '.png';
+            } else {
+              fileName = userinfo.sub + '.png';
+            }
+
+            const imagePath = path.join(__dirname, '..', '..', 'client', 'public', 'images', 'openid', fileName);
 
             // Download image
             await downloadImage(imageUrl, imagePath, tokenset.access_token);
 
-            user.avatar = '/images/openid/' + randomFileName; // store the relative path to the image
+            user.avatar = '/images/openid/' + fileName; 
           } else {
             user.avatar = '';
           }
