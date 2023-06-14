@@ -51,6 +51,4 @@ Query: {input}
   return AgentExecutor.fromAgentAndTools({ agent, tools, memory, ...rest });
 };
 
-module.exports = {
-  initializeCustomAgent
-};
+module.exports = initializeCustomAgent;
