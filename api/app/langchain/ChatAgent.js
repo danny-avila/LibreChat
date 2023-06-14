@@ -12,7 +12,8 @@ const { CallbackManager } = require('langchain/callbacks');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
 const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents/');
 const { getMessages, saveMessage, saveConvo } = require('../../models');
-const { loadTools, SelfReflectionTool } = require('./tools');
+const { loadTools } = require('./tools/util');
+const { SelfReflectionTool } = require('./tools/');
 const {
   instructions,
   imageInstructions,

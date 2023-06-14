@@ -11,21 +11,20 @@ var mockPluginService = {
 };
 
 
-jest.mock('../../../models/User', () => {
+jest.mock('../../../../models/User', () => {
   return function() {
     return mockUser;
   };
 });
 
-jest.mock('../../../server/services/PluginService', () => mockPluginService);
+jest.mock('../../../../server/services/PluginService', () => mockPluginService);
 
-const User = require('../../../models/User');
-const { validateTools, loadTools, availableTools } = require('./index');
-const PluginService = require('../../../server/services/PluginService');
+const User = require('../../../../models/User');
+const { validateTools, loadTools, availableTools } = require('./');
+const PluginService = require('../../../../server/services/PluginService');
 const { BaseChatModel } = require('langchain/chat_models/openai');
 const { Calculator } = require('langchain/tools/calculator');
-const OpenAICreateImage = require('./DALL-E');
-const GoogleSearchAPI = require('./GoogleSearch');
+const { OpenAICreateImage, GoogleSearchAPI } = require('../');
 
 describe('Tool Handlers', () => {
   let fakeUser;
