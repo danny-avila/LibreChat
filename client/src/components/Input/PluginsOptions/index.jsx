@@ -187,6 +187,7 @@ function PluginsOptions() {
           <div className="px-4 py-4">
             {showAgentSettings ? (
               <AgentSettings
+                agent={agentOptions.agent}
                 model={agentOptions.model}
                 endpoint={agentOptions.endpoint}
                 temperature={agentOptions.temperature}
