@@ -99,14 +99,14 @@ function formatSteps(steps) {
 
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
-    const actionInput = step.action.toolInput;
+    const actionInput = getString(step.action.toolInput);
     const observation = step.observation;
 
     if (actionInput === 'N/A' || observation?.trim()?.length === 0) {
       continue;
     }
 
-    output += `Input: ${actionInput?.input || actionInput}\nOutput: ${getString(observation)}`;
+    output += `Input: ${actionInput}\nOutput: ${getString(observation)}`;
 
     if (steps.length > 1 && i !== steps.length - 1) {
       output += '\n---\n';
@@ -131,7 +131,7 @@ function formatAction(action) {
 
   const formattedAction = {
     plugin: capitalizeWords(action.tool) || action.tool,
-    input: action.toolInput?.input || action.toolInput,
+    input: getString(action.toolInput),
     thought: action.log.includes('Thought: ')
       ? action.log.split('\n')[0].replace('Thought: ', '')
       : action.log.split('\n')[0]
