@@ -95,6 +95,7 @@ const removeEnvs = {
   'SERVER_URL_PROD': 'remove',
   'JWT_SECRET_DEV': 'remove', // Lets regen
   'JWT_SECRET_PROD': 'remove', // Lets regen
+  'VITE_APP_TITLE': 'remove',
   // Comments to remove:
   '#JWT:': 'remove',
   '# Add a secure secret for production if deploying to live domain.': 'remove',
@@ -120,11 +121,10 @@ loader.addSecureEnvVar(rootEnvPath, 'JWT_SECRET', 32);
 // Lets update the openai key name, not the best spot in the env file but who cares ¯\_(ツ)_/¯
 loader.writeEnvFile(rootEnvPath, {'OPENAI_API_KEY': initEnv['OPENAI_KEY']})
 
-// TODO: we need to copy over the value of: VITE_SHOW_GOOGLE_LOGIN_OPTION & VITE_APP_TITLE
+// TODO: we need to copy over the value of: APP_TITLE
 fs.appendFileSync(rootEnvPath, '\n\n##########################\n# Frontend Vite Variables:\n##########################\n');
 const frontend = {
-  'VITE_APP_TITLE': initEnv['VITE_APP_TITLE'] || '"LibreChat"',
-  'VITE_SHOW_GOOGLE_LOGIN_OPTION': initEnv['VITE_SHOW_GOOGLE_LOGIN_OPTION'] || 'false',
+  'APP_TITLE': initEnv['VITE_APP_TITLE'] || '"LibreChat"',
   'ALLOW_REGISTRATION': 'true'
 }
 loader.writeEnvFile(rootEnvPath, frontend)
