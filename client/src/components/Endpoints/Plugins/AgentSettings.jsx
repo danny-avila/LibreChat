@@ -20,6 +20,7 @@ import store from '~/store';
 function Settings(props) {
   const {
     readonly,
+    agent,
     model,
     temperature,
     // topP,
@@ -39,6 +40,7 @@ function Settings(props) {
 
   // const toolsSelected = tools?.length > 0;
   const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
+  const agents = endpointsConfig?.[endpoint]?.['availableAgents'] || [];
 
   return (
     <div className="max-h-[350px] min-h-[305px] overflow-y-auto">
@@ -50,6 +52,20 @@ function Settings(props) {
               value={model}
               setValue={setModel}
               availableValues={models}
+              disabled={readonly}
+              className={cn(
+                defaultTextProps,
+                'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+              )}
+              containerClassName="flex w-full resize-none"
+            />
+          </div>
+          <div className="grid w-full items-center gap-2">
+            <SelectDropDown
+              title="Agent Mode"
+              value={agent}
+              setValue={setOption('agent')}
+              availableValues={agents}
               disabled={readonly}
               className={cn(
                 defaultTextProps,
