@@ -25,8 +25,8 @@ services:
       target: node
     # image: chatgptclone/app:latest # Uncomment this & comment above to build from docker hub image
     restart: always
-    # extra_hosts: # if you are running APIs on docker you need access to, you will need to uncomment this line and next
-    # - "host.docker.internal:host-gateway"
+    extra_hosts: # if you are running APIs on docker you need access to, you will need to uncomment this line and next
+    - "host.docker.internal:host-gateway"
     env_file:
       - .env
     environment:

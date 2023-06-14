@@ -227,7 +227,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
             <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
             <div className="w-full p-0">
               {shouldShowSettings && <Settings preset={preset} setOption={setOption} />}
-              {preset?.endpoint === 'google' && showExamples && (
+              {preset?.endpoint === 'google' && showExamples && !preset?.model?.startsWith('codechat-') && (
                 <Examples
                   examples={preset.examples}
                   setExample={setExample}
