@@ -235,7 +235,7 @@ export type TResetPassword = {
 };
 
 export type TStartupConfig = {
-  searchEnabled: boolean;
+  appTitle: boolean;
   googleLoginEnabled: boolean;
   serverDomain: string;
   registrationEnabled: boolean;
