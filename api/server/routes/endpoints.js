@@ -53,7 +53,7 @@ router.get('/', async function (req, res) {
     ? { availableModels: getOpenAIModels(), userProvide: apiKey === 'user_provided' }
     : false;
   const gptPlugins = apiKey
-    ? { availableModels: getPluginModels(), availableTools }
+    ? { availableModels: getPluginModels(), availableTools, availableAgents: ['classic', 'functions'] }
     : false;
   const bingAI = process.env.BINGAI_TOKEN
     ? { userProvide: process.env.BINGAI_TOKEN == 'user_provided' }
