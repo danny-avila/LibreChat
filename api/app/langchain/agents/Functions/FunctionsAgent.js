@@ -88,28 +88,28 @@ Query: {input}
 
   async plan(steps, inputs, callbackManager) {
     // Add scratchpad and stop to inputs
-    var thoughts = await this.constructScratchPad(steps);
-    var newInputs = Object.assign({}, inputs, { agent_scratchpad: thoughts });
+    const thoughts = await this.constructScratchPad(steps);
+    const newInputs = Object.assign({}, inputs, { agent_scratchpad: thoughts });
     if (this._stop().length !== 0) {
       newInputs.stop = this._stop();
     }
 
     // Split inputs between prompt and llm
-    var llm = this.llmChain.llm;
-    var valuesForPrompt = Object.assign({}, newInputs);
-    var valuesForLLM = {
+    const llm = this.llmChain.llm;
+    const valuesForPrompt = Object.assign({}, newInputs);
+    const valuesForLLM = {
       tools: this.tools
     };
-    for (var i = 0; i < this.llmChain.llm.callKeys.length; i++) {
-      var key = this.llmChain.llm.callKeys[i];
+    for (let i = 0; i < this.llmChain.llm.callKeys.length; i++) {
+      const key = this.llmChain.llm.callKeys[i];
       if (key in inputs) {
         valuesForLLM[key] = inputs[key];
         delete valuesForPrompt[key];
       }
     }
 
-    var promptValue = await this.llmChain.prompt.formatPromptValue(valuesForPrompt);
-    var message = await llm.predictMessages(
+    const promptValue = await this.llmChain.prompt.formatPromptValue(valuesForPrompt);
+    const message = await llm.predictMessages(
       promptValue.toChatMessages(),
       valuesForLLM,
       callbackManager
