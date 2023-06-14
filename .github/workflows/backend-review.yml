@@ -1,4 +1,3 @@
-
 name: Backend Unit Tests
 on:
   push:
@@ -22,6 +21,11 @@ jobs:
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
       CREDS_KEY: ${{ secrets.CREDS_KEY }}
       CREDS_IV: ${{ secrets.CREDS_IV }}
+      APP_TITLE: 'Test Title'
+      GOOGLE_CLIENT_ID: 'Test Google Client Id'
+      GOOGLE_CLIENT_SECRET: 'Test Google Client Secret'
+      DOMAIN_SERVER: 'http://test-server.com'
+      ALLOW_REGISTRATION: 'true'
     steps:
       - uses: actions/checkout@v2
       - name: Use Node.js 19.x
@@ -34,7 +38,7 @@ jobs:
         run: npm ci
 
       # - name: Install Linux X64 Sharp
-      #   run: npm install --platform=linux --arch=x64 --verbose sharp 
+      #   run: npm install --platform=linux --arch=x64 --verbose sharp
 
       - name: Run unit tests
         run: cd api && npm run test:ci
