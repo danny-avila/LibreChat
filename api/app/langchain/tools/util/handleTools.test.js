@@ -24,7 +24,7 @@ const { validateTools, loadTools } = require('./');
 const PluginService = require('../../../../server/services/PluginService');
 const { BaseChatModel } = require('langchain/chat_models/openai');
 const { Calculator } = require('langchain/tools/calculator');
-const { availableTools, OpenAICreateImage, GoogleSearchAPI } = require('../');
+const { availableTools, OpenAICreateImage, GoogleSearchAPI, StructuredSD } = require('../');
 
 describe('Tool Handlers', () => {
   let fakeUser;
@@ -173,6 +173,18 @@ describe('Tool Handlers', () => {
         model: BaseChatModel
       });
       expect(toolFunctions).toEqual({});
+    });
+    it('should return the StructuredTool version when using functions', async () => {
+      process.env.SD_WEBUI_URL = mockCredential;
+      toolFunctions = await loadTools({
+        user: fakeUser._id,
+        model: BaseChatModel,
+        tools: ['stable-diffusion'],
+        functions: true
+      });
+      const structuredTool = await toolFunctions['stable-diffusion']();
+      expect(structuredTool).toBeInstanceOf(StructuredSD);
+      delete process.env.SD_WEBUI_URL;
     });
   });
 });
