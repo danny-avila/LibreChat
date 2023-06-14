@@ -72,8 +72,7 @@ const loadToolWithAuth = async (user, authFields, ToolConstructor, options = {})
   };
 };
 
-const loadTools = async ({ user, model, tools = [], options = {} }) => {
-  const { functions } = options;
+const loadTools = async ({ user, model, functions = null, tools = [], options = {} }) => {
   const toolConstructors = {
     calculator: Calculator,
     google: GoogleSearchAPI,
