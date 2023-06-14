@@ -451,6 +451,7 @@ Only respond with your conversational reply to the following User Message:
       user,
       model,
       tools: this.options.tools,
+      functions: this.functionsAgent,
       options: {
         openAIApiKey: this.openAIApiKey
       }
