@@ -72,7 +72,21 @@ const askClient = async ({
     });
   }
 
-  const client = new ChatGPTClient(apiKey, clientOptions, store);
+  let client = null;
+  try {
+    client = new ChatGPTClient(apiKey, clientOptions, store);
+  } catch (e) {
+    // We can try again with more context?
+    // TODO: allow user to disable this
+    if (model === 'gpt-3.5-turbo' && e.message.contains('maxContextTokens')) {
+      model = 'gpt-3.5-turbo-16k';
+      clientOptions.maxContextTokens = maxTokensMap[model] ?? 4095;
+      clientOptions.modelOptions.model = model;
+      client = new ChatGPTClient(apiKey, clientOptions, store);
+    } else {
+      throw e;
+    }
+  }
 
   const options = {
     onProgress,
