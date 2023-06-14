@@ -9,6 +9,7 @@ const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { Calculator } = require('langchain/tools/calculator');
 const { WebBrowser } = require('langchain/tools/webbrowser');
 const {
+  availableTools,
   AIPluginTool,
   GoogleSearchAPI,
   WolframAlphaAPI,
@@ -17,7 +18,6 @@ const {
   StableDiffusionAPI,
   StructuredSD,
 } = require('../'); 
-const availableTools = require('../manifest.json');
 
 const validateTools = async (user, tools = []) => {
   try {

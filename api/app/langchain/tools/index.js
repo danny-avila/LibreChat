@@ -6,8 +6,10 @@ const StructuredSD = require('./structured/StableDiffusion');
 const StableDiffusionAPI = require('./StableDiffusion');
 const WolframAlphaAPI = require('./Wolfram');
 const SelfReflectionTool = require('./SelfReflection');
+const availableTools = require('./manifest.json');
 
 module.exports = {
+  availableTools,
   GoogleSearchAPI,
   HttpRequestTool,
   AIPluginTool,
