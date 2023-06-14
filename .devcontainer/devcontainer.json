@@ -1,0 +1,57 @@
+// {
+// 	"name": "LibreChat_dev",
+// 	// Update the 'dockerComposeFile' list if you have more compose files or use different names.
+// 	"dockerComposeFile": "docker-compose.yml",
+// 	// The 'service' property is the name of the service for the container that VS Code should
+// 	// use. Update this value and .devcontainer/docker-compose.yml to the real service name.
+// 	"service": "librechat",
+// 	// The 'workspaceFolder' property is the path VS Code should open by default when
+// 	// connected. Corresponds to a volume mount in .devcontainer/docker-compose.yml
+// 	"workspaceFolder": "/workspace"
+//     //,
+// 	// // Set *default* container specific settings.json values on container create.
+// 	// "settings": {},
+// 	// // Add the IDs of extensions you want installed when the container is created.
+// 	// "extensions": [],
+// 	// Uncomment the next line if you want to keep your containers running after VS Code shuts down.
+// 	// "shutdownAction": "none",
+// 	// Uncomment the next line to use 'postCreateCommand' to run commands after the container is created.
+// 	// "postCreateCommand": "uname -a",
+// 	// Comment out to connect as root instead. To add a non-root user, see: https://aka.ms/vscode-remote/containers/non-root.
+// 	// "remoteUser": "vscode"
+// }
+{
+    // "name": "LibreChat_dev",
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "app",
+    // "image": "node:19-alpine",
+    // "workspaceFolder": "/workspaces",
+    "workspaceFolder": "/workspace",
+    // Set *default* container specific settings.json values on container create.
+    // "overrideCommand": true,
+    "customizations": {
+        "vscode": {
+            "extensions": [],
+            "settings": {
+                "terminal.integrated.profiles.linux": {
+                    "bash": null
+                }
+            }
+        }
+    },
+    "postCreateCommand": ""
+    // "workspaceMount": "src=${localWorkspaceFolder},dst=/code,type=bind,consistency=cached"
+
+    // "runArgs": [
+    //     "--cap-add=SYS_PTRACE", "--security-opt", "seccomp=unconfined",
+    //     "-v", "/tmp/.X11-unix:/tmp/.X11-unix",
+    //     "-v", "${env:XAUTHORITY}:/root/.Xauthority:rw",
+    //     "-v", "/home/${env:USER}/.cdh:/root/.cdh",
+    //     "-e", "DISPLAY=${env:DISPLAY}",
+    //     "--name=tgw_assistant_backend_dev",
+    //     "--network=host"
+    // ],
+    // "settings": {
+    //     "terminal.integrated.shell.linux": "/bin/bash"
+    // },
+}
