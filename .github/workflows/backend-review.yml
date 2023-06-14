@@ -21,11 +21,6 @@ jobs:
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
       CREDS_KEY: ${{ secrets.CREDS_KEY }}
       CREDS_IV: ${{ secrets.CREDS_IV }}
-      APP_TITLE: 'Test Title'
-      GOOGLE_CLIENT_ID: 'Test Google Client Id'
-      GOOGLE_CLIENT_SECRET: 'Test Google Client Secret'
-      DOMAIN_SERVER: 'http://test-server.com'
-      ALLOW_REGISTRATION: 'true'
     steps:
       - uses: actions/checkout@v2
       - name: Use Node.js 19.x
