@@ -837,8 +837,13 @@ Only respond with your conversational reply to the following User Message:
       return [instructionsPayload, messagePayload];
     }
 
+    const result = [messagePayload, instructionsPayload];
+
+    if (this.functionsAgent && !this.isGpt3 && !completionMode) {
+      result[1].content = `${result[1].content}\nSure thing! Here is the output you requested:\n`;
+    }
+    
     if (isChatGptModel) {
-      const result = [messagePayload, instructionsPayload];
       return result.filter((message) => message.content.length > 0);
     }
 

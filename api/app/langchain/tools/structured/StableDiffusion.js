@@ -20,8 +20,8 @@ Guidelines:
 "negative_prompt":"semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime, out of frame, low quality, ugly, mutation, deformed"
 - Generate images only once per human query unless explicitly requested by the user`;
     this.schema = z.object({
-      prompt: z.string().describe("Detailed keywords to describe the subject, use at minimum but not limited to 5, separated by comma"),
-      negative_prompt: z.string().describe("Keywords we want to exclude from the final image, use at minimum but not limited to 5, separated by comma")
+      prompt: z.string().describe("Detailed keywords to describe the subject, using at least 7 keywords to accurately describe the image, separated by comma"),
+      negative_prompt: z.string().describe("Keywords we want to exclude from the final image, using at least 7 keywords to accurately describe the image, separated by comma")
     });
   }
 
