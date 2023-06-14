@@ -20,11 +20,11 @@ jest.mock('../../../../models/User', () => {
 jest.mock('../../../../server/services/PluginService', () => mockPluginService);
 
 const User = require('../../../../models/User');
-const { validateTools, loadTools, availableTools } = require('./');
+const { validateTools, loadTools } = require('./');
 const PluginService = require('../../../../server/services/PluginService');
 const { BaseChatModel } = require('langchain/chat_models/openai');
 const { Calculator } = require('langchain/tools/calculator');
-const { OpenAICreateImage, GoogleSearchAPI } = require('../');
+const { availableTools, OpenAICreateImage, GoogleSearchAPI } = require('../');
 
 describe('Tool Handlers', () => {
   let fakeUser;
