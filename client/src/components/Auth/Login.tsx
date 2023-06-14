@@ -2,10 +2,11 @@ import { useEffect } from 'react';
 import LoginForm from './LoginForm';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { SHOW_GOOGLE_LOGIN_OPTION, ALLOW_REGISTRATION, DOMAIN_SERVER } from "~/utils/envConstants";
+import { useGetStartupConfig } from '~/data-provider';
 
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();
+  const { data: startupConfig } = useGetStartupConfig();
 
   const navigate = useNavigate();
 
@@ -29,7 +30,7 @@ function Login() {
           </div>
         )}
         <LoginForm onSubmit={login} />
-        {ALLOW_REGISTRATION && (
+        {startupConfig?.registrationEnabled && (
           <p className="my-4 text-center text-sm font-light text-gray-700">
             {' '}
             Don&apos;t have an account?{' '}
@@ -38,7 +39,7 @@ function Login() {
             </a>
           </p>
         )}
-        {SHOW_GOOGLE_LOGIN_OPTION && (
+        {startupConfig?.googleLoginEnabled && (
           <>
             <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
               <div className="absolute bg-white px-3 text-xs">Or</div>
@@ -47,7 +48,7 @@ function Login() {
               <a
                 aria-label="Login with Google"
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${DOMAIN_SERVER}/oauth/google`}
+                href={`${startupConfig.serverDomain}/oauth/google`}
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
