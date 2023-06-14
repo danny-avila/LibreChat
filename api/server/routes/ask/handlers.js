@@ -91,6 +91,9 @@ const handleText = async (response, bing = false) => {
   return text;
 };
 
+const isObject = (item) => item && typeof item === 'object' && !Array.isArray(item);
+const getString = (input) => isObject(input) ? JSON.stringify(input) : input ;
+
 function formatSteps(steps) {
   let output = '';
 
@@ -103,7 +106,7 @@ function formatSteps(steps) {
       continue;
     }
 
-    output += `Input: ${actionInput}\nOutput: ${observation}`;
+    output += `Input: ${actionInput?.input || actionInput}\nOutput: ${getString(observation)}`;
 
     if (steps.length > 1 && i !== steps.length - 1) {
       output += '\n---\n';
@@ -128,11 +131,13 @@ function formatAction(action) {
 
   const formattedAction = {
     plugin: capitalizeWords(action.tool) || action.tool,
-    input: action.toolInput,
+    input: action.toolInput?.input || action.toolInput,
     thought: action.log.includes('Thought: ')
       ? action.log.split('\n')[0].replace('Thought: ', '')
       : action.log.split('\n')[0]
   };
+
+  formattedAction.thought = getString(formattedAction.thought);
 
   if (action.tool.toLowerCase() === 'self-reflection' || formattedAction.plugin === 'N/A') {
     formattedAction.inputStr = `{\n\tthought: ${formattedAction.input}${
@@ -142,7 +147,9 @@ function formatAction(action) {
     }\n}`;
     formattedAction.inputStr = formattedAction.inputStr.replace('N/A - ', '');
   } else {
-    formattedAction.inputStr = `{\n\tplugin: ${formattedAction.plugin}\n\tinput: ${formattedAction.input}\n\tthought: ${formattedAction.thought}\n}`;
+    const hasThought = formattedAction.thought.length > 0;
+    const thought = hasThought ? `\n\tthought: ${formattedAction.thought}` : ''; 
+    formattedAction.inputStr = `{\n\tplugin: ${formattedAction.plugin}\n\tinput: ${formattedAction.input}\n${thought}}`;
   }
 
   return formattedAction;
