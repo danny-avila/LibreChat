@@ -53,7 +53,7 @@ class ChatAgent {
 
     if (actions[0]?.action && this.functionsAgent) {
       actions = actions.map((step) => ({
-        log: `Action: ${step.action?.tool || ''}\nInput: ${step.action?.toolInput?.input || ''}\nObservation: ${step.observation}`
+        log: `Action: ${step.action?.tool || ''}\nInput: ${JSON.stringify(step.action?.toolInput) || ''}\nObservation: ${step.observation}`
       }));
     } else if (actions[0]?.action) {
       actions = actions.map((step) => ({
@@ -494,7 +494,7 @@ Only respond with your conversational reply to the following User Message:
     };
 
     // initialize agent
-    const initializer = this.options.agentOptions?.agent === 'functions' ? initializeFunctionsAgent : initializeCustomAgent;
+    const initializer = this.functionsAgent ? initializeFunctionsAgent : initializeCustomAgent;
     this.executor = await initializer({
       model,
       signal,
