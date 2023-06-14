@@ -20,8 +20,8 @@ Guidelines:
 "negative_prompt":"semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime, out of frame, low quality, ugly, mutation, deformed"
 - Generate images only once per human query unless explicitly requested by the user`;
     this.schema = z.object({
-      prompt: z.string().describe("Detailed keywords to describe the subject, separated by comma"),
-      negative_prompt: z.string().describe("Keywords we want to exclude from the final image")
+      prompt: z.string().describe("Detailed keywords to describe the subject, use at minimum but not limited to 5, separated by comma"),
+      negative_prompt: z.string().describe("Keywords we want to exclude from the final image, use at minimum but not limited to 5, separated by comma")
     });
   }
 
@@ -42,8 +42,9 @@ Guidelines:
     return url;
   }
 
-  async _call(prompt, negative_prompt) {
+  async _call(data) {
     const url = this.url;
+    const { prompt, negative_prompt } = data;
     const payload = {
       prompt,
       negative_prompt,
@@ -57,8 +58,8 @@ Guidelines:
 
     // Generate unique name
     const imageName = `${Date.now()}.png`;
-    this.outputPath = path.resolve(__dirname, '..', '..', '..', '..', 'client', 'public', 'images');
-    const appRoot = path.resolve(__dirname, '..', '..', '..', '..', 'client');
+    this.outputPath = path.resolve(__dirname, '..', '..', '..', '..', '..', 'client', 'public', 'images');
+    const appRoot = path.resolve(__dirname, '..', '..', '..', '..', '..', 'client');
     this.relativeImageUrl = path.relative(appRoot, this.outputPath);
 
     // Check if directory exists, if not create it

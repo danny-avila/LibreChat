@@ -3,7 +3,7 @@ const router = express.Router();
 const { titleConvo } = require('../../../app/');
 // const { getOpenAIModels } = require('../endpoints');
 const ChatAgent = require('../../../app/langchain/ChatAgent');
-const { validateTools } = require('../../../app/langchain/tools');
+const { validateTools } = require('../../../app/langchain/tools/util');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const {
   handleError,
