@@ -50,7 +50,11 @@ class ChatAgent {
     let output = 'Internal thoughts & actions taken:\n"';
     let actions = input || this.actions;
 
-    if (actions[0]?.action) {
+    if (actions[0]?.action && this.functionsAgent) {
+      actions = actions.map((step) => ({
+        log: `Action: ${step.action?.tool || ''}\nInput: ${step.action?.toolInput?.input || ''}\nObservation: ${step.observation}`
+      }));
+    } else if (actions[0]?.action) {
       actions = actions.map((step) => ({
         log: `${step.action.log}\nObservation: ${step.observation}`
       }));
@@ -469,7 +473,7 @@ Only respond with your conversational reply to the following User Message:
       console.debug(this.tools.map((tool) => tool.name));
     }
 
-    if (this.tools.length > 0) {
+    if (this.tools.length > 0 && !this.functionsAgent) {
       this.tools.push(new SelfReflectionTool({ message, isGpt3: false }));
     } else if (this.tools.length === 0) {
       return;
