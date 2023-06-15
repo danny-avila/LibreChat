@@ -42,7 +42,7 @@ Note: These changes only apply to users who are updating from a previous version
 - We have simplified the configuration process by using a single `.env` file in the root folder instead of separate `/api/.env` and `/client/.env` files.
 - If you had installed a previous version, you can run `npm run upgrade` to automatically copy the content of both files to the new `.env` file and backup the old ones in the root dir.
 - If you are installing the project for the first time, it's recommend you run the installation script `npm run install` to guide your local setup (otherwise continue to use docker)
-- The docker-compose file had some change. Review the [new docker instructions](docs\install\docker_install.md) to make sure you are setup properly. This is still the simplest and most effective method.
+- The docker-compose file had some change. Review the [new docker instructions](docs/install/docker_install.md) to make sure you are setup properly. This is still the simplest and most effective method.
 - The upgrade script requires both `/api/.env` and `/client/.env` files to run properly. If you get an error about a missing client env file, just rename the `/client/.env.example` file to `/client/.env` and run the script again.
 - We have renamed the `OPENAI_KEY` variable to `OPENAI_API_KEY` to match the official documentation. The upgrade script should do this automatically for you, but please double-check that your key is correct in the new `.env` file.
 - After running the upgrade script, the `OPENAI_API_KEY` variable might be placed in a different section in the new `.env` file than before. This does not affect the functionality of the app, but if you want to keep it organized, you can look for it near the bottom of the file and move it to its usual section.
@@ -71,7 +71,7 @@ We apologize for any inconvenience caused by these changes. We hope you enjoy th
 <details open>
   <summary><strong>Getting Started</strong></summary>
 
-  * [Docker Install](/docs/install/docker_install.md)
+  * [Docker Install](docs/install/docker_install.md)
   * [Linux Install](docs/install/linux_install.md)
   * [Mac Install](docs/install/mac_install.md)
   * [Windows Install](docs/install/windows_install.md)
