@@ -111,3 +111,7 @@ export const getAvailablePlugins = (): Promise<t.TPlugin[]> => {
 export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
   return request.post(endpoints.userPlugins(), payload);
 };
+
+export const getStartupConfig = (): Promise<t.TStartupConfig> => {
+  return request.get(endpoints.config());
+}

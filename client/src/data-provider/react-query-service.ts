@@ -19,7 +19,8 @@ export enum QueryKeys {
   presets = 'presets',
   searchResults = 'searchResults',
   tokenCount = 'tokenCount',
-  availablePlugins = 'availablePlugins'
+  availablePlugins = 'availablePlugins',
+  startupConfig = 'startupConfig',
 }
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
@@ -336,3 +337,11 @@ export const useUpdateUserPluginsMutation = (): UseMutationResult<
     }
   });
 };
+
+export const useGetStartupConfig = (): QueryObserverResult<t.TStartupConfig> => {
+  return useQuery<t.TStartupConfig>([QueryKeys.startupConfig], () => dataService.getStartupConfig(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false
+  });
+}
