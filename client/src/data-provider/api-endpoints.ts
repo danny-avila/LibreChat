@@ -89,3 +89,7 @@ export const resetPassword = () => {
 export const plugins = () => {
   return '/api/plugins';
 };
+
+export const config = () => {
+  return '/api/config';
+}
