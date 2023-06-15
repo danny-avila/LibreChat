@@ -27,7 +27,7 @@
 ---
 
 ### Docker
-- The docker-compose file had some change. Review the [new docker instructions](docs/install/docker_install.md) to make sure you are setup properly. This is still the simplest and most effective method.
+- The docker-compose file had some change. Review the [new docker instructions](../install/docker_install.md) to make sure you are setup properly. This is still the simplest and most effective method.
 
 ---
 
