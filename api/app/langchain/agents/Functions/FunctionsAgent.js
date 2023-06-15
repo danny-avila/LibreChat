@@ -8,7 +8,7 @@ const {
   HumanMessagePromptTemplate
 } = require('langchain/prompts');
 const PREFIX = `You are a helpful AI assistant. Objective: Resolve the user's query with provided functions.
-The user is demanding a function response to the query; if any part of the query requires a function, respond with the function call first since you won't get to later`;
+The user is demanding a function response to the query.`;
 
 function parseOutput(message) {
   if (message.additional_kwargs.function_call) {
@@ -53,8 +53,7 @@ class FunctionsAgent extends Agent {
     return ChatPromptTemplate.fromPromptMessages([
       SystemMessagePromptTemplate.fromTemplate(`Date: ${currentDateString}\n${prefix}`),
       HumanMessagePromptTemplate.fromTemplate(`{chat_history}
-Query: {input}
-{agent_scratchpad}`),
+Query: {input}`),
       new MessagesPlaceholder('agent_scratchpad')
     ]);
   }
