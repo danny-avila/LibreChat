@@ -86,6 +86,7 @@ Issuer.discover(process.env.OPENID_ISSUER)
             user.avatar = '';
           }
 
+          user.refreshToken = tokenset.refresh_token;
           await user.save();
 
           const payload = {
