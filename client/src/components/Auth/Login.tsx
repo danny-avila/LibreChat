@@ -87,10 +87,10 @@ function Login() {
               <a
                 aria-label="Login with OpenID"
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${DOMAIN_SERVER}/oauth/openid`}
+                href={`${startupConfig.serverDomain}/oauth/openid`}
               >
-              {VITE_OPENID_URL ? (
-                <img src={VITE_OPENID_URL} alt="OpenID Logo" className="h-5 w-5"/>
+              {startupConfig.openidUrl ? (
+                <img src={startupConfig.openidUrl} alt="OpenID Logo" className="h-5 w-5"/>
               ) : (
                 <svg 
                   xmlns="http://www.w3.org/2000/svg"
@@ -103,11 +103,7 @@ function Login() {
                   ></path>
                 </svg>
               )}
-              {VITE_OPENID_LABEL ? (
-                <p>{VITE_OPENID_LABEL}</p>
-              ) : (
-                <p>OpenID</p>
-              )}
+              <p>startupConfig.openidLabel</p>              
               </a>
             </div>
           </>
