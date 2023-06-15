@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { useRegisterUserMutation, TRegisterUser } from '~/data-provider';
-import { SHOW_GOOGLE_LOGIN_OPTION, DOMAIN_SERVER } from '~/utils/envConstants';
+import { useRegisterUserMutation, TRegisterUser, useGetStartupConfig } from '~/data-provider';
 
 function Registration() {
   const navigate = useNavigate();
+  const { data: startupConfig } = useGetStartupConfig();
 
   const {
     register,
@@ -33,6 +33,12 @@ function Registration() {
       }
     });
   };
+
+  useEffect(() => {
+    if (startupConfig?.registrationEnabled === false) {
+      navigate('/login');
+    }
+  }, [startupConfig, navigate]);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
@@ -266,7 +272,7 @@ function Registration() {
             Login
           </a>
         </p>
-        {SHOW_GOOGLE_LOGIN_OPTION && (
+        {startupConfig?.googleLoginEnabled && (
           <>
             <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
               <div className="absolute bg-white px-3 text-xs">Or</div>
@@ -275,7 +281,7 @@ function Registration() {
             <div className="mt-4 flex gap-x-2">
               <a
                 aria-label="Login with Google"
-                href={`${DOMAIN_SERVER}/oauth/google`}
+                href={`${startupConfig.serverDomain}/oauth/google`}
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
               >
                 <svg

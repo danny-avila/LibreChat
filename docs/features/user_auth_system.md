@@ -29,7 +29,7 @@ When the first account is registered, the application will automatically migrate
 
 The application is setup to support OAuth2/Social Login with Google. All of the code is in place for Facebook login as well, but this has not been tested because the setup process with Facebook was honestly just too painful for me to deal with. I plan to add support for other OAuth2 providers including Github and Discord at a later time.
 
-To enable Google login, you must create an application in the [Google Cloud Console](https://cloud.google.com) and provide the client ID and client secret in the `/.env` file, then set `VITE_SHOW_GOOGLE_LOGIN_OPTION=true`. 
+To enable Google login, you must create an application in the [Google Cloud Console](https://cloud.google.com) and provide the client ID and client secret in the `/.env` file.
 
 ### *Instructions for setting up Google login are provided below.*
 ```
