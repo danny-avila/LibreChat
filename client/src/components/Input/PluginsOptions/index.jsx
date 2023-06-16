@@ -188,6 +188,7 @@ function PluginsOptions() {
             {showAgentSettings ? (
               <AgentSettings
                 agent={agentOptions.agent}
+                skipCompletion={agentOptions.skipCompletion}
                 model={agentOptions.model}
                 endpoint={agentOptions.endpoint}
                 temperature={agentOptions.temperature}

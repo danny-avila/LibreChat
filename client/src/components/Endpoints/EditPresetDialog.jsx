@@ -239,6 +239,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
               {preset?.endpoint === 'gptPlugins' && showAgentSettings && (
                 <AgentSettings
                   agent={preset.agent}
+                  skipCompletion={preset.agentOptions.skipCompletion}
                   model={preset.agentOptions.model}
                   endpoint={preset.agentOptions.endpoint}
                   temperature={preset.agentOptions.temperature}

@@ -1,6 +1,7 @@
 import { cn } from '~/utils/';
 import { useRecoilValue } from 'recoil';
 import {
+  Switch,
   SelectDropDown,
   Label,
   Slider,
@@ -21,26 +22,28 @@ function Settings(props) {
   const {
     readonly,
     agent,
+    skipCompletion,
     model,
     temperature,
-    // topP,
-    // freqP,
-    // presP,
     setOption,
-    // tools
   } = props;
   const endpoint = 'gptPlugins';
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const setModel = setOption('model');
   const setTemperature = setOption('temperature');
-  // const setTopP = setOption('top_p');
-  // const setFreqP = setOption('presence_penalty');
-  // const setPresP = setOption('frequency_penalty');
+  const setAgent = setOption('agent');
+  const setSkipCompletion = setOption('skipCompletion');
+  const onCheckedChangeAgent = (checked) => {
+    setAgent(checked ? 'functions' : 'classic');
+  };
 
-  // const toolsSelected = tools?.length > 0;
+  const onCheckedChangeSkip = (checked) => {
+    setSkipCompletion(checked);
+  };
+  
+
   const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
-  const agents = endpointsConfig?.[endpoint]?.['availableAgents'] || [];
 
   return (
     <div className="max-h-[350px] min-h-[305px] overflow-y-auto">
@@ -60,19 +63,31 @@ function Settings(props) {
               containerClassName="flex w-full resize-none"
             />
           </div>
-          <div className="grid w-full items-center gap-2">
-            <SelectDropDown
-              title="Agent Mode"
-              value={agent}
-              setValue={setOption('agent')}
-              availableValues={agents}
-              disabled={readonly}
-              className={cn(
-                defaultTextProps,
-                'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
-              )}
-              containerClassName="flex w-full resize-none"
-            />
+          <div className="grid w-full items-center gap-2 grid-cols-2">
+            <HoverCard openDelay={500}>
+              <HoverCardTrigger className='w-1/2'>
+                <label
+                  htmlFor="functions-agent"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+                >
+                  <small>Use Functions</small>
+                </label>
+                <Switch id="functions-agent" checked={agent === 'functions'} onCheckedChange={onCheckedChangeAgent} disabled={readonly} className="mt-2 ml-4"/>
+              </HoverCardTrigger>
+              <OptionHover type="temp" side="right" />
+            </HoverCard>
+            <HoverCard openDelay={500}>
+              <HoverCardTrigger className='w-1/2 ml-[-60px]'>
+                <label
+                  htmlFor="skip-completion"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+                >
+                  <small>Skip Completion</small>
+                </label>
+                <Switch id="skip-completion" checked={skipCompletion === true} onCheckedChange={onCheckedChangeSkip} disabled={readonly} className="mt-2 ml-4"/>
+              </HoverCardTrigger>
+              <OptionHover type="temp" side="right" />
+            </HoverCard>
           </div>
         </div>
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
