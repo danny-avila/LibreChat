@@ -11,6 +11,7 @@ export * from './Landing';
 export * from './ModelSelect';
 export * from './Prompt';
 export * from './Slider';
+export * from './Switch';
 export * from './Tabs';
 export * from './Templates';
 export * from './Textarea';
