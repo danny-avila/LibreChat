@@ -74,7 +74,7 @@ function Settings(props) {
                 </label>
                 <Switch id="functions-agent" checked={agent === 'functions'} onCheckedChange={onCheckedChangeAgent} disabled={readonly} className="mt-2 ml-4"/>
               </HoverCardTrigger>
-              <OptionHover type="temp" side="right" />
+              <OptionHover type="func" side="right" />
             </HoverCard>
             <HoverCard openDelay={500}>
               <HoverCardTrigger className='w-1/2 ml-[-60px]'>
@@ -86,7 +86,7 @@ function Settings(props) {
                 </label>
                 <Switch id="skip-completion" checked={skipCompletion === true} onCheckedChange={onCheckedChangeSkip} disabled={readonly} className="mt-2 ml-4"/>
               </HoverCardTrigger>
-              <OptionHover type="temp" side="right" />
+              <OptionHover type="skip" side="right" />
             </HoverCard>
           </div>
         </div>
