@@ -6,7 +6,7 @@ const {
 } = require('@dqbd/tiktoken');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
 const { Agent, ProxyAgent } = require('undici');
-// const TextStream = require('../stream');
+const TextStream = require('../stream');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { CallbackManager } = require('langchain/callbacks');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
@@ -687,13 +687,14 @@ Only respond with your conversational reply to the following User Message:
       return { ...responseMessage, ...this.result };
     }
 
-    // if (!this.agentIsGpt3 && this.result.output) {
-    //   responseMessage.text = this.result.output;
-    //   await this.saveMessageToDatabase(responseMessage, user);
-    //   const textStream = new TextStream(this.result.output);
-    //   await textStream.processTextStream(opts.onProgress);
-    //   return { ...responseMessage, ...this.result };
-    // }
+    if (!completionMode && this.agentOptions.skipCompletion && this.result.output) {
+      responseMessage.text = this.result.output;
+      this.addImages(this.result.intermediateSteps, responseMessage);
+      await this.saveMessageToDatabase(responseMessage, user);
+      const textStream = new TextStream(this.result.output);
+      await textStream.processTextStream(opts.onProgress);
+      return { ...responseMessage, ...this.result };
+    }
 
     if (this.options.debug) {
       console.debug('this.result', this.result);
@@ -712,6 +713,26 @@ Only respond with your conversational reply to the following User Message:
     responseMessage.text = finalReply;
     await this.saveMessageToDatabase(responseMessage, user);
     return { ...responseMessage, ...this.result };
+  }
+
+  addImages(intermediateSteps, responseMessage) {
+    if (!intermediateSteps || !responseMessage) {
+      return;
+    }
+
+    intermediateSteps.forEach(step => {
+      const { observation } = step;
+      if (!observation || !observation.includes('![')) {
+        return;
+      }
+
+      if (!responseMessage.text.includes(observation)) {
+        responseMessage.text += '\n' + observation;
+        if (this.options.debug) {
+          console.debug('added image from intermediateSteps');
+        }
+      }
+    });
   }
 
   async buildPrompt({ messages, promptPrefix: _promptPrefix, completionMode = false, isChatGptModel = true }) {
