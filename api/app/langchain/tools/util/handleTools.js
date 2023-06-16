@@ -13,6 +13,7 @@ const {
   AIPluginTool,
   GoogleSearchAPI,
   WolframAlphaAPI,
+  StructuredWolfram,
   HttpRequestTool,
   OpenAICreateImage,
   StableDiffusionAPI,
@@ -76,7 +77,7 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
   const toolConstructors = {
     calculator: Calculator,
     google: GoogleSearchAPI,
-    wolfram: WolframAlphaAPI,
+    wolfram: functions ? StructuredWolfram : WolframAlphaAPI,
     'dall-e': OpenAICreateImage,
     'stable-diffusion': functions ? StructuredSD : StableDiffusionAPI
   };
