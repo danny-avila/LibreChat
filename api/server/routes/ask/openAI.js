@@ -1,16 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { titleConvo } = require('../../../app/');
-// const { getOpenAIModels } = require('../endpoints');
-const ChatAgent = require('../../../app/langchain/ChatAgent');
-const { validateTools } = require('../../../app/langchain/tools/util');
+const { titleConvo, OpenAIClient } = require('../../../app');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const {
   handleError,
   sendMessage,
   createOnProgress,
-  formatSteps,
-  formatAction
 } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 
@@ -36,35 +31,17 @@ router.post('/abort', requireJwtAuth, async (req, res) => {
 router.post('/', requireJwtAuth, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
-  if (endpoint !== 'gptPlugins') return handleError(res, { text: 'Illegal request' });
+  if (endpoint !== 'openAI') return handleError(res, { text: 'Illegal request' });
 
-  const agentOptions = req.body?.agentOptions ?? {
-    agent: 'functions',
-    skipCompletion: true,
-    model: 'gpt-3.5-turbo',
-    temperature: 0,
-    // top_p: 1,
-    // presence_penalty: 0,
-    // frequency_penalty: 0
-  };
-  
-  const tools = req.body?.tools.map((tool) => tool.pluginKey) ?? [];
   // build endpoint option
   const endpointOption = {
-    chatGptLabel: tools.length === 0 ? req.body?.chatGptLabel ?? null : null,
-    promptPrefix: tools.length === 0 ? req.body?.promptPrefix ?? null : null,
-    tools,
-    modelOptions: {
-      model: req.body?.model ?? 'gpt-4',
-      temperature: req.body?.temperature ?? 0,
-      top_p: req.body?.top_p ?? 1,
-      presence_penalty: req.body?.presence_penalty ?? 0,
-      frequency_penalty: req.body?.frequency_penalty ?? 0
-    },
-    agentOptions: {
-      ...agentOptions,
-      // agent: 'functions'
-    }
+    model: req.body?.model ?? 'gpt-3.5-turbo',
+    chatGptLabel: req.body?.chatGptLabel ?? null,
+    promptPrefix: req.body?.promptPrefix ?? null,
+    temperature: req.body?.temperature ?? 1,
+    top_p: req.body?.top_p ?? 1,
+    presence_penalty: req.body?.presence_penalty ?? 0,
+    frequency_penalty: req.body?.frequency_penalty ?? 0
   };
 
   console.log('ask log');
@@ -97,13 +74,6 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
   const { overrideParentMessageId = null } = req.body;
   const user = req.user.id;
 
-  const plugin = {
-    loading: true,
-    inputs: [],
-    latest: null,
-    outputs: null
-  };
-
   try {
     const getIds = (data) => {
       userMessage = data.userMessage;
@@ -114,13 +84,9 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       }
     };
 
-    const { onProgress: progressCallback, sendIntermediateMessage, getPartialText } = createOnProgress({
+    const { onProgress: progressCallback, getPartialText } = createOnProgress({
       onProgress: ({ text: partialText }) => {
         const currentTimestamp = Date.now();
-
-        if (plugin.loading === true) {
-          plugin.loading = false;
-        }
 
         if (currentTimestamp - lastSavedTimestamp > 500) {
           lastSavedTimestamp = currentTimestamp;
@@ -130,7 +96,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
             conversationId,
             parentMessageId: overrideParentMessageId || userMessageId,
             text: partialText,
-            model: endpointOption.modelOptions.model,
+            model: endpointOption.model,
             unfinished: false,
             cancelled: true,
             error: false
@@ -149,8 +115,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
         conversationId,
         parentMessageId: overrideParentMessageId || userMessageId,
         text: getPartialText(),
-        plugin: { ...plugin, loading: false },
-        model: endpointOption.modelOptions.model,
+        model: endpointOption.model,
         unfinished: false,
         cancelled: true,
         error: false,
@@ -170,13 +135,13 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     const onStart = (userMessage) => {
       sendMessage(res, { message: userMessage, created: true });
       abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
-    }
+    };
 
-    endpointOption.tools = await validateTools(user, endpointOption.tools);
     const clientOptions = {
       debug: true,
       reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
       proxy: process.env.PROXY || null,
+      endpoint: 'openAI',
       ...endpointOption
     };
 
@@ -190,40 +155,18 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     }
 
     const oaiApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
-    const chatAgent = new ChatAgent(oaiApiKey, clientOptions);
+    const client = new OpenAIClient(oaiApiKey, clientOptions);
 
-    const onAgentAction = (action) => {
-      const formattedAction = formatAction(action);
-      plugin.inputs.push(formattedAction);
-      plugin.latest = formattedAction.plugin;
-      saveMessage(userMessage);
-      sendIntermediateMessage(res, { plugin });
-      // console.log('PLUGIN ACTION', formattedAction);
-    };
-
-    const onChainEnd = (data) => {
-      let { intermediateSteps: steps } = data;
-      plugin.outputs = steps && steps[0].action ? formatSteps(steps) : 'An error occurred.';
-      plugin.loading = false;
-      saveMessage(userMessage);
-      sendIntermediateMessage(res, { plugin });
-      // console.log('CHAIN END', plugin.outputs);
-    };
-
-    let response = await chatAgent.sendMessage(text, {
-      getIds,
+    let response = await client.sendMessage(text, {
       user,
       parentMessageId,
       conversationId,
       overrideParentMessageId,
-      onAgentAction,
-      onChainEnd,
+      getIds,
       onStart,
-      ...endpointOption,
       onProgress: progressCallback.call(null, {
         res,
         text,
-        plugin,
         parentMessageId: overrideParentMessageId || userMessageId
       }),
       abortController
@@ -233,9 +176,6 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       response.parentMessageId = overrideParentMessageId;
     }
 
-    // console.log('CLIENT RESPONSE');
-    // console.dir(response, { depth: null });
-    response.plugin = { ...plugin, loading: false };
     await saveMessage(response);
 
     sendMessage(res, {

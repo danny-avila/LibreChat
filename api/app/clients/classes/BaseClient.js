@@ -20,8 +20,8 @@ class BaseClient {
     throw new Error("Method 'getCompletion' must be implemented.");
   }
 
-  async getConversation(conversationId, userId = null) {
-    return await getConvo(userId, conversationId);
+  async getConversation(conversationId, user = null) {
+    return await getConvo(user, conversationId);
   }
 
   async loadHistory(conversationId, parentMessageId = null, mapMethod = null) {
@@ -38,9 +38,9 @@ class BaseClient {
     return this.constructor.getMessagesForConversation(messages, parentMessageId, mapMethod);
   }
 
-  async saveMessageToDatabase(message, endpointOptions, userId = null) {
+  async saveMessageToDatabase(message, endpointOptions, user = null) {
     await saveMessage({ ...message, unfinished: false });
-    await saveConvo(userId, {
+    await saveConvo(user, {
       conversationId: message.conversationId,
       endpoint: this.options.endpoint,
       ...endpointOptions
