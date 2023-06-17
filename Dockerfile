@@ -1,8 +1,6 @@
 # Base node image
 FROM node:19-alpine AS node
 COPY . /app
-# Copy .env file
-COPY .env .env
 # Install dependencies
 WORKDIR /app
 RUN npm ci
@@ -10,9 +8,6 @@ RUN npm ci
 # React client build
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 RUN npm run frontend
-
-# Remove .env file after build
-RUN rm .env
 
 # Node API setup
 EXPOSE 3080

@@ -65,7 +65,7 @@ function Settings(props) {
           </div>
           <div className="grid w-full items-center gap-2 grid-cols-2">
             <HoverCard openDelay={500}>
-              <HoverCardTrigger className='w-1/2'>
+              <HoverCardTrigger className='w-[100px]'>
                 <label
                   htmlFor="functions-agent"
                   className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
@@ -77,7 +77,7 @@ function Settings(props) {
               <OptionHover type="func" side="right" />
             </HoverCard>
             <HoverCard openDelay={500}>
-              <HoverCardTrigger className='w-1/2 ml-[-60px]'>
+              <HoverCardTrigger className='w-[100px] ml-[-60px]'>
                 <label
                   htmlFor="skip-completion"
                   className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
