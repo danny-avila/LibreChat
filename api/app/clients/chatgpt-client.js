@@ -22,7 +22,6 @@ const askClient = async ({
   abortController,
   userId
 }) => {
-  // const { ChatGPTClient } = await import('@waylaidwanderer/chatgpt-api');
   const store = {
     store: new KeyvFile({ filename: './data/cache.json' })
   };
@@ -59,6 +58,7 @@ const askClient = async ({
     chatGptLabel,
     promptPrefix,
     proxy: process.env.PROXY || null,
+    userId,
     // debug: true
   };
 

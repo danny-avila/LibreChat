@@ -4,21 +4,22 @@ const Keyv = require('keyv');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('@dqbd/tiktoken');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
 const { Agent, ProxyAgent } = require('undici');
-const BaseClient = require('./BaseClient');
 
 const CHATGPT_MODEL = 'gpt-3.5-turbo';
+
 const tokenizersCache = {};
 
-class ChatGPTClient extends BaseClient {
+class ChatGPTClient {
   constructor(
     apiKey,
     options = {},
     cacheOptions = {},
   ) {
-    super(apiKey, options, cacheOptions);
+    this.apiKey = apiKey;
 
     cacheOptions.namespace = cacheOptions.namespace || 'chatgpt';
     this.conversationsCache = new Keyv(cacheOptions);
+
     this.setOptions(options);
   }
 
@@ -48,9 +49,9 @@ class ChatGPTClient extends BaseClient {
       ...modelOptions,
       // set some good defaults (check for undefined in some cases because they may be 0)
       model: modelOptions.model || CHATGPT_MODEL,
-      temperature: typeof modelOptions.temperature === 'undefined' ? 0.8 : modelOptions.temperature,
-      top_p: typeof modelOptions.top_p === 'undefined' ? 1 : modelOptions.top_p,
-      presence_penalty: typeof modelOptions.presence_penalty === 'undefined' ? 1 : modelOptions.presence_penalty,
+      temperature: typeof modelOptions.temperature === 'undefined' ? null : modelOptions.temperature,
+      top_p: typeof modelOptions.top_p === 'undefined' ? null : modelOptions.top_p,
+      presence_penalty: typeof modelOptions.presence_penalty === 'undefined' ? null : modelOptions.presence_penalty,
       stop: modelOptions.stop,
     };
 
@@ -73,8 +74,9 @@ class ChatGPTClient extends BaseClient {
 
     this.userLabel = this.options.userLabel || 'User';
     this.chatGptLabel = this.options.chatGptLabel || 'ChatGPT';
+    this.getDelta = this.isChatGptModel || this.options.reverseProxyUrl;
 
-    if (isChatGptModel) {
+    if (this.getDelta) {
       // Use these faux tokens to help the AI understand the context since we are building the chat log ourselves.
       // Trying to use "<|im_start|>" causes the AI to still generate "<" or "<|" at the end sometimes for some reason,
       // without tripping the stop sequences, so I'm using "||>" instead.
@@ -145,11 +147,23 @@ class ChatGPTClient extends BaseClient {
     if (typeof onProgress === 'function') {
       modelOptions.stream = true;
     }
-    if (this.isChatGptModel) {
+    if (this.getDelta) {
       modelOptions.messages = input;
     } else {
       modelOptions.prompt = input;
     }
+
+    if (this.options.reverseProxyUrl) {
+      delete modelOptions.temperature;
+      delete modelOptions.top_p;
+      delete modelOptions.presence_penalty;
+      delete modelOptions.frequency_penalty;
+      // delete modelOptions.stop;
+      // delete modelOptions.stream;
+    }
+
+    console.debug('<-------------Prompt payload:------------>', modelOptions);
+
     const { debug } = this.options;
     const url = this.completionsUrl;
     if (debug) {
@@ -334,13 +348,11 @@ ${botMessage.message}
     };
     conversation.messages.push(userMessage);
 
-    // Doing it this way instead of having each message be a separate element in the array seems to be more reliable,
-    // especially when it comes to keeping the AI in character. It also seems to improve coherency and context retention.
     const { prompt: payload, context } = await this.buildPrompt(
       conversation.messages,
       userMessage.id,
       {
-        isChatGptModel: this.isChatGptModel,
+        isChatGptModel: this.getDelta,
         promptPrefix: opts.promptPrefix,
       },
     );
@@ -351,6 +363,7 @@ ${botMessage.message}
 
     let reply = '';
     let result = null;
+    
     if (typeof opts.onProgress === 'function') {
       await this.getCompletion(
         payload,
@@ -358,7 +371,7 @@ ${botMessage.message}
           if (progressMessage === '[DONE]') {
             return;
           }
-          const token = this.isChatGptModel ? progressMessage.choices[0].delta.content : progressMessage.choices[0].text;
+          const token = this.getDelta ? progressMessage.choices[0].delta?.content : progressMessage.choices[0].text;
           // first event's delta content is always undefined
           if (!token) {
             return;
@@ -383,7 +396,7 @@ ${botMessage.message}
       if (this.options.debug) {
         console.debug(JSON.stringify(result));
       }
-      if (this.isChatGptModel) {
+      if (this.getDelta) {
         reply = result.choices[0].message.content;
       } else {
         reply = result.choices[0].text.replace(this.endToken, '');
@@ -531,13 +544,13 @@ ${botMessage.message}
   }
 
   /**
- * Algorithm adapted from "6. Counting tokens for chat API calls" of
- * https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
- *
- * An additional 2 tokens need to be added for metadata after all messages have been counted.
- *
- * @param {*} message
- */
+     * Algorithm adapted from "6. Counting tokens for chat API calls" of
+     * https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
+     *
+     * An additional 2 tokens need to be added for metadata after all messages have been counted.
+     *
+     * @param {*} message
+     */
   getTokenCountForMessage(message) {
     let tokensPerMessage;
     let nameAdjustment;
@@ -561,6 +574,29 @@ ${botMessage.message}
 
     // Sum the number of tokens in all properties and add `tokensPerMessage` for metadata
     return propertyTokenCounts.reduce((a, b) => a + b, tokensPerMessage);
+  }
+
+  /**
+     * Iterate through messages, building an array based on the parentMessageId.
+     * Each message has an id and a parentMessageId. The parentMessageId is the id of the message that this message is a reply to.
+     * @param messages
+     * @param parentMessageId
+     * @returns {*[]} An array containing the messages in the order they should be displayed, starting with the root message.
+     */
+  static getMessagesForConversation(messages, parentMessageId) {
+    const orderedMessages = [];
+    let currentMessageId = parentMessageId;
+    while (currentMessageId) {
+      // eslint-disable-next-line no-loop-func
+      const message = messages.find(m => m.id === currentMessageId);
+      if (!message) {
+        break;
+      }
+      orderedMessages.unshift(message);
+      currentMessageId = message.parentMessageId;
+    }
+
+    return orderedMessages;
   }
 }
 
