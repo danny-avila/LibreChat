@@ -4,6 +4,7 @@ const { genAzureChatCompletion } = require('../../utils/genAzureEndpoints');
 const tiktoken = require('@dqbd/tiktoken');
 const tiktokenModels = require('../../utils/tiktokenModels');
 const encoding_for_model = tiktoken.encoding_for_model;
+const { OpenAIClient } = require('./classes');
 
 const askClient = async ({
   text,
@@ -21,7 +22,7 @@ const askClient = async ({
   abortController,
   userId
 }) => {
-  const { ChatGPTClient } = await import('@waylaidwanderer/chatgpt-api');
+  // const { ChatGPTClient } = await import('@waylaidwanderer/chatgpt-api');
   const store = {
     store: new KeyvFile({ filename: './data/cache.json' })
   };
@@ -57,7 +58,7 @@ const askClient = async ({
     },
     chatGptLabel,
     promptPrefix,
-    proxy: process.env.PROXY || null
+    proxy: process.env.PROXY || null,
     // debug: true
   };
 
@@ -72,7 +73,7 @@ const askClient = async ({
     });
   }
 
-  const client = new ChatGPTClient(apiKey, clientOptions, store);
+  const client = new OpenAIClient(apiKey, clientOptions, store);
 
   const options = {
     onProgress,
