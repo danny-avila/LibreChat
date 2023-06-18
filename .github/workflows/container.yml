@@ -9,8 +9,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      packages: write
 
     steps:
       # Check out the repository
@@ -43,6 +41,8 @@ jobs:
       # Tag it properly before push to github
       - name: tag image and push
         run: |
-          docker tag librechat:latest ghcr.io/aitok/librechat/librechat:${{ steps.tag_name.outputs.TAG_NAME }}
-          docker push ghcr.io/aitok/librechat/librechat:${{ steps.tag_name.outputs.TAG_NAME }}
+          docker tag librechat:latest ghcr.io/aitok-ai/librechat/librechat:${{ steps.tag_name.outputs.TAG_NAME }}
+          docker push ghcr.io/aitok-ai/librechat/librechat:${{ steps.tag_name.outputs.TAG_NAME }}
+          docker tag librechat:latest ghcr.io/aitok-ai/librechat/librechat:latest
+          docker push ghcr.io/aitok-ai/librechat/librechat:latest
 
