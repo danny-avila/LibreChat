@@ -1,4 +1,3 @@
-require('./fetch-polyfill.js');
 const crypto = require('crypto');
 const Keyv = require('keyv');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('@dqbd/tiktoken');

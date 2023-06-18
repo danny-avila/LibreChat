@@ -58,7 +58,10 @@ class BaseClient {
     const orderedMessages = [];
     let currentMessageId = parentMessageId;
     while (currentMessageId) {
-      const message = messages.find(m => m.id === currentMessageId);
+      const message = messages.find(msg => {
+        const messageId = msg.messageId ?? msg.id;
+        return messageId === currentMessageId;
+      });
       if (!message) {
         break;
       }

@@ -63,7 +63,7 @@ class OpenAIClient extends ChatGPTClient {
     currentMessages.push(userMessage);
     const { prompt: payload } = await this.buildPrompt(
       currentMessages,
-      userMessage.id,
+      userMessage.messageId,
       {
         isChatGptModel: this.isChatGptModel,
         promptPrefix: opts.promptPrefix,
@@ -124,7 +124,7 @@ class OpenAIClient extends ChatGPTClient {
 
   async buildPrompt(messages, parentMessageId, { isChatGptModel = false, promptPrefix = null }) {
     const payload = [];
-    // const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
+    const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
 
     promptPrefix = (promptPrefix || this.options.promptPrefix || '').trim();
     if (promptPrefix) {
@@ -136,7 +136,7 @@ class OpenAIClient extends ChatGPTClient {
       });
     }
 
-    const formattedMessages = messages.map((message) => {
+    const formattedMessages = orderedMessages.map((message) => {
       let { role: _role, sender, text } = message;
       const role = _role ?? sender;
       const formattedMessage = {
