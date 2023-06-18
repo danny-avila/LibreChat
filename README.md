@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://discord.gg/NGaa9RPCft">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://user-images.githubusercontent.com/110412045/228325485-9d3e618f-a980-44fe-89e9-d6d39164680e.png">
-      <img src="https://user-images.githubusercontent.com/110412045/228325485-9d3e618f-a980-44fe-89e9-d6d39164680e.png" height="128">
+      <source media="(prefers-color-scheme: dark)" srcset="https://github.com/fuegovic/LibreChat/assets/32828263/fe3b9dbc-976f-4eb3-a900-fa21e0e38be6">
+      <img src="https://github.com/fuegovic/LibreChat/assets/32828263/fe3b9dbc-976f-4eb3-a900-fa21e0e38be6" height="172">
     </picture>
     <h1 align="center">LibreChat</h1>
   </a>
