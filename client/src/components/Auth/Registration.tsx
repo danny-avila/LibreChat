@@ -337,7 +337,7 @@ function Registration() {
                   ></path>
                 </svg>
               )}
-              <p>{startupConfig.openidLabel}/p>              
+              <p>startupConfig.openidLabel/p>              
               </a>
             </div>
           </>
