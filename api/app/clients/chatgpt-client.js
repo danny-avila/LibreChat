@@ -1,8 +1,7 @@
 require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
-const { genAzureChatCompletion } = require('../../utils/genAzureEndpoints');
+const { tiktokenModels, genAzureChatCompletion } = require('../../utils/');
 const tiktoken = require('@dqbd/tiktoken');
-const tiktokenModels = require('../../utils/tiktokenModels');
 const encoding_for_model = tiktoken.encoding_for_model;
 const { OpenAIClient } = require('./classes');
 

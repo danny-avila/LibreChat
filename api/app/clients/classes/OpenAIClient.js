@@ -1,9 +1,9 @@
-// const { ChatGPTClient } = import('@waylaidwanderer/chatgpt-api');
 const ChatGPTClient = require('./ChatGPTClient');
 
 class OpenAIClient extends ChatGPTClient {
   constructor(apiKey, options, cacheOptions) {
     super(apiKey, options, cacheOptions);
+    this.getDelta = this.options.reverseProxyUrl || this.isChatGptModel || this.options.localAI;
   }
 
   async sendMessage(message, opts = {}) {

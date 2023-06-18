@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { titleConvo, OpenAIClient } = require('../../../app');
+const { getAzureCredentials } = require('../../../utils');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const {
   handleError,
@@ -146,12 +147,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     };
 
     if (process.env.AZURE_OPENAI_API_KEY) {
-      clientOptions.azure = {
-        azureOpenAIApiKey: process.env.AZURE_OPENAI_API_KEY,
-        azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME,
-        azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME,
-        azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION
-      };
+      clientOptions.azure = getAzureCredentials();
     }
 
     const oaiApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
@@ -190,7 +186,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     if (parentMessageId == '00000000-0000-0000-0000-000000000000' && newConvo) {
       const title = await titleConvo({ text, response });
       await saveConvo(req.user.id, {
-        conversationId: conversationId,
+        conversationId,
         title
       });
     }

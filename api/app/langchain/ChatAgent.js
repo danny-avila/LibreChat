@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { genAzureChatCompletion } = require('../../utils/genAzureEndpoints');
+const { genAzureChatCompletion } = require('../../utils/');
 const {
   encoding_for_model: encodingForModel,
   get_encoding: getEncoding
@@ -30,13 +30,7 @@ class ChatAgent {
     this.openAIApiKey = apiKey;
     this.azure = options.azure || false;
     if (this.azure) {
-      const { azureOpenAIApiInstanceName, azureOpenAIApiDeploymentName, azureOpenAIApiVersion } =
-        this.azure;
-      this.azureEndpoint = genAzureChatCompletion({
-        azureOpenAIApiInstanceName,
-        azureOpenAIApiDeploymentName,
-        azureOpenAIApiVersion
-      });
+      this.azureEndpoint = genAzureChatCompletion(this.azure);
     }
     this.setOptions(options);
     this.executor = null;

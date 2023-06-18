@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { titleConvo } = require('../../../app/');
-// const { getOpenAIModels } = require('../endpoints');
+const { getAzureCredentials } = require('../../../utils/');
 const ChatAgent = require('../../../app/langchain/ChatAgent');
 const { validateTools } = require('../../../app/langchain/tools/util');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
@@ -181,12 +181,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     };
 
     if (process.env.AZURE_OPENAI_API_KEY) {
-      clientOptions.azure = {
-        azureOpenAIApiKey: process.env.AZURE_OPENAI_API_KEY,
-        azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME,
-        azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME,
-        azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION
-      };
+      clientOptions.azure = getAzureCredentials();
     }
 
     const oaiApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
