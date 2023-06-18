@@ -85,22 +85,8 @@ Issuer.discover(process.env.OPENID_ISSUER)
           } else {
             user.avatar = '';
           }
-
-          // user.refreshToken = tokenset.refresh_token;    // Not Secure
-          await user.save();
-
-          const payload = {
-            id: user._id,
-            username: user.username,
-            email: user.email
-            // Add other user data if needed
-          };
           
-          const token = jwt.sign(payload, process.env.JWT_SECRET, {
-            expiresIn: '1h' // Adjust the expiration as needed
-          });
-
-          done(null, user, token);
+          done(null, user);
         } catch (err) {
           done(err);
         }
