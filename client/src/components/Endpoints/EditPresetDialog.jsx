@@ -168,9 +168,9 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={`${title || 'Edit Preset'} - ${preset?.title}`}
-        className="max-w-full sm:max-w-4xl"
+        className="max-w-full sm:max-w-4xl h-[675px] "
         main={
-          <div className="flex w-full flex-col items-center gap-2">
+          <div className="flex w-full flex-col items-center gap-2 md:h-[475px]">
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
