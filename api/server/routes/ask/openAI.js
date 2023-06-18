@@ -36,13 +36,15 @@ router.post('/', requireJwtAuth, async (req, res) => {
 
   // build endpoint option
   const endpointOption = {
-    model: req.body?.model ?? 'gpt-3.5-turbo',
     chatGptLabel: req.body?.chatGptLabel ?? null,
     promptPrefix: req.body?.promptPrefix ?? null,
-    temperature: req.body?.temperature ?? 1,
-    top_p: req.body?.top_p ?? 1,
-    presence_penalty: req.body?.presence_penalty ?? 0,
-    frequency_penalty: req.body?.frequency_penalty ?? 0
+    modelOptions: {
+      model: req.body?.model ?? 'gpt-3.5-turbo',
+      temperature: req.body?.temperature ?? 1,
+      top_p: req.body?.top_p ?? 1,
+      presence_penalty: req.body?.presence_penalty ?? 0,
+      frequency_penalty: req.body?.frequency_penalty ?? 0
+    }
   };
 
   console.log('ask log');
@@ -97,7 +99,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
             conversationId,
             parentMessageId: overrideParentMessageId || userMessageId,
             text: partialText,
-            model: endpointOption.model,
+            model: endpointOption.modelOptions.model,
             unfinished: false,
             cancelled: true,
             error: false
@@ -116,7 +118,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
         conversationId,
         parentMessageId: overrideParentMessageId || userMessageId,
         text: getPartialText(),
-        model: endpointOption.model,
+        model: endpointOption.modelOptions.model,
         unfinished: false,
         cancelled: true,
         error: false,
@@ -139,7 +141,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     };
 
     const clientOptions = {
-      // debug: true,
+      debug: true,
       reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
       proxy: process.env.PROXY || null,
       endpoint: 'openAI',
@@ -158,6 +160,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       parentMessageId,
       conversationId,
       overrideParentMessageId,
+      ...endpointOption,
       getIds,
       onStart,
       onProgress: progressCallback.call(null, {

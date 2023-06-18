@@ -3,7 +3,10 @@ const ChatGPTClient = require('./ChatGPTClient');
 class OpenAIClient extends ChatGPTClient {
   constructor(apiKey, options, cacheOptions) {
     super(apiKey, options, cacheOptions);
-    this.getDelta = this.options.reverseProxyUrl || this.isChatGptModel || this.options.localAI;
+    this.isChatCompletion = this.options.reverseProxyUrl || this.options.localAI || this.isChatGptModel;
+    if (this.modelOptions.model === 'text-davinci-003') {
+      this.isChatCompletion = false;
+    }
   }
 
   async sendMessage(message, opts = {}) {
@@ -18,6 +21,11 @@ class OpenAIClient extends ChatGPTClient {
     const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
     const responseMessageId = crypto.randomUUID();
     const currentMessages = await this.loadHistory(conversationId, parentMessageId) ?? [];
+    const saveOptions = { 
+      chatGptLabel: this.options.chatGptLabel,
+      promptPrefix: this.options.promptPrefix,
+      ...this.modelOptions
+    };
 
     const userMessage = {
       messageId: userMessageId,
@@ -44,7 +52,7 @@ class OpenAIClient extends ChatGPTClient {
       opts.onStart(userMessage);
     }
 
-    await this.saveMessageToDatabase(userMessage, { ...this.modelOptions }, user);
+    await this.saveMessageToDatabase(userMessage, saveOptions, user);
 
     const responseMessage = {
       messageId: responseMessageId,
@@ -65,7 +73,7 @@ class OpenAIClient extends ChatGPTClient {
       currentMessages,
       userMessage.messageId,
       {
-        isChatGptModel: this.isChatGptModel,
+        isChatCompletion: this.isChatCompletion,
         promptPrefix: opts.promptPrefix,
       },
     );
@@ -84,7 +92,7 @@ class OpenAIClient extends ChatGPTClient {
           if (progressMessage === '[DONE]') {
             return;
           }
-          const token = this.isChatGptModel ? progressMessage.choices[0].delta?.content : progressMessage.choices[0].text;
+          const token = this.isChatCompletion ? progressMessage.choices[0].delta?.content : progressMessage.choices[0].text;
           // first event's delta content is always undefined
           if (!token) {
             return;
@@ -109,7 +117,7 @@ class OpenAIClient extends ChatGPTClient {
       if (this.options.debug) {
         console.debug(JSON.stringify(result));
       }
-      if (this.isChatGptModel) {
+      if (this.isChatCompletion) {
         reply = result.choices[0].message.content;
       } else {
         reply = result.choices[0].text.replace(this.endToken, '');
@@ -118,11 +126,15 @@ class OpenAIClient extends ChatGPTClient {
 
     reply = reply.trim();
     responseMessage.text = reply;
-    await this.saveMessageToDatabase(responseMessage, { ...this.modelOptions }, user);
+    await this.saveMessageToDatabase(responseMessage, saveOptions, user);
     return { ...responseMessage, ...this.result };
   }
 
-  async buildPrompt(messages, parentMessageId, { isChatGptModel = false, promptPrefix = null }) {
+  async buildPrompt(messages, parentMessageId, { isChatCompletion = false, promptPrefix = null }) {
+    if (!isChatCompletion) {
+      return await super.buildPrompt(messages, parentMessageId, { isChatGptModel: isChatCompletion, promptPrefix });
+    }
+
     const payload = [];
     const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
 
@@ -144,20 +156,19 @@ class OpenAIClient extends ChatGPTClient {
         content: text ?? '',
       };
 
-      if (this.options?.name && formattedMessage.role === 'user' ) {
+      if (this.options?.name && formattedMessage.role === 'user') {
         formattedMessage.name = this.options.name;
       }
-    
+
       return formattedMessage;
-    });    
+    });
 
     payload.push(...formattedMessages);
 
-    if (isChatGptModel || this.options.reverseProxyUrl) {
-      // return { prompt: [instructionsPayload, ...orderedMessages], context };
+    if (isChatCompletion) {
       return { prompt: payload };
     }
-    
+
     return { prompt };
   }
 
