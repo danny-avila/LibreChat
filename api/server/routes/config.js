@@ -11,7 +11,7 @@ router.get('/', async function (req, res) {
     const serverDomain = process.env.DOMAIN_SERVER || 'http://localhost:3080';
     const registrationEnabled = process.env.ALLOW_REGISTRATION || true;
     
-    return res.status(200).send({appTitle, googleLoginEnabled, openidLoginEnabled, serverDomain, registrationEnabled});
+    return res.status(200).send({appTitle, googleLoginEnabled, openidLoginEnabled, openidLabel, openidUrl, serverDomain, registrationEnabled});
   } catch (err) {
     console.error(err);
     return res.status(500).send({error: err.message});
