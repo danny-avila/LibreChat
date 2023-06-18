@@ -52,15 +52,15 @@ let env = {};
 
 (async () => {
   // Lets colour the console
-  console.purple('=== LibreChat First Install ===');
+  console.purple('=== AITok Chat First Install ===');
   console.blue('Note: Leave blank to use the default value.');
   console.log(''); // New line
 
   // Ask for the app title
   const title = await askQuestion(
-    'Enter the app title (default: "LibreChat"): '
+    'Enter the app title (default: "AITok Chat"): '
   );
-  env['APP_TITLE'] = title || 'LibreChat';
+  env['APP_TITLE'] = title || 'AITok Chat';
 
   // Ask for OPENAI_API_KEY
   const key = await askQuestion(
