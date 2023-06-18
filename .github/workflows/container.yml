@@ -29,7 +29,9 @@ jobs:
 
       # Run docker-compose build
       - name: Build Docker images
-        run: docker-compose build
+        run: |
+          cp .env.example .env
+          docker-compose build
       
       # Get Tag Name
       - name: Get Tag Name
