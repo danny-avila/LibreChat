@@ -77,7 +77,7 @@ router.get(
     session: false
   }),
   (req, res) => {
-    const token = req.authInfo; 
+    const token = req.user.generateToken();
     res.cookie('token', token, {
       expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
       httpOnly: false,
