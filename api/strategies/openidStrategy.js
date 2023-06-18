@@ -86,6 +86,8 @@ Issuer.discover(process.env.OPENID_ISSUER)
             user.avatar = '';
           }
           
+          await user.save();
+          
           done(null, user);
         } catch (err) {
           done(err);
