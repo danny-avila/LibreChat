@@ -4,7 +4,7 @@ name: Docker Compose Build on Tag
 on:
   push:
     tags:
-      - '*'
+      - "*"
 
 jobs:
   build:
@@ -32,17 +32,16 @@ jobs:
         run: |
           cp .env.example .env
           docker-compose build
-      
+
       # Get Tag Name
       - name: Get Tag Name
         id: tag_name
-        run: echo ::set-output name=TAG_NAME::${GITHUB_REF/refs\/tags\//}
+        run: echo "TAG_NAME=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
 
       # Tag it properly before push to github
       - name: tag image and push
         run: |
-          docker tag librechat:latest ghcr.io/aitok-ai/librechat:${{ steps.tag_name.outputs.TAG_NAME }}
-          docker push ghcr.io/aitok-ai/librechat:${{ steps.tag_name.outputs.TAG_NAME }}
-          docker tag librechat:latest ghcr.io/aitok-ai/librechat:latest
-          docker push ghcr.io/aitok-ai/librechat:latest
-
+          docker tag librechat:latest ghcr.io/${{ github.repository_owner }}/librechat:${{ env.TAG_NAME }}
+          docker push ghcr.io/${{ github.repository_owner }}/librechat:${{ env.TAG_NAME }}
+          docker tag librechat:latest ghcr.io/${{ github.repository_owner }}/librechat:latest
+          docker push ghcr.io/${{ github.repository_owner }}/librechat:latest
