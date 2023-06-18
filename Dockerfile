@@ -15,8 +15,8 @@ ENV HOST=0.0.0.0
 CMD ["npm", "run", "backend"]
 
 # Optional: for client with nginx routing
-# FROM nginx:stable-alpine AS nginx-client
-# WORKDIR /usr/share/nginx/html
-# COPY --from=node /app/client/dist /usr/share/nginx/html
-# COPY client/nginx.conf /etc/nginx/conf.d/default.conf
-# ENTRYPOINT ["nginx", "-g", "daemon off;"]
+FROM nginx:stable-alpine AS nginx-client
+WORKDIR /usr/share/nginx/html
+COPY --from=node /app/client/dist /usr/share/nginx/html
+COPY client/nginx.conf /etc/nginx/conf.d/default.conf
+ENTRYPOINT ["nginx", "-g", "daemon off;"]
