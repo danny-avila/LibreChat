@@ -83,49 +83,7 @@ class OpenAIClient extends ChatGPTClient {
       console.debug(payload);
     }
 
-    let reply = '';
-    let result = null;
-    if (typeof opts.onProgress === 'function') {
-      await this.getCompletion(
-        payload,
-        (progressMessage) => {
-          if (progressMessage === '[DONE]') {
-            return;
-          }
-          const token = this.isChatCompletion ? progressMessage.choices[0].delta?.content : progressMessage.choices[0].text;
-          // first event's delta content is always undefined
-          if (!token) {
-            return;
-          }
-          if (this.options.debug) {
-            console.debug(token);
-          }
-          if (token === this.endToken) {
-            return;
-          }
-          opts.onProgress(token);
-          reply += token;
-        },
-        opts.abortController || new AbortController(),
-      );
-    } else {
-      result = await this.getCompletion(
-        payload,
-        null,
-        opts.abortController || new AbortController(),
-      );
-      if (this.options.debug) {
-        console.debug(JSON.stringify(result));
-      }
-      if (this.isChatCompletion) {
-        reply = result.choices[0].message.content;
-      } else {
-        reply = result.choices[0].text.replace(this.endToken, '');
-      }
-    }
-
-    reply = reply.trim();
-    responseMessage.text = reply;
+    responseMessage.text = await this.sendCompletion(payload, opts);
     await this.saveMessageToDatabase(responseMessage, saveOptions, user);
     return { ...responseMessage, ...this.result };
   }
@@ -172,6 +130,50 @@ class OpenAIClient extends ChatGPTClient {
     return { prompt };
   }
 
+  async sendCompletion(payload, opts = {}) {
+    let reply = '';
+    let result = null;
+    if (typeof opts.onProgress === 'function') {
+      await this.getCompletion(
+        payload,
+        (progressMessage) => {
+          if (progressMessage === '[DONE]') {
+            return;
+          }
+          const token = this.isChatCompletion ? progressMessage.choices[0].delta?.content : progressMessage.choices[0].text;
+          // first event's delta content is always undefined
+          if (!token) {
+            return;
+          }
+          if (this.options.debug) {
+            console.debug(token);
+          }
+          if (token === this.endToken) {
+            return;
+          }
+          opts.onProgress(token);
+          reply += token;
+        },
+        opts.abortController || new AbortController(),
+      );
+    } else {
+      result = await this.getCompletion(
+        payload,
+        null,
+        opts.abortController || new AbortController(),
+      );
+      if (this.options.debug) {
+        console.debug(JSON.stringify(result));
+      }
+      if (this.isChatCompletion) {
+        reply = result.choices[0].message.content;
+      } else {
+        reply = result.choices[0].text.replace(this.endToken, '');
+      }
+    }
+
+    return reply.trim();
+  }
 }
 
 module.exports = OpenAIClient;
