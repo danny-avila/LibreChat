@@ -153,7 +153,7 @@ export default function NewConversationMenu() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
-          className="min-w-[300px] dark:bg-gray-900 z-[100]"
+          className="w-96 dark:bg-gray-900 z-[100]"
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
           <DropdownMenuLabel
@@ -217,7 +217,7 @@ export default function NewConversationMenu() {
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
             onValueChange={onSelectPreset}
-            className={cn('overflow-y-auto', showEndpoints ? 'max-h-[180px]' : 'max-h-[315px]')}
+            className={cn('overflow-y-auto overflow-x-hidden', showEndpoints ? 'max-h-[210px]' : 'max-h-[315px]')}
           >
             {showPresets &&
               (presets.length ? (

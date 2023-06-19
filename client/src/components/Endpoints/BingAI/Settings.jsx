@@ -43,7 +43,7 @@ function Settings(props) {
   }, [debouncedContext]);
 
   return (
-    <div className="max-h-[350px] overflow-y-auto">
+    <div className="md:h-[350px] h-[490px] overflow-y-auto">
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">

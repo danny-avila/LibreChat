@@ -6,7 +6,7 @@ export default function PresetItems({ presets, onSelect, onChangePreset, onDelet
     <>
       {presets.map((preset) => (
         <PresetItem
-          key={preset?.presetId}
+          key={preset?.presetId ?? Math.random()}
           value={preset}
           onSelect={onSelect}
           onChangePreset={onChangePreset}
