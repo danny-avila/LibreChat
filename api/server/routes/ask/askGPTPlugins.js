@@ -218,6 +218,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       onAgentAction,
       onChainEnd,
       onStart,
+      ...endpointOption,
       onProgress: progressCallback.call(null, {
         res,
         text,
