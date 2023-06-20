@@ -17,18 +17,25 @@ try {
 }
 
 const downloadImage = async (url, imagePath, accessToken) => {
-  const response = await axios.get(url, {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`
-    },
-    responseType: 'arraybuffer'
-  });
+  try {
+    const response = await axios.get(url, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      },
+      responseType: 'arraybuffer'
+    });
+    
+    fs.mkdirSync(path.dirname(imagePath), { recursive: true });
+    fs.writeFileSync(imagePath, response.data);
 
-  // Ensure the directory exists, if not, create it
-  fs.mkdirSync(path.dirname(imagePath), { recursive: true });
+    const fileName = path.basename(imagePath);
 
-  fs.writeFileSync(imagePath, response.data);
-}
+    return `/images/openid/${fileName}`;
+  } catch (error) {
+    console.error(`Error downloading image at URL "${url}": ${error}`);
+    return '';
+  }
+};
 
 Issuer.discover(process.env.OPENID_ISSUER)
   .then(issuer => {
@@ -78,10 +85,9 @@ Issuer.discover(process.env.OPENID_ISSUER)
 
             const imagePath = path.join(__dirname, '..', '..', 'client', 'public', 'images', 'openid', fileName);
 
-            // Download image
-            await downloadImage(imageUrl, imagePath, tokenset.access_token);
+            const imagePathOrEmpty = await downloadImage(imageUrl, imagePath, tokenset.access_token);
 
-            user.avatar = '/images/openid/' + fileName; 
+            user.avatar = imagePathOrEmpty;
           } else {
             user.avatar = '';
           }
