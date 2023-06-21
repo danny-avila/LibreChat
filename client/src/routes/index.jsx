@@ -5,7 +5,6 @@ import Search from './Search';
 import { Login, Registration, RequestPasswordReset, ResetPassword } from '../components/Auth';
 import { AuthContextProvider } from '../hooks/AuthContext';
 import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
-import { ALLOW_REGISTRATION } from '../utils/envConstants';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -17,7 +16,7 @@ const AuthLayout = () => (
 export const router = createBrowserRouter([
   {
     path: 'register',
-    element: ALLOW_REGISTRATION ? <Registration /> : <Navigate to="/login" replace={true} />
+    element: <Registration /> 
   },
   {
     path: 'forgot-password',

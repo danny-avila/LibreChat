@@ -11,6 +11,7 @@ const stripe = require('./stripe');
 const { router: endpoints } = require('./endpoints');
 const plugins = require('./plugins');
 const user = require('./user');
+const config = require('./config');
 
 module.exports = {
   search,
@@ -25,5 +26,6 @@ module.exports = {
   tokenizer,
   endpoints,
   stripe,
-  plugins
+  plugins,
+  config
 };

@@ -3,7 +3,7 @@ const router = express.Router();
 const { titleConvo } = require('../../../app/');
 // const { getOpenAIModels } = require('../endpoints');
 const ChatAgent = require('../../../app/langchain/ChatAgent');
-const { validateTools } = require('../../../app/langchain/tools');
+const { validateTools } = require('../../../app/langchain/tools/util');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const {
   handleError,
@@ -39,8 +39,9 @@ router.post('/', requireJwtAuth, async (req, res) => {
   if (endpoint !== 'gptPlugins') return handleError(res, { text: 'Illegal request' });
 
   const agentOptions = req.body?.agentOptions ?? {
+    agent: 'classic',
+    skipCompletion: false,
     model: 'gpt-3.5-turbo',
-    // model: 'gpt-4', // for agent model
     temperature: 0,
     // top_p: 1,
     // presence_penalty: 0,
@@ -60,19 +61,11 @@ router.post('/', requireJwtAuth, async (req, res) => {
       presence_penalty: req.body?.presence_penalty ?? 0,
       frequency_penalty: req.body?.frequency_penalty ?? 0
     },
-    agentOptions
+    agentOptions: {
+      ...agentOptions,
+      // agent: 'functions'
+    }
   };
-
-  // const availableModels = getOpenAIModels();
-  // if (availableModels.find((model) => model === endpointOption.modelOptions.model) === undefined) {
-  //   return handleError(res, { text: `Illegal request: model` });
-  // }
-
-  // console.log('ask log', {
-  //   text,
-  //   conversationId,
-  //   endpointOption
-  // });
 
   console.log('ask log');
   console.dir({ text, conversationId, endpointOption }, { depth: null });

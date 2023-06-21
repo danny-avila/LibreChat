@@ -234,3 +234,10 @@ export type TResetPassword = {
   token: string;
   password: string;
 };
+
+export type TStartupConfig = {
+  appTitle: boolean;
+  googleLoginEnabled: boolean;
+  serverDomain: string;
+  registrationEnabled: boolean;
+}

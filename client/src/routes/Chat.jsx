@@ -7,7 +7,11 @@ import Messages from '../components/Messages';
 import TextChat from '../components/Input';
 
 import store from '~/store';
-import { useGetMessagesByConvoId, useGetConversationByIdMutation } from '~/data-provider';
+import {
+  useGetMessagesByConvoId,
+  useGetConversationByIdMutation,
+  useGetStartupConfig
+} from '~/data-provider';
 
 export default function Chat() {
   const searchQuery = useRecoilValue(store.searchQuery);
@@ -21,6 +25,7 @@ export default function Chat() {
   //disabled by default, we only enable it when messagesTree is null
   const messagesQuery = useGetMessagesByConvoId(conversationId, { enabled: false });
   const getConversationMutation = useGetConversationByIdMutation(conversationId);
+  const { data: config } = useGetStartupConfig();
 
   // when conversation changed or conversationId (in url) changed
   useEffect(() => {
@@ -53,8 +58,8 @@ export default function Chat() {
       // conversationId (in url) should always follow conversation?.conversationId, unless conversation is null
       navigate(`/chat/${conversation?.conversationId}`);
     }
-    document.title = conversation?.title || import.meta.env.VITE_APP_TITLE || 'Chat';
-  }, [conversation, conversationId]);
+    document.title = conversation?.title || config?.appTitle || 'Chat';
+  }, [conversation, conversationId, config]);
 
   useEffect(() => {
     if (messagesTree === null && conversation?.conversationId) {

@@ -67,6 +67,8 @@ const buildDefaultConversation = ({
     };
   } else if (endpoint === 'gptPlugins') {
     const agentOptions = lastConversationSetup?.agentOptions ?? {
+      agent: 'classic',
+      skipCompletion: false,
       model: 'gpt-3.5-turbo',
       temperature: 0,
       // top_p: 1,

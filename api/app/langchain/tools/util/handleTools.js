@@ -1,3 +1,4 @@
+const { getUserPluginAuthValue } = require('../../../../server/services/PluginService');
 const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
 const { ZapierToolKit } = require('langchain/agents');
 const {
@@ -7,14 +8,17 @@ const {
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { Calculator } = require('langchain/tools/calculator');
 const { WebBrowser } = require('langchain/tools/webbrowser');
-const GoogleSearchAPI = require('./GoogleSearch');
-const HttpRequestTool = require('./HttpRequestTool');
-const AIPluginTool = require('./AIPluginTool');
-const OpenAICreateImage = require('./DALL-E');
-const StableDiffusionAPI = require('./StableDiffusion');
-const WolframAlphaAPI = require('./Wolfram');
-const availableTools = require('./manifest.json');
-const { getUserPluginAuthValue } = require('../../../server/services/PluginService');
+const {
+  availableTools,
+  AIPluginTool,
+  GoogleSearchAPI,
+  WolframAlphaAPI,
+  StructuredWolfram,
+  HttpRequestTool,
+  OpenAICreateImage,
+  StableDiffusionAPI,
+  StructuredSD,
+} = require('../'); 
 
 const validateTools = async (user, tools = []) => {
   try {
@@ -69,13 +73,13 @@ const loadToolWithAuth = async (user, authFields, ToolConstructor, options = {})
   };
 };
 
-const loadTools = async ({ user, model, tools = [], options = {} }) => {
+const loadTools = async ({ user, model, functions = null, tools = [], options = {} }) => {
   const toolConstructors = {
     calculator: Calculator,
     google: GoogleSearchAPI,
-    wolfram: WolframAlphaAPI,
+    wolfram: functions ? StructuredWolfram : WolframAlphaAPI,
     'dall-e': OpenAICreateImage,
-    'stable-diffusion': StableDiffusionAPI
+    'stable-diffusion': functions ? StructuredSD : StableDiffusionAPI
   };
 
   const customConstructors = {
@@ -109,9 +113,10 @@ const loadTools = async ({ user, model, tools = [], options = {} }) => {
       return [
         new HttpRequestTool(),
         await AIPluginTool.fromPluginUrl(
-          "https://www.klarna.com/.well-known/ai-plugin.json", new ChatOpenAI({ openAIApiKey: options.openAIApiKey, temperature: 0 })
-        ),
-      ]
+          'https://www.klarna.com/.well-known/ai-plugin.json',
+          new ChatOpenAI({ openAIApiKey: options.openAIApiKey, temperature: 0 })
+        )
+      ];
     }
   };
 

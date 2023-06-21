@@ -46,7 +46,7 @@
     "jsonwebtoken": "^9.0.0",
     "keyv": "^4.5.2",
     "keyv-file": "^0.2.0",
-    "langchain": "^0.0.92",
+    "langchain": "^0.0.94",
     "lodash": "^4.17.21",
     "meilisearch": "^0.33.0",
     "mongoose": "^7.1.1",
@@ -64,6 +64,7 @@
   "devDependencies": {
     "jest": "^29.5.0",
     "nodemon": "^2.0.20",
-    "path": "^0.12.7"
+    "path": "^0.12.7",
+    "supertest": "^6.3.3"
   }
 }

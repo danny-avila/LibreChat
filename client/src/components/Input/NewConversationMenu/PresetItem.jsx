@@ -50,8 +50,8 @@ export default function PresetItem({ preset = {}, value, onChangePreset, onDelet
       className="group dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800"
     >
       {icon}
-      {preset?.title}
-      <small className="ml-2">({getPresetTitle()})</small>
+      <small className="text-[11px]">{preset?.title}</small>
+      <small className="ml-2 text-[10px]">({getPresetTitle()})</small>
       <div className="flex w-4 flex-1" />
       <button
         className="invisible m-0 mr-1 rounded-md p-2 text-gray-400 hover:text-gray-700 group-hover:visible dark:text-gray-400 dark:hover:text-gray-200        "

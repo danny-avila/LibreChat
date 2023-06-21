@@ -60,6 +60,7 @@ const rawBodyBuffer = (req, res, buf, encoding) => {
   app.use('/api/endpoints', routes.endpoints);
   app.use('/api/stripe', routes.stripe);
   app.use('/api/plugins', routes.plugins);
+  app.use('/api/config', routes.config);
 
   // static files
   app.get('/*', function (req, res) {
