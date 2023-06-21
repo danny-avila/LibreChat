@@ -3,8 +3,7 @@ const { getConvo, getMessages, saveMessage, saveConvo } = require('../../../mode
 class BaseClient {
   constructor(apiKey, options = {}) {
     this.apiKey = apiKey;
-    this.options = options;
-    this.setOptions(options);
+    this.sender = options.sender || 'AI';
     this.currentDateString = new Date().toLocaleDateString('en-us', {
       year: 'numeric',
       month: 'long',
@@ -18,6 +17,86 @@ class BaseClient {
 
   getCompletion() {
     throw new Error("Method 'getCompletion' must be implemented.");
+  }
+
+  getSaveOptions() {
+    throw new Error('Subclasses must implement getSaveOptions');
+  }
+
+  getBuildPromptOptions() {
+    throw new Error('Subclasses must implement getBuildPromptOptions');
+  }
+
+  async sendMessage(message, opts = {}) {
+    if (opts && typeof opts === 'object') {
+      this.setOptions(opts);
+    }
+    console.log('sendMessage', message, opts);
+
+    const user = opts.user || null;
+    const conversationId = opts.conversationId || crypto.randomUUID();
+    const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
+    const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
+    const responseMessageId = crypto.randomUUID();
+    const currentMessages = await this.loadHistory(conversationId, parentMessageId) ?? [];
+    const saveOptions = this.getSaveOptions();
+
+    const userMessage = {
+      messageId: userMessageId,
+      parentMessageId,
+      conversationId,
+      sender: 'User',
+      text: message,
+      isCreatedByUser: true
+    };
+
+    if (this.options.debug) {
+      console.debug('currentMessages', currentMessages);
+    }
+
+    if (typeof opts?.getIds === 'function') {
+      opts.getIds({
+        userMessage,
+        conversationId,
+        responseMessageId
+      });
+    }
+
+    if (typeof opts?.onStart === 'function') {
+      opts.onStart(userMessage);
+    }
+
+    await this.saveMessageToDatabase(userMessage, saveOptions, user);
+
+    const responseMessage = {
+      messageId: responseMessageId,
+      conversationId,
+      parentMessageId: userMessage.messageId,
+      isCreatedByUser: false,
+      model: this.modelOptions.model,
+      sender: this.sender
+    };
+
+    if (this.options.debug) {
+      console.debug('options');
+      console.debug(this.options);
+    }
+
+    currentMessages.push(userMessage);
+    const { prompt: payload } = await this.buildPrompt(
+      currentMessages,
+      userMessage.messageId,
+      this.getBuildPromptOptions(opts),
+    );
+
+    if (this.options.debug) {
+      console.debug('payload');
+      console.debug(payload);
+    }
+
+    responseMessage.text = await this.sendCompletion(payload, opts);
+    await this.saveMessageToDatabase(responseMessage, saveOptions, user);
+    return { ...responseMessage, ...this.result };
   }
 
   async getConversation(conversationId, user = null) {

@@ -1,96 +1,62 @@
+const BaseClient = require('./BaseClient');
 const ChatGPTClient = require('./ChatGPTClient');
 
-class OpenAIClient extends ChatGPTClient {
-  constructor(apiKey, options, cacheOptions) {
-    super(apiKey, options, cacheOptions);
+class OpenAIClient extends BaseClient {
+  constructor(apiKey, options = {}) {
+    super(apiKey, options);
+    this.ChatGPTClient = new ChatGPTClient();
+    this.setOptions = this.ChatGPTClient.setOptions.bind(this);
+    this.getCompletion = this.ChatGPTClient.getCompletion.bind(this);
+    this.getTokenCountForMessage = this.ChatGPTClient.getTokenCountForMessage.bind(this);
+    this.buildPromptMessage = this.ChatGPTClient.buildPrompt.bind(this);
+    this.sender = options.sender || 'ChatGPT';
+    this.setOptions(options);
     this.isChatCompletion = this.options.reverseProxyUrl || this.options.localAI || this.isChatGptModel;
+    this.isChatGptModel = this.isChatCompletion;
     if (this.modelOptions.model === 'text-davinci-003') {
       this.isChatCompletion = false;
+      this.isChatGptModel = false;
     }
   }
 
-  async sendMessage(message, opts = {}) {
-    if (opts && typeof opts === 'object') {
-      this.setOptions(opts);
-    }
-    console.log('sendMessage', message, opts);
+  setupTokens() {
+    this.ChatGPTClient.setupTokens();
+  }
 
-    const user = opts.user || null;
-    const conversationId = opts.conversationId || crypto.randomUUID();
-    const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
-    const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
-    const responseMessageId = crypto.randomUUID();
-    const currentMessages = await this.loadHistory(conversationId, parentMessageId) ?? [];
-    const saveOptions = { 
+  setupTokenizer() {
+    this.ChatGPTClient.setupTokenizer();
+  }
+
+  getTokenizer() {
+    this.gptEncoder = this.ChatGPTClient.getTokenizer(this.modelOptions.model, true);
+  }
+
+  getTokenCount(text) {
+    return this.ChatGPTClient.getTokenCount(text);
+  }
+
+  getTokenCountForMessage(message) {
+    return this.ChatGPTClient.getTokenCountForMessage(message);
+  }
+
+  getSaveOptions() {
+    return {
       chatGptLabel: this.options.chatGptLabel,
       promptPrefix: this.options.promptPrefix,
       ...this.modelOptions
     };
+  }
 
-    const userMessage = {
-      messageId: userMessageId,
-      parentMessageId,
-      conversationId,
-      sender: 'User',
-      text: message,
-      isCreatedByUser: true
+  getBuildPromptOptions(opts) {
+    return {
+      isChatCompletion: this.isChatCompletion,
+      promptPrefix: opts.promptPrefix,
     };
-
-    if (this.options.debug) {
-      console.debug('currentMessages', currentMessages);
-    }
-
-    if (typeof opts?.getIds === 'function') {
-      opts.getIds({
-        userMessage,
-        conversationId,
-        responseMessageId
-      });
-    }
-
-    if (typeof opts?.onStart === 'function') {
-      opts.onStart(userMessage);
-    }
-
-    await this.saveMessageToDatabase(userMessage, saveOptions, user);
-
-    const responseMessage = {
-      messageId: responseMessageId,
-      conversationId,
-      parentMessageId: userMessage.messageId,
-      isCreatedByUser: false,
-      model: this.modelOptions.model,
-      sender: 'ChatGPT'
-    };
-
-    if (this.options.debug) {
-      console.debug('options');
-      console.debug(this.options);
-    }
-
-    currentMessages.push(userMessage);
-    const { prompt: payload } = await this.buildPrompt(
-      currentMessages,
-      userMessage.messageId,
-      {
-        isChatCompletion: this.isChatCompletion,
-        promptPrefix: opts.promptPrefix,
-      },
-    );
-
-    if (this.options.debug) {
-      console.debug('payload');
-      console.debug(payload);
-    }
-
-    responseMessage.text = await this.sendCompletion(payload, opts);
-    await this.saveMessageToDatabase(responseMessage, saveOptions, user);
-    return { ...responseMessage, ...this.result };
   }
 
   async buildPrompt(messages, parentMessageId, { isChatCompletion = false, promptPrefix = null }) {
     if (!isChatCompletion) {
-      return await super.buildPrompt(messages, parentMessageId, { isChatGptModel: isChatCompletion, promptPrefix });
+      return await this.buildPromptMessage(messages, parentMessageId, { isChatGptModel: isChatCompletion, promptPrefix });
     }
 
     const payload = [];
