@@ -136,7 +136,7 @@ class OpenAIClient extends BaseClient {
     return tokenizer;
   }
 
-  freeAndInitializeEncoder() {
+  freeAndResetEncoder() {
     try {
       if (!this.gptEncoder) {
         return;
@@ -146,7 +146,7 @@ class OpenAIClient extends BaseClient {
       this.setupTokenizer();
       tokenizersCache.count = 0;
     } catch (error) {
-      console.log('freeAndInitializeEncoder error');
+      console.log('freeAndResetEncoder error');
       console.error(error);
     }
   }
@@ -154,12 +154,12 @@ class OpenAIClient extends BaseClient {
   getTokenCount(text) {
     try {
       if (tokenizersCache.count >= 25) {
-        this.freeAndInitializeEncoder();
+        this.freeAndResetEncoder();
       }
       tokenizersCache.count = (tokenizersCache.count || 0) + 1;
       return this.gptEncoder.encode(text, 'all').length;
     } catch (error) {
-      this.freeAndInitializeEncoder();
+      this.freeAndResetEncoder();
       return this.gptEncoder.encode(text, 'all').length;
     }
   }

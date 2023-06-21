@@ -473,8 +473,8 @@ ${botMessage.message}
     const buildPromptBody = async () => {
       if (currentTokenCount < maxTokenCount && orderedMessages.length > 0) {
         const message = orderedMessages.pop();
-        const roleLabel = message.isCreatedByUser ? this.userLabel : this.chatGptLabel;
-        const messageString = `${this.startToken}${roleLabel}:\n${message.text}${this.endToken}\n`;
+        const roleLabel = message?.isCreatedByUser || message?.role?.toLowerCase() === 'user' ? this.userLabel : this.chatGptLabel;
+        const messageString = `${this.startToken}${roleLabel}:\n${message?.text ?? message?.message}${this.endToken}\n`;
         let newPromptBody;
         if (promptBody || isChatGptModel) {
           newPromptBody = `${messageString}${promptBody}`;
