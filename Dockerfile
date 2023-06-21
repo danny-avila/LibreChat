@@ -2,7 +2,7 @@
 FROM node:19-alpine AS node
 
 # Install curl for health check
-apk add curl
+RUN apk --no-cache add curl
 
 COPY . /app
 # Install dependencies
