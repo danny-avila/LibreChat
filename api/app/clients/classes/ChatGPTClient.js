@@ -229,7 +229,7 @@ class ChatGPTClient extends BaseClient {
             },
             onmessage(message) {
               if (debug) {
-                console.debug(message);
+                // console.debug(message);
               }
               if (!message.data || message.event === 'ping') {
                 return;
@@ -473,8 +473,8 @@ ${botMessage.message}
     const buildPromptBody = async () => {
       if (currentTokenCount < maxTokenCount && orderedMessages.length > 0) {
         const message = orderedMessages.pop();
-        const roleLabel = message.role === 'User' ? this.userLabel : this.chatGptLabel;
-        const messageString = `${this.startToken}${roleLabel}:\n${message.message}${this.endToken}\n`;
+        const roleLabel = message.isCreatedByUser ? this.userLabel : this.chatGptLabel;
+        const messageString = `${this.startToken}${roleLabel}:\n${message.text}${this.endToken}\n`;
         let newPromptBody;
         if (promptBody || isChatGptModel) {
           newPromptBody = `${messageString}${promptBody}`;
@@ -518,6 +518,10 @@ ${botMessage.message}
 
     // Use up to `this.maxContextTokens` tokens (prompt + response), but try to leave `this.maxTokens` tokens for the response.
     this.modelOptions.max_tokens = Math.min(this.maxContextTokens - currentTokenCount, this.maxResponseTokens);
+
+    if (this.options.debug) {
+      console.debug(`Prompt : ${prompt}`);
+    }
 
     if (isChatGptModel) {
       return { prompt: [instructionsPayload, messagePayload], context };

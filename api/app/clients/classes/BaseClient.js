@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { getConvo, getMessages, saveMessage, saveConvo } = require('../../../models');
 
 class BaseClient {
@@ -23,8 +24,12 @@ class BaseClient {
     throw new Error('Subclasses must implement getSaveOptions');
   }
 
-  getBuildPromptOptions() {
-    throw new Error('Subclasses must implement getBuildPromptOptions');
+  buildMessages() {
+    throw new Error('Subclasses must implement buildMessages');
+  }
+
+  getBuildMessagesOptions() {
+    throw new Error('Subclasses must implement getBuildMessagesOptions');
   }
 
   async sendMessage(message, opts = {}) {
@@ -83,10 +88,10 @@ class BaseClient {
     }
 
     currentMessages.push(userMessage);
-    const { prompt: payload } = await this.buildPrompt(
+    const { prompt: payload } = await this.buildMessages(
       currentMessages,
       userMessage.messageId,
-      this.getBuildPromptOptions(opts),
+      this.getBuildMessagesOptions(opts),
     );
 
     if (this.options.debug) {

@@ -160,7 +160,6 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       parentMessageId,
       conversationId,
       overrideParentMessageId,
-      ...endpointOption,
       getIds,
       onStart,
       onProgress: progressCallback.call(null, {
