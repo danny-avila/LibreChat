@@ -6,6 +6,7 @@ import LightningIcon from '../svg/LightningIcon';
 import CautionIcon from '../svg/CautionIcon';
 import store from '~/store';
 import { useGetStartupConfig } from '~/data-provider';
+import getAppTitle from '~/utils/getAppTitle';
 
 export default function Landing() {
   const { data: config } = useGetStartupConfig();
@@ -13,6 +14,8 @@ export default function Landing() {
   const conversation = useRecoilValue(store.conversation);
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
   const { title = 'New Chat' } = conversation || {};
+
+  const appTitle = getAppTitle(config);
 
   useDocumentTitle(title);
 
@@ -30,7 +33,7 @@ export default function Landing() {
           id="landing-title"
           className="mb-10 ml-auto mr-auto mt-6 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-16 md:mt-[10vh]"
         >
-          {config?.appTitle || 'ChatGPT'}
+          {appTitle}
         </h1>
         <div className="items-start gap-3.5 text-center md:flex">
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
