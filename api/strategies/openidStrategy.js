@@ -54,10 +54,10 @@ Issuer.discover(process.env.OPENID_ISSUER)
       },
       async (tokenset, userinfo, done) => {
         try {
-          let user = await User.findOne({ email: userinfo.email });
+          let user = await User.findOne({ openidId: userinfo.sub });
 
           if (!user) {
-            user = await User.findOne({ openidId: userinfo.sub });
+            user = await User.findOne({ email: userinfo.email });
           }
           
           if (!user) {
