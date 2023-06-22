@@ -185,16 +185,17 @@ class OpenAIClient extends BaseClient {
     }
 
     const payload = [];
+    let instructions;
     const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
 
     promptPrefix = (promptPrefix || this.options.promptPrefix || '').trim();
     if (promptPrefix) {
       promptPrefix = `Instructions:\n${promptPrefix}`;
-      payload.push({
+      instructions = {
         role: 'system',
         name: 'instructions',
         content: promptPrefix,
-      });
+      };
     }
 
     const formattedMessages = orderedMessages.map((message) => {
@@ -212,7 +213,15 @@ class OpenAIClient extends BaseClient {
       return formattedMessage;
     });
 
-    payload.push(...formattedMessages);
+    if (formattedMessages.length > 1) {
+      payload.push(...formattedMessages.slice(0, -1));
+    }
+  
+    payload.push(instructions);
+  
+    if (formattedMessages.length > 0) {
+      payload.push(formattedMessages[formattedMessages.length - 1]);
+    }
 
     if (isChatCompletion) {
       return { prompt: payload };
@@ -231,13 +240,13 @@ class OpenAIClient extends BaseClient {
           if (progressMessage === '[DONE]') {
             return;
           }
-          const token = this.isChatCompletion ? progressMessage.choices[0].delta?.content : progressMessage.choices[0].text;
+          const token = this.isChatCompletion ? progressMessage.choices?.[0]?.delta?.content : progressMessage.choices?.[0]?.text;
           // first event's delta content is always undefined
           if (!token) {
             return;
           }
           if (this.options.debug) {
-            console.debug(token);
+            // console.debug(token);
           }
           if (token === this.endToken) {
             return;
