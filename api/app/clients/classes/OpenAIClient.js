@@ -3,6 +3,16 @@ const ChatGPTClient = require('./ChatGPTClient');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('@dqbd/tiktoken');
 
 const tokenizersCache = {};
+const maxTokensMap = {
+  'gpt-4': 8191,
+  'gpt-4-0613': 8191,
+  'gpt-4-32k': 32767,
+  'gpt-4-32k-0613': 32767,
+  'gpt-3.5-turbo': 4095,
+  'gpt-3.5-turbo-0613': 4095,
+  'gpt-3.5-turbo-0301': 4095,
+  'gpt-3.5-turbo-16k': 15999,
+};
 
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -54,7 +64,7 @@ class OpenAIClient extends BaseClient {
     }
     const { isChatGptModel } = this;
     this.isUnofficialChatGptModel = this.modelOptions.model.startsWith('text-chat') || this.modelOptions.model.startsWith('text-davinci-002-render');
-    this.maxContextTokens = this.options.maxContextTokens || (isChatGptModel ? 4095 : 4097);
+    this.maxContextTokens = maxTokensMap[this.modelOptions.model] ?? 4095; // 1 less than maximum
     this.maxResponseTokens = this.modelOptions.max_tokens || 1024;
     this.maxPromptTokens = this.options.maxPromptTokens || (this.maxContextTokens - this.maxResponseTokens);
 
@@ -180,11 +190,10 @@ class OpenAIClient extends BaseClient {
   }
 
   async buildMessages(messages, parentMessageId, { isChatCompletion = false, promptPrefix = null }) {
-    if (!isChatCompletion) {
+    if (!isChatCompletion || this.modelOptions.model.startsWith('gpt-3.5')) {
       return await this.buildPrompt(messages, parentMessageId, { isChatGptModel: isChatCompletion, promptPrefix });
     }
 
-    const payload = [];
     let instructions;
     const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
 
@@ -213,15 +222,7 @@ class OpenAIClient extends BaseClient {
       return formattedMessage;
     });
 
-    if (formattedMessages.length > 1) {
-      payload.push(...formattedMessages.slice(0, -1));
-    }
-  
-    payload.push(instructions);
-  
-    if (formattedMessages.length > 0) {
-      payload.push(formattedMessages[formattedMessages.length - 1]);
-    }
+    const payload = this.addInstructions(formattedMessages, instructions);
 
     if (isChatCompletion) {
       return { prompt: payload };

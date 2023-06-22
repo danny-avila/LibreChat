@@ -32,6 +32,24 @@ class BaseClient {
     throw new Error('Subclasses must implement getBuildMessagesOptions');
   }
 
+  addInstructions(messages, instructions) {
+    const payload = [];
+    if (!instructions) {
+      return messages;
+    }
+    if (messages.length > 1) {
+      payload.push(...messages.slice(0, -1));
+    }
+  
+    payload.push(instructions);
+  
+    if (messages.length > 0) {
+      payload.push(messages[messages.length - 1]);
+    }
+
+    return payload;
+  }
+
   async sendMessage(message, opts = {}) {
     if (opts && typeof opts === 'object') {
       this.setOptions(opts);
