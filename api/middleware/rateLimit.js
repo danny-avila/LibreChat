@@ -1,3 +1,5 @@
+console.log("rateLimit middleware executed")
+
 const UserActivity = require('../models/UserActivity');
 
 const rateLimit = async (req, res, next) => {
