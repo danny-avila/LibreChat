@@ -59,6 +59,15 @@ Issuer.discover(process.env.OPENID_ISSUER)
           if (!user) {
             user = await User.findOne({ email: userinfo.email });
           }
+
+          let fullName = '';
+          if (userinfo.given_name && userinfo.family_name) {
+            fullName = userinfo.given_name + ' ' + userinfo.family_name;
+          } else if (userinfo.given_name) {
+            fullName = userinfo.given_name;
+          } else if (userinfo.family_name) {
+            fullName = userinfo.family_name;
+          }
           
           if (!user) {
             user = new User({
@@ -67,13 +76,13 @@ Issuer.discover(process.env.OPENID_ISSUER)
               username: userinfo.given_name || '',
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
-              name: (userinfo.given_name || '') + ' ' + (userinfo.family_name || '')
+              name: fullName
              });
           } else {
             user.provider = 'openid';
             user.openidId = userinfo.sub;
             user.username = userinfo.given_name || '';
-            user.name = (userinfo.given_name || '') + ' ' + (userinfo.family_name || '');
+            user.name = fullName;
           }
 
           if (userinfo.picture) {
