@@ -15,6 +15,7 @@ import { cn } from '~/utils/';
 import DotsIcon from '../svg/DotsIcon';
 import SubscribeForm from "../Stripe/SubscribeForm.tsx";
 import { DialogOverlay, DialogContent } from "@reach/dialog";
+import { Button } from '../ui/Button';
 import "@reach/dialog/styles.css";
 
 import store from '~/store';
@@ -44,14 +45,16 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
       <Menu as="div" className="group relative">
         {({ open }) => (
           <>
-            {/* Add the "Go Pro" button */}
-            <button
-              className="bg-indigo-600 text-white px-3 py-2 rounded w-full"
-              onClick={() => setShowSubscribeModal(true)}
-            >
-              Go Pro
-            </button>
-
+            {user && user.subscriptionStatus !== 'active' && (
+              <Button
+                variant="green" 
+                className="w-full" 
+                onClick={() => setShowSubscribeModal(true)}
+              >
+                Go Pro
+              </Button>
+              
+            )}
             {/* Add the SubscribeForm dialog */}
             {showSubscribeModal && (
               <DialogOverlay isOpen={showSubscribeModal} onDismiss={() => setShowSubscribeModal(false)} className="z-50">

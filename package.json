@@ -60,8 +60,8 @@
     "@stripe/react-stripe-js": "^2.1.0",
     "@stripe/stripe-js": "^1.54.0",
     "axios": "^1.4.0",
-    "stripe": "^12.9.0",
-    "langchain": "^0.0.91"
+    "langchain": "^0.0.91",
+    "stripe": "^12.9.0"
   },
   "nodemonConfig": {
     "ignore": [
