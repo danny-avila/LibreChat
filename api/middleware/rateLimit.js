@@ -21,9 +21,9 @@ const rateLimit = async (req, res, next) => {
   
   console.log(`User: ${userId} message count: ${userActivity.messageCount}`);
   
-  if (userActivity.messageCount >= 3000) {
+  if (userActivity.messageCount >= 25) {
     console.log(`Rate limit exceeded for user: ${userId}`);
-    return res.status(429).json({ text: 'Rate limit exceeded. You can send 3 messages per day.' });
+    return res.status(429).json({ text: 'Rate limit exceeded. You can send 25 messages per day.' });
   }
     
   userActivity.messageCount += 1;
