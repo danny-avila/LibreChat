@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { titleConvo } = require('../../../app/');
 // const { getOpenAIModels } = require('../endpoints');
+const rateLimit = require('../../../middleware/rateLimit');
 const ChatAgent = require('../../../app/langchain/ChatAgent');
 const { validateTools } = require('../../../app/langchain/tools/util');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
@@ -33,7 +34,7 @@ router.post('/abort', requireJwtAuth, async (req, res) => {
   res.send(JSON.stringify(ret));
 });
 
-router.post('/', requireJwtAuth, async (req, res) => {
+router.post('/', requireJwtAuth, rateLimit, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   if (endpoint !== 'gptPlugins') return handleError(res, { text: 'Illegal request' });

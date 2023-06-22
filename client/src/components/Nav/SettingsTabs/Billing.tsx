@@ -48,7 +48,7 @@ function Billing() {
           onClick={cancelSubscription}
           disabled={isLoading} 
         >
-          { isLoading ? <Spinner /> : 'Cancel Subscription' } {/* Use your Spinner */}
+          { isLoading ? <Spinner /> : 'Cancel Subscription' }
         </button>
       ) : (
         <p>No active subscription.</p>
