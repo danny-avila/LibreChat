@@ -190,7 +190,7 @@ class OpenAIClient extends BaseClient {
   }
 
   async buildMessages(messages, parentMessageId, { isChatCompletion = false, promptPrefix = null }) {
-    if (!isChatCompletion || this.modelOptions.model.startsWith('gpt-3.5')) {
+    if (!isChatCompletion) {
       return await this.buildPrompt(messages, parentMessageId, { isChatGptModel: isChatCompletion, promptPrefix });
     }
 
