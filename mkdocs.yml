@@ -1,0 +1,58 @@
+site_name: Librechat
+repo_url: https://github.com/danny-avila/LibreChat
+edit_uri: -/tree/main/docs/ 
+
+theme:
+  name: material
+  logo: assets/logo.png
+  
+  palette:
+    # Palette toggle for dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    # Palette toggle for light mode
+    - scheme: default
+      toggle:
+        icon: material/brightness-7 
+        name: Switch to dark mode
+  
+  icon:
+    repo: fontawesome/brands/gitlab
+    edit: material/pencil
+    view: material/eye
+  
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - content.action.edit
+    - content.code.copy
+
+markdown_extensions:
+  - attr_list
+  - admonition
+  - pymdownx.details
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:materialx.emoji.twemoji
+      emoji_generator: !!python/name:materialx.emoji.to_svg
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+
+# Page tree
+nav:
+  - Home: index.md
+  - Getting Started: 
+    - Docker Install: 'install/docker_install.md'
+    
+
+  - AI:
+    - Important:
+      - AI Strategy: 'ai/index.md'
+  - About: 'about/index.md'
