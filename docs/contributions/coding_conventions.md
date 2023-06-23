@@ -97,7 +97,7 @@ Defines Mongoose models to represent data entities and their relationships.
 
 ### Data Services
 
-Use the conventions found in the `data-provider` directory for handling data services. For more information, see [this article](https://www.danorlandoblog.com/chatgpt-clone-data-services-with-react-query/) which describes the methodology used.
+Use the conventions found in the `data-provider` directory for handling data services. For more information, see [this article](https://www.danorlandoblog.com/building-data-services-for-librechat-with-react-query/) which describes the methodology used.
 
 ### State Management
 

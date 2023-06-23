@@ -39,8 +39,8 @@ router.post('/', requireJwtAuth, async (req, res) => {
   if (endpoint !== 'gptPlugins') return handleError(res, { text: 'Illegal request' });
 
   const agentOptions = req.body?.agentOptions ?? {
-    agent: 'classic',
-    skipCompletion: false,
+    agent: 'functions',
+    skipCompletion: true,
     model: 'gpt-3.5-turbo',
     temperature: 0,
     // top_p: 1,
