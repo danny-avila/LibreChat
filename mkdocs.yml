@@ -1,7 +1,10 @@
+# Project information
 site_name: Librechat
-repo_url: https://github.com/danny-avila/LibreChat
 docs_dir: .
-edit_uri: -/tree/main/docs/ 
+
+# Repository
+repo_name: danny-avila/LibreChat
+repo_url: https://github.com/danny-avila/LibreChat
 
 theme:
   name: material
