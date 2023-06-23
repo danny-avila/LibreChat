@@ -30,9 +30,9 @@ https://github.com/danny-avila/LibreChat/assets/110412045/c1eb0c0f-41f6-4335-b98
 - Response streaming identical to ChatGPT through server-sent events
 - UI from original ChatGPT, including Dark mode
 - AI model selection (through 5 endpoints: OpenAI API, BingAI, ChatGPT Browser, PaLM2, Plugins)
-- Create, Save, & Share custom presets - [More info on prompt presets here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.3.0)
+- Create, Save, & Share custom presets - [More info on prompt presets here](https://github.com/danny-avila/LibreChat/releases/tag/v0.3.0)
 - Edit and Resubmit messages with conversation branching
-- Search all messages/conversations - [More info here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.1.0)
+- Search all messages/conversations - [More info here](https://github.com/danny-avila/LibreChat/releases/tag/v0.1.0)
 - Plugins now available (including web access, image generation and more)
 
 ---
@@ -98,7 +98,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Code Standards and Conventions](docs/contributions/coding_conventions.md)
   * [Testing](docs/contributions/testing.md)
   * [Security](SECURITY.md)
-  * [Trello Board](https://trello.com/b/17z094kq/chatgpt-clone)
+  * [Trello Board](https://trello.com/b/17z094kq/LibreChate)
 </details>
 
 
@@ -106,7 +106,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=danny-avila/chatgpt-clone&type=Date)](https://star-history.com/#danny-avila/chatgpt-clone&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date)](https://star-history.com/#danny-avila/LibreChat&Date)
 
 ---
 
@@ -128,6 +128,6 @@ For new features, components, or extensions, please open an issue and discuss be
 
 This project exists in its current state thanks to all the people who contribute
 ---
-<a href="https://github.com/danny-avila/chatgpt-clone/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=danny-avila/chatgpt-clone" />
+<a href="https://github.com/danny-avila/LibreChat/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=danny-avila/LibreChat" />
 </a>

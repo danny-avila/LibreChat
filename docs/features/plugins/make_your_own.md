@@ -207,12 +207,12 @@ Here are a few customConstructors, which have varying initializations
       {
         "authField": "GOOGLE_CSE_ID",
         "label": "Google CSE ID",
-        "description": "This is your Google Custom Search Engine ID. For instructions on how to obtain this, see <a href='https://github.com/danny-avila/chatgpt-clone/blob/main/guides/GOOGLE_SEARCH.md'>Our Docs</a>."
+        "description": "This is your Google Custom Search Engine ID. For instructions on how to obtain this, see <a href='https://github.com/danny-avila/LibreChat/blob/main/docs/features/plugins/google_search.md'>Our Docs</a>."
       },
       {
         "authField": "GOOGLE_API_KEY",
         "label": "Google API Key",
-        "description": "This is your Google Custom Search API Key. For instructions on how to obtain this, see <a href='https://github.com/danny-avila/chatgpt-clone/blob/main/guides/GOOGLE_SEARCH.md'>Our Docs</a>."
+        "description": "This is your Google Custom Search API Key. For instructions on how to obtain this, see <a href='https://github.com/danny-avila/LibreChat/blob/main/docs/features/plugins/google_search.md'>Our Docs</a>."
       }
     ]
   },
