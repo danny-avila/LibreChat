@@ -4,6 +4,7 @@ site_name: Librechat
 # Repository
 repo_name: danny-avila/LibreChat
 repo_url: https://github.com/danny-avila/LibreChat
+edit_uri: ''
 
 theme:
   name: material
