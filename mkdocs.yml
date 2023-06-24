@@ -50,6 +50,7 @@ markdown_extensions:
 
 # Page tree
 nav:
+  - Home: 'index.md'
   - Getting Started: 
     - Docker Install: 'install/docker_install.md'
     - Linux Install: 'install/linux_install.md'
