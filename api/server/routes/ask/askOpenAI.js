@@ -7,6 +7,7 @@ const { titleConvo, askClient } = require('../../../app/');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
+const { getMessagesCount } = require('../../models/Message');
 
 const abortControllers = new Map();
 
@@ -171,6 +172,20 @@ const ask = async ({
     abortControllers.set(abortKey, { abortController, ...endpointOption });
     const oaiApiKey = req.body?.token ?? null;
 
+    let someTimeAgo = new Date();
+    someTimeAgo.setSeconds(someTimeAgo.getSeconds() - 60 * 60 * 24); // 24 hours
+
+    if (endpointOption.model.includes("gpt-4")) {
+      let messagesCount = await getMessagesCount({
+        user: req.user.id,
+        model: endpointOption.model,
+        updatedAt: { $gte: someTimeAgo },
+      });
+      if (messagesCount > process.env["OPENAI_GPT4_QUOTA_PER_SECOND"] * 60 * 60 * 24) {
+        throw new Error("Exceed daily quota! Please contact 615547 to purchase more quota via Wechat");
+      }
+    }
+
     let response = await askClient({
       text,
       parentMessageId: userParentMessageId,
@@ -206,7 +221,8 @@ const ask = async ({
       unfinished: false,
       cancelled: false,
       error: false,
-      model: endpointOption.model
+      model: endpointOption.model,
+      senderId: req.user.id,
     };
 
     await saveMessage(responseMessage);
