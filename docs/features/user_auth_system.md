@@ -58,6 +58,3 @@ To disable or re-enable registration, open up the root `.env` file and set `ALLO
 
 If you previously implemented your own user system using the original scaffolding that was provided, you will no longer see conversations and presets by switching to the new user system. This is because of a design flaw in the scaffolding implementation that was problematic for the inclusion of social login.
 
----
-
-## [Go Back to ReadMe](../../README.md)
