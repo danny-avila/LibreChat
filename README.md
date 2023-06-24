@@ -47,59 +47,12 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 
 ---
 
-<h1>Table of Contents</h1>
-
-<details open>
-  <summary><strong>Getting Started</strong></summary>
-
-  * [Docker Install](docs/install/docker_install.md)
-  * [Linux Install](docs/install/linux_install.md)
-  * [Mac Install](docs/install/mac_install.md)
-  * [Windows Install](docs/install/windows_install.md)
-  * [APIs and Tokens](docs/install/apis_and_tokens.md)
-</details>
-
-<details>
-  <summary><strong>General Information</strong></summary>
+<h1>General Information</h1>
 
   * [Code of Conduct](CODE_OF_CONDUCT.md)
-  * [Project Origin](docs/general_info/project_origin.md)
-  * [Multilingual Information](docs/general_info/multilingual_information.md)
-  * [Tech Stack](docs/general_info/tech_stack.md)
-  * [Bing Jailbreak Info](docs/general_info/bing_jailbreak_info.md)
-</details>
-
-<details>
-  <summary><strong>Features</strong></summary>
-
-  * **Plugins**
-    * [Introduction](docs/features/plugins/introduction.md)
-    * [Google](docs/features/plugins/google_search.md)
-    * [Stable Diffusion](docs/features/plugins/stable_diffusion.md)
-    * [Wolfram](docs/features/plugins/wolfram.md)
-    * [Make Your Own Plugin](docs/features/plugins/make_your_own.md)
-
-  * [User Auth System](docs/features/user_auth_system.md)
-  * [Proxy](docs/features/proxy.md)
-</details>
-
-<details>
-  <summary><strong>Cloud Deployment</strong></summary>
-
-  * [Hetzner](docs/deployment/hetzner_ubuntu.md)
-  * [Heroku](docs/deployment/heroku.md)
-</details>
-
-<details>
-  <summary><strong>Contributions</strong></summary>
-
   * [Contributor Guidelines](CONTRIBUTING.md)
-  * [Documentation Guidelines](docs/contributions/documentation_guidelines.md)
-  * [Code Standards and Conventions](docs/contributions/coding_conventions.md)
-  * [Testing](docs/contributions/testing.md)
   * [Security](SECURITY.md)
   * [Trello Board](https://trello.com/b/17z094kq/LibreChate)
-</details>
 
 
 ---
