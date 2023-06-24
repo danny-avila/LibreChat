@@ -8,7 +8,3 @@
  - Use `#` / `##` / `###` for the different section of the doc
  - Do not add unrelated information to an existing document, create a new one if needed
  - For incremental updates, you need to update the main **README.MD**
-
----
-
-## [Go Back to ReadMe](../../README.md)
