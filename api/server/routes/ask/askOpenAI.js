@@ -177,7 +177,7 @@ const ask = async ({
 
     if (endpointOption.model.includes("gpt-4")) {
       let messagesCount = await getMessagesCount({
-        user: req.user.id,
+        senderId: req.user.id,
         model: endpointOption.model,
         updatedAt: { $gte: someTimeAgo },
       });
