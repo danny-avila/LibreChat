@@ -50,7 +50,7 @@ markdown_extensions:
 
 # Page tree
 nav:
-  - Home: '../README.md'
+  - Home:
   - Getting Started: 
     - Docker Install: 'install/docker_install.md'
     - Linux Install: 'install/linux_install.md'
@@ -58,14 +58,13 @@ nav:
     - Windows Install: 'install/windows_install.md'
     - APIs and Tokens: 'install/apis_and_tokens.md'
   - General Information:
-    - Code of Conduct: '../CODE_OF_CONDUCT.md'
     - Project Origin: 'general_info/project_origin.md'
     - Multilingual Information: 'general_info/multilingual_information.md)'
     - Tech Stack: 'general_info/tech_stack.md'
     - Bing Jailbreak Info: 'general_info/bing_jailbreak_info.md'
   - Features:
     - Plugins:
-      - Introduction]: 'features/plugins/introduction.md'
+      - Introduction: 'features/plugins/introduction.md'
       - Google: 'features/plugins/google_search.md'
       - Stable Diffusion: 'features/plugins/stable_diffusion.md'
       - Wolfram: 'features/plugins/wolfram.md'
@@ -76,12 +75,7 @@ nav:
     - Hetzner: 'deployment/hetzner_ubuntu.md'
     - Heroku: 'deployment/heroku.md'
   - Contributions:
-    - Contributor Guidelines: '../CONTRIBUTING.md'
     - Documentation Guidelines: 'contributions/documentation_guidelines.md'
     - Code Standards and Conventions: 'contributions/coding_conventions.md'
-    - Testing: 'contributions/testing.md'
-    - Security: '../SECURITY.md'
-    
+    - Testing: 'contributions/testing.md' 
 
-
-  
