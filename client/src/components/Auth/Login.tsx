@@ -15,7 +15,6 @@ function Login() {
       navigate('/chat/new');
     }
   }, [isAuthenticated, navigate]);
-
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
       <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
@@ -30,7 +29,7 @@ function Login() {
           </div>
         )}
         <LoginForm onSubmit={login} />
-        {startupConfig?.registrationEnabled === true && (
+        {startupConfig?.registrationEnabled && (
           <p className="my-4 text-center text-sm font-light text-gray-700">
             {' '}
             Don&apos;t have an account?{' '}
@@ -39,7 +38,7 @@ function Login() {
             </a>
           </p>
         )}
-        {startupConfig?.googleLoginEnabled === true && (
+        {startupConfig?.googleLoginEnabled && (
           <>
             <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
               <div className="absolute bg-white px-3 text-xs">Or</div>

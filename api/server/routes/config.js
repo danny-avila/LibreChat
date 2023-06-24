@@ -9,7 +9,7 @@ router.get('/', async function (req, res) {
     const openidLabel = process.env.VITE_OPENID_LABEL || 'Login with OpenID';
     const openidUrl = process.env.VITE_OPENID_URL;
     const serverDomain = process.env.DOMAIN_SERVER || 'http://localhost:3080';
-    const registrationEnabled = process.env.ALLOW_REGISTRATION || true;
+    const registrationEnabled = process.env.ALLOW_REGISTRATION === 'true';
     
     return res.status(200).send({appTitle, googleLoginEnabled, openidLoginEnabled, openidLabel, openidUrl, serverDomain, registrationEnabled});
   } catch (err) {
