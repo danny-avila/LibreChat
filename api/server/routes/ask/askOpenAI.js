@@ -205,7 +205,8 @@ const ask = async ({
       sender: endpointOption?.chatGptLabel || 'ChatGPT',
       unfinished: false,
       cancelled: false,
-      error: false
+      error: false,
+      model: endpointOption.model
     };
 
     await saveMessage(responseMessage);
