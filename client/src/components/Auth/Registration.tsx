@@ -272,7 +272,7 @@ function Registration() {
             Login
           </a>
         </p>
-        {startupConfig?.googleLoginEnabled && (
+        {startupConfig?.googleLoginEnabled === true && (
           <>
             <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
               <div className="absolute bg-white px-3 text-xs">Or</div>
