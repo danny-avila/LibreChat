@@ -1,6 +1,5 @@
 # Project information
 site_name: Librechat
-docs_dir: .
 
 # Repository
 repo_name: danny-avila/LibreChat
@@ -51,37 +50,37 @@ markdown_extensions:
 
 # Page tree
 nav:
-  - Home: 'README.md'
+  - Home: '../README.md'
   - Getting Started: 
-    - Docker Install: 'docs/install/docker_install.md'
-    - Linux Install: 'docs/install/linux_install.md'
-    - Mac Install: 'docs/install/mac_install.md'
-    - Windows Install: 'docs/install/windows_install.md'
-    - APIs and Tokens: 'docs/install/apis_and_tokens.md'
+    - Docker Install: 'install/docker_install.md'
+    - Linux Install: 'install/linux_install.md'
+    - Mac Install: 'install/mac_install.md'
+    - Windows Install: 'install/windows_install.md'
+    - APIs and Tokens: 'install/apis_and_tokens.md'
   - General Information:
-    - Code of Conduct: 'CODE_OF_CONDUCT.md'
-    - Project Origin: 'docs/general_info/project_origin.md'
-    - Multilingual Information: 'docs/general_info/multilingual_information.md)'
-    - Tech Stack: 'docs/general_info/tech_stack.md'
-    - Bing Jailbreak Info: 'docs/general_info/bing_jailbreak_info.md'
+    - Code of Conduct: '../CODE_OF_CONDUCT.md'
+    - Project Origin: 'general_info/project_origin.md'
+    - Multilingual Information: 'general_info/multilingual_information.md)'
+    - Tech Stack: 'general_info/tech_stack.md'
+    - Bing Jailbreak Info: 'general_info/bing_jailbreak_info.md'
   - Features:
     - Plugins:
-      - Introduction]: 'docs/features/plugins/introduction.md'
-      - Google: 'docs/features/plugins/google_search.md'
-      - Stable Diffusion: 'docs/features/plugins/stable_diffusion.md'
-      - Wolfram: 'docs/features/plugins/wolfram.md'
-      - Make Your Own Plugin: 'docs/features/plugins/make_your_own.md'
-    - User Auth System: 'docs/features/user_auth_system.md'
-    - Proxy: 'docs/features/proxy.md'
+      - Introduction]: 'features/plugins/introduction.md'
+      - Google: 'features/plugins/google_search.md'
+      - Stable Diffusion: 'features/plugins/stable_diffusion.md'
+      - Wolfram: 'features/plugins/wolfram.md'
+      - Make Your Own Plugin: 'features/plugins/make_your_own.md'
+    - User Auth System: 'features/user_auth_system.md'
+    - Proxy: 'features/proxy.md'
   - Cloud Deployment:
-    - Hetzner: 'docs/deployment/hetzner_ubuntu.md'
-    - Heroku: 'docs/deployment/heroku.md'
+    - Hetzner: 'deployment/hetzner_ubuntu.md'
+    - Heroku: 'deployment/heroku.md'
   - Contributions:
-    - Contributor Guidelines: 'CONTRIBUTING.md'
-    - Documentation Guidelines: 'docs/contributions/documentation_guidelines.md'
-    - Code Standards and Conventions: 'docs/contributions/coding_conventions.md'
-    - Testing: 'docs/contributions/testing.md'
-    - Security: 'SECURITY.md'
+    - Contributor Guidelines: '../CONTRIBUTING.md'
+    - Documentation Guidelines: 'contributions/documentation_guidelines.md'
+    - Code Standards and Conventions: 'contributions/coding_conventions.md'
+    - Testing: 'contributions/testing.md'
+    - Security: '../SECURITY.md'
     
 
 
