@@ -43,13 +43,13 @@ function Registration() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
       <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl font-semibold">Create your account</h1>
+        <h1 className="mb-4 text-center text-3xl font-semibold">{navigator.languages[0]==='zh-CN'?'创建你的账号':'Create your account'}</h1>
         {error && (
           <div
             className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
             role="alert"
           >
-            There was an error attempting to register your account. Please try again. {errorMessage}
+            {navigator.languages[0]==='zh-CN'?'注册帐户时出错。请重试。':'There was an error attempting to register your account. Please try again.'} {errorMessage}
           </div>
         )}
         <form
@@ -69,11 +69,11 @@ function Registration() {
                   required: 'Name is required',
                   minLength: {
                     value: 3,
-                    message: 'Name must be at least 3 characters'
+                    message: navigator.languages[0]==='zh-CN'?'名字必须超过3个字符':'Name must be at least 3 characters'
                   },
                   maxLength: {
                     value: 80,
-                    message: 'Name must be less than 80 characters'
+                    message: navigator.languages[0]==='zh-CN'?'名字最大长度是80个字符':'Name must be less than 80 characters'
                   }
                 })}
                 aria-invalid={!!errors.name}
@@ -84,7 +84,7 @@ function Registration() {
                 htmlFor="name"
                 className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
               >
-                Full name
+                {navigator.languages[0]==='zh-CN'?'全名':'Full name'}
               </label>
             </div>
 
@@ -105,11 +105,11 @@ function Registration() {
                   required: 'Username is required',
                   minLength: {
                     value: 3,
-                    message: 'Username must be at least 3 characters'
+                    message: navigator.languages[0]==='zh-CN'?'用户名长度最少3个字符':'Username must be at least 3 characters'
                   },
                   maxLength: {
                     value: 20,
-                    message: 'Username must be less than 20 characters'
+                    message: navigator.languages[0]==='zh-CN'?'用户名必须少于20个字符':'Username must be less than 20 characters'
                   }
                 })}
                 aria-invalid={!!errors.username}
@@ -121,7 +121,7 @@ function Registration() {
                 htmlFor="username"
                 className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
               >
-                Username
+                {navigator.languages[0]==='zh-CN'?'用户名':'Username'}
               </label>
             </div>
 
@@ -143,15 +143,15 @@ function Registration() {
                   required: 'Email is required',
                   minLength: {
                     value: 3,
-                    message: 'Email must be at least 6 characters'
+                    message: navigator.languages[0]==='zh-CN'?'邮箱地址至少6个字符':'Email must be at least 6 characters'
                   },
                   maxLength: {
                     value: 120,
-                    message: 'Email should not be longer than 120 characters'
+                    message: navigator.languages[0]==='zh-CN'?'邮箱地址不能超过120个字符':'Email should not be longer than 120 characters'
                   },
                   pattern: {
                     value: /\S+@\S+\.\S+/,
-                    message: 'You must enter a valid email address'
+                    message: navigator.languages[0]==='zh-CN'?'你必须输入一个有效的邮箱地址':'You must enter a valid email address'
                   }
                 })}
                 aria-invalid={!!errors.email}
@@ -162,7 +162,7 @@ function Registration() {
                 htmlFor="email"
                 className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
               >
-                Email
+                {navigator.languages[0]==='zh-CN'?'邮箱':'Email'}
               </label>
             </div>
             {errors.email && (
@@ -184,11 +184,11 @@ function Registration() {
                   required: 'Password is required',
                   minLength: {
                     value: 8,
-                    message: 'Password must be at least 8 characters'
+                    message: navigator.languages[0]==='zh-CN'?'密码长度至少8位':'Password must be at least 8 characters'
                   },
                   maxLength: {
                     value: 40,
-                    message: 'Password must be less than 40 characters'
+                    message: navigator.languages[0]==='zh-CN'?'密码长度不能超过40个字符':'Password must be less than 40 characters'
                   }
                 })}
                 aria-invalid={!!errors.password}
@@ -199,7 +199,7 @@ function Registration() {
                 htmlFor="password"
                 className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
               >
-                Password
+                {navigator.languages[0]==='zh-CN'?'密码':'Password'}
               </label>
             </div>
 
@@ -233,7 +233,7 @@ function Registration() {
                 htmlFor="confirm_password"
                 className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
               >
-                Confirm password
+                {navigator.languages[0]==='zh-CN'?'再次输入密码':'Confirm password'}
               </label>
             </div>
 
@@ -257,19 +257,19 @@ function Registration() {
               aria-label="Submit registration"
               className="w-full transform rounded-sm bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-green-500"
             >
-              Continue
+              {navigator.languages[0]==='zh-CN'?'继续':'Continue'}
             </button>
           </div>
         </form>
         <p className="my-4 text-center text-sm font-light text-gray-700">
           {' '}
-          Already have an account?{' '}
+          {navigator.languages[0]==='zh-CN'?'已经有账号？ 点击':'Already have an account?'}{' '}
           <a
             href="/login"
             aria-label="Login"
             className="p-1 font-medium text-green-500 hover:underline"
           >
-            Login
+            {navigator.languages[0]==='zh-CN'?'登录':'Login'}
           </a>
         </p>
         {startupConfig?.googleLoginEnabled && (
@@ -307,7 +307,7 @@ function Registration() {
                     d="m419.404 58.936-82.933 67.896C313.136 112.246 285.552 103.82 256 103.82c-66.729 0-123.429 42.957-143.965 102.724l-83.397-68.276h-.014C71.23 56.123 157.06 0 256 0c62.115 0 119.068 22.126 163.404 58.936z"
                   ></path>
                 </svg>
-                <p>Login with Google</p>
+                <p>{navigator.languages[0]==='zh-CN'?'Google登录':'Login with Google'}</p>
               </a>
             </div>
           </>

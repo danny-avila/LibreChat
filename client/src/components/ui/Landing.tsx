@@ -36,60 +36,60 @@ export default function Landing() {
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
             <h2 className="m-auto flex items-center gap-3 text-lg font-normal md:flex-col md:gap-2">
               <SunIcon />
-              Examples
+              {navigator.languages[0]==='zh-CN'? "样例":"Examples" }
             </h2>
             <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
               <button
                 onClick={clickHandler}
                 className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
               >
-                &quot;Explain quantum computing in simple terms&quot; →
+                &quot;{navigator.languages[0]==='zh-CN'? "用简单的术语解释量子计算":"Explain quantum computing in simple terms"}&quot; →
               </button>
               <button
                 onClick={clickHandler}
                 className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
               >
-                &quot;Got any creative ideas for a 10 year old&apos;s birthday?&quot; →
+                &quot;{navigator.languages[0]==='zh-CN'? "对10岁的生日有什么创意吗？":"Got any creative ideas for a 10 year old&apos;s birthday?"}&quot; →
               </button>
               <button
                 onClick={clickHandler}
                 className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
               >
-                &quot;How do I make an HTTP request in Javascript?&quot; →
+                &quot;{navigator.languages[0]==='zh-CN'? "如何在Javascript中发出HTTP请求？":"How do I make an HTTP request in Javascript?"}&quot; →
               </button>
             </ul>
           </div>
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
             <h2 className="m-auto flex items-center gap-3 text-lg font-normal md:flex-col md:gap-2">
               <LightningIcon />
-              Capabilities
+              {navigator.languages[0]==='zh-CN'? "能力":"Capabilities"}
             </h2>
             <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                Remembers what user said earlier in the conversation
+                {navigator.languages[0]==='zh-CN'? "记住用户在对话中之前所说的话":"Remembers what user said earlier in the conversation"}
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                Allows user to provide follow-up corrections
+                {navigator.languages[0]==='zh-CN'? "允许用户提供后续更正":"Allows user to provide follow-up corrections"}
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                Trained to decline inappropriate requests
+                {navigator.languages[0]==='zh-CN'? "受过拒绝不当请求的培训":"Trained to decline inappropriate requests"}
               </li>
             </ul>
           </div>
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
             <h2 className="m-auto flex items-center gap-3 text-lg font-normal md:flex-col md:gap-2">
               <CautionIcon />
-              Limitations
+              {navigator.languages[0]==='zh-CN'? "限制":"Limitations"}
             </h2>
             <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                May occasionally generate incorrect information
+                {navigator.languages[0]==='zh-CN'? "可能偶尔会产生不正确的信息":"May occasionally generate incorrect information"}
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                May occasionally produce harmful instructions or biased content
+                {navigator.languages[0]==='zh-CN'? "可能偶尔会产生有害指令或有偏见的内容":"May occasionally produce harmful instructions or biased content"}
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                Limited knowledge of world and events after 2021
+                {navigator.languages[0]==='zh-CN'? "对2021年后的世界和事件了解有限":"Limited knowledge of world and events after 2021"}
               </li>
             </ul>
           </div>

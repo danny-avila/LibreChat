@@ -3,7 +3,15 @@ import { useRecoilValue, useRecoilCallback } from 'recoil';
 import filenamify from 'filenamify';
 import exportFromJSON from 'export-from-json';
 import download from 'downloadjs';
-import { Dialog, DialogButton, DialogTemplate, Input, Label, Checkbox, Dropdown } from '~/components/ui/';
+import {
+  Dialog,
+  DialogButton,
+  DialogTemplate,
+  Input,
+  Label,
+  Checkbox,
+  Dropdown
+} from '~/components/ui/';
 import { cn } from '~/utils/';
 import { useScreenshot } from '~/utils/screenshotContext';
 
@@ -32,11 +40,11 @@ export default function ExportModel({ open, onOpenChange }) {
   );
 
   const typeOptions = [
-    { value: 'screenshot', display: 'screenshot (.png)' },
-    { value: 'text', display: 'text (.txt)' },
-    { value: 'markdown', display: 'markdown (.md)' },
-    { value: 'json', display: 'json (.json)' },
-    { value: 'csv', display: 'csv (.csv)' }
+    { value: 'screenshot', display: navigator.languages[0] === 'zh-CN' ?'截图文件 (.png)':'screenshot (.png)' },
+    { value: 'text', display: navigator.languages[0] === 'zh-CN' ?'文本文件 (.txt)':'text (.txt)' },
+    { value: 'markdown', display: navigator.languages[0] === 'zh-CN' ?'markdown文件 (.md)':'markdown (.md)' },
+    { value: 'json', display: navigator.languages[0] === 'zh-CN' ?'json文件 (.json)':'json (.json)' },
+    { value: 'csv', display: navigator.languages[0] === 'zh-CN' ?'csv文件 (.csv)': 'csv (.csv)' }
   ]; //,, 'webpage'];
 
   useEffect(() => {
@@ -306,14 +314,14 @@ export default function ExportModel({ open, onOpenChange }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title="Export conversation"
+        title={navigator.languages[0] === 'zh-CN' ? '导出对话' : 'Export conversation'}
         className="max-w-full sm:max-w-2xl"
         main={
           <div className="flex w-full flex-col items-center gap-6">
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="filename" className="text-left text-sm font-medium">
-                  Filename
+                  {navigator.languages[0] === 'zh-CN' ? '文件名' : 'Filename'}
                 </Label>
                 <Input
                   id="filename"
@@ -328,7 +336,7 @@ export default function ExportModel({ open, onOpenChange }) {
               </div>
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="type" className="text-left text-sm font-medium">
-                  Type
+                  {navigator.languages[0] === 'zh-CN' ? '文件类型' : 'Type'}
                 </Label>
                 <Dropdown
                   id="type"
@@ -347,7 +355,9 @@ export default function ExportModel({ open, onOpenChange }) {
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <div className="grid w-full items-center gap-2">
                   <Label htmlFor="includeOptions" className="text-left text-sm font-medium">
-                    Include endpoint options
+                    {navigator.languages[0] === 'zh-CN'
+                      ? '包含接入点选项'
+                      : 'Include endpoint options'}
                   </Label>
                   <div className="flex h-[40px] w-full items-center space-x-3">
                     <Checkbox
@@ -361,14 +371,22 @@ export default function ExportModel({ open, onOpenChange }) {
                       htmlFor="includeOptions"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                     >
-                      {exportOptionsSupport ? 'Enabled' : 'Not Supported'}
+                      {navigator.languages[0] === 'zh-CN'
+                        ? exportOptionsSupport
+                          ? '启用'
+                          : '不支持'
+                        : exportOptionsSupport
+                          ? 'Enabled'
+                          : 'Not Supported'}
                     </label>
                   </div>
                 </div>
               </div>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="exportBranches" className="text-left text-sm font-medium">
-                  Export all message branches
+                  {navigator.languages[0] === 'zh-CN'
+                    ? '导出所有消息分支'
+                    : 'Export all message branches'}
                 </Label>
                 <div className="flex h-[40px] w-full items-center space-x-3">
                   <Checkbox
@@ -382,14 +400,20 @@ export default function ExportModel({ open, onOpenChange }) {
                     htmlFor="exportBranches"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                   >
-                    {exportBranchesSupport ? 'Enabled' : 'Not Supported'}
+                    {navigator.languages[0] === 'zh-CN'
+                      ? exportBranchesSupport
+                        ? '启用'
+                        : '不支持'
+                      : exportBranchesSupport
+                        ? 'Enabled'
+                        : 'Not Supported'}
                   </label>
                 </div>
               </div>
               {type === 'json' ? (
                 <div className="grid w-full items-center gap-2">
                   <Label htmlFor="recursive" className="text-left text-sm font-medium">
-                    Recursive or sequential?
+                    {navigator.languages[0] === 'zh-CN' ? '递归还是顺序？' : 'Recursive or sequential?'}
                   </Label>
                   <div className="flex h-[40px] w-full items-center space-x-3">
                     <Checkbox
@@ -402,7 +426,7 @@ export default function ExportModel({ open, onOpenChange }) {
                       htmlFor="recursive"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                     >
-                      Recursive
+                      {navigator.languages[0] === 'zh-CN' ? '递归' : 'Recursive'}
                     </label>
                   </div>
                 </div>
@@ -416,7 +440,7 @@ export default function ExportModel({ open, onOpenChange }) {
               onClick={exportConversation}
               className="dark:hover:gray-400 border-gray-700 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
             >
-              Export
+              {navigator.languages[0] === 'zh-CN' ? '导出' : 'Export'}
             </DialogButton>
           </>
         }

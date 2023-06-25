@@ -176,7 +176,7 @@ export default function Message({
                       Save & Submit
                     </button>
                     <button className="btn btn-neutral relative" onClick={() => enterEdit(true)}>
-                      Cancel
+                      {navigator.languages[0] === 'zh-CN' ? '取消' : 'Cancel'}
                     </button>
                   </div>
                 </div>

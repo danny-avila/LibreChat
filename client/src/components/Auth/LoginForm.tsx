@@ -30,15 +30,15 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
               required: 'Email is required',
               minLength: {
                 value: 3,
-                message: 'Email must be at least 6 characters'
+                message: navigator.languages[0]==='zh-CN'?'邮箱地址长度至少超过6个字符':'Email must be at least 6 characters'
               },
               maxLength: {
                 value: 120,
-                message: 'Email should not be longer than 120 characters'
+                message: navigator.languages[0]==='zh-CN'?"邮箱长度不能超过120个字符":'Email should not be longer than 120 characters'
               },
               pattern: {
                 value: /\S+@\S+\.\S+/,
-                message: 'You must enter a valid email address'
+                message: navigator.languages[0]==='zh-CN'?'你必须输入一个有效的邮箱地址':'You must enter a valid email address'
               }
             })}
             aria-invalid={!!errors.email}
@@ -49,7 +49,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
             htmlFor="email"
             className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
           >
-            Email address
+            {navigator.languages[0]==='zh-CN'?"邮箱":"Email address"}
           </label>
         </div>
         {errors.email && (
@@ -85,7 +85,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
             htmlFor="password"
             className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
           >
-            Password
+            {navigator.languages[0]==='zh-CN'?'密码':'Password'}
           </label>
         </div>
 
@@ -97,7 +97,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
         )}
       </div>
       <a href="/forgot-password" className="text-sm text-green-500 hover:underline">
-        Forgot Password?
+        {navigator.languages[0]==='zh-CN'?"忘记密码？":"Forgot Password?"}
       </a>
       <div className="mt-6">
         <button
@@ -105,7 +105,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
           type="submit"
           className="w-full transform rounded-sm bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none"
         >
-          Continue
+          {navigator.languages[0]==='zh-CN'?'继续':'Continue'}
         </button>
       </div>
     </form>

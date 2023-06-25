@@ -4,7 +4,7 @@ import { Listbox, Transition } from '@headlessui/react';
 import { cn } from '~/utils/';
 
 function SelectDropDown({
-  title = 'Model',
+  title = navigator.languages[0] === 'zh-CN'?'模型':'Model',
   value,
   disabled,
   setValue,
