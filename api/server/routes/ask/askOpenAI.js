@@ -7,7 +7,7 @@ const { titleConvo, askClient } = require('../../../app/');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
-const { getMessagesCount } = require('../../models/Message');
+const { getMessagesCount } = require('../../../models/Message');
 
 const abortControllers = new Map();
 
@@ -181,8 +181,10 @@ const ask = async ({
         model: endpointOption.model,
         updatedAt: { $gte: someTimeAgo },
       });
-      if (messagesCount > process.env["OPENAI_GPT4_QUOTA_PER_SECOND"] * 60 * 60 * 24) {
-        throw new Error("Exceed daily quota! Please contact 615547 to purchase more quota via Wechat");
+      let dailyQuota = (JSON.parse(process.env["CHAT_QUOTA_PER_SECOND"])[endpointOption.model] * 60 * 60 * 24).toFixed(0);
+      if (messagesCount > dailyQuota) {
+        // throw new Error("Exceed daily quota! Please contact 615547 to purchase more quota via Wechat");
+        throw new Error(`超出了您的使用额度(${endpointOption.model}每天${dailyQuota}条消息)，如需购买更多额度，请加微信：615547`);
       }
     }
 
