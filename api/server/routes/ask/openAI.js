@@ -142,7 +142,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
 
     const clientOptions = {
       debug: true,
-      contextStrategy: 'refine',
+      // contextStrategy: 'refine',
       reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
       proxy: process.env.PROXY || null,
       endpoint: 'openAI',
