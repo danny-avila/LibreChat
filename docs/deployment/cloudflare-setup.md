@@ -1,4 +1,4 @@
-## if you are knew to Domain, here's a quick guide to use setup a domain with Cloudflare:
+## if you are new to Domain, here's a quick guide to use setup a domain with Cloudflare:
 
 **Google Domains and Cloudflare**
 
