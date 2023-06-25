@@ -88,6 +88,8 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 
   * [Hetzner](docs/deployment/hetzner_ubuntu.md)
   * [Heroku](docs/deployment/heroku.md)
+  * [Linode](docs/deployment/linode-setup.md)
+  * [Cloudflare](docs/deployment/cloudflare-setup.md)
 </details>
 
 <details>
