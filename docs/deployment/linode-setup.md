@@ -1,3 +1,6 @@
+
+[<img src="https://github.com/Berry-13/LibreChat/blob/main/docs/assets/linode-logo.jpg" width="250">](https://www.linode.com/)
+
 # Linode (⚠️Payment required)
 
 **Create a Linode Account and a Linode Server**
