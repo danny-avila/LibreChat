@@ -14,6 +14,7 @@ module.exports = {
     error,
     unfinished,
     cancelled,
+    tokenCount = null,
     plugin = null,
     model = null,
   }) {
@@ -31,6 +32,7 @@ module.exports = {
           error,
           unfinished,
           cancelled,
+          tokenCount,
           plugin,
           model
         },
@@ -43,14 +45,41 @@ module.exports = {
         parentMessageId,
         sender,
         text,
-        isCreatedByUser
+        isCreatedByUser,
+        tokenCount,
       };
     } catch (err) {
       console.error(`Error saving message: ${err}`);
       throw new Error('Failed to save message.');
     }
   },
-
+  async updateMessage(message) {
+    try {
+      const { messageId, ...update } = message;
+      const updatedMessage = await Message.findOneAndUpdate(
+        { messageId },
+        update,
+        { new: true }
+      );
+  
+      if (!updatedMessage) {
+        throw new Error('Message not found.');
+      }
+  
+      return {
+        messageId: updatedMessage.messageId,
+        conversationId: updatedMessage.conversationId,
+        parentMessageId: updatedMessage.parentMessageId,
+        sender: updatedMessage.sender,
+        text: updatedMessage.text,
+        isCreatedByUser: updatedMessage.isCreatedByUser,
+        tokenCount: updatedMessage.tokenCount,
+      };
+    } catch (err) {
+      console.error(`Error updating message: ${err}`);
+      throw new Error('Failed to update message.');
+    }
+  },  
   async deleteMessagesSince({ messageId, conversationId }) {
     try {
       const message = await Message.findOne({ messageId }).exec();

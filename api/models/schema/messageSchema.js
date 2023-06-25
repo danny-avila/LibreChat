@@ -31,6 +31,9 @@ const messageSchema = mongoose.Schema(
       type: String
       // required: true
     },
+    tokenCount: {
+      type: Number
+    },
     sender: {
       type: String,
       required: true,

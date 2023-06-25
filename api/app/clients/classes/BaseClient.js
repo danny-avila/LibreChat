@@ -1,10 +1,11 @@
 const crypto = require('crypto');
-const { getConvo, getMessages, saveMessage, saveConvo } = require('../../../models');
+const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('../../../models');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
     this.apiKey = apiKey;
     this.sender = options.sender || 'AI';
+    this.contextStrategy = null;
     this.currentDateString = new Date().toLocaleDateString('en-us', {
       year: 'numeric',
       month: 'long',
@@ -24,7 +25,7 @@ class BaseClient {
     throw new Error('Subclasses must implement getSaveOptions');
   }
 
-  buildMessages() {
+  async buildMessages() {
     throw new Error('Subclasses must implement buildMessages');
   }
 
@@ -50,6 +51,61 @@ class BaseClient {
     return payload;
   }
 
+  async handleTokenCountMap(tokenCountMap) {
+    if (this.options.debug) {
+      console.debug('Token count map', tokenCountMap);
+    }
+
+    if (this.currentMessages.length === 0) {
+      return;
+    }
+
+    for (let i = 0; i < this.currentMessages.length; i++) {
+      // Skip the last message, which is the user message.
+      if (i === this.currentMessages.length - 1) {
+        break;
+      }
+
+      const message = this.currentMessages[i];
+      if (message.tokenCount) {
+        if (this.options.debug) {
+          console.debug(`Skipping ${message.messageId}: already had a token count.`);
+        }
+        continue;
+      }
+
+      const tokenCount = tokenCountMap[message.messageId];
+      if (tokenCount) {
+        message.tokenCount = tokenCount;
+        await this.updateMessageInDatabase({ messageId: message.messageId, tokenCount });
+      }
+    }
+  }
+
+  async getMessagesWithinTokenLimit(messages) {
+    // Assume messages are already ordered from oldest to newest.
+    let currentTokenCount = 0;
+    let context = [];
+  
+    // Iterate from the end (newest messages) and add them to the context until we reach the max token count.
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      const newTokenCount = currentTokenCount + message.tokenCount;
+  
+      if (newTokenCount > this.maxContextTokens) {
+        // This message would put us over the token limit, so don't add it.
+        break;
+      }
+  
+      context.unshift(message);
+      currentTokenCount = newTokenCount;
+      // wait for next tick to avoid blocking the event loop
+      await new Promise(resolve => setImmediate(resolve));
+    }
+  
+    return context;
+  }
+
   async sendMessage(message, opts = {}) {
     if (opts && typeof opts === 'object') {
       this.setOptions(opts);
@@ -61,7 +117,7 @@ class BaseClient {
     const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
     const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
     const responseMessageId = crypto.randomUUID();
-    const currentMessages = await this.loadHistory(conversationId, parentMessageId) ?? [];
+    this.currentMessages = await this.loadHistory(conversationId, parentMessageId) ?? [];
     const saveOptions = this.getSaveOptions();
 
     const userMessage = {
@@ -74,7 +130,7 @@ class BaseClient {
     };
 
     if (this.options.debug) {
-      console.debug('currentMessages', currentMessages);
+      console.debug('currentMessages', this.currentMessages);
     }
 
     if (typeof opts?.getIds === 'function') {
@@ -88,8 +144,6 @@ class BaseClient {
     if (typeof opts?.onStart === 'function') {
       opts.onStart(userMessage);
     }
-
-    await this.saveMessageToDatabase(userMessage, saveOptions, user);
 
     const responseMessage = {
       messageId: responseMessageId,
@@ -105,9 +159,9 @@ class BaseClient {
       console.debug(this.options);
     }
 
-    currentMessages.push(userMessage);
-    const { prompt: payload } = await this.buildMessages(
-      currentMessages,
+    this.currentMessages.push(userMessage);
+    let { prompt: payload, tokenCountMap } = await this.buildMessages(
+      this.currentMessages,
       userMessage.messageId,
       this.getBuildMessagesOptions(opts),
     );
@@ -117,7 +171,24 @@ class BaseClient {
       console.debug(payload);
     }
 
+    if (tokenCountMap) {
+      payload = payload.map((message, i) => {
+        const { tokenCount, ...messageWithoutTokenCount } = message;
+        // userMessage is always the last one in the payload
+        if (i === payload.length - 1) {
+          userMessage.tokenCount = message.tokenCount;
+          console.debug(`Token count for user message: ${tokenCount}`,`Instruction Tokens: ${tokenCountMap.instructions || 'N/A'}`);
+        }
+        return messageWithoutTokenCount;
+      });
+      this.handleTokenCountMap(tokenCountMap);
+    }
+
+    await this.saveMessageToDatabase(userMessage, saveOptions, user);
     responseMessage.text = await this.sendCompletion(payload, opts);
+    if (tokenCountMap && this.getTokenCountForResponse) {
+      responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
+    }
     await this.saveMessageToDatabase(responseMessage, saveOptions, user);
     return { ...responseMessage, ...this.result };
   }
@@ -149,6 +220,10 @@ class BaseClient {
     });
   }
 
+  async updateMessageInDatabase(message) {
+    await updateMessage(message);
+  }
+
   /**
      * Iterate through messages, building an array based on the parentMessageId.
      * Each message has an id and a parentMessageId. The parentMessageId is the id of the message that this message is a reply to.
@@ -176,6 +251,50 @@ class BaseClient {
     }
 
     return orderedMessages;
+  }
+
+  /**
+ * Algorithm adapted from "6. Counting tokens for chat API calls" of
+ * https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
+ *
+ * An additional 2 tokens need to be added for metadata after all messages have been counted.
+ *
+ * @param {*} message
+ */
+  getTokenCountForMessage(message) {
+    let tokensPerMessage;
+    let nameAdjustment;
+    if (this.modelOptions.model.startsWith('gpt-4')) {
+      tokensPerMessage = 3;
+      nameAdjustment = 1;
+    } else {
+      tokensPerMessage = 4;
+      nameAdjustment = -1;
+    }
+
+    if (this.options.debug) {
+      console.debug('getTokenCountForMessage', message);
+    }
+  
+    // Map each property of the message to the number of tokens it contains
+    const propertyTokenCounts = Object.entries(message).map(([key, value]) => {
+      if (key === 'tokenCount' || typeof value !== 'string') {
+        return 0;
+      }
+      // Count the number of tokens in the property value
+      const numTokens = this.getTokenCount(value);
+  
+      // Adjust by `nameAdjustment` tokens if the property key is 'name'
+      const adjustment = (key === 'name') ? nameAdjustment : 0;
+      return numTokens + adjustment;
+    });
+
+    if (this.options.debug) {
+      console.debug('propertyTokenCounts', propertyTokenCounts);
+    }
+  
+    // Sum the number of tokens in all properties and add `tokensPerMessage` for metadata
+    return propertyTokenCounts.reduce((a, b) => a + b, tokensPerMessage);
   }
 }
 

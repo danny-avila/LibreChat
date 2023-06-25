@@ -20,8 +20,8 @@ class OpenAIClient extends BaseClient {
     this.ChatGPTClient = new ChatGPTClient();
     this.buildPrompt = this.ChatGPTClient.buildPrompt.bind(this);
     this.getCompletion = this.ChatGPTClient.getCompletion.bind(this);
-    this.getTokenCountForMessage = this.ChatGPTClient.getTokenCountForMessage.bind(this);
-    this.sender = options.sender || 'ChatGPT';
+    this.sender = options.sender ?? 'ChatGPT';
+    this.contextStrategy = options.contextStrategy ?? 'discard';
     this.setOptions(options);
   }
 
@@ -164,6 +164,9 @@ class OpenAIClient extends BaseClient {
   getTokenCount(text) {
     try {
       if (tokenizersCache.count >= 25) {
+        if (this.options.debug) {
+          console.debug('freeAndResetEncoder: reached 25 encodings, reseting...');
+        }
         this.freeAndResetEncoder();
       }
       tokenizersCache.count = (tokenizersCache.count || 0) + 1;
@@ -193,44 +196,67 @@ class OpenAIClient extends BaseClient {
     if (!isChatCompletion) {
       return await this.buildPrompt(messages, parentMessageId, { isChatGptModel: isChatCompletion, promptPrefix });
     }
-
+  
     let instructions;
+    let tokenCountMap;
     const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
-
+  
     promptPrefix = (promptPrefix || this.options.promptPrefix || '').trim();
     if (promptPrefix) {
       promptPrefix = `Instructions:\n${promptPrefix}`;
       instructions = {
         role: 'system',
         name: 'instructions',
-        content: promptPrefix,
+        content: promptPrefix
       };
-    }
 
+      if (this.contextStrategy === 'discard') {
+        instructions.tokenCount = this.getTokenCountForMessage(instructions);
+      }
+    }
+  
     const formattedMessages = orderedMessages.map((message) => {
       let { role: _role, sender, text } = message;
       const role = _role ?? sender;
+      const content = text ?? '';
       const formattedMessage = {
         role: role?.toLowerCase() === 'user' ? 'user' : 'assistant',
-        content: text ?? '',
+        content,
       };
 
       if (this.options?.name && formattedMessage.role === 'user') {
         formattedMessage.name = this.options.name;
       }
 
+      if (this.contextStrategy === 'discard') {
+        formattedMessage.tokenCount = message.tokenCount ?? this.getTokenCountForMessage(formattedMessage);
+      }
+  
       return formattedMessage;
     });
+  
+    let payload = this.addInstructions(formattedMessages, instructions);
 
-    const payload = this.addInstructions(formattedMessages, instructions);
-
-    if (isChatCompletion) {
-      return { prompt: payload };
+    if (this.contextStrategy === 'discard') {
+      payload = await this.getMessagesWithinTokenLimit(formattedMessages);
+      tokenCountMap = orderedMessages.reduce((map, message, index) => {
+        map[message.messageId] = formattedMessages[index].tokenCount;
+        return map;
+      }, {});
     }
 
-    return { prompt };
-  }
+    const result = {
+      prompt: payload,
+    };
 
+    if (tokenCountMap) {
+      tokenCountMap.instructions = instructions?.tokenCount;
+      result.tokenCountMap = tokenCountMap;
+    }
+
+    return result;
+  }
+  
   async sendCompletion(payload, opts = {}) {
     let reply = '';
     let result = null;
@@ -274,6 +300,13 @@ class OpenAIClient extends BaseClient {
     }
 
     return reply.trim();
+  }
+
+  getTokenCountForResponse(response) {
+    return this.getTokenCountForMessage({
+      role: 'assistant',
+      content: response.text,
+    });
   }
 }
 
