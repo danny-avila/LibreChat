@@ -21,7 +21,8 @@ class OpenAIClient extends BaseClient {
     this.buildPrompt = this.ChatGPTClient.buildPrompt.bind(this);
     this.getCompletion = this.ChatGPTClient.getCompletion.bind(this);
     this.sender = options.sender ?? 'ChatGPT';
-    this.contextStrategy = options.contextStrategy ?? 'discard';
+    this.contextStrategy = options.contextStrategy ? options.contextStrategy.toLowerCase() : 'discard';
+    this.shouldRefineContext = this.contextStrategy === 'refine';
     this.setOptions(options);
   }
 
@@ -210,7 +211,7 @@ class OpenAIClient extends BaseClient {
         content: promptPrefix
       };
 
-      if (this.contextStrategy === 'discard') {
+      if (this.contextStrategy) {
         instructions.tokenCount = this.getTokenCountForMessage(instructions);
       }
     }
@@ -228,7 +229,7 @@ class OpenAIClient extends BaseClient {
         formattedMessage.name = this.options.name;
       }
 
-      if (this.contextStrategy === 'discard') {
+      if (this.contextStrategy) {
         formattedMessage.tokenCount = message.tokenCount ?? this.getTokenCountForMessage(formattedMessage);
       }
   
@@ -237,8 +238,16 @@ class OpenAIClient extends BaseClient {
   
     let payload = this.addInstructions(formattedMessages, instructions);
 
-    if (this.contextStrategy === 'discard') {
-      payload = await this.getMessagesWithinTokenLimit(formattedMessages);
+    if (this.contextStrategy) {
+      const { context, remainingContext, messagesToRefine } = await this.getMessagesWithinTokenLimit(formattedMessages);
+
+      payload = context;
+
+      if (messagesToRefine.length > 0) {
+        const refinedMessage = await this.refineMessages(messagesToRefine, remainingContext);
+        payload.unshift(refinedMessage);
+      }
+
       tokenCountMap = orderedMessages.reduce((map, message, index) => {
         map[message.messageId] = formattedMessages[index].tokenCount;
         return map;

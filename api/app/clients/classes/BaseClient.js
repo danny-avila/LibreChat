@@ -1,4 +1,7 @@
 const crypto = require('crypto');
+const { RecursiveCharacterTextSplitter } = require('langchain/text_splitter');
+const { ChatOpenAI } = require('langchain/chat_models/openai');
+const { loadSummarizationChain } = require('langchain/chains');
 const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('../../../models');
 
 class BaseClient {
@@ -41,9 +44,9 @@ class BaseClient {
     if (messages.length > 1) {
       payload.push(...messages.slice(0, -1));
     }
-  
+
     payload.push(instructions);
-  
+
     if (messages.length > 0) {
       payload.push(messages[messages.length - 1]);
     }
@@ -82,30 +85,98 @@ class BaseClient {
     }
   }
 
+  concatenateMessages(messages) {
+    return messages.reduce((acc, message) => {
+      const nameOrRole = message.name ?? message.role;
+      return acc + `${nameOrRole}:\n${message.content}\n\n`;
+    }, '');
+  }
+
+  async refineMessages(messagesToRefine, remainingContext) {
+    const model = new ChatOpenAI({ temperature: 0 });
+    const splitter = new RecursiveCharacterTextSplitter({
+      chunkSize: 500,
+      chunkOverlap: 0,
+    });
+
+    const chain = loadSummarizationChain(model, { type: 'refine' });
+    const concatenatedMessages = this.concatenateMessages(messagesToRefine);
+    const input_documents = await splitter.createDocuments([concatenatedMessages]);
+    if (this.options.debug ) {
+      console.debug(`Refining message: ${concatenatedMessages.slice(0, 25)}...`);
+    }
+    try {
+      const res = await chain.call({
+        input_documents,
+      });
+  
+      const refinedMessage = {
+        role: 'user',
+        content: res.output,
+        tokenCount: this.getTokenCountForMessage(res.text),
+      }
+  
+      if (this.options.debug ) {
+        console.debug('Refined messages', refinedMessage);
+        console.debug(`remainingContext: ${remainingContext}, after refining: ${remainingContext - refinedMessage.tokenCount}`);
+      }
+
+      return refinedMessage;
+    } catch (e) {
+      console.error('Error refining messages');
+      console.error(e);
+      return null;
+    }
+  }
+
+  /**
+ * This method processes an array of messages and returns a context of messages that fit within a token limit.
+ * It iterates over the messages from newest to oldest, adding them to the context until the token limit is reached.
+ * If the token limit would be exceeded by adding a message, that message and possibly the previous one are added to a separate array of messages to refine.
+ * The method uses `push` and `pop` operations for efficient array manipulation, and reverses the arrays at the end to maintain the original order of the messages.
+ * The method also includes a mechanism to avoid blocking the event loop by waiting for the next tick after each iteration.
+ *
+ * @param {Array} messages - An array of messages, each with a `tokenCount` property. The messages should be ordered from oldest to newest.
+ * @returns {Object} An object with three properties: `context`, `remainingContext`, and `messagesToRefine`. `context` is an array of messages that fit within the token limit. `remainingContext` is the number of tokens remaining within the limit after adding the messages to the context. `messagesToRefine` is an array of messages that were not added to the context because they would have exceeded the token limit.
+ */
   async getMessagesWithinTokenLimit(messages) {
-    // Assume messages are already ordered from oldest to newest.
     let currentTokenCount = 0;
     let context = [];
+    let messagesToRefine = [];
+    let remainingContext = this.maxContextTokens;
   
-    // Iterate from the end (newest messages) and add them to the context until we reach the max token count.
     for (let i = messages.length - 1; i >= 0; i--) {
       const message = messages[i];
       const newTokenCount = currentTokenCount + message.tokenCount;
+      const exceededLimit = newTokenCount > this.maxContextTokens;
+      let shouldRefine = exceededLimit && this.shouldRefineContext;
+      let refineNextMessage = i !== 0 && i !== 1 && context.length > 0;
   
-      if (newTokenCount > this.maxContextTokens) {
-        // This message would put us over the token limit, so don't add it.
+      if (shouldRefine) {
+        messagesToRefine.push(message);
+  
+        if (refineNextMessage) {
+          const removedMessage = context.pop();
+          messagesToRefine.push(removedMessage);
+          currentTokenCount -= removedMessage.tokenCount;
+          remainingContext = this.maxContextTokens - currentTokenCount;
+          refineNextMessage = false;
+        }
+  
+        continue;
+      } else if (exceededLimit) {
         break;
       }
   
-      context.unshift(message);
+      context.push(message);
       currentTokenCount = newTokenCount;
-      // wait for next tick to avoid blocking the event loop
+      remainingContext = this.maxContextTokens - currentTokenCount;
       await new Promise(resolve => setImmediate(resolve));
     }
   
-    return context;
+    return { context: context.reverse(), remainingContext, messagesToRefine: messagesToRefine.reverse() };
   }
-
+  
   async sendMessage(message, opts = {}) {
     if (opts && typeof opts === 'object') {
       this.setOptions(opts);
@@ -177,7 +248,7 @@ class BaseClient {
         // userMessage is always the last one in the payload
         if (i === payload.length - 1) {
           userMessage.tokenCount = message.tokenCount;
-          console.debug(`Token count for user message: ${tokenCount}`,`Instruction Tokens: ${tokenCountMap.instructions || 'N/A'}`);
+          console.debug(`Token count for user message: ${tokenCount}`, `Instruction Tokens: ${tokenCountMap.instructions || 'N/A'}`);
         }
         return messageWithoutTokenCount;
       });
@@ -275,7 +346,7 @@ class BaseClient {
     if (this.options.debug) {
       console.debug('getTokenCountForMessage', message);
     }
-  
+
     // Map each property of the message to the number of tokens it contains
     const propertyTokenCounts = Object.entries(message).map(([key, value]) => {
       if (key === 'tokenCount' || typeof value !== 'string') {
@@ -283,7 +354,7 @@ class BaseClient {
       }
       // Count the number of tokens in the property value
       const numTokens = this.getTokenCount(value);
-  
+
       // Adjust by `nameAdjustment` tokens if the property key is 'name'
       const adjustment = (key === 'name') ? nameAdjustment : 0;
       return numTokens + adjustment;
@@ -292,7 +363,7 @@ class BaseClient {
     if (this.options.debug) {
       console.debug('propertyTokenCounts', propertyTokenCounts);
     }
-  
+
     // Sum the number of tokens in all properties and add `tokensPerMessage` for metadata
     return propertyTokenCounts.reduce((a, b) => a + b, tokensPerMessage);
   }
