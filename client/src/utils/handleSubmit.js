@@ -76,6 +76,13 @@ const useMessageHandler = () => {
         token: endpointsConfig[endpoint]?.userProvide ? getToken() : null
       };
       responseSender = endpointOption.jailbreak ? 'Sydney' : 'BingAI';
+    } else if (endpoint === 'claude') {
+      endpointOption = {
+        endpoint,
+        systemMessage: currentConversation?.systemMessage ?? null,
+        context: currentConversation?.context ?? null,
+      };
+      responseSender = 'Claude';
     } else if (endpoint === 'chatGPTBrowser') {
       endpointOption = {
         endpoint,

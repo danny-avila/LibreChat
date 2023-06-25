@@ -41,6 +41,7 @@ export const alternateName = {
   bingAI: 'Bing',
   chatGPTBrowser: 'ChatGPT',
   gptPlugins: 'Plugins',
-  google: 'PaLM'
+  google: 'PaLM',
+  claude: 'Claude',
 };
 

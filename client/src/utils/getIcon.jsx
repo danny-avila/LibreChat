@@ -20,7 +20,9 @@ const getIcon = (props) => {
           className="rounded-sm"
           src={
             user?.avatar ||
-            `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name || 'User'}&fontFamily=Verdana&fontSize=36`
+            `https://api.dicebear.com/6.x/initials/svg?seed=${
+              user?.name || 'User'
+            }&fontFamily=Verdana&fontSize=36`
           }
           alt="avatar"
         />
@@ -53,6 +55,10 @@ const getIcon = (props) => {
       const { modelLabel } = props;
       icon = <img src="/assets/google-palm.svg" alt="Palm Icon"/>;
       name = modelLabel || 'PaLM2';
+    } else if (endpoint === 'claude') {
+      const { modelLabel } = props;
+      icon = <img src="/assets/claude.png" />;
+      name = modelLabel || 'Claude';
     } else if (endpoint === 'bingAI') {
       const { jailbreak } = props;
       icon = <BingIcon size={size * 0.7} />;

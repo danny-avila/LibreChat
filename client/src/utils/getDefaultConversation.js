@@ -57,6 +57,11 @@ const buildDefaultConversation = ({
       clientId: null,
       invocationId: 1
     };
+  } else if (endpoint === 'claude') {
+    conversation = {
+      ...conversation,
+      endpoint,
+    };
   } else if (endpoint === 'chatGPTBrowser') {
     conversation = {
       ...conversation,
@@ -165,7 +170,8 @@ const getDefaultConversation = ({ conversation, endpointsConfig, preset }) => {
     'bingAI',
     'chatGPTBrowser',
     'gptPlugins',
-    'google'
+    'google',
+    'claude'
   ].find((e) => endpointsConfig?.[e]);
   if (endpoint) {
     conversation = buildDefaultConversation({ conversation, endpoint, endpointsConfig });
