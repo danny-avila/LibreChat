@@ -1,3 +1,6 @@
+
+[<img src="https://github.com/Berry-13/LibreChat/blob/main/docs/assets/Cloudflare-logo.jpg" width="350">](https://www.cloudflare.com/)
+
 ## if you are new to Domain, here's a quick guide to use setup a domain with Cloudflare:
 
 **Google Domains and Cloudflare**
@@ -13,7 +16,7 @@
 - return to the cloudflare tab and tap on `Done, check nameservers`, then `finish later` and `Check nameservers` (this process can take about 5 minutes)
 - in the `DNS` tab select `Records` and `Add Record`
 
-![248543319-77618430-d346-49a9-a5d3-17eac0270ccf](https://github.com/Berry-13/LibreChat/blob/main/docs/assets/3-linode.png)
+![248543319-77618430-d346-49a9-a5d3-17eac0270ccf](https://github.com/Berry-13/LibreChat/blob/main/docs/assets/1-cloudflare.png)
 
   (in the Name section, if you use @ it will use you main domain, but if you want to use a subdomain write it in the Name section)
    - For example: if you want to acces with chat.yourdomain.com just set in the Name section `chat`
@@ -36,7 +39,7 @@ If you want to use LibreChat exclusively for yourself or your family and set up 
   - If you choose Docker: Simply copy the displayed command and paste it into the terminal. Before running it, add `-d` after `docker run`, like this: `docker run -d cloudflare/cloudflared:latest...` (this will run the Docker process in the background).
 - In the **Public Hostname** tab, select **Add a public hostname**.
 
-![image](https://github.com/Berry-13/LibreChat/blob/main/docs/assets/4-linode.png)
+![image](https://github.com/Berry-13/LibreChat/blob/main/docs/assets/2-cloudflare.png)
 
 
 
