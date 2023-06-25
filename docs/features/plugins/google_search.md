@@ -64,7 +64,3 @@ Fill in a name, select to "Search the entire web" and hit "Create":
 
 
 ![image](https://user-images.githubusercontent.com/23362597/233268067-5a6cfaf1-bec0-48b3-8add-70b218fb4264.png)
-
----
-
-## [Go Back to ReadMe](../../../README.md)
