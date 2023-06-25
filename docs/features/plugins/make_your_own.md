@@ -284,6 +284,3 @@ module.exports = WolframAlphaAPI;
 
 In this example, the `WolframAlphaAPI` class has helper methods like `fetchRawText`, `getAppId`, and `createWolframAlphaURL` to handle specific tasks. The `_call` method makes an HTTP request to the Wolfram Alpha API and returns the response.
 
----
-
-## [Go Back to ReadMe](../../../README.md)
