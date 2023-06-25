@@ -43,6 +43,7 @@ services:
       - ./.env.development:/app/.env.development
       - ./.env.production:/app/.env.production
       - /app/api/node_modules
+      - ./images:/app/client/public/images
   mongodb:
     container_name: chat-mongodb
     ports:
