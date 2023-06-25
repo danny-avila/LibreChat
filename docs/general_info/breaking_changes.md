@@ -40,7 +40,3 @@
 ---
 
 We apologize for any inconvenience caused by these changes. We hope you enjoy the new and improved version of our app!
-
----
-
-## [Go Back to ReadMe](../../README.md)

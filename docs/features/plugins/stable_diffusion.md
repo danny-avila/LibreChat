@@ -63,6 +63,3 @@ With the docker deployment you can skip step 2 and step 3, use the setup instruc
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/bbdffdc7-57b0-459e-87c2-c3c2871b74cb)
 
----
-
-## [Go Back to ReadMe](../../../README.md)

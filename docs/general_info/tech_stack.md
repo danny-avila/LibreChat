@@ -7,6 +7,3 @@
 - Use of Tailwind CSS and [shadcn/ui](https://github.com/shadcn/ui) components
 - Docker, useSWR, Redux, Express, MongoDB, [Keyv](https://www.npmjs.com/package/keyv)
 
----
-
-## [Go Back to ReadMe](../../README.md)
