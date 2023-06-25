@@ -4,9 +4,9 @@ const {
   resetPasswordController,
   // refreshController,
   registrationController
-} = require('../controllers/auth.controller');
-const { loginController } = require('../controllers/auth/login.controller');
-const { logoutController } = require('../controllers/auth/logout.controller');
+} = require('../controllers/AuthController');
+const { loginController } = require('../controllers/auth/LoginController');
+const { logoutController } = require('../controllers/auth/LogoutController');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 const requireLocalAuth = require('../../middleware/requireLocalAuth');
 
