@@ -1,5 +1,5 @@
 
-[<img src="https://github.com/Berry-13/LibreChat/blob/main/docs/assets/linode-logo.jpg" width="250">](https://www.linode.com/)
+[<img src="../assets/linode-logo.jpg" width="250">](https://www.linode.com/)
 
 # Linode (⚠️Payment required)
 
@@ -20,7 +20,7 @@
   sudo apt update
   sudo apt install docker.io && apt install docker-compose
   ```
-## [Install LibreChat](https://github.com/danny-avila/LibreChat/blob/main/docs/install/docker_install.md)
+## [Install LibreChat](../install/docker_install.md)
 
 ## Install and Setup NGINX Proxy Manager:
 
@@ -68,8 +68,8 @@ Password: changeme
 - Login to NGINX Proxy Manager.
 - Click on "Proxy Host" and add a proxy host.
 
-![248540414-0dbbfdbb-063e-4fa5-bb1d-811064cc4bad](https://github.com/Berry-13/LibreChat/blob/main/docs/assets/1-linode.png)
+![248540414-0dbbfdbb-063e-4fa5-bb1d-811064cc4bad](../assets/1-linode.png)
 
 - If you want, you can add the Let's Encrypt SSL certificate.
 
-![248540572-6d0220e2-2506-4b40-8974-a5014df646d6](https://github.com/Berry-13/LibreChat/blob/main/docs/assets/2-linode.png)
+![248540572-6d0220e2-2506-4b40-8974-a5014df646d6](../assets/2-linode.png)
