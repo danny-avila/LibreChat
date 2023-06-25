@@ -26,7 +26,7 @@ const endpointsFilter = selector({
 const availableEndpoints = selector({
   key: 'availableEndpoints',
   get: ({ get }) => {
-    const endpoints = ['azureOpenAI', 'openAI', 'chatGPTBrowser', 'gptPlugins', 'bingAI', 'google'];
+    const endpoints = ['azureOpenAI', 'openAI', 'chatGPTBrowser', 'gptPlugins', 'bingAI', 'google', 'claude'];
     const f = get(endpointsFilter);
     return endpoints.filter((endpoint) => f[endpoint]);
   }

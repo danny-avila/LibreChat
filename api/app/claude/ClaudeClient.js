@@ -47,6 +47,7 @@ class ClaudeClient {
         body: JSON.stringify({ ...params, stream: true }),
         signal: abortController.signal,
         onopen: async (response) => {
+          console.log("Opened stream, HTTP status code", response.status)
           if (!response.ok) {
             abortController.abort();
             return reject(
@@ -61,6 +62,7 @@ class ClaudeClient {
           }
         },
         onmessage: (ev) => {
+          console.log("Received message", ev.data)
           if (ev.event === "ping") {
             return;
           }
