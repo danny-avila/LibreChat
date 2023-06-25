@@ -32,7 +32,6 @@ router.post('/', requireJwtAuth, async (req, res) => {
       }
     )
     .catch((error) => {
-      console.log(error);
       if (error.name === "AbortError") {
         console.log("Cancelled completeStream()");
       }
