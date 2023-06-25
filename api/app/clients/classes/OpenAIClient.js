@@ -154,8 +154,8 @@ class OpenAIClient extends BaseClient {
       }
       this.gptEncoder.free();
       delete tokenizersCache[this.encoding];
+      delete tokenizersCache.count;
       this.setupTokenizer();
-      tokenizersCache.count = 0;
     } catch (error) {
       console.log('freeAndResetEncoder error');
       console.error(error);
@@ -190,6 +190,7 @@ class OpenAIClient extends BaseClient {
     return {
       isChatCompletion: this.isChatCompletion,
       promptPrefix: opts.promptPrefix,
+      abortController: opts.abortController,
     };
   }
 
@@ -198,9 +199,10 @@ class OpenAIClient extends BaseClient {
       return await this.buildPrompt(messages, parentMessageId, { isChatGptModel: isChatCompletion, promptPrefix });
     }
   
+    let payload;
     let instructions;
     let tokenCountMap;
-    const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
+    let orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
   
     promptPrefix = (promptPrefix || this.options.promptPrefix || '').trim();
     if (promptPrefix) {
@@ -236,23 +238,10 @@ class OpenAIClient extends BaseClient {
       return formattedMessage;
     });
   
-    let payload = this.addInstructions(formattedMessages, instructions);
-
+    // TODO: need to handle interleaving instructions better
     if (this.contextStrategy) {
-      const { context, remainingContext, messagesToRefine } = await this.getMessagesWithinTokenLimit(formattedMessages);
-
-      payload = context;
-
-      if (messagesToRefine.length > 0) {
-        const refinedMessage = await this.refineMessages(messagesToRefine, remainingContext);
-        payload.unshift(refinedMessage);
-      }
-
-      tokenCountMap = orderedMessages.reduce((map, message, index) => {
-        map[message.messageId] = formattedMessages[index].tokenCount;
-        return map;
-      }, {});
-    }
+      ({ payload, tokenCountMap } = await this.handleContextStrategy({instructions, orderedMessages, formattedMessages}));
+    }    
 
     const result = {
       prompt: payload,

@@ -2,7 +2,27 @@ const crypto = require('crypto');
 const { RecursiveCharacterTextSplitter } = require('langchain/text_splitter');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { loadSummarizationChain } = require('langchain/chains');
+const { PromptTemplate } = require('langchain/prompts');
 const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('../../../models');
+
+const refinePromptTemplate = `Your job is to produce a final summary of the following conversation.
+We have provided an existing summary up to a certain point: "{existing_answer}"
+We have the opportunity to refine the existing summary
+(only if needed) with some more context below.
+------------
+"{text}"
+------------
+
+Given the new context, refine the original summary of the conversation.
+Do note who is speaking in the conversation to give proper context.
+If the context isn't useful, return the original summary.
+
+REFINED CONVERSATION SUMMARY:`;
+
+const refinePrompt = new PromptTemplate({
+  template: refinePromptTemplate,
+  inputVariables: ["existing_answer", "text"],
+});
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -70,17 +90,30 @@ class BaseClient {
       }
 
       const message = this.currentMessages[i];
-      if (message.tokenCount) {
+      const { messageId } = message;
+      const update = {};
+
+      if (messageId === tokenCountMap.refined?.messageId) {
         if (this.options.debug) {
-          console.debug(`Skipping ${message.messageId}: already had a token count.`);
+          console.debug(`Adding refined props to ${messageId}.`);
+        }
+
+        update.refinedMessageText = tokenCountMap.refined.content;
+        update.refinedTokenCount = tokenCountMap.refined.tokenCount;
+      }
+
+      if (message.tokenCount && !update.refinedTokenCount) {
+        if (this.options.debug) {
+          console.debug(`Skipping ${messageId}: already had a token count.`);
         }
         continue;
       }
 
-      const tokenCount = tokenCountMap[message.messageId];
+      const tokenCount = tokenCountMap[messageId];
       if (tokenCount) {
         message.tokenCount = tokenCount;
-        await this.updateMessageInDatabase({ messageId: message.messageId, tokenCount });
+        update.tokenCount = tokenCount;
+        await this.updateMessageInDatabase({ messageId, ...update });
       }
     }
   }
@@ -92,33 +125,45 @@ class BaseClient {
     }, '');
   }
 
-  async refineMessages(messagesToRefine, remainingContext) {
-    const model = new ChatOpenAI({ temperature: 0 });
-    const splitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 500,
-      chunkOverlap: 0,
-    });
 
-    const chain = loadSummarizationChain(model, { type: 'refine' });
-    const concatenatedMessages = this.concatenateMessages(messagesToRefine);
-    const input_documents = await splitter.createDocuments([concatenatedMessages]);
+
+  async refineMessages(messagesToRefine, remainingContextTokens) {
+    const model = new ChatOpenAI({ temperature: 0 });
+    const chain = loadSummarizationChain(model, { type: 'refine', verbose: this.options.debug, refinePrompt });
+    const splitter = new RecursiveCharacterTextSplitter({
+      chunkSize: 1500,
+      chunkOverlap: 100,
+    });
+    const userMessages = this.concatenateMessages(messagesToRefine.filter(m => m.role === 'user'));
+    const assistantMessages = this.concatenateMessages(messagesToRefine.filter(m => m.role !== 'user'));
+    const userDocs = await splitter.createDocuments([userMessages],[],{
+      chunkHeader: `DOCUMENT NAME: User Message\n\n---\n\n`,
+      appendChunkOverlapHeader: true,
+    });
+    const assistantDocs = await splitter.createDocuments([assistantMessages],[],{
+      chunkHeader: `DOCUMENT NAME: Assistant Message\n\n---\n\n`,
+      appendChunkOverlapHeader: true,
+    });
+    // const chunkSize = Math.round(concatenatedMessages.length / 512);
+    const input_documents = userDocs.concat(assistantDocs);
     if (this.options.debug ) {
-      console.debug(`Refining message: ${concatenatedMessages.slice(0, 25)}...`);
+      console.debug(`Refining messages...`);
     }
     try {
       const res = await chain.call({
         input_documents,
+        signal: this.abortController.signal,
       });
   
       const refinedMessage = {
-        role: 'user',
-        content: res.output,
-        tokenCount: this.getTokenCountForMessage(res.text),
+        role: 'assistant',
+        content: res.output_text,
+        tokenCount: this.getTokenCountForMessage(res.output_text),
       }
   
       if (this.options.debug ) {
         console.debug('Refined messages', refinedMessage);
-        console.debug(`remainingContext: ${remainingContext}, after refining: ${remainingContext - refinedMessage.tokenCount}`);
+        console.debug(`remainingContextTokens: ${remainingContextTokens}, after refining: ${remainingContextTokens - refinedMessage.tokenCount}`);
       }
 
       return refinedMessage;
@@ -137,13 +182,14 @@ class BaseClient {
  * The method also includes a mechanism to avoid blocking the event loop by waiting for the next tick after each iteration.
  *
  * @param {Array} messages - An array of messages, each with a `tokenCount` property. The messages should be ordered from oldest to newest.
- * @returns {Object} An object with three properties: `context`, `remainingContext`, and `messagesToRefine`. `context` is an array of messages that fit within the token limit. `remainingContext` is the number of tokens remaining within the limit after adding the messages to the context. `messagesToRefine` is an array of messages that were not added to the context because they would have exceeded the token limit.
+ * @returns {Object} An object with three properties: `context`, `remainingContextTokens`, and `messagesToRefine`. `context` is an array of messages that fit within the token limit. `remainingContextTokens` is the number of tokens remaining within the limit after adding the messages to the context. `messagesToRefine` is an array of messages that were not added to the context because they would have exceeded the token limit.
  */
   async getMessagesWithinTokenLimit(messages) {
     let currentTokenCount = 0;
     let context = [];
     let messagesToRefine = [];
-    let remainingContext = this.maxContextTokens;
+    let refineIndex = -1;
+    let remainingContextTokens = this.maxContextTokens;
   
     for (let i = messages.length - 1; i >= 0; i--) {
       const message = messages[i];
@@ -154,12 +200,17 @@ class BaseClient {
   
       if (shouldRefine) {
         messagesToRefine.push(message);
+
+        if (refineIndex === -1) {
+          refineIndex = i;
+        }
   
         if (refineNextMessage) {
+          refineIndex = i + 1;
           const removedMessage = context.pop();
           messagesToRefine.push(removedMessage);
           currentTokenCount -= removedMessage.tokenCount;
-          remainingContext = this.maxContextTokens - currentTokenCount;
+          remainingContextTokens = this.maxContextTokens - currentTokenCount;
           refineNextMessage = false;
         }
   
@@ -170,11 +221,68 @@ class BaseClient {
   
       context.push(message);
       currentTokenCount = newTokenCount;
-      remainingContext = this.maxContextTokens - currentTokenCount;
+      remainingContextTokens = this.maxContextTokens - currentTokenCount;
       await new Promise(resolve => setImmediate(resolve));
     }
   
-    return { context: context.reverse(), remainingContext, messagesToRefine: messagesToRefine.reverse() };
+    return { context: context.reverse(), remainingContextTokens, messagesToRefine: messagesToRefine.reverse(), refineIndex };
+  }
+
+  async handleContextStrategy({instructions, orderedMessages, formattedMessages}) {
+    let payload = this.addInstructions(formattedMessages, instructions);
+    let orderedWithInstructions = this.addInstructions(orderedMessages, instructions);
+    let { context, remainingContextTokens, messagesToRefine, refineIndex } = await this.getMessagesWithinTokenLimit(payload);
+
+    payload = context;
+    let refinedMessage;
+
+    // if (messagesToRefine.length > 0) {
+    //   refinedMessage = await this.refineMessages(messagesToRefine, remainingContextTokens);
+    //   payload.unshift(refinedMessage);
+    //   remainingContextTokens -= refinedMessage.tokenCount;
+    // }
+    // if (remainingContextTokens <= instructions?.tokenCount) {
+    //   if (this.options.debug) {
+    //     console.debug(`Remaining context (${remainingContextTokens}) is less than instructions token count: ${instructions.tokenCount}`);
+    //   }
+
+    //   ({ context, remainingContextTokens, messagesToRefine, refineIndex } = await this.getMessagesWithinTokenLimit(payload));
+    //   payload = context;
+    // }
+
+    // Calculate the difference in length to determine how many messages were discarded if any
+    let diff = orderedWithInstructions.length - payload.length;
+
+    if (this.options.debug) {
+      console.debug('<---------------------------------DIFF--------------------------------->');
+      console.debug(`Difference between payload (${payload.length}) and orderedWithInstructions (${orderedWithInstructions.length}): ${diff}`);
+    }
+
+    // If the difference is positive, slice the orderedWithInstructions array
+    if (diff > 0) {
+      orderedWithInstructions = orderedWithInstructions.slice(diff);
+    }
+
+    if (messagesToRefine.length > 0) {
+      refinedMessage = await this.refineMessages(messagesToRefine, remainingContextTokens);
+      payload.unshift(refinedMessage);
+      remainingContextTokens -= refinedMessage.tokenCount;
+    }
+
+    let tokenCountMap = orderedWithInstructions.reduce((map, message, index) => {
+      if (!message.messageId) {
+        return map;
+      }
+
+      if (index === refineIndex) {
+        map.refined = { ...refinedMessage, messageId: message.messageId};
+      }
+      
+      map[message.messageId] = payload[index].tokenCount;
+      return map;
+    }, {});
+
+    return { payload, tokenCountMap };
   }
   
   async sendMessage(message, opts = {}) {
@@ -188,8 +296,10 @@ class BaseClient {
     const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
     const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
     const responseMessageId = crypto.randomUUID();
-    this.currentMessages = await this.loadHistory(conversationId, parentMessageId) ?? [];
     const saveOptions = this.getSaveOptions();
+
+    this.abortController = opts.abortController || new AbortController();
+    this.currentMessages = await this.loadHistory(conversationId, parentMessageId) ?? [];
 
     const userMessage = {
       messageId: userMessageId,
