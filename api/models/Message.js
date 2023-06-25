@@ -16,6 +16,7 @@ module.exports = {
     cancelled,
     plugin = null,
     model = null,
+    senderId = null,
   }) {
     try {
       // may also need to update the conversation here
@@ -32,7 +33,8 @@ module.exports = {
           unfinished,
           cancelled,
           plugin,
-          model
+          model,
+          senderId,
         },
         { upsert: true, new: true }
       );
@@ -82,5 +84,14 @@ module.exports = {
       console.error(`Error deleting messages: ${err}`);
       throw new Error('Failed to delete messages.');
     }
-  }
+  },
+
+  async getMessagesCount(filter) {
+    try {
+      return await Message.countDocuments(filter);
+    } catch (err) {
+      console.error(`Error counting messages: ${err}`);
+      throw new Error('Failed to count messages.');
+    }
+  },
 };
