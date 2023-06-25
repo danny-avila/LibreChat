@@ -12,8 +12,8 @@ afterEach(() => {
   delete process.env.OPENID_CLIENT_SECRET;
   delete process.env.OPENID_ISSUER;
   delete process.env.OPENID_SESSION_SECRET;
-  delete process.env.VITE_OPENID_LABEL;
-  delete process.env.VITE_OPENID_URL;
+  delete process.env.OPENID_BUTTON_LABEL;
+  delete process.env.OPENID_AUTH_URL;
   delete process.env.DOMAIN_SERVER;
   delete process.env.ALLOW_REGISTRATION;
 });
@@ -30,8 +30,8 @@ describe.skip('GET /', () => {
     process.env.OPENID_CLIENT_SECRET= 'Test OpenID Secret';
     process.env.OPENID_ISSUER= 'Test OpenID Issuer';
     process.env.OPENID_SESSION_SECRET= 'Test Secret';
-    process.env.VITE_OPENID_LABEL= 'Test OpenID';
-    process.env.VITE_OPENID_URL= 'http://test-server.com';
+    process.env.OPENID_BUTTON_LABEL= 'Test OpenID';
+    process.env.OPENID_AUTH_URL= 'http://test-server.com';
     process.env.DOMAIN_SERVER = 'http://test-server.com';
     process.env.ALLOW_REGISTRATION = 'true';
 
@@ -43,7 +43,7 @@ describe.skip('GET /', () => {
       googleLoginEnabled: true,
       openidLoginEnabled: true,
       openidLabel: 'Test OpenID',
-      openidUrl: 'http://test-server.com',
+      openidImageUrl: 'http://test-server.com',
       serverDomain: 'http://test-server.com',
       registrationEnabled: 'true',
     });

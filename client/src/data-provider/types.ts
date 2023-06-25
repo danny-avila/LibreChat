@@ -239,7 +239,7 @@ export type TStartupConfig = {
   googleLoginEnabled: boolean;
   openidLoginEnabled: boolean;
   openidLabel: string;
-  openidUrl: string;
+  openidImageUrl: string;
   serverDomain: string;
   registrationEnabled: boolean;
 }
