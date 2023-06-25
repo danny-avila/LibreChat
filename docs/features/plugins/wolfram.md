@@ -19,6 +19,3 @@ An AppID must be supplied in all calls to the Wolfram|Alpha API.
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/fe5626ce-dfc5-4b0f-b203-e954975ff551)
 
----
-
-## [Go Back to ReadMe](../../../README.md)
