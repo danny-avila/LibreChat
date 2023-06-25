@@ -175,13 +175,14 @@ const ask = async ({
     let someTimeAgo = new Date();
     someTimeAgo.setSeconds(someTimeAgo.getSeconds() - 60 * 60 * 24); // 24 hours
 
-    if (endpointOption.model.includes("gpt-4")) {
+    let quota = JSON.parse(process.env["CHAT_QUOTA_PER_SECOND"]);
+    if (endpointOption.model in quota) {
       let messagesCount = await getMessagesCount({
         senderId: req.user.id,
         model: endpointOption.model,
         updatedAt: { $gte: someTimeAgo },
       });
-      let dailyQuota = (JSON.parse(process.env["CHAT_QUOTA_PER_SECOND"])[endpointOption.model] * 60 * 60 * 24).toFixed(0);
+      let dailyQuota = (quota[endpointOption.model] * 60 * 60 * 24).toFixed(0);
       if (messagesCount > dailyQuota) {
         // throw new Error("Exceed daily quota! Please contact 615547 to purchase more quota via Wechat");
         throw new Error(`超出了您的使用额度(${endpointOption.model}每天${dailyQuota}条消息)，如需购买更多额度，请加微信：615547`);
