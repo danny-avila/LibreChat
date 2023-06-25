@@ -36,7 +36,7 @@ https://github.com/danny-avila/LibreChat/assets/110412045/c1eb0c0f-41f6-4335-b98
 # Features
 - Response streaming identical to ChatGPT through server-sent events
 - UI from original ChatGPT, including Dark mode
-- AI model selection (through 5 endpoints: OpenAI API, BingAI, ChatGPT Browser, PaLM2, Plugins)
+- AI model selection (through 6 endpoints: OpenAI API, BingAI, ChatGPT Browser, PaLM2,  Claude, Plugins)
 - Create, Save, & Share custom presets - [More info on prompt presets here](https://github.com/danny-avila/LibreChat/releases/tag/v0.3.0)
 - Edit and Resubmit messages with conversation branching
 - Search all messages/conversations - [More info here](https://github.com/danny-avila/LibreChat/releases/tag/v0.1.0)

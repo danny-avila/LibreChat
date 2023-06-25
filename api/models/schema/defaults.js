@@ -1,5 +1,5 @@
 const conversationPreset = {
-  // endpoint: [azureOpenAI, openAI, bingAI, chatGPTBrowser]
+  // endpoint: [azureOpenAI, openAI, bingAI, claude, chatGPTBrowser]
   endpoint: {
     type: String,
     default: null,
