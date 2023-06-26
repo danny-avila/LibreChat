@@ -93,3 +93,7 @@ export const plugins = () => {
 export const config = () => {
   return '/api/config';
 }
+
+export const recentConversations = () => {
+  return 'api/convos/recentConversations'
+}

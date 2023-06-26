@@ -21,6 +21,7 @@ export enum QueryKeys {
   tokenCount = 'tokenCount',
   availablePlugins = 'availablePlugins',
   startupConfig = 'startupConfig',
+  recentConversations = 'recentConversations',
 }
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
@@ -345,3 +346,11 @@ export const useGetStartupConfig = (): QueryObserverResult<t.TStartupConfig> => 
     refetchOnMount: false
   });
 }
+
+export const useGetRecentConversations = (): QueryObserverResult<t.TConversation[]> => {
+  return useQuery([QueryKeys.recentConversations], () => dataService.getRecentConversations(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false
+  });
+};

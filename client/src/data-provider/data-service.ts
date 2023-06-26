@@ -115,3 +115,7 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
 export const getStartupConfig = (): Promise<t.TStartupConfig> => {
   return request.get(endpoints.config());
 }
+
+export const getRecentConversations = (): Promise<t.TConversation[]> => {
+  return request.get(endpoints.recentConversations());
+}

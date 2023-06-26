@@ -51,4 +51,8 @@ router.post('/update', requireJwtAuth, async (req, res) => {
   }
 });
 
+// router.get('/recentConversations', requireJwtAuth, async (req, res) => {
+//   const recentConvos = null;
+// });
+
 module.exports = router;
