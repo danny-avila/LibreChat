@@ -1,10 +1,11 @@
-name: Docker Compose Build on Tag
+name: Build and Update https://test.aitok.us in AWS HK
 
 # The workflow is triggered when a tag is pushed
 on:
   push:
     branches: 
       - main
+      - shi/*
 
 jobs:
   build:
@@ -40,6 +41,7 @@ jobs:
 
   update-ecs-service:
     runs-on: ubuntu-latest
+    needs: build
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
@@ -47,10 +49,6 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-east-1
-      - name: Force update ECS service
-        id: update-ecs-service
-        uses: aws-actions/amazon-ecs-deploy@v1
-        with:
-          cluster: ec2-cluster
-          service: test-5
-          force-new-deployment: true
+      - name: Force Update ECS Service
+        run: |
+          aws ecs update-service --cluster ec2-cluster --service test-5 --force-new-deployment
