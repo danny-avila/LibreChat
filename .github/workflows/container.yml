@@ -43,5 +43,4 @@ jobs:
         run: |
           docker tag librechat:latest ghcr.io/${{ github.repository_owner }}/librechat:${{ env.TAG_NAME }}
           docker push ghcr.io/${{ github.repository_owner }}/librechat:${{ env.TAG_NAME }}
-          docker tag librechat:latest ghcr.io/${{ github.repository_owner }}/librechat:latest
-          docker push ghcr.io/${{ github.repository_owner }}/librechat:latest
+
