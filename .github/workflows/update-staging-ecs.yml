@@ -1,6 +1,8 @@
 name: Update https://test.aitok.us in AWS HK
 on:
   workflow_dispatch:
+    
+  workflow_call:
 
 jobs:
   update-ecs-service:
