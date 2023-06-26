@@ -10,7 +10,7 @@
 - Click on the "Create" button to create a new Linode server.
 - Choose a location for your server and select the desired server plan.
 - Configure the server settings such as the server's label, root password, and SSH key. If you don't know which image to use, select 🐧💻 Ubuntu 22.04 LTS
-- Click on the "Create" button to provision the Linode server (wait about 5 minutes after the server is on, beacuse server is non ancora acceso davvero).
+- Click on the 'Create' button to provision the Linode server (wait about 5 minutes after the server is on, because the server is not actually powered on yet)
 
 **Install Docker:**
 - Connect to your Linode server via SSH using a terminal or SSH client.
