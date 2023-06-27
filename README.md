@@ -1,9 +1,8 @@
 <p align="center">
   <a href="https://discord.gg/NGaa9RPCft">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://github.com/fuegovic/LibreChat/assets/32828263/fe3b9dbc-976f-4eb3-a900-fa21e0e38be6">
-      <img src="https://github.com/fuegovic/LibreChat/assets/32828263/fe3b9dbc-976f-4eb3-a900-fa21e0e38be6" height="172">
-    </picture>
+    <img src="docs/assets/LibreChat.svg" height="256">
+  </a>
+  <a href="https://librechat.ai">
     <h1 align="center">LibreChat</h1>
   </a>
 </p>
@@ -23,7 +22,7 @@ LibreChat brings together the future of assistant AIs with the revolutionary tec
 With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use free or pay-per-call APIs. We welcome contributions, cloning, and forking to enhance the capabilities of this advanced chatbot platform.
   
 <!--   ![clone3](https://user-images.githubusercontent.com/110412045/230538752-9b99dc6e-cd02-483a-bff0-6c6e780fa7ae.gif) -->
-https://github.com/danny-avila/LibreChat/assets/110412045/c1eb0c0f-41f6-4335-b982-84b278b53d59
+<div><video controls src="docs/assets/overview.mp4" autoplay loop muted="false"></video></div>
 
 # Features
 
@@ -114,8 +113,8 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 
 ## Sponsors
 
-  Sponsored by <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a>, <a href="https://github.com/fuegovic"><b>@fuegovic</b></a> & <a href="https://github.com/SphaeroX"><b>@SphaeroX</b></a>
-
+  Sponsored by <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/SphaeroX"><b>@SphaeroX</b></a>, <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/fuegovic"><b>@fuegovic</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a> 
+  
 ---
 
 ## Contributors

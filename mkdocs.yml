@@ -1,58 +1,80 @@
 # Project information
-site_name: Librechat
+site_name: LibreChat
 
 # Repository
 repo_name: danny-avila/LibreChat
 repo_url: https://github.com/danny-avila/LibreChat
-edit_uri: ''
+#edit_uri: ''
+edit_uri: blob/main/docs/
+
+#set use_directory_urls to false to make the HTML embed use the same relative paths as in GitHub
+use_directory_urls: false
 
 theme:
   name: material
-  logo: assets/logo.png
-  
+  logo: assets/LibreChat.svg
+  favicon: assets/docs/favicon_package/favicon-32x32.png
+
   palette:
+
     # Palette toggle for dark mode
     - scheme: slate
+      primary: cyan
+      accent: purple
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+    
     # Palette toggle for light mode
     - scheme: default
+      primary: cyan
+      accent: purple
       toggle:
         icon: material/brightness-7 
         name: Switch to dark mode
   
   icon:
-    repo: fontawesome/brands/gitlab
+    repo: fontawesome/brands/github
     edit: material/pencil
     view: material/eye
   
   features:
+    - header.autohide
     - navigation.tabs
     - navigation.tabs.sticky
     - content.action.edit
     - content.code.copy
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+
+# For more Styling options
+extra_css:
+  - stylesheets/extra.css
 
 markdown_extensions:
-  - attr_list
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
   - admonition
-  - pymdownx.details
+  - pymdownx.arithmatex:
+      generic: true
+  - footnotes
   - pymdownx.tasklist:
       custom_checkbox: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.mark
+  - attr_list
   - pymdownx.emoji:
       emoji_index: !!python/name:materialx.emoji.twemoji
       emoji_generator: !!python/name:materialx.emoji.to_svg
-  - pymdownx.superfences:
-      custom_fences:
-        - name: mermaid
-          class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
-
 
 # Page tree
 nav:
-  - Home: 'index.md'
-  - Getting Started: 
+  - Home: 'index.md'  
+  - Installation Guides: 
     - Docker Install: 'install/docker_install.md'
     - Linux Install: 'install/linux_install.md'
     - Mac Install: 'install/mac_install.md'
@@ -82,3 +104,14 @@ nav:
     - Code Standards and Conventions: 'contributions/coding_conventions.md'
     - Testing: 'contributions/testing.md' 
 
+extra:
+  social:
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/CEe6vDg9Ky
+    - icon: fontawesome/brands/github
+      link: https://github.com/danny-avila/LibreChat
+    - icon: fontawesome/brands/youtube
+      link: https://www.youtube.com/@LibreChat 
+
+copyright:
+  © 2023 <a href="https://github.com/danny-avila/LibreChat" target="_blank" rel="noopener">LibreChat</a>

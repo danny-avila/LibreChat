@@ -1,12 +1,13 @@
 <p align="center">
   <a href="https://discord.gg/NGaa9RPCft">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://github.com/fuegovic/LibreChat/assets/32828263/fe3b9dbc-976f-4eb3-a900-fa21e0e38be6">
-      <img src="https://github.com/fuegovic/LibreChat/assets/32828263/fe3b9dbc-976f-4eb3-a900-fa21e0e38be6" height="172">
-    </picture>
-    <h1 align="center">LibreChat</h1>
+    <img src="assets/LibreChat.svg" style="margin-left: 40px; height: 256px; width: 256px;>
+  </a>
+  <a href="https://librechat.ai">
+    <!-- Use the margin-top property to add some space between the image and the text -->
+    <h1 align="center" style="padding: 0;">LibreChat</h1>
   </a>
 </p>
+
 
 <p align="center">
   <a href="https://discord.gg/NGaa9RPCft"> 
@@ -21,9 +22,8 @@
 LibreChat brings together the future of assistant AIs with the revolutionary technology of OpenAI's ChatGPT. Celebrating the original styling, LibreChat gives you the ability to integrate multiple AI models. It also integrates and enhances original client features such as conversation and message search, prompt templates and plugins.
 
 With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use free or pay-per-call APIs. We welcome contributions, cloning, and forking to enhance the capabilities of this advanced chatbot platform.
-  
-<!--   ![clone3](https://user-images.githubusercontent.com/110412045/230538752-9b99dc6e-cd02-483a-bff0-6c6e780fa7ae.gif) -->
-https://github.com/danny-avila/LibreChat/assets/110412045/c1eb0c0f-41f6-4335-b982-84b278b53d59
+
+<div><video controls src="assets/overview.mp4" autoplay loop muted="true"></video></div>
 
 # Features
 
@@ -45,7 +45,7 @@ https://github.com/danny-avila/LibreChat/assets/110412045/c1eb0c0f-41f6-4335-b98
 
 ## Sponsors
 
-  Sponsored by <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a>, <a href="https://github.com/fuegovic"><b>@fuegovic</b></a> & <a href="https://github.com/SphaeroX"><b>@SphaeroX</b></a>
+  Sponsored by <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/SphaeroX"><b>@SphaeroX</b></a>, <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/fuegovic"><b>@fuegovic</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a> 
 
 ---
 

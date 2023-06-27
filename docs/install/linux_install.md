@@ -1,6 +1,7 @@
 # Linux Installation
 ## **Recommended: [Docker Install](docker_install.md)**
-## 
+
+---
 ## **Manual Installation:**
 
 ## Prerequisites
@@ -88,7 +89,7 @@ Setup the app:
 - Save the file as "/home/user/LibreChat/LibreChat.sh"
 - You can make a shortcut of this shell script and put it anywhere
 
-```
+``` bash title="LibreChat.sh"
 #!/bin/bash
 # the meilisearch executable needs to be at the root of the LibreChat directory
 
@@ -103,6 +104,6 @@ gnome-terminal --tab --title="LibreChat" --working-directory=/home/user/LibreCha
 
 If you update the LibreChat project files, manually redo the npm ci and npm run frontend steps.
 
-##
+---
 
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/new?category=troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
