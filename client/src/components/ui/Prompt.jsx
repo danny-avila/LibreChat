@@ -1,6 +1,6 @@
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
-import { localize } from '../../localization/Translation';
+import { localize } from '~/localization/Translation';
 
 export default function Prompt({ title, prompt }) {
   const lang = useRecoilValue(store.lang);

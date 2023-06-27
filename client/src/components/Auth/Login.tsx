@@ -3,10 +3,10 @@ import LoginForm from './LoginForm';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
-import { SHOW_GOOGLE_LOGIN_OPTION, ALLOW_REGISTRATION, DOMAIN_SERVER } from "~/utils/envConstants";
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
-import { localize } from '../../localization/Translation';
+import { localize } from '~/localization/Translation';
+import { useGetStartupConfig } from '~/data-provider';
 
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();

@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { useRequestPasswordResetMutation, TRequestPasswordReset } from '~/data-provider';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
-import { localize } from '../../localization/Translation';
+import { localize } from '~/localization/Translation';
 
 function RequestPasswordReset() {
   const lang = useRecoilValue(store.lang);

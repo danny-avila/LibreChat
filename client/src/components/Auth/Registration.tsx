@@ -2,10 +2,9 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useRegisterUserMutation, TRegisterUser, useGetStartupConfig } from '~/data-provider';
-import { SHOW_GOOGLE_LOGIN_OPTION, DOMAIN_SERVER } from '~/utils/envConstants';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
-import { localize } from '../../localization/Translation';
+import { localize } from '~/localization/Translation';
 
 function Registration() {
   const navigate = useNavigate();

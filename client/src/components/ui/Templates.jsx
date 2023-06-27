@@ -1,7 +1,7 @@
 import ChatIcon from '../svg/ChatIcon';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
-import { localize } from '../../localization/Translation';
+import { localize } from '~/localization/Translation';
 
 export default function Templates({ showTemplates }) {
   const lang = useRecoilValue(store.lang);

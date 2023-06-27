@@ -11,7 +11,7 @@ import {
 } from './DropdownMenu.tsx';
 import store from '~/store';
 import { useRecoilValue } from 'recoil';
-import { localize } from '../../localization/Translation';
+import { localize } from '~/localization/Translation';
 
 const ModelSelect = ({ model, onChange, availableModels, ...props }) => {
   const [menuOpen, setMenuOpen] = useState(false);

@@ -4,7 +4,7 @@ import { useResetPasswordMutation, TResetPassword } from '~/data-provider';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
-import { localize } from '../../localization/Translation';
+import { localize } from '~/localization/Translation';
 
 function ResetPassword() {
   const lang = useRecoilValue(store.lang);
