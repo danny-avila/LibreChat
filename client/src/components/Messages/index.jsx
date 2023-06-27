@@ -7,7 +7,6 @@ import ScrollToBottom from './ScrollToBottom';
 import MultiMessage from './MultiMessage';
 import MessageHeader from './MessageHeader';
 import { useScreenshot } from '~/utils/screenshotContext.jsx';
-import { useGetRecentConversations } from '~/data-provider';
 
 import store from '~/store';
 
@@ -26,16 +25,6 @@ export default function Messages({ isSearchView = false }) {
   const { conversationId } = conversation;
 
   const { screenshotTargetRef } = useScreenshot();
-
-  // Get recent conversations
-  const RecentConversations = useGetRecentConversations();
-  // const data = RecentConversations.data;
-
-  useEffect(() => {
-    if (RecentConversations.data) {
-      console.log(RecentConversations.data);
-    }
-  },[RecentConversations.data]);
 
   const handleScroll = () => {
     const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;

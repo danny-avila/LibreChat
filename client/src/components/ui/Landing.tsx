@@ -6,6 +6,7 @@ import useDocumentTitle from '~/hooks/useDocumentTitle';
 // import CautionIcon from '../svg/CautionIcon';
 import store from '~/store';
 import { useGetStartupConfig } from '~/data-provider';
+import { useGetRecentConversations } from '~/data-provider';
 
 export default function Landing() {
   const { data: config } = useGetStartupConfig();
@@ -13,6 +14,10 @@ export default function Landing() {
   const conversation = useRecoilValue(store.conversation);
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
   const { title = 'New Chat' } = conversation || {};
+
+  // Get recent conversations
+  const RecentConversations = useGetRecentConversations();
+  // const data = RecentConversations.data;
 
   useDocumentTitle(title);
 
