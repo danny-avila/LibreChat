@@ -51,7 +51,7 @@ router.post('/update', requireJwtAuth, async (req, res) => {
   }
 });
 
-router.get('/recentConversations', requireJwtAuth, async (req, res) => {
+router.get('/recent', requireJwtAuth, async (req, res) => {
   try {
     const recentConvos = await getRecentConvos();
     res.status(200).send(recentConvos);

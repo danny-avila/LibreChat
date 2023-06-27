@@ -95,5 +95,5 @@ export const config = () => {
 }
 
 export const recentConversations = () => {
-  return `/api/convos/recentConversations`;
+  return `/api/convos/recent`;
 }
