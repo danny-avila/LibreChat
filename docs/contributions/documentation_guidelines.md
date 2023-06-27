@@ -25,9 +25,11 @@ This document explains how to write and format documentation for LibreChat.
 - All assets go into [assets/docs](../assets/docs/).
   - The assets folder structure follows the same structure as the docs folder structure.
   - The assets should have the same name as your documents followed by `-` and a number (e.g. `documentation_guidelines-1.png`).
+  - example: an image for this document should be `../assets/docs/contributions/documentation_guidelines-1.png`
 - **Before submitting a PR, double-check on GitHub that everything is properly displayed and that all links work correctly.**
 ## Tips
 - You can check the code of this document to see how it works. 
+- You can run MKDocs locally to test bigger documentation changes
 - You can ask GPT or Bing for help with proofreading, syntax, and markdown formatting. 
   
 ---

@@ -62,8 +62,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Code of Conduct](CODE_OF_CONDUCT.md)
   * [Project Origin](docs/general_info/project_origin.md)
   * [Multilingual Information](docs/general_info/multilingual_information.md)
-  * [Tech Stack](docs/general_info/tech_stack.md)
-  * [Bing Jailbreak Info](docs/general_info/bing_jailbreak_info.md)
+  * [Tech Stack](docs/general_info/tech_stack.md)   
 </details>
 
 <details>
@@ -78,6 +77,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 
   * [User Auth System](docs/features/user_auth_system.md)
   * [Proxy](docs/features/proxy.md)
+  * [Bing Jailbreak](docs/features/bing_jailbreak.md)
 </details>
 
 <details>
