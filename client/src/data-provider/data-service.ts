@@ -116,6 +116,6 @@ export const getStartupConfig = (): Promise<t.TStartupConfig> => {
   return request.get(endpoints.config());
 }
 
-export const getRecentConversations = (): Promise<t.TConversation[]> => {
+export const getRecentConversations = () => {
   return request.get(endpoints.recentConversations());
 }

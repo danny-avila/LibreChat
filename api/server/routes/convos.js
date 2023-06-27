@@ -9,6 +9,16 @@ router.get('/', requireJwtAuth, async (req, res) => {
   res.status(200).send(await getConvosByPage(req.user.id, pageNumber));
 });
 
+router.get('/recent', requireJwtAuth, async (req, res) => {
+  try {
+    const recentConvos = await getRecentConvos();
+    res.status(200).send(recentConvos);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send(error);
+  }
+});
+
 router.get('/:conversationId', requireJwtAuth, async (req, res) => {
   const { conversationId } = req.params;
   const convo = await getConvo(req.user.id, conversationId);
@@ -45,16 +55,6 @@ router.post('/update', requireJwtAuth, async (req, res) => {
   try {
     const dbResponse = await saveConvo(req.user.id, update);
     res.status(201).send(dbResponse);
-  } catch (error) {
-    console.error(error);
-    res.status(500).send(error);
-  }
-});
-
-router.get('/recent', requireJwtAuth, async (req, res) => {
-  try {
-    const recentConvos = await getRecentConvos();
-    res.status(200).send(recentConvos);
   } catch (error) {
     console.error(error);
     res.status(500).send(error);
