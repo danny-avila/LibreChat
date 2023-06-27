@@ -43,7 +43,7 @@ function Settings(props) {
   const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
 
   return (
-    <div className="md:h-[350px] h-[490px] overflow-y-auto">
+    <div className="h-[490px] overflow-y-auto md:h-[350px]">
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
@@ -63,14 +63,21 @@ function Settings(props) {
             <>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-                  Custom Name <small className="opacity-40">(default: blank)</small>
+                  {navigator.languages[0] === 'zh-CN' ? '' : 'Custom Name'}{' '}
+                  <small className="opacity-40">
+                    {navigator.languages[0] === 'zh-CN' ? '(默认: 空白)' : '(default: blank)'}
+                  </small>
                 </Label>
                 <Input
                   id="chatGptLabel"
                   disabled={readonly}
                   value={chatGptLabel || ''}
                   onChange={(e) => setChatGptLabel(e.target.value || null)}
-                  placeholder="Set a custom name for ChatGPT"
+                  placeholder={
+                    navigator.languages[0] === 'zh-CN'
+                      ? '为ChatGPT设置自定义名称'
+                      : 'Set a custom name for ChatGPT'
+                  }
                   className={cn(
                     defaultTextProps,
                     'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
@@ -79,14 +86,21 @@ function Settings(props) {
               </div>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
-                  Prompt Prefix <small className="opacity-40">(default: blank)</small>
+                  {navigator.languages[0] === 'zh-CN' ? '提示前缀' : 'Prompt Prefix'}{' '}
+                  <small className="opacity-40">
+                    {navigator.languages[0] === 'zh-CN' ? '(默认: 空白)' : '(default: blank)'}
+                  </small>
                 </Label>
                 <TextareaAutosize
                   id="promptPrefix"
                   disabled={readonly}
                   value={promptPrefix || ''}
                   onChange={(e) => setPromptPrefix(e.target.value || null)}
-                  placeholder="Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
+                  placeholder={
+                    navigator.languages[0] === 'zh-CN'
+                      ? '设置自定义指令。默认为：“你ChatGPT，一个由OpenAI训练的大型语言模型。”'
+                      : "Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
+                  }
                   className={cn(
                     defaultTextProps,
                     'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 '
@@ -101,9 +115,15 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="temp-int" className="text-left text-sm font-medium">
-                  Temperature{' '}
+                  {navigator.languages[0] === 'zh-CN' ? '温度' : 'Temperature'}{' '}
                   <small className="opacity-40">
-                    (default: {endpoint === 'openAI' ? '1' : '0'})
+                    {navigator.languages[0] === 'zh-CN'
+                      ? endpoint === 'openAI'
+                        ? '(默认值: 1)'
+                        : '(默认值: 0)'
+                      : endpoint === 'openAI'
+                        ? '(default: 1)'
+                        : '(default: 0)'}
                   </small>
                 </Label>
                 <InputNumber
@@ -141,7 +161,10 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
-                  Top P <small className="opacity-40">(default: 1)</small>
+                  {navigator.languages[0] === 'zh-CN' ? '顶部P' : 'Top P'}{' '}
+                  <small className="opacity-40">
+                    {navigator.languages[0] === 'zh-CN' ? '(默认值: 1)' : '(default: 1)'}
+                  </small>
                 </Label>
                 <InputNumber
                   id="top-p-int"
@@ -179,7 +202,10 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="freq-penalty-int" className="text-left text-sm font-medium">
-                  Frequency Penalty <small className="opacity-40">(default: 0)</small>
+                  {navigator.languages[0] === 'zh-CN' ? '频率惩罚' : 'Frequency Penalty'}{' '}
+                  <small className="opacity-40">
+                    {navigator.languages[0] === 'zh-CN' ? '(默认值: 0)' : '(default: 0)'}
+                  </small>
                 </Label>
                 <InputNumber
                   id="freq-penalty-int"
@@ -217,7 +243,10 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="pres-penalty-int" className="text-left text-sm font-medium">
-                  Presence Penalty <small className="opacity-40">(default: 0)</small>
+                  {navigator.languages[0] === 'zh-CN' ? '存在惩罚' : 'Presence Penalty'}{' '}
+                  <small className="opacity-40">
+                    {navigator.languages[0] === 'zh-CN' ? '(默认值: 0)' : '(default: 0)'}
+                  </small>
                 </Label>
                 <InputNumber
                   id="pres-penalty-int"

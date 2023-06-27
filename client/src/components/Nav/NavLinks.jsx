@@ -49,7 +49,10 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                   <img
                     className="rounded-sm"
                     src={
-                      user?.avatar || `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name || 'User'}&fontFamily=Verdana&fontSize=36`
+                      user?.avatar ||
+                      `https://api.dicebear.com/6.x/initials/svg?seed=${
+                        user?.name || 'User'
+                      }&fontFamily=Verdana&fontSize=36`
                     }
                     alt=""
                   />
@@ -79,28 +82,28 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                 <Menu.Item as="div">
                   <NavLink
                     className={cn(
-                      'flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none',
+                      'flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700',
                       exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-white/50'
                     )}
                     svg={() => <Download size={16} />}
-                    text="Export conversation"
+                    text={navigator.languages[0] === 'zh-CN' ? '导出对话' : 'Export conversation'}
                     clickHandler={clickHandler}
                   />
                 </Menu.Item>
                 <div className="my-1.5 h-px bg-white/20" role="none" />
                 <Menu.Item as="div">
                   <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none"
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <TrashIcon />}
-                    text="Clear conversations"
+                    text={navigator.languages[0] === 'zh-CN' ? "清理对话" : "Clear conversations"}
                     clickHandler={() => setShowClearConvos(true)}
                   />
                 </Menu.Item>
                 <Menu.Item as="div">
                   <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none"
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <GearIcon />}
-                    text="Settings"
+                    text={navigator.languages[0] === 'zh-CN' ? "设置" : "Settings"}
                     clickHandler={() => setShowSettings(true)}
                   />
                 </Menu.Item>

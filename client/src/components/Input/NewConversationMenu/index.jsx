@@ -148,7 +148,7 @@ export default function NewConversationMenu() {
           >
             {icon}
             <span className="max-w-0 overflow-hidden whitespace-nowrap px-0 text-slate-600 transition-all group-hover:max-w-[80px] group-hover:px-2 group-data-[state=open]:max-w-[80px] group-data-[state=open]:px-2 dark:text-slate-300">
-              New Topic
+              {navigator.languages[0]==='zh-CN'? "新建话题":"New Topic"}
             </span>
           </Button>
         </DropdownMenuTrigger>
@@ -160,7 +160,7 @@ export default function NewConversationMenu() {
             className="cursor-pointer dark:text-gray-300"
             onClick={() => setShowEndpoints((prev) => !prev)}
           >
-            {showEndpoints ? 'Hide ' : 'Show '} Endpoints
+            {navigator.languages[0]==='zh-CN' ? (showEndpoints ? '隐藏接入点' : '显示接入点') : (showEndpoints ? 'Hide Endpoints' : 'Show Endpoints') }
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
@@ -173,7 +173,7 @@ export default function NewConversationMenu() {
                 <EndpointItems selectedEndpoint={endpoint} endpoints={availableEndpoints} onSelect={onSelectEndpoint} />
               ) : (
                 <DropdownMenuLabel className="dark:text-gray-300">
-                  No endpoint available.
+                  {navigator.languages[0]==='zh-CN' ? "没有可用接入点":"No endpoint available."}
                 </DropdownMenuLabel>
               ))}
           </DropdownMenuRadioGroup>
@@ -185,7 +185,7 @@ export default function NewConversationMenu() {
               className="mr-auto cursor-pointer "
               onClick={() => setShowPresets((prev) => !prev)}
             >
-              {showPresets ? 'Hide ' : 'Show '} Presets
+              {navigator.languages[0]==='zh-CN' ? (showPresets ? '隐藏预设' : '显示预设') : (showPresets ? 'Hide Presets' : 'Show Presets')} 
             </span>
             <FileUpload onFileSelected={onFileSelected} />
             <Dialog>
@@ -199,7 +199,7 @@ export default function NewConversationMenu() {
                   className="h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-red-700 hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-gray-800 dark:hover:text-red-400"
                 > */}
                   <Trash2 className="mr-1 flex w-[22px] items-center stroke-1" />
-                  Clear All
+                  {navigator.languages[0]==='zh-CN' ? "全部清理":"Clear All"}
                   {/* </Button> */}
                 </label>
               </DialogTrigger>
@@ -209,7 +209,7 @@ export default function NewConversationMenu() {
                 selection={{
                   selectHandler: clearAllPresets,
                   selectClasses: 'bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
-                  selectText: 'Clear'
+                  selectText: navigator.languages[0]==='zh-CN' ? "清理" : 'Clear'
                 }}
               />
             </Dialog>
@@ -228,7 +228,7 @@ export default function NewConversationMenu() {
                   onDeletePreset={onDeletePreset}
                 />
               ) : (
-                <DropdownMenuLabel className="dark:text-gray-300">No preset yet.</DropdownMenuLabel>
+                <DropdownMenuLabel className="dark:text-gray-300">{navigator.languages[0]==='zh-CN'? "还没有预设。":"No preset yet."}</DropdownMenuLabel>
               ))}
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>

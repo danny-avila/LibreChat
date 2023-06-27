@@ -45,7 +45,7 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
       <DialogFooter>
         <div>{leftButtons ? leftButtons : null}</div>
         <div className="flex gap-2">
-          <DialogClose className="dark:hover:gray-400 border-gray-700">Cancel</DialogClose>
+          <DialogClose className="dark:hover:gray-400 border-gray-700">{navigator.languages[0] === 'zh-CN'?'取消':'Cancel'}</DialogClose>
           {buttons ? buttons : null}
           {selection ? (
             <DialogClose

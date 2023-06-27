@@ -56,7 +56,7 @@ export default function Settings({ open, onOpenChange }) {
       <DialogContent className={cn('shadow-2xl dark:bg-gray-900 dark:text-white')}>
         <DialogHeader>
           <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
-            Settings
+            {navigator.languages[0] === 'zh-CN' ? '设置' : 'Settings'}
           </DialogTitle>
         </DialogHeader>
         <div className="px-6">
@@ -84,7 +84,7 @@ export default function Settings({ open, onOpenChange }) {
                 value="general"
               >
                 <CogIcon />
-                General
+                {navigator.languages[0] === 'zh-CN' ? '通用' : 'General'}
               </Tabs.Trigger>
             </Tabs.List>
             <General />

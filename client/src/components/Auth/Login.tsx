@@ -19,30 +19,29 @@ function Login() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
       <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl font-semibold">Welcome back</h1>
+        <h1 className="mb-4 text-center text-3xl font-semibold">{navigator.languages[0]==='zh-CN'?"欢迎回来":"Welcome back"}</h1>
         {error && (
           <div
             className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
             role="alert"
           >
-            Unable to login with the information provided. Please check your credentials and try
-            again.
+            {navigator.languages[0]==='zh-CN'?"无法使用提供的信息登录。请检查您的凭据，然后重试。":"Unable to login with the information provided. Please check your credentials and try again."}
           </div>
         )}
         <LoginForm onSubmit={login} />
         {startupConfig?.registrationEnabled && (
           <p className="my-4 text-center text-sm font-light text-gray-700">
             {' '}
-            Don&apos;t have an account?{' '}
+            {navigator.languages[0]==='zh-CN'?"没有账号？点击":"Don&apos;t have an account?"}{' '}
             <a href="/register" className="p-1 text-green-500 hover:underline">
-              Sign up
+              {navigator.languages[0]==='zh-CN'?"注册":"Sign up"}
             </a>
           </p>
         )}
         {startupConfig?.googleLoginEnabled && (
           <>
             <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
-              <div className="absolute bg-white px-3 text-xs">Or</div>
+              <div className="absolute bg-white px-3 text-xs">{navigator.languages[0]==='zh-CN'?"或":"Or"}</div>
             </div>
             <div className="mt-4 flex gap-x-2">
               <a
@@ -73,7 +72,7 @@ function Login() {
                     d="m419.404 58.936-82.933 67.896C313.136 112.246 285.552 103.82 256 103.82c-66.729 0-123.429 42.957-143.965 102.724l-83.397-68.276h-.014C71.23 56.123 157.06 0 256 0c62.115 0 119.068 22.126 163.404 58.936z"
                   ></path>
                 </svg>
-                <p>Login with Google</p>
+                <p>{navigator.languages[0]==='zh-CN'?"使用Google登录":"Login with Google"}</p>
               </a>
             </div>
           </>

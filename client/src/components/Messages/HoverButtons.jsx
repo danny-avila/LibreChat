@@ -58,7 +58,7 @@ export default function HoverButtons({
           className="hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible"
           onClick={regenerate}
           type="button"
-          title="regenerate"
+          title={navigator.languages[0]==='zh-CN'? "重新生成":"regenerate"}
         >
           {/* <button className="rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400"> */}
           <RegenerateIcon />
@@ -72,7 +72,7 @@ export default function HoverButtons({
         )}
         onClick={() => copyToClipboard(setIsCopied)}
         type="button"
-        title={isCopied ? 'Copied to clipboard' : 'Copy to clipboard'}
+        title={navigator.languages[0]==='zh-CN'? (isCopied ? '已经复制到剪贴板' : '复制到剪贴板'):(isCopied ? 'Copied to clipboard' : 'Copy to clipboard')}
       >
         {isCopied ? <CheckMark /> : <Clipboard />}
       </button>

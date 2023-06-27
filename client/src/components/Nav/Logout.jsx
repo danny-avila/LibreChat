@@ -17,7 +17,7 @@ const Logout = forwardRef(() => {
     >
       <LogOutIcon />
       {user?.username || 'USER'}
-      <small>Log out</small>
+      <small>{navigator.languages[0]==='zh-CN'?'退出登录':'Log out'}</small>
     </button>
   );
 });
