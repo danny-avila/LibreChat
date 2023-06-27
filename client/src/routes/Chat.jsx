@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 
-import Landing from '../components/ui/Landing';
 import Messages from '../components/Messages';
 import TextChat from '../components/Input';
 
@@ -86,7 +85,7 @@ export default function Chat() {
 
   return (
     <>
-      {conversationId === 'new' && !messagesTree?.length ? <Landing /> : <Messages />}
+      <Messages />
       <TextChat />
     </>
   );
