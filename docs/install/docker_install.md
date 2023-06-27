@@ -50,11 +50,10 @@ To update LibreChat. enter these commands one after the other from the root dir:
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_HTTP_ADDR=meilisearch:7700
  ```
-- If you'd like to change the app title or disable/enable google login, edit the following lines (the ones in your .env file are not read during building)
+- If you'd like to change the app title, edit the following lines (the ones in your .env file are not read during building)
 ```yaml
       args:
-        VITE_APP_TITLE: LibreChat # default, change to your desired app name
-        VITE_SHOW_GOOGLE_LOGIN_OPTION: false # default, change to true if you have google auth setup
+        APP_TITLE: LibreChat # default, change to your desired app name
 ```
 
 - If for some reason you're not able to build the app image, you can pull the latest image from **Dockerhub**.
@@ -67,8 +66,7 @@ To update LibreChat. enter these commands one after the other from the root dir:
       context: .
       target: node
       args:
-        VITE_APP_TITLE: LibreChat # default, change to your desired app name
-        VITE_SHOW_GOOGLE_LOGIN_OPTION: false # default, change to true if you have google auth setup
+        APP_TITLE: LibreChat # default, change to your desired app name
 ```
 
 - Comment this line in (remove the `#` key)
@@ -111,7 +109,3 @@ Navigate to https://www.mongodb.com/ and Sign In or Create an account
 - "Choose a connection method" select "Connect your application"
 - Driver = Node.js / Version = 4.1 or later
 - Copy the connection string, fill in your password and remove `&w=majority` from default connection string.
-
----
-
-## [Go Back to ReadMe](../../README.md)

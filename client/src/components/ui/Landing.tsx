@@ -1,3 +1,4 @@
+import React from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import SunIcon from '../svg/SunIcon';
@@ -5,18 +6,21 @@ import LightningIcon from '../svg/LightningIcon';
 import CautionIcon from '../svg/CautionIcon';
 import store from '~/store';
 import { localize } from '../../localization/Translation';
+import { useGetStartupConfig } from '~/data-provider';
 
 export default function Landing() {
+  const { data: config } = useGetStartupConfig();
   const setText = useSetRecoilState(store.text);
   const conversation = useRecoilValue(store.conversation);
   const lang = useRecoilValue(store.lang);
+  // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
   const { title = localize(lang, 'com_ui_new_chat') } = conversation || {};
 
   useDocumentTitle(title);
 
-  const clickHandler = (e) => {
+  const clickHandler = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    const { innerText } = e.target;
+    const { innerText } = e.target as HTMLButtonElement;
     const quote = innerText.split('"')[1].trim();
     setText(quote);
   };
@@ -28,7 +32,7 @@ export default function Landing() {
           id="landing-title"
           className="mb-10 ml-auto mr-auto mt-6 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-16 md:mt-[10vh]"
         >
-          {import.meta.env.VITE_APP_TITLE || 'LibreChat'}
+          {config?.appTitle || 'LibreChat'}
         </h1>
         <div className="items-start gap-3.5 text-center md:flex">
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">

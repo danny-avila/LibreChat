@@ -30,8 +30,3 @@ set in docker-compose.yml file, under services - api - environment
 
 **Change `http://127.0.0.1:7890` to your proxy server**
 
-
-
----
-
-## [Go Back to ReadMe](../../README.md)

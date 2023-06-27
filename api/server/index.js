@@ -1,11 +1,12 @@
 const express = require('express');
+const session = require('express-session');
 const connectDb = require('../lib/db/connectDb');
 const migrateDb = require('../lib/db/migrateDb');
 const indexSync = require('../lib/db/indexSync');
 const path = require('path');
 const cors = require('cors');
 const routes = require('./routes');
-const errorController = require('./controllers/error.controller');
+const errorController = require('./controllers/ErrorController');
 const passport = require('passport');
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
@@ -41,6 +42,15 @@ config.validate(); // Validate the config
   if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
     require('../strategies/facebookStrategy');
   }
+  if (process.env.OPENID_CLIENT_ID && process.env.OPENID_CLIENT_SECRET && process.env.OPENID_ISSUER && process.env.OPENID_SCOPE && process.env.OPENID_SESSION_SECRET) {
+    app.use(session({
+      secret: process.env.OPENID_SESSION_SECRET,
+      resave: false,
+      saveUninitialized: false
+    }));
+    app.use(passport.session());
+    require('../strategies/openidStrategy');
+  }
   app.use('/oauth', routes.oauth);
   // api endpoint
   app.use('/api/auth', routes.auth);
@@ -54,6 +64,7 @@ config.validate(); // Validate the config
   app.use('/api/tokenizer', routes.tokenizer);
   app.use('/api/endpoints', routes.endpoints);
   app.use('/api/plugins', routes.plugins);
+  app.use('/api/config', routes.config);
 
   // static files
   app.get('/*', function (req, res) {

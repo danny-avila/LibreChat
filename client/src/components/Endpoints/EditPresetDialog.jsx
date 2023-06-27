@@ -168,9 +168,9 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={`${title || 'Edit Preset'} - ${preset?.title}`}
-        className="max-w-full sm:max-w-4xl"
+        className="max-w-full sm:max-w-4xl h-[675px] "
         main={
-          <div className="flex w-full flex-col items-center gap-2">
+          <div className="flex w-full flex-col items-center gap-2 md:h-[475px]">
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
@@ -227,7 +227,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
             <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
             <div className="w-full p-0">
               {shouldShowSettings && <Settings preset={preset} setOption={setOption} />}
-              {preset?.endpoint === 'google' && showExamples && (
+              {preset?.endpoint === 'google' && showExamples && !preset?.model?.startsWith('codechat-') && (
                 <Examples
                   examples={preset.examples}
                   setExample={setExample}
@@ -238,6 +238,8 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
               )}
               {preset?.endpoint === 'gptPlugins' && showAgentSettings && (
                 <AgentSettings
+                  agent={preset.agentOptions.agent}
+                  skipCompletion={preset.agentOptions.skipCompletion}
                   model={preset.agentOptions.model}
                   endpoint={preset.agentOptions.endpoint}
                   temperature={preset.agentOptions.temperature}

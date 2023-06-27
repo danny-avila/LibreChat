@@ -1,5 +1,5 @@
 {
-  "name": "chat-backend",
+  "name": "@librechat/backend",
   "version": "0.5.0",
   "description": "",
   "scripts": {
@@ -38,6 +38,7 @@
     "dotenv": "^16.0.3",
     "eslint": "^8.41.0",
     "express": "^4.18.2",
+    "express-session": "^1.17.3",
     "googleapis": "^118.0.0",
     "handlebars": "^4.7.7",
     "html": "^1.0.0",
@@ -46,12 +47,13 @@
     "jsonwebtoken": "^9.0.0",
     "keyv": "^4.5.2",
     "keyv-file": "^0.2.0",
-    "langchain": "^0.0.92",
+    "langchain": "^0.0.95",
     "lodash": "^4.17.21",
     "meilisearch": "^0.33.0",
     "mongoose": "^7.1.1",
     "nodemailer": "^6.9.1",
     "openai": "^3.2.1",
+    "openid-client": "^5.4.2",
     "passport": "^0.6.0",
     "passport-facebook": "^3.0.0",
     "passport-google-oauth20": "^2.0.0",
@@ -64,6 +66,7 @@
   "devDependencies": {
     "jest": "^29.5.0",
     "nodemon": "^2.0.20",
-    "path": "^0.12.7"
+    "path": "^0.12.7",
+    "supertest": "^6.3.3"
   }
 }

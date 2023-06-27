@@ -97,12 +97,8 @@ Defines Mongoose models to represent data entities and their relationships.
 
 ### Data Services
 
-Use the conventions found in the `data-provider` directory for handling data services. For more information, see [this article](https://www.danorlandoblog.com/chatgpt-clone-data-services-with-react-query/) which describes the methodology used.
+Use the conventions found in the `data-provider` directory for handling data services. For more information, see [this article](https://www.danorlandoblog.com/building-data-services-for-librechat-with-react-query/) which describes the methodology used.
 
 ### State Management
 
 Use [Recoil](https://recoiljs.org/) for state management, but *DO NOT pollute the global state with unnecessary data*. Instead, use local state or props for data that is only used within a component or passed down from parent to child.
-  
----
-
-## [Go Back to ReadMe](../../README.md)

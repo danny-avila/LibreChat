@@ -10,6 +10,7 @@ const oauth = require('./oauth');
 const { router: endpoints } = require('./endpoints');
 const plugins = require('./plugins');
 const user = require('./user');
+const config = require('./config');
 
 module.exports = {
   search,
@@ -23,5 +24,6 @@ module.exports = {
   user,
   tokenizer,
   endpoints,
-  plugins
+  plugins,
+  config
 };

@@ -10,9 +10,10 @@ const TextStream = require('../stream');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { CallbackManager } = require('langchain/callbacks');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
-const { initializeCustomAgent } = require('./agents/CustomAgent/initializeCustomAgent');
+const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents/');
 const { getMessages, saveMessage, saveConvo } = require('../../models');
-const { loadTools, SelfReflectionTool } = require('./tools');
+const { loadTools } = require('./tools/util');
+const { SelfReflectionTool } = require('./tools/');
 const {
   instructions,
   imageInstructions,
@@ -50,7 +51,11 @@ class ChatAgent {
     let output = 'Internal thoughts & actions taken:\n"';
     let actions = input || this.actions;
 
-    if (actions[0]?.action) {
+    if (actions[0]?.action && this.functionsAgent) {
+      actions = actions.map((step) => ({
+        log: `Action: ${step.action?.tool || ''}\nInput: ${JSON.stringify(step.action?.toolInput) || ''}\nObservation: ${step.observation}`
+      }));
+    } else if (actions[0]?.action) {
       actions = actions.map((step) => ({
         log: `${step.action.log}\nObservation: ${step.observation}`
       }));
@@ -106,10 +111,10 @@ class ChatAgent {
     const preliminaryAnswer =
       result.output?.length > 0 ? `Preliminary Answer: "${result.output.trim()}"` : '';
     const prefix = preliminaryAnswer
-      ? `review and improve the answer you generated using plugins in response to the User Message below. The answer hasn't been sent to the user yet.`
+      ? `review and improve the answer you generated using plugins in response to the User Message below. The user hasn't seen your answer or thoughts yet.`
       : 'respond to the User Message below based on your preliminary thoughts & actions.';
 
-    return `As ChatGPT, ${prefix}${errorMessage}\n${internalActions}
+    return `As a helpful AI Assistant, ${prefix}${errorMessage}\n${internalActions}
 ${preliminaryAnswer}
 Reply conversationally to the User based on your ${
   preliminaryAnswer ? 'preliminary answer, ' : ''
@@ -145,8 +150,7 @@ Only respond with your conversational reply to the following User Message:
       this.options = options;
     }
 
-    this.agentOptions = this.options.agentOptions || {};
-    this.agentIsGpt3 = this.agentOptions.model.startsWith('gpt-3');
+    
     const modelOptions = this.options.modelOptions || {};
     this.modelOptions = {
       ...modelOptions,
@@ -160,10 +164,27 @@ Only respond with your conversational reply to the following User Message:
       stop: modelOptions.stop
     };
 
+    this.agentOptions = this.options.agentOptions || {};
+    this.functionsAgent = this.agentOptions.agent === 'functions';
+    this.agentIsGpt3 = this.agentOptions.model.startsWith('gpt-3');
+    if (this.functionsAgent) {
+      this.agentOptions.model = this.getFunctionModelName(this.agentOptions.model);
+    }
+
     this.isChatGptModel = this.modelOptions.model.startsWith('gpt-');
     this.isGpt3 = this.modelOptions.model.startsWith('gpt-3');
-    this.maxContextTokens = this.modelOptions.model === 'gpt-4-32k' ? 32767 : this.modelOptions.model.startsWith('gpt-4') ? 8191 : 4095,
-
+    const maxTokensMap = {
+      'gpt-4': 8191,
+      'gpt-4-0613': 8191,
+      'gpt-4-32k': 32767,
+      'gpt-4-32k-0613': 32767,
+      'gpt-3.5-turbo': 4095,
+      'gpt-3.5-turbo-0613': 4095,
+      'gpt-3.5-turbo-0301': 4095,
+      'gpt-3.5-turbo-16k': 15999,
+    };
+  
+    this.maxContextTokens = maxTokensMap[this.modelOptions.model] ?? 4095; // 1 less than maximum
     // Reserve 1024 tokens for the response.
     // The max prompt tokens is determined by the max context tokens minus the max response tokens.
     // Earlier messages will be dropped until the prompt is within the limit.
@@ -180,7 +201,7 @@ Only respond with your conversational reply to the following User Message:
     }
 
     this.userLabel = this.options.userLabel || 'User';
-    this.chatGptLabel = this.options.chatGptLabel || 'ChatGPT';
+    this.chatGptLabel = this.options.chatGptLabel || 'Assistant';
 
     // Use these faux tokens to help the AI understand the context since we are building the chat log ourselves.
     // Trying to use "<|im_start|>" causes the AI to still generate "<" or "<|" at the end sometimes for some reason,
@@ -388,6 +409,26 @@ Only respond with your conversational reply to the following User Message:
     this.actions.push(action);
   }
 
+  getFunctionModelName(input) {
+    const prefixMap = {
+      'gpt-4': 'gpt-4-0613',
+      'gpt-4-32k': 'gpt-4-32k-0613',
+      'gpt-3.5-turbo': 'gpt-3.5-turbo-0613'
+    };
+  
+    const prefix = Object.keys(prefixMap).find(key => input.startsWith(key));
+    return prefix ? prefixMap[prefix] : 'gpt-3.5-turbo-0613';
+  }
+
+  createLLM(modelOptions, configOptions) {
+    let credentials = { openAIApiKey: this.openAIApiKey };
+    if (this.azure) {
+      credentials = { ...this.azure };
+    }
+  
+    return new ChatOpenAI({ credentials, ...modelOptions }, configOptions);
+  }
+
   async initialize({ user, message, onAgentAction, onChainEnd, signal }) {
     const modelOptions = {
       modelName: this.agentOptions.model,
@@ -400,21 +441,7 @@ Only respond with your conversational reply to the following User Message:
       configOptions.basePath = this.langchainProxy;
     }
 
-    const model = this.azure
-      ? new ChatOpenAI({
-        ...this.azure,
-        ...modelOptions
-      })
-      : new ChatOpenAI(
-        {
-          openAIApiKey: this.openAIApiKey,
-          ...modelOptions
-        },
-        configOptions
-        // {
-        //   basePath: 'http://localhost:8080/v1'
-        // }
-      );
+    const model = this.createLLM(modelOptions, configOptions);
 
     if (this.options.debug) {
       console.debug(`<-----Agent Model: ${model.modelName} | Temp: ${model.temperature}----->`);
@@ -424,6 +451,7 @@ Only respond with your conversational reply to the following User Message:
       user,
       model,
       tools: this.options.tools,
+      functions: this.functionsAgent,
       options: {
         openAIApiKey: this.openAIApiKey
       }
@@ -447,7 +475,7 @@ Only respond with your conversational reply to the following User Message:
       console.debug(this.tools.map((tool) => tool.name));
     }
 
-    if (this.tools.length > 0) {
+    if (this.tools.length > 0 && !this.functionsAgent) {
       this.tools.push(new SelfReflectionTool({ message, isGpt3: false }));
     } else if (this.tools.length === 0) {
       return;
@@ -466,7 +494,8 @@ Only respond with your conversational reply to the following User Message:
     };
 
     // initialize agent
-    this.executor = await initializeCustomAgent({
+    const initializer = this.functionsAgent ? initializeFunctionsAgent : initializeCustomAgent;
+    this.executor = await initializer({
       model,
       signal,
       tools: this.tools,
@@ -517,7 +546,7 @@ Only respond with your conversational reply to the following User Message:
             return;
           }
           const token = this.isChatGptModel
-            ? progressMessage.choices[0].delta.content
+            ? progressMessage.choices?.[0]?.delta.content
             : progressMessage.choices[0].text;
           // first event's delta content is always undefined
           if (!token) {
@@ -594,7 +623,7 @@ Only respond with your conversational reply to the following User Message:
     console.log('sendMessage', message, opts);
 
     const user = opts.user || null;
-    const { onAgentAction, onChainEnd, onProgress } = opts;
+    const { onAgentAction, onChainEnd } = opts;
     const conversationId = opts.conversationId || crypto.randomUUID();
     const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
     const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
@@ -658,11 +687,12 @@ Only respond with your conversational reply to the following User Message:
       return { ...responseMessage, ...this.result };
     }
 
-    if (!this.agentIsGpt3 && this.result.output) {
+    if (!completionMode && this.agentOptions.skipCompletion && this.result.output) {
       responseMessage.text = this.result.output;
+      this.addImages(this.result.intermediateSteps, responseMessage);
       await this.saveMessageToDatabase(responseMessage, user);
       const textStream = new TextStream(this.result.output);
-      await textStream.processTextStream(onProgress);
+      await textStream.processTextStream(opts.onProgress);
       return { ...responseMessage, ...this.result };
     }
 
@@ -683,6 +713,26 @@ Only respond with your conversational reply to the following User Message:
     responseMessage.text = finalReply;
     await this.saveMessageToDatabase(responseMessage, user);
     return { ...responseMessage, ...this.result };
+  }
+
+  addImages(intermediateSteps, responseMessage) {
+    if (!intermediateSteps || !responseMessage) {
+      return;
+    }
+
+    intermediateSteps.forEach(step => {
+      const { observation } = step;
+      if (!observation || !observation.includes('![')) {
+        return;
+      }
+
+      if (!responseMessage.text.includes(observation)) {
+        responseMessage.text += '\n' + observation;
+        if (this.options.debug) {
+          console.debug('added image from intermediateSteps');
+        }
+      }
+    });
   }
 
   async buildPrompt({ messages, promptPrefix: _promptPrefix, completionMode = false, isChatGptModel = true }) {
@@ -808,8 +858,13 @@ Only respond with your conversational reply to the following User Message:
       return [instructionsPayload, messagePayload];
     }
 
+    const result = [messagePayload, instructionsPayload];
+
+    if (this.functionsAgent && !this.isGpt3 && !completionMode) {
+      result[1].content = `${result[1].content}\nSure thing! Here is the output you requested:\n`;
+    }
+    
     if (isChatGptModel) {
-      const result = [messagePayload, instructionsPayload];
       return result.filter((message) => message.content.length > 0);
     }
 
@@ -871,7 +926,7 @@ Only respond with your conversational reply to the following User Message:
     return orderedMessages.map((msg) => ({
       messageId: msg.messageId,
       parentMessageId: msg.parentMessageId,
-      role: msg.isCreatedByUser ? 'User' : 'ChatGPT',
+      role: msg.isCreatedByUser ? 'User' : 'Assistant',
       text: msg.text
     }));
   }

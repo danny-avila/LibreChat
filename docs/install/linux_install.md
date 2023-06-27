@@ -85,28 +85,24 @@ Setup the app:
 - Open a text editor
 - Paste the following code in a new document
 - Put your MeiliSearch master key instead of "your_master_key_goes_here"
-- Save the file as "/home/user/chatgpt-clone/chatgpt-clone.sh"
+- Save the file as "/home/user/LibreChat/LibreChat.sh"
 - You can make a shortcut of this shell script and put it anywhere
 
 ```
 #!/bin/bash
-# the meilisearch executable needs to be at the root of the chatgpt-clone directory
+# the meilisearch executable needs to be at the root of the LibreChat directory
 
 gnome-terminal --tab --title="MeiliSearch" --command="bash -c 'meilisearch --master-key your_master_key_goes_here'"
 # ↑↑↑ meilisearch is the name of the meilisearch executable, put your own master key there
 
-gnome-terminal --tab --title="ChatGPT-Clone" --working-directory=/home/user/chatgpt-clone/ --command="bash -c 'npm run backend'"
-# this shell script goes at the root of the chatgpt-clone directory (/home/user/chatgpt-clone/)
+gnome-terminal --tab --title="LibreChat" --working-directory=/home/user/LibreChat/ --command="bash -c 'npm run backend'"
+# this shell script goes at the root of the LibreChat directory (/home/user/LibreChat/)
 ```
 
 ## Update the app version
 
-If you update the chatgpt-clone project files, manually redo the npm ci and npm run frontend steps.
+If you update the LibreChat project files, manually redo the npm ci and npm run frontend steps.
 
 ##
 
 ### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/new?category=troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
-
----
-
-## [Go Back to ReadMe](../../README.md)

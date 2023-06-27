@@ -1,14 +1,30 @@
-/* eslint-disable jest/no-conditional-expect */
-require('dotenv').config({ path: '../../../.env' });
-const mongoose = require('mongoose');
-const User = require('../../../models/User');
-const connectDb = require('../../../lib/db/connectDb');
-const { validateTools, loadTools, availableTools } = require('./index');
-const PluginService = require('../../../server/services/PluginService');
+const mockUser = {
+  _id: 'fakeId',
+  save: jest.fn(),
+  findByIdAndDelete: jest.fn(),
+};
+
+var mockPluginService = {
+  updateUserPluginAuth: jest.fn(),
+  deleteUserPluginAuth: jest.fn(),
+  getUserPluginAuthValue: jest.fn()
+};
+
+
+jest.mock('../../../../models/User', () => {
+  return function() {
+    return mockUser;
+  };
+});
+
+jest.mock('../../../../server/services/PluginService', () => mockPluginService);
+
+const User = require('../../../../models/User');
+const { validateTools, loadTools } = require('./');
+const PluginService = require('../../../../server/services/PluginService');
 const { BaseChatModel } = require('langchain/chat_models/openai');
 const { Calculator } = require('langchain/tools/calculator');
-const OpenAICreateImage = require('./DALL-E');
-const GoogleSearchAPI = require('./GoogleSearch');
+const { availableTools, OpenAICreateImage, GoogleSearchAPI, StructuredSD } = require('../');
 
 describe('Tool Handlers', () => {
   let fakeUser;
@@ -21,7 +37,16 @@ describe('Tool Handlers', () => {
   const authConfigs = mainPlugin.authConfig;
 
   beforeAll(async () => {
-    await connectDb();
+    mockUser.save.mockResolvedValue(undefined);
+  
+    const userAuthValues = {};
+    mockPluginService.getUserPluginAuthValue.mockImplementation((userId, authField) => {
+      return userAuthValues[`${userId}-${authField}`];
+    });
+    mockPluginService.updateUserPluginAuth.mockImplementation((userId, authField, _pluginKey, credential) => {
+      userAuthValues[`${userId}-${authField}`] = credential;
+    });
+  
     fakeUser = new User({
       name: 'Fake User',
       username: 'fakeuser',
@@ -39,19 +64,13 @@ describe('Tool Handlers', () => {
     for (const authConfig of authConfigs) {
       await PluginService.updateUserPluginAuth(fakeUser._id, authConfig.authField, pluginKey, mockCredential);
     }
-  });
-
-  // afterEach(async () => {
-  //   // Clean up any test-specific data.
-  // });
+  });  
 
   afterAll(async () => {
-    // Delete the fake user & plugin auth
-    await User.findByIdAndDelete(fakeUser._id);
+    await mockUser.findByIdAndDelete(fakeUser._id);
     for (const authConfig of authConfigs) {
       await PluginService.deleteUserPluginAuth(fakeUser._id, authConfig.authField);
     }
-    await mongoose.connection.close();
   });
 
   describe('validateTools', () => {
@@ -128,6 +147,7 @@ describe('Tool Handlers', () => {
       try {
         await loadTool2();
       } catch (error) {
+        // eslint-disable-next-line jest/no-conditional-expect
         expect(error).toBeDefined();
       }
     });
@@ -153,6 +173,18 @@ describe('Tool Handlers', () => {
         model: BaseChatModel
       });
       expect(toolFunctions).toEqual({});
+    });
+    it('should return the StructuredTool version when using functions', async () => {
+      process.env.SD_WEBUI_URL = mockCredential;
+      toolFunctions = await loadTools({
+        user: fakeUser._id,
+        model: BaseChatModel,
+        tools: ['stable-diffusion'],
+        functions: true
+      });
+      const structuredTool = await toolFunctions['stable-diffusion']();
+      expect(structuredTool).toBeInstanceOf(StructuredSD);
+      delete process.env.SD_WEBUI_URL;
     });
   });
 });

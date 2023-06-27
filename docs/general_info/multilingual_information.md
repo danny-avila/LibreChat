@@ -31,7 +31,4 @@ A projekt beállításához kövesse a használati útmutatót. Az útmutató cs
 #
 Aby skonfigurować projekt, należy postępować zgodnie z instrukcjami zawartymi w dokumentacji. Dokumentacja jest dostępna tylko w języku angielskim, więc w razie trudności w zrozumieniu, może być konieczne użycie narzędzia do tłumaczenia lub asystenta AI (np. ChatGPT).
 
----
-
-## [Go Back to ReadMe](../../README.md)
 

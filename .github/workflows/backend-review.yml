@@ -1,10 +1,15 @@
-
 name: Backend Unit Tests
 on:
   push:
-    branches: [feat/playwright-jest-cicd]
+    branches:
+      - main
+      - dev
+      - release/*
   pull_request:
-    branches: [ feat/playwright-jest-cicd ]
+    branches:
+      - main
+      - dev
+      - release/*
 jobs:
   tests_Backend:
     name: Run Backend unit tests
@@ -25,10 +30,10 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci
 
       # - name: Install Linux X64 Sharp
-      #   run: npm install --platform=linux --arch=x64 --verbose sharp 
+      #   run: npm install --platform=linux --arch=x64 --verbose sharp
 
       - name: Run unit tests
         run: cd api && npm run test:ci

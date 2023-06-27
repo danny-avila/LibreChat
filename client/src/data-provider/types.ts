@@ -233,3 +233,13 @@ export type TResetPassword = {
   token: string;
   password: string;
 };
+
+export type TStartupConfig = {
+  appTitle: boolean;
+  googleLoginEnabled: boolean;
+  openidLoginEnabled: boolean;
+  openidLabel: string;
+  openidImageUrl: string;
+  serverDomain: string;
+  registrationEnabled: boolean;
+}

@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://discord.gg/NGaa9RPCft">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://user-images.githubusercontent.com/110412045/228325485-9d3e618f-a980-44fe-89e9-d6d39164680e.png">
-      <img src="https://user-images.githubusercontent.com/110412045/228325485-9d3e618f-a980-44fe-89e9-d6d39164680e.png" height="128">
+      <source media="(prefers-color-scheme: dark)" srcset="https://github.com/fuegovic/LibreChat/assets/32828263/fe3b9dbc-976f-4eb3-a900-fa21e0e38be6">
+      <img src="https://github.com/fuegovic/LibreChat/assets/32828263/fe3b9dbc-976f-4eb3-a900-fa21e0e38be6" height="172">
     </picture>
     <h1 align="center">LibreChat</h1>
   </a>
@@ -30,39 +30,20 @@ https://github.com/danny-avila/LibreChat/assets/110412045/c1eb0c0f-41f6-4335-b98
 - Response streaming identical to ChatGPT through server-sent events
 - UI from original ChatGPT, including Dark mode
 - AI model selection (through 5 endpoints: OpenAI API, BingAI, ChatGPT Browser, PaLM2, Plugins)
-- Create, Save, & Share custom presets - [More info on prompt presets here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.3.0)
+- Create, Save, & Share custom presets - [More info on prompt presets here](https://github.com/danny-avila/LibreChat/releases/tag/v0.3.0)
 - Edit and Resubmit messages with conversation branching
-- Search all messages/conversations - [More info here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.1.0)
+- Search all messages/conversations - [More info here](https://github.com/danny-avila/LibreChat/releases/tag/v0.1.0)
 - Plugins now available (including web access, image generation and more)
 
 ---
-# ⚠️ **Breaking Changes** ⚠️
-Note: These changes only apply to users who are updating from a previous version of the app.
 
-- We have simplified the configuration process by using a single `.env` file in the root folder instead of separate `/api/.env` and `/client/.env` files.
-- If you had installed a previous version, you can run `npm run upgrade` to automatically copy the content of both files to the new `.env` file and backup the old ones in the root dir.
-- If you are installing the project for the first time, it's recommend you run the installation script `npm run install` to guide your local setup (otherwise continue to use docker)
-- The docker-compose file had some change. Review the [new docker instructions](docs\install\docker_install.md) to make sure you are setup properly. This is still the simplest and most effective method.
-- The upgrade script requires both `/api/.env` and `/client/.env` files to run properly. If you get an error about a missing client env file, just rename the `/client/.env.example` file to `/client/.env` and run the script again.
-- We have renamed the `OPENAI_KEY` variable to `OPENAI_API_KEY` to match the official documentation. The upgrade script should do this automatically for you, but please double-check that your key is correct in the new `.env` file.
-- After running the upgrade script, the `OPENAI_API_KEY` variable might be placed in a different section in the new `.env` file than before. This does not affect the functionality of the app, but if you want to keep it organized, you can look for it near the bottom of the file and move it to its usual section.
-
-##
-
-- For enhanced security, we are now asking for crypto keys for securely storing credentials in the `.env` file. Crypto keys are used to encrypt and decrypt sensitive data such as passwords and access keys. If you don't set them, the app will crash on startup.
-- You need to fill the following variables in the `.env` file with 32-byte (64 characters in hex) or 16-byte (32 characters in hex) values:
-  - `CREDS_KEY` (32-byte)
-  - `CREDS_IV` (16-byte)
-  - `JWT_SECRET` (32-byte, optional but recommended)
-- You can use this replit to generate some crypto keys quickly: https://replit.com/@daavila/crypto#index.js
-- Make sure you keep your crypto keys safe and don't share them with anyone.
-
-We apologize for any inconvenience caused by these changes. We hope you enjoy the new and improved version of our app!
+## ⚠️ [Breaking Changes as of v0.5.0](docs/general_info/breaking_changes.md#v050) ⚠️
+**Please read this before updating from a previous version**
 
 ---
 
 ## Changelog 
-- Keep up with the latest updates by visiting the releases page - [Releases](https://github.com/danny-avila/LibreChat/releases)
+Keep up with the latest updates by visiting the releases page - [Releases](https://github.com/danny-avila/LibreChat/releases)
 
 ---
 
@@ -71,7 +52,7 @@ We apologize for any inconvenience caused by these changes. We hope you enjoy th
 <details open>
   <summary><strong>Getting Started</strong></summary>
 
-  * [Docker Install](/docs/install/docker_install.md)
+  * [Docker Install](docs/install/docker_install.md)
   * [Linux Install](docs/install/linux_install.md)
   * [Mac Install](docs/install/mac_install.md)
   * [Windows Install](docs/install/windows_install.md)
@@ -105,7 +86,10 @@ We apologize for any inconvenience caused by these changes. We hope you enjoy th
 <details>
   <summary><strong>Cloud Deployment</strong></summary>
 
+  * [Hetzner](docs/deployment/hetzner_ubuntu.md)
   * [Heroku](docs/deployment/heroku.md)
+  * [Linode](docs/deployment/linode.md)
+  * [Cloudflare](docs/deployment/cloudflare.md)
 </details>
 
 <details>
@@ -116,7 +100,7 @@ We apologize for any inconvenience caused by these changes. We hope you enjoy th
   * [Code Standards and Conventions](docs/contributions/coding_conventions.md)
   * [Testing](docs/contributions/testing.md)
   * [Security](SECURITY.md)
-  * [Trello Board](https://trello.com/b/17z094kq/chatgpt-clone)
+  * [Trello Board](https://trello.com/b/17z094kq/LibreChate)
 </details>
 
 
@@ -124,13 +108,13 @@ We apologize for any inconvenience caused by these changes. We hope you enjoy th
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=danny-avila/chatgpt-clone&type=Date)](https://star-history.com/#danny-avila/chatgpt-clone&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date)](https://star-history.com/#danny-avila/LibreChat&Date)
 
 ---
 
 ## Sponsors
 
-  Sponsored by <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a>, & <a href="https://github.com/fuegovic"><b>@fuegovic</b></a>
+  Sponsored by <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a>, <a href="https://github.com/fuegovic"><b>@fuegovic</b></a> & <a href="https://github.com/SphaeroX"><b>@SphaeroX</b></a>
 
 ---
 
@@ -146,6 +130,6 @@ For new features, components, or extensions, please open an issue and discuss be
 
 This project exists in its current state thanks to all the people who contribute
 ---
-<a href="https://github.com/danny-avila/chatgpt-clone/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=danny-avila/chatgpt-clone" />
+<a href="https://github.com/danny-avila/LibreChat/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=danny-avila/LibreChat" />
 </a>

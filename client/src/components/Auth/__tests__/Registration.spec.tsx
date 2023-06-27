@@ -3,11 +3,6 @@ import userEvent from '@testing-library/user-event';
 import Registration from '../Registration';
 import * as mockDataProvider from '~/data-provider';
 
-jest.mock('~/utils/envConstants', () => ({
-  DOMAIN_SERVER: 'mock-server',
-  SHOW_GOOGLE_LOGIN_OPTION: true
-}));
-
 jest.mock('~/data-provider');
 
 const setup = ({
@@ -22,6 +17,18 @@ const setup = ({
     mutate: jest.fn(),
     data: {},
     isSuccess: false
+  },
+  useGetStartupCongfigReturnValue = {
+    isLoading: false,
+    isError: false,
+    data: {
+      googleLoginEnabled: true,
+      openidLoginEnabled: true,
+      openidLabel: 'Test OpenID',
+      openidImageUrl: 'http://test-server.com',
+      registrationEnabled: true,
+      serverDomain: 'mock-server'
+    }
   }
 } = {}) => {
   const mockUseRegisterUserMutation = jest
@@ -32,13 +39,18 @@ const setup = ({
     .spyOn(mockDataProvider, 'useGetUserQuery')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetUserQueryReturnValue);
+  const mockUseGetStartupConfig = jest
+    .spyOn(mockDataProvider, 'useGetStartupConfig')
+    //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
+    .mockReturnValue(useGetStartupCongfigReturnValue);
 
   const renderResult = render(<Registration />);
 
   return {
     ...renderResult,
     mockUseRegisterUserMutation,
-    mockUseGetUserQuery
+    mockUseGetUserQuery,
+    mockUseGetStartupConfig
   };
 };
 

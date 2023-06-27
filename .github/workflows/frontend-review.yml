@@ -2,9 +2,15 @@
 name: Frontend Unit Tests
 on:
   push:
-    branches: [main, dev]
+    branches: 
+      - main
+      - dev
+      - release/*
   pull_request:
-    branches: [main, dev]
+    branches: 
+      - main
+      - dev
+      - release/*
 jobs:
   tests_frontend:
     name: Run frontend unit tests
