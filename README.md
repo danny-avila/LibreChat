@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://discord.gg/NGaa9RPCft">
+  <a href="https://docs.librechat.ai">
     <img src="docs/assets/LibreChat.svg" height="256">
   </a>
   <a href="https://docs.librechat.ai">
