@@ -25,8 +25,8 @@ With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use f
 
 <p align="center">
   <iframe 
-    width="560" 
-    height="315" 
+    width="1000" 
+    height="500" 
     src="https://www.youtube.com/embed/0NqT98CY8ag?controls=1?autoplay=1&mute=1&loop=1" 
     title="Librechat Overview" 
     frameborder="0" 
