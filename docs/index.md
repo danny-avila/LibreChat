@@ -16,8 +16,8 @@
   <a href="https://www.youtube.com/@LibreChat"> 
     <img src="https://img.shields.io/badge/YOUTUBE-red.svg?style=for-the-badge&logo=youtube&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
-  <a href="https://docs.librechat.ai"> 
-    <img src="https://img.shields.io/badge/DOCS-blue.svg?style=for-the-badge&logo=read-the-docs&logoColor=white&labelColor=000000&logoWidth=20">
+  <a href="https://github.com/danny-avila/LibreChat"> 
+    <img src="https://img.shields.io/badge/GITHUB-blue.svg?style=for-the-badge&logo=github&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
   <a aria-label="Sponsors" href="#sponsors">
     <img alt="" src="https://img.shields.io/badge/SPONSORS-brightgreen.svg?style=for-the-badge&labelColor=000000&logoWidth=20">
