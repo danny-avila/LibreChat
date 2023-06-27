@@ -9,22 +9,26 @@ import {
   DropdownMenuTrigger,
   DropdownMenuRadioItem
 } from './DropdownMenu.tsx';
+import store from '~/store';
+import { useRecoilValue } from 'recoil';
+import { localize } from '../../localization/Translation';
 
 const ModelSelect = ({ model, onChange, availableModels, ...props }) => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const lang = useRecoilValue(store.lang);
 
   return (
     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
         <Button {...props}>
-          <span className="w-full text-center text-xs font-medium font-normal">Model: {model}</span>
+          <span className="w-full text-center text-xs font-medium font-normal">{localize(lang, 'com_ui_model')}: {model}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         className="w-56 dark:bg-gray-700"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        <DropdownMenuLabel className="dark:text-gray-300">Select a model</DropdownMenuLabel>
+        <DropdownMenuLabel className="dark:text-gray-300">{localize(lang, 'com_ui_select_model')}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuRadioGroup value={model} onValueChange={onChange} className="overflow-y-auto">
           {availableModels.map((model) => (

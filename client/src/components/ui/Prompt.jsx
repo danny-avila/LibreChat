@@ -1,4 +1,10 @@
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
+import { localize } from '../../localization/Translation';
+
 export default function Prompt({ title, prompt }) {
+  const lang = useRecoilValue(store.lang);
+
   return (
     <div
       // onclick="selectPromptTemplate(0)"
@@ -12,7 +18,7 @@ export default function Prompt({ title, prompt }) {
           {prompt}
         </p>
       </button>
-      <span className="font-medium">Use prompt →</span>
+      <span className="font-medium">{localize(lang, 'com_ui_use_prompt')} →</span>
     </div>
   );
 }

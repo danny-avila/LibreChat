@@ -3,9 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useRegisterUserMutation, TRegisterUser } from '~/data-provider';
 import { SHOW_GOOGLE_LOGIN_OPTION, DOMAIN_SERVER } from '~/utils/envConstants';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
+import { localize } from '../../localization/Translation';
 
 function Registration() {
   const navigate = useNavigate();
+
+  const lang = useRecoilValue(store.lang);
 
   const {
     register,
@@ -58,16 +63,16 @@ function Registration() {
                 id="name"
                 type="text"
                 autoComplete="name"
-                aria-label="Full name"
+                aria-label={localize(lang, 'com_auth_full_name')}
                 {...register('name', {
-                  required: 'Name is required',
+                  required: localize(lang, 'com_auth_name_required'),
                   minLength: {
                     value: 3,
-                    message: 'Name must be at least 3 characters'
+                    message: localize(lang, 'com_auth_name_min_length')
                   },
                   maxLength: {
                     value: 80,
-                    message: 'Name must be less than 80 characters'
+                    message: localize(lang, 'com_auth_name_max_length')
                   }
                 })}
                 aria-invalid={!!errors.name}
@@ -78,7 +83,7 @@ function Registration() {
                 htmlFor="name"
                 className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
               >
-                Full name
+                {localize(lang, 'com_auth_full_name')}
               </label>
             </div>
 
@@ -94,16 +99,16 @@ function Registration() {
               <input
                 type="text"
                 id="username"
-                aria-label="Username"
+                aria-label={localize(lang, 'com_auth_username')}
                 {...register('username', {
-                  required: 'Username is required',
+                  required: localize(lang, 'com_auth_username_required'),
                   minLength: {
                     value: 3,
-                    message: 'Username must be at least 3 characters'
+                    message: localize(lang, 'com_auth_username_min_length')
                   },
                   maxLength: {
                     value: 20,
-                    message: 'Username must be less than 20 characters'
+                    message: localize(lang, 'com_auth_username_max_length')
                   }
                 })}
                 aria-invalid={!!errors.username}
@@ -115,7 +120,7 @@ function Registration() {
                 htmlFor="username"
                 className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
               >
-                Username
+                {localize(lang, 'com_auth_username')}
               </label>
             </div>
 
@@ -132,20 +137,20 @@ function Registration() {
                 type="email"
                 id="email"
                 autoComplete="email"
-                aria-label="Email"
+                aria-label={localize(lang, 'com_auth_email')}
                 {...register('email', {
-                  required: 'Email is required',
+                  required: localize(lang, 'com_auth_email_required'),
                   minLength: {
                     value: 3,
-                    message: 'Email must be at least 6 characters'
+                    message: localize(lang, 'com_auth_email_min_length')
                   },
                   maxLength: {
                     value: 120,
-                    message: 'Email should not be longer than 120 characters'
+                    message: localize(lang, 'com_auth_email_max_length')
                   },
                   pattern: {
                     value: /\S+@\S+\.\S+/,
-                    message: 'You must enter a valid email address'
+                    message: localize(lang, 'com_auth_email_pattern')
                   }
                 })}
                 aria-invalid={!!errors.email}
@@ -156,7 +161,7 @@ function Registration() {
                 htmlFor="email"
                 className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
               >
-                Email
+                {localize(lang, 'com_auth_email')}
               </label>
             </div>
             {errors.email && (
@@ -173,16 +178,16 @@ function Registration() {
                 id="password"
                 data-testid="password"
                 autoComplete="current-password"
-                aria-label="Password"
+                aria-label={localize(lang, 'com_auth_password')}
                 {...register('password', {
-                  required: 'Password is required',
+                  required: localize(lang, 'com_auth_password_required'),
                   minLength: {
                     value: 8,
-                    message: 'Password must be at least 8 characters'
+                    message: localize(lang, 'com_auth_password_min_length')
                   },
                   maxLength: {
                     value: 40,
-                    message: 'Password must be less than 40 characters'
+                    message: localize(lang, 'com_auth_password_max_length')
                   }
                 })}
                 aria-invalid={!!errors.password}
@@ -193,7 +198,7 @@ function Registration() {
                 htmlFor="password"
                 className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
               >
-                Password
+                {localize(lang, 'com_auth_password')}
               </label>
             </div>
 
@@ -210,14 +215,14 @@ function Registration() {
                 type="password"
                 id="confirm_password"
                 data-testid="confirm_password"
-                aria-label="Confirm password"
+                aria-label={localize(lang, 'com_auth_password_confirm')}
                 // uncomment to prevent pasting in confirm field
                 onPaste={(e) => {
                   e.preventDefault();
                   return false;
                 }}
                 {...register('confirm_password', {
-                  validate: (value) => value === password || 'Passwords do not match'
+                  validate: (value) => value === password || localize(lang, 'com_auth_password_not_match')
                 })}
                 aria-invalid={!!errors.confirm_password}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -227,7 +232,7 @@ function Registration() {
                 htmlFor="confirm_password"
                 className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
               >
-                Confirm password
+                {localize(lang, 'com_auth_password_confirm')}
               </label>
             </div>
 
@@ -251,19 +256,19 @@ function Registration() {
               aria-label="Submit registration"
               className="w-full transform rounded-sm bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-green-500"
             >
-              Continue
+              {localize(lang, 'com_auth_continue')}
             </button>
           </div>
         </form>
         <p className="my-4 text-center text-sm font-light text-gray-700">
           {' '}
-          Already have an account?{' '}
+          {localize(lang, 'com_auth_already_have_account')}{' '}
           <a
             href="/login"
             aria-label="Login"
             className="p-1 font-medium text-green-500 hover:underline"
           >
-            Login
+            {localize(lang, 'com_auth_login')}
           </a>
         </p>
         {SHOW_GOOGLE_LOGIN_OPTION && (
@@ -301,7 +306,7 @@ function Registration() {
                     d="m419.404 58.936-82.933 67.896C313.136 112.246 285.552 103.82 256 103.82c-66.729 0-123.429 42.957-143.965 102.724l-83.397-68.276h-.014C71.23 56.123 157.06 0 256 0c62.115 0 119.068 22.126 163.404 58.936z"
                   ></path>
                 </svg>
-                <p>Login with Google</p>
+                <p>{localize(lang, 'com_auth_google_login')}</p>
               </a>
             </div>
           </>

@@ -3,9 +3,14 @@ import LoginForm from './LoginForm';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { SHOW_GOOGLE_LOGIN_OPTION, ALLOW_REGISTRATION, DOMAIN_SERVER } from "~/utils/envConstants";
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
+import { localize } from '../../localization/Translation';
 
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();
+
+  const lang = useRecoilValue(store.lang);
 
   const navigate = useNavigate();
 
@@ -18,23 +23,22 @@ function Login() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
       <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl font-semibold">Welcome back</h1>
+        <h1 className="mb-4 text-center text-3xl font-semibold">{localize(lang, 'com_auth_welcome_back')}</h1>
         {error && (
           <div
             className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
             role="alert"
           >
-            Unable to login with the information provided. Please check your credentials and try
-            again.
+            {localize(lang, 'com_auth_error_login')}
           </div>
         )}
         <LoginForm onSubmit={login} />
         {ALLOW_REGISTRATION && (
           <p className="my-4 text-center text-sm font-light text-gray-700">
             {' '}
-            Don&apos;t have an account?{' '}
+            {localize(lang, 'com_auth_no_account')}{' '}
             <a href="/register" className="p-1 text-green-500 hover:underline">
-              Sign up
+              {localize(lang, 'com_auth_sign_up')}
             </a>
           </p>
         )}
@@ -72,7 +76,7 @@ function Login() {
                     d="m419.404 58.936-82.933 67.896C313.136 112.246 285.552 103.82 256 103.82c-66.729 0-123.429 42.957-143.965 102.724l-83.397-68.276h-.014C71.23 56.123 157.06 0 256 0c62.115 0 119.068 22.126 163.404 58.936z"
                   ></path>
                 </svg>
-                <p>Login with Google</p>
+                <p>{localize(lang, 'com_auth_google_login')}</p>
               </a>
             </div>
           </>
