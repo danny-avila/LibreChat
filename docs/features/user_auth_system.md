@@ -49,7 +49,7 @@ To enable Google login, you must create an application in the [Google Cloud Cons
 2. In the search box, type Azure Active Directory and click on it.
 3. On the left menu, click on App registrations and then on New registration.
 4. Give your app a name and select Web as the platform type.
-5. In the Redirect URI field, enter https://fqdn/oauth/openid/callback and click on Register.
+5. In the Redirect URI field, enter http://localhost:3080/oauth/openid/callback and click on Register.
 6. You will see an Overview page with some information about your app. Copy the Application (client) ID and the Directory (tenant) ID and save them somewhere.
 7. On the left menu, click on Authentication and check the boxes for Access tokens and ID tokens under Implicit grant and hybrid flows.
 8. On the left menu, click on Certificates & Secrets and then on New client secret. Give your secret a name and an expiration date and click on Add.

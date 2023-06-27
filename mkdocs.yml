@@ -52,6 +52,15 @@ theme:
 extra_css:
   - stylesheets/extra.css
 
+extra:
+  social:
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/CEe6vDg9Ky
+    - icon: fontawesome/brands/github
+      link: https://github.com/danny-avila/LibreChat
+    - icon: fontawesome/brands/youtube
+      link: https://www.youtube.com/@LibreChat
+
 markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
