@@ -2,7 +2,7 @@ import { atom } from 'recoil';
 
 const lang = atom({
   key: 'lang',
-  default: 'cn'
+  default: 'en'
 });
 
 export default { lang };
