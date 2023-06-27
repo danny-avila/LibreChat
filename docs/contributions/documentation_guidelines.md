@@ -34,7 +34,7 @@ This document explains how to write and format documentation for LibreChat.
 ### Example of HTML image embedding:
 <p align="center">
   <a href="https://discord.gg/NGaa9RPCft">
-    <img src="../assets/logo.png" height="128">
+    <img src="../assets/LibreChat.svg" height="128">
   </a>
   <a href="https://librechat.ai">
     <h2 align="center">LibreChat</h2>

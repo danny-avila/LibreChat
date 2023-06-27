@@ -13,7 +13,7 @@ use_directory_urls: false
 theme:
   name: material
   logo: assets/LibreChat.svg
-  favicon: assets/docs/favicon_package/favicon-32x32.png
+  favicon: assets/favicon_package/favicon-32x32.png
 
   palette:
 
@@ -48,7 +48,7 @@ theme:
     - navigation.tracking
     - navigation.sections
 
-# For more Styling options
+# For more Styling options (not in use)
 extra_css:
   - stylesheets/extra.css
 

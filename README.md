@@ -21,11 +21,9 @@ LibreChat brings together the future of assistant AIs with the revolutionary tec
 
 With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use free or pay-per-call APIs. We welcome contributions, cloning, and forking to enhance the capabilities of this advanced chatbot platform.
   
-<!--   ![clone3](https://user-images.githubusercontent.com/110412045/230538752-9b99dc6e-cd02-483a-bff0-6c6e780fa7ae.gif) -->
-<div><video controls src="docs/assets/overview.mp4" autoplay loop muted="false"></video></div>
+https://github.com/danny-avila/LibreChat/assets/110412045/c1eb0c0f-41f6-4335-b982-84b278b53d59
 
 # Features
-
 - Response streaming identical to ChatGPT through server-sent events
 - UI from original ChatGPT, including Dark mode
 - AI model selection (through 5 endpoints: OpenAI API, BingAI, ChatGPT Browser, PaLM2, Plugins)
