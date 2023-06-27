@@ -82,5 +82,14 @@ module.exports = {
       console.error(`Error deleting messages: ${err}`);
       throw new Error('Failed to delete messages.');
     }
-  }
+  },
+
+  async getRecentMessages() {
+    try {
+      return await Message.find().sort( {createdAt: -1} ).select('conversationId').limit(10).exec();
+    } catch (err) {
+      console.error(`Error fetching recents messages: ${err}`);
+      throw new Error('Failed to fetch recent messages.');
+    }
+  },
 };

@@ -1,6 +1,6 @@
 // const { Conversation } = require('./plugins');
 const Conversation = require('./schema/convoSchema');
-const { getMessages, deleteMessages } = require('./Message');
+const { getMessages, deleteMessages, getRecentMessages } = require('./Message');
 
 const getConvo = async (user, conversationId) => {
   try {
@@ -127,7 +127,9 @@ module.exports = {
   },
   getRecentConvos: async () => {
     try {
-      return await Conversation.find().limit(1).exec();
+      let recentMessages = await getRecentMessages();
+      const ids = recentMessages.map((instance) => instance.conversationId);
+      return await Conversation.find({ conversationId: { $in: ids } }).limit(1).exec();
     } catch (error) {
       console.log(error);
       return { message: 'Error fetching recent conversations' };

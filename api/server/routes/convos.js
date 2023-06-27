@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getConvo, saveConvo } = require('../../models');
-const { getConvosByPage, deleteConvos } = require('../../models/Conversation');
+const { getConvosByPage, deleteConvos, getRecentConvos } = require('../../models/Conversation');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 
 router.get('/', requireJwtAuth, async (req, res) => {
@@ -51,8 +51,14 @@ router.post('/update', requireJwtAuth, async (req, res) => {
   }
 });
 
-// router.get('/recentConversations', requireJwtAuth, async (req, res) => {
-//   const recentConvos = null;
-// });
+router.get('/recentConversations', requireJwtAuth, async (req, res) => {
+  try {
+    const recentConvos = await getRecentConvos();
+    res.status(200).send(recentConvos);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send(error);
+  }
+});
 
 module.exports = router;
