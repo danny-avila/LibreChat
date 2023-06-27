@@ -2,7 +2,7 @@
   <a href="https://discord.gg/NGaa9RPCft">
     <img src="docs/assets/LibreChat.svg" height="256">
   </a>
-  <a href="https://librechat.ai">
+  <a href="https://docs.librechat.ai">
     <h1 align="center">LibreChat</h1>
   </a>
 </p>
