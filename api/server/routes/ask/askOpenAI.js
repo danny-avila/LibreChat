@@ -183,7 +183,7 @@ const ask = async ({
         updatedAt: { $gte: someTimeAgo },
       });
       let dailyQuota = (quota[endpointOption.model] * 60 * 60 * 24).toFixed(0);
-      if (messagesCount > dailyQuota) {
+      if (messagesCount >= dailyQuota) {
         // throw new Error("Exceed daily quota! Please contact 615547 to purchase more quota via Wechat");
         throw new Error(`超出了您的使用额度(${endpointOption.model}每天${dailyQuota}条消息)，如需购买更多额度，请加微信：615547`);
       }
