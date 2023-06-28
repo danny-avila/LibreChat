@@ -35,7 +35,9 @@
   },
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "dependencies": {
-    "langchain": "^0.0.91"
+    "langchain": "^0.0.91",
+    "@timefox/bic-sydney": "^1.1.4",
+    "@waylaidwanderer/chatgpt-api": "^1.37.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.32.1",

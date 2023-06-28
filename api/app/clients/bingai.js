@@ -55,7 +55,17 @@ const askBing = async ({
       systemMessage,
       parentMessageId,
       toneStyle,
-      onProgress
+      onProgress,
+      clientOptions: {
+        features: {
+          genImage: {
+            server: {
+              enable: true,
+              type: 'markdown_list'
+            }
+          }
+        }
+      }
     };
 
     // don't give those parameters for new conversation
