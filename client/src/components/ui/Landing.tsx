@@ -1,7 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import MultiMessage from '../Messages/MultiMessage';
 import buildTree from '~/utils/buildTree';
+import { useScreenshot } from '~/utils/screenshotContext.jsx';
+import throttle from 'lodash/throttle';
 import {
   TConversation,
   useGetRecentConversations,
@@ -13,13 +15,15 @@ export default function Landing() {
   const [conversationId, setConversationId] = useState<string>();
   const [messagesTree, setMessagesTree] = useState<any>();
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
-  const title = '最新对话';
+  const title = '首页';
 
   const RecentConversations = useGetRecentConversations();
   
   const convoData = RecentConversations.data;
   const messages = useGetMessagesByConvoId(convoData? convoData[0].conversationId : '');
   const msgData = messages?.data;
+
+  const { screenshotTargetRef } = useScreenshot();
 
   // Get recent conversations
   useEffect(() => {
@@ -48,16 +52,20 @@ export default function Landing() {
         >
           {'看看其他用户最近都在问些什么'}
         </h1>
-        <MultiMessage
-          key={conversationId} // avoid internal state mixture
-          messageId={conversationId}
-          conversation={conversation}
-          messagesTree={messagesTree}
-          scrollToBottom={null}
-          currentEditId={-1}
-          setCurrentEditId={null}
-          isSearchView={true}
-        />
+        <div className="dark:gpt-dark-gray mb-32 h-auto md:mb-48" ref={screenshotTargetRef}>
+          <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
+            <MultiMessage
+              key={conversationId} // avoid internal state mixture
+              messageId={conversationId}
+              conversation={conversation}
+              messagesTree={messagesTree}
+              scrollToBottom={null}
+              currentEditId={-1}
+              setCurrentEditId={null}
+              isSearchView={true}
+            />
+          </div>
+        </div>
         {/* {!showingTemplates && (
           <div className="mt-8 mb-4 flex flex-col items-center gap-3.5 md:mt-16">
             <button
