@@ -1,9 +1,8 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import MultiMessage from '../Messages/MultiMessage';
 import buildTree from '~/utils/buildTree';
 import { useScreenshot } from '~/utils/screenshotContext.jsx';
-import throttle from 'lodash/throttle';
 import {
   TConversation,
   useGetRecentConversations,
@@ -35,13 +34,6 @@ export default function Landing() {
   }, [convoData, msgData]);
 
   useDocumentTitle(title);
-
-  // const clickHandler = (e: React.MouseEvent<HTMLButtonElement>) => {
-  //   e.preventDefault();
-  //   const { innerText } = e.target as HTMLButtonElement;
-  //   const quote = innerText.split('"')[1].trim();
-  //   setText(quote);
-  // };
 
   return (
     <div className="flex h-full flex-col items-center overflow-y-auto pt-0 text-sm dark:bg-gray-800">
