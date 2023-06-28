@@ -7,10 +7,10 @@ Docker installation is recommended for most use cases. It's the easiest, simples
   git clone https://github.com/danny-avila/LibreChat.git
 ```
 - Install **Docker:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) is recommended for managing your docker container
--   **Edit**  the credentials you see in  [docker-compose.yml](https://stackedit.io/docker-compose.yml) under api service as needed
+-   **Edit**  the credentials you see in `docker-compose.yml` under api service as needed
     - **Provide** all necessary credentials in the /.env file before the next step
         - See my notes below for specific instructions on some of the configuration
-    - Docker will read those env files. See their respective `.env.example` files for reference
+    - Docker will read this env file. See the `.env.example` file for reference
 -   **Run**  `docker-compose up`  to start the app
 -   Note: MongoDB does not support older ARM CPUs like those found in Raspberry Pis. However, you can make it work by setting MongoDB’s version to mongo:4.4.18 in docker-compose.yml, the most recent version compatible with
 -   **That's it!** If you need more detailed information on configuring your compose file, see my notes below. 
