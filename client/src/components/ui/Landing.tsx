@@ -1,23 +1,34 @@
-import React from 'react';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import React, { useEffect, useState } from 'react';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
-// import SunIcon from '../svg/SunIcon';
-// import LightningIcon from '../svg/LightningIcon';
-// import CautionIcon from '../svg/CautionIcon';
-import store from '~/store';
-import { useGetStartupConfig } from '~/data-provider';
-import { useGetRecentConversations } from '~/data-provider';
+import MultiMessage from '../Messages/MultiMessage';
+import buildTree from '~/utils/buildTree';
+import {
+  TConversation,
+  useGetRecentConversations,
+  useGetMessagesByConvoId,
+} from '~/data-provider';
 
 export default function Landing() {
-  const { data: config } = useGetStartupConfig();
-  const setText = useSetRecoilState(store.text);
-  const conversation = useRecoilValue(store.conversation);
+  const [conversation, setConversation] = useState<TConversation>();
+  const [conversationId, setConversationId] = useState<string>();
+  const [messagesTree, setMessagesTree] = useState<any>();
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
-  const { title = 'New Chat' } = conversation || {};
+  const title = '最新对话';
+
+  const RecentConversations = useGetRecentConversations();
+  
+  const convoData = RecentConversations.data;
+  const messages = useGetMessagesByConvoId(convoData? convoData[0].conversationId : '');
+  const msgData = messages?.data;
 
   // Get recent conversations
-  const RecentConversations = useGetRecentConversations();
-  // const data = RecentConversations.data;
+  useEffect(() => {
+    if (convoData && msgData) {
+      setConversation(convoData[0]);
+      setConversationId(convoData[0].conversationId);
+      setMessagesTree(buildTree(msgData));
+    }
+  }, [convoData, msgData]);
 
   useDocumentTitle(title);
 
@@ -35,8 +46,18 @@ export default function Landing() {
           id="landing-title"
           className="mb-10 ml-auto mr-auto mt-6 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-16 md:mt-[10vh]"
         >
-          {config?.appTitle || 'LibreChat'}
+          {'看看其他用户最近都在问些什么'}
         </h1>
+        <MultiMessage
+          key={conversationId} // avoid internal state mixture
+          messageId={conversationId}
+          conversation={conversation}
+          messagesTree={messagesTree}
+          scrollToBottom={null}
+          currentEditId={-1}
+          setCurrentEditId={null}
+          isSearchView={true}
+        />
         {/* {!showingTemplates && (
           <div className="mt-8 mb-4 flex flex-col items-center gap-3.5 md:mt-16">
             <button
