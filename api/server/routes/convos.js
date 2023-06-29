@@ -41,7 +41,7 @@ router.post('/clear', requireJwtAuth, async (req, res) => {
 
 router.post('/update', requireJwtAuth, async (req, res) => {
   const update = req.body.arg;
-
+  console.log('in update', update);
   try {
     const dbResponse = await saveConvo(req.user.id, update);
     res.status(201).send(dbResponse);
