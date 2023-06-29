@@ -34,17 +34,15 @@ describe('OpenAIClient', () => {
     });
   });
 
-  describe('freeAndResetEncoder', () => {
-    it('should reset the encoder', () => {
-      client.freeAndResetEncoder();
-      expect(client.gptEncoder).toBeDefined();
-    });
-  });
-
-  describe('getTokenCount', () => {
+  describe('getTokenCount & freeAndResetEncoder', () => {
     it('should return the correct token count', () => {
       const count = client.getTokenCount('Hello, world!');
       expect(count).toBeGreaterThan(0);
+    });
+
+    it('should reset the encoder', () => {
+      client.freeAndResetEncoder();
+      expect(client.gptEncoder).toBeDefined();
     });
 
     it('should reset the encoder and count when count reaches 25', () => {

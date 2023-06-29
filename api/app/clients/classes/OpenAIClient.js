@@ -198,12 +198,12 @@ class OpenAIClient extends BaseClient {
     if (!isChatCompletion) {
       return await this.buildPrompt(messages, parentMessageId, { isChatGptModel: isChatCompletion, promptPrefix });
     }
-  
+
     let payload;
     let instructions;
     let tokenCountMap;
     let orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
-  
+
     promptPrefix = (promptPrefix || this.options.promptPrefix || '').trim();
     if (promptPrefix) {
       promptPrefix = `Instructions:\n${promptPrefix}`;
@@ -217,7 +217,7 @@ class OpenAIClient extends BaseClient {
         instructions.tokenCount = this.getTokenCountForMessage(instructions);
       }
     }
-  
+
     const formattedMessages = orderedMessages.map((message) => {
       let { role: _role, sender, text } = message;
       const role = _role ?? sender;
@@ -234,14 +234,14 @@ class OpenAIClient extends BaseClient {
       if (this.contextStrategy) {
         formattedMessage.tokenCount = message.tokenCount ?? this.getTokenCountForMessage(formattedMessage);
       }
-  
+
       return formattedMessage;
     });
-  
+
     // TODO: need to handle interleaving instructions better
     if (this.contextStrategy) {
       ({ payload, tokenCountMap } = await this.handleContextStrategy({instructions, orderedMessages, formattedMessages}));
-    }    
+    }
 
     const result = {
       prompt: payload,
@@ -254,7 +254,7 @@ class OpenAIClient extends BaseClient {
 
     return result;
   }
-  
+
   async sendCompletion(payload, opts = {}) {
     let reply = '';
     let result = null;
