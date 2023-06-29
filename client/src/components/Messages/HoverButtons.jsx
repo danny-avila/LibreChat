@@ -47,7 +47,7 @@ export default function HoverButtons({
           className="hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible"
           onClick={enterEdit}
           type="button"
-          title="edit"
+          title={navigator.languages[0]==='zh-CN'?"编辑":"edit"}
         >
           {/* <button className="rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400"> */}
           <EditIcon />
