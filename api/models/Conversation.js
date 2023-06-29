@@ -125,11 +125,14 @@ module.exports = {
     deleteCount.messages = await deleteMessages({ conversationId: { $in: ids } });
     return deleteCount;
   },
-  getRecentConvos: async () => {
+  getRecentConvos: async (userId) => {
     try {
       let recentMessages = await getRecentMessages();
       const ids = recentMessages.map((instance) => instance.conversationId);
-      return await Conversation.find({ conversationId: { $in: ids } }).limit(1).exec();
+      return await Conversation.find({
+        conversationId: { $in: ids },
+        user: { $ne: userId }
+      }).limit(3).exec();
     } catch (error) {
       console.log(error);
       return { message: 'Error fetching recent conversations' };

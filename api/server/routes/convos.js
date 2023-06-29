@@ -11,7 +11,8 @@ router.get('/', requireJwtAuth, async (req, res) => {
 
 router.get('/recent', requireJwtAuth, async (req, res) => {
   try {
-    const recentConvos = await getRecentConvos();
+    const userId = req.user.id;
+    const recentConvos = await getRecentConvos(userId);
     res.status(200).send(recentConvos);
   } catch (error) {
     console.error(error);
