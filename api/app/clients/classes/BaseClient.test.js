@@ -1,4 +1,5 @@
 const BaseClient = require('./BaseClient');
+const crypto = require('crypto');
 
 jest.mock('../../../lib/db/connectDb');
 jest.mock('../../../models', () => {
@@ -39,9 +40,14 @@ jest.mock('langchain/chains', () => {
   };
 });
 
+let parentMessageId;
+let conversationId;
+const fakeMessages = [];
+const userMessage = 'Hello, ChatGPT!';
+const apiKey = 'fake-api-key';
+
 describe('BaseClient', () => {
   let TestClient;
-  const apiKey = 'fake-api-key';
   const options = {
     modelOptions: {
       model: 'gpt-3.5-turbo',
@@ -67,11 +73,11 @@ describe('BaseClient', () => {
       } else {
         this.options = options;
       }
-  
+
       if (this.options.openaiApiKey) {
         this.apiKey = this.options.openaiApiKey;
       }
-  
+
       const modelOptions = this.options.modelOptions || {};
       if (!this.modelOptions) {
         this.modelOptions = {
@@ -92,7 +98,7 @@ describe('BaseClient', () => {
       return str.length;
     }
     getTokenCountForMessage(message) {
-      return message.content.length;
+      return message?.content?.length || message.length;
     }
   }
 
@@ -100,6 +106,56 @@ describe('BaseClient', () => {
     TestClient = new FakeClient(apiKey);
     TestClient.options = options;
     TestClient.abortController = { abort: jest.fn() };
+    TestClient.loadHistory = jest
+      .fn()
+      .mockImplementation((conversationId, parentMessageId = null) => {
+        if (!conversationId) {
+          TestClient.currentMessages = [];
+          return Promise.resolve([]);
+        }
+
+        const orderedMessages = TestClient.constructor.getMessagesForConversation(
+          fakeMessages,
+          parentMessageId
+        );
+
+        TestClient.currentMessages = orderedMessages;
+        return Promise.resolve(orderedMessages);
+      });
+    TestClient.sendMessage = jest.fn().mockImplementation(async (message, opts = {}) => {
+      if (opts && typeof opts === 'object') {
+        TestClient.setOptions(opts);
+      }
+      const conversationId = opts.conversationId || crypto.randomUUID();
+      const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
+      const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
+      this.pastMessages = await TestClient.loadHistory(
+        conversationId,
+        TestClient.options?.parentMessageId
+      );
+
+      const userMessage = {
+        text: message,
+        sender: 'ChatGPT',
+        isCreatedByUser: true,
+        messageId: userMessageId,
+        parentMessageId,
+        conversationId
+      };
+
+      const response = {
+        sender: 'ChatGPT',
+        text: 'Hello, User!',
+        isCreatedByUser: false,
+        messageId: crypto.randomUUID(),
+        parentMessageId: userMessage.messageId,
+        conversationId
+      };
+
+      fakeMessages.push(userMessage);
+      fakeMessages.push(response);
+      return response;
+    });
   });
 
   test('returns the input messages without instructions when addInstructions() is called with empty instructions', () => {
@@ -152,12 +208,12 @@ describe('BaseClient', () => {
       content: 'Refined answer',
       tokenCount: 14 // 'Refined answer'.length
     };
-  
+
     const result = await TestClient.refineMessages(messagesToRefine, remainingContextTokens);
     expect(result).toEqual(expectedRefinedMessage);
-  });  
+  });
 
-  test('gets messages within token limit correctly in getMessagesWithinTokenLimit()', async () => {
+  test('gets messages within token limit (under limit) correctly in getMessagesWithinTokenLimit()', async () => {
     TestClient.maxContextTokens = 100;
     TestClient.shouldRefineContext = true;
     TestClient.refineMessages = jest.fn().mockResolvedValue({
@@ -167,17 +223,50 @@ describe('BaseClient', () => {
     });
 
     const messages = [
-      { role: 'user', content: 'Hello', tokenCount: 10 },
-      { role: 'assistant', content: 'How can I help you?', tokenCount: 20 },
-      { role: 'user', content: 'I have a question.', tokenCount: 15 },
+      { role: 'user', content: 'Hello', tokenCount: 5 },
+      { role: 'assistant', content: 'How can I help you?', tokenCount: 19 },
+      { role: 'user', content: 'I have a question.', tokenCount: 18 },
     ];
     const expectedContext = [
       { role: 'user', content: 'Hello', tokenCount: 5 }, // 'Hello'.length
-      { role: 'assistant', content: 'How can I help you?', tokenCount: 20 },
-      { role: 'user', content: 'I have a question.', tokenCount: 15 },
+      { role: 'assistant', content: 'How can I help you?', tokenCount: 19 },
+      { role: 'user', content: 'I have a question.', tokenCount: 18 },
     ];
-    const expectedRemainingContextTokens = 60; // 100 - 5 - 20 - 15
+    const expectedRemainingContextTokens = 58; // 100 - 5 - 19 - 18
     const expectedMessagesToRefine = [];
+
+    const result = await TestClient.getMessagesWithinTokenLimit(messages);
+    expect(result.context).toEqual(expectedContext);
+    expect(result.remainingContextTokens).toBe(expectedRemainingContextTokens);
+    expect(result.messagesToRefine).toEqual(expectedMessagesToRefine);
+  });
+
+  test('gets messages within token limit (over limit) correctly in getMessagesWithinTokenLimit()', async () => {
+    TestClient.maxContextTokens = 50; // Set a lower limit
+    TestClient.shouldRefineContext = true;
+    TestClient.refineMessages = jest.fn().mockResolvedValue({
+      role: 'assistant',
+      content: 'Refined answer',
+      tokenCount: 4
+    });
+
+    const messages = [
+      { role: 'user', content: 'I need a coffee, stat!', tokenCount: 30 },
+      { role: 'assistant', content: 'Sure, I can help with that.', tokenCount: 30 },
+      { role: 'user', content: 'Hello', tokenCount: 5 },
+      { role: 'assistant', content: 'How can I help you?', tokenCount: 19 },
+      { role: 'user', content: 'I have a question.', tokenCount: 18 },
+    ];
+    const expectedContext = [
+      { role: 'user', content: 'Hello', tokenCount: 5 },
+      { role: 'assistant', content: 'How can I help you?', tokenCount: 19 },
+      { role: 'user', content: 'I have a question.', tokenCount: 18 },
+    ];
+    const expectedRemainingContextTokens = 8; // 50 - 18 - 19 - 5
+    const expectedMessagesToRefine = [
+      { role: 'user', content: 'I need a coffee, stat!', tokenCount: 30 },
+      { role: 'assistant', content: 'Sure, I can help with that.', tokenCount: 30 },
+    ];
 
     const result = await TestClient.getMessagesWithinTokenLimit(messages);
     expect(result.context).toEqual(expectedContext);
@@ -226,17 +315,16 @@ describe('BaseClient', () => {
     ];
     const expectedResult = {
       payload: [
-        { content: 'Refined answer' },
+        {
+          content: 'Refined answer',
+          role: 'assistant',
+          tokenCount: 30
+        },
         { content: 'How can I help you?' },
         { content: 'Please provide more details.' },
         { content: 'I can assist you with that.' }
       ],
-      tokenCountMap: {
-        refined: { content: 'Refined answer', messageId: undefined },
-        msg1: 20,
-        msg2: 50,
-        msg3: 40
-      }
+      tokenCountMap: {},
     };
 
     const result = await TestClient.handleContextStrategy({
@@ -245,5 +333,51 @@ describe('BaseClient', () => {
       formattedMessages,
     });
     expect(result).toEqual(expectedResult);
+  });
+
+  describe('sendMessage', () => {
+    test('sendMessage should return a response message', async () => {
+      const expectedResult = expect.objectContaining({
+        sender: expect.any(String),
+        text: expect.any(String),
+        isCreatedByUser: false,
+        messageId: expect.any(String),
+        parentMessageId: expect.any(String),
+        conversationId: expect.any(String)
+      });
+
+      const response = await TestClient.sendMessage(userMessage);
+      parentMessageId = response.messageId;
+      conversationId = response.conversationId;
+      expect(response).toEqual(expectedResult);
+    });
+
+    test('sendMessage should work with provided conversationId and parentMessageId', async () => {
+      const userMessage = 'Second message in the conversation';
+      const opts = {
+        conversationId,
+        parentMessageId
+      };
+
+      const expectedResult = expect.objectContaining({
+        sender: expect.any(String),
+        text: expect.any(String),
+        isCreatedByUser: false,
+        messageId: expect.any(String),
+        parentMessageId: expect.any(String),
+        conversationId: opts.conversationId
+      });
+
+      const response = await TestClient.sendMessage(userMessage, opts);
+      parentMessageId = response.messageId;
+      expect(response.conversationId).toEqual(conversationId);
+      expect(response).toEqual(expectedResult);
+    });
+
+    test('should return chat history', async () => {
+      const chatMessages = await TestClient.loadHistory(conversationId, parentMessageId);
+      expect(TestClient.currentMessages).toHaveLength(4);
+      expect(chatMessages[0].text).toEqual(userMessage);
+    });
   });
 });

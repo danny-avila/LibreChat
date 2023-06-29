@@ -56,10 +56,6 @@ class BaseClient {
   }
 
   async handleTokenCountMap(tokenCountMap) {
-    if (this.options.debug) {
-      console.debug('Token count map', tokenCountMap);
-    }
-
     if (this.currentMessages.length === 0) {
       return;
     }
@@ -133,13 +129,13 @@ class BaseClient {
         input_documents,
         signal: this.abortController.signal,
       });
-  
+
       const refinedMessage = {
         role: 'assistant',
         content: res.output_text,
-        tokenCount: this.getTokenCountForMessage(res.output_text),
+        tokenCount: this.getTokenCount(res.output_text),
       }
-  
+
       if (this.options.debug ) {
         console.debug('Refined messages', refinedMessage);
         console.debug(`remainingContextTokens: ${remainingContextTokens}, after refining: ${remainingContextTokens - refinedMessage.tokenCount}`);
@@ -169,21 +165,21 @@ class BaseClient {
     let messagesToRefine = [];
     let refineIndex = -1;
     let remainingContextTokens = this.maxContextTokens;
-  
+
     for (let i = messages.length - 1; i >= 0; i--) {
       const message = messages[i];
       const newTokenCount = currentTokenCount + message.tokenCount;
       const exceededLimit = newTokenCount > this.maxContextTokens;
       let shouldRefine = exceededLimit && this.shouldRefineContext;
       let refineNextMessage = i !== 0 && i !== 1 && context.length > 0;
-  
+
       if (shouldRefine) {
         messagesToRefine.push(message);
 
         if (refineIndex === -1) {
           refineIndex = i;
         }
-  
+
         if (refineNextMessage) {
           refineIndex = i + 1;
           const removedMessage = context.pop();
@@ -192,18 +188,18 @@ class BaseClient {
           remainingContextTokens = this.maxContextTokens - currentTokenCount;
           refineNextMessage = false;
         }
-  
+
         continue;
       } else if (exceededLimit) {
         break;
       }
-  
+
       context.push(message);
       currentTokenCount = newTokenCount;
       remainingContextTokens = this.maxContextTokens - currentTokenCount;
       await new Promise(resolve => setImmediate(resolve));
     }
-  
+
     return { context: context.reverse(), remainingContextTokens, messagesToRefine: messagesToRefine.reverse(), refineIndex };
   }
 
@@ -256,14 +252,20 @@ class BaseClient {
       if (index === refineIndex) {
         map.refined = { ...refinedMessage, messageId: message.messageId};
       }
-      
+
       map[message.messageId] = payload[index].tokenCount;
       return map;
     }, {});
 
+    if (this.options.debug) {
+      console.debug('<-------------------------PAYLOAD/TOKEN COUNT MAP------------------------->');
+      console.debug('Payload:', payload);
+      console.debug('Token Count Map:', tokenCountMap);
+    }
+
     return { payload, tokenCountMap };
   }
-  
+
   async sendMessage(message, opts = {}) {
     if (opts && typeof opts === 'object') {
       this.setOptions(opts);
