@@ -73,8 +73,8 @@ export default function Landing() {
               setCurrentEditId={null}
               isSearchView={true}
             />
-            <SwitchPage switchHandler={ prevConvo } direction={ 'left' } />
-            <SwitchPage switchHandler={ nextConvo } direction={ 'right' } />
+            <SwitchPage key={ 'left_switch' } switchHandler={ prevConvo } direction={ 'left' } />
+            <SwitchPage key={ 'right_switch' } switchHandler={ nextConvo } direction={ 'right' } />
           </div>
         </div>
         {/* {!showingTemplates && (
