@@ -70,7 +70,7 @@ export default function MultiMessage({
       siblingIdx={messagesTree.length - siblingIdx - 1}
       siblingCount={messagesTree.length}
       setSiblingIdx={setSiblingIdxRev}
-      hideUser
+      hideUser={hideUser}
     />
   );
 }

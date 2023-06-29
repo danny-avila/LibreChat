@@ -244,6 +244,7 @@ export default function Message({
         scrollToBottom={scrollToBottom}
         currentEditId={currentEditId}
         setCurrentEditId={setCurrentEditId}
+        hideUser={hideUser}
       />
     </>
   );
