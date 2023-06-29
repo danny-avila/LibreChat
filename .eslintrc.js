@@ -37,6 +37,7 @@ module.exports = {
     ],
     'linebreak-style': 0,
     'no-trailing-spaces': 'error',
+    'no-multiple-empty-lines': ['error', { 'max': 1 }],
     // "arrow-parens": [2, "as-needed", { requireForBlockBody: true }],
     // 'no-plusplus': ['error', { allowForLoopAfterthoughts: true }],
     'no-console': 'off',

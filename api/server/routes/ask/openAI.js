@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { titleConvo, OpenAIClient } = require('../../../app');
-const { getAzureCredentials } = require('../../../utils');
+const { getAzureCredentials, abortMessage } = require('../../../utils');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const {
   handleError,
@@ -13,20 +13,7 @@ const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 const abortControllers = new Map();
 
 router.post('/abort', requireJwtAuth, async (req, res) => {
-  const { abortKey } = req.body;
-  console.log(`req.body`, req.body);
-  if (!abortControllers.has(abortKey)) {
-    return res.status(404).send('Request not found');
-  }
-
-  const { abortController } = abortControllers.get(abortKey);
-
-  abortControllers.delete(abortKey);
-  const ret = await abortController.abortAsk();
-  console.log('Aborted request', abortKey);
-  console.log('Aborted message:', ret);
-
-  res.send(JSON.stringify(ret));
+  return await abortMessage(req, res, abortControllers);
 });
 
 router.post('/', requireJwtAuth, async (req, res) => {
@@ -77,69 +64,69 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
   const { overrideParentMessageId = null } = req.body;
   const user = req.user.id;
 
+  const getIds = (data) => {
+    userMessage = data.userMessage;
+    userMessageId = userMessage.messageId;
+    responseMessageId = data.responseMessageId;
+    if (!conversationId) {
+      conversationId = data.conversationId;
+    }
+  };
+
+  const { onProgress: progressCallback, getPartialText } = createOnProgress({
+    onProgress: ({ text: partialText }) => {
+      const currentTimestamp = Date.now();
+
+      if (currentTimestamp - lastSavedTimestamp > 500) {
+        lastSavedTimestamp = currentTimestamp;
+        saveMessage({
+          messageId: responseMessageId,
+          sender: 'ChatGPT',
+          conversationId,
+          parentMessageId: overrideParentMessageId || userMessageId,
+          text: partialText,
+          model: endpointOption.modelOptions.model,
+          unfinished: false,
+          cancelled: true,
+          error: false
+        });
+      }
+    }
+  });
+
+  const abortController = new AbortController();
+  abortController.abortAsk = async function () {
+    this.abort();
+
+    const responseMessage = {
+      messageId: responseMessageId,
+      sender: endpointOption?.chatGptLabel || 'ChatGPT',
+      conversationId,
+      parentMessageId: overrideParentMessageId || userMessageId,
+      text: getPartialText(),
+      model: endpointOption.modelOptions.model,
+      unfinished: false,
+      cancelled: true,
+      error: false,
+    };
+
+    saveMessage(responseMessage);
+
+    return {
+      title: await getConvoTitle(req.user.id, conversationId),
+      final: true,
+      conversation: await getConvo(req.user.id, conversationId),
+      requestMessage: userMessage,
+      responseMessage: responseMessage
+    };
+  };
+
+  const onStart = (userMessage) => {
+    sendMessage(res, { message: userMessage, created: true });
+    abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
+  };
+
   try {
-    const getIds = (data) => {
-      userMessage = data.userMessage;
-      userMessageId = userMessage.messageId;
-      responseMessageId = data.responseMessageId;
-      if (!conversationId) {
-        conversationId = data.conversationId;
-      }
-    };
-
-    const { onProgress: progressCallback, getPartialText } = createOnProgress({
-      onProgress: ({ text: partialText }) => {
-        const currentTimestamp = Date.now();
-
-        if (currentTimestamp - lastSavedTimestamp > 500) {
-          lastSavedTimestamp = currentTimestamp;
-          saveMessage({
-            messageId: responseMessageId,
-            sender: 'ChatGPT',
-            conversationId,
-            parentMessageId: overrideParentMessageId || userMessageId,
-            text: partialText,
-            model: endpointOption.modelOptions.model,
-            unfinished: false,
-            cancelled: true,
-            error: false
-          });
-        }
-      }
-    });
-
-    const abortController = new AbortController();
-    abortController.abortAsk = async function () {
-      this.abort();
-
-      const responseMessage = {
-        messageId: responseMessageId,
-        sender: endpointOption?.chatGptLabel || 'ChatGPT',
-        conversationId,
-        parentMessageId: overrideParentMessageId || userMessageId,
-        text: getPartialText(),
-        model: endpointOption.modelOptions.model,
-        unfinished: false,
-        cancelled: true,
-        error: false,
-      };
-
-      saveMessage(responseMessage);
-
-      return {
-        title: await getConvoTitle(req.user.id, conversationId),
-        final: true,
-        conversation: await getConvo(req.user.id, conversationId),
-        requestMessage: userMessage,
-        responseMessage: responseMessage
-      };
-    };
-
-    const onStart = (userMessage) => {
-      sendMessage(res, { message: userMessage, created: true });
-      abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
-    };
-
     const clientOptions = {
       // debug: true,
       // contextStrategy: 'refine',
@@ -195,18 +182,23 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     }
   } catch (error) {
     console.error(error);
-    const errorMessage = {
-      messageId: responseMessageId,
-      sender: 'ChatGPT',
-      conversationId,
-      parentMessageId: userMessageId,
-      unfinished: false,
-      cancelled: false,
-      error: true,
-      text: error.message
-    };
-    await saveMessage(errorMessage);
-    handleError(res, errorMessage);
+    const partialText = getPartialText();
+    if (partialText?.length > 2) {
+      return await abortMessage(req, res, abortControllers);
+    } else {
+      const errorMessage = {
+        messageId: responseMessageId,
+        sender: 'ChatGPT',
+        conversationId,
+        parentMessageId: userMessageId,
+        unfinished: false,
+        cancelled: false,
+        error: true,
+        text: error.message
+      };
+      await saveMessage(errorMessage);
+      handleError(res, errorMessage);
+    }
   }
 };
 
