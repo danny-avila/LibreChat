@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useTransition } from 'react';
+import React, { useEffect, useState } from 'react';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import MultiMessage from '../Messages/MultiMessage';
 import buildTree from '~/utils/buildTree';
@@ -11,7 +11,6 @@ import {
 import SwitchPage from './SwitchPage';
 
 export default function Landing() {
-  const [isPending, startTransition] = useTransition();
   const [conversation, setConversation] = useState<TConversation>();
   const [conversationId, setConversationId] = useState<string>();
   const [messagesTree, setMessagesTree] = useState<any>();
@@ -29,15 +28,11 @@ export default function Landing() {
   const { screenshotTargetRef } = useScreenshot();
 
   const nextConvo = () => {
-    startTransition(() => {
-      convoIdx === convoDataLength - 1 ? setConvoIdx(0) : setConvoIdx(convoIdx + 1);
-    });
+    convoIdx === convoDataLength - 1 ? setConvoIdx(0) : setConvoIdx(convoIdx + 1);
   }
 
   const prevConvo = () => {
-    startTransition(() => {
-      convoIdx === 0 ? setConvoIdx(convoDataLength - 1) : setConvoIdx(convoIdx - 1);
-    });
+    convoIdx === 0 ? setConvoIdx(convoDataLength - 1) : setConvoIdx(convoIdx - 1);
   }
 
   // Get recent conversations
@@ -72,6 +67,7 @@ export default function Landing() {
               currentEditId={-1}
               setCurrentEditId={null}
               isSearchView={true}
+              hideUser={true}
             />
             <SwitchPage key={ 'left_switch' } switchHandler={ prevConvo } direction={ 'left' } />
             <SwitchPage key={ 'right_switch' } switchHandler={ nextConvo } direction={ 'right' } />
