@@ -217,11 +217,11 @@ function Registration() {
                 id="confirm_password"
                 data-testid="confirm_password"
                 aria-label="Confirm password"
-                // uncomment to prevent pasting in confirm field
-                onPaste={(e) => {
-                  e.preventDefault();
-                  return false;
-                }}
+                // uncomment to block pasting in confirm field
+                // onPaste={(e) => {
+                //   e.preventDefault();
+                //   return false;
+                // }}
                 {...register('confirm_password', {
                   validate: (value) => value === password || 'Passwords do not match'
                 })}
