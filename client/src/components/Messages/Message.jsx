@@ -173,7 +173,7 @@ export default function Message({
                       disabled={isSubmitting}
                       onClick={resubmitMessage}
                     >
-                      Save & Submit
+                      {navigator.languages[0] === 'zh-CN' ? '保存并提交' : 'Save & Submit'}
                     </button>
                     <button className="btn btn-neutral relative" onClick={() => enterEdit(true)}>
                       {navigator.languages[0] === 'zh-CN' ? '取消' : 'Cancel'}

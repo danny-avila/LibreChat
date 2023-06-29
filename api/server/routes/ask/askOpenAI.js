@@ -7,6 +7,7 @@ const { titleConvo, askClient } = require('../../../app/');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
+const trieSensitive = require('../../../utils/trieSensitive');
 
 const abortControllers = new Map();
 
@@ -35,6 +36,10 @@ router.post('/', requireJwtAuth, async (req, res) => {
     parentMessageId,
     conversationId: oldConversationId
   } = req.body;
+  
+  const isSensitive = await trieSensitive.checkSensitiveWords(text);
+  if(isSensitive) return handleError(res, {text:'请回避敏感词汇，谢谢！'});
+
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   if (endpoint !== 'openAI') return handleError(res, { text: 'Illegal request' });
 
