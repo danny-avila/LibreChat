@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useTransition } from 'react';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import MultiMessage from '../Messages/MultiMessage';
 import buildTree from '~/utils/buildTree';
@@ -8,30 +8,47 @@ import {
   useGetRecentConversations,
   useGetMessagesByConvoId,
 } from '~/data-provider';
+import SwitchPage from './SwitchPage';
 
 export default function Landing() {
+  const [isPending, startTransition] = useTransition();
   const [conversation, setConversation] = useState<TConversation>();
   const [conversationId, setConversationId] = useState<string>();
   const [messagesTree, setMessagesTree] = useState<any>();
+  const [convoIdx, setConvoIdx] = useState<number>(0);
+  const [convoDataLength, setConvoDataLength] = useState<number>(1);
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
   const title = '首页';
 
   const RecentConversations = useGetRecentConversations();
   
   const convoData = RecentConversations.data;
-  const messages = useGetMessagesByConvoId(convoData? convoData[0].conversationId : '');
+  const messages = useGetMessagesByConvoId(convoData? convoData[convoIdx].conversationId : '');
   const msgData = messages?.data;
 
   const { screenshotTargetRef } = useScreenshot();
 
+  const nextConvo = () => {
+    startTransition(() => {
+      convoIdx === convoDataLength - 1 ? setConvoIdx(0) : setConvoIdx(convoIdx + 1);
+    });
+  }
+
+  const prevConvo = () => {
+    startTransition(() => {
+      convoIdx === 0 ? setConvoIdx(convoDataLength - 1) : setConvoIdx(convoIdx - 1);
+    });
+  }
+
   // Get recent conversations
   useEffect(() => {
     if (convoData && msgData) {
-      setConversation(convoData[0]);
-      setConversationId(convoData[0].conversationId);
+      setConvoDataLength(convoData.length);
+      setConversation(convoData[convoIdx]);
+      setConversationId(convoData[convoIdx].conversationId);
       setMessagesTree(buildTree(msgData));
     }
-  }, [convoData, msgData]);
+  }, [convoData, msgData, convoIdx]);
 
   useDocumentTitle(title);
 
@@ -56,6 +73,8 @@ export default function Landing() {
               setCurrentEditId={null}
               isSearchView={true}
             />
+            <SwitchPage switchHandler={ prevConvo } direction={ 'left' } />
+            <SwitchPage switchHandler={ nextConvo } direction={ 'right' } />
           </div>
         </div>
         {/* {!showingTemplates && (
