@@ -352,7 +352,7 @@ class BaseClient {
       responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
     }
     await this.saveMessageToDatabase(responseMessage, saveOptions, user);
-    return { ...responseMessage, ...this.result };
+    return responseMessage;
   }
 
   async getConversation(conversationId, user = null) {
@@ -394,6 +394,10 @@ class BaseClient {
      * @returns {*[]} An array containing the messages in the order they should be displayed, starting with the root message.
      */
   static getMessagesForConversation(messages, parentMessageId, mapMethod = null) {
+    if (!messages || messages.length === 0) {
+      return [];
+    }
+
     const orderedMessages = [];
     let currentMessageId = parentMessageId;
     while (currentMessageId) {

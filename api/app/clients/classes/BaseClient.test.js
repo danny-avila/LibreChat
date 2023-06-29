@@ -57,6 +57,7 @@ describe('BaseClient', () => {
   class FakeClient extends BaseClient {
     constructor(apiKey, options = {}) {
       super(apiKey, options);
+      this.sender = 'AI Assistant';
       this.setOptions(options);
     }
     setOptions(options) {
@@ -91,9 +92,7 @@ describe('BaseClient', () => {
       }
     }
     getCompletion() {}
-    getSaveOptions() {}
     buildMessages() {}
-    getBuildMessagesOptions() {}
     getTokenCount(str) {
       return str.length;
     }
@@ -106,6 +105,7 @@ describe('BaseClient', () => {
     TestClient = new FakeClient(apiKey);
     TestClient.options = options;
     TestClient.abortController = { abort: jest.fn() };
+    TestClient.saveMessageToDatabase = jest.fn();
     TestClient.loadHistory = jest
       .fn()
       .mockImplementation((conversationId, parentMessageId = null) => {
@@ -122,13 +122,30 @@ describe('BaseClient', () => {
         TestClient.currentMessages = orderedMessages;
         return Promise.resolve(orderedMessages);
       });
+
+    TestClient.getSaveOptions = jest.fn().mockImplementation(() => {
+      return {};
+    });
+
+    TestClient.getBuildMessagesOptions = jest.fn().mockImplementation(() => {
+      return {};
+    });
+
+    TestClient.sendCompletion = jest.fn(async () => {
+      return 'Mock response text';
+    });
+
     TestClient.sendMessage = jest.fn().mockImplementation(async (message, opts = {}) => {
       if (opts && typeof opts === 'object') {
         TestClient.setOptions(opts);
       }
+
+      const user = opts.user || null;
       const conversationId = opts.conversationId || crypto.randomUUID();
       const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
       const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
+      const saveOptions = TestClient.getSaveOptions();
+
       this.pastMessages = await TestClient.loadHistory(
         conversationId,
         TestClient.options?.parentMessageId
@@ -136,7 +153,7 @@ describe('BaseClient', () => {
 
       const userMessage = {
         text: message,
-        sender: 'ChatGPT',
+        sender: TestClient.sender,
         isCreatedByUser: true,
         messageId: userMessageId,
         parentMessageId,
@@ -144,7 +161,7 @@ describe('BaseClient', () => {
       };
 
       const response = {
-        sender: 'ChatGPT',
+        sender: TestClient.sender,
         text: 'Hello, User!',
         isCreatedByUser: false,
         messageId: crypto.randomUUID(),
@@ -154,8 +171,64 @@ describe('BaseClient', () => {
 
       fakeMessages.push(userMessage);
       fakeMessages.push(response);
+
+      if (typeof opts.getIds === 'function') {
+        opts.getIds({
+          userMessage,
+          conversationId,
+          responseMessageId: response.messageId
+        });
+      }
+
+      if (typeof opts.onStart === 'function') {
+        opts.onStart(userMessage);
+      }
+
+      let { prompt: payload, tokenCountMap } = await TestClient.buildMessages(
+        this.currentMessages,
+        userMessage.messageId,
+        TestClient.getBuildMessagesOptions(opts),
+      );
+
+      if (tokenCountMap) {
+        payload = payload.map((message, i) => {
+          const { tokenCount, ...messageWithoutTokenCount } = message;
+          // userMessage is always the last one in the payload
+          if (i === payload.length - 1) {
+            userMessage.tokenCount = message.tokenCount;
+            console.debug(`Token count for user message: ${tokenCount}`, `Instruction Tokens: ${tokenCountMap.instructions || 'N/A'}`);
+          }
+          return messageWithoutTokenCount;
+        });
+        TestClient.handleTokenCountMap(tokenCountMap);
+      }
+
+      await TestClient.saveMessageToDatabase(userMessage, saveOptions, user);
+      response.text = await TestClient.sendCompletion(payload, opts);
+      if (tokenCountMap && TestClient.getTokenCountForResponse) {
+        response.tokenCount = TestClient.getTokenCountForResponse(response);
+      }
+      await TestClient.saveMessageToDatabase(response, saveOptions, user);
       return response;
     });
+
+    TestClient.buildMessages = jest.fn(async (messages, parentMessageId) => {
+      const orderedMessages = TestClient.constructor.getMessagesForConversation(messages, parentMessageId);
+      const formattedMessages = orderedMessages.map((message) => {
+        let { role: _role, sender, text } = message;
+        const role = _role ?? sender;
+        const content = text ?? '';
+        return {
+          role: role?.toLowerCase() === 'user' ? 'user' : 'assistant',
+          content,
+        };
+      });
+      return {
+        prompt: formattedMessages,
+        tokenCountMap: null, // Simplified for the mock
+      };
+    });
+
   });
 
   test('returns the input messages without instructions when addInstructions() is called with empty instructions', () => {
@@ -300,7 +373,7 @@ describe('BaseClient', () => {
     });
     TestClient.getTokenCountForResponse = jest.fn().mockReturnValue(40);
 
-    const inputInstructions = { content: 'Please provide more details.' };
+    const instructions = { content: 'Please provide more details.' };
     const orderedMessages = [
       { content: 'Hello' },
       { content: 'How can I help you?' },
@@ -328,7 +401,7 @@ describe('BaseClient', () => {
     };
 
     const result = await TestClient.handleContextStrategy({
-      instructions: inputInstructions,
+      instructions,
       orderedMessages,
       formattedMessages,
     });
@@ -338,7 +411,7 @@ describe('BaseClient', () => {
   describe('sendMessage', () => {
     test('sendMessage should return a response message', async () => {
       const expectedResult = expect.objectContaining({
-        sender: expect.any(String),
+        sender: TestClient.sender,
         text: expect.any(String),
         isCreatedByUser: false,
         messageId: expect.any(String),
@@ -356,11 +429,13 @@ describe('BaseClient', () => {
       const userMessage = 'Second message in the conversation';
       const opts = {
         conversationId,
-        parentMessageId
+        parentMessageId,
+        getIds: jest.fn(),
+        onStart: jest.fn()
       };
 
       const expectedResult = expect.objectContaining({
-        sender: expect.any(String),
+        sender: TestClient.sender,
         text: expect.any(String),
         isCreatedByUser: false,
         messageId: expect.any(String),
@@ -372,12 +447,95 @@ describe('BaseClient', () => {
       parentMessageId = response.messageId;
       expect(response.conversationId).toEqual(conversationId);
       expect(response).toEqual(expectedResult);
+      expect(opts.getIds).toHaveBeenCalled();
+      expect(opts.onStart).toHaveBeenCalled();
+      expect(TestClient.getBuildMessagesOptions).toHaveBeenCalled();
+      expect(TestClient.getSaveOptions).toHaveBeenCalled();
     });
 
     test('should return chat history', async () => {
       const chatMessages = await TestClient.loadHistory(conversationId, parentMessageId);
       expect(TestClient.currentMessages).toHaveLength(4);
       expect(chatMessages[0].text).toEqual(userMessage);
+    });
+
+    test('setOptions is called with the correct arguments', async () => {
+      TestClient.setOptions = jest.fn();
+      const opts = { conversationId: '123', parentMessageId: '456' };
+      await TestClient.sendMessage('Hello, world!', opts);
+      expect(TestClient.setOptions).toHaveBeenCalledWith(opts);
+      TestClient.setOptions.mockClear();
+    });
+
+    test('loadHistory is called with the correct arguments', async () => {
+      const opts = { conversationId: '123', parentMessageId: '456' };
+      await TestClient.sendMessage('Hello, world!', opts);
+      expect(TestClient.loadHistory).toHaveBeenCalledWith(opts.conversationId, opts.parentMessageId);
+    });
+
+    test('getIds is called with the correct arguments', async () => {
+      const getIds = jest.fn();
+      const opts = { getIds };
+      const response = await TestClient.sendMessage('Hello, world!', opts);
+      expect(getIds).toHaveBeenCalledWith({
+        userMessage: expect.objectContaining({ text: 'Hello, world!' }),
+        conversationId: response.conversationId,
+        responseMessageId: response.messageId
+      });
+    });
+
+    test('onStart is called with the correct arguments', async () => {
+      const onStart = jest.fn();
+      const opts = { onStart };
+      await TestClient.sendMessage('Hello, world!', opts);
+      expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ text: 'Hello, world!' }));
+    });
+
+    test('saveMessageToDatabase is called with the correct arguments', async () => {
+      const saveOptions = TestClient.getSaveOptions();
+      const user = {}; // Mock user
+      const opts = { user };
+      await TestClient.sendMessage('Hello, world!', opts);
+      expect(TestClient.saveMessageToDatabase).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sender: expect.any(String),
+          text: expect.any(String),
+          isCreatedByUser: expect.any(Boolean),
+          messageId: expect.any(String),
+          parentMessageId: expect.any(String),
+          conversationId: expect.any(String)
+        }),
+        saveOptions,
+        user
+      );
+    });
+
+    test('sendCompletion is called with the correct arguments', async () => {
+      const payload = {}; // Mock payload
+      TestClient.buildMessages.mockReturnValue({ prompt: payload, tokenCountMap: null });
+      const opts = {};
+      await TestClient.sendMessage('Hello, world!', opts);
+      expect(TestClient.sendCompletion).toHaveBeenCalledWith(payload, opts);
+    });
+
+    test('getTokenCountForResponse is called with the correct arguments', async () => {
+      const tokenCountMap = {}; // Mock tokenCountMap
+      TestClient.buildMessages.mockReturnValue({ prompt: [], tokenCountMap });
+      TestClient.getTokenCountForResponse = jest.fn();
+      const response = await TestClient.sendMessage('Hello, world!', {});
+      expect(TestClient.getTokenCountForResponse).toHaveBeenCalledWith(response);
+    });
+
+    test('returns an object with the correct shape', async () => {
+      const response = await TestClient.sendMessage('Hello, world!', {});
+      expect(response).toEqual(expect.objectContaining({
+        sender: expect.any(String),
+        text: expect.any(String),
+        isCreatedByUser: expect.any(Boolean),
+        messageId: expect.any(String),
+        parentMessageId: expect.any(String),
+        conversationId: expect.any(String)
+      }));
     });
   });
 });
