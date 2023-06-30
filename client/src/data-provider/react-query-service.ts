@@ -4,7 +4,8 @@ import {
   useMutation,
   useQueryClient,
   UseMutationResult,
-  QueryObserverResult
+  QueryObserverResult,
+  QueryClient
 } from '@tanstack/react-query';
 import * as t from './types';
 import * as dataService from './data-service';
@@ -354,3 +355,7 @@ export const useGetRecentConversations = (): QueryObserverResult<t.TConversation
     refetchOnMount: false
   });
 };
+
+export const useDuplicateConvoMutation = (): any => {
+  return useMutation((payload: object) => dataService.duplicateConversation(payload))
+}

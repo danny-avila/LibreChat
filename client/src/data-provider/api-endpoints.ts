@@ -97,3 +97,7 @@ export const config = () => {
 export const recentConversations = () => {
   return `/api/convos/recent`;
 }
+
+export const duplicateConversation = () => {
+  return `/api/convos/duplicate`
+}

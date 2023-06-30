@@ -119,3 +119,7 @@ export const getStartupConfig = (): Promise<t.TStartupConfig> => {
 export const getRecentConversations = () => {
   return request.get(endpoints.recentConversations());
 }
+
+export const duplicateConversation = (payload: object) => {
+  return request.post(endpoints.duplicateConversation(), { arg: payload });
+}
