@@ -58,7 +58,7 @@
 
 #### To use the app:
 1. Run `npm run backend`
-2. Run `meilisearch --master-key put_your_meilesearch_Master_Key_here` (Only if SEARCH=TRUE)
+2. Run `meilisearch --master-key <meilisearch_Master_Key>` (Only if SEARCH=TRUE)
 3. Visit http://localhost:3080 (default port) & enjoy
 
 #### Using a batch file
@@ -67,12 +67,12 @@
   - Open a text editor
   - Paste the following code in a new document
   - The meilisearch executable needs to be at the root of the LibreChat directory
-  - Put your MeiliSearch master key instead of "your_master_key_goes_here"
+  - Put your MeiliSearch master key instead of "`<meilisearch_Master_Key>`"
   - Save the file as "C:/LibreChat/LibreChat.bat"
   - you can make a shortcut of this batch file and put it anywhere
 
 ``` bat title="LibreChat.bat"
-start "MeiliSearch" cmd /k "meilisearch --master-key your_master_key_goes_here
+start "MeiliSearch" cmd /k "meilisearch --master-key <meilisearch_Master_Key>
 
 start "LibreChat" cmd /k "npm run backend"
 
