@@ -3,6 +3,7 @@ const router = express.Router();
 const { getConvo, saveConvo } = require('../../models');
 const { getConvosByPage, deleteConvos, getRecentConvos } = require('../../models/Conversation');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
+const { duplicateMessages } = require('../../models/Message');
 
 router.get('/', requireJwtAuth, async (req, res) => {
   const pageNumber = req.query.pageNumber || 1;
@@ -60,6 +61,31 @@ router.post('/update', requireJwtAuth, async (req, res) => {
     console.error(error);
     res.status(500).send(error);
   }
+});
+
+router.post('/duplicate', requireJwtAuth, async (req, res) => {
+  const { conversation, messages } = req.body.arg;
+
+  const newConversationId = crypto.randomUUID();
+
+  try {
+    await duplicateMessages(newConversationId, messages);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send(error);
+  }
+
+  conversation.conversationId = newConversationId;
+  conversation.isPrivate = true;
+
+  try {
+    const dbResponse = await saveConvo(req.user.id, conversation);
+    res.status(200).send(dbResponse);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send(error);
+  }
+  
 });
 
 module.exports = router;

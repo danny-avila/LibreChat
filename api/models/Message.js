@@ -92,4 +92,21 @@ module.exports = {
       throw new Error('Failed to fetch recent messages.');
     }
   },
+
+  async duplicateMessages(newConversationId, messages) {
+    try {
+      let parentMessageId = "00000000-0000-0000-0000-000000000000";
+      messages.map(async (msg) => {
+        msg.parentMessageId = parentMessageId;
+        parentMessageId = crypto.randomUUID();
+        msg.messageId = parentMessageId;
+        msg.conversationId = newConversationId;
+        await this.saveMessage( {msg} );
+      });
+    } catch (err) {
+      console.error(`Error duplicating messages: ${err}`);
+      throw new Error('Failed to duplicate messages.');
+    }
+    
+  }
 };
