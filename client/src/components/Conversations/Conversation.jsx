@@ -6,6 +6,7 @@ import DeleteButton from './DeleteButton';
 import ConvoIcon from '../svg/ConvoIcon';
 
 import store from '~/store';
+import PrivateButton from './PrivateButton';
 
 export default function Conversation({ conversation, retainView }) {
   const [currentConversation, setCurrentConversation] = useRecoilState(store.conversation);
@@ -19,9 +20,11 @@ export default function Conversation({ conversation, retainView }) {
   const [renaming, setRenaming] = useState(false);
   const inputRef = useRef(null);
 
-  const { conversationId, title } = conversation;
+  const { conversationId, title, isPrivate } = conversation;
 
   const [titleInput, setTitleInput] = useState(title);
+
+  const [privateState, setPrivateState] = useState(isPrivate);
 
   const clickHandler = async () => {
     if (currentConversation?.conversationId === conversationId) {
@@ -42,6 +45,12 @@ export default function Conversation({ conversation, retainView }) {
       switchToConversation(conversation);
     }
   };
+
+  const setPrivateHandler = (e) => {
+    e.preventDefault();
+    updateConvoMutation.mutate({ conversationId, isPrivate: !privateState });
+    setPrivateState(!privateState);
+  }
 
   const renameHandler = (e) => {
     e.preventDefault();
@@ -115,6 +124,11 @@ export default function Conversation({ conversation, retainView }) {
       </div>
       {currentConversation?.conversationId === conversationId ? (
         <div className="visible absolute right-1 z-10 flex text-gray-300">
+          <PrivateButton
+            conversationId={conversationId}
+            isPrivate={privateState}
+            setPrivateHandler={setPrivateHandler}
+          />
           <RenameButton
             conversationId={conversationId}
             renaming={renaming}
