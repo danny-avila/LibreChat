@@ -95,7 +95,7 @@ function ResetPassword() {
                     },
                     maxLength: {
                       value: 128,
-                      message: 'Password must be less than 128 characters'
+                      message: 'Password must be 128 characters or less'
                     }
                   })}
                   aria-invalid={!!errors.password}
