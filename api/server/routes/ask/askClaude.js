@@ -28,7 +28,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
         onUpdate: (completion) => {
           console.log(completion.completion);
         },
-        signal: abortController.signal,
+        // signal: abortController.signal,
       }
     )
     .catch((error) => {

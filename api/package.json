@@ -21,6 +21,7 @@
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "dependencies": {
     "@dqbd/tiktoken": "^1.0.2",
+    "@fortaine/fetch-event-source": "^3.0.6",
     "@keyv/mongo": "^2.1.8",
     "@waylaidwanderer/chatgpt-api": "^1.37.0",
     "axios": "^1.3.4",

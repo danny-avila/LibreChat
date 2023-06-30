@@ -1,5 +1,5 @@
 const Keyv = require('keyv');
-const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
+const { fetchEventSource } = require('@fortaine/fetch-event-source');
 
 const HUMAN_PROMPT = "\n\nHuman:";
 const AI_PROMPT = "\n\nAssistant:";
