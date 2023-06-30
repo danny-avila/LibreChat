@@ -1,18 +1,9 @@
 const BaseClient = require('./BaseClient');
 const ChatGPTClient = require('./ChatGPTClient');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('@dqbd/tiktoken');
+const { maxTokensMap } = require('../../../utils');
 
 const tokenizersCache = {};
-const maxTokensMap = {
-  'gpt-4': 8191,
-  'gpt-4-0613': 8191,
-  'gpt-4-32k': 32767,
-  'gpt-4-32k-0613': 32767,
-  'gpt-3.5-turbo': 4095,
-  'gpt-3.5-turbo-0613': 4095,
-  'gpt-3.5-turbo-0301': 4095,
-  'gpt-3.5-turbo-16k': 15999,
-};
 
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -202,6 +193,7 @@ class OpenAIClient extends BaseClient {
     let payload;
     let instructions;
     let tokenCountMap;
+    let promptTokens;
     let orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
 
     promptPrefix = (promptPrefix || this.options.promptPrefix || '').trim();
@@ -240,11 +232,12 @@ class OpenAIClient extends BaseClient {
 
     // TODO: need to handle interleaving instructions better
     if (this.contextStrategy) {
-      ({ payload, tokenCountMap } = await this.handleContextStrategy({instructions, orderedMessages, formattedMessages}));
+      ({ payload, tokenCountMap, promptTokens } = await this.handleContextStrategy({instructions, orderedMessages, formattedMessages}));
     }
 
     const result = {
       prompt: payload,
+      promptTokens,
     };
 
     if (tokenCountMap) {

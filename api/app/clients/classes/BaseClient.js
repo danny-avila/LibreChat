@@ -231,6 +231,7 @@ class BaseClient {
     if (this.options.debug) {
       console.debug('<---------------------------------DIFF--------------------------------->');
       console.debug(`Difference between payload (${payload.length}) and orderedWithInstructions (${orderedWithInstructions.length}): ${diff}`);
+      console.debug('remainingContextTokens, this.maxContextTokens (1/2)', remainingContextTokens, this.maxContextTokens);
     }
 
     // If the difference is positive, slice the orderedWithInstructions array
@@ -242,6 +243,10 @@ class BaseClient {
       refinedMessage = await this.refineMessages(messagesToRefine, remainingContextTokens);
       payload.unshift(refinedMessage);
       remainingContextTokens -= refinedMessage.tokenCount;
+    }
+
+    if (this.options.debug) {
+      console.debug('remainingContextTokens, this.maxContextTokens (2/2)', remainingContextTokens, this.maxContextTokens);
     }
 
     let tokenCountMap = orderedWithInstructions.reduce((map, message, index) => {
@@ -257,13 +262,16 @@ class BaseClient {
       return map;
     }, {});
 
+    const promptTokens = this.maxContextTokens - remainingContextTokens;
+
     if (this.options.debug) {
       console.debug('<-------------------------PAYLOAD/TOKEN COUNT MAP------------------------->');
       console.debug('Payload:', payload);
       console.debug('Token Count Map:', tokenCountMap);
+      console.debug('Prompt Tokens', promptTokens, remainingContextTokens, this.maxContextTokens);
     }
 
-    return { payload, tokenCountMap };
+    return { payload, tokenCountMap, promptTokens };
   }
 
   async sendMessage(message, opts = {}) {
@@ -307,22 +315,13 @@ class BaseClient {
       opts.onStart(userMessage);
     }
 
-    const responseMessage = {
-      messageId: responseMessageId,
-      conversationId,
-      parentMessageId: userMessage.messageId,
-      isCreatedByUser: false,
-      model: this.modelOptions.model,
-      sender: this.sender
-    };
-
     if (this.options.debug) {
       console.debug('options');
       console.debug(this.options);
     }
 
     this.currentMessages.push(userMessage);
-    let { prompt: payload, tokenCountMap } = await this.buildMessages(
+    let { prompt: payload, tokenCountMap, promptTokens } = await this.buildMessages(
       this.currentMessages,
       userMessage.messageId,
       this.getBuildMessagesOptions(opts),
@@ -347,11 +346,23 @@ class BaseClient {
     }
 
     await this.saveMessageToDatabase(userMessage, saveOptions, user);
-    responseMessage.text = await this.sendCompletion(payload, opts);
+    const responseMessage = {
+      messageId: responseMessageId,
+      conversationId,
+      parentMessageId: userMessage.messageId,
+      isCreatedByUser: false,
+      model: this.modelOptions.model,
+      sender: this.sender,
+      text: await this.sendCompletion(payload, opts),
+      promptTokens,
+    };
+
     if (tokenCountMap && this.getTokenCountForResponse) {
       responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
+      responseMessage.completionTokens = responseMessage.tokenCount;
     }
     await this.saveMessageToDatabase(responseMessage, saveOptions, user);
+    delete responseMessage.tokenCount;
     return responseMessage;
   }
 

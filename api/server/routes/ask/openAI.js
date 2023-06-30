@@ -167,6 +167,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
       response.parentMessageId = overrideParentMessageId;
     }
 
+    console.log('promptTokens, completionTokens:', response.promptTokens, response.completionTokens);
     await saveMessage(response);
 
     sendMessage(res, {
