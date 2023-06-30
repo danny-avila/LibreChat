@@ -33,6 +33,15 @@ theme:
     - content.action.edit
     - content.code.copy
 
+extra:
+  social:
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/CEe6vDg9Ky
+    - icon: fontawesome/brands/github
+      link: https://github.com/danny-avila/LibreChat
+    - icon: fontawesome/brands/youtube
+      link: https://www.youtube.com/@LibreChat
+
 markdown_extensions:
   - attr_list
   - admonition
@@ -75,6 +84,8 @@ nav:
   - Cloud Deployment:
     - Hetzner: 'deployment/hetzner_ubuntu.md'
     - Heroku: 'deployment/heroku.md'
+    - Cloudflare: 'deployment/cloudflare.md'
+    - Linode: 'deployment/linode.md'
   - Contributions:
     - Documentation Guidelines: 'contributions/documentation_guidelines.md'
     - Code Standards and Conventions: 'contributions/coding_conventions.md'
