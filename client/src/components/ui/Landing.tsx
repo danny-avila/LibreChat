@@ -22,7 +22,7 @@ export default function Landing() {
   const RecentConversations = useGetRecentConversations();
   
   const convoData = RecentConversations.data;
-  const messages = useGetMessagesByConvoId(convoData? convoData[convoIdx].conversationId : '');
+  const messages = useGetMessagesByConvoId(convoData?.length ? convoData[convoIdx].conversationId : '');
   const msgData = messages?.data;
 
   const { screenshotTargetRef } = useScreenshot();
@@ -37,7 +37,7 @@ export default function Landing() {
 
   // Get recent conversations
   useEffect(() => {
-    if (convoData && msgData) {
+    if (convoData?.length && msgData) {
       setConvoDataLength(convoData.length);
       setConversation(convoData[convoIdx]);
       setConversationId(convoData[convoIdx].conversationId);

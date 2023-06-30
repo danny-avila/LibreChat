@@ -131,7 +131,8 @@ module.exports = {
       const ids = recentMessages.map((instance) => instance.conversationId);
       return await Conversation.find({
         conversationId: { $in: ids },
-        user: { $ne: userId }
+        user: { $ne: userId },
+        isPrivate: {$eq: false}
       }).limit(3).exec();
     } catch (error) {
       console.log(error);
