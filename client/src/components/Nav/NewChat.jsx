@@ -1,6 +1,6 @@
 import React from 'react';
 import store from '~/store';
-import { trackEvent } from '../../../api/utils/trackevents';
+import { trackEvent } from '~/utils/trackEvents';
 
 export default function NewChat() {
   const { newConversation } = store.useConversation();
