@@ -24,12 +24,12 @@ jobs:
       - name: set variables based on section
         id: setVars
         run: |
-          if [[ ${{ github.event.inputs.environment }} == 'staging' || ${{ inputs.environment }} == 'staging' ]]; then
+          if [[  ${{ inputs.environment }} == staging ]]; then
             echo "ENVIRONMENT=staging" >> $GITHUB_ENV
             echo "REGION=ap-east-1" >> $GITHUB_ENV
             echo "SERVICE=test-5" >> $GITHUB_ENV
             echo "CLUSTER=ec2-cluster" >> $GITHUB_ENV
-          elif [[ ${{ github.event.inputs.environment }} == 'production' || [[ ${{ inputs.environment }} == 'production'  ]]; then
+          elif [[ ${{ inputs.environment }} == production  ]]; then
             echo "ENVIRONMENT=production" >> $GITHUB_ENV
             echo "REGION=ap-southeast-1" >> $GITHUB_ENV
             echo "SERVICE=libreChat" >> $GITHUB_ENV
