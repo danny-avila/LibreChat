@@ -30,6 +30,7 @@ jobs:
       - name: Build Docker images
         run: |
           cp .env.example .env
+          echo "version=$(date +'%Y-%m-%d')-${{ github.sha }}" > client/public/assets/version.txt
           docker-compose build
 
       # Tag it properly before push to github
