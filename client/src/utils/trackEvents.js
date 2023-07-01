@@ -11,12 +11,10 @@ ReactGA.initialize(trackingId, {
   gaOptions
 });
 
-const trackEvent = (category, action, label) => {
+export const trackEvent = (category, action, label) => {
   ReactGA.event({
     category,
     action,
     label
   });
 };
-
-module.exports = { trackEvent }; 
