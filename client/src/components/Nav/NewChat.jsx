@@ -1,12 +1,12 @@
 import React from 'react';
 import store from '~/store';
+import { trackEvent } from '../../../api/utils/trackevents';
 
 export default function NewChat() {
   const { newConversation } = store.useConversation();
 
   const clickHandler = () => {
-    // dispatch(setInputValue(''));
-    // dispatch(setQuery(''));
+    trackEvent('User Interaction', 'Create New Chat', 'User clicked on New Chat');
     newConversation();
   };
 
