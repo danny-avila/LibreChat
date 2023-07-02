@@ -31,7 +31,7 @@ const ExportConversation = forwardRef(() => {
         onClick={clickHandler}
       >
         <Download size={16} />
-        Export conversation
+        {navigator.languages[0] === 'zh-CN' ? '导出对话' : 'Export conversation'}
       </button>
 
       <ExportModel open={open} onOpenChange={setOpen} />

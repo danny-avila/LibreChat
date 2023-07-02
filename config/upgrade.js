@@ -124,7 +124,7 @@ loader.writeEnvFile(rootEnvPath, {'OPENAI_API_KEY': initEnv['OPENAI_KEY']})
 // TODO: we need to copy over the value of: APP_TITLE
 fs.appendFileSync(rootEnvPath, '\n\n##########################\n# Frontend Vite Variables:\n##########################\n');
 const frontend = {
-  'APP_TITLE': initEnv['VITE_APP_TITLE'] || '"LibreChat"',
+  'APP_TITLE': initEnv['VITE_APP_TITLE'] || '"AITok Chat"',
   'ALLOW_REGISTRATION': 'true'
 }
 loader.writeEnvFile(rootEnvPath, frontend)

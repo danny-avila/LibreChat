@@ -1,15 +1,14 @@
-name: Docker Compose Build on Tag
+name: Build and Update https://test.aitok.us in AWS HK
 
 # The workflow is triggered when a tag is pushed
 on:
   push:
-    tags:
-      - "*"
+    branches: 
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       # Check out the repository
       - name: Checkout
@@ -31,17 +30,19 @@ jobs:
       - name: Build Docker images
         run: |
           cp .env.example .env
+          echo "version=$(date +'%Y-%m-%d')-${{ github.sha }}" > client/public/assets/version.txt
           docker-compose build
-
-      # Get Tag Name
-      - name: Get Tag Name
-        id: tag_name
-        run: echo "TAG_NAME=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
 
       # Tag it properly before push to github
       - name: tag image and push
         run: |
-          docker tag librechat:latest ghcr.io/${{ github.repository_owner }}/librechat:${{ env.TAG_NAME }}
-          docker push ghcr.io/${{ github.repository_owner }}/librechat:${{ env.TAG_NAME }}
           docker tag librechat:latest ghcr.io/${{ github.repository_owner }}/librechat:latest
           docker push ghcr.io/${{ github.repository_owner }}/librechat:latest
+
+  update-ecs-service:
+    needs: build
+    uses: ./.github/workflows/update-ecs.yml
+    with:
+      environment: staging
+    name: Update ECS Service
+    secrets: inherit

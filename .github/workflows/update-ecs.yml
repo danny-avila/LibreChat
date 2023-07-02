@@ -1,0 +1,48 @@
+name: Restart ECS Service
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment'
+        required: true
+        type: choice
+        default: 'staging'
+        options: ['staging', 'production']
+
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Environment'
+        required: true
+        type: string
+        default: 'staging'
+
+jobs:
+  update-ecs-service:
+    runs-on: ubuntu-latest
+    steps:
+      - name: set variables based on section
+        id: setVars
+        run: |
+          if [[  ${{ inputs.environment }} == staging ]]; then
+            echo "ENVIRONMENT=staging" >> $GITHUB_ENV
+            echo "REGION=ap-east-1" >> $GITHUB_ENV
+            echo "SERVICE=test-5" >> $GITHUB_ENV
+            echo "CLUSTER=ec2-cluster" >> $GITHUB_ENV
+          elif [[ ${{ inputs.environment }} == production  ]]; then
+            echo "ENVIRONMENT=production" >> $GITHUB_ENV
+            echo "REGION=ap-southeast-1" >> $GITHUB_ENV
+            echo "SERVICE=libreChat" >> $GITHUB_ENV
+            echo "CLUSTER=production" >> $GITHUB_ENV
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.REGION }}
+
+      - name: Force Update ECS Service
+        run: |
+          aws ecs update-service --cluster ${{ env.CLUSTER }} --service ${{ env.SERVICE }} --force-new-deployment
