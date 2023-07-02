@@ -1,9 +1,10 @@
 
-[<img src="../assets/Cloudflare-logo.jpg" width="350">](https://www.cloudflare.com/)
+[<img src="../assets/docs/deployment/cloudflare-logo.jpg" width="350">](https://www.cloudflare.com/)
 
+#Cloudflare
 ## if you are new to Domain, here's a quick guide to use setup a domain with Cloudflare:
 
-**Google Domains and Cloudflare**
+## Google Domains and Cloudflare
 
 - buy a domain at https://domains.google.com/
 - register a Cloudflare account at https://dash.cloudflare.com/sign-up
@@ -16,7 +17,7 @@
 - return to the cloudflare tab and tap on `Done, check nameservers`, then `finish later` and `Check nameservers` (this process can take about 5 minutes)
 - in the `DNS` tab select `Records` and `Add Record`
 
-![248543319-77618430-d346-49a9-a5d3-17eac0270ccf](../assets/1-cloudflare.png)
+![248543319-77618430-d346-49a9-a5d3-17eac0270ccf](../assets/docs/deployment/cloudflare-1.png)
 
   (in the Name section, if you use @ it will use you main domain, but if you want to use a subdomain write it in the Name section)
    - For example: if you want to acces with chat.yourdomain.com just set in the Name section `chat`
@@ -27,7 +28,7 @@
 
 If you want to use LibreChat exclusively for yourself or your family and set up an additional layer of protection, you can utilize Cloudflare Zero Trust. Here's how:
 
-**Install Cloudflare Tunnel:**
+### Install Cloudflare Tunnel:
 
 - Go to `https://dash.cloudflare.com/`.
 - On the left side, click on **Zero Trust**.
@@ -39,7 +40,7 @@ If you want to use LibreChat exclusively for yourself or your family and set up 
   - If you choose Docker: Simply copy the displayed command and paste it into the terminal. Before running it, add `-d` after `docker run`, like this: `docker run -d cloudflare/cloudflared:latest...` (this will run the Docker process in the background).
 - In the **Public Hostname** tab, select **Add a public hostname**.
 
-![image](../assets/2-cloudflare.png)
+![image](../assets/docs/deployment/cloudflare-2.png)
 
 
 
@@ -72,3 +73,7 @@ After adding at least one login method, return to the **Applications** section, 
 - Turn off "Accept all available identity providers".
 - Select your social login method and deselect "One-time PIN".
 - Click on **Save application**.
+
+---
+
+### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
