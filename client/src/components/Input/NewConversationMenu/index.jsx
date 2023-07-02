@@ -96,7 +96,7 @@ export default function NewConversationMenu() {
   // set the current model
   const onSelectPreset = (newPreset) => {
     setMenuOpen(false);
-    
+
     if (endpoint === 'gptPlugins' && newPreset?.endpoint === 'gptPlugins') {
       const currentConvo = getDefaultConversation({
         conversation,

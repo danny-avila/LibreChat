@@ -9,7 +9,7 @@ const askChatGPTBrowser = require('./askChatGPTBrowser');
 const askGPTPlugins = require('./askGPTPlugins');
 
 // router.use('/azureOpenAI', askAzureOpenAI);
-router.use('/openAI', openAI);
+router.use(['/azureOpenAI', '/openAI'], openAI);
 router.use('/google', askGoogle);
 router.use('/bingAI', askBingAI);
 router.use('/chatGPTBrowser', askChatGPTBrowser);

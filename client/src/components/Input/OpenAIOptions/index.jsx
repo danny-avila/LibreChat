@@ -27,11 +27,11 @@ function OpenAIOptions() {
   } = conversation;
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
-
-  if (endpoint !== 'openAI') return null;
+  const isOpenAI = endpoint === 'openAI' || endpoint === 'azureOpenAI';
+  if (!isOpenAI) return null;
   if (conversationId !== 'new') return null;
 
-  const models = endpointsConfig?.['openAI']?.['availableModels'] || [];
+  const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
 
   const triggerAdvancedMode = () => setAdvancedMode((prev) => !prev);
 

@@ -47,12 +47,15 @@ router.get('/', async function (req, res) {
     key || palmUser
       ? { userProvide: palmUser, availableModels: ['chat-bison', 'text-bison', 'codechat-bison'] }
       : false;
-  const azureOpenAI = !!process.env.AZURE_OPENAI_API_KEY;
-  const apiKey = process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_API_KEY;
-  const openAI = apiKey
-    ? { availableModels: getOpenAIModels(), userProvide: apiKey === 'user_provided' }
+  const openAIApiKey = process.env.OPENAI_API_KEY;
+  const azureOpenAIApiKey = process.env.AZURE_OPENAI_API_KEY;
+  const azureOpenAI = azureOpenAIApiKey
+    ? { availableModels: getOpenAIModels(), userProvide: openAIApiKey === 'user_provided' }
     : false;
-  const gptPlugins = apiKey
+  const openAI = openAIApiKey
+    ? { availableModels: getOpenAIModels(), userProvide: openAIApiKey === 'user_provided' }
+    : false;
+  const gptPlugins = openAIApiKey || azureOpenAIApiKey
     ? { availableModels: getPluginModels(), availableTools, availableAgents: ['classic', 'functions'] }
     : false;
   const bingAI = process.env.BINGAI_TOKEN

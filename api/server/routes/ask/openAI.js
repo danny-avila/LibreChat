@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { titleConvo, OpenAIClient } = require('../../../app');
-const { getAzureCredentials, abortMessage } = require('../../../utils');
+const { genAzureEndpoint, getAzureCredentials, abortMessage } = require('../../../utils');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const {
   handleError,
@@ -19,7 +19,9 @@ router.post('/abort', requireJwtAuth, async (req, res) => {
 router.post('/', requireJwtAuth, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
-  if (endpoint !== 'openAI') return handleError(res, { text: 'Illegal request' });
+  const isOpenAI = endpoint === 'openAI' || endpoint === 'azureOpenAI';
+  console.log('endpoint', endpoint, isOpenAI);
+  if (!isOpenAI) return handleError(res, { text: 'Illegal request' });
 
   // build endpoint option
   const endpointOption = {
@@ -43,12 +45,13 @@ router.post('/', requireJwtAuth, async (req, res) => {
     endpointOption,
     conversationId,
     parentMessageId,
+    endpoint,
     req,
     res
   });
 });
 
-const ask = async ({ text, endpointOption, parentMessageId = null, conversationId, req, res }) => {
+const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, conversationId, req, res }) => {
   res.writeHead(200, {
     Connection: 'keep-alive',
     'Content-Type': 'text/event-stream',
@@ -132,15 +135,19 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       // contextStrategy: 'refine',
       reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
       proxy: process.env.PROXY || null,
-      endpoint: 'openAI',
+      endpoint,
       ...endpointOption
     };
 
-    if (process.env.AZURE_OPENAI_API_KEY) {
+    let oaiApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
+
+    if (process.env.AZURE_OPENAI_API_KEY && endpoint === 'azureOpenAI') {
       clientOptions.azure = getAzureCredentials();
+      clientOptions.reverseProxyUrl = process.env.AZURE_REVERSE_PROXY ?? genAzureEndpoint({ ...clientOptions.azure });
+      oaiApiKey = clientOptions.azure.azureOpenAIApiKey;
     }
 
-    const oaiApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
+    console.log('clientOptions', clientOptions);
     const client = new OpenAIClient(oaiApiKey, clientOptions);
 
     let response = await client.sendMessage(text, {
