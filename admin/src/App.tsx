@@ -4,13 +4,13 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
 import { useApiErrorBoundary } from '~/hooks/ApiErrorBoundaryContext';
 import { router } from './routes';
-import { PrimeReactProvider, PrimeReactContext } from 'primereact/api';
+import { PrimeReactProvider } from 'primereact/api';
+import { ThemeProvider } from '~/hooks/ThemeContext';
 
 const App = () => {
+  // const { setInputStyle } = useContext(PrimeReactContext);
 
-  const { setInputStyle } = useContext(PrimeReactContext);
-
-  setInputStyle('filled');
+  // setInputStyle('filled');
 
   const { setError } = useApiErrorBoundary();
 
@@ -27,10 +27,12 @@ const App = () => {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <PrimeReactProvider>
-        <RouterProvider router={router} />
-        <ReactQueryDevtools initialIsOpen={false} position="top-right" />
-      </PrimeReactProvider>
+      <ThemeProvider initialTheme={'light'}>
+        <PrimeReactProvider>
+          <RouterProvider router={router} />
+          <ReactQueryDevtools initialIsOpen={false} position="top-right" />
+        </PrimeReactProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 };
