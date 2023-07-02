@@ -1,6 +1,6 @@
 const ReactGA = require('react-ga');
 
-const trackingId = 'G-KVV9QJKG5K';
+const trackingId = process.env.GOOGLE_ANALYTICS_TRACKING_ID;
 const debug = process.env.NODE_ENV !== 'production';
 const gaOptions = {
   anonymizeIp: true
