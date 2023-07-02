@@ -77,7 +77,7 @@ Issuer.discover(process.env.OPENID_ISSUER)
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
               name: fullName
-             });
+            });
           } else {
             user.provider = 'openid';
             user.openidId = userinfo.sub;
