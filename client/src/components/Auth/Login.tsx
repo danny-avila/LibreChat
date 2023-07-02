@@ -9,7 +9,7 @@ import { localize } from '~/localization/Translation';
 import { useGetStartupConfig } from 'librechat-data-provider';
 import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
 
-function Login() {
+function Login({ loginRedirect }: {loginRedirect: string}) {
   const { login, error, isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
 
@@ -19,9 +19,9 @@ function Login() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/chat/new', { replace: true });
+      navigate(loginRedirect, { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, loginRedirect]);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">

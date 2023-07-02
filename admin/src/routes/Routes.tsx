@@ -1,13 +1,13 @@
-import { createBrowserRouter, Outlet } from 'react-router-dom';
+import { createBrowserRouter, Outlet, Navigate } from 'react-router-dom';
 import Root from './Root';
-import { Login, Registration, RequestPasswordReset, ResetPassword } from '~/components/Auth';
+import { Login, Registration, RequestPasswordReset, ResetPassword, ApiErrorWatcher } from '@/modules/auth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
-import ApiErrorWatcher from '~/components/Auth/ApiErrorWatcher';
-import {Dashboard} from '@/modules/Dashboard';
-import {Users} from '@/modules/Users';
+import { Dashboard } from '@/modules/Dashboard';
+import { Users } from '@/modules/Users';
+import appConfig from '@/appConfig';
 
 const AuthLayout = () => (
-  <AuthContextProvider>
+  <AuthContextProvider authConfig={appConfig}>
     <Outlet />
     <ApiErrorWatcher />
   </AuthContextProvider>
@@ -16,7 +16,7 @@ const AuthLayout = () => (
 export const router = createBrowserRouter([
   {
     path: 'register',
-    element: <Registration /> 
+    element: <Registration />
   },
   {
     path: 'forgot-password',
@@ -31,7 +31,7 @@ export const router = createBrowserRouter([
     children: [
       {
         path: 'login',
-        element: <Login />
+        element: <Login loginRedirect={appConfig.loginRedirect} />
       },
       {
         path: '/',
@@ -39,12 +39,16 @@ export const router = createBrowserRouter([
         children: [
           {
             index: true,
+            element: <Navigate to="/dashboard" replace={true} />
+          },
+          {
+            path: 'dashboard',
             element: <Dashboard />
           },
           {
             path: 'users',
             element: <Users />
-          },
+          }
         ]
       }
     ]

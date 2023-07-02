@@ -5,9 +5,10 @@ import Search from './Search';
 import { Login, Registration, RequestPasswordReset, ResetPassword } from '../components/Auth';
 import { AuthContextProvider } from '../hooks/AuthContext';
 import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
+import appConfig from '~/appConfig';
 
 const AuthLayout = () => (
-  <AuthContextProvider>
+  <AuthContextProvider authConfig={appConfig}>
     <Outlet />
     <ApiErrorWatcher />
   </AuthContextProvider>
@@ -31,7 +32,7 @@ export const router = createBrowserRouter([
     children: [
       {
         path: 'login',
-        element: <Login />,
+        element: <Login loginRedirect={appConfig.loginRedirect} />
       },
       {
         path: '/',

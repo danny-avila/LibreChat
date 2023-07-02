@@ -66,6 +66,7 @@ const AuthContextProvider = ({
     if (error) {
       console.log(error);
       // set timeout to ensure we don't get a flash of the error message
+      //@ts-ignore - index is not of type number
       window['errorTimeout'] = setTimeout(() => {
         setError(error);
       }, 400);
@@ -98,7 +99,7 @@ const AuthContextProvider = ({
     loginUser.mutate(data, {
       onSuccess: (data: TLoginResponse) => {
         const { user, token } = data;
-        setUserContext({ token, isAuthenticated: true, user, redirect: '/chat/new' });
+        setUserContext({ token, isAuthenticated: true, user, redirect: authConfig.loginRedirect });
       },
       onError: (error) => {
         doSetError((error as Error).message);
