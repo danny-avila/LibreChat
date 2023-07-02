@@ -55,11 +55,14 @@ With the docker deployment you can skip step 2 and step 3, use the setup instruc
 - Use `SD_WEBUI_URL=http://127.0.0.1:7860` in the `.env` file 
 - Or `http://127.0.0.1:7860` from the webui
 
-![image](https://github.com/danny-avila/LibreChat/assets/110412045/e33e0133-66c1-4781-9ca8-bbd8c174579c)
-![image](https://github.com/danny-avila/LibreChat/assets/110412045/a075e5b9-d648-405d-96cf-178af792aabc)
+
+### Select the plugins endpoint
+![image](../../assets/docs/features/plugins/plugins_endpoint.png)
+
+### Open the Plugin store and Install Stable Diffusion
+![image](../../assets/docs/features/plugins/plugin_store.png)
+![image](../../assets/docs/features/plugins/stable_diffusion-1.png)
 
 
 ## 5. Select the plugin and enjoy!
-
-![image](https://github.com/danny-avila/LibreChat/assets/110412045/bbdffdc7-57b0-459e-87c2-c3c2871b74cb)
-
+![image](../../assets/docs/features/plugins/stable_diffusion-2.png)
