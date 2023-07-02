@@ -104,7 +104,7 @@ module.exports = {
       files: ['**/*.ts', '**/*.tsx'],
       parser: '@typescript-eslint/parser',
       parserOptions: {
-        project: './client/tsconfig.json',
+        project: './tsconfig.json'
       },
       plugins: ['@typescript-eslint/eslint-plugin', 'jest'],
       extends: [

@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import path, { resolve } from 'path';
+import path from 'path';
 import type { Plugin } from 'vite';
 
 // https://vitejs.dev/config/
@@ -12,13 +12,13 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:3080',
-        changeOrigin: true,
+        changeOrigin: true
       },
       '/oauth': {
         target: 'http://localhost:3080',
-        changeOrigin: true,
-      },
-    },
+        changeOrigin: true
+      }
+    }
   },
   // All other env variables are filtered out
   envDir: '../',
@@ -35,16 +35,16 @@ export default defineConfig({
           if (id.includes('node_modules')) {
             return 'vendor';
           }
-        },
-      },
-    },
+        }
+      }
+    }
   },
   resolve: {
     alias: {
-      '~': path.join(__dirname, 'src/'),
-      $fonts: resolve('public/fonts'),
-    },
-  },
+      '@': path.join(__dirname, 'src/'),
+      '~': path.join(__dirname, '..', 'client', 'src'),
+    }
+  }
 });
 
 interface SourcemapExclude {
@@ -58,9 +58,9 @@ export function sourcemapExclude(opts?: SourcemapExclude): Plugin {
         return {
           code,
           // https://github.com/rollup/rollup/blob/master/docs/plugin-development/index.md#source-code-transformations
-          map: { mappings: '' },
+          map: { mappings: '' }
         };
       }
-    },
+    }
   };
 }

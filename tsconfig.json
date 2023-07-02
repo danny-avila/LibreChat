@@ -13,7 +13,7 @@
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noImplicitAny": false,
+    "noImplicitAny": true,
     "noEmit": false,
     "declaration": true,
     "declarationDir": "./types",
@@ -22,7 +22,8 @@
     "paths": {
       "~/*": ["./client/src/*"],
       "test/*": ["./client/test/*"],
-      "*": ["./client/*", "../node_modules/*"]
+      "*": ["./client/*", "../node_modules/*"],
+      "@/*": ["./admin/src/*"]
     }
   },
   "types": ["node", "jest", "@testing-library/jest-dom"],
@@ -34,7 +35,12 @@
     "setupTests.js",
     "vite.config.ts",
     "env.d.ts",
-    "../vite.config.ts"
+    "../vite.config.ts",
+    "./client/src/**/*",
+    "./e2e/**/*",
+    "./client/vite.config.ts",
+    "./admin/src/**/*",
+    "./admin/vite.config.ts"
   ],
   "references": [
     {
