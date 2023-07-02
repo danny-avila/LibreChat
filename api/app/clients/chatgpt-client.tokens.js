@@ -1,7 +1,25 @@
+/*
+  This is a test script to see how much memory is used by the client when encoding.
+  On my work machine, it was able to process 10,000 encoding requests / 48.686 seconds = approximately 205.4 RPS
+  I've significantly reduced the amount of encoding needed by saving token counts in the database, so these
+  numbers should only be hit with a large amount of concurrent users
+  It would take 103 concurrent users sending 1 message every 1 second to hit these numbers, which is rather unrealistic,
+  and at that point, out-sourcing the encoding to a separate server would be a better solution
+  Also, for scaling, could increase the rate at which the encoder resets; the trade-off is more resource usage on the server.
+  Initial memory usage: 25.93 megabytes
+  Peak memory usage: 55 megabytes
+  Final memory usage: 28.03 megabytes
+  Post-test (timeout of 15s): 21.91 megabytes
+*/
+
 require('dotenv').config();
+const { OpenAIClient } = require('./classes');
+
+function timeout(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 const run = async () => {
-  const { ChatGPTClient } = await import('@waylaidwanderer/chatgpt-api');
   const text = `
   The standard Lorem Ipsum passage, used since the 1500s
   
@@ -37,7 +55,6 @@ const run = async () => {
 
   // Calculate initial percentage of memory used
   const initialMemoryUsage = process.memoryUsage().heapUsed;
-  
 
   function printProgressBar(percentageUsed) {
     const filledBlocks = Math.round(percentageUsed / 2); // Each block represents 2%
@@ -46,20 +63,20 @@ const run = async () => {
     console.log(progressBar);
   }
 
-  const iterations = 16000;
+  const iterations = 10000;
   console.time('loopTime');
   // Trying to catch the error doesn't help; all future calls will immediately crash
   for (let i = 0; i < iterations; i++) {
     try {
       console.log(`Iteration ${i}`);
-      const client = new ChatGPTClient(apiKey, clientOptions);
+      const client = new OpenAIClient(apiKey, clientOptions);
 
       client.getTokenCount(text);
       // const encoder = client.constructor.getTokenizer('cl100k_base');
       // console.log(`Iteration ${i}: call encode()...`);
       // encoder.encode(text, 'all');
       // encoder.free();
-      
+
       const memoryUsageDuringLoop = process.memoryUsage().heapUsed;
       const percentageUsed = memoryUsageDuringLoop / maxMemory * 100;
       printProgressBar(percentageUsed);
@@ -80,10 +97,23 @@ const run = async () => {
   // const finalPercentageUsed = finalMemoryUsage / maxMemory * 100;
   console.log(`Initial memory usage: ${initialMemoryUsage / 1024 / 1024} megabytes`);
   console.log(`Final memory usage: ${finalMemoryUsage / 1024 / 1024} megabytes`);
-  setTimeout(() => {
-    const memoryUsageAfterTimeout = process.memoryUsage().heapUsed;
-    console.log(`Post timeout: ${memoryUsageAfterTimeout / 1024 / 1024} megabytes`);
-  } , 10000);
+  await timeout(15000);
+  const memoryUsageAfterTimeout = process.memoryUsage().heapUsed;
+  console.log(`Post timeout: ${memoryUsageAfterTimeout / 1024 / 1024} megabytes`);
 }
 
-run();  
+run();
+
+process.on('uncaughtException', (err) => {
+  if (!err.message.includes('fetch failed')) {
+    console.error('There was an uncaught error:');
+    console.error(err);
+  }
+
+  if (err.message.includes('fetch failed')) {
+    console.log('fetch failed error caught');
+    // process.exit(0);
+  } else {
+    process.exit(1);
+  }
+});
