@@ -20,7 +20,6 @@ router.post('/', requireJwtAuth, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   const isOpenAI = endpoint === 'openAI' || endpoint === 'azureOpenAI';
-  console.log('endpoint', endpoint, isOpenAI);
   if (!isOpenAI) return handleError(res, { text: 'Illegal request' });
 
   // build endpoint option
@@ -147,7 +146,6 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
       oaiApiKey = clientOptions.azure.azureOpenAIApiKey;
     }
 
-    console.log('clientOptions', clientOptions);
     const client = new OpenAIClient(oaiApiKey, clientOptions);
 
     let response = await client.sendMessage(text, {
