@@ -80,7 +80,8 @@ router.post('/duplicate', requireJwtAuth, async (req, res) => {
     convoObj.messages = await duplicateMessages({ newConversationId, msgData });
 
     const newConvo = new Conversation(convoObj);
-    return await newConvo.save();
+    const dbResponse = await newConvo.save();
+    res.status(201).send(dbResponse);
   } catch (error) {
     console.error(error);
     res.status(500).send(error);

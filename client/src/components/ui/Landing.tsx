@@ -12,6 +12,7 @@ import {
 import SwitchPage from './SwitchPage';
 import DuplicateConvoButton from './DuplicateConvoButton';
 import { useMutation } from '@tanstack/react-query';
+import store from '~/store';
 
 export default function Landing() {
   const [conversation, setConversation] = useState<TConversation>();
@@ -29,6 +30,8 @@ export default function Landing() {
   const msgData = messages?.data;
 
   const { screenshotTargetRef } = useScreenshot();
+  const { refreshConversations } = store.useConversations();
+  const { switchToConversation } = store.useConversation();
 
   const nextConvo = () => convoIdx === convoDataLength - 1 ? setConvoIdx(0) : setConvoIdx(convoIdx + 1);
   const prevConvo = () => convoIdx === 0 ? setConvoIdx(convoDataLength - 1) : setConvoIdx(convoIdx - 1);
@@ -50,6 +53,13 @@ export default function Landing() {
       setMessagesTree(buildTree(msgData));
     }
   }, [convoData, msgData, convoIdx]);
+
+  useEffect(() => { // Consider moving this to Conversation.jsx
+    if (duplicateConversationMutation.isSuccess) {
+      refreshConversations();
+      switchToConversation(conversation);
+    }
+  })
 
   useDocumentTitle(title);
 
