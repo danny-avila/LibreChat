@@ -74,7 +74,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
               },
               maxLength: {
                 value: 40,
-                message: 'Password must be less than 40 characters'
+                message: 'Password must be 128 characters or less'
               }
             })}
             aria-invalid={!!errors.password}
