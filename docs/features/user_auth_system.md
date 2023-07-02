@@ -84,7 +84,3 @@ If you previously implemented your own user system using the original scaffoldin
 
 When the first account is registered, the application will automatically migrate any conversations and presets that you created before the user system was implemented to that account. 
 if you use login for the first time with a social login account (eg. Google, facebook, etc.), the conversations and presets that you created before the user system was implemented will NOT be migrated to that account.
-
----
-
-## [Go Back to ReadMe](../../README.md)
