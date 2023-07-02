@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const Message = require('./schema/messageSchema');
 
 module.exports = {
@@ -93,16 +94,29 @@ module.exports = {
     }
   },
 
-  async duplicateMessages(newConversationId, messages) {
+  async duplicateMessages({ newConversationId, msgData }) {
     try {
-      let parentMessageId = "00000000-0000-0000-0000-000000000000";
-      messages.map(async (msg) => {
-        msg.parentMessageId = parentMessageId;
-        parentMessageId = crypto.randomUUID();
-        msg.messageId = parentMessageId;
-        msg.conversationId = newConversationId;
-        await this.saveMessage( {msg} );
-      });
+      let newParentMessageId = "00000000-0000-0000-0000-000000000000";
+      let newMessageId = crypto.randomUUID();
+      const msgObjIds = [];
+
+      for (let i = 0; i < msgData.length; i++) {
+        let msgObj = structuredClone(msgData[i]);
+
+        delete msgObj._id;
+        msgObj.messageId = newMessageId;
+        msgObj.parentMessageId = newParentMessageId;
+        msgObj.conversationId = newConversationId;
+
+        newParentMessageId = newMessageId;
+        newMessageId = crypto.randomUUID();
+
+        const newMsg = new Message(msgObj);
+        const result = await newMsg.save();
+        msgObjIds.push(result.id);
+      }
+
+      return msgObjIds;
     } catch (err) {
       console.error(`Error duplicating messages: ${err}`);
       throw new Error('Failed to duplicate messages.');

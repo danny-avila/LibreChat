@@ -4,6 +4,8 @@ const { getConvo, saveConvo } = require('../../models');
 const { getConvosByPage, deleteConvos, getRecentConvos } = require('../../models/Conversation');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 const { duplicateMessages } = require('../../models/Message');
+const crypto = require('crypto');
+const Conversation = require('../../models/schema/convoSchema');
 
 router.get('/', requireJwtAuth, async (req, res) => {
   const pageNumber = req.query.pageNumber || 1;
@@ -64,28 +66,25 @@ router.post('/update', requireJwtAuth, async (req, res) => {
 });
 
 router.post('/duplicate', requireJwtAuth, async (req, res) => {
-  const { conversation, messages } = req.body.arg;
+  const { conversation, msgData } = req.body.arg;
 
   const newConversationId = crypto.randomUUID();
 
   try {
-    await duplicateMessages(newConversationId, messages);
+    let convoObj = structuredClone(conversation);
+
+    delete convoObj._id;
+    convoObj.user = req.user.id;
+    convoObj.conversationId = newConversationId;
+    convoObj.isPrivate = true;
+    convoObj.messages = await duplicateMessages({ newConversationId, msgData });
+
+    const newConvo = new Conversation(convoObj);
+    return await newConvo.save();
   } catch (error) {
     console.error(error);
     res.status(500).send(error);
   }
-
-  conversation.conversationId = newConversationId;
-  conversation.isPrivate = true;
-
-  try {
-    const dbResponse = await saveConvo(req.user.id, conversation);
-    res.status(200).send(dbResponse);
-  } catch (error) {
-    console.error(error);
-    res.status(500).send(error);
-  }
-  
 });
 
 module.exports = router;

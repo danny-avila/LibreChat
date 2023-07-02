@@ -7,8 +7,11 @@ import {
   TConversation,
   useGetRecentConversations,
   useGetMessagesByConvoId,
+  useDuplicateConvoMutation,
 } from '~/data-provider';
 import SwitchPage from './SwitchPage';
+import DuplicateConvoButton from './DuplicateConvoButton';
+import { useMutation } from '@tanstack/react-query';
 
 export default function Landing() {
   const [conversation, setConversation] = useState<TConversation>();
@@ -22,17 +25,20 @@ export default function Landing() {
   const RecentConversations = useGetRecentConversations();
   
   const convoData = RecentConversations.data;
-  const messages = useGetMessagesByConvoId(convoData?.length ? convoData[convoIdx].conversationId : '');
+  const messages = useGetMessagesByConvoId(convoData?.length ? convoData[convoIdx].conversationId : ''); // sometimes returns a string
   const msgData = messages?.data;
 
   const { screenshotTargetRef } = useScreenshot();
 
-  const nextConvo = () => {
-    convoIdx === convoDataLength - 1 ? setConvoIdx(0) : setConvoIdx(convoIdx + 1);
-  }
+  const nextConvo = () => convoIdx === convoDataLength - 1 ? setConvoIdx(0) : setConvoIdx(convoIdx + 1);
+  const prevConvo = () => convoIdx === 0 ? setConvoIdx(convoDataLength - 1) : setConvoIdx(convoIdx - 1);
 
-  const prevConvo = () => {
-    convoIdx === 0 ? setConvoIdx(convoDataLength - 1) : setConvoIdx(convoIdx - 1);
+  const duplicateConversationMutation = useDuplicateConvoMutation();
+
+  const duplicateHandler = () => {
+    if (typeof msgData === 'string') return; // quick fix, but needs refactoring
+    // const messageIds = msgData?.map((msg) => { return msg.messageId });
+    duplicateConversationMutation.mutate({ conversation, msgData });
   }
 
   // Get recent conversations
@@ -71,6 +77,7 @@ export default function Landing() {
             />
             <SwitchPage key={ 'left_switch' } switchHandler={ prevConvo } direction={ 'left' } />
             <SwitchPage key={ 'right_switch' } switchHandler={ nextConvo } direction={ 'right' } />
+            <DuplicateConvoButton duplicateHandler={ duplicateHandler } />
           </div>
         </div>
         {/* {!showingTemplates && (
