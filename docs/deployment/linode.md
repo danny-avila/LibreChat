@@ -1,9 +1,11 @@
 
-[<img src="../assets/linode-logo.jpg" width="250">](https://www.linode.com/)
+[<img src="../assets/docs/deployment/linode-logo.jpg" width="250">](https://www.linode.com/)
 
-# Linode (⚠️Payment required)
+# Linode 
 
-**Create a Linode Account and a Linode Server**
+⚠️**Note: Payment is required**
+
+## Create a Linode Account and a Linode Server
 - Go to the Linode website (https://www.linode.com/) and click on the "Sign Up" or "Get Started" button.
 - Follow the instructions to create a new account by providing your personal details and payment information.
 - Once your account is created, you will have access to the Linode Cloud Manager.
@@ -12,7 +14,7 @@
 - Configure the server settings such as the server's label, root password, and SSH key. If you don't know which image to use, select 🐧💻 Ubuntu 22.04 LTS
 - Click on the 'Create' button to provision the Linode server (wait about 5 minutes after the server is on, because the server is not actually powered on yet)
 
-**Install Docker:**
+## Install Docker:
 - Connect to your Linode server via SSH using a terminal or SSH client.
 - Run the following commands to install Docker and Docker-compose:
   
@@ -52,24 +54,31 @@ if you want, you can use NGINX, Apache, or any other proxy manager.
         - ./letsencrypt:/etc/letsencrypt
   ```
 
-- **Run**  `docker-compose up -d`  to start NGINX Proxy Manager
+### Start NGINX Proxy Manager
+ 
+ - By executing: `docker-compose up -d`
+  
+### Login to NGINX Proxy Manager
+  - **Important: You need to update the default credentials**
 
-- Login to NGINX Proxy Manager and change the username and password.
+  - The default login link is at `your_linode_ip:81`.
 
-The default login link is at `your_linode_ip:81`.
-
-Default Admin User:
+  - Default Admin User:
 
  ```
 Email:    admin@example.com
 Password: changeme
  ```
 
-- Login to NGINX Proxy Manager.
-- Click on "Proxy Host" and add a proxy host.
+### Login to NGINX Proxy Manager.
+  - Click on "Proxy Host" and add a proxy host.
 
-![248540414-0dbbfdbb-063e-4fa5-bb1d-811064cc4bad](../assets/1-linode.png)
+![248540414-0dbbfdbb-063e-4fa5-bb1d-811064cc4bad](../assets/docs/deployment/linode-1.png)
 
-- If you want, you can add the Let's Encrypt SSL certificate.
+- If you want, you can add the `Let's Encrypt SSL` certificate.
 
-![248540572-6d0220e2-2506-4b40-8974-a5014df646d6](../assets/2-linode.png)
+![248540572-6d0220e2-2506-4b40-8974-a5014df646d6](../assets/docs/deployment/linode-2.png)
+
+---
+
+### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

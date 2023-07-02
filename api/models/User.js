@@ -25,7 +25,7 @@ const userSchema = mongoose.Schema(
       type: String,
       lowercase: true,
       required: [true, "can't be blank"],
-      match: [/^[a-zA-Z0-9_]+$/, 'is invalid'],
+      match: [/^[a-zA-Z0-9_-]+$/, 'is invalid'],
       index: true
     },
     email: {
@@ -45,7 +45,7 @@ const userSchema = mongoose.Schema(
       type: String,
       trim: true,
       minlength: 8,
-      maxlength: 60
+      maxlength: 128
     },
     avatar: {
       type: String,
@@ -162,9 +162,9 @@ module.exports.validateUser = (user) => {
     username: Joi.string()
       .min(2)
       .max(80)
-      .regex(/^[a-zA-Z0-9_]+$/)
+      .regex(/^[a-zA-Z0-9_-]+$/)
       .required(),
-    password: Joi.string().min(8).max(60).allow('').allow(null)
+    password: Joi.string().min(8).max(128).allow('').allow(null)
   };
 
   return schema.validate(user);
