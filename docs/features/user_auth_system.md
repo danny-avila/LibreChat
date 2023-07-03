@@ -74,9 +74,11 @@ OPENID_CALLBACK_URL=/oauth/openid/callback
 2. Create a new Github app
 3. Give it a GitHub App name and set in the Homepage URL your [DOMAIN_CLIENT](https://github.com/danny-avila/LibreChat/blob/main/.env.example#L219)    (example: http://localhost:3080)
 4. Add a callback URL and set it as "[Your DOMAIN_CLIENT](https://github.com/danny-avila/LibreChat/blob/main/.env.example#L219)/oauth/github/callback" (example: http://localhost:3080/oauth/github/callback)
-5. Save changes and generate a Client Secret
-6. Put the Client ID and Client Secret in the .env file
-7. Save the .env file
+5. Remove the Active checkbox in the Webhook section
+6. Save changes and generate a Client Secret
+7. In the Permissions & events tab select, open the Account Permissions and set Email addresses to Read-only
+8. Put the Client ID and Client Secret in the .env file
+9. Save the .env file
 
 ---
 ## **Email and Password Reset** 
