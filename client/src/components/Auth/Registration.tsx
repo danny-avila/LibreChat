@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { useRegisterUserMutation, TRegisterUser, useGetStartupConfig } from '~/data-provider';
+import {
+  useRegisterUserMutation,
+  TRegisterUser,
+  useGetStartupConfig
+} from '@librechat/data-provider';
 
 function Registration() {
   const navigate = useNavigate();

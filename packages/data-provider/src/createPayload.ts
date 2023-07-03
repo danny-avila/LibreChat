@@ -1,9 +1,9 @@
-import type { TSubmission } from './types';
+import type { TConversation, TSubmission, EModelEndpoint } from './types';
 
 export default function createPayload(submission: TSubmission) {
   const { conversation, message, endpointOption } = submission;
-  const { conversationId } = conversation;
-  const { endpoint } = endpointOption;
+  const { conversationId } = conversation as TConversation;
+  const { endpoint } = endpointOption as { endpoint: EModelEndpoint };
 
   const endpointUrlMap = {
     azureOpenAI: '/api/ask/azureOpenAI',

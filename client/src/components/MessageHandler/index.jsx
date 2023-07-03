@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
-import { SSE } from '~/data-provider/sse.mjs';
-import createPayload from '~/data-provider/createPayload';
+import { SSE, createPayload } from '@librechat/data-provider';
+// import createPayload from '@librechat/data-provider';
 import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
 
@@ -224,7 +224,8 @@ export default function MessageHandler() {
 
     events.onopen = () => console.log('connection is opened');
 
-    events.oncancel = () => abortConversation(message?.conversationId || submission?.conversationId);
+    events.oncancel = () =>
+      abortConversation(message?.conversationId || submission?.conversationId);
 
     events.onerror = function (e) {
       console.log('error in opening conn.');

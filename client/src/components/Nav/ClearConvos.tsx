@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogTemplate } from '../ui/';
 import { ClearChatsButton } from './SettingsTabs/';
-import { useClearConversationsMutation } from '~/data-provider';
+import { useClearConversationsMutation } from '@librechat/data-provider';
 import store from '~/store';
 
 const ClearConvos = ({ open, onOpenChange }) => {
@@ -32,7 +32,9 @@ const ClearConvos = ({ open, onOpenChange }) => {
       <DialogTemplate
         title="Clear conversations"
         description="Are you sure you want to clear all conversations? This is irreversible."
-        leftButtons={<ClearChatsButton showText={false} confirmClear={confirmClear} onClick={clearConvos} />}
+        leftButtons={
+          <ClearChatsButton showText={false} confirmClear={confirmClear} onClick={clearConvos} />
+        }
       />
     </Dialog>
   );

@@ -2,9 +2,9 @@ import { useEffect } from 'react';
 import LoginForm from './LoginForm';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { useGetStartupConfig } from '~/data-provider';
+import { useGetStartupConfig } from '@librechat/data-provider';
 
-function Login() {
+function Login({ loginRedirect }: { loginRedirect: string }) {
   const { login, error, isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
 

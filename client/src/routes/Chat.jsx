@@ -11,7 +11,7 @@ import {
   useGetMessagesByConvoId,
   useGetConversationByIdMutation,
   useGetStartupConfig
-} from '~/data-provider';
+} from '@librechat/data-provider';
 
 export default function Chat() {
   const [shouldNavigate, setShouldNavigate] = useState(true);

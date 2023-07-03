@@ -9,7 +9,7 @@ import { Trash2 } from 'lucide-react';
 import FileUpload from './FileUpload';
 import getIcon from '~/utils/getIcon';
 import getDefaultConversation from '~/utils/getDefaultConversation';
-import { useDeletePresetMutation, useCreatePresetMutation } from '~/data-provider';
+import { useDeletePresetMutation, useCreatePresetMutation } from '@librechat/data-provider';
 import {
   Button,
   DropdownMenu,
@@ -19,7 +19,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   DialogTemplate,
-  Dialog, DialogTrigger
+  Dialog,
+  DialogTrigger
 } from '../../ui/';
 import { cn } from '~/utils/';
 
@@ -87,8 +88,9 @@ export default function NewConversationMenu() {
   // set the current model
   const onSelectEndpoint = (newEndpoint) => {
     setMenuOpen(false);
-    if (!newEndpoint) { return; }
-    else {
+    if (!newEndpoint) {
+      return;
+    } else {
       newConversation({}, { endpoint: newEndpoint });
     }
   };
@@ -101,7 +103,7 @@ export default function NewConversationMenu() {
       const currentConvo = getDefaultConversation({
         conversation,
         endpointsConfig,
-        preset: newPreset,
+        preset: newPreset
       });
 
       setConversation(currentConvo);
@@ -153,7 +155,7 @@ export default function NewConversationMenu() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
-          className="w-96 dark:bg-gray-900 z-[100]"
+          className="z-[100] w-96 dark:bg-gray-900"
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
           <DropdownMenuLabel
@@ -166,11 +168,15 @@ export default function NewConversationMenu() {
           <DropdownMenuRadioGroup
             value={endpoint}
             onValueChange={onSelectEndpoint}
-            className="overflow-y-auto gap-1 flex flex-col"
+            className="flex flex-col gap-1 overflow-y-auto"
           >
             {showEndpoints &&
               (availableEndpoints.length ? (
-                <EndpointItems selectedEndpoint={endpoint} endpoints={availableEndpoints} onSelect={onSelectEndpoint} />
+                <EndpointItems
+                  selectedEndpoint={endpoint}
+                  endpoints={availableEndpoints}
+                  onSelect={onSelectEndpoint}
+                />
               ) : (
                 <DropdownMenuLabel className="dark:text-gray-300">
                   No endpoint available.
@@ -217,7 +223,10 @@ export default function NewConversationMenu() {
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
             onValueChange={onSelectPreset}
-            className={cn('overflow-y-auto overflow-x-hidden', showEndpoints ? 'max-h-[210px]' : 'max-h-[315px]')}
+            className={cn(
+              'overflow-y-auto overflow-x-hidden',
+              showEndpoints ? 'max-h-[210px]' : 'max-h-[315px]'
+            )}
           >
             {showPresets &&
               (presets.length ? (

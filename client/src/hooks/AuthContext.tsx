@@ -16,7 +16,7 @@ import {
   useGetUserQuery,
   useRefreshTokenMutation,
   TLoginUser
-} from '~/data-provider';
+} from '@librechat/data-provider';
 import { useNavigate } from 'react-router-dom';
 
 export type TAuthContext = {
@@ -35,10 +35,20 @@ export type TUserContext = {
   redirect?: string;
 };
 
+export type TAuthConfig = {
+  loginRedirect: string;
+};
+//@ts-ignore - index expression is not of type number
 window['errorTimeout'] = undefined;
 const AuthContext = createContext<TAuthContext | undefined>(undefined);
 
-const AuthContextProvider = ({ children }: { children: ReactNode }) => {
+const AuthContextProvider = ({
+  authConfig,
+  children
+}: {
+  authConfig: TAuthConfig;
+  children: ReactNode;
+}) => {
   const [user, setUser] = useState<TUser | undefined>(undefined);
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -60,7 +70,7 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
         setError(error);
       }, 400);
     }
-  }
+  };
 
   const setUserContext = useCallback(
     (userContext: TUserContext) => {
@@ -79,7 +89,7 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
     [navigate]
   );
 
-  const getCookieValue = (key) => {
+  const getCookieValue = (key: string) => {
     let keyValue = document.cookie.match('(^|;) ?' + key + '=([^;]*)(;|$)');
     return keyValue ? keyValue[2] : null;
   };
@@ -157,7 +167,7 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   //       setError(error.message);
   //     }
   //   });
-  //   
+  //
   // }, [setUserContext]);
 
   // useEffect(() => {

@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useRequestPasswordResetMutation, TRequestPasswordReset, TRequestPasswordResetResponse } from '~/data-provider';
+import {
+  useRequestPasswordResetMutation,
+  TRequestPasswordReset,
+  TRequestPasswordResetResponse
+} from '@librechat/data-provider';
 
 function RequestPasswordReset() {
   const {

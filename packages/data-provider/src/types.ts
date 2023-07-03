@@ -20,9 +20,10 @@ export enum EModelEndpoint {
   azureOpenAI = 'azureOpenAI',
   openAI = 'openAI',
   bingAI = 'bingAI',
+  chatGPT = 'chatGPT',
   chatGPTBrowser = 'chatGPTBrowser',
   google = 'google',
-  gptPlugins = 'gptPlugins',
+  gptPlugins = 'gptPlugins'
 }
 
 export type TSubmission = {
@@ -49,17 +50,7 @@ export type TSubmission = {
   top_p?: number;
   presence_penalty?: number;
   frequence_penalty?: number;
-  conversation: TConversation;
-  message: TMessage;
-  endpointOption: TEndpointOption;
 };
-
-export type TEndpointOption = {
-  endpoint: EModelEndpoint;
-  model?: string;
-  promptPrefix?: string;
-  temperature?: number;
-}
 
 export type TPluginAuthConfig = {
   authField: string;
@@ -248,6 +239,7 @@ export type TStartupConfig = {
   appTitle: boolean;
   googleLoginEnabled: boolean;
   openidLoginEnabled: boolean;
+  githubLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
   serverDomain: string;
