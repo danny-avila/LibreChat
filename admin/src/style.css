@@ -132,6 +132,10 @@
   transition: all 1s ease-in-out;
 } */
 
+body {
+  height: 100%;
+}
+
 select {
   --tw-shadow: 0 0 transparent;
   -webkit-appearance: none;
