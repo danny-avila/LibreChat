@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import { TLoginUser } from '~/data-provider';
+import { TLoginUser } from '@librechat/data-provider';
 
 type TLoginFormProps = {
   onSubmit: (data: TLoginUser) => void;
