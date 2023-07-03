@@ -1,21 +1,6 @@
-// const { Configuration, OpenAIApi } = require('openai');
+
 const _ = require('lodash');
-const { genAzureChatCompletion } = require('../utils/genAzureEndpoints');
-
-// const proxyEnvToAxiosProxy = (proxyString) => {
-//   if (!proxyString) return null;
-
-//   const regex = /^([^:]+):\/\/(?:([^:@]*):?([^:@]*)@)?([^:]+)(?::(\d+))?/;
-//   const [, protocol, username, password, host, port] = proxyString.match(regex);
-//   const proxyConfig = {
-//     protocol,
-//     host,
-//     port: port ? parseInt(port) : undefined,
-//     auth: username && password ? { username, password } : undefined
-//   };
-
-//   return proxyConfig;
-// };
+const { genAzureChatCompletion, getAzureCredentials } = require('../utils/');
 
 const titleConvo = async ({ text, response, oaiApiKey }) => {
   let title = 'New Chat';
@@ -34,7 +19,7 @@ const titleConvo = async ({ text, response, oaiApiKey }) => {
     ||>Title:`
     };
 
-    const azure = process.env.AZURE_OPENAI_API_KEY ? true : false;
+    const azure = process.env.AZURE_API_KEY ? true : false;
     const options = {
       azure,
       reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
@@ -53,12 +38,8 @@ const titleConvo = async ({ text, response, oaiApiKey }) => {
     let apiKey = oaiApiKey || process.env.OPENAI_API_KEY;
 
     if (azure) {
-      apiKey = process.env.AZURE_OPENAI_API_KEY;
-      titleGenClientOptions.reverseProxyUrl = genAzureChatCompletion({
-        azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME,
-        azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME,
-        azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION
-      });
+      apiKey = process.env.AZURE_API_KEY;
+      titleGenClientOptions.reverseProxyUrl = genAzureChatCompletion(getAzureCredentials());
     }
 
     const titleGenClient = new ChatGPTClient(apiKey, titleGenClientOptions);
