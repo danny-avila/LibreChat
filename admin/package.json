@@ -42,7 +42,8 @@
     "react-string-replace": "^1.1.0",
     "tailwind-merge": "^1.9.1",
     "tailwindcss-animate": "^1.0.5",
-    "@heroicons/react": "^2.0.18"
+    "@heroicons/react": "^2.0.18",
+    "@librechat/data-provider": "*"
   },
   "devDependencies": {
     "@babel/cli": "^7.20.7",
