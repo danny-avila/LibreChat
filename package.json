@@ -17,6 +17,7 @@
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
     "e2e:ci": "playwright test --config=e2e/playwright.config.ts",
     "e2e:debug": "cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
+    "e2e:codegen": "npx playwright codegen --load-storage=e2e/storageState.json http://localhost:3080/chat/new",
     "test:client": "cd client && npm run test",
     "test:api": "cd api && npm run test",
     "e2e:update": "playwright test --config=e2e/playwright.config.js --update-snapshots",
