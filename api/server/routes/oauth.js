@@ -87,10 +87,11 @@ router.get(
   }
 );
 
+
 router.get(
   '/github',
   passport.authenticate('github', {
-    scope: ['user:email'],
+    scope: ['user:email', 'read:user'],
     session: false
   })
 );
@@ -101,7 +102,7 @@ router.get(
     failureRedirect: `${domains.client}/login`,
     failureMessage: true,
     session: false,
-    scope: ['user:email']
+    scope: ['user:email', 'read:user']
   }),
   (req, res) => {
     const token = req.user.generateToken();

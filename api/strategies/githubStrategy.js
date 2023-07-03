@@ -11,31 +11,35 @@ const githubLogin = new GitHubStrategy(
     clientID: process.env.GITHUB_CLIENT_ID,
     clientSecret: process.env.GITHUB_CLIENT_SECRET,
     callbackURL: `${domains.server}${process.env.GITHUB_CALLBACK_URL}`,
-    proxy: true
+    proxy: false,
+    scope: ['user:email'] // Request email scope
   },
   async (accessToken, refreshToken, profile, cb) => {
     try {
-      const oldUser = await User.findOne({ email: user.emails[0].value });
+      let email;
+      if (profile.emails && profile.emails.length > 0) {
+        email = profile.emails[0].value;
+      }
+
+      const oldUser = await User.findOne({ email });
       if (oldUser) {
         return cb(null, oldUser);
       }
-    } catch (err) {
-      console.log(err);
-    }
 
-    try {
       const newUser = await new User({
         provider: 'github',
         githubId: profile.id,
         username: profile.username,
-        email: user.emails[0].value,
+        email,
         emailVerified: profile.emails[0].verified,
         name: profile.displayName,
-        avatar: profile.photos[0].value
+        avatar: profile.photos[0].value        
       }).save();
+
       cb(null, newUser);
     } catch (err) {
-      console.log(err);
+      console.error(err);
+      cb(err);
     }
   }
 );
