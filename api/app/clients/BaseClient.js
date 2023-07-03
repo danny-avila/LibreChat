@@ -38,7 +38,7 @@ class BaseClient {
     throw new Error('Subclasses must implement getBuildMessagesOptions');
   }
 
-  async generateTextStream(text, onProgress, options ={}) {
+  async generateTextStream(text, onProgress, options = {}) {
     const stream = new TextStream(text, options);
     await stream.processTextStream(onProgress);
   }
@@ -76,7 +76,6 @@ class BaseClient {
       text,
       isCreatedByUser: true
     };
-    this.currentMessages.push(userMessage);
     return userMessage;
   }
 
@@ -370,6 +369,10 @@ class BaseClient {
       saveOptions,
       userMessage,
     } = await this.handleStartMethods(message, opts);
+
+    // It's not necessary to push to currentMessages
+    // depending on subclass implementation of handling messages
+    this.currentMessages.push(userMessage);
 
     let { prompt: payload, tokenCountMap, promptTokens } = await this.buildMessages(
       this.currentMessages,

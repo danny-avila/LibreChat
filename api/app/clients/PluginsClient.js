@@ -20,12 +20,6 @@ class PluginsClient extends OpenAIClient {
     this.openAIApiKey = apiKey;
     this.setOptions(options);
     this.executor = null;
-    this.contextStrategy = options.contextStrategy ? options.contextStrategy.toLowerCase() : 'discard';
-    this.currentDateString = new Date().toLocaleDateString('en-us', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
   }
 
   getActions(input = null) {
@@ -236,7 +230,7 @@ Only respond with your conversational reply to the following User Message:
     };
 
     // Map Messages to Langchain format
-    const pastMessages = this.currentMessages.slice(0,-1).map(
+    const pastMessages = this.currentMessages.map(
       msg => msg?.isCreatedByUser || msg?.role?.toLowerCase() === 'user'
         ? new HumanChatMessage(msg.text)
         : new AIChatMessage(msg.text));
@@ -429,7 +423,7 @@ Only respond with your conversational reply to the following User Message:
     }
 
     payload = await this.buildCompletionPrompt({
-      messages: this.currentMessages.slice(0, -1),
+      messages: this.currentMessages,
       promptPrefix,
     });
 
