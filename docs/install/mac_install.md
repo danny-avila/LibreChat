@@ -1,7 +1,7 @@
 # Mac Install
 ## **Recommended : [Docker Install](docker_install.md)**
 
-##
+---
 
 ## **Manual Installation**
 
@@ -76,7 +76,7 @@ Visit http://localhost:3080 (default port) & enjoy
 
   - Create a script to automate the starting process by creating a new file named start_chatgpt.sh in the LibreChat directory and pasting the following code:
 
-```
+``` bash title="LibreChat.sh"
 #!/bin/bash
 # Replace "your_master_key_goes_here" with your MeiliSearch Master Key
 if [ -x "$(command -v ./meilisearch)" ]; then
@@ -102,10 +102,6 @@ npm run backend
 - Run npm ci from root directory `npm ci`
 - Build the client by running `npm run frontend`
 
-##
-
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/new?category=troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
-
 ---
 
-## [Go Back to ReadMe](../../README.md)
+### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

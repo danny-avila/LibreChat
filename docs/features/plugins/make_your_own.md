@@ -207,12 +207,12 @@ Here are a few customConstructors, which have varying initializations
       {
         "authField": "GOOGLE_CSE_ID",
         "label": "Google CSE ID",
-        "description": "This is your Google Custom Search Engine ID. For instructions on how to obtain this, see <a href='https://github.com/danny-avila/chatgpt-clone/blob/main/guides/GOOGLE_SEARCH.md'>Our Docs</a>."
+        "description": "This is your Google Custom Search Engine ID. For instructions on how to obtain this, see <a href='https://github.com/danny-avila/LibreChat/blob/main/docs/features/plugins/google_search.md'>Our Docs</a>."
       },
       {
         "authField": "GOOGLE_API_KEY",
         "label": "Google API Key",
-        "description": "This is your Google Custom Search API Key. For instructions on how to obtain this, see <a href='https://github.com/danny-avila/chatgpt-clone/blob/main/guides/GOOGLE_SEARCH.md'>Our Docs</a>."
+        "description": "This is your Google Custom Search API Key. For instructions on how to obtain this, see <a href='https://github.com/danny-avila/LibreChat/blob/main/docs/features/plugins/google_search.md'>Our Docs</a>."
       }
     ]
   },
@@ -284,6 +284,3 @@ module.exports = WolframAlphaAPI;
 
 In this example, the `WolframAlphaAPI` class has helper methods like `fetchRawText`, `getAppId`, and `createWolframAlphaURL` to handle specific tasks. The `_call` method makes an HTTP request to the Wolfram Alpha API and returns the response.
 
----
-
-## [Go Back to ReadMe](../../../README.md)

@@ -187,8 +187,8 @@ function Registration() {
                     message: 'Password must be at least 8 characters'
                   },
                   maxLength: {
-                    value: 40,
-                    message: 'Password must be less than 40 characters'
+                    value: 128,
+                    message: 'Password must be 128 characters or less'
                   }
                 })}
                 aria-invalid={!!errors.password}
@@ -217,11 +217,11 @@ function Registration() {
                 id="confirm_password"
                 data-testid="confirm_password"
                 aria-label="Confirm password"
-                // uncomment to prevent pasting in confirm field
-                onPaste={(e) => {
-                  e.preventDefault();
-                  return false;
-                }}
+                // uncomment to block pasting in confirm field
+                // onPaste={(e) => {
+                //   e.preventDefault();
+                //   return false;
+                // }}
                 {...register('confirm_password', {
                   validate: (value) => value === password || 'Passwords do not match'
                 })}
@@ -308,6 +308,34 @@ function Registration() {
                   ></path>
                 </svg>
                 <p>Login with Google</p>
+              </a>
+            </div>
+          </>
+        )}
+        {startupConfig?.openidLoginEnabled && (
+          <>
+            <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
+              <div className="absolute bg-white px-3 text-xs">Or</div>
+            </div>
+            <div className="mt-4 flex gap-x-2">
+              <a
+                aria-label="Login with OpenID"
+                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
+                href={`${startupConfig.serverDomain}/oauth/openid`}
+              >
+                {startupConfig.openidImageUrl ? (
+                  <img src={startupConfig.openidImageUrl} alt="OpenID Logo" className="h-5 w-5" />
+                ) : (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 448 512"
+                    id="openid"
+                    className="h-5 w-5"
+                  >
+                    <path d="M271.5 432l-68 32C88.5 453.7 0 392.5 0 318.2c0-71.5 82.5-131 191.7-144.3v43c-71.5 12.5-124 53-124 101.3 0 51 58.5 93.3 135.7 103v-340l68-33.2v384zM448 291l-131.3-28.5 36.8-20.7c-19.5-11.5-43.5-20-70-24.8v-43c46.2 5.5 87.7 19.5 120.3 39.3l35-19.8L448 291z"></path>
+                  </svg>
+                )}
+                <p>{startupConfig.openidLabel}</p>
               </a>
             </div>
           </>

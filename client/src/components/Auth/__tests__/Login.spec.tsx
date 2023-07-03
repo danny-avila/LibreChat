@@ -23,6 +23,9 @@ const setup = ({
     isError: false,
     data: {
       googleLoginEnabled: true,
+      openidLoginEnabled: true,
+      openidLabel: 'Test OpenID',
+      openidImageUrl: 'http://test-server.com',
       registrationEnabled: true,
       serverDomain: 'mock-server'
     }

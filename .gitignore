@@ -48,10 +48,9 @@ bower_components/
 
 # Environment
 .npmrc
-.env
-!.env.example
-!.env.test.example
 .env*
+!**/.env.example
+!**/.env.test.example
 cache.json
 api/data/
 owner.yml
@@ -66,7 +65,7 @@ src/style - official.css
 .idea
 *.pem
 config.local.ts
-storageState.json
+**/storageState.json
 junit.xml
 
 # meilisearch

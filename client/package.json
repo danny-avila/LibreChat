@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "0.5.0",
+  "version": "0.5.2",
   "description": "",
   "scripts": {
     "build": "cross-env NODE_ENV=production dotenv -e ../.env -- vite build",
