@@ -1,0 +1,106 @@
+[
+  {
+    "name": "Google",
+    "pluginKey": "google",
+    "description": "Use Google Search to find information about the weather, news, sports, and more.",
+    "icon": "https://i.imgur.com/SMmVkNB.png",
+    "authConfig": [
+      {
+        "authField": "GOOGLE_CSE_ID",
+        "label": "Google CSE ID",
+        "description": "This is your Google Custom Search Engine ID. For instructions on how to obtain this, see <a href='https://github.com/danny-avila/LibreChat/blob/main/docs/features/plugins/google_search.md'>Our Docs</a>."
+      },
+      {
+        "authField": "GOOGLE_API_KEY",
+        "label": "Google API Key",
+        "description": "This is your Google Custom Search API Key. For instructions on how to obtain this, see <a href='https://github.com/danny-avila/LibreChat/blob/main/docs/features/plugins/google_search.md'>Our Docs</a>."
+      }
+    ]
+  },
+  {
+    "name": "Wolfram",
+    "pluginKey": "wolfram",
+    "description": "Access computation, math, curated knowledge & real-time data through Wolfram|Alpha and Wolfram Language.",
+    "icon": "https://www.wolframcdn.com/images/icons/Wolfram.png",
+    "authConfig": [
+      {
+        "authField": "WOLFRAM_APP_ID",
+        "label": "Wolfram App ID",
+        "description": "An AppID must be supplied in all calls to the Wolfram|Alpha API. You can get one by registering at <a href='http://products.wolframalpha.com/api/'>Wolfram|Alpha</a> and going to the <a href='https://developer.wolframalpha.com/portal/myapps/'>Developer Portal</a>."
+      }
+    ]
+  },
+  {
+    "name": "Browser",
+    "pluginKey": "browser",
+    "description": "Scrape and summarize webpage data",
+    "icon": "/assets/web-browser.png",
+    "authConfig": [
+      {
+        "authField": "OPENAI_API_KEY",
+        "label": "OpenAI API Key",
+        "description": "Browser makes use of OpenAI embeddings"
+      }
+    ]
+  },
+  {
+    "name": "Serpapi",
+    "pluginKey": "serpapi",
+    "description": "SerpApi is a real-time API to access search engine results.",
+    "icon": "https://i.imgur.com/5yQHUz4.png",
+    "authConfig": [
+      {
+        "authField": "SERPAPI_API_KEY",
+        "label": "Serpapi Private API Key",
+        "description": "Private Key for Serpapi. Register at <a href='https://serpapi.com/'>Serpapi</a> to obtain a private key."
+      }
+    ]
+  },
+  {
+    "name": "DALL-E",
+    "pluginKey": "dall-e",
+    "description": "Create realistic images and art from a description in natural language",
+    "icon": "https://i.imgur.com/u2TzXzH.png",
+    "authConfig": [
+      {
+        "authField": "DALLE_API_KEY",
+        "label": "OpenAI API Key",
+        "description": "You can use DALL-E with your API Key from OpenAI."
+      }
+    ]
+  },
+  {
+    "name": "Calculator",
+    "pluginKey": "calculator",
+    "description": "Perform simple and complex mathematical calculations.",
+    "icon": "https://i.imgur.com/RHsSG5h.png",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
+    "name": "Stable Diffusion",
+    "pluginKey": "stable-diffusion",
+    "description": "Generate photo-realistic images given any text input.",
+    "icon": "https://i.imgur.com/Yr466dp.png",
+    "authConfig": [
+      {
+        "authField": "SD_WEBUI_URL",
+        "label": "Your Stable Diffusion WebUI API URL",
+        "description": "You need to provide the URL of your Stable Diffusion WebUI API. For instructions on how to obtain this, see <a href='url'>Our Docs</a>."
+      }
+    ]
+  },
+  {
+    "name": "Zapier",
+    "pluginKey": "zapier",
+    "description": "Interact with over 5,000+ apps like Google Sheets, Gmail, HubSpot, Salesforce, and thousands more.",
+    "icon": "https://cdn.zappy.app/8f853364f9b383d65b44e184e04689ed.png",
+    "authConfig": [
+      {
+        "authField": "ZAPIER_NLA_API_KEY",
+        "label": "Zapier API Key",
+        "description": "You can use Zapier with your API Key from Zapier."
+      }
+    ]
+  }
+]

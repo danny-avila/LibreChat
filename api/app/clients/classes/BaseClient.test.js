@@ -227,6 +227,7 @@ describe('BaseClient', () => {
       ],
       promptTokens: expect.any(Number),
       tokenCountMap: {},
+      messages: expect.any(Array),
     };
 
     const result = await TestClient.handleContextStrategy({

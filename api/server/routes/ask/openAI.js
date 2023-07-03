@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { titleConvo, OpenAIClient } = require('../../../app');
-const { genAzureChatCompletion, getAzureCredentials, abortMessage } = require('../../../utils');
+const { getAzureCredentials, abortMessage } = require('../../../utils');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const {
   handleError,
@@ -140,9 +140,9 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
 
     let oaiApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
 
-    if (process.env.AZURE_OPENAI_API_KEY && endpoint === 'azureOpenAI') {
+    if (process.env.AZURE_API_KEY && endpoint === 'azureOpenAI') {
       clientOptions.azure = getAzureCredentials();
-      clientOptions.reverseProxyUrl = process.env.AZURE_REVERSE_PROXY ?? genAzureChatCompletion({ ...clientOptions.azure });
+      // clientOptions.reverseProxyUrl = process.env.AZURE_REVERSE_PROXY ?? genAzureChatCompletion({ ...clientOptions.azure });
       oaiApiKey = clientOptions.azure.azureOpenAIApiKey;
     }
 

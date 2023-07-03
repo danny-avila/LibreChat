@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const TextStream = require('./stream');
 const { RecursiveCharacterTextSplitter } = require('langchain/text_splitter');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { loadSummarizationChain } = require('langchain/chains');
@@ -35,6 +36,92 @@ class BaseClient {
 
   getBuildMessagesOptions() {
     throw new Error('Subclasses must implement getBuildMessagesOptions');
+  }
+
+  async generateTextStream(text, onProgress, options ={}) {
+    const stream = new TextStream(text, options);
+    await stream.processTextStream(onProgress);
+  }
+
+  async setMessageOptions(opts = {}) {
+    if (opts && typeof opts === 'object') {
+      this.setOptions(opts);
+    }
+    const user = opts.user || null;
+    const conversationId = opts.conversationId || crypto.randomUUID();
+    const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
+    const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
+    const responseMessageId = crypto.randomUUID();
+    const saveOptions = this.getSaveOptions();
+    this.abortController = opts.abortController || new AbortController();
+    this.currentMessages = await this.loadHistory(conversationId, parentMessageId) ?? [];
+
+    return {
+      ...opts,
+      user,
+      conversationId,
+      parentMessageId,
+      userMessageId,
+      responseMessageId,
+      saveOptions,
+    };
+  }
+
+  createUserMessage({ messageId, parentMessageId, conversationId, text}) {
+    const userMessage = {
+      messageId,
+      parentMessageId,
+      conversationId,
+      sender: 'User',
+      text,
+      isCreatedByUser: true
+    };
+    this.currentMessages.push(userMessage);
+    return userMessage;
+  }
+
+  async handleStartMethods(message, opts) {
+    const {
+      user,
+      conversationId,
+      parentMessageId,
+      userMessageId,
+      responseMessageId,
+      saveOptions,
+    } = await this.setMessageOptions(opts);
+
+    const userMessage = this.createUserMessage({
+      messageId: userMessageId,
+      parentMessageId,
+      conversationId,
+      text: message,
+    });
+
+    if (typeof opts?.getIds === 'function') {
+      opts.getIds({
+        userMessage,
+        conversationId,
+        responseMessageId
+      });
+    }
+
+    if (typeof opts?.onStart === 'function') {
+      opts.onStart(userMessage);
+    }
+
+    if (this.options.debug) {
+      console.debug('options');
+      console.debug(this.options);
+    }
+
+    return {
+      ...opts,
+      user,
+      conversationId,
+      responseMessageId,
+      saveOptions,
+      userMessage,
+    };
   }
 
   addInstructions(messages, instructions) {
@@ -271,56 +358,19 @@ class BaseClient {
       console.debug('Prompt Tokens', promptTokens, remainingContextTokens, this.maxContextTokens);
     }
 
-    return { payload, tokenCountMap, promptTokens };
+    return { payload, tokenCountMap, promptTokens, messages: orderedWithInstructions };
   }
 
   async sendMessage(message, opts = {}) {
-    if (opts && typeof opts === 'object') {
-      this.setOptions(opts);
-    }
-    console.log('sendMessage', message, opts);
-
-    const user = opts.user || null;
-    const conversationId = opts.conversationId || crypto.randomUUID();
-    const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
-    const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
-    const responseMessageId = crypto.randomUUID();
-    const saveOptions = this.getSaveOptions();
-
-    this.abortController = opts.abortController || new AbortController();
-    this.currentMessages = await this.loadHistory(conversationId, parentMessageId) ?? [];
-
-    const userMessage = {
-      messageId: userMessageId,
-      parentMessageId,
+    console.log('BaseClient: sendMessage', message, opts);
+    const {
+      user,
       conversationId,
-      sender: 'User',
-      text: message,
-      isCreatedByUser: true
-    };
+      responseMessageId,
+      saveOptions,
+      userMessage,
+    } = await this.handleStartMethods(message, opts);
 
-    if (this.options.debug) {
-      console.debug('currentMessages', this.currentMessages);
-    }
-
-    if (typeof opts?.getIds === 'function') {
-      opts.getIds({
-        userMessage,
-        conversationId,
-        responseMessageId
-      });
-    }
-
-    if (typeof opts?.onStart === 'function') {
-      opts.onStart(userMessage);
-    }
-
-    if (this.options.debug) {
-      console.debug('options');
-      console.debug(this.options);
-    }
-
-    this.currentMessages.push(userMessage);
     let { prompt: payload, tokenCountMap, promptTokens } = await this.buildMessages(
       this.currentMessages,
       userMessage.messageId,
@@ -370,7 +420,7 @@ class BaseClient {
     return await getConvo(user, conversationId);
   }
 
-  async loadHistory(conversationId, parentMessageId = null, mapMethod = null) {
+  async loadHistory(conversationId, parentMessageId = null) {
     if (this.options.debug) {
       console.debug('Loading history for conversation', conversationId, parentMessageId);
     }
@@ -379,6 +429,11 @@ class BaseClient {
 
     if (messages.length === 0) {
       return [];
+    }
+
+    let mapMethod = null;
+    if (this.getMessageMapMethod) {
+      mapMethod = this.getMessageMapMethod();
     }
 
     return this.constructor.getMessagesForConversation(messages, parentMessageId, mapMethod);

@@ -19,7 +19,7 @@ const titleConvo = async ({ text, response, oaiApiKey }) => {
     ||>Title:`
     };
 
-    const azure = process.env.AZURE_OPENAI_API_KEY ? true : false;
+    const azure = process.env.AZURE_API_KEY ? true : false;
     const options = {
       azure,
       reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
@@ -38,7 +38,7 @@ const titleConvo = async ({ text, response, oaiApiKey }) => {
     let apiKey = oaiApiKey || process.env.OPENAI_API_KEY;
 
     if (azure) {
-      apiKey = process.env.AZURE_OPENAI_API_KEY;
+      apiKey = process.env.AZURE_API_KEY;
       titleGenClientOptions.reverseProxyUrl = genAzureChatCompletion(getAzureCredentials());
     }
 

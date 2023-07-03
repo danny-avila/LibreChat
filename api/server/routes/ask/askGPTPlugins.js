@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { titleConvo } = require('../../../app/');
-const { getAzureCredentials } = require('../../../utils/');
-const ChatAgent = require('../../../app/langchain/ChatAgent');
+const { titleConvo, PluginsClient } = require('../../../app/');
+// const { getAzureCredentials } = require('../../../utils/');
+// const ChatAgent = require('../../../app/langchain/ChatAgent');
 const { validateTools } = require('../../../app/langchain/tools/util');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const {
@@ -47,7 +47,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
     // presence_penalty: 0,
     // frequency_penalty: 0
   };
-  
+
   const tools = req.body?.tools.map((tool) => tool.pluginKey) ?? [];
   // build endpoint option
   const endpointOption = {
@@ -73,6 +73,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
   // eslint-disable-next-line no-use-before-define
   return await ask({
     text,
+    endpoint,
     endpointOption,
     conversationId,
     parentMessageId,
@@ -81,7 +82,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
   });
 });
 
-const ask = async ({ text, endpointOption, parentMessageId = null, conversationId, req, res }) => {
+const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, conversationId, req, res }) => {
   res.writeHead(200, {
     Connection: 'keep-alive',
     'Content-Type': 'text/event-stream',
@@ -175,17 +176,18 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     endpointOption.tools = await validateTools(user, endpointOption.tools);
     const clientOptions = {
       debug: true,
+      endpoint,
       reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
       proxy: process.env.PROXY || null,
       ...endpointOption
     };
 
-    if (process.env.AZURE_OPENAI_API_KEY) {
-      clientOptions.azure = getAzureCredentials();
-    }
+    // if (process.env.AZURE_API_KEY) {
+    //   clientOptions.azure = getAzureCredentials();
+    // }
 
     const oaiApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
-    const chatAgent = new ChatAgent(oaiApiKey, clientOptions);
+    const chatAgent = new PluginsClient(oaiApiKey, clientOptions);
 
     const onAgentAction = (action) => {
       const formattedAction = formatAction(action);
@@ -228,8 +230,8 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       response.parentMessageId = overrideParentMessageId;
     }
 
-    // console.log('CLIENT RESPONSE');
-    // console.dir(response, { depth: null });
+    console.log('CLIENT RESPONSE');
+    console.dir(response, { depth: null });
     response.plugin = { ...plugin, loading: false };
     await saveMessage(response);
 

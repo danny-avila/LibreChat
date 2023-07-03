@@ -169,7 +169,7 @@ class ChatGPTClient extends BaseClient {
       }),
     };
 
-    if (this.apiKey && this.options.azure && this.options.reverseProxyUrl) {
+    if (this.apiKey && this.options.azure) {
       opts.headers['api-key'] = this.apiKey;
     } else if (this.apiKey) {
       opts.headers.Authorization = `Bearer ${this.apiKey}`;

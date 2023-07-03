@@ -144,7 +144,6 @@ Only respond with your conversational reply to the following User Message:
       this.options = options;
     }
 
-    
     const modelOptions = this.options.modelOptions || {};
     this.modelOptions = {
       ...modelOptions,
@@ -177,7 +176,7 @@ Only respond with your conversational reply to the following User Message:
       'gpt-3.5-turbo-0301': 4095,
       'gpt-3.5-turbo-16k': 15999,
     };
-  
+
     this.maxContextTokens = maxTokensMap[this.modelOptions.model] ?? 4095; // 1 less than maximum
     // Reserve 1024 tokens for the response.
     // The max prompt tokens is determined by the max context tokens minus the max response tokens.
@@ -409,7 +408,7 @@ Only respond with your conversational reply to the following User Message:
       'gpt-4-32k': 'gpt-4-32k-0613',
       'gpt-3.5-turbo': 'gpt-3.5-turbo-0613'
     };
-  
+
     const prefix = Object.keys(prefixMap).find(key => input.startsWith(key));
     return prefix ? prefixMap[prefix] : 'gpt-3.5-turbo-0613';
   }
@@ -419,7 +418,7 @@ Only respond with your conversational reply to the following User Message:
     if (this.azure) {
       credentials = { ...this.azure };
     }
-  
+
     return new ChatOpenAI({ credentials, ...modelOptions }, configOptions);
   }
 
@@ -857,7 +856,7 @@ Only respond with your conversational reply to the following User Message:
     if (this.functionsAgent && !this.isGpt3 && !completionMode) {
       result[1].content = `${result[1].content}\nSure thing! Here is the output you requested:\n`;
     }
-    
+
     if (isChatGptModel) {
       return result.filter((message) => message.content.length > 0);
     }

@@ -61,11 +61,11 @@ module.exports = {
         update,
         { new: true }
       );
-  
+
       if (!updatedMessage) {
         throw new Error('Message not found.');
       }
-  
+
       return {
         messageId: updatedMessage.messageId,
         conversationId: updatedMessage.conversationId,
@@ -79,7 +79,7 @@ module.exports = {
       console.error(`Error updating message: ${err}`);
       throw new Error('Failed to update message.');
     }
-  },  
+  },
   async deleteMessagesSince({ messageId, conversationId }) {
     try {
       const message = await Message.findOne({ messageId }).exec();

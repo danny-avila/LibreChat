@@ -1,7 +1,7 @@
 const BaseClient = require('./BaseClient');
 const ChatGPTClient = require('./ChatGPTClient');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('@dqbd/tiktoken');
-const { maxTokensMap } = require('../../../utils');
+const { maxTokensMap, genAzureChatCompletion } = require('../../../utils');
 
 const tokenizersCache = {};
 
@@ -14,6 +14,10 @@ class OpenAIClient extends BaseClient {
     this.sender = options.sender ?? 'ChatGPT';
     this.contextStrategy = options.contextStrategy ? options.contextStrategy.toLowerCase() : 'discard';
     this.shouldRefineContext = this.contextStrategy === 'refine';
+    this.azure = options.azure || false;
+    if (this.azure) {
+      this.azureEndpoint = genAzureChatCompletion(this.azure);
+    }
     this.setOptions(options);
   }
 
@@ -86,6 +90,14 @@ class OpenAIClient extends BaseClient {
       this.completionsUrl = 'https://api.openai.com/v1/chat/completions';
     } else {
       this.completionsUrl = 'https://api.openai.com/v1/completions';
+    }
+
+    if (this.azureEndpoint) {
+      this.completionsUrl = this.azureEndpoint;
+    }
+
+    if (this.azureEndpoint && this.options.debug) {
+      console.debug(`Using Azure endpoint: ${this.azureEndpoint}`, this.azure);
     }
 
     return this;
@@ -232,12 +244,13 @@ class OpenAIClient extends BaseClient {
 
     // TODO: need to handle interleaving instructions better
     if (this.contextStrategy) {
-      ({ payload, tokenCountMap, promptTokens } = await this.handleContextStrategy({instructions, orderedMessages, formattedMessages}));
+      ({ payload, tokenCountMap, promptTokens, messages } = await this.handleContextStrategy({instructions, orderedMessages, formattedMessages}));
     }
 
     const result = {
       prompt: payload,
       promptTokens,
+      messages,
     };
 
     if (tokenCountMap) {
