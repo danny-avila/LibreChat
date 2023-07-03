@@ -73,3 +73,5 @@ junit.xml
 meilisearch
 data.ms/*
 auth.json
+
+/packages/ux-shared/

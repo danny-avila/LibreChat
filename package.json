@@ -67,7 +67,9 @@
     "ignore": [
       "api/data/",
       "data",
-      "client/"
+      "client/",
+      "admin/",
+      "packages/"
     ]
   }
 }
