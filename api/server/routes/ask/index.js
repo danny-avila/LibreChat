@@ -1,17 +1,18 @@
 const express = require('express');
 const router = express.Router();
 // const askAzureOpenAI = require('./askAzureOpenAI';)
-const askOpenAI = require('./askOpenAI');
-const askGoogle = require('./askGoogle');
+// const askOpenAI = require('./askOpenAI');
+const openAI = require('./openAI');
+const google = require('./google');
 const askBingAI = require('./askBingAI');
+const gptPlugins = require('./gptPlugins');
 const askChatGPTBrowser = require('./askChatGPTBrowser');
-const askGPTPlugins = require('./askGPTPlugins');
 
 // router.use('/azureOpenAI', askAzureOpenAI);
-router.use('/openAI', askOpenAI);
-router.use('/google', askGoogle);
+router.use(['/azureOpenAI', '/openAI'], openAI);
+router.use('/google', google);
 router.use('/bingAI', askBingAI);
 router.use('/chatGPTBrowser', askChatGPTBrowser);
-router.use('/gptPlugins', askGPTPlugins);
+router.use('/gptPlugins', gptPlugins);
 
 module.exports = router;

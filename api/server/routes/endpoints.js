@@ -1,10 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { availableTools } = require('../../app/langchain/tools');
+const { availableTools } = require('../../app/clients/tools');
 
-const getOpenAIModels = () => {
+const getOpenAIModels = (opts = { azure: false }) => {
   let models = ['gpt-4', 'gpt-4-0613', 'gpt-3.5-turbo', 'gpt-3.5-turbo-16k', 'gpt-3.5-turbo-0613', 'gpt-3.5-turbo-0301', 'text-davinci-003' ];
-  if (process.env.OPENAI_MODELS) models = String(process.env.OPENAI_MODELS).split(',');
+  const key = opts.azure ? 'AZURE_OPENAI_MODELS' : 'OPENAI_MODELS';
+  if (process.env[key]) models = String(process.env[key]).split(',');
 
   return models;
 };
@@ -47,12 +48,15 @@ router.get('/', async function (req, res) {
     key || palmUser
       ? { userProvide: palmUser, availableModels: ['chat-bison', 'text-bison', 'codechat-bison'] }
       : false;
-  const azureOpenAI = !!process.env.AZURE_OPENAI_API_KEY;
-  const apiKey = process.env.OPENAI_API_KEY || process.env.AZURE_OPENAI_API_KEY;
-  const openAI = apiKey
-    ? { availableModels: getOpenAIModels(), userProvide: apiKey === 'user_provided' }
+  const openAIApiKey = process.env.OPENAI_API_KEY;
+  const azureOpenAIApiKey = process.env.AZURE_API_KEY;
+  const openAI = openAIApiKey
+    ? { availableModels: getOpenAIModels(), userProvide: openAIApiKey === 'user_provided' }
     : false;
-  const gptPlugins = apiKey
+  const azureOpenAI = azureOpenAIApiKey
+    ? { availableModels: getOpenAIModels({ azure: true}), userProvide: azureOpenAIApiKey === 'user_provided' }
+    : false;
+  const gptPlugins = openAIApiKey || azureOpenAIApiKey
     ? { availableModels: getPluginModels(), availableTools, availableAgents: ['classic', 'functions'] }
     : false;
   const bingAI = process.env.BINGAI_TOKEN

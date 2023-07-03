@@ -44,7 +44,6 @@ export default function ModelItem({ endpoint, value, isSelected }) {
       >
         {icon}
         {alternateName[endpoint] || endpoint}
-        {!!['azureOpenAI', 'openAI'].find((e) => e === endpoint) && <sup>$</sup>}
         {endpoint === 'gptPlugins' && (
           <span className="py-0.25 ml-1 rounded bg-blue-200 px-1 text-[10px] font-semibold text-[#4559A4]">
             Beta

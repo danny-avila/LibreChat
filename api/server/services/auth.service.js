@@ -1,10 +1,9 @@
 const User = require('../../models/User');
 const Token = require('../../models/schema/tokenSchema');
-const sendEmail = require('../../utils/sendEmail');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { registerSchema } = require('../../strategies/validators');
-const migrateDataToFirstUser = require('../../utils/migrateDataToFirstUser');
+const { migrateDataToFirstUser, sendEmail } = require('../../utils');
 const config = require('../../../config/loader');
 const domains = config.domains;
 
@@ -63,7 +62,7 @@ const registerUser = async (user) => {
         { name: 'Request params:', value: user },
         { name: 'Existing user:', value: existingUser }
       );
-      
+
       // Sleep for 1 second
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
@@ -100,7 +99,7 @@ const registerUser = async (user) => {
     return { status: 500, message: err?.message || 'Something went wrong' };
   }
 };
- 
+
 /**
  * Request password reset
  *
