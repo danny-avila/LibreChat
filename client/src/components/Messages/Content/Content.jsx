@@ -74,7 +74,7 @@ const Content = React.memo(({ content, message }) => {
 
   return (
     <ReactMarkdown
-      remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+      remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
       rehypePlugins={rehypePlugins}
       linkTarget="_new"
       components={{
