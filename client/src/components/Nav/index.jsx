@@ -1,18 +1,19 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import { useState, useEffect, useRef, useContext, useCallback } from 'react';
-import NewChat from './NewChat';
-import Panel from '../svg/Panel';
-import Spinner from '../svg/Spinner';
-import Pages from '../Conversations/Pages';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useGetConversationsQuery, useSearchQuery } from '~/data-provider';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
+
 import Conversations from '../Conversations';
 import NavLinks from './NavLinks';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { useGetConversationsQuery, useSearchQuery } from '~/data-provider';
-import useDebounce from '~/hooks/useDebounce';
+import NewChat from './NewChat';
+import Pages from '../Conversations/Pages';
+import Panel from '../svg/Panel';
+import Spinner from '../svg/Spinner';
+// import { ThemeContext } from '~/hooks/ThemeContext';
+import { cn } from '~/utils/';
 import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
-import { ThemeContext } from '~/hooks/ThemeContext';
-import { cn } from '~/utils/';
+import useDebounce from '~/hooks/useDebounce';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
 // const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -37,7 +38,7 @@ import { cn } from '~/utils/';
 export default function Nav({ navVisible, setNavVisible }) {
   const [isHovering, setIsHovering] = useState(false);
   const { isAuthenticated } = useAuthContext();
-  const { theme, } = useContext(ThemeContext);
+  // const { theme, } = useContext(ThemeContext);
   const containerRef = useRef(null);
   const scrollPositionRef = useRef(null);
 
@@ -165,8 +166,6 @@ export default function Nav({ navVisible, setNavVisible }) {
   useEffect(() => {
     if (isMobile()) {
       setNavVisible(false);
-    } else {
-      setNavVisible(true);
     }
   }, [conversationId, setNavVisible]);
 
@@ -181,10 +180,19 @@ export default function Nav({ navVisible, setNavVisible }) {
         <div className="flex h-full min-h-0 flex-col ">
           <div className="scrollbar-trigger relative flex h-full w-full flex-1 items-start border-white/20">
             <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
-              <NewChat />
+              <div className='flex flex-row'>
+                <NewChat />
+                <button
+                  type='button'
+                  className={cn('nav-close-button inline-flex h-11 w-11 border border-white/20 items-center justify-center rounded-md text-white hover:bg-gray-500/10')}
+                  onClick={toggleNavVisible}
+                >
+                  <span className='sr-only'>Close sidebar</span>
+                  <Panel open={false} />
+                </button>
+              </div>
               <div
-                className={`flex-1 flex-col overflow-y-auto ${
-                  isHovering ? '' : 'scrollbar-transparent'
+                className={`flex-1 flex-col overflow-y-auto ${isHovering ? '' : 'scrollbar-transparent'
                 } border-b border-white/20`}
                 onMouseEnter={() => setIsHovering(true)}
                 onMouseLeave={() => setIsHovering(false)}
@@ -212,23 +220,17 @@ export default function Nav({ navVisible, setNavVisible }) {
             </nav>
           </div>
         </div>
-        <button
-          type="button"
-          className={cn('nav-close-button -ml-0.5 -mt-2.5 inline-flex h-10 w-10 items-center justify-center rounded-md focus:outline-none focus:ring-white md:-ml-1 md:-mt-2.5', theme === 'dark' ? 'text-gray-500 hover:text-gray-400' : 'text-gray-400 hover:text-gray-500')}
-          onClick={toggleNavVisible}
-        >
-          <span className="sr-only">Close sidebar</span>
-          <Panel/>
-        </button>
       </div>
       {!navVisible && (
         <button
           type="button"
-          className="nav-open-button fixed left-2 top-0.5 z-10 inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-white dark:text-gray-500 dark:hover:text-gray-400"
+          className="nav-open-button mt-1 fixed left-2 top-0.5 z-10 inline-flex h-10 w-10 items-center justify-center rounded-md border text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-white dark:text-gray-500 dark:hover:text-gray-400"
           onClick={toggleNavVisible}
         >
-          <span className="sr-only">Open sidebar</span>
-          <Panel open={true}/>
+          <div className="flex items-center justify-center">
+            <span className="sr-only">Open sidebar</span>
+            <Panel open={true} />
+          </div>
         </button>
       )}
 
