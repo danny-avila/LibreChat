@@ -1,18 +1,19 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import { useState, useEffect, useRef, useContext, useCallback } from 'react';
-import NewChat from './NewChat';
-import Panel from '../svg/Panel';
-import Spinner from '../svg/Spinner';
-import Pages from '../Conversations/Pages';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useGetConversationsQuery, useSearchQuery } from '~/data-provider';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
+
 import Conversations from '../Conversations';
 import NavLinks from './NavLinks';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { useGetConversationsQuery, useSearchQuery } from '~/data-provider';
-import useDebounce from '~/hooks/useDebounce';
-import store from '~/store';
-import { useAuthContext } from '~/hooks/AuthContext';
+import NewChat from './NewChat';
+import Pages from '../Conversations/Pages';
+import Panel from '../svg/Panel';
+import Spinner from '../svg/Spinner';
 import { ThemeContext } from '~/hooks/ThemeContext';
 import { cn } from '~/utils/';
+import store from '~/store';
+import { useAuthContext } from '~/hooks/AuthContext';
+import useDebounce from '~/hooks/useDebounce';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
 // const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -165,8 +166,6 @@ export default function Nav({ navVisible, setNavVisible }) {
   useEffect(() => {
     if (isMobile()) {
       setNavVisible(false);
-    } else {
-      setNavVisible(true);
     }
   }, [conversationId, setNavVisible]);
 
@@ -183,8 +182,7 @@ export default function Nav({ navVisible, setNavVisible }) {
             <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
               <NewChat />
               <div
-                className={`flex-1 flex-col overflow-y-auto ${
-                  isHovering ? '' : 'scrollbar-transparent'
+                className={`flex-1 flex-col overflow-y-auto ${isHovering ? '' : 'scrollbar-transparent'
                 } border-b border-white/20`}
                 onMouseEnter={() => setIsHovering(true)}
                 onMouseLeave={() => setIsHovering(false)}
@@ -218,7 +216,7 @@ export default function Nav({ navVisible, setNavVisible }) {
           onClick={toggleNavVisible}
         >
           <span className="sr-only">Close sidebar</span>
-          <Panel/>
+          <Panel />
         </button>
       </div>
       {!navVisible && (
@@ -228,7 +226,7 @@ export default function Nav({ navVisible, setNavVisible }) {
           onClick={toggleNavVisible}
         >
           <span className="sr-only">Open sidebar</span>
-          <Panel open={true}/>
+          <Panel open={true} />
         </button>
       )}
 
