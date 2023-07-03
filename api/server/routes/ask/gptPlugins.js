@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { titleConvo, validateTools, PluginsClient } = require('../../../app/');
-// const { getAzureCredentials } = require('../../../utils/');
+const { titleConvo, validateTools, PluginsClient } = require('../../../app');
+const { abortMessage } = require('../../../utils');
 // const ChatAgent = require('../../../app/langchain/ChatAgent');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const {
@@ -16,20 +16,7 @@ const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 const abortControllers = new Map();
 
 router.post('/abort', requireJwtAuth, async (req, res) => {
-  const { abortKey } = req.body;
-  console.log(`req.body`, req.body);
-  if (!abortControllers.has(abortKey)) {
-    return res.status(404).send('Request not found');
-  }
-
-  const { abortController } = abortControllers.get(abortKey);
-
-  abortControllers.delete(abortKey);
-  const ret = await abortController.abortAsk();
-  console.log('Aborted request', abortKey);
-  console.log('Aborted message:', ret);
-
-  res.send(JSON.stringify(ret));
+  return await abortMessage(req, res, abortControllers);
 });
 
 router.post('/', requireJwtAuth, async (req, res) => {
