@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { DropdownMenuRadioItem } from '../../ui/DropdownMenu.tsx';
 import { Settings } from 'lucide-react';
 import getIcon from '~/utils/getIcon';
@@ -13,6 +13,7 @@ const alternateName = {
   azureOpenAI: 'Azure OpenAI',
   bingAI: 'Bing',
   chatGPTBrowser: 'ChatGPT',
+  gptPlugins: 'Plugins',
   google: 'PaLM'
 };
 
@@ -24,7 +25,8 @@ export default function ModelItem({ endpoint, value, isSelected }) {
     size: 20,
     endpoint,
     error: false,
-    className: 'mr-2'
+    className: 'mr-2',
+    message: false
   });
 
   const isUserProvided = endpointsConfig?.[endpoint]?.userProvide;
@@ -43,6 +45,11 @@ export default function ModelItem({ endpoint, value, isSelected }) {
         {icon}
         {alternateName[endpoint] || endpoint}
         {!!['azureOpenAI', 'openAI'].find((e) => e === endpoint) && <sup>$</sup>}
+        {endpoint === 'gptPlugins' && (
+          <span className="py-0.25 ml-1 rounded bg-blue-200 px-1 text-[10px] font-semibold text-[#4559A4]">
+            Beta
+          </span>
+        )}
         <div className="flex w-4 flex-1" />
         {isUserProvided ? (
           <button

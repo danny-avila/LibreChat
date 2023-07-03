@@ -1,3 +1,5 @@
 **/node_modules
-api/.env
 client/dist/images
+data-node
+.env
+**/.env

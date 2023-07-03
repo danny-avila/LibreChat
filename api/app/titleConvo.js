@@ -1,23 +1,23 @@
-const { Configuration, OpenAIApi } = require('openai');
+// const { Configuration, OpenAIApi } = require('openai');
 const _ = require('lodash');
-const { genAzureEndpoint } = require('../utils/genAzureEndpoints');
+const { genAzureChatCompletion } = require('../utils/genAzureEndpoints');
 
-const proxyEnvToAxiosProxy = (proxyString) => {
-  if (!proxyString) return null;
+// const proxyEnvToAxiosProxy = (proxyString) => {
+//   if (!proxyString) return null;
 
-  const regex = /^([^:]+):\/\/(?:([^:@]*):?([^:@]*)@)?([^:]+)(?::(\d+))?/;
-  const [, protocol, username, password, host, port] = proxyString.match(regex);
-  const proxyConfig = {
-    protocol,
-    host,
-    port: port ? parseInt(port) : undefined,
-    auth: username && password ? { username, password } : undefined
-  };
+//   const regex = /^([^:]+):\/\/(?:([^:@]*):?([^:@]*)@)?([^:]+)(?::(\d+))?/;
+//   const [, protocol, username, password, host, port] = proxyString.match(regex);
+//   const proxyConfig = {
+//     protocol,
+//     host,
+//     port: port ? parseInt(port) : undefined,
+//     auth: username && password ? { username, password } : undefined
+//   };
 
-  return proxyConfig;
-};
+//   return proxyConfig;
+// };
 
-const titleConvo = async ({ endpoint, text, response, oaiApiKey }) => {
+const titleConvo = async ({ text, response, oaiApiKey }) => {
   let title = 'New Chat';
   const ChatGPTClient = (await import('@waylaidwanderer/chatgpt-api')).default;
 
@@ -50,11 +50,11 @@ const titleConvo = async ({ endpoint, text, response, oaiApiKey }) => {
       frequency_penalty: 0
     };
 
-    let apiKey = oaiApiKey || process.env.OPENAI_KEY;
+    let apiKey = oaiApiKey || process.env.OPENAI_API_KEY;
 
     if (azure) {
       apiKey = process.env.AZURE_OPENAI_API_KEY;
-      titleGenClientOptions.reverseProxyUrl = genAzureEndpoint({
+      titleGenClientOptions.reverseProxyUrl = genAzureChatCompletion({
         azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME,
         azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME,
         azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION

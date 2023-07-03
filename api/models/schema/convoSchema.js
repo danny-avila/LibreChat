@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const mongoMeili = require('../plugins/mongoMeili');
-const conversationPreset = require('./conversationPreset');
+const { conversationPreset } = require('./defaults');
 const convoSchema = mongoose.Schema(
   {
     conversationId: {
@@ -22,6 +22,10 @@ const convoSchema = mongoose.Schema(
     messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
     // google only
     examples: [{ type: mongoose.Schema.Types.Mixed }],
+    agentOptions: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
     ...conversationPreset,
     // for bingAI only
     bingConversationId: {

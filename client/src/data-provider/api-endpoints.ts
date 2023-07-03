@@ -1,5 +1,9 @@
 export const user = () => {
-  return `/api/auth/user`;
+  return `/api/user`;
+};
+
+export const userPlugins = () => {
+  return `/api/user/plugins`;
 };
 
 export const messages = (id: string) => {
@@ -81,3 +85,11 @@ export const requestPasswordReset = () => {
 export const resetPassword = () => {
   return '/api/auth/resetPassword';
 };
+
+export const plugins = () => {
+  return '/api/plugins';
+};
+
+export const config = () => {
+  return '/api/config';
+}

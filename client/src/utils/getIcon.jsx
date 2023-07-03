@@ -1,10 +1,8 @@
-import GPTIcon from '../components/svg/GPTIcon';
-import BingIcon from '../components/svg/BingIcon';
+import { Plugin, GPTIcon, BingIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 const getIcon = (props) => {
-  // { size = 30, isCreatedByUser, model, chatGptLabel, error, ...props }
-  const { size = 30, isCreatedByUser, button, model } = props;
+  const { size = 30, isCreatedByUser, button, model, message = true } = props;
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const { user } = useAuthContext();
 
@@ -37,7 +35,7 @@ const getIcon = (props) => {
       icon = <GPTIcon size={size * 0.7} />;
       bg = 'linear-gradient(0.375turn, #61bde2, #4389d0)';
       name = chatGptLabel || 'ChatGPT';
-    } else if (endpoint === 'openAI') {
+    } else if (endpoint === 'openAI' || (endpoint === 'gptPlugins' && message)) {
       const { chatGptLabel } = props;
       icon = <GPTIcon size={size * 0.7} />;
       bg =
@@ -47,6 +45,10 @@ const getIcon = (props) => {
             ? `rgba(16, 163, 127, ${button ? 0.75 : 1})`
             : `rgba(16, 163, 127, ${button ? 0.75 : 1})`;
       name = chatGptLabel || 'ChatGPT';
+    } else if (endpoint === 'gptPlugins' && !message) {
+      icon = <Plugin size={size * 0.7} />;
+      bg = `rgba(69, 89, 164, ${button ? 0.75 : 1})`;
+      name = 'Plugins';
     } else if (endpoint === 'google') {
       const { modelLabel } = props;
       icon = <img src="/assets/palm.png" />;

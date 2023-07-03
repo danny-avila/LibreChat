@@ -22,7 +22,8 @@ export enum EModelEndpoint {
   bingAI = 'bingAI',
   chatGPT = 'chatGPT',
   chatGPTBrowser = 'chatGPTBrowser',
-  google = 'google'
+  google = 'google',
+  gptPlugins = 'gptPlugins'
 }
 
 export type TSubmission = {
@@ -51,6 +52,27 @@ export type TSubmission = {
   frequence_penalty?: number;
 };
 
+export type TPluginAuthConfig = {
+  authField: string;
+  label: string;
+  description: string;
+};
+
+export type TPlugin = {
+  name: string;
+  pluginKey: string;
+  description: string;
+  icon: string;
+  authConfig: TPluginAuthConfig[];
+  authenticated: boolean;
+};
+
+export type TUpdateUserPlugins = {
+  pluginKey: string;
+  action: string;
+  auth?: unknown;
+};
+
 export type TConversation = {
   conversationId: string;
   title: string;
@@ -58,6 +80,7 @@ export type TConversation = {
   endpoint: EModelEndpoint;
   suggestions?: string[];
   messages?: TMessage[];
+  tools?: TPlugin[];
   createdAt: string;
   updatedAt: string;
   // google only
@@ -117,6 +140,8 @@ export type TUser = {
   name: string;
   avatar: string;
   role: string;
+  provider: string;
+  plugins: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -186,6 +211,7 @@ export type TRegisterUser = {
   email: string;
   username: string;
   password: string;
+  confirm_password?: string;
 };
 
 export type TLoginUser = {
@@ -207,3 +233,13 @@ export type TResetPassword = {
   token: string;
   password: string;
 };
+
+export type TStartupConfig = {
+  appTitle: boolean;
+  googleLoginEnabled: boolean;
+  openidLoginEnabled: boolean;
+  openidLabel: string;
+  openidImageUrl: string;
+  serverDomain: string;
+  registrationEnabled: boolean;
+}

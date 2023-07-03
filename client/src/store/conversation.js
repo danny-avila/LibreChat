@@ -1,4 +1,5 @@
 import endpoints from './endpoints';
+import { useCallback } from 'react';
 import {
   atom,
   selector,
@@ -74,20 +75,7 @@ const useConversation = () => {
   const setMessages = useSetRecoilState(messages);
   const setSubmission = useSetRecoilState(submission.submission);
   const resetLatestMessage = useResetRecoilState(latestMessage);
-
-  const switchToConversation = useRecoilCallback(
-    ({ snapshot }) =>
-      async (_conversation, messages = null, preset = null) => {
-        const prevConversation = await snapshot.getPromise(conversation);
-        const endpointsConfig = await snapshot.getPromise(endpoints.endpointsConfig);
-        _switchToConversation(_conversation, messages, preset, {
-          endpointsConfig,
-          prevConversation
-        });
-      },
-    []
-  );
-
+  
   const _switchToConversation = (
     conversation,
     messages = null,
@@ -111,7 +99,21 @@ const useConversation = () => {
     resetLatestMessage();
   };
 
-  const newConversation = (template = {}, preset) => {
+  const switchToConversation = useRecoilCallback(
+    ({ snapshot }) =>
+      async (_conversation, messages = null, preset = null) => {
+        const prevConversation = await snapshot.getPromise(conversation);
+        const endpointsConfig = await snapshot.getPromise(endpoints.endpointsConfig);
+        _switchToConversation(_conversation, messages, preset, {
+          endpointsConfig,
+          prevConversation
+        });
+      },
+    []
+  );
+
+
+  const newConversation = useCallback((template = {}, preset) => {
     switchToConversation(
       {
         conversationId: 'new',
@@ -121,7 +123,7 @@ const useConversation = () => {
       [],
       preset
     );
-  };
+  }, [switchToConversation]);
 
   const searchPlaceholderConversation = () => {
     switchToConversation(
@@ -133,7 +135,7 @@ const useConversation = () => {
     );
   };
 
-  return { newConversation, switchToConversation, searchPlaceholderConversation };
+  return { _switchToConversation, newConversation, switchToConversation, searchPlaceholderConversation };
 };
 
 export default {

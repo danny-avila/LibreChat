@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const addToCache = require('./addToCache');
-const { getOpenAIModels } = require('../endpoints');
+// const { getOpenAIModels } = require('../endpoints');
 const { titleConvo, askClient } = require('../../../app/');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
@@ -63,9 +63,9 @@ router.post('/', requireJwtAuth, async (req, res) => {
     frequency_penalty: req.body?.frequency_penalty ?? 0
   };
 
-  const availableModels = getOpenAIModels();
-  if (availableModels.find((model) => model === endpointOption.model) === undefined)
-    return handleError(res, { text: 'Illegal request: model' });
+  // const availableModels = getOpenAIModels();
+  // if (availableModels.find((model) => model === endpointOption.model) === undefined)
+  //   return handleError(res, { text: 'Illegal request: model' });
 
   console.log('ask log', {
     userMessage,

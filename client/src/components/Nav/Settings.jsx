@@ -1,34 +1,18 @@
-import { Dialog } from '../ui/Dialog.tsx';
 import * as Tabs from '@radix-ui/react-tabs';
-import { DialogContent, DialogHeader, DialogTitle } from '../ui/Dialog.tsx';
-import { useEffect, useState, useContext } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/Dialog.tsx';
+import { General } from './SettingsTabs/';
+import { CogIcon } from '~/components/svg';
+import { useEffect, useState } from 'react';
 import { cn } from '~/utils/';
 import { useClearConversationsMutation } from '~/data-provider';
-import { ThemeContext } from '~/hooks/ThemeContext';
 import store from '~/store';
-import { CheckIcon } from 'lucide-react';
 
 export default function Settings({ open, onOpenChange }) {
-  const { theme, setTheme } = useContext(ThemeContext);
   const { newConversation } = store.useConversation();
   const { refreshConversations } = store.useConversations();
   const clearConvosMutation = useClearConversationsMutation();
-  const [isMobile, setIsMobile] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
-
-  const clearConvos = () => {
-    if (confirmClear) {
-      console.log('Clearing conversations...');
-      clearConvosMutation.mutate();
-      setConfirmClear(false);
-    } else {
-      setConfirmClear(true);
-    }
-  };
-
-  const changeTheme = (e) => {
-    setTheme(e.target.value);
-  };
+  const [isMobile, setIsMobile] = useState(false);
 
   // check if mobile dynamically and update
   useEffect(() => {
@@ -46,10 +30,10 @@ export default function Settings({ open, onOpenChange }) {
 
   useEffect(() => {
     if (clearConvosMutation.isSuccess) {
-      newConversation();
       refreshConversations();
+      newConversation();
     }
-  }, [clearConvosMutation.isSuccess]);
+  }, [clearConvosMutation.isSuccess, newConversation, refreshConversations]);
 
   useEffect(() => {
     // If the user clicks in the dialog when confirmClear is true, set it to false
@@ -71,7 +55,9 @@ export default function Settings({ open, onOpenChange }) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={cn('shadow-2xl dark:bg-gray-900 dark:text-white')}>
         <DialogHeader>
-          <DialogTitle className="text-gray-800 dark:text-white">Settings</DialogTitle>
+          <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
+            Settings
+          </DialogTitle>
         </DialogHeader>
         <div className="px-6">
           <Tabs.Root
@@ -97,71 +83,11 @@ export default function Settings({ open, onOpenChange }) {
                 )}
                 value="general"
               >
-                <svg
-                  stroke="currentColor"
-                  fill="currentColor"
-                  strokeWidth="0"
-                  viewBox="0 0 20 20"
-                  className="group-radix-state-active:fill-white h-4 h-5 w-4 w-5 fill-white dark:fill-gray-500"
-                  height="1em"
-                  width="1em"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
-                    clipRule="evenodd"
-                  />
-                </svg>
+                <CogIcon />
                 General
               </Tabs.Trigger>
             </Tabs.List>
-
-            <Tabs.Content value="general" role="tabpanel" className="w-full md:min-h-[300px]">
-              <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-300">
-                <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-                  <div className="flex items-center justify-between">
-                    <div>Theme</div>
-                    <select
-                      className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20 dark:bg-gray-900"
-                      onChange={changeTheme}
-                      value={theme}
-                    >
-                      <option value="system">System</option>
-                      <option value="dark">Dark</option>
-                      <option value="light">Light</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-                  <div className="flex items-center justify-between">
-                    <div>Clear all chats</div>
-                    <button
-                      className="btn relative bg-red-600  text-white hover:bg-red-800"
-                      type="button"
-                      id="clearConvosBtn"
-                      onClick={clearConvos}
-                    >
-                      {confirmClear ? (
-                        <div
-                          className="flex w-full items-center justify-center gap-2"
-                          id="clearConvosTxt"
-                        >
-                          <CheckIcon className="h-5 w-5" /> Confirm Clear
-                        </div>
-                      ) : (
-                        <div
-                          className="flex w-full items-center justify-center gap-2"
-                          id="clearConvosTxt"
-                        >
-                          Clear
-                        </div>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </Tabs.Content>
+            <General />
           </Tabs.Root>
         </div>
       </DialogContent>

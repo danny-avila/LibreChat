@@ -179,6 +179,26 @@ select {
   opacity: 1;
 }
 
+.pluginOptions {
+  pointer-events: none;
+  opacity: 0;
+  transition: all 0.5s ease-in-out;
+}
+
+.pluginOptions.full-opacity {
+  pointer-events: fill;
+  opacity: 1;
+}
+
+.pluginOptions.show {
+  pointer-events: fill;
+  opacity: 0.3;
+}
+
+.hidden {
+  display: none;
+}
+
 .endpointOptionsPopover-container {
   pointer-events: none;
   opacity: 0;

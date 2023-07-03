@@ -2,23 +2,23 @@ const express = require('express');
 const {
   resetPasswordRequestController,
   resetPasswordController,
-  getUserController,
-  loginController,
-  logoutController,
-  refreshController,
+  // refreshController,
   registrationController
-} = require('../controllers/auth.controller');
+} = require('../controllers/AuthController');
+const { loginController } = require('../controllers/auth/LoginController');
+const { logoutController } = require('../controllers/auth/LogoutController');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 const requireLocalAuth = require('../../middleware/requireLocalAuth');
 
 const router = express.Router();
 
 //Local
-router.get('/user', requireJwtAuth, getUserController);
 router.post('/logout', requireJwtAuth, logoutController);
 router.post('/login', requireLocalAuth, loginController);
-router.post('/refresh', requireJwtAuth, refreshController);
-router.post('/register', registrationController);
+// router.post('/refresh', requireJwtAuth, refreshController);
+if (process.env.ALLOW_REGISTRATION) {
+  router.post('/register', registrationController);
+}
 router.post('/requestPasswordReset', resetPasswordRequestController);
 router.post('/resetPassword', resetPasswordController);
 

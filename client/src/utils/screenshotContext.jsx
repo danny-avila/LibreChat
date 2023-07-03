@@ -1,4 +1,4 @@
-import React, { createContext, useRef, useContext, useCallback } from 'react';
+import { createContext, useRef, useContext } from 'react';
 import html2canvas from 'html2canvas';
 
 const ScreenshotContext = createContext({});

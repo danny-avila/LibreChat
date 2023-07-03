@@ -1,83 +1,69 @@
-﻿
 <p align="center">
-  <a href="https://discord.gg/NGaa9RPCft">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://user-images.githubusercontent.com/110412045/228325485-9d3e618f-a980-44fe-89e9-d6d39164680e.png">
-      <img src="https://user-images.githubusercontent.com/110412045/228325485-9d3e618f-a980-44fe-89e9-d6d39164680e.png" height="128">
-    </picture>
-    <h1 align="center">ChatGPT Clone</h1>
+  <a href="https://docs.librechat.ai">
+    <img src="docs/assets/LibreChat.svg" height="256">
+  </a>
+  <a href="https://docs.librechat.ai">
+    <h1 align="center">LibreChat</h1>
   </a>
 </p>
 
 <p align="center">
-  <a aria-label="Join the community on Discord" href="https://discord.gg/NGaa9RPCft">
-    <img alt="" src="https://img.shields.io/badge/Join%20the%20community-blueviolet.svg?style=for-the-badge&logo=DISCORD&labelColor=000000&logoWidth=20">
+  <a href="https://discord.gg/NGaa9RPCft"> 
+    <img
+      src="https://img.shields.io/discord/1086345563026489514?label=&logo=discord&style=for-the-badge&logoWidth=20&logoColor=white&labelColor=000000&color=blueviolet">
+  </a>
+  <a href="https://www.youtube.com/@LibreChat"> 
+    <img
+      src="https://img.shields.io/badge/YOUTUBE-red.svg?style=for-the-badge&logo=youtube&logoColor=white&labelColor=000000&logoWidth=20">
+  </a>
+  <a href="https://docs.librechat.ai"> 
+    <img
+      src="https://img.shields.io/badge/DOCS-blue.svg?style=for-the-badge&logo=read-the-docs&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
   <a aria-label="Sponsors" href="#sponsors">
-    <img alt="" src="https://img.shields.io/badge/SPONSORS-brightgreen.svg?style=for-the-badge&labelColor=000000&logoWidth=20">
+    <img
+      src="https://img.shields.io/badge/SPONSORS-brightgreen.svg?style=for-the-badge&logo=github-sponsors&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
 </p>
 
-## All AI Conversations under One Roof. ##
-  Assistant AIs are the future and OpenAI revolutionized this movement with ChatGPT. While numerous UIs exist, this app commemorates the original styling of ChatGPT, with the ability to integrate any current/future AI models, while integrating and improving upon original client features, such as conversation/message search and prompt templates (currently WIP). Through this clone, you can avoid ChatGPT Plus in favor of free or pay-per-call APIs. I will soon deploy a demo of this app. Feel free to contribute, clone, or fork. Currently dockerized.
+## All-In-One AI Conversations with LibreChat ##
+LibreChat brings together the future of assistant AIs with the revolutionary technology of OpenAI's ChatGPT. Celebrating the original styling, LibreChat gives you the ability to integrate multiple AI models. It also integrates and enhances original client features such as conversation and message search, prompt templates and plugins.
+
+With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use free or pay-per-call APIs. We welcome contributions, cloning, and forking to enhance the capabilities of this advanced chatbot platform.
   
-  ![clone3](https://user-images.githubusercontent.com/110412045/230538752-9b99dc6e-cd02-483a-bff0-6c6e780fa7ae.gif)
+https://github.com/danny-avila/LibreChat/assets/110412045/c1eb0c0f-41f6-4335-b982-84b278b53d59
 
 # Features
-
 - Response streaming identical to ChatGPT through server-sent events
 - UI from original ChatGPT, including Dark mode
-- AI model selection (through 3 endpoints: OpenAI API, BingAI, and ChatGPT Browser)
-- Create, Save, & Share custom presets for OpenAI and BingAI endpoints - [More info on customization here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.3.0)
-- Edit and Resubmit messages just like the official site (with conversation branching)
-- Search all messages/conversations - [More info here](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.1.0)
-- Integrating plugins soon
-
-##
-# Sponsors
-
-  Sponsored by <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a>, & <a href="https://github.com/fuegovic"><b>@fuegovic</b></a>
-
-##
-
-## **Google's PaLM 2 is now supported as of [v0.4.3](https://github.com/danny-avila/chatgpt-clone/releases/tag/v0.4.3)**
-  
-  ![image](https://github.com/danny-avila/chatgpt-clone/assets/110412045/ec5e8ff3-6c3a-4f25-9687-d8558435d094)
- 
-<details>
-<summary><strong>How to Setup PaLM 2 (via Google Cloud Vertex AI API)</strong></summary>
-- Enable the Vertex AI API on Google Cloud:
-- - https://console.cloud.google.com/vertex-ai
-- Create a Service Account:
-- - https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts/create?walkthrough_id=iam--create-service-account#step_index=1
-- Make sure to click 'Create and Continue' to give at least the 'Vertex AI User' role.
-- Create a JSON key, rename as 'auth.json' and save it in /api/data/.
-
-**Alternatively**
-
-- In your ./api/.env file, set PALM_KEY as "user_provided" to allow the user to provide a Service Account key JSON from the UI.
-- They will follow the steps above except for renaming the file, simply importing the JSON when prompted.
-- The key is sent to the server but never saved except in your local storage
-
-**Note:**
-
-- Vertex AI does not (yet) support response streaming for text generations, so response may seem to take long when generating a lot of text.
-- Text streaming is simulated
-</details>
+- AI model selection (through 5 endpoints: OpenAI API, BingAI, ChatGPT Browser, PaLM2, Plugins)
+- Create, Save, & Share custom presets - [More info on prompt presets here](https://github.com/danny-avila/LibreChat/releases/tag/v0.3.0)
+- Edit and Resubmit messages with conversation branching
+- Search all messages/conversations - [More info here](https://github.com/danny-avila/LibreChat/releases/tag/v0.1.0)
+- Plugins now available (including web access, image generation and more)
 
 ---
 
-## [Read all Latest Updates here](CHANGELOG.md)
+## ⚠️ [Breaking Changes as of v0.5.0](docs/general_info/breaking_changes.md#v050) ⚠️
+**Please read this before updating from a previous version**
+
+---
+
+## Changelog 
+Keep up with the latest updates by visiting the releases page - [Releases](https://github.com/danny-avila/LibreChat/releases)
+
+---
 
 <h1>Table of Contents</h1>
 
 <details open>
   <summary><strong>Getting Started</strong></summary>
 
-  * [Docker Install](/docs/install/docker_install.md)
+  * [Docker Install](docs/install/docker_install.md)
   * [Linux Install](docs/install/linux_install.md)
   * [Mac Install](docs/install/mac_install.md)
   * [Windows Install](docs/install/windows_install.md)
+  * [APIs and Tokens](docs/install/apis_and_tokens.md)
 </details>
 
 <details>
@@ -86,23 +72,31 @@
   * [Code of Conduct](CODE_OF_CONDUCT.md)
   * [Project Origin](docs/general_info/project_origin.md)
   * [Multilingual Information](docs/general_info/multilingual_information.md)
-  * [Roadmap](docs/general_info/roadmap.md)
-  * [Tech Stack](docs/general_info/tech_stack.md)
-  * [Changelog](CHANGELOG.md)
-  * [Bing Jailbreak Info](docs/general_info/bing_jailbreak_info.md)
+  * [Tech Stack](docs/general_info/tech_stack.md)   
 </details>
 
 <details>
   <summary><strong>Features</strong></summary>
 
+  * **Plugins**
+    * [Introduction](docs/features/plugins/introduction.md)
+    * [Google](docs/features/plugins/google_search.md)
+    * [Stable Diffusion](docs/features/plugins/stable_diffusion.md)
+    * [Wolfram](docs/features/plugins/wolfram.md)
+    * [Make Your Own Plugin](docs/features/plugins/make_your_own.md)
+
   * [User Auth System](docs/features/user_auth_system.md)
   * [Proxy](docs/features/proxy.md)
+  * [Bing Jailbreak](docs/features/bing_jailbreak.md)
 </details>
 
 <details>
   <summary><strong>Cloud Deployment</strong></summary>
 
+  * [Hetzner](docs/deployment/hetzner_ubuntu.md)
   * [Heroku](docs/deployment/heroku.md)
+  * [Linode](docs/deployment/linode.md)
+  * [Cloudflare](docs/deployment/cloudflare.md)
 </details>
 
 <details>
@@ -113,19 +107,29 @@
   * [Code Standards and Conventions](docs/contributions/coding_conventions.md)
   * [Testing](docs/contributions/testing.md)
   * [Security](SECURITY.md)
-  * [Trello Board](https://trello.com/b/17z094kq/chatgpt-clone)
+  * [Trello Board](https://trello.com/b/17z094kq/LibreChate)
 </details>
 
 
-##
+---
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=danny-avila/chatgpt-clone&type=Date)](https://star-history.com/#danny-avila/chatgpt-clone&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date)](https://star-history.com/#danny-avila/LibreChat&Date)
+
+---
+
+## Sponsors
+
+  Sponsored by <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/SphaeroX"><b>@SphaeroX</b></a>, <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/fuegovic"><b>@fuegovic</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a> 
+  
+---
 
 ## Contributors
 Contributions and suggestions bug reports and fixes are welcome!
 Please read the documentation before you do!
+
+---
 
 For new features, components, or extensions, please open an issue and discuss before sending a PR. 
 
@@ -133,6 +137,6 @@ For new features, components, or extensions, please open an issue and discuss be
 
 This project exists in its current state thanks to all the people who contribute
 ---
-<a href="https://github.com/danny-avila/chatgpt-clone/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=danny-avila/chatgpt-clone" />
+<a href="https://github.com/danny-avila/LibreChat/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=danny-avila/LibreChat" />
 </a>

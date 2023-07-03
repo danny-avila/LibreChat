@@ -1,16 +1,20 @@
 const express = require('express');
+const session = require('express-session');
 const connectDb = require('../lib/db/connectDb');
 const migrateDb = require('../lib/db/migrateDb');
 const indexSync = require('../lib/db/indexSync');
 const path = require('path');
 const cors = require('cors');
 const routes = require('./routes');
-const errorController = require('./controllers/error.controller');
+const errorController = require('./controllers/ErrorController');
 const passport = require('passport');
-
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
 const projectPath = path.join(__dirname, '..', '..', 'client');
+
+// Init the config and validate it
+const config = require('../../config/loader');
+config.validate(); // Validate the config
 
 (async () => {
   await connectDb();
@@ -23,6 +27,8 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
   app.use(express.static(path.join(projectPath, 'dist')));
+  app.use(express.static(path.join(projectPath, 'public')));
+
   app.set('trust proxy', 1); // trust first proxy
   app.use(cors());
 
@@ -36,9 +42,20 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
     require('../strategies/facebookStrategy');
   }
+  if (process.env.OPENID_CLIENT_ID && process.env.OPENID_CLIENT_SECRET 
+    && process.env.OPENID_ISSUER && process.env.OPENID_SCOPE && process.env.OPENID_SESSION_SECRET) {
+    app.use(session({
+      secret: process.env.OPENID_SESSION_SECRET,
+      resave: false,
+      saveUninitialized: false
+    }));
+    app.use(passport.session());
+    require('../strategies/openidStrategy');
+  }
   app.use('/oauth', routes.oauth);
   // api endpoint
   app.use('/api/auth', routes.auth);
+  app.use('/api/user', routes.user);
   app.use('/api/search', routes.search);
   app.use('/api/ask', routes.ask);
   app.use('/api/messages', routes.messages);
@@ -47,6 +64,8 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
   app.use('/api/prompts', routes.prompts);
   app.use('/api/tokenizer', routes.tokenizer);
   app.use('/api/endpoints', routes.endpoints);
+  app.use('/api/plugins', routes.plugins);
+  app.use('/api/config', routes.config);
 
   // static files
   app.get('/*', function (req, res) {
@@ -66,7 +85,8 @@ const projectPath = path.join(__dirname, '..', '..', 'client');
 let messageCount = 0;
 process.on('uncaughtException', (err) => {
   if (!err.message.includes('fetch failed')) {
-    console.error('There was an uncaught error:', err.message);
+    console.error('There was an uncaught error:');
+    console.error(err);
   }
 
   if (err.message.includes('fetch failed')) {

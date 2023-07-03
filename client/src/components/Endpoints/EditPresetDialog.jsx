@@ -1,33 +1,39 @@
-import React, { useEffect, useState } from 'react';
+import axios from 'axios';
+import { useEffect, useState } from 'react';
+import Settings from './Settings';
 import Examples from './Google/Examples.jsx';
-import MessagesSquared from '~/components/svg/MessagesSquared.jsx';
+import exportFromJSON from 'export-from-json';
+import AgentSettings from './Plugins/AgentSettings.jsx';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import filenamify from 'filenamify';
-import axios from 'axios';
-import exportFromJSON from 'export-from-json';
-import DialogTemplate from '../ui/DialogTemplate';
-import { Dialog, DialogClose, DialogButton } from '../ui/Dialog.tsx';
-import { Input } from '../ui/Input.tsx';
-import { Label } from '../ui/Label.tsx';
-import { Button } from '../ui/Button.tsx';
-import Dropdown from '../ui/Dropdown';
+import {
+  MessagesSquared,
+  GPTIcon,
+  Input,
+  Label,
+  Button,
+  Dropdown,
+  Dialog,
+  DialogClose,
+  DialogButton,
+  DialogTemplate
+} from '~/components/';
 import { cn } from '~/utils/';
 import cleanupPreset from '~/utils/cleanupPreset';
-
-import Settings from './Settings';
 
 import store from '~/store';
 
 const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
-  //   const [title, setTitle] = useState('My Preset');
   const [preset, setPreset] = useState(_preset);
-  const [showExamples, setShowExamples] = useState(false);
   const setPresets = useSetRecoilState(store.presets);
+  const [showExamples, setShowExamples] = useState(false);
+  const [showAgentSettings, setShowAgentSettings] = useState(false);
 
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   const triggerExamples = () => setShowExamples((prev) => !prev);
+  const triggerAgentSettings = () => setShowAgentSettings((prev) => !prev);
 
   const setOption = (param) => (newValue) => {
     let update = {};
@@ -37,6 +43,22 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
         preset: {
           ...prevState,
           ...update
+        },
+        endpointsConfig
+      })
+    );
+  };
+
+  const setAgentOption = (param) => (newValue) => {
+    let editablePreset = JSON.stringify(_preset);
+    editablePreset = JSON.parse(editablePreset);
+    let { agentOptions } = editablePreset;
+    agentOptions[param] = newValue;
+    setPreset((prevState) =>
+      cleanupPreset({
+        preset: {
+          ...prevState,
+          agentOptions
         },
         endpointsConfig
       })
@@ -134,13 +156,21 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  const endpoint = preset?.endpoint;
+  const isGoogle = endpoint === 'google';
+  const isGptPlugins = endpoint === 'gptPlugins';
+  const shouldShowSettings =
+    (isGoogle && !showExamples) ||
+    (isGptPlugins && !showAgentSettings) ||
+    (!isGoogle && !isGptPlugins);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={`${title || 'Edit Preset'} - ${preset?.title}`}
-        className="max-w-full sm:max-w-4xl"
+        className="max-w-full sm:max-w-4xl h-[675px] "
         main={
-          <div className="flex w-full flex-col items-center gap-2">
+          <div className="flex w-full flex-col items-center gap-2 md:h-[475px]">
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
@@ -182,21 +212,42 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
                     {(showExamples ? 'Hide' : 'Show') + ' Examples'}
                   </Button>
                 )}
+                {preset?.endpoint === 'gptPlugins' && (
+                  <Button
+                    type="button"
+                    className="ml-1 flex h-auto w-full bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
+                    onClick={triggerAgentSettings}
+                  >
+                    <GPTIcon className="mr-1 mt-[2px] w-[14px]" size={14} />
+                    {`Show ${showAgentSettings ? 'Completion' : 'Agent'} Settings`}
+                  </Button>
+                )}
               </div>
             </div>
             <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
             <div className="w-full p-0">
-              {((preset?.endpoint === 'google' && !showExamples) ||
-                preset?.endpoint !== 'google') && (
-                <Settings preset={preset} setOption={setOption} />
-              )}
-              {preset?.endpoint === 'google' && showExamples && (
+              {shouldShowSettings && <Settings preset={preset} setOption={setOption} />}
+              {preset?.endpoint === 'google' && showExamples && !preset?.model?.startsWith('codechat-') && (
                 <Examples
                   examples={preset.examples}
                   setExample={setExample}
                   addExample={addExample}
                   removeExample={removeExample}
                   edit={true}
+                />
+              )}
+              {preset?.endpoint === 'gptPlugins' && showAgentSettings && (
+                <AgentSettings
+                  agent={preset.agentOptions.agent}
+                  skipCompletion={preset.agentOptions.skipCompletion}
+                  model={preset.agentOptions.model}
+                  endpoint={preset.agentOptions.endpoint}
+                  temperature={preset.agentOptions.temperature}
+                  topP={preset.agentOptions.top_p}
+                  freqP={preset.agentOptions.presence_penalty}
+                  presP={preset.agentOptions.frequency_penalty}
+                  setOption={setAgentOption}
+                  tools={preset.tools}
                 />
               )}
             </div>

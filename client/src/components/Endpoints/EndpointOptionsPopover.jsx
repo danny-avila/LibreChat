@@ -3,6 +3,7 @@ import { Button } from '../ui/Button.tsx';
 import CrossIcon from '../svg/CrossIcon';
 // import SaveIcon from '../svg/SaveIcon';
 import { Save } from 'lucide-react';
+import { cn } from '~/utils/';
 
 function EndpointOptionsPopover({
   content,
@@ -18,7 +19,7 @@ function EndpointOptionsPopover({
     <>
       <div
         className={
-          ' endpointOptionsPopover-container absolute bottom-[-10px] flex w-full flex-col items-center md:px-4' +
+          ' endpointOptionsPopover-container absolute bottom-[-10px] flex w-full flex-col items-center md:px-4 z-0' +
           (visible ? ' show' : '')
         }
       >
@@ -41,7 +42,7 @@ function EndpointOptionsPopover({
             {additionalButton && (
               <Button
                 type="button"
-                className="ml-1 h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
+                className={cn(additionalButton.buttonClass, "ml-1 h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0")}
                 onClick={additionalButton.handler}
               >
                 {additionalButton.icon}

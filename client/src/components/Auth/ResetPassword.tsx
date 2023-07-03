@@ -94,8 +94,8 @@ function ResetPassword() {
                       message: 'Password must be at least 8 characters'
                     },
                     maxLength: {
-                      value: 40,
-                      message: 'Password must be less than 40 characters'
+                      value: 128,
+                      message: 'Password must be 128 characters or less'
                     }
                   })}
                   aria-invalid={!!errors.password}
@@ -112,7 +112,7 @@ function ResetPassword() {
 
               {errors.password && (
                 <span role="alert" className="mt-1 text-sm text-red-600">
-                  {/* @ts-ignore */}
+                  {/* @ts-ignore not sure why */}
                   {errors.password.message}
                 </span>
               )}
@@ -144,19 +144,19 @@ function ResetPassword() {
               </div>
               {errors.confirm_password && (
                 <span role="alert" className="mt-1 text-sm text-red-600">
-                  {/* @ts-ignore */}
+                  {/* @ts-ignore not sure why */}
                   {errors.confirm_password.message}
                 </span>
               )}
               {errors.token && (
                 <span role="alert" className="mt-1 text-sm text-red-600">
-                  {/* @ts-ignore */}
+                  {/* @ts-ignore not sure why */}
                   {errors.token.message}
                 </span>
               )}
               {errors.userId && (
                 <span role="alert" className="mt-1 text-sm text-red-600">
-                  {/* @ts-ignore */}
+                  {/* @ts-ignore not sure why */}
                   {errors.userId.message}
                 </span>
               )}

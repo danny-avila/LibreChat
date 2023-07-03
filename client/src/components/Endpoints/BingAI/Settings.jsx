@@ -39,10 +39,11 @@ function Settings(props) {
     };
 
     handleTextChange(debouncedContext);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedContext]);
 
   return (
-    <div className="max-h-[350px] overflow-y-auto">
+    <div className="md:h-[350px] h-[490px] overflow-y-auto">
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
@@ -110,7 +111,7 @@ function Settings(props) {
                 style={{ opacity: showSystemMessage ? '1' : '0' }}
               >
                 <a
-                  href="https://github.com/danny-avila/chatgpt-clone/blob/main/client/defaultSystemMessage.md"
+                  href="https://github.com/danny-avila/LibreChat/blob/main/client/defaultSystemMessage.md"
                   target="_blank"
                   className="text-blue-500 transition-colors duration-200 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-500" rel="noreferrer"
                 >

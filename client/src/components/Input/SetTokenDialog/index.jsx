@@ -1,6 +1,6 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect, useState } from 'react';
-import DialogTemplate from '../../ui/DialogTemplate';
-import { Dialog } from '../../ui/Dialog.tsx';
+import { Dialog, DialogTemplate } from '../../ui';
 import * as Checkbox from '@radix-ui/react-checkbox';
 import { CheckIcon } from '@radix-ui/react-icons';
 import FileUpload from '../NewConversationMenu/FileUpload';

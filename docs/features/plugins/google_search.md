@@ -1,5 +1,5 @@
-﻿# AI-Assisted Google Search  
-This bot supports searching google for answers to your questions with assistance from GPT! To get started, you need to get a Google Custom Search API key, and a Google Custom Search Engine ID. You can then define these as follows in your `.env` file:  
+# Google Search Plugin
+Through the plugins endpoint, you can use google search for answers to your questions with assistance from GPT! To get started, you need to get a Google Custom Search API key, and a Google Custom Search Engine ID. You can then define these as follows in your `.env` file:  
 ```env  
 GOOGLE_API_KEY="...."  
 GOOGLE_CSE_ID="...."  
@@ -21,15 +21,14 @@ Then you can get the API key, click the "Get a key" button on this page: https:/
 
 Click to sign in(make a Google acct if you do not have one):
 
-![image](https://user-images.githubusercontent.com/23362597/233266042-98098ed5-72b2-41b3-9495-1a9f4d7e1101.png)
-
+![image](../../assets/docs/features/plugins/google_search-1.png)
 
 ## 3\. Register yourself a new account/Login to the Control Panel
 
 
 After logging in, you will be redirected to the Control Panel to create a new search engine:
 
-![image](https://user-images.githubusercontent.com/23362597/233266323-53232468-2590-4820-b55f-08c78529d752.png)
+![image](../../assets/docs/features/plugins/google_search-2.png)
 
 
 ## 4\. Create a new search engine
@@ -37,33 +36,30 @@ After logging in, you will be redirected to the Control Panel to create a new se
 
 Fill in a name, select to "Search the entire web" and hit "Create":
 
-![image](https://user-images.githubusercontent.com/23362597/233266738-b70f004d-4324-482e-a945-9b0193b60158.png)
+![image](../../assets/docs/features/plugins/google_search-3.png)
 
 
 ## 5\. Copy your Search engine ID to your .env file
 
 
-![image](https://user-images.githubusercontent.com/23362597/233267123-ea25a3bb-6cdb-4d46-a893-846ea4933632.png)
+![image](../../assets/docs/features/plugins/google_search-4.png)
 
 
 ## 6\. Go to [custom-search docs](https://developers.google.com/custom-search/v1/introduction) to get a Google search API key
 
 
-Click "Get a Key":
+## 7\. Click "Get a Key":
 
-![image](https://user-images.githubusercontent.com/23362597/233267659-f82621f4-1f0b-46bf-8994-be443dd79932.png)
+![image](../../assets/docs/features/plugins/google_search-5.png)
 
 
 ## 8\. Name your project and agree to the Terms of Service
 
 
-![image](https://user-images.githubusercontent.com/23362597/233267793-ca3c273d-ebc6-44a5-a49d-0d4c3223c992.png)
+![image](../../assets/docs/features/plugins/google_search-6.png)
 
 
 ## 9\. Copy your Google search API key to your .env file
 
 
-![image](https://user-images.githubusercontent.com/23362597/233268067-5a6cfaf1-bec0-48b3-8add-70b218fb4264.png)
-##
-
-## [Go Back to ReadMe](../../../README.md)
+![image](../../assets/docs/features/plugins/google_search-7.png)

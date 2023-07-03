@@ -8,7 +8,6 @@ import {
 } from '@tanstack/react-query';
 import * as t from './types';
 import * as dataService from './data-service';
-import axios from 'axios';
 
 export enum QueryKeys {
   messages = 'messsages',
@@ -19,7 +18,9 @@ export enum QueryKeys {
   endpoints = 'endpoints',
   presets = 'presets',
   searchResults = 'searchResults',
-  tokenCount = 'tokenCount'
+  tokenCount = 'tokenCount',
+  availablePlugins = 'availablePlugins',
+  startupConfig = 'startupConfig',
 }
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
@@ -81,7 +82,8 @@ export const useGetConversationByIdQuery = (
 export const useGetConversationByIdMutation = (id: string): UseMutationResult<t.TConversation> => {
   const queryClient = useQueryClient();
   return useMutation(() => dataService.getConversationById(id), {
-    onSuccess: (res: t.TConversation) => {
+    // onSuccess: (res: t.TConversation) => {
+    onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.conversation, id]);
     }
   });
@@ -213,11 +215,11 @@ export const useGetPresetsQuery = (
 export const useDeletePresetMutation = (): UseMutationResult<
   t.TPreset[],
   unknown,
-  t.TPreset | {},
+  t.TPreset | object,
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation((payload: t.TPreset | {}) => dataService.deletePreset(payload), {
+  return useMutation((payload: t.TPreset | object) => dataService.deletePreset(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.presets]);
     }
@@ -256,13 +258,13 @@ export const useUpdateTokenCountMutation = (): UseMutationResult<
 };
 
 export const useLoginUserMutation = (): UseMutationResult<
-  t.TLoginUserResponse,
+  t.TLoginResponse,
   unknown,
-  t.TLoginUserRequest,
+  t.TLoginUser,
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation((payload: t.TLoginUserRequest) => dataService.login(payload), {
+  return useMutation((payload: t.TLoginUser) => dataService.login(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.user]);
     }
@@ -270,7 +272,7 @@ export const useLoginUserMutation = (): UseMutationResult<
 };
 
 export const useRegisterUserMutation = (): UseMutationResult<
-  t.TRegisterUserResponse,
+  unknown,
   unknown,
   t.TRegisterUser,
   unknown
@@ -300,7 +302,6 @@ export const useRefreshTokenMutation = (): UseMutationResult<
 > => {
   return useMutation(() => dataService.refreshToken(), {});
 };
-
 export const useRequestPasswordResetMutation = (): UseMutationResult<unknown> => {
   return useMutation((payload: t.TRequestPasswordReset) =>
     dataService.requestPasswordReset(payload)
@@ -310,3 +311,37 @@ export const useRequestPasswordResetMutation = (): UseMutationResult<unknown> =>
 export const useResetPasswordMutation = (): UseMutationResult<unknown> => {
   return useMutation((payload: t.TResetPassword) => dataService.resetPassword(payload));
 };
+
+export const useAvailablePluginsQuery = (): QueryObserverResult<t.TPlugin[]> => {
+  return useQuery<t.TPlugin[]>(
+    [QueryKeys.availablePlugins],
+    () => dataService.getAvailablePlugins(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false
+    }
+  );
+};
+
+export const useUpdateUserPluginsMutation = (): UseMutationResult<
+  t.TUser,
+  unknown,
+  t.TUpdateUserPlugins,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: t.TUpdateUserPlugins) => dataService.updateUserPlugins(payload), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.user]);
+    }
+  });
+};
+
+export const useGetStartupConfig = (): QueryObserverResult<t.TStartupConfig> => {
+  return useQuery<t.TStartupConfig>([QueryKeys.startupConfig], () => dataService.getStartupConfig(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false
+  });
+}

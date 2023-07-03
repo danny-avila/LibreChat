@@ -49,6 +49,30 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
         'text-davinci-002-render-sha',
       title: _preset?.title ?? 'New Preset'
     };
+  } else if (endpoint === 'gptPlugins') {
+    const agentOptions = _preset?.agentOptions ?? {
+      agent: 'functions',
+      skipCompletion: true,
+      model: 'gpt-3.5-turbo',
+      temperature: 0,
+      // top_p: 1,
+      // presence_penalty: 0,
+      // frequency_penalty: 0
+    };
+    preset = {
+      endpoint,
+      presetId: _preset?.presetId ?? null,
+      tools: _preset?.tools ?? [],
+      model: _preset?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'gpt-3.5-turbo',
+      chatGptLabel: _preset?.chatGptLabel ?? null,
+      promptPrefix: _preset?.promptPrefix ?? null,
+      temperature: _preset?.temperature ?? 0.8,
+      top_p: _preset?.top_p ?? 1,
+      presence_penalty: _preset?.presence_penalty ?? 0,
+      frequency_penalty: _preset?.frequency_penalty ?? 0,
+      agentOptions,
+      title: _preset?.title ?? 'New Preset'
+    };
   } else if (endpoint === null) {
     preset = {
       endpoint,

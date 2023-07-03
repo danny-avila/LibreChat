@@ -1,84 +1,64 @@
-﻿# Windows Install
+# Windows Install
 
-### Recommended:
-### **[Docker](docker_install.md)**
-or
-### **[Automated Installer (Windows)](https://github.com/fuegovic/chatgpt-clone-local-installer)**
+## **Recommended: [Docker Install](docker_install.md)**
+
+**or**
+## **[Windows Installer](https://github.com/fuegovic/LibreChat-Windows-Installer)**
 (Includes a Startup and Update Utility)
-##
+
+---
 
 ## Manual Installation
 ### Install the prerequisites on your machine
 
-  - **Download chatgpt-clone**
+### **Download LibreChat**
    
-    - Download the latest release here: https://github.com/danny-avila/chatgpt-clone/releases/
-    - Or by clicking on the green code button in the top of the page and selecting "Download ZIP"
-    - Or (Recommended if you have Git installed) pull the latest release from the main branch
-    - If you downloaded a zip file, extract the content in "C:/chatgpt-clone/" 
-    - **IMPORTANT : If you install the files somewhere else modify the instructions accordingly**
+  - Download the latest release here: https://github.com/danny-avila/LibreChat/releases/
+  - Or by clicking on the green code button in the top of the page and selecting "Download ZIP"
+  - Open Terminal (command prompt) and clone the repository by running `git clone https://github.com/danny-avila/LibreChat.git`
+  - If you downloaded a zip file, extract the content in "C:/LibreChat/" 
+  - **IMPORTANT : If you install the files somewhere else modify the instructions accordingly**
   
-  - **Enable the Conversation search feature:** (optional)
+### **Enable the Conversation search feature:** (optional)
 		
-    - Download MeiliSearch latest release from : https://github.com/meilisearch/meilisearch/releases
-    - Copy it to "C:/chatgpt-clone/"
-    - Rename the file to "meilisearch.exe"
-    - Open it by double clicking on it
-    - Copy the generated Master Key and save it somewhere (You will need it later)
+  - Download MeiliSearch latest release from : https://github.com/meilisearch/meilisearch/releases
+  - Copy it to "C:/LibreChat/"
+  - Rename the file to "meilisearch.exe"
+  - Open it by double clicking on it
+  - Copy the generated Master Key and save it somewhere (You will need it later)
 
-  - **Download and Install Node.js**
+### **Download and Install Node.js**
     
-    - Navigate to https://nodejs.org/en/download and to download the latest Node.js version for your OS (The Node.js installer includes the NPM package manager.)
+  - Navigate to https://nodejs.org/en/download and to download the latest Node.js version for your OS (The Node.js installer includes the NPM package manager.)
     
-  - **Create a MongoDB database**
+### **Create a MongoDB database**
     
-    - Navigate to https://www.mongodb.com/ and Sign In or Create an account
-    - Create a new project
-    - Build a Database using the free plan and name the cluster (example: chatgpt-clone)
-    - Use the "Username and Password" method for authentication
-    - Add your current IP to the access list
-    - Then in the Database Deployment tab click on Connect
-    - In "Choose a connection method" select "Connect your application"
-    - Driver = Node.js / Version = 4.1 or later
-    - Copy the connection string and save it somewhere(you will need it later)
+  - Navigate to https://www.mongodb.com/ and Sign In or Create an account
+  - Create a new project
+  - Build a Database using the free plan and name the cluster (example: LibreChat)
+  - Use the "Username and Password" method for authentication
+  - Add your current IP to the access list
+  - Then in the Database Deployment tab click on Connect
+  - In "Choose a connection method" select "Connect your application"
+  - Driver = Node.js / Version = 4.1 or later
+  - Copy the connection string and save it somewhere(you will need it later)
     
-     
-  - **Get your OpenAI API key** 
-	  - here: https://platform.openai.com/account/api-keys and save it somewhere safe (you will need it later)
+### [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
+- You must set up at least one of these tokens or APIs to run the app.
 
-   **Get your Bing Access Token**
-   
-  Please follow the **[updated instructions.](https://github.com/danny-avila/chatgpt-clone/issues/370#issuecomment-1560382302)**
-  
-  ~~Using MS Edge, navigate to bing.com~~
-   - ~~Make sure you are logged in~~
-   - ~~Open the DevTools by pressing F12 on your keyboard~~
-   - ~~Click on the tab "Application" (On the left of the DevTools)~~
-   - ~~Expand the "Cookies" (Under "Storage")~~
-   - ~~Copy the value of the "\_U" cookie~~
+### [User/Auth System](../features/user_auth_system.md) (Optional)
+- How to set up the user/auth system and Google login.
 
-- **Create the ".env" File** 
-You will need all your credentials, (API keys, access tokens, and Mongo Connection String, MeileSearch Master Key)
-  - Open "C:/chatgpt-clone/api/.env.example" in a text editor
-  - At this line **MONGO_URI="mongodb://127.0.0.1:27017/chatgpt-clone"**
-    Replace mongodb://127.0.0.1:27017/chatgpt-clone with the MondoDB connection string you saved earlier, **remove "&w=majority" at the end**
-    - It should look something like this: "MONGO_URI="mongodb+srv://username:password@chatgpt-clone.lfbcwz3.mongodb.net/?retryWrites=true"
-  - At this line **OPENAI_KEY=** you need to add your openai API key
-  - Add your Bing token to this line **BINGAI_TOKEN=** (needed for BingChat & Sydney)
-  - If you want to enable Search, **SEARCH=TRUE** if you do not want to enable search **SEARCH=FALSE**
-  - Add your previously saved MeiliSearch Master key to this line **MEILI_MASTER_KEY=** (the key is needed if search is enabled even on local install or you may encounter errors)
-  - Save the file as **"C:/chatgpt-clone/api/.env"**
-
-### Run the app
+## Setup and Run the app
 
 ### Using the command line (in the root directory)
-To setup the app:
-1. Run `npm ci`
+#### To setup the app:
+1. Run `npm ci` (this step will also create the env file)
 2. Run `npm run frontend`
 
-To use the app:
+#### To use the app:
 1. Run `npm run backend`
-2. Run `meilisearch --master-key put_your_meilesearch_Master_Key_here` (Only if SEARCH=TRUE)
+2. Run `meilisearch --master-key <meilisearch_Master_Key>` (Only if SEARCH=TRUE)
 3. Visit http://localhost:3080 (default port) & enjoy
 
 #### Using a batch file
@@ -86,25 +66,26 @@ To use the app:
 - **Make a batch file to automate the starting process**
   - Open a text editor
   - Paste the following code in a new document
-  - The meilisearch executable needs to be at the root of the chatgpt-clone directory
-  - Put your MeiliSearch master key instead of "your_master_key_goes_here"
-  - Save the file as "C:/chatgpt-clone/chatgpt-clone.bat"
+  - The meilisearch executable needs to be at the root of the LibreChat directory
+  - Put your MeiliSearch master key instead of "`<meilisearch_Master_Key>`"
+  - Save the file as "C:/LibreChat/LibreChat.bat"
   - you can make a shortcut of this batch file and put it anywhere
 
+``` bat title="LibreChat.bat"
+start "MeiliSearch" cmd /k "meilisearch --master-key <meilisearch_Master_Key>
+
+start "LibreChat" cmd /k "npm run backend"
+
+REM this batch file goes at the root of the LibreChat directory (C:/LibreChat/)
 ```
-start "MeiliSearch" cmd /k "meilisearch --master-key your_master_key_goes_here
+##
 
-start "ChatGPT-Clone" cmd /k "npm run backend"
-
-REM this batch file goes at the root of the chatgpt-clone directory (C:/chatgpt-clone/)
-```
-
-### **Update**
+## **Update**
 - run `git pull` from the root dir
 - Run npm ci from root directory `npm ci`
 - Build the client by running `npm run frontend`
 
 
-##
+---
 
-## [Go Back to ReadMe](../../README.md)
+### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

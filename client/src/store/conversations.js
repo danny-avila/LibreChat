@@ -1,12 +1,5 @@
-import React from 'react';
-import {
-  RecoilRoot,
-  atom,
-  selector,
-  useRecoilState,
-  useRecoilValue,
-  useSetRecoilState
-} from 'recoil';
+import { atom, useSetRecoilState } from 'recoil';
+import { useCallback } from 'react';
 
 const refreshConversationsHint = atom({
   key: 'refreshConversationsHint',
@@ -16,7 +9,9 @@ const refreshConversationsHint = atom({
 const useConversations = () => {
   const setRefreshConversationsHint = useSetRecoilState(refreshConversationsHint);
 
-  const refreshConversations = () => setRefreshConversationsHint((prevState) => prevState + 1);
+  const refreshConversations = useCallback(() => {
+    setRefreshConversationsHint((prevState) => prevState + 1);
+  }, [setRefreshConversationsHint]);
 
   return { refreshConversations };
 };

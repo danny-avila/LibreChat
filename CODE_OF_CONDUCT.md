@@ -1,4 +1,4 @@
-﻿# Contributor Covenant Code of Conduct
+# Contributor Covenant Code of Conduct
 
 ## Our Pledge
 
@@ -127,6 +127,6 @@ For answers to common questions about this code of conduct, see the FAQ at
 https://www.contributor-covenant.org/faq. Translations are available at
 https://www.contributor-covenant.org/translations.
 
-##
+---
 
 ## [Go Back to ReadMe](README.md)
