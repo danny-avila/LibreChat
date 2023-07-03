@@ -30,7 +30,6 @@ function Settings(props) {
   } = props;
   const endpoint = props.endpoint || 'openAI';
   const isOpenAI = endpoint === 'openAI' || endpoint === 'azureOpenAI';
-  console.log('Settings.jsx: isOpenAI & endpoint: ', isOpenAI, endpoint);
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 

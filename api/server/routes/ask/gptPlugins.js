@@ -1,8 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { titleConvo, validateTools, PluginsClient } = require('../../../app');
-const { abortMessage } = require('../../../utils');
-// const ChatAgent = require('../../../app/langchain/ChatAgent');
+const { abortMessage, getAzureCredentials } = require('../../../utils');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const {
   handleError,
@@ -168,9 +167,9 @@ const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, con
       ...endpointOption
     };
 
-    // if (process.env.AZURE_API_KEY) {
-    //   clientOptions.azure = getAzureCredentials();
-    // }
+    if (process.env.PLUGINS_USE_AZURE === 'true') {
+      clientOptions.azure = getAzureCredentials();
+    }
 
     const oaiApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
     const chatAgent = new PluginsClient(oaiApiKey, clientOptions);
