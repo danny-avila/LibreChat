@@ -27,7 +27,9 @@ function Registration() {
       },
       onError: (error) => {
         setError(true);
+        //@ts-ignore - error is of type unknown
         if (error.response?.data?.message) {
+          //@ts-ignore - error is of type unknown
           setErrorMessage(error.response?.data?.message);
         }
       }

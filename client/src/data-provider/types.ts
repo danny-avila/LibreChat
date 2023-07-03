@@ -235,6 +235,7 @@ export type TResetPassword = {
   userId: string;
   token: string;
   password: string;
+  confirm_password?: string;
 };
 
 export type TStartupConfig = {
@@ -247,3 +248,12 @@ export type TStartupConfig = {
   serverDomain: string;
   registrationEnabled: boolean;
 }
+
+export type TRefreshTokenResponse = {
+  token: string;
+  user: TUser;
+};
+
+export type TRequestPasswordResetResponse = {
+  link: string;
+};

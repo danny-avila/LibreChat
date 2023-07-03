@@ -73,12 +73,14 @@ function ResetPassword() {
                 <input
                   type="hidden"
                   id="token"
+                  // @ts-ignore - Type 'string | null' is not assignable to type 'string | number | readonly string[] | undefined'
                   value={params.get('token')}
                   {...register('token', { required: 'Unable to process: No valid reset token' })}
                 />
                 <input
                   type="hidden"
                   id="userId"
+                  // @ts-ignore - Type 'string | null' is not assignable to type 'string | number | readonly string[] | undefined'
                   value={params.get('userId')}
                   {...register('userId', { required: 'Unable to process: No valid user id' })}
                 />

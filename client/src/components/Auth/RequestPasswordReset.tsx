@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useRequestPasswordResetMutation, TRequestPasswordReset } from '~/data-provider';
+import { useRequestPasswordResetMutation, TRequestPasswordReset, TRequestPasswordResetResponse } from '~/data-provider';
 
 function RequestPasswordReset() {
   const {
@@ -15,7 +15,7 @@ function RequestPasswordReset() {
 
   const onSubmit = (data: TRequestPasswordReset) => {
     requestPasswordReset.mutate(data, {
-      onSuccess: (data) => {
+      onSuccess: (data: TRequestPasswordResetResponse) => {
         setSuccess(true);
         setResetLink(data.link);
       },
