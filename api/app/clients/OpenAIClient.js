@@ -1,7 +1,7 @@
 const BaseClient = require('./BaseClient');
 const ChatGPTClient = require('./ChatGPTClient');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('@dqbd/tiktoken');
-const { maxTokensMap, genAzureChatCompletion } = require('../../../utils');
+const { maxTokensMap, genAzureChatCompletion } = require('../../utils');
 
 const tokenizersCache = {};
 

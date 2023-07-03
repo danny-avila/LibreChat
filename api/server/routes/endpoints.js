@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { availableTools } = require('../../app/langchain/tools');
+const { availableTools } = require('../../app/clients/tools');
 
 const getOpenAIModels = () => {
   let models = ['gpt-4', 'gpt-4-0613', 'gpt-3.5-turbo', 'gpt-3.5-turbo-16k', 'gpt-3.5-turbo-0613', 'gpt-3.5-turbo-0301', 'text-davinci-003' ];

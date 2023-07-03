@@ -10,7 +10,6 @@ var mockPluginService = {
   getUserPluginAuthValue: jest.fn()
 };
 
-
 jest.mock('../../../../models/User', () => {
   return function() {
     return mockUser;
@@ -38,7 +37,7 @@ describe('Tool Handlers', () => {
 
   beforeAll(async () => {
     mockUser.save.mockResolvedValue(undefined);
-  
+
     const userAuthValues = {};
     mockPluginService.getUserPluginAuthValue.mockImplementation((userId, authField) => {
       return userAuthValues[`${userId}-${authField}`];
@@ -46,7 +45,7 @@ describe('Tool Handlers', () => {
     mockPluginService.updateUserPluginAuth.mockImplementation((userId, authField, _pluginKey, credential) => {
       userAuthValues[`${userId}-${authField}`] = credential;
     });
-  
+
     fakeUser = new User({
       name: 'Fake User',
       username: 'fakeuser',
@@ -64,7 +63,7 @@ describe('Tool Handlers', () => {
     for (const authConfig of authConfigs) {
       await PluginService.updateUserPluginAuth(fakeUser._id, authConfig.authField, pluginKey, mockCredential);
     }
-  });  
+  });
 
   afterAll(async () => {
     await mockUser.findByIdAndDelete(fakeUser._id);

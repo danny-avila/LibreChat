@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const TextStream = require('../stream');
+const { TextStream } = require('../');
 const { google } = require('googleapis');
 const { Agent, ProxyAgent } = require('undici');
 const { getMessages, saveMessage, saveConvo } = require('../../models');

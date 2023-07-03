@@ -18,7 +18,7 @@ const {
   OpenAICreateImage,
   StableDiffusionAPI,
   StructuredSD,
-} = require('../'); 
+} = require('../');
 
 const validateTools = async (user, tools = []) => {
   try {

@@ -1,10 +1,10 @@
 const crypto = require('crypto');
-const TextStream = require('./stream');
+const TextStream = require('./TextStream');
 const { RecursiveCharacterTextSplitter } = require('langchain/text_splitter');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { loadSummarizationChain } = require('langchain/chains');
-const { refinePrompt } = require('./refinePrompt');
-const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('../../../models');
+const { refinePrompt } = require('./prompts/refinePrompt');
+const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('../../models');
 
 class BaseClient {
   constructor(apiKey, options = {}) {

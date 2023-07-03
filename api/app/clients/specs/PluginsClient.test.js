@@ -1,5 +1,5 @@
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
-const PluginsClient = require('./PluginsClient');
+const PluginsClient = require('../PluginsClient');
 const crypto = require('crypto');
 
 jest.mock('../../../lib/db/connectDb');

@@ -9,7 +9,7 @@ const {
   instructions,
   imageInstructions,
   errorInstructions,
-} = require('./instructions');
+} = require('./prompts/instructions');
 
 class PluginsClient extends OpenAIClient {
   constructor(apiKey, options = {}) {

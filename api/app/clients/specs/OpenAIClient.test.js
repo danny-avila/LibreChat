@@ -1,4 +1,4 @@
-const OpenAIClient = require('./OpenAIClient');
+const OpenAIClient = require('../OpenAIClient');
 
 describe('OpenAIClient', () => {
   let client;

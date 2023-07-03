@@ -1,9 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { titleConvo, PluginsClient } = require('../../../app/');
+const { titleConvo, validateTools, PluginsClient } = require('../../../app/');
 // const { getAzureCredentials } = require('../../../utils/');
 // const ChatAgent = require('../../../app/langchain/ChatAgent');
-const { validateTools } = require('../../../app/langchain/tools/util');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const {
   handleError,

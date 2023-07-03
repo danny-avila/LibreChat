@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const BaseClient = require('./BaseClient');
+const BaseClient = require('../BaseClient');
 const { maxTokensMap } = require('../../../utils');
 
 class FakeClient extends BaseClient {
