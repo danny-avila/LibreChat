@@ -76,7 +76,7 @@ markdown_extensions:
 nav:
   - Home: 
     - 'index.md'
-    - v0.5.0 Breaking Changes: 'general_info\breaking_changes.md'
+    - v0.5.0 Breaking Changes: 'general_info/breaking_changes.md'
     - Project Origin: 'general_info/project_origin.md'
     - Tech Stack: 'general_info/tech_stack.md'  
     - Multilingual Information: 'general_info/multilingual_information.md'
