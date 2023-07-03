@@ -1,19 +1,24 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect, useState } from 'react';
-import { Outlet } from 'react-router-dom';
-import MessageHandler from '../components/MessageHandler';
-import Nav from '../components/Nav';
-import MobileNav from '../components/Nav/MobileNav';
 import {
-  useGetSearchEnabledQuery,
   useGetEndpointsQuery,
-  useGetPresetsQuery
+  useGetPresetsQuery,
+  useGetSearchEnabledQuery
 } from '~/data-provider';
+
+import MessageHandler from '../components/MessageHandler';
+import MobileNav from '../components/Nav/MobileNav';
+import Nav from '../components/Nav';
+import { Outlet } from 'react-router-dom';
 import store from '~/store';
-import { useSetRecoilState } from 'recoil';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useSetRecoilState } from 'recoil';
+
 export default function Root() {
-  const [navVisible, setNavVisible] = useState(false);
+  const [navVisible, setNavVisible] = useState(() => {
+    const savedNavVisible = localStorage.getItem('navVisible');
+    return savedNavVisible !== null ? JSON.parse(savedNavVisible) : false;
+  });
 
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
   const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
@@ -23,6 +28,10 @@ export default function Root() {
   const searchEnabledQuery = useGetSearchEnabledQuery();
   const endpointsQuery = useGetEndpointsQuery();
   const presetsQuery = useGetPresetsQuery({ enabled: !!user });
+
+  useEffect(() => {
+    localStorage.setItem('navVisible', JSON.stringify(navVisible));
+  }, [navVisible]);
 
   useEffect(() => {
     if (endpointsQuery.data) {
