@@ -38,7 +38,6 @@
     "axios": "^1.4.0",
     "langchain": "^0.0.91",
     "passport": "^0.6.0",
-    "passport-github": "^1.1.0",
     "passport-github2": "^0.1.12"
   },
   "devDependencies": {
