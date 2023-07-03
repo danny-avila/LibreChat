@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { titleConvo } = require('../../../app/');
-const GoogleClient = require('../../../app/google/GoogleClient');
+const { titleConvo, GoogleClient } = require('../../../app');
+// const GoogleClient = require('../../../app/google/GoogleClient');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');

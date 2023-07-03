@@ -1,8 +1,6 @@
-const crypto = require('crypto');
-const { TextStream } = require('../');
+const BaseClient = require('./BaseClient');
 const { google } = require('googleapis');
 const { Agent, ProxyAgent } = require('undici');
-const { getMessages, saveMessage, saveConvo } = require('../../models');
 const {
   encoding_for_model: encodingForModel,
   get_encoding: getEncoding
@@ -10,17 +8,14 @@ const {
 
 const tokenizersCache = {};
 
-class GoogleAgent {
+class GoogleClient extends BaseClient {
   constructor(credentials, options = {}) {
+    super('apiKey', options);
     this.client_email = credentials.client_email;
     this.project_id = credentials.project_id;
     this.private_key = credentials.private_key;
+    this.sender = 'PaLM2';
     this.setOptions(options);
-    this.currentDateString = new Date().toLocaleDateString('en-us', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
   }
 
   constructUrl() {
@@ -129,20 +124,6 @@ class GoogleAgent {
     return this;
   }
 
-  static getTokenizer(encoding, isModelName = false, extendSpecialTokens = {}) {
-    if (tokenizersCache[encoding]) {
-      return tokenizersCache[encoding];
-    }
-    let tokenizer;
-    if (isModelName) {
-      tokenizer = encodingForModel(encoding, extendSpecialTokens);
-    } else {
-      tokenizer = getEncoding(encoding, extendSpecialTokens);
-    }
-    tokenizersCache[encoding] = tokenizer;
-    return tokenizer;
-  }
-
   async getClient() {
     const scopes = ['https://www.googleapis.com/auth/cloud-platform'];
     const jwtClient = new google.auth.JWT(this.client_email, null, this.private_key, scopes);
@@ -157,7 +138,7 @@ class GoogleAgent {
     return jwtClient;
   }
 
-  buildPayload(input, { messages = [] }) {
+  buildMessages(input, { messages = [] }) {
     let payload = {
       instances: [
         {
@@ -184,7 +165,7 @@ class GoogleAgent {
     }
 
     if (this.options.debug) {
-      console.debug('buildPayload');
+      console.debug('buildMessages');
       console.dir(payload, { depth: null });
     }
 
@@ -217,83 +198,44 @@ class GoogleAgent {
     }
 
     const client = await this.getClient();
-    const payload = this.buildPayload(input, { messages });
+    const payload = this.buildMessages(input, { messages });
     const res = await client.request({ url, method: 'POST', data: payload });
     console.dir(res.data, { depth: null });
     return res.data;
   }
 
-  async loadHistory(conversationId, parentMessageId = null) {
-    if (this.options.debug) {
-      console.debug('Loading history for conversation', conversationId, parentMessageId);
-    }
-
-    if (!parentMessageId) {
-      return [];
-    }
-
-    const messages = (await getMessages({ conversationId })) || [];
-
-    if (messages.length === 0) {
-      this.currentMessages = [];
-      return [];
-    }
-
-    const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
-    return orderedMessages.map((message) => {
-      return {
-        author: message.isCreatedByUser ? this.userLabel : this.modelLabel,
-        content: message.content
-      };
-    });
+  getMessageMapMethod() {
+    return ((message) => ({
+      author: message.isCreatedByUser ? this.userLabel : this.modelLabel,
+      content: message?.content ?? message.text
+    })).bind(this);
   }
 
-  async saveMessageToDatabase(message, user = null) {
-    await saveMessage({ ...message, unfinished: false });
-    await saveConvo(user, {
-      conversationId: message.conversationId,
-      endpoint: 'google',
+  getSaveOptions() {
+    return {
       ...this.modelOptions
-    });
+    };
+  }
+
+  getBuildMessagesOptions() {
+    console.log('GoogleClient doesn\'t use getBuildMessagesOptions');
   }
 
   async sendMessage(message, opts = {}) {
-    if (opts && typeof opts === 'object') {
-      this.setOptions(opts);
-    }
-    console.log('sendMessage', message, opts);
-
-    const user = opts.user || null;
-    const conversationId = opts.conversationId || crypto.randomUUID();
-    const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
-    const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
-    const responseMessageId = crypto.randomUUID();
-    const messages = await this.loadHistory(conversationId, this.options?.parentMessageId);
-
-    const userMessage = {
-      messageId: userMessageId,
-      parentMessageId,
+    console.log('GoogleClient: sendMessage', message, opts);
+    const {
+      user,
       conversationId,
-      sender: 'User',
-      text: message,
-      isCreatedByUser: true
-    };
+      responseMessageId,
+      saveOptions,
+      userMessage,
+    } = await this.handleStartMethods(message, opts);
 
-    if (typeof opts?.getIds === 'function') {
-      opts.getIds({
-        userMessage,
-        conversationId,
-        responseMessageId
-      });
-    }
-
-    console.log('userMessage', userMessage);
-
-    await this.saveMessageToDatabase(userMessage, user);
+    await this.saveMessageToDatabase(userMessage, saveOptions, user);
     let reply = '';
     let blocked = false;
     try {
-      const result = await this.getCompletion(message, messages, opts.abortController);
+      const result = await this.getCompletion(message, this.currentMessages, opts.abortController);
       blocked = result?.predictions?.[0]?.safetyAttributes?.blocked;
       reply =
         result?.predictions?.[0]?.candidates?.[0]?.content ||
@@ -318,80 +260,40 @@ class GoogleAgent {
     }
 
     if (!blocked) {
-      const textStream = new TextStream(reply, { delay: 0.5 });
-      await textStream.processTextStream(opts.onProgress);
+      await this.generateTextStream(reply, opts.onProgress, { delay: 0.5 });
     }
 
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
       parentMessageId: userMessage.messageId,
-      sender: 'PaLM2',
+      sender: this.sender,
       text: reply,
       error: blocked,
       isCreatedByUser: false
     };
 
-    await this.saveMessageToDatabase(responseMessage, user);
+    await this.saveMessageToDatabase(responseMessage, saveOptions, user);
     return responseMessage;
+  }
+
+  static getTokenizer(encoding, isModelName = false, extendSpecialTokens = {}) {
+    if (tokenizersCache[encoding]) {
+      return tokenizersCache[encoding];
+    }
+    let tokenizer;
+    if (isModelName) {
+      tokenizer = encodingForModel(encoding, extendSpecialTokens);
+    } else {
+      tokenizer = getEncoding(encoding, extendSpecialTokens);
+    }
+    tokenizersCache[encoding] = tokenizer;
+    return tokenizer;
   }
 
   getTokenCount(text) {
     return this.gptEncoder.encode(text, 'all').length;
   }
-
-  /**
-   * Algorithm adapted from "6. Counting tokens for chat API calls" of
-   * https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
-   *
-   * An additional 2 tokens need to be added for metadata after all messages have been counted.
-   *
-   * @param {*} message
-   */
-  getTokenCountForMessage(message) {
-    // Map each property of the message to the number of tokens it contains
-    const propertyTokenCounts = Object.entries(message).map(([key, value]) => {
-      // Count the number of tokens in the property value
-      const numTokens = this.getTokenCount(value);
-
-      // Subtract 1 token if the property key is 'name'
-      const adjustment = key === 'name' ? 1 : 0;
-      return numTokens - adjustment;
-    });
-
-    // Sum the number of tokens in all properties and add 4 for metadata
-    return propertyTokenCounts.reduce((a, b) => a + b, 4);
-  }
-
-  /**
-   * Iterate through messages, building an array based on the parentMessageId.
-   * Each message has an id and a parentMessageId. The parentMessageId is the id of the message that this message is a reply to.
-   * @param messages
-   * @param parentMessageId
-   * @returns {*[]} An array containing the messages in the order they should be displayed, starting with the root message.
-   */
-  static getMessagesForConversation(messages, parentMessageId) {
-    const orderedMessages = [];
-    let currentMessageId = parentMessageId;
-    while (currentMessageId) {
-      // eslint-disable-next-line no-loop-func
-      const message = messages.find((m) => m.messageId === currentMessageId);
-      if (!message) {
-        break;
-      }
-      orderedMessages.unshift(message);
-      currentMessageId = message.parentMessageId;
-    }
-
-    if (orderedMessages.length === 0) {
-      return [];
-    }
-
-    return orderedMessages.map((msg) => ({
-      isCreatedByUser: msg.isCreatedByUser,
-      content: msg.text
-    }));
-  }
 }
 
-module.exports = GoogleAgent;
+module.exports = GoogleClient;
