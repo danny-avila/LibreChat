@@ -7,9 +7,9 @@ import PluginsSettings from './Plugins/Settings.jsx';
 const Settings = ({ preset, ...props }) => {
   const renderSettings = () => {
     const { endpoint } = preset || {};
-    // console.log('preset', preset);
+    console.log('endpoint', endpoint);
 
-    if (endpoint === 'openAI') {
+    if (endpoint === 'openAI' || endpoint === 'azureOpenAI') {
       return (
         <OpenAISettings
           model={preset?.model}

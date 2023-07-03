@@ -1,5 +1,5 @@
 const PluginAuth = require('../../models/schema/pluginAuthSchema');
-const { encrypt, decrypt } = require('../../utils/crypto');
+const { encrypt, decrypt } = require('../../utils/');
 
 const getUserPluginAuthValue = async (user, authField) => {
   try {
