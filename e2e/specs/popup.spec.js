@@ -5,7 +5,8 @@ test.describe('Endpoints Presets suite', () => {
     await page.goto('http://localhost:3080/');
     await page.getByRole('button', { name: 'New Topic' }).click();
 
-    const endpointItem = await page.getByRole('menuitemradio', { name: 'OpenAI' })
+    // includes the icon + endpoint names in obj property
+    const endpointItem = await page.getByRole('menuitemradio', { name: 'ChatGPT OpenAI' })
     await endpointItem.click();
 
     await page.getByRole('button', { name: 'New Topic' }).click();
