@@ -1,9 +1,9 @@
 import { render, waitFor } from 'layout-test-utils';
 import userEvent from '@testing-library/user-event';
 import Login from '../Login';
-import * as mockDataProvider from '~/data-provider';
+import * as mockDataProvider from '@librechat/data-provider';
 
-jest.mock('~/data-provider');
+jest.mock('@librechat/data-provider');
 
 const setup = ({
   useGetUserQueryReturnValue = {
