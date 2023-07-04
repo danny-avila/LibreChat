@@ -10,6 +10,7 @@ export default function createPayload(submission: TSubmission) {
     openAI: '/api/ask/openAI',
     google: '/api/ask/google',
     bingAI: '/api/ask/bingAI',
+    chatGPT: '/api/ask/chatGPT',
     chatGPTBrowser: '/api/ask/chatGPTBrowser',
     gptPlugins: '/api/ask/gptPlugins'
   };

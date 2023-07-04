@@ -24,7 +24,7 @@ module.exports = {
   plugins: ['react', 'react-hooks', '@typescript-eslint'],
   rules: {
     'react/react-in-jsx-scope': 'off',
-    '@typescript-eslint/ban-ts-comment': ['error', { 'ts-ignore': 'allow-with-description' }],
+    '@typescript-eslint/ban-ts-comment': ['error', { 'ts-ignore': 'allow' }],
     indent: ['error', 2, { SwitchCase: 1 }],
     'max-len': [
       'error',
@@ -42,12 +42,6 @@ module.exports = {
     // 'no-plusplus': ['error', { allowForLoopAfterthoughts: true }],
     'no-console': 'off',
     'import/extensions': 'off',
-    'no-use-before-define': [
-      'error',
-      {
-        functions: false
-      }
-    ],
     'no-promise-executor-return': 'off',
     'no-param-reassign': 'off',
     'no-continue': 'off',
@@ -102,6 +96,18 @@ module.exports = {
       extends: [
         'plugin:@typescript-eslint/eslint-recommended',
         'plugin:@typescript-eslint/recommended'
+      ]
+    },
+    {
+      files: './packages/data-provider/**/*.ts',
+      overrides: [
+        {
+          files: "**/*.ts",
+          parser: "@typescript-eslint/parser",
+          parserOptions: {
+            project: "./packages/data-provider/tsconfig.json"
+          }
+        }
       ]
     }
   ],

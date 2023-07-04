@@ -140,9 +140,9 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
 
 export const useGetConversationsQuery = (
   pageNumber: string,
-  config?: UseQueryOptions<t.TConversation[]>
-): QueryObserverResult<t.TConversation[]> => {
-  return useQuery<t.TConversation[]>(
+  config?: UseQueryOptions<t.TGetConversationsResponse>
+): QueryObserverResult<t.TGetConversationsResponse> => {
+  return useQuery<t.TGetConversationsResponse>(
     [QueryKeys.allConversations, pageNumber],
     () => dataService.getConversations(pageNumber),
     {
@@ -302,13 +302,19 @@ export const useRefreshTokenMutation = (): UseMutationResult<
 > => {
   return useMutation(() => dataService.refreshToken(), {});
 };
-export const useRequestPasswordResetMutation = (): UseMutationResult<unknown> => {
+
+export const useRequestPasswordResetMutation = (): UseMutationResult<t.TRequestPasswordResetResponse, unknown, t.TRequestPasswordReset, unknown> => {
   return useMutation((payload: t.TRequestPasswordReset) =>
     dataService.requestPasswordReset(payload)
   );
 };
 
-export const useResetPasswordMutation = (): UseMutationResult<unknown> => {
+export const useResetPasswordMutation = (): UseMutationResult<
+  unknown,
+  unknown,
+  t.TResetPassword,
+  unknown
+> => {
   return useMutation((payload: t.TResetPassword) => dataService.resetPassword(payload));
 };
 
