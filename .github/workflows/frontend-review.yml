@@ -28,7 +28,7 @@ jobs:
         run: npm ci
 
       - name: Build Client
-        run: npm run frontend
+        run: npm run frontend:ci
 
       - name: Run unit tests
         run: cd client && npm run test:ci

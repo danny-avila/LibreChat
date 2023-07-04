@@ -5,7 +5,7 @@
   "scripts": {
     "data-provider": "cd .. && npm run build:data-provider",
     "build": "cross-env NODE_ENV=production dotenv -e ../.env -- vite build",
-    "build:ci": "cd ../packages/data-provider && npm run build && npm link && cd ../../client && npm link @librechat/data-provider && cross-env NODE_ENV=dev vite build --mode ci",
+    "build:ci": "cross-env NODE_ENV=dev vite build --mode ci",
     "dev": "cross-env NODE_ENV=dev dotenv -e ../.env -- vite",
     "preview-prod": "cross-env NODE_ENV=dev dotenv -e ../.env -- vite preview",
     "test": "cross-env NODE_ENV=test jest --watch",
