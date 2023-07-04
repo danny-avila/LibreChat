@@ -25,7 +25,7 @@ const isPluginAuthenticated = (plugin) => {
 const getAvailablePluginsController = async (req, res) => {
   try {
     fs.readFile(
-      path.join(__dirname, '..', '..', 'app', 'langchain', 'tools', 'manifest.json'),
+      path.join(__dirname, '..', '..', 'app', 'clients', 'tools', 'manifest.json'),
       'utf8',
       (err, data) => {
         if (err) {

@@ -38,7 +38,7 @@ export default function SubmitButton({
         </div>
       </button>
     );
-  } else if (!isTokenProvided && endpoint !== 'openAI') {
+  } else if (!isTokenProvided && (endpoint !== 'openAI' || endpoint !== 'azureOpenAI' )) {
     return (
       <>
         <button

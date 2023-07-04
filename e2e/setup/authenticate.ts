@@ -19,6 +19,11 @@ async function authenticate(config: FullConfig, user: User) {
   await login(page, user);
   await page.locator('h1:has-text("LibreChat")').waitFor();
   console.log('🤖: ✔️  user successfully authenticated');
+  // Set localStorage before navigating to the page
+  await page.context().addInitScript(() => {
+    localStorage.setItem('navVisible', 'true');
+  });
+  console.log('🤖: ✔️  localStorage: set Nav as Visible', storageState);
   await page.context().storageState({path: storageState as string});
   console.log('🤖: ✔️  authentication state successfully saved in', storageState);
   await browser.close();

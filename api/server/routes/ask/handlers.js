@@ -148,7 +148,7 @@ function formatAction(action) {
     formattedAction.inputStr = formattedAction.inputStr.replace('N/A - ', '');
   } else {
     const hasThought = formattedAction.thought.length > 0;
-    const thought = hasThought ? `\n\tthought: ${formattedAction.thought}` : ''; 
+    const thought = hasThought ? `\n\tthought: ${formattedAction.thought}` : '';
     formattedAction.inputStr = `{\n\tplugin: ${formattedAction.plugin}\n\tinput: ${formattedAction.input}\n${thought}}`;
   }
 
