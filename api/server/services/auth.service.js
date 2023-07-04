@@ -91,10 +91,14 @@ const registerUser = async (user) => {
     const salt = bcrypt.genSaltSync(10);
     const hash = bcrypt.hashSync(newUser.password, salt);
     newUser.password = hash;
-    newUser.save();
+    const registrationResult = await newUser.save();
 
     if (isFirstRegisteredUser) {
       migrateDataToFirstUser(newUser);
+    }
+
+    if (refBy !== '') {
+      await User.updateOne({ _id: refBy }, { $push: { referrals: registrationResult.id } })
     }
     return { status: 200, user: newUser };
   } catch (err) {
