@@ -44,7 +44,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
   }
 
   useEffect(() => {
-    if (user) setRefLink(mode === 'dev' ? `http://localhost:3090/?r=${user.id}` : `aitok.us/?r=${user.id}`);
+    if (user) setRefLink(mode === 'dev' ? `http://localhost:3090/register/${user.id}` : `aitok.us/register/${user.id}`);
   }, [user]);
 
   useEffect(() => {

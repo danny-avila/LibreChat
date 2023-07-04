@@ -52,7 +52,7 @@ const registerUser = async (user) => {
     return { status: 422, message: error.details[0].message };
   }
 
-  const { email, password, name, username } = user;
+  const { email, password, name, username, refBy } = user;
 
   try {
     const existingUser = await User.findOne({ email });
@@ -81,7 +81,8 @@ const registerUser = async (user) => {
       username,
       name,
       avatar: null,
-      role: isFirstRegisteredUser ? 'ADMIN' : 'USER'
+      role: isFirstRegisteredUser ? 'ADMIN' : 'USER',
+      refBy: refBy
     });
 
     // todo: implement refresh token
