@@ -1,6 +1,6 @@
 const User = require('../../models/User');
 
-const updateUserPluginsService = async (user, pluginKey, action) => {
+const updateUserPlugins = async (user, pluginKey, action) => {
   try {
     if (action === 'install') {
       const response = await User.updateOne(
@@ -21,4 +21,37 @@ const updateUserPluginsService = async (user, pluginKey, action) => {
   }
 };
 
-module.exports = { updateUserPluginsService };
+const updateUser = async (user, update) => {
+  try {
+    const response = await User.updateOne(
+      { _id: user._id },
+      { $set: update }
+    );  
+    return response;
+  } catch (err) {
+    console.log(err);
+    return err;
+  }
+};
+
+const deleteUser = async (user) => {
+  try {
+    const response = await User.deleteOne({ _id: user._id });
+    return response;
+  } catch (err) {
+    console.log(err);
+    return err;
+  }
+};
+
+const getAllUsers = async () => {
+  try {
+    const users = await User.find({});
+    return users;
+  } catch (err) {
+    console.log(err);
+    return err;
+  }
+};
+
+module.exports = { getAllUsers, deleteUser, updateUser, updateUserPlugins };
