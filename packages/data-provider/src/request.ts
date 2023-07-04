@@ -27,7 +27,7 @@ async function _put(url: string, data?: any) {
   return response.data;
 }
 
-async function _delete<T>(url: string): Promise<T> {
+async function _delete<T>(url: string, data?: any): Promise<T> {
   const response = await axios.delete(url);
   return response.data;
 }

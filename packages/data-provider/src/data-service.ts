@@ -58,10 +58,6 @@ export function getSearchEnabled(): Promise<boolean> {
   return request.get(endpoints.searchEnabled());
 }
 
-export function getUser(): Promise<t.TUser> {
-  return request.get(endpoints.user());
-}
-
 export const searchConversations = async (
   q: string,
   pageNumber: string,
@@ -118,3 +114,23 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
 export const getStartupConfig = (): Promise<t.TStartupConfig> => {
   return request.get(endpoints.config());
 };
+
+export function getUser(): Promise<t.TUser> {
+  return request.get(endpoints.user());
+}
+
+export function getAllUsers(): Promise<t.TUser[]> {
+  return request.get(endpoints.allUsers());
+}
+
+export function createUser(payload: t.TUser): Promise<t.TUser> {
+  return request.post(endpoints.user(), payload);
+}
+
+export function updateUser(payload: t.TUser): Promise<t.TUser> {
+  return request.put(endpoints.user(), payload);
+}
+
+export function deleteUser(payload: t.TUser): Promise<t.TUser> {
+  return request.delete(endpoints.user(), payload);
+}

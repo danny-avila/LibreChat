@@ -6,6 +6,10 @@ export const userPlugins = () => {
   return '/api/user/plugins';
 };
 
+export const allUsers = () => {
+  return '/api/user/users';
+}
+
 export const messages = (id: string) => {
   return `/api/messages/${id}`;
 };
