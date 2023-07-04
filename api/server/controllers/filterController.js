@@ -84,11 +84,12 @@ function splitWords(text, trie) {
   return tokens;
 }
 const fs = require('fs');
-const path = require('path');
+
+const { Buffer } = require('buffer');
 
 // Replace the file paths with the actual paths to your files
-const sensitiveWordsFilePath = path.resolve(__dirname, '/Users/phe/WebstormProjects/aitok/LibreChat/api/server/controllers/sensitive-text/sw.txt');
-const stopWordsFilePath = path.resolve(__dirname, '/Users/phe/WebstormProjects/aitok/LibreChat/api/server/controllers/sensitive-text/stw.txt');
+const sensitiveWordsFilePath = '/Users/phe/WebstormProjects/aitok/LibreChat/api/server/controllers/sensitive-text/sw.txt';
+const stopWordsFilePath = '/Users/phe/WebstormProjects/aitok/LibreChat/api/server/controllers/sensitive-text/stw.txt';
 
 function initializeTrieFromFile(file) {
   const lexiconData = fs.readFileSync(file, 'utf-8');
@@ -96,7 +97,8 @@ function initializeTrieFromFile(file) {
 
   const trie = new Trie();
   for (const word of lexiconWords) {
-    trie.insert(word);
+    const decodedWord = Buffer.from(word, 'base64').toString('utf-8');
+    trie.insert(decodedWord);
   }
 
   return trie;
@@ -106,7 +108,6 @@ let gSensitiveWordsTrie = null;
 let gStopWordsTrie = null;
 
 function isIncludeSensitiveWords(text) {
-  console.log('filterController --- isInclude', text);
   if (!gSensitiveWordsTrie || !gStopWordsTrie) {
     const sensitiveWordsTrie = initializeTrieFromFile(sensitiveWordsFilePath);
     const stopWordsTrie = initializeTrieFromFile(stopWordsFilePath);
@@ -118,13 +119,13 @@ function isIncludeSensitiveWords(text) {
   const words = splitWords(text, gStopWordsTrie);
   for (const word of words) {
     if (gSensitiveWordsTrie.search(word)) {
-      console.log(`敏感词: ${word}`);
       return true;
     }
   }
 
   return false;
 }
+
 
 
 module.exports = {

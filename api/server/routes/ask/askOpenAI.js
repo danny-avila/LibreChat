@@ -113,9 +113,9 @@ const ask = async ({
   let responseMessageId = crypto.randomUUID();
 
   // Filter the user's message for sensitive words
-  console.log('askAI --- before if isIncludeSensitiveWords', isIncludeSensitiveWords(text))
+
   if (isIncludeSensitiveWords(text)) {
-    console.log('inside isIncude')
+  
     // Handle the case when sensitive words are found in the user's message
     const errorMessage = {
       messageId: responseMessageId,
