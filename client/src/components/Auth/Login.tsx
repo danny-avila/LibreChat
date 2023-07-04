@@ -4,7 +4,7 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useGetStartupConfig } from '@librechat/data-provider';
 
-function Login({ loginRedirect }: { loginRedirect: string }) {
+function Login() {
   const { login, error, isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
 

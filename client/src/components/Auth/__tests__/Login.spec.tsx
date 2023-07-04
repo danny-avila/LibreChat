@@ -44,7 +44,7 @@ const setup = ({
     .spyOn(mockDataProvider, 'useGetStartupConfig')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetStartupCongfigReturnValue);
-  const renderResult = render(<Login loginRedirect="mock-login-redirect" />);
+  const renderResult = render(<Login />);
   return {
     ...renderResult,
     mockUseLoginUser,
