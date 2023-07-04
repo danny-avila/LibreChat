@@ -20,6 +20,7 @@ export enum EModelEndpoint {
   azureOpenAI = 'azureOpenAI',
   openAI = 'openAI',
   bingAI = 'bingAI',
+  chatGPT = 'chatGPT',
   chatGPTBrowser = 'chatGPTBrowser',
   google = 'google',
   gptPlugins = 'gptPlugins',
