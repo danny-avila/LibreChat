@@ -14,6 +14,8 @@ afterEach(() => {
   delete process.env.OPENID_SESSION_SECRET;
   delete process.env.OPENID_BUTTON_LABEL;
   delete process.env.OPENID_AUTH_URL;
+  delete process.env.GITHUB_CLIENT_ID;
+  delete process.env.GITHUB_CLIENT_SECRET;
   delete process.env.DOMAIN_SERVER;
   delete process.env.ALLOW_REGISTRATION;
 });
@@ -32,6 +34,8 @@ describe.skip('GET /', () => {
     process.env.OPENID_SESSION_SECRET= 'Test Secret';
     process.env.OPENID_BUTTON_LABEL= 'Test OpenID';
     process.env.OPENID_AUTH_URL= 'http://test-server.com';
+    process.env.GITHUB_CLIENT_ID = 'Test Github client Id';
+    process.env.GITHUB_CLIENT_SECRET= 'Test Github client Secret';
     process.env.DOMAIN_SERVER = 'http://test-server.com';
     process.env.ALLOW_REGISTRATION = 'true';
 
@@ -44,6 +48,7 @@ describe.skip('GET /', () => {
       openidLoginEnabled: true,
       openidLabel: 'Test OpenID',
       openidImageUrl: 'http://test-server.com',
+      githubLoginEnabled: true,
       serverDomain: 'http://test-server.com',
       registrationEnabled: 'true',
     });

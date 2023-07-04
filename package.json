@@ -36,7 +36,10 @@
   },
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "dependencies": {
-    "langchain": "^0.0.91"
+    "axios": "^1.4.0",
+    "langchain": "^0.0.91",
+    "passport": "^0.6.0",
+    "passport-github2": "^0.1.12"
   },
   "devDependencies": {
     "@playwright/test": "^1.32.1",

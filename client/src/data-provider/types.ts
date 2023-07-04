@@ -243,6 +243,7 @@ export type TStartupConfig = {
   openidLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
+  githubLoginEnabled: boolean;
   serverDomain: string;
   registrationEnabled: boolean;
 }
