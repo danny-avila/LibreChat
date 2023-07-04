@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useGetConversationsQuery, useSearchQuery } from '~/data-provider';
+import { useGetConversationsQuery, useSearchQuery } from '@librechat/data-provider';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 
 import Conversations from '../Conversations';
@@ -9,7 +9,6 @@ import NewChat from './NewChat';
 import Pages from '../Conversations/Pages';
 import Panel from '../svg/Panel';
 import Spinner from '../svg/Spinner';
-// import { ThemeContext } from '~/hooks/ThemeContext';
 import { cn } from '~/utils/';
 import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -38,7 +37,6 @@ import useDebounce from '~/hooks/useDebounce';
 export default function Nav({ navVisible, setNavVisible }) {
   const [isHovering, setIsHovering] = useState(false);
   const { isAuthenticated } = useAuthContext();
-  // const { theme, } = useContext(ThemeContext);
   const containerRef = useRef(null);
   const scrollPositionRef = useRef(null);
 
@@ -159,7 +157,8 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const isMobile = () => {
     const userAgent = typeof window.navigator === 'undefined' ? '' : navigator.userAgent;
-    const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS/i;
+    const mobileRegex =
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS/i;
     return mobileRegex.test(userAgent);
   };
 

@@ -96,7 +96,7 @@ export const getLoginGoogle = () => {
   return request.get(endpoints.loginGoogle());
 };
 
-export const requestPasswordReset = (payload: t.TRequestPasswordReset) => {
+export const requestPasswordReset = (payload: t.TRequestPasswordReset): Promise<t.TRequestPasswordResetResponse> => {
   return request.post(endpoints.requestPasswordReset(), payload);
 };
 

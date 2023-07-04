@@ -4,16 +4,19 @@
   "description": "",
   "workspaces": [
     "api",
-    "client"
+    "client",
+    "packages/data-provider"
   ],
   "scripts": {
     "install": "node config/install.js",
     "upgrade": "node config/upgrade.js",
     "create-user": "node config/create-user.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
-    "backend-dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
-    "frontend": "cd client && npm run build",
-    "frontend-dev": "cd client && npm run dev",
+    "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
+    "build:data-provider": "cd packages/data-provider && npm run build && npm link && cd ../../client && npm link @librechat/data-provider",
+    "frontend": "npm run build:data-provider && cd client && npm run build",
+    "frontend:ci": "npm run build:data-provider && cd client && npm run build:ci",
+    "frontend:dev": "cd client && npm run dev",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
     "e2e:ci": "playwright test --config=e2e/playwright.config.ts",
     "e2e:debug": "cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
@@ -66,7 +69,9 @@
     "ignore": [
       "api/data/",
       "data",
-      "client/"
+      "client/",
+      "admin/",
+      "packages/"
     ]
   }
 }

@@ -1,4 +1,4 @@
-import { TPlugin } from '~/data-provider';
+import { TPlugin } from '@librechat/data-provider';
 import { XCircle, DownloadCloud } from 'lucide-react';
 
 type TPluginStoreItemProps = {
