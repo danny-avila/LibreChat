@@ -21,6 +21,16 @@ const updateUserPlugins = async (user, pluginKey, action) => {
   }
 };
 
+const createUser = async (user) => {
+  try {
+    const response = await User.create(user);
+    return response;
+  } catch (err) {
+    console.log(err);
+    return err;
+  }
+};
+
 const updateUser = async (user, update) => {
   try {
     const response = await User.updateOne(
@@ -54,4 +64,4 @@ const getAllUsers = async () => {
   }
 };
 
-module.exports = { getAllUsers, deleteUser, updateUser, updateUserPlugins };
+module.exports = { getAllUsers, createUser, deleteUser, updateUser, updateUserPlugins };

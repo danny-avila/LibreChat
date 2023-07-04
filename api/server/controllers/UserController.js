@@ -1,4 +1,4 @@
-const { updateUserPlugins, getAllUsers, deleteUser, updateUser } = require('../services/UserService');
+const { updateUserPlugins, getAllUsers, deleteUser, updateUser, createUser } = require('../services/UserService');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('../services/PluginService');
 
 const getUserController = async (req, res) => {
@@ -15,11 +15,22 @@ const getAllUsersController = async (req, res) => {
   }
 }
 
+const createUserController = async (req, res) => {
+  try {
+    const { user } = req.body;
+    const newUser = await createUser(user);
+    return res.status(200).json(newUser);
+  } catch (e) {
+    console.log(e);
+    return res.status(500).json({ message: e.message });
+  }
+}
+
 const deleteUserController = async (req, res) => {
   try {
-    const { id } = req.params;
-    const user = await deleteUser(id);
-    return res.status(200).json(user);
+    const { user } = req.body;
+    const del = await deleteUser(user.id);
+    return res.status(200).json(del);
   } catch (e) {
     console.log(e);
     return res.status(500).json({ message: e.message });
@@ -28,10 +39,9 @@ const deleteUserController = async (req, res) => {
 
 const updateUserController = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { email, password, role } = req.body;
-    const user = await updateUser(id, email, password, role);
-    return res.status(200).json(user);
+    const { user } = req.body;
+    const update = await updateUser(user);
+    return res.status(200).json(update);
   } catch (e) {
     console.log(e);
     return res.status(500).json({ message: e.message });
@@ -88,4 +98,5 @@ module.exports = {
   updateUserController,
   getAllUsersController,
   deleteUserController,
+  createUserController,
 };
