@@ -97,6 +97,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Heroku](docs/deployment/heroku.md)
   * [Linode](docs/deployment/linode.md)
   * [Cloudflare](docs/deployment/cloudflare.md)
+  * [Ngrok](docs/deployment/ngrok.md)
 </details>
 
 <details>
