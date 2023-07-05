@@ -3,16 +3,16 @@ const Token = require('../../models/schema/tokenSchema');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { registerSchema } = require('../../strategies/validators');
-const { migrateDataToFirstUser, sendEmail } = require('../../utils');
+const { sendEmail } = require('../../utils');
 const config = require('../../../config/loader');
 const domains = config.domains;
 
 /**
  * Logout user
  *
- * @param {Object} user 
- * @param {*} refreshToken 
- * @returns 
+ * @param {Object} user
+ * @param {*} refreshToken
+ * @returns
  */
 const logoutUser = async (user, refreshToken) => {
   try {
@@ -37,7 +37,7 @@ const logoutUser = async (user, refreshToken) => {
  * Register a new user
  *
  * @param {Object} user <email, password, name, username>
- * @returns 
+ * @returns
  */
 const registerUser = async (user) => {
   const { error } = registerSchema.validate(user);
@@ -91,9 +91,6 @@ const registerUser = async (user) => {
     newUser.password = hash;
     newUser.save();
 
-    if (isFirstRegisteredUser) {
-      migrateDataToFirstUser(newUser);
-    }
     return { status: 200, user: newUser };
   } catch (err) {
     return { status: 500, message: err?.message || 'Something went wrong' };
@@ -103,8 +100,8 @@ const registerUser = async (user) => {
 /**
  * Request password reset
  *
- * @param {String} email 
- * @returns 
+ * @param {String} email
+ * @returns
  */
 const requestPasswordReset = async (email) => {
   const user = await User.findOne({ email });
@@ -141,10 +138,10 @@ const requestPasswordReset = async (email) => {
 /**
  * Reset Password
  *
- * @param {*} userId 
- * @param {String} token 
- * @param {String} password 
- * @returns 
+ * @param {*} userId
+ * @param {String} token
+ * @param {String} password
+ * @returns
  */
 const resetPassword = async (userId, token, password) => {
   let passwordResetToken = await Token.findOne({ userId });
