@@ -6,6 +6,7 @@ const buildDefaultConversation = ({
 }) => {
   const lastSelectedModel = JSON.parse(localStorage.getItem('lastSelectedModel')) || {};
   const lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools')) || [];
+  const lastBingSettings = JSON.parse(localStorage.getItem('lastBingSettings')) || [];
 
   if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
     conversation = {
@@ -43,13 +44,14 @@ const buildDefaultConversation = ({
       topK: lastConversationSetup?.topK ?? 40
     };
   } else if (endpoint === 'bingAI') {
+    const { jailbreak, toneStyle } = lastBingSettings;
     conversation = {
       ...conversation,
       endpoint,
-      jailbreak: lastConversationSetup?.jailbreak ?? false,
+      jailbreak: lastConversationSetup?.jailbreak ?? jailbreak ?? false,
       context: lastConversationSetup?.context ?? null,
       systemMessage: lastConversationSetup?.systemMessage ?? null,
-      toneStyle: lastConversationSetup?.toneStyle ?? 'creative',
+      toneStyle: lastConversationSetup?.toneStyle ?? toneStyle ?? 'creative',
       jailbreakConversationId: lastConversationSetup?.jailbreakConversationId ?? null,
       conversationSignature: null,
       clientId: null,

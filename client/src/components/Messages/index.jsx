@@ -89,9 +89,9 @@ export default function Messages({ isSearchView = false }) {
         <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
           <MessageHeader isSearchView={isSearchView} />
           {_messagesTree === null ? (
-            <body className="h-screen flex items-center justify-center">
+            <div className="h-screen flex items-center justify-center">
               <Spinner />
-            </body>
+            </div>
           ) : _messagesTree?.length == 0 && isSearchView ? (
             <div className="flex w-full items-center justify-center gap-1 bg-gray-50 p-3 text-sm text-gray-500 dark:border-gray-900/50 dark:bg-gray-800 dark:text-gray-300">
               Nothing found
