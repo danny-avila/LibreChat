@@ -8,7 +8,7 @@ import {
   WrenchScrewdriverIcon,
   HomeIcon,
   UsersIcon,
-  UserGroupIcon,
+  // UserGroupIcon,
   CogIcon,
   XMarkIcon
 } from '@heroicons/react/24/outline';
@@ -26,7 +26,7 @@ export type TNavItem = {
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: HomeIcon, current: true },
   { name: 'Users', href: '/users', icon: UsersIcon, current: false },
-  { name: 'Groups', href: '#', icon: UserGroupIcon, current: false },
+  // { name: 'Groups', href: '#', icon: UserGroupIcon, current: false },
   { name: 'Models', href: '#', icon: CpuChipIcon, current: false },
   { name: 'Plugins', href: '#', icon: CogIcon, current: false },
   { name: 'Templates', href: '#', icon: DocumentDuplicateIcon, current: false },

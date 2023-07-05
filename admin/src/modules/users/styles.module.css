@@ -1,0 +1,53 @@
+.idColumn {
+  width: 5%;
+  min-width: 5%;
+  max-width: 5%;
+}
+
+.usernameColumn {
+  width: 10%;
+  min-width: 10%;
+  max-width: 10%;
+}
+
+.nameColumn {
+  width: 15%;
+  min-width: 15%;
+  max-width: 15%;
+}
+
+.emailColumn {
+  width: 15%;
+  min-width: 15%;
+  max-width: 15%;
+}
+
+.roleColumn {
+  width: 5%;
+  min-width: 5%;
+  max-width: 5%;
+}
+
+.providerColumn {
+  width: 7%;
+  min-width: 7%;
+  max-width: 7%;
+}
+
+.createdColumn {
+  width: 10%;
+  min-width: 10%;
+  max-width: 10%;
+}
+
+.updatedColumn {
+  width: 10%;
+  min-width: 10%;
+  max-width: 10%;
+}
+
+.pluginsColumn {
+  width: 18%;
+  min-width: 18%;
+  max-width: 18%;
+}
