@@ -244,6 +244,7 @@ export type TStartupConfig = {
   openidLabel: string;
   openidImageUrl: string;
   githubLoginEnabled: boolean;
+  discordLoginEnabled: boolean;
   serverDomain: string;
   registrationEnabled: boolean;
 }
