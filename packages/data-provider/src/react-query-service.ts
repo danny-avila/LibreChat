@@ -22,6 +22,7 @@ export enum QueryKeys {
   tokenCount = 'tokenCount',
   availablePlugins = 'availablePlugins',
   startupConfig = 'startupConfig',
+  allUsers = 'allUsers'
 }
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
@@ -351,13 +352,58 @@ export const useUpdateUserPluginsMutation = (): UseMutationResult<
 };
 
 export const useGetStartupConfig = (): QueryObserverResult<t.TStartupConfig> => {
-  return useQuery<t.TStartupConfig>(
-    [QueryKeys.startupConfig],
-    () => dataService.getStartupConfig(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
+  return useQuery<t.TStartupConfig>([QueryKeys.startupConfig], () => dataService.getStartupConfig(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  });
+}
+
+export const useGetAllUsers = (): QueryObserverResult<t.TUser[], Error> => {
+  return useQuery<t.TUser[], Error>([QueryKeys.allUsers], () => dataService.getAllUsers(), {
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  });
+}
+
+export const useCreateUserMutation = (): UseMutationResult<
+  t.TUser,
+  Error,
+  t.TUser,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: t.TUser) => dataService.createUser(payload), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.allUsers]);
     },
-  );
-};
+  });
+}
+
+export const useUpdateUserMutation = (): UseMutationResult<
+  t.TUser,
+  Error,
+  t.TUser,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: t.TUser) => dataService.updateUser(payload), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.allUsers]);
+    },
+  });
+}
+
+export const useDeleteUserMutation = (): UseMutationResult<
+  t.TUser,
+  Error,
+  t.TUser,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: t.TUser) => dataService.deleteUser(payload), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.allUsers]);
+    },
+  });
+}
