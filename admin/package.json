@@ -22,6 +22,8 @@
   },
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "dependencies": {
+    "@heroicons/react": "^2.0.18",
+    "@librechat/data-provider": "*",
     "@tanstack/react-query": "^4.28.0",
     "clsx": "^1.2.1",
     "copy-to-clipboard": "^3.3.3",
@@ -41,9 +43,7 @@
     "react-router-dom": "^6.11.2",
     "react-string-replace": "^1.1.0",
     "tailwind-merge": "^1.9.1",
-    "tailwindcss-animate": "^1.0.5",
-    "@heroicons/react": "^2.0.18",
-    "@librechat/data-provider": "*"
+    "tailwindcss-animate": "^1.0.5"
   },
   "devDependencies": {
     "@babel/cli": "^7.20.7",
@@ -91,6 +91,7 @@
     "ts-jest": "^29.1.0",
     "ts-loader": "^9.4.2",
     "typescript": "^5.0.4",
+    "typescript-plugin-css-modules": "^5.0.1",
     "vite": "^4.3.9",
     "vite-plugin-html": "^3.2.0"
   }

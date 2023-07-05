@@ -39,6 +39,11 @@ export default defineConfig({
       }
     }
   },
+  css: {
+    modules: {
+      localsConvention: 'camelCaseOnly'
+    }
+  },
   resolve: {
     alias: {
       '@': path.join(__dirname, 'src/'),
