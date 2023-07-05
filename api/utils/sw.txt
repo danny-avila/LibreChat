@@ -48,8 +48,6 @@ VFZjY3R2
 VOWPsOmAieengA==
 VWx0cmFTdXJm
 VuS/oQ==
-V1dX
-V1d3
 V2VjaGF0
 V2VpWGlu
 V2VpeGlu
@@ -110,8 +108,6 @@ aG9uZ3poaQ==
 aHJpY2hpbmE=
 aHNjbmQuY29t
 aHNjbmQuY29t6aKG5Y+W5oOK5Zac
-aHRtbA==
-aHR0cA==
 aHVhbmV0
 aHVqaW50YW8=
 aHlwZXJtYXJ0Lm5ldA==
@@ -132,7 +128,6 @@ bWluZ2h1aW5ld3M=
 bW9ycGhpbmU=
 bmFjYg==
 bmFpdmU=
-bmV0
 bmlwcGxl
 bm1pcw==
 bnVkZQ==
