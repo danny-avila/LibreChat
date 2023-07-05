@@ -181,7 +181,7 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
                   setToken(JSON.stringify(data));
                 }}
               />
-            ) : endpoint === 'openAI' ? (
+            ) : endpoint === 'openAI' || endpoint === 'azureOpenAI' ? (
               <>
                 {!showPanel ? (
                   <>
@@ -196,29 +196,29 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
                   <>
                     <InputWithLabel
                       id={'instanceNameLabel'}
-                      value={getAzure('instanceName') || ''}
-                      onChange={(e) => setAzure('instanceName', e.target.value || '')}
+                      value={getAzure('azureOpenAIApiInstanceName') || ''}
+                      onChange={(e) => setAzure('azureOpenAIApiInstanceName', e.target.value || '')}
                       label={'Azure OpenAI Instance Name'}
                     />
 
                     <InputWithLabel
                       id={'deploymentNameLabel'}
-                      value={getAzure('deploymentName') || ''}
-                      onChange={(e) => setAzure('deploymentName', e.target.value || '')}
+                      value={getAzure('azureOpenAIApiDeploymentName') || ''}
+                      onChange={(e) => setAzure('azureOpenAIApiDeploymentName', e.target.value || '')}
                       label={'Azure OpenAI Deployment Name'}
                     />
 
                     <InputWithLabel
                       id={'versionLabel'}
-                      value={getAzure('version') || ''}
-                      onChange={(e) => setAzure('version', e.target.value || '')}
+                      value={getAzure('azureOpenAIApiVersion') || ''}
+                      onChange={(e) => setAzure('azureOpenAIApiVersion', e.target.value || '')}
                       label={'Azure OpenAI API Version'}
                     />
 
                     <InputWithLabel
                       id={'apiKeyLabel'}
-                      value={getAzure('apiKey') || ''}
-                      onChange={(e) => setAzure('apiKey', e.target.value || '')}
+                      value={getAzure('azureOpenAIApiKey') || ''}
+                      onChange={(e) => setAzure('azureOpenAIApiKey', e.target.value || '')}
                       label={'Azure OpenAI API Key'}
                     />
                   </>
@@ -227,7 +227,7 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
                   <Checkbox.Root
                     className="flex h-[20px] w-[20px] appearance-none items-center justify-center rounded-[4px] bg-gray-100 text-white outline-none hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-900"
                     id="azureOpenAI"
-                    checked={showPanel}
+                    checked={showPanel && endpoint === 'azureOpenAI'}
                     onCheckedChange={() => setShowPanel(!showPanel)}
                   >
                     <Checkbox.Indicator className="flex h-[20px] w-[20px] items-center justify-center rounded-[3.5px] bg-green-600">

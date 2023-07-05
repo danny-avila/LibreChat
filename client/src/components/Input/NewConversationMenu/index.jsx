@@ -83,6 +83,15 @@ export default function NewConversationMenu() {
       );
       localStorage.setItem('lastConversationSetup', JSON.stringify(conversation));
     }
+
+    if (endpoint === 'bingAI') {
+      const lastBingSettings = JSON.parse(localStorage.getItem('lastBingSettings')) || {};
+      const { jailbreak, toneStyle } = conversation;
+      localStorage.setItem(
+        'lastBingSettings',
+        JSON.stringify({ ...lastBingSettings, jailbreak, toneStyle })
+      );
+    }
   }, [conversation]);
 
   // set the current model
