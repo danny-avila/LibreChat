@@ -88,8 +88,9 @@ const fs = require('fs');
 const { Buffer } = require('buffer');
 
 // Replace the file paths with the actual paths to your files
-const sensitiveWordsFilePath = '/Users/phe/WebstormProjects/aitok/LibreChat/api/server/controllers/sensitive-text/sw.txt';
-const stopWordsFilePath = '/Users/phe/WebstormProjects/aitok/LibreChat/api/server/controllers/sensitive-text/stw.txt';
+const sensitiveWordsFilePath = './api/server/controllers/sensitive-text/sw.txt';
+const stopWordsFilePath = './api/server/controllers/sensitive-text/stw.txt';
+
 
 function initializeTrieFromFile(file) {
   const lexiconData = fs.readFileSync(file, 'utf-8');
