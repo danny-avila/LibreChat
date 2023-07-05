@@ -26,6 +26,10 @@ class BaseClient {
     throw new Error("Method 'getCompletion' must be implemented.");
   }
 
+  sendCompletion() {
+    throw new Error("Method 'sendCompletion' must be implemented.");
+  }
+
   getSaveOptions() {
     throw new Error('Subclasses must implement getSaveOptions');
   }
