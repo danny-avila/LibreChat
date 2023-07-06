@@ -57,12 +57,13 @@ With the docker deployment you can skip step 2 and step 3, use the setup instruc
 
 
 ### Select the plugins endpoint
-![image](../../assets/docs/features/plugins/plugins_endpoint.png)
+
+![plugins_endpoint](https://github.com/danny-avila/LibreChat/assets/32828263/9717e111-2e9e-43da-bd08-c5a0bbbc4d6d)
 
 ### Open the Plugin store and Install Stable Diffusion
-![image](../../assets/docs/features/plugins/plugin_store.png)
-![image](../../assets/docs/features/plugins/stable_diffusion-1.png)
+![plugin_store](https://github.com/danny-avila/LibreChat/assets/32828263/add4d6a8-e5d6-4129-a334-4ff9290c0e2d)
+![stable_diffusion-1](https://github.com/danny-avila/LibreChat/assets/32828263/b4364f41-0f7e-4197-af86-7d6061797366)
 
 
 ## 5. Select the plugin and enjoy!
-![image](../../assets/docs/features/plugins/stable_diffusion-2.png)
+![stable_diffusion-2](https://github.com/danny-avila/LibreChat/assets/32828263/8fa898b9-0826-42eb-bba4-6f85ec5f6ec2)
