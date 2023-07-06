@@ -1,7 +1,8 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useEffect, useState } from 'react';
-import * as Checkbox from '@radix-ui/react-checkbox';
-import { CheckIcon } from '@radix-ui/react-icons';
+// TODO: Temporarily remove checkbox until Plugins solution for Azure is figured out
+// import * as Checkbox from '@radix-ui/react-checkbox';
+// import { CheckIcon } from '@radix-ui/react-icons';
 import InputWithLabel from './InputWithLabel';
 import store from '~/store';
 
@@ -98,7 +99,7 @@ const OpenAIConfig = ({ token, setToken, endpoint } : OpenAIConfigProps) => {
           />
         </>
       )}
-      { endpoint === 'gptPlugins' && (
+      {/* { endpoint === 'gptPlugins' && (
         <div className="flex items-center">
           <Checkbox.Root
             className="flex h-[20px] w-[20px] appearance-none items-center justify-center rounded-[4px] bg-gray-100 text-white outline-none hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-900"
@@ -118,7 +119,7 @@ const OpenAIConfig = ({ token, setToken, endpoint } : OpenAIConfigProps) => {
           Use Azure OpenAI.
           </label>
         </div>
-      )}
+      )} */}
     </>
   );
 };

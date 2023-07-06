@@ -23,7 +23,7 @@ const initializeFunctionsAgent = async ({
     tools,
     model,
     {
-      agentType: "openai-functions",
+      agentType: 'openai-functions',
       memory,
       ...rest,
     }
