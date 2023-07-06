@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Plugin } from '~/components/svg';
 import EndpointOptionsDialog from '../Endpoints/EndpointOptionsDialog';
-import { cn } from '~/utils/';
+import { cn, alternateName } from '~/utils/';
 
 import store from '~/store';
 
@@ -28,7 +28,7 @@ const MessageHeader = ({ isSearchView = false }) => {
   const getConversationTitle = () => {
     if (isSearchView) return `Search: ${searchQuery}`;
     else {
-      let _title = `${endpoint}`;
+      let _title = `${alternateName[endpoint] ?? endpoint}`;
 
       if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
         const { chatGptLabel } = conversation;
@@ -42,7 +42,7 @@ const MessageHeader = ({ isSearchView = false }) => {
       } else if (endpoint === 'bingAI') {
         const { jailbreak, toneStyle } = conversation;
         if (toneStyle) _title += `: ${toneStyle}`;
-        if (jailbreak) _title += ` as Sydney`;
+        if (jailbreak) _title += ' as Sydney';
       } else if (endpoint === 'chatGPTBrowser') {
         if (model) _title += `: ${model}`;
       } else if (endpoint === 'gptPlugins') {
