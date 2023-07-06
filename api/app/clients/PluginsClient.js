@@ -164,7 +164,7 @@ Only respond with your conversational reply to the following User Message:
 
     if (this.options.debug) {
       console.debug('createLLM: configOptions');
-      console.debug(configOptions, credentials);
+      console.debug(configOptions);
     }
 
     return new ChatOpenAI({ credentials, configuration, ...modelOptions }, configOptions);
