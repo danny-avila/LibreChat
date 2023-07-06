@@ -1,5 +1,4 @@
-
-[<img src="../assets/docs/deployment/cloudflare-logo.jpg" width="350">](https://www.cloudflare.com/)
+<img src="https://github.com/danny-avila/LibreChat/assets/32828263/cfbc7ca5-b51e-4f1d-aa89-b9b4cb13eead" width="350">
 
 # Cloudflare
 ### if you are new to Domain, here's a quick guide to use setup a domain with Cloudflare:
@@ -17,7 +16,7 @@
 - return to the cloudflare tab and tap on `Done, check nameservers`, then `finish later` and `Check nameservers` (this process can take about 5 minutes)
 - in the `DNS` tab select `Records` and `Add Record`
 
-![248543319-77618430-d346-49a9-a5d3-17eac0270ccf](../assets/docs/deployment/cloudflare-1.png)
+![cloudflare-1](https://github.com/danny-avila/LibreChat/assets/32828263/249574b5-a064-4803-8b08-f95804db0719)
 
   (in the Name section, if you use @ it will use you main domain, but if you want to use a subdomain write it in the Name section)
    - For example: if you want to acces with chat.yourdomain.com just set in the Name section `chat`
@@ -105,12 +104,12 @@ Now that you have installed the tunnel, it's time to configure it. Follow these 
 
 1. Proceed to the next step and select a public hostname.
 2. Follow the instructions provided in this image to configure it correctly.
+   
+![cloudflare-2](https://github.com/danny-avila/LibreChat/assets/32828263/d155b58f-7f59-4372-a3aa-dec2413a3dce)
 
-   ![image](../assets/docs/deployment/cloudflare-2.png)
+**Note: If the tunnel doesn't work and shows "bad gateway", try using your ip instead of localhost**
 
-### If the tunnel dont works and show "bad gateway" put your ip instead of localhost
-
-## You did it! You have successfully set up a working tunnel.
+### You did it! You have successfully set up a working tunnel.
 
 ---
 
