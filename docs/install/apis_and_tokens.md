@@ -18,7 +18,7 @@ To get your Access token for ChatGPT 'Free Version', you need to:
 - Go to https://chat.openai.com
 - Create an account or log in with your existing one
 - Visit https://chat.openai.com/api/auth/session
-- Copy the value of the "access_token" field and save it in ./.env as CHATGPT_ACCESS_TOKEN
+- Copy the value of the "accessToken" field and save it in ./.env as CHATGPT_ACCESS_TOKEN
 
 Warning: There may be a chance of your account being banned if you deploy the app to multiple users with this method. Use at your own risk. 😱
 
