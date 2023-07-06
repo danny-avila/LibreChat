@@ -62,5 +62,6 @@ the provided docker-compose file:
    
 If everything goes well, you should see a `passed` message.
 
-<img src="../assets/docs/contributions/testing-1.png">
+![testing-1](https://github.com/danny-avila/LibreChat/assets/32828263/35b5c6a8-5c76-4e76-8ad9-2b1977eabc2a)
+
 
