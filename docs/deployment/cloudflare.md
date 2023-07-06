@@ -1,8 +1,8 @@
 
 [<img src="../assets/docs/deployment/cloudflare-logo.jpg" width="350">](https://www.cloudflare.com/)
 
-#Cloudflare
-## if you are new to Domain, here's a quick guide to use setup a domain with Cloudflare:
+# Cloudflare
+### if you are new to Domain, here's a quick guide to use setup a domain with Cloudflare:
 
 ## Google Domains and Cloudflare
 
@@ -28,23 +28,8 @@
 
 If you want to use LibreChat exclusively for yourself or your family and set up an additional layer of protection, you can utilize Cloudflare Zero Trust. Here's how:
 
-### Install Cloudflare Tunnel:
 
-- Go to `https://dash.cloudflare.com/`.
-- On the left side, click on **Zero Trust**.
-- Provide a casual name (which you can change later).
-- Select the free plan and proceed to payment (if you choose the free plan, you will not be charged).
-- Open the **Access** tab, navigate to **Tunnels**, and click on **Create a tunnel**.
-- Set up a tunnel name (e.g., `my-linode-server`) and save the tunnel.
-- Choose where you want to install Cloudflare Tunnel (I recommend using Docker).
-  - If you choose Docker: Simply copy the displayed command and paste it into the terminal. Before running it, add `-d` after `docker run`, like this: `docker run -d cloudflare/cloudflared:latest...` (this will run the Docker process in the background).
-- In the **Public Hostname** tab, select **Add a public hostname**.
-
-![image](../assets/docs/deployment/cloudflare-2.png)
-
-
-
-## Setup Application Login: (optional)
+### Setup Application Login: (optional)
 
 Setting up application login with Cloudflare Zero Trust adds extra security but is not recommended for most users because it requires authentication through Cloudflare Zero Trust before accessing LibreChat.
 
@@ -59,7 +44,7 @@ Setting up application login with Cloudflare Zero Trust adds extra security but 
 
 **NOTE:** If you have followed the "Setup Application Login" section, you must read the next part.
 
-## Setup Authentication Method:
+### Setup Authentication Method:
 
 Currently, you can only access Cloudflare Zero Trust using a PIN. Below are guides that explain how to add popular social login methods:
 
@@ -73,6 +58,59 @@ After adding at least one login method, return to the **Applications** section, 
 - Turn off "Accept all available identity providers".
 - Select your social login method and deselect "One-time PIN".
 - Click on **Save application**.
+
+---
+
+## Cloudflare Tunnels
+
+Cloudflare Tunnels is a powerful tool that allows you to securely expose your local web servers or services to the internet. With Cloudflare Tunnels, you can establish a secure connection between your local machine and Cloudflare's global network, ensuring that your web traffic is protected and efficiently routed.
+
+Here's a straightforward guide on how to install it!
+
+### Installation Steps
+
+
+1. Go to `https://dash.cloudflare.com/`.
+2. On the left side, click on **Zero Trust**.
+3. Provide a casual name (which you can change later).
+4. Select the free plan and proceed to payment (if you choose the free plan, you will not be charged).
+5. Open the **Access** tab, navigate to **Tunnels**, and click on **Create a tunnel**.
+6. Set up a tunnel name (e.g., `home`) and save the tunnel.
+
+
+### Windows Installation
+
+To install Cloudflare Tunnels on Windows, follow these steps:
+
+1. Click [here](https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.msi) to download the latest version.
+2. Open the Command Prompt as an administrator.
+3. Copy the command provided in the Windows section under "Install and run a connector." The command should look something like this: `cloudflared.exe service install <your token>`.
+4. Paste the command into the Command Prompt and press Enter.
+5. The installation is now complete! Proceed to the [Tunnel Configuration](#tunnel-configuration) section to continue with the configuration.
+
+
+### Docker Installation
+
+To install Cloudflare Tunnels using Docker, follow these steps:
+
+1. Copy the command provided in the Docker section. It should be something like this: `docker run cloudflare/cloudflared:latest tunnel --no-autoupdate run --token <your token>`
+2. Open the terminal or command prompt.
+3. Paste the command and add `-d` after `docker run` to run the Docker process in the background. The updated command should look like this: `docker run -d cloudflare/cloudflared:latest...`
+4. Press Enter to execute the command.
+5. The installation is now complete! Proceed to the [Tunnel Configuration](#tunnel-configuration) section to continue with the configuration.
+
+### Tunnel Configuration
+
+Now that you have installed the tunnel, it's time to configure it. Follow these steps:
+
+1. Proceed to the next step and select a public hostname.
+2. Follow the instructions provided in this image to configure it correctly.
+
+   ![image](../assets/docs/deployment/cloudflare-2.png)
+
+### If the tunnel dont works and show "bad gateway" put your ip instead of localhost
+
+## You did it! You have successfully set up a working tunnel.
 
 ---
 
