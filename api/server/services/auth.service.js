@@ -98,7 +98,8 @@ const registerUser = async (user) => {
     }
 
     if (refBy !== '') {
-      await User.updateOne({ _id: refBy }, { $push: { referrals: registrationResult.id } })
+      await User.updateOne({ _id: refBy }, { $push: { referrals: registrationResult.id },
+        $inc: { numOfReferrals: 1 } })
     }
     return { status: 200, user: newUser };
   } catch (err) {

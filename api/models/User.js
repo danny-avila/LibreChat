@@ -84,6 +84,10 @@ const userSchema = mongoose.Schema(
     referrals: {
       type: Array,
       default: []
+    },
+    numOfReferrals: {
+      type: Number,
+      default: 0
     }
   },
   { timestamps: true }
