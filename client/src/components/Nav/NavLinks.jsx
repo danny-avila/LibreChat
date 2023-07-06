@@ -1,5 +1,5 @@
 import { Menu, Transition } from '@headlessui/react';
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import SearchBar from './SearchBar';
 import TrashIcon from '../svg/TrashIcon';
@@ -15,17 +15,12 @@ import { cn } from '~/utils/';
 import DotsIcon from '../svg/DotsIcon';
 
 import store from '~/store';
-import CopyIcon from '../svg/CopyIcon';
-import CheckMark from '../svg/CheckMark';
 
 export default function NavLinks({ clearSearch, isSearchEnabled }) {
   const [showExports, setShowExports] = useState(false);
   const [showClearConvos, setShowClearConvos] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [refLink, setRefLink] = useState('');
-  const [copied, setCopied] = useState(false);
   const { user } = useAuthContext();
-  const mode = process.env.NODE_ENV;
 
   const conversation = useRecoilValue(store.conversation) || {};
 
@@ -37,21 +32,6 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
   const clickHandler = () => {
     if (exportable) setShowExports(true);
   };
-
-  const copyLinkHander = () => {
-    navigator.clipboard.writeText(refLink);
-    setCopied(true);
-  }
-
-  useEffect(() => {
-    if (user) setRefLink(mode === 'dev' ? `http://localhost:3090/register/${user.id}` : `aitok.us/register/${user.id}`);
-  }, [user]);
-
-  useEffect(() => {
-    setTimeout(() => {
-      if (copied) setCopied(!copied);
-    }, 1000);
-  }, [copied])
 
   return (
     <>
@@ -128,15 +108,6 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                   />
                 </Menu.Item>
                 <div className="my-1.5 h-px bg-white/20" role="none" />
-                <div className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700">
-                  <button onClick={ copyLinkHander }>
-                    {copied ? <CheckMark /> : <CopyIcon />}
-                  </button>
-                  <input className='typing-container'
-                    value={refLink}
-                    style={{ color: "white", fontSize: "12pt" }}
-                    disabled={true} />
-                </div>
                 <Menu.Item as="div">
                   <Logout />
                 </Menu.Item>
