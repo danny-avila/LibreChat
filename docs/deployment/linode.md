@@ -1,5 +1,4 @@
-
-[<img src="../assets/docs/deployment/linode-logo.jpg" width="250">](https://www.linode.com/)
+<img src="https://github.com/danny-avila/LibreChat/assets/32828263/d6e430db-518a-4779-83d3-a2d177907df1" width="250">
 
 # Linode 
 
@@ -72,12 +71,14 @@ Password: changeme
 
 ### Login to NGINX Proxy Manager.
   - Click on "Proxy Host" and add a proxy host.
+    
+![linode-1](https://github.com/danny-avila/LibreChat/assets/32828263/798014ce-6e71-4e1f-9637-3f5f2a7fe402)
 
-![248540414-0dbbfdbb-063e-4fa5-bb1d-811064cc4bad](../assets/docs/deployment/linode-1.png)
 
 - If you want, you can add the `Let's Encrypt SSL` certificate.
+  
+![linode-2](https://github.com/danny-avila/LibreChat/assets/32828263/5bd03be9-1e72-4801-8694-db2c540a2833)
 
-![248540572-6d0220e2-2506-4b40-8974-a5014df646d6](../assets/docs/deployment/linode-2.png)
 
 ---
 
