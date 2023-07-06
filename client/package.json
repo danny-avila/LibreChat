@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "",
   "scripts": {
     "data-provider": "cd .. && npm run build:data-provider",
