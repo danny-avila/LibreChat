@@ -92,9 +92,6 @@ const useMessageHandler = () => {
         skipCompletion: true,
         model: 'gpt-3.5-turbo',
         temperature: 0,
-        // top_p: 1,
-        // presence_penalty: 0,
-        // frequency_penalty: 0
       };
       endpointOption = {
         endpoint,
@@ -109,6 +106,7 @@ const useMessageHandler = () => {
         top_p: currentConversation?.top_p ?? 1,
         presence_penalty: currentConversation?.presence_penalty ?? 0,
         frequency_penalty: currentConversation?.frequency_penalty ?? 0,
+        token: endpointsConfig[endpoint]?.userProvide ? getToken() : null,
         agentOptions
       };
       responseSender = 'ChatGPT';
