@@ -22,8 +22,9 @@ To use Ngrok for tunneling your local server to the internet, follow these steps
 7. In the `ngrok.exe` terminal, run the following command: ngrok http 3080
 
 You will see a link that can be used to access LibreChat.
-![ngrok-windows](../assets/docs/deployment/ngrok-1.png)
+![ngrok-1](https://github.com/danny-avila/LibreChat/assets/32828263/3cb4b063-541f-4f0a-bea8-a04dd36e6bf4)
 
 ---
 
-Please note that this readme assumes some prior knowledge and familiarity with the command line, Docker, and running applications on your local machine. If you have any issues or questions, refer to the Ngrok documentation or open an issuee on our [Discord server](https://discord.gg/NGaa9RPCft)
+### Note: 
+This readme assumes some prior knowledge and familiarity with the command line, Docker, and running applications on your local machine. If you have any issues or questions, refer to the Ngrok documentation or open an issue on our [Discord server](https://discord.gg/NGaa9RPCft)
