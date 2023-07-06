@@ -179,7 +179,7 @@ export default function Nav({ navVisible, setNavVisible }) {
         <div className="flex h-full min-h-0 flex-col ">
           <div className="scrollbar-trigger relative flex h-full w-full flex-1 items-start border-white/20">
             <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
-              <div className='flex flex-row'>
+              <div className='flex flex-row h-11'>
                 <NewChat />
                 <button
                   type='button'
@@ -223,7 +223,7 @@ export default function Nav({ navVisible, setNavVisible }) {
       {!navVisible && (
         <button
           type="button"
-          className="nav-open-button mt-1 fixed left-2 top-0.5 z-10 inline-flex h-10 w-10 items-center justify-center rounded-md border text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-white dark:text-gray-500 dark:hover:text-gray-400"
+          className="nav-open-button mt-1 fixed left-2 top-0.5 z-10 inline-flex h-11 w-11 items-center justify-center rounded-md border border-black/10 dark:border-white/20 bg-white dark:bg-gray-800 text-black hover:text-gray-500 dark:text-white dark:hover:text-gray-400"
           onClick={toggleNavVisible}
         >
           <div className="flex items-center justify-center">
