@@ -34,3 +34,13 @@ export const languages = [
   'perl',
   'pascal'
 ];
+
+export const alternateName = {
+  openAI: 'OpenAI',
+  azureOpenAI: 'Azure OpenAI',
+  bingAI: 'Bing',
+  chatGPTBrowser: 'ChatGPT',
+  gptPlugins: 'Plugins',
+  google: 'PaLM'
+};
+
