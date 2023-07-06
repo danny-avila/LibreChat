@@ -6,7 +6,7 @@ This doc explains how to setup various tokens and APIs for the project. You will
 
 To get your OpenAI API key, you need to:
 
-- Go to https://platform.openai.com/account/api-keys
+- Go to [https://platform.openai.com/account/api-keys](https://platform.openai.com/account/api-keys)
 - Create an account or log in with your existing one
 - Add a payment method to your account (this is not free, sorry 😬)
 - Copy your secret key (sk-...) and save it in ./.env as OPENAI_API_KEY
@@ -15,9 +15,9 @@ To get your OpenAI API key, you need to:
 
 To get your Access token for ChatGPT 'Free Version', you need to:
 
-- Go to https://chat.openai.com
+- Go to [https://chat.openai.com](https://chat.openai.com)
 - Create an account or log in with your existing one
-- Visit https://chat.openai.com/api/auth/session
+- Visit [https://chat.openai.com/api/auth/session](https://chat.openai.com/api/auth/session)
 - Copy the value of the "accessToken" field and save it in ./.env as CHATGPT_ACCESS_TOKEN
 
 Warning: There may be a chance of your account being banned if you deploy the app to multiple users with this method. Use at your own risk. 😱
@@ -41,35 +41,64 @@ To get your Bing Access Token, you have a few options:
 
 To setup PaLM 2 (via Google Cloud Vertex AI API), you need to:
 
-- Enable the Vertex AI API on Google Cloud:
-  - Go to https://console.cloud.google.com/vertex-ai
+### Enable the Vertex AI API on Google Cloud:
+  - Go to [https://console.cloud.google.com/vertex-ai](https://console.cloud.google.com/vertex-ai)
   - Click on "Enable API" if prompted
-- Create a Service Account:
-  - Go to https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts/create?walkthrough_id=iam--create-service-account#step_index=1
+### Create a Service Account:
+  - Go to [https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts/create?walkthrough_id=iam--create-service-account#step_index=1](https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts/create?walkthrough_id=iam--create-service-account#step_index=1)
   - Select or create a project
   - Enter a service account name and description
   - Click on "Create and Continue" to give at least the "Vertex AI User" role
   - Click on "Done"
-- Create a JSON key, rename as 'auth.json' and save it in /api/data/:
-  - Go back to https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts
+### Create a JSON key, rename as 'auth.json' and save it in /api/data/:
+  - Go back to [https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts](https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts)
   - Select your service account
   - Click on "Keys"
   - Click on "Add Key" and then "Create new key"
   - Choose JSON as the key type and click on "Create"
   - Download the key file and rename it as 'auth.json'
-  - Save it in /api/data/
+  - Save it in `/api/data/`
 
-##
+## Azure OpenAI
 
-That's it! You're all set. 🎉
+In order to use Azure OpenAI with this project, specific environment variables must be set in your `.env` file. These variables will be used for constructing the API URLs. 
 
-##
+The variables needed are outlined below:
 
-## Go Back to Your Install Documentation:
-- [Docker Install](docker_install.md)
-- [Linux Install](linux_install.md)
-- [Mac Install](mac_install.md)
-- [Windows Install](windows_install.md)
+### Required Variables
+
+* `AZURE_API_KEY`: Your Azure OpenAI API key.
+* `AZURE_OPENAI_API_INSTANCE_NAME`: The instance name of your Azure OpenAI API.
+* `AZURE_OPENAI_API_DEPLOYMENT_NAME`: The deployment name of your Azure OpenAI API. 
+* `AZURE_OPENAI_API_VERSION`: The version of your Azure OpenAI API.
+
+For example, with these variables, the URL for chat completion would look something like:
+```plaintext
+https://{AZURE_OPENAI_API_INSTANCE_NAME}.openai.azure.com/openai/deployments/{AZURE_OPENAI_API_DEPLOYMENT_NAME}/chat/completions?api-version={AZURE_OPENAI_API_VERSION}
+```
+You should also consider changing the `AZURE_OPENAI_MODELS` variable to the models available in your deployment.
+
+### Optional Variables
+
+* `AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME`: The deployment name for completion. This is currently not in use but may be used in future.
+* `AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME`: The deployment name for embedding. This is currently not in use but may be used in future.
+
+These two variables are optional but may be used in future updates of this project.
+
+### Plugin Endpoint Variables
+
+Note: The Plugins endpoint may not work as expected with Azure OpenAI, which may not support OpenAI Functions yet. Even when results were generated, they were not great compared to the regular OpenAI endpoint. You should set the "Functions" off in the Agent settings, and it's recommend to not skip completion with functions off.
+
+To use Azure with the Plugins endpoint, there are some extra steps to take as the langchain library is particular with envrionment variables:
+
+* `PLUGINS_USE_AZURE`: If set to "true" or any truthy value, this will enable the program to use Azure with the Plugins endpoint. 
+* `AZURE_OPENAI_API_KEY`: Your Azure API key must be set to this environment variable, not to be confused with `AZURE_API_KEY`, which can remain as before.
+* `OPENAI_API_KEY`: Must be omitted or commented to use Azure with Plugins
+
+These steps are quick workarounds as other solutions would require renaming environment variables. This is due to langchain overriding environment variables, and will have to be solved with a later solution.
+
+
+## That's it! You're all set. 🎉
 
 ---
 

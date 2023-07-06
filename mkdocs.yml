@@ -86,8 +86,8 @@ nav:
     - Mac Install: 'install/mac_install.md'
     - Windows Install: 'install/windows_install.md'
     - APIs and Tokens: 'install/apis_and_tokens.md'
+    - User Auth System: 'install/user_auth_system.md'
   - Features:
-    - User Auth System: 'features/user_auth_system.md'
     - Plugins:
       - Introduction: 'features/plugins/introduction.md'
       - Google: 'features/plugins/google_search.md'
