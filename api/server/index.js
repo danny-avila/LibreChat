@@ -66,7 +66,7 @@ config.validate(); // Validate the config
   app.use('/api/endpoints', routes.endpoints);
   app.use('/api/plugins', routes.plugins);
   app.use('/api/config', routes.config);
-  app.use('api/leaderboard', routes.leaderboard);
+  app.use('/api/leaderboard', routes.leaderboard);
 
   // static files
   app.get('/*', function (req, res) {
