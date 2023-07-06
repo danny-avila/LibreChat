@@ -4,7 +4,7 @@ const { CallbackManager } = require('langchain/callbacks');
 const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents/');
 const { loadTools } = require('./tools/util');
 const { SelfReflectionTool } = require('./tools/');
-const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
+const { HumanMessage, AIMessage } = require('langchain/schema');
 const {
   instructions,
   imageInstructions,
@@ -235,17 +235,10 @@ Only respond with your conversational reply to the following User Message:
     };
 
     // Map Messages to Langchain format
-    const pastMessages = this.currentMessages.map(
+    const pastMessages = this.currentMessages.slice(0, -1).map(
       msg => msg?.isCreatedByUser || msg?.role?.toLowerCase() === 'user'
-        ? new HumanChatMessage(msg.text)
-        : new AIChatMessage(msg.text));
-
-    if (this.options.debug) {
-      console.debug('Current Messages');
-      console.debug(this.currentMessages);
-      console.debug('Past Messages');
-      console.debug(pastMessages);
-    }
+        ? new HumanMessage(msg.text)
+        : new AIMessage(msg.text));
 
     // initialize agent
     const initializer = this.functionsAgent ? initializeFunctionsAgent : initializeCustomAgent;
@@ -351,6 +344,8 @@ Only respond with your conversational reply to the following User Message:
       onChainEnd,
     } = await this.handleStartMethods(message, opts);
 
+    this.currentMessages.push(userMessage);
+
     let { prompt: payload, tokenCountMap, promptTokens, messages } = await this.buildMessages(
       this.currentMessages,
       userMessage.messageId,
@@ -360,19 +355,15 @@ Only respond with your conversational reply to the following User Message:
       }),
     );
 
-    if (this.options.debug) {
-      console.debug('buildMessages: Messages');
-      console.debug(messages);
-    }
-
     if (tokenCountMap) {
-      payload = payload.map((message, i) => {
-        const { tokenCount, ...messageWithoutTokenCount } = message;
-        // userMessage is always the last one in the payload
-        if (i === payload.length - 1) {
-          userMessage.tokenCount = message.tokenCount;
-          console.debug(`Token count for user message: ${tokenCount}`, `Instruction Tokens: ${tokenCountMap.instructions || 'N/A'}`);
-        }
+      console.dir(tokenCountMap, { depth: null })
+      if (tokenCountMap[userMessage.messageId]) {
+        userMessage.tokenCount = tokenCountMap[userMessage.messageId];
+        console.log('userMessage.tokenCount', userMessage.tokenCount);
+      }
+      payload = payload.map((message) => {
+        const messageWithoutTokenCount = message;
+        delete messageWithoutTokenCount.tokenCount;
         return messageWithoutTokenCount;
       });
       this.handleTokenCountMap(tokenCountMap);
@@ -482,25 +473,15 @@ Only respond with your conversational reply to the following User Message:
 
     let promptBody = '';
     const maxTokenCount = this.maxPromptTokens;
-
     // Iterate backwards through the messages, adding them to the prompt until we reach the max token count.
     // Do this within a recursive async function so that it doesn't block the event loop for too long.
     const buildPromptBody = async () => {
       if (currentTokenCount < maxTokenCount && orderedMessages.length > 0) {
         const message = orderedMessages.pop();
-        // const roleLabel = message.role === 'User' ? this.userLabel : this.chatGptLabel;
-        const roleLabel = message.role;
+        const isCreatedByUser = message.isCreatedByUser || message.role?.toLowerCase() === 'user';
+        const roleLabel = isCreatedByUser ? this.userLabel : this.chatGptLabel;
         let messageString = `${this.startToken}${roleLabel}:\n${message.text}${this.endToken}\n`;
-        let newPromptBody;
-        if (promptBody) {
-          newPromptBody = `${messageString}${promptBody}`;
-        } else {
-          // Always insert prompt prefix before the last user message, if not gpt-3.5-turbo.
-          // This makes the AI obey the prompt instructions better, which is important for custom instructions.
-          // After a bunch of testing, it doesn't seem to cause the AI any confusion, even if you ask it things
-          // like "what's the last thing I wrote?".
-          newPromptBody = `${promptPrefix}${messageString}${promptBody}`;
-        }
+        let newPromptBody = `${messageString}${promptBody}`;
 
         const tokenCountForMessage = this.getTokenCount(messageString);
         const newTokenCount = currentTokenCount + tokenCountForMessage;
@@ -549,7 +530,7 @@ Only respond with your conversational reply to the following User Message:
     const result = [messagePayload, instructionsPayload];
 
     if (this.functionsAgent && !this.isGpt3) {
-      result[1].content = `${result[1].content}\nSure thing! Here is the output you requested:\n`;
+      result[1].content = `${result[1].content}\n${this.startToken}${this.chatGptLabel}:\nSure thing! Here is the output you requested:\n`;
     }
 
     return result.filter((message) => message.content.length > 0);
