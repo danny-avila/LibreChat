@@ -14,8 +14,8 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { ThemeContext } from '~/hooks/ThemeContext';
 import { cn } from '~/utils/';
 import NavLink from './NavLink';
-import CopyIcon from '../svg/CopyIcon';
 import CheckMark from '../svg/CheckMark';
+import Clipboard from '../svg/Clipboard';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
 // const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -233,7 +233,7 @@ export default function Nav({ navVisible, setNavVisible }) {
               </div>
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-                svg={() => copied ? <CheckMark /> : <CopyIcon />}
+                svg={() => copied ? <CheckMark /> : <Clipboard />}
                 text={navigator.languages[0] === 'zh-CN' ? "复制邀请链接" : "Copy invitation link"}
                 clickHandler={ copyLinkHandler }
               />
