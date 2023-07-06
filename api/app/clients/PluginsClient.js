@@ -86,7 +86,7 @@ class PluginsClient extends OpenAIClient {
     const preliminaryAnswer =
       result.output?.length > 0 ? `Preliminary Answer: "${result.output.trim()}"` : '';
     const prefix = preliminaryAnswer
-      ? `review and improve the answer you generated using plugins in response to the User Message below. The user hasn't seen your answer or thoughts yet.`
+      ? 'review and improve the answer you generated using plugins in response to the User Message below. The user hasn\'t seen your answer or thoughts yet.'
       : 'respond to the User Message below based on your preliminary thoughts & actions.';
 
     return `As a helpful AI Assistant, ${prefix}${errorMessage}\n${internalActions}
@@ -153,16 +153,21 @@ Only respond with your conversational reply to the following User Message:
 
   createLLM(modelOptions, configOptions) {
     let credentials = { openAIApiKey: this.openAIApiKey };
+    let configuration = {
+      apiKey: this.openAIApiKey,
+    };
+
     if (this.azure) {
-      credentials = { ...this.azure };
+      credentials = {};
+      configuration = {};
     }
 
     if (this.options.debug) {
       console.debug('createLLM: configOptions');
-      console.debug(configOptions);
+      console.debug(configOptions, credentials);
     }
 
-    return new ChatOpenAI({ credentials, ...modelOptions }, configOptions);
+    return new ChatOpenAI({ credentials, configuration, ...modelOptions }, configOptions);
   }
 
   async initialize({ user, message, onAgentAction, onChainEnd, signal }) {
@@ -525,7 +530,7 @@ Only respond with your conversational reply to the following User Message:
     currentTokenCount += 2;
 
     if (this.isGpt3 && messagePayload.content.length > 0) {
-      const context = `Chat History:\n`;
+      const context = 'Chat History:\n';
       messagePayload.content = `${context}${prompt}`;
       currentTokenCount += this.getTokenCount(context);
     }
