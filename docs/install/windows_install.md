@@ -46,7 +46,7 @@
 ### [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
 - You must set up at least one of these tokens or APIs to run the app.
 
-### [User/Auth System](../features/user_auth_system.md) (Optional)
+### [User/Auth System](../install/user_auth_system.md) (Optional)
 - How to set up the user/auth system and Google login.
 
 ## Setup and Run the app
