@@ -26,7 +26,7 @@ These two variables are optional but may be used in future updates of this proje
 
 ## Plugin Endpoint Variables
 
-Note: feature may not work as expected with the Plugins endpoint as Azure OpenAI may not support OpenAI Functions yet. Even when results were generated, they were not great compared to the regular OpenAI endpoint. You should set the "Functions" off in the Agent settings, and it's recommend to not skip completion with functions off.
+Note: The Plugins endpoint may not work as expected with Azure OpenAI, which may not support OpenAI Functions yet. Even when results were generated, they were not great compared to the regular OpenAI endpoint. You should set the "Functions" off in the Agent settings, and it's recommend to not skip completion with functions off.
 
 To use Azure with the Plugins endpoint, there are some extra steps to take as the langchain library is particular with envrionment variables:
 
