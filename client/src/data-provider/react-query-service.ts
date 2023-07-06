@@ -23,6 +23,7 @@ export enum QueryKeys {
   availablePlugins = 'availablePlugins',
   startupConfig = 'startupConfig',
   recentConversations = 'recentConversations',
+  numOfReferrals = 'numOfReferrals'
 }
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
@@ -358,4 +359,12 @@ export const useGetRecentConversations = (): QueryObserverResult<t.TConversation
 
 export const useDuplicateConvoMutation = (): any => {
   return useMutation((payload: object) => dataService.duplicateConversation(payload))
+}
+
+export const useGetLeaderboardQuery = () => {
+  return useQuery([QueryKeys.numOfReferrals], () => dataService.getLeaderboard(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false
+  });
 }

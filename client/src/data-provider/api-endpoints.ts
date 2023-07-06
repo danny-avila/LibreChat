@@ -101,3 +101,7 @@ export const recentConversations = () => {
 export const duplicateConversation = () => {
   return `/api/convos/duplicate`
 }
+
+export const leaderboard = () => {
+  return `/api/leaderboard`
+}
