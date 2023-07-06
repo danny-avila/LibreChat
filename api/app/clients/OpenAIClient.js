@@ -69,7 +69,7 @@ class OpenAIClient extends BaseClient {
     }
 
     this.userLabel = this.options.userLabel || 'User';
-    this.chatGptLabel = this.options.chatGptLabel || 'ChatGPT';
+    this.chatGptLabel = this.options.chatGptLabel || 'Assistant';
 
     this.setupTokens();
     this.setupTokenizer();
