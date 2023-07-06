@@ -10,7 +10,7 @@ module.exports = {
     'eslint:recommended',
     'plugin:react/recommended',
     'plugin:react-hooks/recommended',
-    "plugin:jest/recommended",
+    'plugin:jest/recommended',
     'prettier'
   ],
   parser: '@typescript-eslint/parser',
@@ -29,7 +29,7 @@ module.exports = {
     'max-len': [
       'error',
       {
-        code: 150,
+        code: 120,
         ignoreStrings: true,
         ignoreTemplateLiterals: true,
         ignoreComments: true
@@ -47,7 +47,8 @@ module.exports = {
     'no-continue': 'off',
     'no-restricted-syntax': 'off',
     'react/prop-types': ['off'],
-    'react/display-name': ['off']
+    'react/display-name': ['off'],
+    'quotes': ['error', 'single'],
   },
   overrides: [
     {
@@ -102,10 +103,10 @@ module.exports = {
       files: './packages/data-provider/**/*.ts',
       overrides: [
         {
-          files: "**/*.ts",
-          parser: "@typescript-eslint/parser",
+          files: '**/*.ts',
+          parser: '@typescript-eslint/parser',
           parserOptions: {
-            project: "./packages/data-provider/tsconfig.json"
+            project: './packages/data-provider/tsconfig.json'
           }
         }
       ]
