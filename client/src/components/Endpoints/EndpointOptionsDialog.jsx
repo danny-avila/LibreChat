@@ -1,10 +1,10 @@
 import exportFromJSON from 'export-from-json';
 import { useEffect, useState } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Dialog, DialogButton, DialogTemplate } from '~/components/';
+import { Dialog, DialogButton, DialogTemplate } from '~/components';
 import SaveAsPresetDialog from './SaveAsPresetDialog';
 import cleanupPreset from '~/utils/cleanupPreset';
-
+import { alternateName } from '~/utils';
 import Settings from './Settings';
 
 import store from '~/store';
@@ -12,18 +12,9 @@ import store from '~/store';
 // A preset dialog to show readonly preset values.
 const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) => {
   const [preset, setPreset] = useState(_preset);
-  const [endpointName, setEndpointName] = useState(preset?.endpoint);
-
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
-
-  if (endpointName === 'google') {
-    setEndpointName('PaLM');
-  }
-
-  if (endpointName === 'gptPlugins') {
-    setEndpointName('Plugins');
-  }
+  const endpointName = alternateName[preset?.endpoint] ?? 'Endpoint';
 
   const setOption = (param) => (newValue) => {
     let update = {};

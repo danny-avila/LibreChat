@@ -88,8 +88,8 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
           parentMessageId: overrideParentMessageId || userMessageId,
           text: partialText,
           model: endpointOption.modelOptions.model,
-          unfinished: false,
-          cancelled: true,
+          unfinished: true,
+          cancelled: false,
           error: false
         });
       }

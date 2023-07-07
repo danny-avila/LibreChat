@@ -117,8 +117,8 @@ const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, con
             parentMessageId: overrideParentMessageId || userMessageId,
             text: partialText,
             model: endpointOption.modelOptions.model,
-            unfinished: false,
-            cancelled: true,
+            unfinished: true,
+            cancelled: false,
             error: false
           });
         }
