@@ -85,7 +85,7 @@ To update LibreChat. enter these commands one after the other from the root dir:
 
 
 ```yaml
-     # image: chatgptclone/app:latest # Uncomment this & comment above to build from docker hub image
+     # image: ghcr.io/danny-avila/librechat:latest # Uncomment this & comment above to build from docker hub image
 ```
 - **Note:** The latest Dockerhub image is only updated with new release tags, so it may not have the latest changes to the main branch
 - You also can't edit the title or toggle google login off as shown above, as these variables are set during build time.
