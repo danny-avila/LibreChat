@@ -245,7 +245,7 @@ class OpenAIClient extends BaseClient {
     // TODO: need to handle interleaving instructions better
     if (this.contextStrategy) {
       ({ payload, tokenCountMap, promptTokens, messages } =
-        await this.handleContextStrategy({instructions, orderedMessages, formattedMessages}));
+        await this.handleContextStrategy({ instructions, orderedMessages, formattedMessages }));
     }
 
     const result = {

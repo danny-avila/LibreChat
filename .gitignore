@@ -75,3 +75,4 @@ data.ms/*
 auth.json
 
 /packages/ux-shared/
+/images
