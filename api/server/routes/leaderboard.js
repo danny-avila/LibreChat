@@ -4,12 +4,28 @@ const User = require('../../models/User');
 
 const router = express.Router();
 
+async function getNumOfReferrals() {
+  try {
+    const dbResponse = await User.find().exec();
+    const finalResponse = [];
+
+    for (let i = 0; i < dbResponse.length; i++) {
+      let id = dbResponse[i].id;
+      let name = dbResponse[i].name;
+      let username = dbResponse[i].username;
+      let numOfReferrals = dbResponse[i].numOfReferrals;
+      finalResponse.push({ id, name, username, numOfReferrals });
+    }
+
+    return finalResponse;
+  } catch (error) {
+    console.log(error);
+    return { message: 'Error getting conversations' };
+  }
+}
+
 router.get('/', requireJwtAuth, async (req, res) => {
-  const dbResponse = await User.find({ numOfReferrals: { $gt: 0 }}, { _id: 0, name: 1, username: 1, numOfReferrals: 1 })
-    .limit(100)
-    .sort({ numOfReferrals: -1 })
-    .exec();
-  res.status(200).send(dbResponse);
+  res.status(200).send(await getNumOfReferrals());
 });
 
 module.exports = router;
