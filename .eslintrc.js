@@ -36,6 +36,7 @@ module.exports = {
       }
     ],
     'linebreak-style': 0,
+    'object-curly-spacing': ['error', 'always'],
     'no-trailing-spaces': 'error',
     'no-multiple-empty-lines': ['error', { 'max': 1 }],
     // "arrow-parens": [2, "as-needed", { requireForBlockBody: true }],

@@ -4,7 +4,7 @@ const { CallbackManager } = require('langchain/callbacks');
 const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents/');
 const { loadTools } = require('./tools/util');
 const { SelfReflectionTool } = require('./tools/');
-const { HumanMessage, AIMessage } = require('langchain/schema');
+const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
 const {
   instructions,
   imageInstructions,
@@ -237,8 +237,8 @@ Only respond with your conversational reply to the following User Message:
     // Map Messages to Langchain format
     const pastMessages = this.currentMessages.slice(0, -1).map(
       msg => msg?.isCreatedByUser || msg?.role?.toLowerCase() === 'user'
-        ? new HumanMessage(msg.text)
-        : new AIMessage(msg.text));
+        ? new HumanChatMessage(msg.text)
+        : new AIChatMessage(msg.text));
 
     // initialize agent
     const initializer = this.functionsAgent ? initializeFunctionsAgent : initializeCustomAgent;
