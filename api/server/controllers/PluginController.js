@@ -18,6 +18,9 @@ const isPluginAuthenticated = (plugin) => {
 
   return plugin.authConfig.every((authFieldObj) => {
     const envValue = process.env[authFieldObj.authField];
+    if (envValue === 'user_provided') {
+      return false;
+    }
     return envValue && envValue.trim() !== '';
   });
 };
