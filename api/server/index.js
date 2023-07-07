@@ -42,7 +42,12 @@ config.validate(); // Validate the config
   if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
     require('../strategies/facebookStrategy');
   }
-  if (process.env.OPENID_CLIENT_ID && process.env.OPENID_CLIENT_SECRET && process.env.OPENID_ISSUER && process.env.OPENID_SCOPE && process.env.OPENID_SESSION_SECRET) {
+  if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
+    require('../strategies/githubStrategy');
+  }
+  if (process.env.OPENID_CLIENT_ID && process.env.OPENID_CLIENT_SECRET &&
+      process.env.OPENID_ISSUER && process.env.OPENID_SCOPE &&
+      process.env.OPENID_SESSION_SECRET) {
     app.use(session({
       secret: process.env.OPENID_SESSION_SECRET,
       resave: false,

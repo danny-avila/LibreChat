@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useResetPasswordMutation, TResetPassword } from '~/data-provider';
+import { useResetPasswordMutation, TResetPassword } from '@librechat/data-provider';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
@@ -77,12 +77,14 @@ function ResetPassword() {
                 <input
                   type="hidden"
                   id="token"
+                  // @ts-ignore - Type 'string | null' is not assignable to type 'string | number | readonly string[] | undefined'
                   value={params.get('token')}
                   {...register('token', { required: 'Unable to process: No valid reset token' })}
                 />
                 <input
                   type="hidden"
                   id="userId"
+                  // @ts-ignore - Type 'string | null' is not assignable to type 'string | number | readonly string[] | undefined'
                   value={params.get('userId')}
                   {...register('userId', { required: 'Unable to process: No valid user id' })}
                 />
@@ -98,7 +100,7 @@ function ResetPassword() {
                       message: localize(lang, 'com_auth_password_min_length')
                     },
                     maxLength: {
-                      value: 40,
+                      value: 128,
                       message: localize(lang, 'com_auth_password_max_length')
                     }
                   })}

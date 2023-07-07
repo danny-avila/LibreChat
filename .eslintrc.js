@@ -10,7 +10,7 @@ module.exports = {
     'eslint:recommended',
     'plugin:react/recommended',
     'plugin:react-hooks/recommended',
-    "plugin:jest/recommended",
+    'plugin:jest/recommended',
     'prettier'
   ],
   parser: '@typescript-eslint/parser',
@@ -24,34 +24,32 @@ module.exports = {
   plugins: ['react', 'react-hooks', '@typescript-eslint'],
   rules: {
     'react/react-in-jsx-scope': 'off',
-    '@typescript-eslint/ban-ts-comment': ['error', { 'ts-ignore': 'allow-with-description' }],
+    '@typescript-eslint/ban-ts-comment': ['error', { 'ts-ignore': 'allow' }],
     indent: ['error', 2, { SwitchCase: 1 }],
     'max-len': [
       'error',
       {
-        code: 150,
+        code: 120,
         ignoreStrings: true,
         ignoreTemplateLiterals: true,
         ignoreComments: true
       }
     ],
     'linebreak-style': 0,
+    'object-curly-spacing': ['error', 'always'],
+    'no-trailing-spaces': 'error',
+    'no-multiple-empty-lines': ['error', { 'max': 1 }],
     // "arrow-parens": [2, "as-needed", { requireForBlockBody: true }],
     // 'no-plusplus': ['error', { allowForLoopAfterthoughts: true }],
     'no-console': 'off',
     'import/extensions': 'off',
-    'no-use-before-define': [
-      'error',
-      {
-        functions: false
-      }
-    ],
     'no-promise-executor-return': 'off',
     'no-param-reassign': 'off',
     'no-continue': 'off',
     'no-restricted-syntax': 'off',
     'react/prop-types': ['off'],
-    'react/display-name': ['off']
+    'react/display-name': ['off'],
+    'quotes': ['error', 'single'],
   },
   overrides: [
     {
@@ -100,6 +98,18 @@ module.exports = {
       extends: [
         'plugin:@typescript-eslint/eslint-recommended',
         'plugin:@typescript-eslint/recommended'
+      ]
+    },
+    {
+      files: './packages/data-provider/**/*.ts',
+      overrides: [
+        {
+          files: '**/*.ts',
+          parser: '@typescript-eslint/parser',
+          parserOptions: {
+            project: './packages/data-provider/tsconfig.json'
+          }
+        }
       ]
     }
   ],

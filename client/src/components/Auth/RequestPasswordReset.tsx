@@ -1,9 +1,13 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useRequestPasswordResetMutation, TRequestPasswordReset } from '~/data-provider';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
+import {
+  useRequestPasswordResetMutation,
+  TRequestPasswordReset,
+  TRequestPasswordResetResponse
+} from '@librechat/data-provider';
 
 function RequestPasswordReset() {
   const lang = useRecoilValue(store.lang);
@@ -19,7 +23,7 @@ function RequestPasswordReset() {
 
   const onSubmit = (data: TRequestPasswordReset) => {
     requestPasswordReset.mutate(data, {
-      onSuccess: (data) => {
+      onSuccess: (data: TRequestPasswordResetResponse) => {
         setSuccess(true);
         setResetLink(data.link);
       },

@@ -1,8 +1,9 @@
 {
   "name": "@librechat/frontend",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "",
   "scripts": {
+    "data-provider": "cd .. && npm run build:data-provider",
     "build": "cross-env NODE_ENV=production dotenv -e ../.env -- vite build",
     "build:ci": "cross-env NODE_ENV=dev vite build --mode ci",
     "dev": "cross-env NODE_ENV=dev dotenv -e ../.env -- vite",
@@ -75,7 +76,8 @@
     "tailwind-merge": "^1.9.1",
     "tailwindcss-animate": "^1.0.5",
     "tailwindcss-radix": "^2.8.0",
-    "url": "^0.11.0"
+    "url": "^0.11.0",
+    "@librechat/data-provider": "*"
   },
   "devDependencies": {
     "@babel/cli": "^7.20.7",

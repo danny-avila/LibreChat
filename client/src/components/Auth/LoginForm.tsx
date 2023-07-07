@@ -1,8 +1,8 @@
 import { useForm } from 'react-hook-form';
-import { TLoginUser } from '~/data-provider';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
-import { localize } from '../../localization/Translation';
+import { localize } from '~/localization/Translation';
+import { TLoginUser } from '@librechat/data-provider';
 
 type TLoginFormProps = {
   onSubmit: (data: TLoginUser) => void;

@@ -1,18 +1,12 @@
 {
   "name": "@librechat/backend",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "",
   "scripts": {
     "start": "echo 'please run this from the root directory'",
     "server-dev": "echo 'please run this from the root directory'",
     "test": "cross-env NODE_ENV=test jest",
-    "test:ci": "jest --ci",
-    "test2": "node --inspect app/langchain/test2.js",
-    "test3": "node --inspect app/langchain/test3.js",
-    "test4": "node --inspect app/langchain/test4.js",
-    "test5": "node --inspect app/langchain/test5.js",
-    "test8": "node --inspect app/langchain/test8.js",
-    "langchain": "node app/langchain/test2.js"
+    "test:ci": "jest --ci"
   },
   "repository": {
     "type": "git",
@@ -47,7 +41,7 @@
     "jsonwebtoken": "^9.0.0",
     "keyv": "^4.5.2",
     "keyv-file": "^0.2.0",
-    "langchain": "^0.0.95",
+    "langchain": "^0.0.103",
     "lodash": "^4.17.21",
     "meilisearch": "^0.33.0",
     "mongoose": "^7.1.1",

@@ -42,9 +42,9 @@ export default function TextChat({ isSearchView = false }) {
     const timeoutId = setTimeout(() => {
       inputRef.current?.focus();
     }, 100);
-    
+
     return () => clearTimeout(timeoutId);
-  }, [isSubmitting]);  
+  }, [isSubmitting]);
 
   const submitMessage = () => {
     ask({ text });

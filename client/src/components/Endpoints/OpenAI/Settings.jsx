@@ -29,6 +29,7 @@ function Settings(props) {
     setOption
   } = props;
   const endpoint = props.endpoint || 'openAI';
+  const isOpenAI = endpoint === 'openAI' || endpoint === 'azureOpenAI';
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
@@ -59,7 +60,7 @@ function Settings(props) {
               containerClassName="flex w-full resize-none"
             />
           </div>
-          {endpoint === 'openAI' && (
+          {isOpenAI && (
             <>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
@@ -103,7 +104,7 @@ function Settings(props) {
                 <Label htmlFor="temp-int" className="text-left text-sm font-medium">
                   Temperature{' '}
                   <small className="opacity-40">
-                    (default: {endpoint === 'openAI' ? '1' : '0'})
+                    (default: {isOpenAI ? '1' : '0'})
                   </small>
                 </Label>
                 <InputNumber
