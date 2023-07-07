@@ -1,25 +1,36 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { FileUp } from 'lucide-react';
 import { cn } from '~/utils/';
 
-const FileUpload = ({
+type FileUploadProps = {
+  onFileSelected: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  className?: string;
+  successText?: string;
+  invalidText?: string;
+  validator?: ((data: any) => boolean) | null;
+  text?: string;
+  id?: string;
+};
+
+const FileUpload: React.FC<FileUploadProps> = ({
   onFileSelected,
+  className = '',
   successText = null,
   invalidText = null,
   validator = null,
   text = null,
   id = '1'
 }) => {
-  const [statusColor, setStatusColor] = useState('text-gray-600');
-  const [status, setStatus] = useState(null);
+  const [statusColor, setStatusColor] = useState<string>('text-gray-600');
+  const [status, setStatus] = useState<null | string>(null);
 
-  const handleFileChange = (event) => {
-    const file = event.target.files[0];
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
+    const file = event.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      const jsonData = JSON.parse(e.target.result);
+      const jsonData = JSON.parse(e.target?.result as string);
       if (validator && !validator(jsonData)) {
         setStatus('invalid');
         setStatusColor('text-red-600');
@@ -52,7 +63,7 @@ const FileUpload = ({
         id={`file-upload-${id}`}
         value=""
         type="file"
-        className="hidden "
+        className={cn('hidden ', className)}
         accept=".json"
         onChange={handleFileChange}
       />

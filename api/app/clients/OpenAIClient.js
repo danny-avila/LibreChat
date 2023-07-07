@@ -69,7 +69,7 @@ class OpenAIClient extends BaseClient {
     }
 
     this.userLabel = this.options.userLabel || 'User';
-    this.chatGptLabel = this.options.chatGptLabel || 'ChatGPT';
+    this.chatGptLabel = this.options.chatGptLabel || 'Assistant';
 
     this.setupTokens();
     this.setupTokenizer();
@@ -244,7 +244,8 @@ class OpenAIClient extends BaseClient {
 
     // TODO: need to handle interleaving instructions better
     if (this.contextStrategy) {
-      ({ payload, tokenCountMap, promptTokens, messages } = await this.handleContextStrategy({instructions, orderedMessages, formattedMessages}));
+      ({ payload, tokenCountMap, promptTokens, messages } =
+        await this.handleContextStrategy({instructions, orderedMessages, formattedMessages}));
     }
 
     const result = {
@@ -271,7 +272,8 @@ class OpenAIClient extends BaseClient {
           if (progressMessage === '[DONE]') {
             return;
           }
-          const token = this.isChatCompletion ? progressMessage.choices?.[0]?.delta?.content : progressMessage.choices?.[0]?.text;
+          const token =
+            this.isChatCompletion ? progressMessage.choices?.[0]?.delta?.content : progressMessage.choices?.[0]?.text;
           // first event's delta content is always undefined
           if (!token) {
             return;

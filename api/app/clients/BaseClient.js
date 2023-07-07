@@ -19,11 +19,15 @@ class BaseClient {
   }
 
   setOptions() {
-    throw new Error("Method 'setOptions' must be implemented.");
+    throw new Error('Method \'setOptions\' must be implemented.');
   }
 
   getCompletion() {
-    throw new Error("Method 'getCompletion' must be implemented.");
+    throw new Error('Method \'getCompletion\' must be implemented.');
+  }
+
+  async sendCompletion() {
+    throw new Error('Method \'sendCompletion\' must be implemented.');
   }
 
   getSaveOptions() {
@@ -106,11 +110,6 @@ class BaseClient {
 
     if (typeof opts?.onStart === 'function') {
       opts.onStart(userMessage);
-    }
-
-    if (this.options.debug) {
-      console.debug('options');
-      console.debug(this.options);
     }
 
     return {
@@ -198,17 +197,17 @@ class BaseClient {
     const userMessages = this.concatenateMessages(messagesToRefine.filter(m => m.role === 'user'));
     const assistantMessages = this.concatenateMessages(messagesToRefine.filter(m => m.role !== 'user'));
     const userDocs = await splitter.createDocuments([userMessages],[],{
-      chunkHeader: `DOCUMENT NAME: User Message\n\n---\n\n`,
+      chunkHeader: 'DOCUMENT NAME: User Message\n\n---\n\n',
       appendChunkOverlapHeader: true,
     });
     const assistantDocs = await splitter.createDocuments([assistantMessages],[],{
-      chunkHeader: `DOCUMENT NAME: Assistant Message\n\n---\n\n`,
+      chunkHeader: 'DOCUMENT NAME: Assistant Message\n\n---\n\n',
       appendChunkOverlapHeader: true,
     });
     // const chunkSize = Math.round(concatenatedMessages.length / 512);
     const input_documents = userDocs.concat(assistantDocs);
     if (this.options.debug ) {
-      console.debug(`Refining messages...`);
+      console.debug('Refining messages...');
     }
     try {
       const res = await chain.call({
@@ -286,13 +285,23 @@ class BaseClient {
       await new Promise(resolve => setImmediate(resolve));
     }
 
-    return { context: context.reverse(), remainingContextTokens, messagesToRefine: messagesToRefine.reverse(), refineIndex };
+    return {
+      context: context.reverse(),
+      remainingContextTokens,
+      messagesToRefine: messagesToRefine.reverse(),
+      refineIndex
+    };
   }
 
   async handleContextStrategy({instructions, orderedMessages, formattedMessages}) {
     let payload = this.addInstructions(formattedMessages, instructions);
     let orderedWithInstructions = this.addInstructions(orderedMessages, instructions);
-    let { context, remainingContextTokens, messagesToRefine, refineIndex } = await this.getMessagesWithinTokenLimit(payload);
+    let {
+      context,
+      remainingContextTokens,
+      messagesToRefine,
+      refineIndex
+    } = await this.getMessagesWithinTokenLimit(payload);
 
     payload = context;
     let refinedMessage;
@@ -376,6 +385,8 @@ class BaseClient {
 
     let { prompt: payload, tokenCountMap, promptTokens } = await this.buildMessages(
       this.currentMessages,
+      // When the userMessage is pushed to currentMessages, the parentMessage is the userMessageId.
+      // this only matters when buildMessages is utilizing the parentMessageId, and may vary on implementation
       userMessage.messageId,
       this.getBuildMessagesOptions(opts),
     );
@@ -386,13 +397,16 @@ class BaseClient {
     }
 
     if (tokenCountMap) {
-      payload = payload.map((message, i) => {
-        const { tokenCount, ...messageWithoutTokenCount } = message;
-        // userMessage is always the last one in the payload
-        if (i === payload.length - 1) {
-          userMessage.tokenCount = message.tokenCount;
-          console.debug(`Token count for user message: ${tokenCount}`, `Instruction Tokens: ${tokenCountMap.instructions || 'N/A'}`);
-        }
+      console.dir(tokenCountMap, { depth: null })
+      if (tokenCountMap[userMessage.messageId]) {
+        userMessage.tokenCount = tokenCountMap[userMessage.messageId];
+        console.log('userMessage.tokenCount', userMessage.tokenCount);
+        console.log('userMessage', userMessage);
+      }
+
+      payload = payload.map((message) => {
+        const messageWithoutTokenCount = message;
+        delete messageWithoutTokenCount.tokenCount;
         return messageWithoutTokenCount;
       });
       this.handleTokenCountMap(tokenCountMap);

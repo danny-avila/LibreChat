@@ -4,7 +4,7 @@ import { General } from './SettingsTabs/';
 import { CogIcon } from '~/components/svg';
 import { useEffect, useState } from 'react';
 import { cn } from '~/utils/';
-import { useClearConversationsMutation } from '~/data-provider';
+import { useClearConversationsMutation } from '@librechat/data-provider';
 import store from '~/store';
 
 export default function Settings({ open, onOpenChange }) {

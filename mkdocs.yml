@@ -86,8 +86,8 @@ nav:
     - Mac Install: 'install/mac_install.md'
     - Windows Install: 'install/windows_install.md'
     - APIs and Tokens: 'install/apis_and_tokens.md'
+    - User Auth System: 'install/user_auth_system.md'
   - Features:
-    - User Auth System: 'features/user_auth_system.md'
     - Plugins:
       - Introduction: 'features/plugins/introduction.md'
       - Google: 'features/plugins/google_search.md'
@@ -101,6 +101,7 @@ nav:
     - Hetzner: 'deployment/hetzner_ubuntu.md'
     - Heroku: 'deployment/heroku.md'
     - Linode: 'deployment/linode.md'
+    - Ngrok: 'deployment/ngrok.md'
   - Contributions:
     - Documentation Guidelines: 'contributions/documentation_guidelines.md'
     - Code Standards and Conventions: 'contributions/coding_conventions.md'

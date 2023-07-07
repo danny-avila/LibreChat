@@ -141,7 +141,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
     let oaiApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
 
     if (process.env.AZURE_API_KEY && endpoint === 'azureOpenAI') {
-      clientOptions.azure = getAzureCredentials();
+      clientOptions.azure = JSON.parse(req.body?.token) ?? getAzureCredentials();
       // clientOptions.reverseProxyUrl = process.env.AZURE_REVERSE_PROXY ?? genAzureChatCompletion({ ...clientOptions.azure });
       oaiApiKey = clientOptions.azure.azureOpenAIApiKey;
     }

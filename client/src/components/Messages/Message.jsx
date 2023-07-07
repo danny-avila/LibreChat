@@ -10,7 +10,7 @@ import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
 import getIcon from '~/utils/getIcon';
 import { useMessageHandler } from '~/utils/handleSubmit';
-import { useGetConversationByIdQuery } from '~/data-provider';
+import { useGetConversationByIdQuery } from '@librechat/data-provider';
 import { cn } from '~/utils/';
 import store from '~/store';
 import getError from '~/utils/getError';
@@ -192,7 +192,7 @@ export default function Message({
                     <div className="markdown prose dark:prose-invert light w-full break-words">
                       {!isCreatedByUser ? (
                         <>
-                          <Content content={text} message={message}/>
+                          <Content content={text} message={message} />
                         </>
                       ) : (
                         <>{text}</>

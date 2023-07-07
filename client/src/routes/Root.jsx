@@ -4,7 +4,7 @@ import {
   useGetEndpointsQuery,
   useGetPresetsQuery,
   useGetSearchEnabledQuery
-} from '~/data-provider';
+} from '@librechat/data-provider';
 
 import MessageHandler from '../components/MessageHandler';
 import MobileNav from '../components/Nav/MobileNav';

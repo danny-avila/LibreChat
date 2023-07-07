@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import LoginForm from './LoginForm';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { useGetStartupConfig } from '~/data-provider';
+import { useGetStartupConfig } from '@librechat/data-provider';
 
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();

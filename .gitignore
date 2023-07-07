@@ -39,6 +39,7 @@ meili_data/
 api/node_modules/
 client/node_modules/
 bower_components/
+types/
 
 # Floobits
 .floo
@@ -72,3 +73,5 @@ junit.xml
 meilisearch
 data.ms/*
 auth.json
+
+/packages/ux-shared/

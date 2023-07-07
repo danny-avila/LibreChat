@@ -31,7 +31,7 @@ router.get('/', async function (req, res) {
     key = require('../../data/auth.json');
   } catch (e) {
     if (i === 0) {
-      console.log("No 'auth.json' file (service account key) found in /api/data/ for PaLM models");
+      console.log('No \'auth.json\' file (service account key) found in /api/data/ for PaLM models');
       i++;
     }
   }
@@ -50,6 +50,7 @@ router.get('/', async function (req, res) {
       : false;
   const openAIApiKey = process.env.OPENAI_API_KEY;
   const azureOpenAIApiKey = process.env.AZURE_API_KEY;
+  const userProvidedOpenAI = openAIApiKey ? openAIApiKey === 'user_provided' : azureOpenAIApiKey === 'user_provided';
   const openAI = openAIApiKey
     ? { availableModels: getOpenAIModels(), userProvide: openAIApiKey === 'user_provided' }
     : false;
@@ -57,7 +58,7 @@ router.get('/', async function (req, res) {
     ? { availableModels: getOpenAIModels({ azure: true}), userProvide: azureOpenAIApiKey === 'user_provided' }
     : false;
   const gptPlugins = openAIApiKey || azureOpenAIApiKey
-    ? { availableModels: getPluginModels(), availableTools, availableAgents: ['classic', 'functions'] }
+    ? { availableModels: getPluginModels(), availableTools, availableAgents: ['classic', 'functions'], userProvide: userProvidedOpenAI }
     : false;
   const bingAI = process.env.BINGAI_TOKEN
     ? { userProvide: process.env.BINGAI_TOKEN == 'user_provided' }
