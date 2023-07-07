@@ -40,7 +40,6 @@ const getUserPluginAuthValue = async (user, authField) => {
 //   }
 // };
 
-
 const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
   try {
     const encryptedValue = encrypt(value);
