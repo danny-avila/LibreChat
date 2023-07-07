@@ -42,7 +42,7 @@ export default {
     com_auth_password: 'Password',
     com_auth_password_required: 'Password is required',
     com_auth_password_min_length: 'Password must be at least 8 characters',
-    com_auth_password_max_length: 'Password must be less than 40 characters',
+    com_auth_password_max_length: 'Password must be less than 128 characters',
     com_auth_password_forgot: 'Forgot Password?',
     com_auth_password_confirm: 'Confirm password',
     com_auth_password_not_match: 'Passwords do not match',
