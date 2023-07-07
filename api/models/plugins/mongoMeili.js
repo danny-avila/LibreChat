@@ -190,19 +190,55 @@ module.exports = function mongoMeili(schema, options) {
   schema.post('remove', function (doc) {
     doc.postRemoveHook();
   });
-  schema.post('deleteMany', function () {
-    // console.log('deleteMany hook', doc);
-    if (Object.prototype.hasOwnProperty.call(schema.obj, 'messages')) {
-      console.log('Syncing convos...');
-      mongoose.model('Conversation').syncWithMeili();
-    }
 
-    if (Object.prototype.hasOwnProperty.call(schema.obj, 'messageId')) {
-      console.log('Syncing messages...');
-      mongoose.model('Message').syncWithMeili();
+  schema.pre('deleteMany', async function (next) {
+    try {
+      if (Object.prototype.hasOwnProperty.call(schema.obj, 'messages')) {
+        const convoIndex = client.index('convos');
+        const deletedConvos = await mongoose.model('Conversation').find(this._conditions).lean();
+        let promises = [];
+        for (const convo of deletedConvos) {
+          promises.push(convoIndex.deleteDocument(convo.conversationId));
+        }
+        await Promise.all(promises);
+      }
+
+      if (Object.prototype.hasOwnProperty.call(schema.obj, 'messageId')) {
+        const messageIndex = client.index('messages');
+        const deletedMessages = await mongoose.model('Message').find(this._conditions).lean();
+        let promises = [];
+        for (const message of deletedMessages) {
+          promises.push(messageIndex.deleteDocument(message.messageId));
+        }
+        await Promise.all(promises);
+      }
+      return next();
+    } catch (error) {
+      console.log('[Meilisearch] There was an issue deleting conversation indexes upon deletion, next startup may be slow due to syncing');
+      console.error(error);
+      return next(error);
     }
   });
-  schema.post('findOneAndUpdate', function (doc) {
+
+  schema.post('findOneAndUpdate', async function (doc) {
+    if (doc.unfinished) {
+      return;
+    }
+
+    let meiliDoc;
+    // Doc is a Conversation
+    if (doc.messages) {
+      try {
+        meiliDoc = await client.index('convos').getDocument(doc.conversationId);
+      } catch (error) {
+        console.log('[Meilisearch] Convo not found and will index', doc.conversationId);
+      }
+    }
+
+    if (meiliDoc && meiliDoc.title === doc.title) {
+      return;
+    }
+
     doc.postSaveHook();
   });
 };
