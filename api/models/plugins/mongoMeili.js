@@ -30,14 +30,17 @@ const createMeiliMongooseModel = function ({ index, indexName, client, attribute
     // Push a mongoDB collection to Meili index
     static async syncWithMeili() {
       await this.resetIndex();
-      // const docs = await this.find();
       const docs = await this.find({ _meiliIndex: { $in: [null, false] } });
       console.log('docs', docs.length);
-      await Promise.all(
-        docs.map(function (doc) {
-          return doc.addObjectToMeili();
-        })
-      );
+      const objs = docs.map((doc) => doc.preprocessObjectForIndex());
+      try {
+        await index.addDocuments(objs);
+        const ids = docs.map((doc) => doc._id);
+        await this.collection.updateMany({ _id: { $in: ids } }, { $set: { _meiliIndex: true } });
+      } catch (error) {
+        console.log('Error adding document to Meili');
+        console.error(error);
+      }
     }
 
     // Set one or more settings of the meili index
@@ -84,15 +87,19 @@ const createMeiliMongooseModel = function ({ index, indexName, client, attribute
       return data;
     }
 
-    // Push new document to Meili
-    async addObjectToMeili() {
+    preprocessObjectForIndex() {
       const object = _.pick(this.toJSON(), attributesToIndex);
       // NOTE: MeiliSearch does not allow | in primary key, so we replace it with - for Bing convoIds
       // object.conversationId = object.conversationId.replace(/\|/g, '-');
       if (object.conversationId && object.conversationId.includes('|')) {
         object.conversationId = object.conversationId.replace(/\|/g, '--');
       }
+      return object
+    }
 
+    // Push new document to Meili
+    async addObjectToMeili() {
+      const object = this.preprocessObjectForIndex()
       try {
         // console.log('Adding document to Meili', object);
         await index.addDocuments([object]);
