@@ -39,7 +39,8 @@ class ClaudeClient extends BaseClient {
       // now we can merge options
       this.options = {
         ...this.options,
-        ...options
+        ...options,
+        debug: true
       };
     } else {
       this.options = options;
@@ -134,18 +135,18 @@ class ClaudeClient extends BaseClient {
 
     const promptSuffix = `${this.startToken}${this.AI_PROMPT}:\n`; // Prompt ChatGPT to respond.
 
-    const instructionsPayload = {
-      role: 'system',
-      name: 'instructions',
-      content: promptPrefix,
-    };
+    // const instructionsPayload = {
+    //   role: 'system',
+    //   name: 'instructions',
+    //   content: promptPrefix,
+    // };
 
-    const messagePayload = {
-      role: 'system',
-      content: promptSuffix,
-    };
+    // const messagePayload = {
+    //   role: 'system',
+    //   content: promptSuffix,
+    // };
 
-    let currentTokenCount = currentTokenCount = this.getTokenCount(`${promptPrefix}${promptSuffix}`);
+    let currentTokenCount = this.getTokenCount(`${promptPrefix}${promptSuffix}`);
 
     let promptBody = '';
     const maxTokenCount = this.maxPromptTokens;
@@ -157,8 +158,10 @@ class ClaudeClient extends BaseClient {
     const buildPromptBody = async () => {
       if (currentTokenCount < maxTokenCount && orderedMessages.length > 0) {
         const message = orderedMessages.pop();
+        console.log('ClaudeClient: buildPromptBody, message: ', message)
         const roleLabel = message?.isCreatedByUser || message?.role?.toLowerCase() === 'user' ? this.HUMAN_PROMPT : this.AI_PROMPT;
         const messageString = `${this.startToken}${roleLabel}:\n${message?.text ?? message?.message}${this.endToken}\n`;
+        console.log('ClaudeClient: buildPromptBody, messageString: ', messageString)
         let newPromptBody;
         if (promptBody) {
           newPromptBody = `${messageString}${promptBody}`;
@@ -169,6 +172,7 @@ class ClaudeClient extends BaseClient {
           // like "what's the last thing I wrote?".
           newPromptBody = `${promptPrefix}${messageString}${promptBody}`;
         }
+        console.log('ClaudeClient: buildPromptBody, newPromptBody: ', newPromptBody)
 
         context.unshift(message);
 
@@ -194,7 +198,7 @@ class ClaudeClient extends BaseClient {
     await buildPromptBody();
 
     const prompt = `${promptBody}${promptSuffix}`;
-    messagePayload.content = prompt;
+    // messagePayload.content = prompt;
     // Add 2 tokens for metadata after all messages have been counted.
     currentTokenCount += 2;
 
@@ -205,8 +209,8 @@ class ClaudeClient extends BaseClient {
       console.debug(`Prompt : ${prompt}`);
     }
 
-    return { prompt: [instructionsPayload, messagePayload], context };
-    //return { prompt, context };
+    // return { prompt: [instructionsPayload, messagePayload], context };
+    return { prompt, context };
   }
 
   async getCompletion(payload, abortController = null) {
