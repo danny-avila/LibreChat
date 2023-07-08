@@ -27,7 +27,7 @@ export default function Leaderboard() {
   const [rowData, setRowData] = useState(); // Set rowData to Array of Objects, one Object per Row
 
   // Each Column Definition results in one Column.
-  const columnDefs = useState([
+  const [columnDefs, setColumnDefs] = useState([ // eslint-disable-line
     {field: '名次'},
     {
       field: '用户',
