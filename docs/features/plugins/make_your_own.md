@@ -27,7 +27,9 @@ Here are the key takeaways for creating your own plugin:
 
 **5.** [**Export Your Plugin and Import into handleTools.js:**](make_your_own.md#step-5-export-your-plugin-and-import-into-handletoolsjs) Export your plugin and import it into `handleTools.js`. Add your plugin to the `toolConstructors` object in the `loadTools` function. If your plugin requires more advanced initialization, add it to the `customConstructors` object.
 
-**6.** [**Add Your Plugin to manifest.json:**](make_your_own.md#step-6-add-your-plugin-to-manifestjson) Add your plugin to `manifest.json`. Follow the strict format for each of the fields of the "plugin" object. If your plugin requires authentication, add those details under `authConfig` as an array. The `pluginKey` should match the class `name` of the Tool class you made, and the `authField` prop must match the process.env variable name.
+**6.** [**Export YourPlugin into index.js:**](make_your_own.md#step-6-export-your-plugin-into-indexjs) Export your plugin into `index.js` under `tools`. Add your plugin to the `module.exports` of the `index.js`, so you also need to declare it as `const` in this file.
+
+**7.** [**Add Your Plugin to manifest.json:**](make_your_own.md#step-7-add-your-plugin-to-manifestjson) Add your plugin to `manifest.json`. Follow the strict format for each of the fields of the "plugin" object. If your plugin requires authentication, add those details under `authConfig` as an array. The `pluginKey` should match the class `name` of the Tool class you made, and the `authField` prop must match the process.env variable name.
 
 Remember, the key to creating a custom plugin is to extend the `Tool` class and implement the `_call` method. The `_call` method is where you define what your plugin does. You can also define helper methods and properties in your class to support the functionality of your plugin.
 
@@ -161,8 +163,24 @@ Here are a few customConstructors, which have varying initializations
     }
   };
   ```
+
+## Step 6: Export your Plugin into index.js
+
+##Find the `index.js` under `api/app/clients/tools`. You need to put your plugin into the `module.exports`, to make it compile, you will also need to declare your plugin as `consts`:
+
+```js
+const StructuredSD = require('./structured/StableDiffusion');
+const StableDiffusionAPI = require('./StableDiffusion');
+...
+module.exports = {
+  ...
+  StableDiffusionAPI,
+  StructuredSD,
+  ...
+}
+```
   
-## Step 6: Add your Plugin to manifest.json
+## Step 7: Add your Plugin to manifest.json
 
 **This process will be somehwat automated in the future along with step 5, as long as you have your plugin/tool in api\app\langchain\tools, and your plugin can be initialized with the default method**
 
