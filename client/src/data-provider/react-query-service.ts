@@ -361,7 +361,7 @@ export const useDuplicateConvoMutation = (): any => {
   return useMutation((payload: object) => dataService.duplicateConversation(payload))
 }
 
-export const useGetLeaderboardQuery = () => {
+export const useGetLeaderboardQuery = (): any => {
   return useQuery([QueryKeys.numOfReferrals], () => dataService.getLeaderboard(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,

@@ -6,7 +6,7 @@ const router = express.Router();
 
 async function getNumOfReferrals() {
   try {
-    const dbResponse = await User.find().exec();
+    const dbResponse = await User.find().sort({ numOfReferrals: -1 }).limit(100).exec();
     const finalResponse = [];
 
     for (let i = 0; i < dbResponse.length; i++) {
