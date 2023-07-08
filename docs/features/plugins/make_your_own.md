@@ -166,7 +166,7 @@ Here are a few customConstructors, which have varying initializations
 
 ## Step 6: Export your Plugin into index.js
 
-##Find the `index.js` under `api/app/clients/tools`. You need to put your plugin into the `modeule.exports`, to make it compile, you will also need to declare your plugin as `consts`:
+##Find the `index.js` under `api/app/clients/tools`. You need to put your plugin into the `module.exports`, to make it compile, you will also need to declare your plugin as `consts`:
 
 ```js
 const StructuredSD = require('./structured/StableDiffusion');
