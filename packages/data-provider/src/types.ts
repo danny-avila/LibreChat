@@ -24,6 +24,7 @@ export enum EModelEndpoint {
   chatGPTBrowser = 'chatGPTBrowser',
   google = 'google',
   gptPlugins = 'gptPlugins',
+  claude = 'claude',
 }
 
 export type TSubmission = {

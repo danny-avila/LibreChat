@@ -8,7 +8,8 @@ const endpointsConfig = atom({
     bingAI: null,
     chatGPTBrowser: null,
     gptPlugins: null,
-    google: null
+    google: null,
+    claude: null
   }
 });
 
