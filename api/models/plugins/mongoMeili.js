@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const { MeiliSearch } = require('meilisearch');
 const { cleanUpPrimaryKeyValue } = require('../../lib/utils/misc');
 const _ = require('lodash');
+const searchEnabled = process.env.SEARCH && process.env.SEARCH.toLowerCase() === 'true';
+const meiliEnabled = process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY && searchEnabled;
 
 const validateOptions = function (options) {
   const requiredKeys = ['host', 'apiKey', 'indexName'];
@@ -199,6 +201,10 @@ module.exports = function mongoMeili(schema, options) {
   });
 
   schema.pre('deleteMany', async function (next) {
+    if (!meiliEnabled) {
+      next();
+    }
+
     try {
       if (Object.prototype.hasOwnProperty.call(schema.obj, 'messages')) {
         const convoIndex = client.index('convos');
@@ -221,13 +227,19 @@ module.exports = function mongoMeili(schema, options) {
       }
       return next();
     } catch (error) {
-      console.log('[Meilisearch] There was an issue deleting conversation indexes upon deletion, next startup may be slow due to syncing');
-      console.error(error);
-      return next(error);
+      if (meiliEnabled) {
+        console.log('[Meilisearch] There was an issue deleting conversation indexes upon deletion, next startup may be slow due to syncing');
+        console.error(error);
+      }
+      return next();
     }
   });
 
   schema.post('findOneAndUpdate', async function (doc) {
+    if (!meiliEnabled) {
+      return;
+    }
+
     if (doc.unfinished) {
       return;
     }
