@@ -56,7 +56,7 @@ const Content = React.memo(({ content, message }) => {
   }, [isSubmitting, isLatestMessage]);
 
   let rehypePlugins = [
-    [rehypeKatex, { output: 'mathml' }],
+    [rehypeKatex],
     [
       rehypeHighlight,
       {
@@ -74,7 +74,7 @@ const Content = React.memo(({ content, message }) => {
 
   return (
     <ReactMarkdown
-      remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
+      remarkPlugins={[supersub, remarkGfm, [remarkMath]]}
       rehypePlugins={rehypePlugins}
       linkTarget="_new"
       components={{
