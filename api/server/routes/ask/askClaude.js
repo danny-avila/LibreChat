@@ -3,8 +3,15 @@ const router = express.Router();
 const crypto = require('crypto');
 const { titleConvo, ClaudeClient } = require('../../../app');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
+const { abortMessage } = require('../../../utils');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress } = require('./handlers');
+
+const abortControllers = new Map();
+
+router.post('/abort', requireJwtAuth, async (req, res) => {
+  return await abortMessage(req, res, abortControllers);
+});
 
 router.post('/', requireJwtAuth, async (req, res) => {
   console.log('askClaude.js: req.body:', req.body)
@@ -43,16 +50,15 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
 
   try {
     const getIds = (data) => {
+      userMessage = data.userMessage;
       userMessageId = data.userMessage.messageId;
       responseMessageId = data.responseMessageId;
       if (!conversationId) {
         conversationId = data.conversationId;
       }
-
-      sendMessage(res, { message: userMessage, created: true })
     };
 
-    const { onProgress: progressCallback } = createOnProgress({
+    const { onProgress: progressCallback, getPartialText } = createOnProgress({
       onProgress: ({ text: partialText }) => {
         const currentTimestamp = Date.now();
         if (currentTimestamp - lastSavedTimestamp > 500) {
@@ -72,6 +78,36 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     });
 
     const abortController = new AbortController();
+    abortController.abortAsk = async function () {
+      this.abort();
+
+      const responseMessage = {
+        messageId: responseMessageId,
+        sender: 'Claude',
+        conversationId,
+        parentMessageId: overrideParentMessageId || userMessageId,
+        text: getPartialText(),
+        model: endpointOption.modelOptions.model,
+        unfinished: false,
+        cancelled: true,
+        error: false,
+      };
+
+      saveMessage(responseMessage);
+
+      return {
+        title: await getConvoTitle(req.user.id, conversationId),
+        final: true,
+        conversation: await getConvo(req.user.id, conversationId),
+        requestMessage: userMessage,
+        responseMessage: responseMessage
+      };
+    };
+
+    const onStart = (userMessage) => {
+      sendMessage(res, { message: userMessage, created: true });
+      abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
+    }
 
     const client = new ClaudeClient();
 
@@ -86,6 +122,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
         text,
         parentMessageId: overrideParentMessageId || userMessageId
       }),
+      onStart,
       abortController
     });
 

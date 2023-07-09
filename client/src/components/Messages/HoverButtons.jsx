@@ -19,7 +19,7 @@ export default function HoverButtons({
 
   const branchingSupported =
     // azureOpenAI, openAI, chatGPTBrowser support branching, so edit enabled // 5/21/23: Bing is allowing editing and Message regenerating
-    !!['azureOpenAI', 'openAI', 'chatGPTBrowser', 'google', 'bingAI', 'gptPlugins'].find(
+    !!['azureOpenAI', 'openAI', 'chatGPTBrowser', 'google', 'bingAI', 'gptPlugins', 'claude'].find(
       (e) => e === endpoint
     );
   // Sydney in bingAI supports branching, so edit enabled

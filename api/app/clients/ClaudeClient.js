@@ -8,8 +8,8 @@ const {
 
 const Anthropic = require('@anthropic-ai/sdk');
 
-const HUMAN_PROMPT = "\n\nHuman:";
-const AI_PROMPT = "\n\nAssistant:";
+const HUMAN_PROMPT = "\n\nHuman";
+const AI_PROMPT = "\n\nAssistant";
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-1";
 // const DEFAULT_API_URL = "https://api.anthropic.com";
 
@@ -114,9 +114,18 @@ class ClaudeClient extends BaseClient {
     return client;
   };
 
-  async buildPrompt(messages, parentMessageId) {
-    console.log('ClaudeClient: buildPrompt', messages, parentMessageId);
+  async buildMessages(messages, parentMessageId) {
     const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
+    if (this.options.debug) {
+      console.debug('ClaudeClient: orderedMessages', orderedMessages, parentMessageId);
+    }
+
+    const formattedMessages = orderedMessages.map((message) => ({
+      author: message.isCreatedByUser ? this.userLabel : this.assistantLabel,
+      content: message?.content ?? message.text
+    }));
+
+    const defaultPrefix = `\nInstructions:\nYou are Claude, a large language model trained by Anthropic. Respond conversationally.\nCurrent date: ${this.currentDateString}${this.endToken}`
 
     let promptPrefix = (this.options.promptPrefix || '').trim();
     if (promptPrefix) {
@@ -124,29 +133,13 @@ class ClaudeClient extends BaseClient {
       if (!promptPrefix.endsWith(`${this.endToken}`)) {
         promptPrefix = `${promptPrefix.trim()}${this.endToken}\n\n`;
       }
-      promptPrefix = `${this.startToken}Instructions:\n${promptPrefix}`;
+      promptPrefix = `\nInstructions:\n${promptPrefix}`;
     } else {
-      const currentDateString = new Date().toLocaleDateString(
-        'en-us',
-        { year: 'numeric', month: 'long', day: 'numeric' },
-      );
-      promptPrefix = `${this.startToken}Instructions:\nYou are Claude, a large language model trained by Anthropic. Respond conversationally.\nCurrent date: ${currentDateString}${this.endToken}\n\n`;
+      promptPrefix = defaultPrefix;
     }
 
-    const promptSuffix = `${this.startToken}${this.AI_PROMPT}:\n`; // Prompt ChatGPT to respond.
-
-    // const instructionsPayload = {
-    //   role: 'system',
-    //   name: 'instructions',
-    //   content: promptPrefix,
-    // };
-
-    // const messagePayload = {
-    //   role: 'system',
-    //   content: promptSuffix,
-    // };
-
-    let currentTokenCount = this.getTokenCount(`${promptPrefix}${promptSuffix}`);
+    const promptSuffix = `${promptPrefix}${this.assistantLabel}:\n`; // Prompt AI to respond.
+    let currentTokenCount = this.getTokenCount(promptSuffix);
 
     let promptBody = '';
     const maxTokenCount = this.maxPromptTokens;
@@ -156,23 +149,11 @@ class ClaudeClient extends BaseClient {
     // Iterate backwards through the messages, adding them to the prompt until we reach the max token count.
     // Do this within a recursive async function so that it doesn't block the event loop for too long.
     const buildPromptBody = async () => {
-      if (currentTokenCount < maxTokenCount && orderedMessages.length > 0) {
-        const message = orderedMessages.pop();
-        console.log('ClaudeClient: buildPromptBody, message: ', message)
-        const roleLabel = message?.isCreatedByUser || message?.role?.toLowerCase() === 'user' ? this.HUMAN_PROMPT : this.AI_PROMPT;
-        const messageString = `${this.startToken}${roleLabel}:\n${message?.text ?? message?.message}${this.endToken}\n`;
-        console.log('ClaudeClient: buildPromptBody, messageString: ', messageString)
-        let newPromptBody;
-        if (promptBody) {
-          newPromptBody = `${messageString}${promptBody}`;
-        } else {
-          // Always insert prompt prefix before the last user message, if not gpt-3.5-turbo.
-          // This makes the AI obey the prompt instructions better, which is important for custom instructions.
-          // After a bunch of testing, it doesn't seem to cause the AI any confusion, even if you ask it things
-          // like "what's the last thing I wrote?".
-          newPromptBody = `${promptPrefix}${messageString}${promptBody}`;
-        }
-        console.log('ClaudeClient: buildPromptBody, newPromptBody: ', newPromptBody)
+      if (currentTokenCount < maxTokenCount && formattedMessages.length > 0) {
+        const message = formattedMessages.pop();
+        const roleLabel = message.author;
+        const messageString = `${roleLabel}:\n${message.content}${this.endToken}\n`;
+        let newPromptBody = `${messageString}${promptBody}`;
 
         context.unshift(message);
 
@@ -196,35 +177,41 @@ class ClaudeClient extends BaseClient {
     };
 
     await buildPromptBody();
-
     const prompt = `${promptBody}${promptSuffix}`;
-    // messagePayload.content = prompt;
+    if (this.options.debug) {
+      console.debug(prompt);
+    }
     // Add 2 tokens for metadata after all messages have been counted.
     currentTokenCount += 2;
 
     // Use up to `this.maxContextTokens` tokens (prompt + response), but try to leave `this.maxTokens` tokens for the response.
     this.modelOptions.max_tokens = Math.min(this.maxContextTokens - currentTokenCount, this.maxResponseTokens);
 
-    if (this.options.debug) {
-      console.debug(`Prompt : ${prompt}`);
-    }
-
-    // return { prompt: [instructionsPayload, messagePayload], context };
     return { prompt, context };
   }
 
-  async getCompletion(payload, abortController = null) {
-    console.log('ClaudeClient: getCompletion', payload)
-    if (!abortController) {
-      abortController = new AbortController();
+  getCompletion() {
+    console.log('ClaudeClient doesn\'t use getCompletion (all handled in sendCompletion)');
+  }
+
+  // TODO: implement abortController usage
+  // async sendCompletion(payload, { onProgress, abortController }) {
+  async sendCompletion(payload, { onProgress }) {
+    console.log('ClaudeClient: getCompletion', payload);
+
+    const modelOptions = { ...this.modelOptions };
+    if (typeof onProgress === 'function') {
+      modelOptions.stream = true;
     }
 
     const { debug } = this.options;
     if (debug) {
       console.debug();
-      console.debug(this.modelOptions);
+      console.debug(modelOptions);
       console.debug();
     }
+
+    // TODO: We should support proxies/aborting
     // const opts = {
     //   method: 'POST',
     //   agent: new Agent({
@@ -240,30 +227,41 @@ class ClaudeClient extends BaseClient {
 
     const client = this.getClient();
 
-    const response = await client.completions.create({
+    // TODO: this may need to be separated to a separate method as streaming response is different from non-streaming
+    // this is done conditionally in api\app\clients\ChatGPTClient.js starting line 186
+    let text = '';
+    const stream = await client.completions.create({
       // prompt: `${Anthropic.HUMAN_PROMPT} ${input} ${Anthropic.AI_PROMPT}`,
       prompt: payload,
       //just temporarily hard-coding this to claude-1
       model: 'claude-1',
       // Not sure if this should be set to true or not
-      // stream: true,
+      stream: true, // I am adding this to modelOptions based on onProgress definition
       // I think this should be this.maxPropmtTokens, but not 100% sure
       max_tokens_to_sample: 300,
 
       //  temporarily commented out for debugging
-      //...this.modelOptions
+      //...modelOptions
     });
 
-    console.dir(response, { depth: null });
-    return response;
+    for await (const completion of stream) {
+      if (this.options.debug) {
+        console.debug(completion);
+      }
+      text += completion.completion;
+      onProgress(completion.completion);
+    }
+
+    return text.trim();
   }
 
-  getMessageMapMethod() {
-    return ((message) => ({
-      author: message.isCreatedByUser ? this.userLabel : this.modelLabel,
-      content: message?.content ?? message.text
-    })).bind(this);
-  }
+  // I commented this out because I will need to refactor this for the BaseClient/all clients
+  // getMessageMapMethod() {
+  //   return ((message) => ({
+  //     author: message.isCreatedByUser ? this.userLabel : this.assistantLabel,
+  //     content: message?.content ?? message.text
+  //   })).bind(this);
+  // }
 
   getSaveOptions() {
     return {
@@ -273,78 +271,6 @@ class ClaudeClient extends BaseClient {
 
   getBuildMessagesOptions() {
     console.log('ClaudeClient doesn\'t use getBuildMessagesOptions');
-  }
-
-  async sendMessage(message, opts = {}) {
-    console.log('ClaudeClient: sendMessage', message, opts);
-    const {
-      user,
-      conversationId,
-      responseMessageId,
-      saveOptions,
-      userMessage,
-    } = await this.handleStartMethods(message, opts);
-
-    await this.saveMessageToDatabase(userMessage, saveOptions, user);
-
-    let conversation = typeof opts.conversation === 'object'
-      ? opts.conversation
-      : await this.conversationsCache.get(conversationId);
-
-    // let isNewConversation = false;
-    if (!conversation) {
-      conversation = {
-        messages: [],
-        createdAt: Date.now(),
-      };
-      // isNewConversation = true;
-    }
-
-    // const shouldGenerateTitle = opts.shouldGenerateTitle && isNewConversation;
-
-    conversation.messages.push(userMessage);
-
-    const { prompt: payload, context } = await this.buildPrompt(
-      conversation.messages,
-      userMessage.id,
-      opts.promptPrefix,
-    );
-
-    if (this.options.keepNecessaryMessagesOnly) {
-      conversation.messages = context;
-    }
-
-    let reply = '';
-
-    try {
-      reply = await this.getCompletion(payload, opts.abortController);
-
-      if (this.options.debug) {
-        console.debug('result');
-        console.debug(reply);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-
-    if (this.options.debug) {
-      console.debug('options');
-      console.debug(this.options);
-    }
-
-    await this.generateTextStream(reply, opts.onProgress, { delay: 0.5 });
-
-    const responseMessage = {
-      messageId: responseMessageId,
-      conversationId,
-      parentMessageId: userMessage.messageId,
-      sender: this.sender,
-      text: reply,
-      isCreatedByUser: false
-    };
-
-    await this.saveMessageToDatabase(responseMessage, saveOptions, user);
-    return responseMessage;
   }
 
   static getTokenizer(encoding, isModelName = false, extendSpecialTokens = {}) {
