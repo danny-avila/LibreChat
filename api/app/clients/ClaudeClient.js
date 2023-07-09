@@ -125,7 +125,7 @@ class ClaudeClient extends BaseClient {
       content: message?.content ?? message.text
     }));
 
-    const defaultPrefix = `\nInstructions:\nYou are Claude, a large language model trained by Anthropic. Respond conversationally.\nCurrent date: ${this.currentDateString}${this.endToken}`
+    const defaultPrefix = `\nRemember your instructions:\nYou are Claude, a large language model trained by Anthropic. Respond conversationally.\nCurrent date: ${this.currentDateString}${this.endToken}`
 
     let promptPrefix = (this.options.promptPrefix || '').trim();
     if (promptPrefix) {
@@ -133,7 +133,7 @@ class ClaudeClient extends BaseClient {
       if (!promptPrefix.endsWith(`${this.endToken}`)) {
         promptPrefix = `${promptPrefix.trim()}${this.endToken}\n\n`;
       }
-      promptPrefix = `\nInstructions:\n${promptPrefix}`;
+      promptPrefix = `\nRemember your instructions:\n${promptPrefix}`;
     } else {
       promptPrefix = defaultPrefix;
     }
