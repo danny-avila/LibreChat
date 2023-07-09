@@ -4,6 +4,21 @@ import { AgGridReact } from 'ag-grid-react'; // the AG Grid React Component
 
 import 'ag-grid-community/styles/ag-grid.css'; // Core grid CSS, always needed
 import 'ag-grid-community/styles/ag-theme-alpine.css'; // Optional theme CSS
+import GoldMedal from "../svg/GoldMedal";
+import SilverMedal from "../svg/SilverMedal";
+import BronzeMedal from "../svg/BronzeMedal";
+
+function placeCellRenderer(place) {
+  switch (place) {
+    default: return place + 1
+
+    case 0: return <GoldMedal />
+
+    case 1: return <SilverMedal />
+
+    case 2: return <BronzeMedal />
+  }
+}
 
 function userCellRenderer(user) {
   const { name, username } = user;
@@ -28,7 +43,12 @@ export default function Leaderboard() {
 
   // Each Column Definition results in one Column.
   const [columnDefs, setColumnDefs] = useState([ // eslint-disable-line
-    {field: '名次'},
+    {
+      field: '名次',
+      cellRenderer: params => <div className="relative flex items-center justify-left">
+        {placeCellRenderer(params.value)}
+      </div>
+    },
     {
       field: '用户',
       cellRenderer: params => userCellRenderer(params.value)
