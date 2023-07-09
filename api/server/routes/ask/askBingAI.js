@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { titleConvo, askBing } = require('../../../app');
+const { titleConvoBing, askBing } = require('../../../app');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
@@ -213,8 +213,7 @@ const ask = async ({
     res.end();
 
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
-      const title = await titleConvo({
-        endpoint: endpointOption?.endpoint,
+      const title = await titleConvoBing({
         text,
         response: responseMessage
       });
