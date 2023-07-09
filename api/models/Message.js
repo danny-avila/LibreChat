@@ -53,6 +53,35 @@ module.exports = {
     }
   },
 
+  async likeMessage (messageId, isLiked) {
+    try {
+      const existingMsg = await Message.findOne({ messageId }).exec();
+  
+      if (existingMsg) {
+        const update = {};
+        
+        if (isLiked) {
+          // Increment by 1
+          update.likesMsg = existingMsg.likesMsg + 1;
+        } else {
+          // Ensure likesCount doesn't go below 0
+          update.likesMsg = existingMsg.likesMsg > 0 ? existingMsg.likesMsg - 1 : 0;
+        }
+  
+        return await Message.findOneAndUpdate(
+          { messageId },
+          update,
+          { new: true }
+        ).exec();
+      } else {
+        return { message: 'Message not found.' };
+      }
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error liking Message' };
+    }
+  },
+
   async deleteMessagesSince({ messageId, conversationId }) {
     try {
       const message = await Message.findOne({ messageId }).exec();

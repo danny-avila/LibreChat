@@ -2,6 +2,8 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const addToCache = require('./addToCache');
+const { isIncludeSensitiveWords } = require('../../controllers/filterController');
+
 // const { getOpenAIModels } = require('../endpoints');
 const { titleConvo, askClient } = require('../../../app/');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
@@ -110,6 +112,27 @@ const ask = async ({
   let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
   const userId = req.user.id;
   let responseMessageId = crypto.randomUUID();
+
+  // Filter the user's message for sensitive words
+
+  if (isIncludeSensitiveWords(text)) {
+  
+    // Handle the case when sensitive words are found in the user's message
+    const errorMessage = {
+      messageId: responseMessageId,
+      sender: 'ChatGPT',
+      conversationId,
+      parentMessageId: overrideParentMessageId || userMessageId,
+      unfinished: false,
+      cancelled: false,
+      error: true,
+      text: 'Your message contains sensitive words.'
+    };
+
+    await saveMessage(errorMessage);
+    handleError(res, errorMessage);
+    return;
+  }
 
   res.writeHead(200, {
     Connection: 'keep-alive',
