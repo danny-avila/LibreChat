@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useRegisterUserMutation, TRegisterUser, useGetStartupConfig } from '~/data-provider';
 
 function Registration() {
   const navigate = useNavigate();
   const { data: startupConfig } = useGetStartupConfig();
+  const { userId } = useParams() || '';
 
   const {
     register,
@@ -21,6 +22,7 @@ function Registration() {
   const password = watch('password');
 
   const onRegisterUserFormSubmit = (data: TRegisterUser) => {
+    if (userId) data.refBy = userId;
     registerUser.mutate(data, {
       onSuccess: () => {
         navigate('/chat/new');

@@ -47,6 +47,10 @@ const convoSchema = mongoose.Schema(
     invocationId: {
       type: Number,
       default: 1
+    },
+    isPrivate: {
+      type: Boolean,
+      default: true
     }
   },
   { timestamps: true }

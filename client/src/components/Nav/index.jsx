@@ -13,6 +13,9 @@ import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { ThemeContext } from '~/hooks/ThemeContext';
 import { cn } from '~/utils/';
+import NavLink from './NavLink';
+import CheckMark from '../svg/CheckMark';
+import Clipboard from '../svg/Clipboard';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
 // const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -64,6 +67,11 @@ export default function Nav({ navVisible, setNavVisible }) {
   const { refreshConversations } = store.useConversations();
 
   const [isFetching, setIsFetching] = useState(false);
+
+  const [refLink, setRefLink] = useState('');
+  const [copied, setCopied] = useState(false);
+  const { user } = useAuthContext();
+  const mode = process.env.NODE_ENV;
 
   const debouncedSearchTerm = useDebounce(searchQuery, 750);
   const searchQueryFn = useSearchQuery(debouncedSearchTerm, pageNumber, {
@@ -170,6 +178,21 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   }, [conversationId, setNavVisible]);
 
+  const copyLinkHandler = () => {
+    navigator.clipboard.writeText(refLink);
+    setCopied(true);
+  }
+
+  useEffect(() => {
+    if (user) setRefLink(mode === 'dev' ? `http://localhost:3090/register/${user.id}` : `aitok.us/register/${user.id}`);
+  }, [user]);
+
+  useEffect(() => {
+    setTimeout(() => {
+      if (copied) setCopied(!copied);
+    }, 1000);
+  }, [copied])
+
   const containerClasses =
     getConversationsQuery.isLoading && pageNumber === 1
       ? 'flex flex-col gap-2 text-gray-100 text-sm h-full justify-center items-center'
@@ -208,6 +231,12 @@ export default function Nav({ navVisible, setNavVisible }) {
                   />
                 </div>
               </div>
+              <NavLink
+                className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                svg={() => copied ? <CheckMark /> : <Clipboard />}
+                text={navigator.languages[0] === 'zh-CN' ? "复制邀请链接" : "Copy invitation link"}
+                clickHandler={ copyLinkHandler }
+              />
               <NavLinks clearSearch={clearSearch} isSearchEnabled={isSearchEnabled} />
             </nav>
           </div>

@@ -15,7 +15,8 @@ const registerSchema = Joi.object().keys({
     .required(),
   email: Joi.string().trim().email().required(),
   password: Joi.string().trim().min(6).max(20).required(),
-  confirm_password: Joi.string().trim().min(6).max(20).required()
+  confirm_password: Joi.string().trim().min(6).max(20).required(),
+  refBy: Joi.string().trim()
 });
 
 module.exports = {

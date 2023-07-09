@@ -124,5 +124,16 @@ module.exports = {
     let deleteCount = await Conversation.deleteMany({ ...filter, user }).exec();
     deleteCount.messages = await deleteMessages({ conversationId: { $in: ids } });
     return deleteCount;
+  },
+  getRecentConvos: async (userId) => {
+    try {
+      return await Conversation.find({
+        user: { $ne: userId },
+        isPrivate: {$eq: false}
+      }).sort( {updatedAt: -1} ).limit(3).exec();
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error fetching recent conversations' };
+    }
   }
 };

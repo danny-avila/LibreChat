@@ -115,3 +115,15 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
 export const getStartupConfig = (): Promise<t.TStartupConfig> => {
   return request.get(endpoints.config());
 }
+
+export const getRecentConversations = () => {
+  return request.get(endpoints.recentConversations());
+}
+
+export const duplicateConversation = (payload: object) => {
+  return request.post(endpoints.duplicateConversation(), { arg: payload });
+}
+
+export const getLeaderboard = () => {
+  return request.get(endpoints.leaderboard());
+}

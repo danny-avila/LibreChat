@@ -142,6 +142,9 @@ export type TUser = {
   role: string;
   provider: string;
   plugins: string[];
+  refBy: string;
+  referrals: string[];
+  numOfReferrals: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -212,6 +215,7 @@ export type TRegisterUser = {
   username: string;
   password: string;
   confirm_password?: string;
+  refBy?: string;
 };
 
 export type TLoginUser = {
