@@ -29,6 +29,7 @@ export default function Message({
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const setLatestMessage = useSetRecoilState(store.latestMessage);
   const [abortScroll, setAbort] = useState(false);
+  const [isLiked, setIsLiked] = useState(false);
   const textEditor = useRef(null);
   const last = !message?.children?.length;
   const edit = message.messageId == currentEditId;
@@ -111,6 +112,31 @@ export default function Message({
     setTimeout(() => {
       setIsCopied(false);
     }, 3000);
+  };
+
+     
+  const handleLikeClick = async () => {
+    try {
+      const response = await fetch('/api/messages/like', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          messageId: message.messageId,
+          isLiked: !isLiked
+        })
+      });
+      const data = await response.json();
+      if (data.message) {
+        console.log(data.message);
+        return;
+      }
+      // Update the isLiked state based on the API response
+      setIsLiked((prev) => !prev);
+    } catch (error) {
+      console.log('Error liking message:', error);
+    }
   };
 
   const clickSearchResult = async () => {
@@ -224,6 +250,8 @@ export default function Message({
               enterEdit={() => enterEdit()}
               regenerate={() => regenerateMessage()}
               copyToClipboard={copyToClipboard}
+              handleLikeClick={handleLikeClick}
+              isLiked={isLiked}
             />
             <SubRow subclasses="switch-container">
               <SiblingSwitch
