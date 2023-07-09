@@ -55,7 +55,7 @@ const getIcon = (props) => {
       const { modelLabel } = props;
       icon = <img src="/assets/google-palm.svg" alt="Palm Icon"/>;
       name = modelLabel || 'PaLM2';
-    } else if (endpoint === 'claude') {
+    } else if (endpoint === 'anthropic') {
       const { modelLabel } = props;
       icon = <img src="/assets/claude.png" />;
       name = modelLabel || 'Claude';

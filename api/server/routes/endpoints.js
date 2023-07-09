@@ -69,11 +69,11 @@ router.get('/', async function (req, res) {
       availableModels: getChatGPTBrowserModels()
     }
     : false;
-  const claude = process.env.ANTHROPIC_API_KEY
+  const anthropic = process.env.ANTHROPIC_API_KEY
     ? { userProvide: process.env.ANTHROPIC_API_KEY == 'user_provided' }
     : false;
 
-  res.send(JSON.stringify({ azureOpenAI, openAI, google, bingAI, chatGPTBrowser, gptPlugins, claude }));
+  res.send(JSON.stringify({ azureOpenAI, openAI, google, bingAI, chatGPTBrowser, gptPlugins, anthropic }));
 });
 
 module.exports = { router, getOpenAIModels, getChatGPTBrowserModels };

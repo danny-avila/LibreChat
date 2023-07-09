@@ -13,7 +13,7 @@ export default function createPayload(submission: TSubmission) {
     chatGPT: '/api/ask/chatGPT',
     chatGPTBrowser: '/api/ask/chatGPTBrowser',
     gptPlugins: '/api/ask/gptPlugins',
-    claude: '/api/ask/claude',
+    anthropic: '/api/ask/anthropic',
   };
 
   const server = endpointUrlMap[endpoint];

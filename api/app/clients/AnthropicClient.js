@@ -1,30 +1,25 @@
 const Keyv = require('keyv');
-const BaseClient = require('./BaseClient');
 // const { Agent, ProxyAgent } = require('undici');
+const BaseClient = require('./BaseClient');
 const {
   encoding_for_model: encodingForModel,
   get_encoding: getEncoding
 } = require('@dqbd/tiktoken');
-
 const Anthropic = require('@anthropic-ai/sdk');
 
 const HUMAN_PROMPT = "\n\nHuman";
 const AI_PROMPT = "\n\nAssistant";
-const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-1";
-// const DEFAULT_API_URL = "https://api.anthropic.com";
-
-// const DONE_MESSAGE = "[DONE]";
 
 const tokenizersCache = {};
 
-class ClaudeClient extends BaseClient {
+class AnthropicClient extends BaseClient {
 
   constructor(apiKey, options = {}, cacheOptions = {}) {
     super(apiKey, options, cacheOptions)
-    cacheOptions.namespace = cacheOptions.namespace || 'claude';
+    cacheOptions.namespace = cacheOptions.namespace || 'anthropic';
     this.conversationsCache = new Keyv(cacheOptions);
     this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
-    this.sender = "Claude";
+    this.sender = "Anthropic";
     this.setOptions(options);
   }
 
@@ -54,7 +49,7 @@ class ClaudeClient extends BaseClient {
     this.modelOptions = {
       ...modelOptions,
       // set some good defaults (check for undefined in some cases because they may be 0)
-      model: modelOptions.model || CLAUDE_MODEL || 'claude-1',
+      model: modelOptions.model || 'claude-1',
       temperature: typeof modelOptions.temperature === 'undefined' ? 0.2 : modelOptions.temperature, // 0 - 1, 0.2 is recommended
       topP: typeof modelOptions.topP === 'undefined' ? 0.95 : modelOptions.topP, // 0 - 1, default: 0.95
       topK: typeof modelOptions.topK === 'undefined' ? 40 : modelOptions.topK, // 1-40, default: 40
@@ -117,7 +112,7 @@ class ClaudeClient extends BaseClient {
   async buildMessages(messages, parentMessageId) {
     const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
     if (this.options.debug) {
-      console.debug('ClaudeClient: orderedMessages', orderedMessages, parentMessageId);
+      console.debug('AnthropicClient: orderedMessages', orderedMessages, parentMessageId);
     }
 
     const formattedMessages = orderedMessages.map((message) => ({
@@ -191,13 +186,16 @@ class ClaudeClient extends BaseClient {
   }
 
   getCompletion() {
-    console.log('ClaudeClient doesn\'t use getCompletion (all handled in sendCompletion)');
+    console.log('AnthropicClient doesn\'t use getCompletion (all handled in sendCompletion)');
   }
 
   // TODO: implement abortController usage
-  // async sendCompletion(payload, { onProgress, abortController }) {
-  async sendCompletion(payload, { onProgress }) {
-    console.log('ClaudeClient: getCompletion', payload);
+  async sendCompletion(payload, { onProgress, abortController }) {
+    if (!abortController) {
+      abortController = new AbortController();
+    }
+    console.log('AnthropicClient: getCompletion', payload);
+    // const { signal } = abortController;
 
     const modelOptions = { ...this.modelOptions };
     if (typeof onProgress === 'function') {
@@ -227,31 +225,29 @@ class ClaudeClient extends BaseClient {
 
     const client = this.getClient();
 
-    // TODO: this may need to be separated to a separate method as streaming response is different from non-streaming
-    // this is done conditionally in api\app\clients\ChatGPTClient.js starting line 186
     let text = '';
-    const stream = await client.completions.create({
-      // prompt: `${Anthropic.HUMAN_PROMPT} ${input} ${Anthropic.AI_PROMPT}`,
-      prompt: payload,
-      //just temporarily hard-coding this to claude-1
-      model: 'claude-1',
-      // Not sure if this should be set to true or not
-      stream: true, // I am adding this to modelOptions based on onProgress definition
-      // I think this should be this.maxPropmtTokens, but not 100% sure
-      max_tokens_to_sample: 300,
 
-      //  temporarily commented out for debugging
-      //...modelOptions
+    const response = await client.completions.create({
+      prompt: payload,
+      model: this.modelOptions.model,
+      stream: this.modelOptions.stream || true,
+      max_tokens_to_sample: this.modelOptions.maxTokensToSample || 1024,
+      ...modelOptions
     });
 
-    for await (const completion of stream) {
+    for await (const completion of response) {
       if (this.options.debug) {
         console.debug(completion);
       }
+      // signal.addEventListener('abort', () => {
+      //   console.log('AnthropicClient: aborting');
+      //   return;
+      // });
       text += completion.completion;
       onProgress(completion.completion);
     }
 
+    // signal.removeEventListener('abort');
     return text.trim();
   }
 
@@ -270,7 +266,7 @@ class ClaudeClient extends BaseClient {
   }
 
   getBuildMessagesOptions() {
-    console.log('ClaudeClient doesn\'t use getBuildMessagesOptions');
+    console.log('AnthropicClient doesn\'t use getBuildMessagesOptions');
   }
 
   static getTokenizer(encoding, isModelName = false, extendSpecialTokens = {}) {
@@ -292,4 +288,4 @@ class ClaudeClient extends BaseClient {
   }
 }
 
-module.exports = ClaudeClient;
+module.exports = AnthropicClient;

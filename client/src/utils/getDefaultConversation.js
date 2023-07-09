@@ -57,7 +57,7 @@ const buildDefaultConversation = ({
       clientId: null,
       invocationId: 1
     };
-  } else if (endpoint === 'claude') {
+  } else if (endpoint === 'anthropic') {
     conversation = {
       ...conversation,
       endpoint,
@@ -171,7 +171,7 @@ const getDefaultConversation = ({ conversation, endpointsConfig, preset }) => {
     'chatGPTBrowser',
     'gptPlugins',
     'google',
-    'claude'
+    'anthropic'
   ].find((e) => endpointsConfig?.[e]);
   if (endpoint) {
     conversation = buildDefaultConversation({ conversation, endpoint, endpointsConfig });

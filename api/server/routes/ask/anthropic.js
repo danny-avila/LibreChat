@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { titleConvo, ClaudeClient } = require('../../../app');
+const { titleConvo, AnthropicClient } = require('../../../app');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 const { abortMessage } = require('../../../utils');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
@@ -14,10 +14,9 @@ router.post('/abort', requireJwtAuth, async (req, res) => {
 });
 
 router.post('/', requireJwtAuth, async (req, res) => {
-  console.log('askClaude.js: req.body:', req.body)
   const { endpoint, text, parentMessageId, conversationId: oldConversationId } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
-  if (endpoint !== 'claude') return handleError(res, { text: 'Illegal request' });
+  if (endpoint !== 'anthropic') return handleError(res, { text: 'Illegal request' });
 
   const endpointOption = {};
 
@@ -65,7 +64,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
           lastSavedTimestamp = currentTimestamp;
           saveMessage({
             messageId: responseMessageId,
-            sender: 'Claude',
+            sender: 'Anthropic',
             conversationId,
             parentMessageId: overrideParentMessageId || userMessageId,
             text: partialText,
@@ -83,7 +82,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
 
       const responseMessage = {
         messageId: responseMessageId,
-        sender: 'Claude',
+        sender: 'Anthropic',
         conversationId,
         parentMessageId: overrideParentMessageId || userMessageId,
         text: getPartialText(),
@@ -109,7 +108,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
     }
 
-    const client = new ClaudeClient();
+    const client = new AnthropicClient();
 
     let response = await client.sendMessage(text, {
       getIds,
@@ -134,7 +133,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       ...endpointOption,
       ...endpointOption.modelOptions,
       conversationId,
-      endpoint: 'claude'
+      endpoint: 'anthropic'
     });
 
     await saveMessage(response);
@@ -158,7 +157,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     console.error(error);
     const errorMessage = {
       messageId: responseMessageId,
-      sender: 'Claude',
+      sender: 'Anthropic',
       conversationId,
       parentMessageId,
       unfinished: false,
