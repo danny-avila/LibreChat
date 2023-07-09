@@ -231,7 +231,7 @@ class AnthropicClient extends BaseClient {
       prompt: payload,
       model: this.modelOptions.model,
       stream: this.modelOptions.stream || true,
-      max_tokens_to_sample: this.modelOptions.maxTokensToSample || 1024,
+      max_tokens_to_sample: this.modelOptions.maxOutputTokens || 1024,
       ...modelOptions
     });
 
