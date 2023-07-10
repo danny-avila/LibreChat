@@ -9,7 +9,7 @@ export default function SilverMedal() {
       <path d="M14.3218 18.8436L17.5349 16.9885L24.0597 28.2899L19.5062 27.8234L14.3218 18.8436Z" fill="#418ED6"/>
       <circle cx="12.0246" cy="11.0622" r="11.0622" fill="#E3E3E3"/>
       <circle cx="12.0247" cy="11.0621" r="8.63501" fill="#595959"/>
-      <mask id="mask0_103_1231" style={{"mask-type": "alpha"}} maskUnits="userSpaceOnUse" x="3" y="3" width="19" height="18">
+      <mask id="mask0_103_1231" style={{"maskType": "alpha"}} maskUnits="userSpaceOnUse" x="3" y="3" width="19" height="18">
         <circle cx="12.4857" cy="11.984" r="8.65511" fill="#C28B37"/>
       </mask>
       <g mask="url(#mask0_103_1231)">
