@@ -117,20 +117,8 @@ function formatSteps(steps) {
 }
 
 function formatAction(action) {
-  const capitalizeWords = (input) => {
-    if (input === 'dall-e') {
-      return 'DALL-E';
-    }
-
-    return input
-      .replace(/-/g, ' ')
-      .split(' ')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  };
-
   const formattedAction = {
-    plugin: capitalizeWords(action.tool) || action.tool,
+    plugin: action.tool,
     input: getString(action.toolInput),
     thought: action.log.includes('Thought: ')
       ? action.log.split('\n')[0].replace('Thought: ', '')

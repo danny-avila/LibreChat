@@ -51,7 +51,14 @@ router.get('/', async function (req, res) {
     }
   }
 
-  const plugins = await addOpenAPISpecs(availableTools);
+  const tools = await addOpenAPISpecs(availableTools);
+  function transformToolsToMap(tools) {
+    return tools.reduce((map, obj) => {
+      map[obj.pluginKey] = obj.name;
+      return map;
+    }, {});
+  }
+  const plugins = transformToolsToMap(tools);
 
   const google =
     key || palmUser
@@ -69,7 +76,7 @@ router.get('/', async function (req, res) {
   const gptPlugins = openAIApiKey || azureOpenAIApiKey
     ? {
       availableModels: getPluginModels(),
-      availableTools: plugins,
+      plugins,
       availableAgents: ['classic', 'functions'],
       userProvide: userProvidedOpenAI
     }
