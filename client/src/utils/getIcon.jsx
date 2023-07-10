@@ -2,14 +2,17 @@ import { Plugin, GPTIcon, BingIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 const getIcon = (props) => {
-  const { size = 30, isCreatedByUser, button, model, message = true } = props;
+  const { size = 30, isCreatedByUser, button, model, message = true, hideUser = false } = props;
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const { user } = useAuthContext();
 
-  if (isCreatedByUser)
+  if (isCreatedByUser) {
+    const title = hideUser ? 'User' : user?.name || 'User';
+    const username = hideUser ? 'User' : user.name;
+
     return (
       <div
-        title={user?.name || 'User'}
+        title={title}
         style={{
           width: size,
           height: size
@@ -20,13 +23,13 @@ const getIcon = (props) => {
           className="rounded-sm"
           src={
             user?.avatar ||
-            `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name || 'User'}&fontFamily=Verdana&fontSize=36`
+            `https://api.dicebear.com/6.x/initials/svg?seed=${username}&fontFamily=Verdana&fontSize=36`
           }
           alt="avatar"
         />
       </div>
     );
-  else if (!isCreatedByUser) {
+  } else if (!isCreatedByUser) {
     const { endpoint, error } = props;
 
     let icon, bg, name;

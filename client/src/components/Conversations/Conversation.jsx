@@ -6,6 +6,7 @@ import DeleteButton from './DeleteButton';
 import ConvoIcon from '../svg/ConvoIcon';
 
 import store from '~/store';
+import PrivateButton from './PrivateButton';
 import LikeIcon from '../svg/LikeIcon';
 
 export default function Conversation({ conversation, retainView }) {
@@ -20,9 +21,11 @@ export default function Conversation({ conversation, retainView }) {
   const [renaming, setRenaming] = useState(false);
   const inputRef = useRef(null);
 
-  const { conversationId, title } = conversation;
+  const { conversationId, title, isPrivate } = conversation;
 
   const [titleInput, setTitleInput] = useState(title);
+
+  const [privateState, setPrivateState] = useState(isPrivate);
   const [isLiked, setIsLiked] = useState(false);
 
   const handleLikeClick = async () => {
@@ -70,6 +73,12 @@ export default function Conversation({ conversation, retainView }) {
     }
 
   };
+
+  const setPrivateHandler = (e) => {
+    e.preventDefault();
+    updateConvoMutation.mutate({ conversationId, isPrivate: !privateState });
+    setPrivateState(!privateState);
+  }
 
   const renameHandler = (e) => {
     e.preventDefault();
@@ -150,6 +159,11 @@ export default function Conversation({ conversation, retainView }) {
             filled={isLiked}
             style={{ marginTop: '0.25rem' }}
             onClick={handleLikeClick}
+          />
+          <PrivateButton
+            conversationId={conversationId}
+            isPrivate={privateState}
+            setPrivateHandler={setPrivateHandler}
           />
           <RenameButton
             conversationId={conversationId}

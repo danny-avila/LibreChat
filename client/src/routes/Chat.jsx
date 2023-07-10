@@ -2,9 +2,9 @@ import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 
-import Landing from '../components/ui/Landing';
 import Messages from '../components/Messages';
 import TextChat from '../components/Input';
+import Landing from '~/components/ui/Landing';
 
 import store from '~/store';
 import {

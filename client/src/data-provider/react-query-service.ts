@@ -4,7 +4,8 @@ import {
   useMutation,
   useQueryClient,
   UseMutationResult,
-  QueryObserverResult
+  QueryObserverResult,
+  QueryClient
 } from '@tanstack/react-query';
 import * as t from './types';
 import * as dataService from './data-service';
@@ -21,6 +22,8 @@ export enum QueryKeys {
   tokenCount = 'tokenCount',
   availablePlugins = 'availablePlugins',
   startupConfig = 'startupConfig',
+  recentConversations = 'recentConversations',
+  numOfReferrals = 'numOfReferrals'
 }
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
@@ -340,6 +343,26 @@ export const useUpdateUserPluginsMutation = (): UseMutationResult<
 
 export const useGetStartupConfig = (): QueryObserverResult<t.TStartupConfig> => {
   return useQuery<t.TStartupConfig>([QueryKeys.startupConfig], () => dataService.getStartupConfig(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false
+  });
+}
+
+export const useGetRecentConversations = (): QueryObserverResult<t.TConversation[]> => {
+  return useQuery([QueryKeys.recentConversations], () => dataService.getRecentConversations(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false
+  });
+};
+
+export const useDuplicateConvoMutation = (): any => {
+  return useMutation((payload: object) => dataService.duplicateConversation(payload))
+}
+
+export const useGetLeaderboardQuery = (): any => {
+  return useQuery([QueryKeys.numOfReferrals], () => dataService.getLeaderboard(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false

@@ -93,3 +93,15 @@ export const plugins = () => {
 export const config = () => {
   return '/api/config';
 }
+
+export const recentConversations = () => {
+  return `/api/convos/recent`;
+}
+
+export const duplicateConversation = () => {
+  return `/api/convos/duplicate`
+}
+
+export const leaderboard = () => {
+  return `/api/leaderboard`
+}

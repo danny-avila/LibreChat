@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const Message = require('./schema/messageSchema');
 
 module.exports = {
@@ -113,6 +114,45 @@ module.exports = {
       console.error(`Error deleting messages: ${err}`);
       throw new Error('Failed to delete messages.');
     }
+  },
+
+  async getRecentMessages() {
+    try {
+      return await Message.find().sort( {createdAt: -1} ).select('conversationId').limit(30).exec();
+    } catch (err) {
+      console.error(`Error fetching recents messages: ${err}`);
+      throw new Error('Failed to fetch recent messages.');
+    }
+  },
+
+  async duplicateMessages({ newConversationId, msgData }) {
+    try {
+      let newParentMessageId = "00000000-0000-0000-0000-000000000000";
+      let newMessageId = crypto.randomUUID();
+      const msgObjIds = [];
+
+      for (let i = 0; i < msgData.length; i++) {
+        let msgObj = structuredClone(msgData[i]);
+
+        delete msgObj._id;
+        msgObj.messageId = newMessageId;
+        msgObj.parentMessageId = newParentMessageId;
+        msgObj.conversationId = newConversationId;
+
+        newParentMessageId = newMessageId;
+        newMessageId = crypto.randomUUID();
+
+        const newMsg = new Message(msgObj);
+        const result = await newMsg.save();
+        msgObjIds.push(result.id);
+      }
+
+      return msgObjIds;
+    } catch (err) {
+      console.error(`Error duplicating messages: ${err}`);
+      throw new Error('Failed to duplicate messages.');
+    }
+    
   },
 
   async getMessagesCount(filter) {

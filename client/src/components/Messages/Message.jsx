@@ -23,7 +23,8 @@ export default function Message({
   setCurrentEditId,
   siblingIdx,
   siblingCount,
-  setSiblingIdx
+  setSiblingIdx,
+  hideUser = false
 }) {
   const { text, searchResult, isCreatedByUser, error, submitting, unfinished } = message;
   const isSubmitting = useRecoilValue(store.isSubmitting);
@@ -76,7 +77,8 @@ export default function Message({
   const icon = getIcon({
     ...conversation,
     ...message,
-    model: message?.model || conversation?.model
+    model: message?.model || conversation?.model,
+    hideUser
   });
 
   if (!isCreatedByUser)
@@ -270,6 +272,7 @@ export default function Message({
         scrollToBottom={scrollToBottom}
         currentEditId={currentEditId}
         setCurrentEditId={setCurrentEditId}
+        hideUser={hideUser}
       />
     </>
   );
