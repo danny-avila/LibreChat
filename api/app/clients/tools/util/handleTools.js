@@ -84,10 +84,9 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
 
   const customConstructors = {
     browser: async () => {
-      let openAIApiKey = process.env.OPENAI_API_KEY;
-      if (!openAIApiKey) {
-        openAIApiKey = await getUserPluginAuthValue(user, 'OPENAI_API_KEY');
-      }
+      let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
+      openAIApiKey = openAIApiKey === 'user_provided' ? null : openAIApiKey;
+      openAIApiKey = openAIApiKey || await getUserPluginAuthValue(user, 'OPENAI_API_KEY');
       return new WebBrowser({ model, embeddings: new OpenAIEmbeddings({ openAIApiKey }) });
     },
     serpapi: async () => {
