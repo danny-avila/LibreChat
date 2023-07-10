@@ -1,5 +1,5 @@
-const { getMessages, saveMessage, deleteMessagesSince, deleteMessages } = require('./Message');
-const { getConvoTitle, getConvo, saveConvo } = require('./Conversation');
+const { getMessages, saveMessage, deleteMessagesSince, deleteMessages, likeMessage } = require('./Message');
+const { getConvoTitle, getConvo, saveConvo, likeConvo } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
 
 module.exports = {
@@ -7,10 +7,12 @@ module.exports = {
   saveMessage,
   deleteMessagesSince,
   deleteMessages,
+  likeMessage,
 
   getConvoTitle,
   getConvo,
   saveConvo,
+  likeConvo,
 
   getPreset,
   getPresets,

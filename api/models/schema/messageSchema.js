@@ -2,6 +2,10 @@ const mongoose = require('mongoose');
 const mongoMeili = require('../plugins/mongoMeili');
 const messageSchema = mongoose.Schema(
   {
+    likesMsg: {
+      type: Number,
+      default: 0
+    },
     messageId: {
       type: String,
       unique: true,

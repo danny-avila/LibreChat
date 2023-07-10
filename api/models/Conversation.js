@@ -124,5 +124,36 @@ module.exports = {
     let deleteCount = await Conversation.deleteMany({ ...filter, user }).exec();
     deleteCount.messages = await deleteMessages({ conversationId: { $in: ids } });
     return deleteCount;
-  }
+  },
+  
+  likeConvo: async (conversationId, isLiked) => {
+    try {
+      const existingConversation = await Conversation.findOne({ conversationId }).exec();
+  
+      if (existingConversation) {
+        const update = {};
+        
+        if (isLiked) {
+          // Increment the likesCount by 1
+          update.likesConvo = existingConversation.likesConvo + 1;
+        } else {
+          // Ensure likesCount doesn't go below 0
+          update.likesConvo = existingConversation.likesConvo > 0 ? existingConversation.likesConvo - 1 : 0;
+        }
+  
+        return await Conversation.findOneAndUpdate(
+          { conversationId },
+          update,
+          { new: true }
+        ).exec();
+      } else {
+        // Handle if the conversation doesn't exist for the user
+        return { message: 'Conversation not found.' };
+      }
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error liking conversation' };
+    }
+  },
+  
 };

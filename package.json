@@ -36,7 +36,8 @@
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "dependencies": {
     "langchain": "^0.0.91",
-    "react-ga": "^3.3.1"
+    "react-ga": "^3.3.1",
+    "mongodb": "5.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.32.1",
