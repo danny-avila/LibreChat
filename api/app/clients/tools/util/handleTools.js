@@ -81,7 +81,7 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
   };
 
   const customConstructors = {
-    browser: async () => {
+    'web-browser': async () => {
       let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
       openAIApiKey = openAIApiKey === 'user_provided' ? null : openAIApiKey;
       openAIApiKey = openAIApiKey || (await getUserPluginAuthValue(user, 'OPENAI_API_KEY'));
