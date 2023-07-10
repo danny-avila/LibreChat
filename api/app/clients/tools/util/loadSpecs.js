@@ -17,7 +17,8 @@ const ManifestDefinition = z.object({
     // located in api\app\clients\tools\.well-known\openapi
     url:z.string(),
     type: z.string().optional(),
-    is_user_authenticated: z.boolean().nullable(),
+    is_user_authenticated: z.boolean().nullable().optional(),
+    has_user_authentication: z.boolean().nullable().optional(),
   }),
   // use to override any params that the LLM will consistently get wrong
   params: z.object({}).optional(),
@@ -26,11 +27,13 @@ const ManifestDefinition = z.object({
   legal_info_url:z.string().optional(),
 });
 
-function validateJson(json, verbose) {
+function validateJson(json, verbose = true) {
   try {
     return ManifestDefinition.parse(json);
   } catch (error) {
-    verbose && console.debug('validateJson error', error);
+    if (verbose) {
+      console.debug('validateJson error', error);
+    }
     return false;
   }
 }

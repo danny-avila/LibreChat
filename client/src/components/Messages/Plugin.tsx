@@ -46,8 +46,7 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
   const finished = plugin.outputs && plugin.outputs.length > 0;
   const plugins: PluginsMap = useRecoilValue(store.plugins);
 
-  const getPluginName = useCallback((currentTool: string) => {
-    const pluginKey = currentTool?.toLowerCase();
+  const getPluginName = useCallback((pluginKey: string) => {
     if (!pluginKey) {
       return null;
     }
