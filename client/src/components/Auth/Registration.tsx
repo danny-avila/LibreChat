@@ -280,9 +280,9 @@ function Registration() {
           </a>
         </p>
         {startupConfig?.socialLoginEnabled && (
-            <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
-              <div className="absolute bg-white px-3 text-xs">Or</div>
-            </div>
+          <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
+            <div className="absolute bg-white px-3 text-xs">Or</div>
+          </div>
         )}
         {startupConfig?.googleLoginEnabled && startupConfig?.socialLoginEnabled && (
           <>
@@ -291,7 +291,7 @@ function Registration() {
               <a
                 aria-label="Login with Google"
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/github`}> 
+                href={`${startupConfig.serverDomain}/oauth/google`}>
                 <GoogleIcon />
                 <p>Login with Google</p>
               </a>
@@ -332,7 +332,7 @@ function Registration() {
                 aria-label="Login with GitHub"
 
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/github`}> 
+                href={`${startupConfig.serverDomain}/oauth/github`}>
                 <GithubIcon />
                 <p>Login with Github</p>
               </a>
@@ -346,9 +346,9 @@ function Registration() {
               <a
                 aria-label="Login with Discord"
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/discord`}> 
-                  <DiscordIcon />
-                  <p>Login with Discord</p>
+                href={`${startupConfig.serverDomain}/oauth/discord`}>
+                <DiscordIcon />
+                <p>Login with Discord</p>
               </a>
             </div>
           </>
