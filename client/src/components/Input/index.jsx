@@ -12,6 +12,7 @@ import TextareaAutosize from 'react-textarea-autosize';
 import { useMessageHandler } from '../../utils/handleSubmit';
 
 import store from '~/store';
+import NewConversationMenu from './NewConversationMenu';
 
 export default function TextChat({ isSearchView = false }) {
   const inputRef = useRef(null);
@@ -141,7 +142,7 @@ export default function TextChat({ isSearchView = false }) {
                   disabled ? 'dark:bg-gray-900' : 'dark:bg-gray-700'
                 } dark:text-white dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] md:py-3 md:pl-4`}
               >
-                {/*<NewConversationMenu />*/}
+                <NewConversationMenu />
                 <TextareaAutosize
                 // set test id for e2e testing
                   data-testid="text-input"
