@@ -16,6 +16,7 @@ const {
   StableDiffusionAPI,
   StructuredSD,
 } = require('../');
+const { loadSpecs } = require('./loadSpecs');
 
 const validateTools = async (user, tools = []) => {
   try {
@@ -117,6 +118,11 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
   };
 
   const requestedTools = {};
+  let specs = null;
+  if (functions) {
+    specs = await loadSpecs({ llm: model, map: true, verbose: options?.debug });
+    console.dir(specs, { depth: null });
+  }
 
   const toolOptions = {
     serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
@@ -135,6 +141,11 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
   for (const tool of tools) {
     if (customConstructors[tool]) {
       requestedTools[tool] = customConstructors[tool];
+      continue;
+    }
+
+    if (specs && specs[tool]) {
+      requestedTools[tool] = specs[tool];
       continue;
     }
 

@@ -193,6 +193,7 @@ Only respond with your conversational reply to the following User Message:
       functions: this.functionsAgent,
       options: {
         openAIApiKey: this.openAIApiKey,
+        debug: this.options?.debug,,
       },
     });
     // load tools

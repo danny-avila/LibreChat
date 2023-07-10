@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { availableTools } = require('../../app/clients/tools');
+const { addOpenAPISpecs } = require('../../app/clients/tools/util/addOpenAPISpecs');
 
 const getOpenAIModels = (opts = { azure: false }) => {
   let models = ['gpt-4', 'gpt-4-0613', 'gpt-3.5-turbo', 'gpt-3.5-turbo-16k', 'gpt-3.5-turbo-0613', 'gpt-3.5-turbo-0301', 'text-davinci-003' ];
@@ -50,6 +51,8 @@ router.get('/', async function (req, res) {
     }
   }
 
+  const plugins = await addOpenAPISpecs(availableTools);
+
   const google =
     key || palmUser
       ? { userProvide: palmUser, availableModels: ['chat-bison', 'text-bison', 'codechat-bison'] }
@@ -64,7 +67,12 @@ router.get('/', async function (req, res) {
     ? { availableModels: getOpenAIModels({ azure: true }), userProvide: azureOpenAIApiKey === 'user_provided' }
     : false;
   const gptPlugins = openAIApiKey || azureOpenAIApiKey
-    ? { availableModels: getPluginModels(), availableTools, availableAgents: ['classic', 'functions'], userProvide: userProvidedOpenAI }
+    ? {
+      availableModels: getPluginModels(),
+      availableTools: plugins,
+      availableAgents: ['classic', 'functions'],
+      userProvide: userProvidedOpenAI
+    }
     : false;
   const bingAI = process.env.BINGAI_TOKEN
     ? { userProvide: process.env.BINGAI_TOKEN == 'user_provided' }
