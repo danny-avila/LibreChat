@@ -13,6 +13,14 @@ const endpointsConfig = atom({
   },
 });
 
+const plugins = selector({
+  key: 'plugins',
+  get: ({  get }) => {
+    const config = get(endpointsConfig) || {};
+    return config?.gptPlugins?.plugins || {};
+  }
+});
+
 const endpointsFilter = selector({
   key: 'endpointsFilter',
   get: ({ get }) => {
@@ -35,6 +43,7 @@ const availableEndpoints = selector({
 // const modelAvailable
 
 export default {
+  plugins,
   endpointsConfig,
   endpointsFilter,
   availableEndpoints,

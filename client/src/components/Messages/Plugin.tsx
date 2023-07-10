@@ -1,11 +1,33 @@
-import { useState } from 'react';
+import React, { useState, useCallback, memo, ReactNode } from 'react';
 import { Spinner } from '~/components';
+import { useRecoilValue } from 'recoil';
 import CodeBlock from './Content/CodeBlock.jsx';
 import { Disclosure } from '@headlessui/react';
 import { ChevronDownIcon } from 'lucide-react';
 import { cn } from '~/utils/';
+import store from '~/store';
 
-function formatInputs(inputs) {
+interface Input {
+  inputStr: string;
+}
+
+interface PluginProps {
+  plugin: {
+    plugin: string;
+    input: string;
+    thought: string;
+    loading?: boolean;
+    outputs?: string;
+    latest?: string;
+    inputs?: Input[];
+  };
+}
+
+type PluginsMap = {
+  [pluginKey: string]: string;
+};
+
+function formatInputs(inputs: Input[]) {
   let output = '';
 
   for (let i = 0; i < inputs.length; i++) {
@@ -19,11 +41,30 @@ function formatInputs(inputs) {
   return output;
 }
 
-export default function Plugin({ plugin }) {
+const Plugin: React.FC<PluginProps> = ({ plugin }) => {
   const [loading, setLoading] = useState(plugin.loading);
   const finished = plugin.outputs && plugin.outputs.length > 0;
+  const plugins: PluginsMap = useRecoilValue(store.plugins);
 
-  if (!plugin.latest || (plugin.latest && plugin.latest.toLowerCase() === 'n/a')) {
+  const getPluginName = useCallback((currentTool: string) => {
+    const pluginKey = currentTool?.toLowerCase();
+    if (!pluginKey) {
+      return null;
+    }
+
+    if (pluginKey === 'n/a' || pluginKey === 'self reflection') {
+      return pluginKey;
+    }
+    return plugins[pluginKey] ?? 'self reflection';
+  }, [plugins]);
+
+  if (!plugin || !plugin.latest) {
+    return null;
+  }
+
+  const latestPlugin = getPluginName(plugin.latest);
+
+  if (!latestPlugin || (latestPlugin && latestPlugin === 'n/a')) {
     return null;
   }
 
@@ -31,15 +72,15 @@ export default function Plugin({ plugin }) {
     setLoading(false);
   }
 
-  const generateStatus = () => {
-    if (!loading && plugin.latest === 'Self Reflection') {
+  const generateStatus = (): ReactNode => {
+    if (!loading && latestPlugin === 'self reflection') {
       return 'Finished';
-    } else if (plugin.latest === 'Self Reflection') {
+    } else if (latestPlugin === 'self reflection') {
       return 'I\'m  thinking...';
     } else {
       return (
         <>
-          {loading ? 'Using' : 'Used'} <b>{plugin.latest}</b>
+          {loading ? 'Using' : 'Used'} <b>{latestPlugin}</b>
           {loading ? '...' : ''}
         </>
       );
@@ -54,7 +95,7 @@ export default function Plugin({ plugin }) {
             <div
               className={cn(
                 loading ? 'bg-green-100' : 'bg-[#ECECF1]',
-                'flex items-center rounded p-3 text-sm text-gray-900',
+                'flex items-center rounded p-3 text-sm text-gray-900'
               )}
             >
               <div>
@@ -70,15 +111,15 @@ export default function Plugin({ plugin }) {
 
             <Disclosure.Panel className="my-3 flex max-w-full flex-col gap-3">
               <CodeBlock
-                lang={plugin.latest?.toUpperCase() || 'INPUTS'}
-                codeChildren={formatInputs(plugin.inputs)}
+                lang={latestPlugin?.toUpperCase() || 'INPUTS'}
+                codeChildren={formatInputs(plugin.inputs ?? [])}
                 plugin={true}
                 classProp="max-h-[450px]"
               />
               {finished && (
                 <CodeBlock
                   lang="OUTPUTS"
-                  codeChildren={plugin.outputs}
+                  codeChildren={plugin.outputs ?? ''}
                   plugin={true}
                   classProp="max-h-[450px]"
                 />
@@ -90,3 +131,5 @@ export default function Plugin({ plugin }) {
     </div>
   );
 }
+
+export default memo(Plugin);

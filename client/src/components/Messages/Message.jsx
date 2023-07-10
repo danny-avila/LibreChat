@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import copy from 'copy-to-clipboard';
-import Plugin from './Plugin.jsx';
+import Plugin from './Plugin';
 import SubRow from './Content/SubRow';
 import Content from './Content/Content';
 import MultiMessage from './MultiMessage';

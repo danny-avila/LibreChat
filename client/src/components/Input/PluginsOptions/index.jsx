@@ -61,7 +61,6 @@ function PluginsOptions() {
 
   if (endpoint !== 'gptPlugins') return null;
   const models = endpointsConfig?.['gptPlugins']?.['availableModels'] || [];
-  // const availableTools = endpointsConfig?.['gptPlugins']?.['availableTools'] || [];
 
   const triggerAdvancedMode = () => setAdvancedMode((prev) => !prev);
 
