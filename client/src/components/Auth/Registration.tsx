@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { useRegisterUserMutation, TRegisterUser, useGetStartupConfig } from '~/data-provider';
+import {
+  useRegisterUserMutation,
+  TRegisterUser,
+  useGetStartupConfig
+} from '@librechat/data-provider';
 
 function Registration() {
   const navigate = useNavigate();
@@ -29,7 +33,9 @@ function Registration() {
       },
       onError: (error) => {
         setError(true);
+        //@ts-ignore - error is of type unknown
         if (error.response?.data?.message) {
+          //@ts-ignore - error is of type unknown
           setErrorMessage(error.response?.data?.message);
         }
       }
@@ -189,8 +195,8 @@ function Registration() {
                     message: navigator.languages[0]==='zh-CN'?'密码长度至少8位':'Password must be at least 8 characters'
                   },
                   maxLength: {
-                    value: 40,
-                    message: navigator.languages[0]==='zh-CN'?'密码长度不能超过40个字符':'Password must be less than 40 characters'
+                    value: 128,
+                    message: navigator.languages[0]==='zh-CN'?'密码长度不能超过128个字符':'Password must be less than 128 characters'
                   }
                 })}
                 aria-invalid={!!errors.password}
@@ -219,11 +225,11 @@ function Registration() {
                 id="confirm_password"
                 data-testid="confirm_password"
                 aria-label="Confirm password"
-                // uncomment to prevent pasting in confirm field
-                onPaste={(e) => {
-                  e.preventDefault();
-                  return false;
-                }}
+                // uncomment to block pasting in confirm field
+                // onPaste={(e) => {
+                //   e.preventDefault();
+                //   return false;
+                // }}
                 {...register('confirm_password', {
                   validate: (value) => value === password || 'Passwords do not match'
                 })}
@@ -342,6 +348,34 @@ function Registration() {
             </div>
           </>
         )}
+        {startupConfig?.githubLoginEnabled && (
+          <>
+            <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
+              <div className="absolute bg-white px-3 text-xs">Or</div>
+            </div>
+            <div className="mt-4 flex gap-x-2">
+              <a
+                aria-label="Login with GitHub"
+                href={`${startupConfig.serverDomain}/oauth/github`}
+                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  id="github"
+                  className="h-5 w-5"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M12 0a12 12 0 0 0-3.84 23.399c.608.112.832-.256.832-.576v-2.015c-3.395.736-4.115-1.632-4.115-1.632a3.241 3.241 0 0 0-1.359-1.792c-1.104-.736.064-.736.064-.736a2.566 2.566 0 0 1 1.824 1.216a2.638 2.638 0 0 0 3.616 1.024a2.607 2.607 0 0 1 .768-1.6c-2.688-.32-5.504-1.344-5.504-5.984a4.677 4.677 0 0 1 1.216-3.168a4.383 4.383 0 0 1 .128-3.136s1.024-.32 3.36 1.216a11.66 11.66 0 0 1 6.112 0c2.336-1.536 3.36-1.216 3.36-1.216a4.354 4.354 0 0 1 .128 3.136a4.628 4.628 0 0 1 1.216 3.168c0 4.672-2.848 5.664-5.536 5.952a2.881 2.881 0 0 1 .832 2.24v3.36c0 .32.224.672.832.576A12 12 0 0 0 12 0z"
+                  />
+                </svg>
+                <p>Login with GitHub</p>
+              </a>
+            </div>
+          </>
+        )}
+
       </div>
     </div>
   );

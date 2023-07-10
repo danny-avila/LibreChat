@@ -1,10 +1,12 @@
 # Windows Install
 
-### Recommended: **[Docker](docker_install.md)**
-or
-### **[Windows Installer](https://github.com/fuegovic/LibreChat-Windows-Installer)**
+## **Recommended: [Docker Install](docker_install.md)**
+
+**or**
+## **[Windows Installer](https://github.com/fuegovic/LibreChat-Windows-Installer)**
 (Includes a Startup and Update Utility)
-##
+
+---
 
 ## Manual Installation
 ### Install the prerequisites on your machine
@@ -44,32 +46,19 @@ or
 ### [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
 - You must set up at least one of these tokens or APIs to run the app.
 
-### [User/Auth System](../features/user_auth_system.md) (Optional)
+### [User/Auth System](../install/user_auth_system.md) (Optional)
 - How to set up the user/auth system and Google login.
 
-
-### **Create the ".env" File** 
-You will need all your credentials, (API keys, access tokens, and Mongo Connection String, MeileSearch Master Key)
-  - Open the .env.example file in your install folder e.g. "C:/LibreChat/.env.example" in a text editor
-  - At this line **MONGO_URI="mongodb://127.0.0.1:27017/LibreChat"**
-    Replace mongodb://127.0.0.1:27017/LibreChat with the MondoDB connection string you saved earlier, **remove "&w=majority" at the end**
-    - It should look something like this: "MONGO_URI="mongodb+srv://username:password@LibreChat.lfbcwz3.mongodb.net/?retryWrites=true"
-  - At this line **OPENAI_API_KEY=** you need to add your openai API key
-  - Add your Bing token to this line **BINGAI_TOKEN=** (needed for BingChat & Sydney)
-  - If you want to enable Search, **SEARCH=TRUE** if you do not want to enable search **SEARCH=FALSE**
-  - Add your previously saved MeiliSearch Master key to this line **MEILI_MASTER_KEY=** (the key is needed if search is enabled even on local install or you may encounter errors)
-  - Save the file as .env at the root of your install dir e.g. **"C:/LibreChat/.env"**
-
-## Run the app
+## Setup and Run the app
 
 ### Using the command line (in the root directory)
-To setup the app:
-1. Run `npm ci`
+#### To setup the app:
+1. Run `npm ci` (this step will also create the env file)
 2. Run `npm run frontend`
 
-To use the app:
+#### To use the app:
 1. Run `npm run backend`
-2. Run `meilisearch --master-key put_your_meilesearch_Master_Key_here` (Only if SEARCH=TRUE)
+2. Run `meilisearch --master-key <meilisearch_Master_Key>` (Only if SEARCH=TRUE)
 3. Visit http://localhost:3080 (default port) & enjoy
 
 #### Using a batch file
@@ -78,12 +67,12 @@ To use the app:
   - Open a text editor
   - Paste the following code in a new document
   - The meilisearch executable needs to be at the root of the LibreChat directory
-  - Put your MeiliSearch master key instead of "your_master_key_goes_here"
+  - Put your MeiliSearch master key instead of "`<meilisearch_Master_Key>`"
   - Save the file as "C:/LibreChat/LibreChat.bat"
   - you can make a shortcut of this batch file and put it anywhere
 
-```
-start "MeiliSearch" cmd /k "meilisearch --master-key your_master_key_goes_here
+``` bat title="LibreChat.bat"
+start "MeiliSearch" cmd /k "meilisearch --master-key <meilisearch_Master_Key>
 
 start "LibreChat" cmd /k "npm run backend"
 
@@ -97,6 +86,6 @@ REM this batch file goes at the root of the LibreChat directory (C:/LibreChat/)
 - Build the client by running `npm run frontend`
 
 
-##
+---
 
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/new?category=troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

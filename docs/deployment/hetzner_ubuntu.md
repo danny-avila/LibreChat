@@ -70,7 +70,7 @@ sudo reboot
 - Make sure you have all the needed variables for the following before moving forward
 ### [Get Your API keys and Tokens](../install/apis_and_tokens.md) (Required)
 - You must set up at least one of these tokens or APIs to run the app.
-### [User/Auth System](../features/user_auth_system.md) (Optional)
+### [User/Auth System](../install/user_auth_system.md) (Optional)
 - How to set up the user/auth system and Google login.
 ### [Plugins](../features/plugins/introduction.md)
 - Optional plugins available to enhance the application.
@@ -137,4 +137,4 @@ ALLOW_REGISTRATION:False
 
 ---
 
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/new?category=troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

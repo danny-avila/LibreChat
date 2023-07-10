@@ -1,5 +1,5 @@
 const passport = require('passport');
-const jwt = require('jsonwebtoken');
+// const jwt = require('jsonwebtoken');
 const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
 const axios = require('axios');
 const fs = require('fs');
@@ -24,7 +24,7 @@ const downloadImage = async (url, imagePath, accessToken) => {
       },
       responseType: 'arraybuffer'
     });
-    
+
     fs.mkdirSync(path.dirname(imagePath), { recursive: true });
     fs.writeFileSync(imagePath, response.data);
 
@@ -68,7 +68,7 @@ Issuer.discover(process.env.OPENID_ISSUER)
           } else if (userinfo.family_name) {
             fullName = userinfo.family_name;
           }
-          
+
           if (!user) {
             user = new User({
               provider: 'openid',
@@ -77,7 +77,7 @@ Issuer.discover(process.env.OPENID_ISSUER)
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
               name: fullName
-             });
+            });
           } else {
             user.provider = 'openid';
             user.openidId = userinfo.sub;
@@ -105,9 +105,9 @@ Issuer.discover(process.env.OPENID_ISSUER)
           } else {
             user.avatar = '';
           }
-          
+
           await user.save();
-          
+
           done(null, user);
         } catch (err) {
           done(err);

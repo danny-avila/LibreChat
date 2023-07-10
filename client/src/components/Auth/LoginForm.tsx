@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import { TLoginUser } from '~/data-provider';
+import { TLoginUser } from '@librechat/data-provider';
 
 type TLoginFormProps = {
   onSubmit: (data: TLoginUser) => void;
@@ -34,7 +34,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
               },
               maxLength: {
                 value: 120,
-                message: navigator.languages[0]==='zh-CN'?"邮箱长度不能超过120个字符":'Email should not be longer than 120 characters'
+                message: navigator.languages[0]==='zh-CN'?'邮箱长度不能超过120个字符':'Email should not be longer than 120 characters'
               },
               pattern: {
                 value: /\S+@\S+\.\S+/,
@@ -49,7 +49,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
             htmlFor="email"
             className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
           >
-            {navigator.languages[0]==='zh-CN'?"邮箱":"Email address"}
+            {navigator.languages[0]==='zh-CN'?'邮箱':'Email address'}
           </label>
         </div>
         {errors.email && (
@@ -74,7 +74,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
               },
               maxLength: {
                 value: 40,
-                message: 'Password must be less than 40 characters'
+                message: 'Password must be 128 characters or less'
               }
             })}
             aria-invalid={!!errors.password}
@@ -97,7 +97,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
         )}
       </div>
       <a href="/forgot-password" className="text-sm text-green-500 hover:underline">
-        {navigator.languages[0]==='zh-CN'?"忘记密码？":"Forgot Password?"}
+        {navigator.languages[0]==='zh-CN'?'忘记密码？':'Forgot Password?'}
       </a>
       <div className="mt-6">
         <button

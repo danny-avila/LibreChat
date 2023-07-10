@@ -61,6 +61,7 @@ function BingAIOptions({ show }) {
         <SelectDropDown
           title="Mode"
           value={jailbreak ? 'Sydney' : 'BingAI'}
+          data-testid="bing-select-dropdown"
           setValue={(value) => setOption('jailbreak')(value === 'Sydney')}
           availableValues={['BingAI', 'Sydney']}
           showAbove={true}
