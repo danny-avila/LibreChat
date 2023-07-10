@@ -255,6 +255,7 @@ export type TStartupConfig = {
   discordLoginEnabled: boolean;
   serverDomain: string;
   registrationEnabled: boolean;
+  socialLoginEnabled: boolean;
 }
 
 export type TRefreshTokenResponse = {

@@ -14,17 +14,27 @@ const discordLogin = new DiscordStrategy(
   async (accessToken, refreshToken, profile, cb) => {
     try {
       const email = profile.email;
-      const oldUser = await User.findOne({ discordId: profile.id });
+      const oldUser = await User.findOne({ email });
       if (oldUser) {
         return cb(null, oldUser);
       }
+
+      let avatarURL;
+      if (profile.avatar) {
+        const format = profile.avatar.startsWith('a_') ? 'gif' : 'png';
+        avatarURL = `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.${format}`;
+      } else {
+        const defaultAvatarNum = Number(profile.discriminator) % 5;
+        avatarURL = `https://cdn.discordapp.com/embed/avatars/${defaultAvatarNum}.png`;
+      }
+
       const newUser = await User.create({
         provider: 'discord',
         discordId: profile.id,
         username: profile.username,   // username is the username (the old tag discord#1111) of the user on discord
         email,
         name: profile.global_name,  // global_name is the name of the user on discord
-        avatar: `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.png`
+        avatar: avatarURL
       });
 
       cb(null, newUser);

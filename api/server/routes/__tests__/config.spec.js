@@ -20,6 +20,7 @@ afterEach(() => {
   delete process.env.DISCORD_CLIENT_SECRET;
   delete process.env.DOMAIN_SERVER;
   delete process.env.ALLOW_REGISTRATION;
+  delete process.env.ALLOW_SOCIAL_LOGIN;
 });
 
 //TODO: This works/passes locally but http request tests fail with 404 in CI. Need to figure out why.
@@ -42,6 +43,7 @@ describe.skip('GET /', () => {
     process.env.DISCORD_CLIENT_SECRET= 'Test Discord client Secret';
     process.env.DOMAIN_SERVER = 'http://test-server.com';
     process.env.ALLOW_REGISTRATION = 'true';
+    process.env.ALLOW_SOCIAL_LOGIN = 'true';
 
     const response = await request(app).get('/');
 
@@ -56,6 +58,7 @@ describe.skip('GET /', () => {
       discordLoginEnabled: true,
       serverDomain: 'http://test-server.com',
       registrationEnabled: 'true',
+      socialLoginEnabled: 'true',
     });
   });
 });
