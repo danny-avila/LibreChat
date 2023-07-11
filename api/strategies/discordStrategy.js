@@ -13,11 +13,19 @@ const discordLogin = new DiscordStrategy(
   },
   async (accessToken, refreshToken, profile, cb) => {
     try {
-
+      const discordId = profile.id;
       const email = profile.email;
-      const oldUser = await User.findOne({ email });
-      if (oldUser) {
-        return cb(null, oldUser);
+
+      const existingUser = await User.findOne({ discordId });
+      if (existingUser) {
+        return cb(null, existingUser);
+      }
+
+      const userWithEmail = await User.findOne({ email });
+      if (userWithEmail) {
+        userWithEmail.discordId = discordId;
+        await userWithEmail.save();
+        return cb(null, userWithEmail);
       }
 
       let avatarURL;
@@ -31,10 +39,10 @@ const discordLogin = new DiscordStrategy(
 
       const newUser = await User.create({
         provider: 'discord',
-        discordId: profile.id,
-        username: profile.username,   // username is the username (the old tag discord#1111) of the user on discord
+        discordId,
+        username: profile.username,
         email,
-        name: profile.global_name,  // global_name is the name of the user on discord
+        name: profile.global_name,
         avatar: avatarURL
       });
 
