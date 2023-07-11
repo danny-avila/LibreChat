@@ -54,7 +54,7 @@ function BingAIOptions({ show }) {
     <>
       <div
         className={
-          'openAIOptions-simple-container flex w-full flex-wrap items-center justify-center gap-2' +
+          'openAIOptions-simple-container flex w-full flex-wrap items-center justify-end gap-2' +
           (!advancedMode ? ' show' : '')
         }
       >

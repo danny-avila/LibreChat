@@ -126,7 +126,7 @@ function PluginsOptions() {
     <>
       <div
         className={
-          'pluginOptions flex w-full flex-wrap items-center justify-center gap-2 ' +
+          'pluginOptions flex w-full flex-wrap items-center justify-end gap-2 ' +
           (!advancedMode ? opacityClass : '')
         }
         onMouseEnter={() => {

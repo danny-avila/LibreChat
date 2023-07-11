@@ -13,6 +13,7 @@ import { useMessageHandler } from '../../utils/handleSubmit';
 
 import store from '~/store';
 import NewConversationMenu from './NewConversationMenu';
+import ChatWidgetMenu from './ChatWidgetMenu';
 
 export default function TextChat({ isSearchView = false }) {
   const inputRef = useRef(null);
@@ -123,13 +124,14 @@ export default function TextChat({ isSearchView = false }) {
   return (
     <>
       <div className="fixed bottom-0 left-0 w-full md:absolute">
-        <div className="relative py-2 md:mb-[-16px] md:py-4 lg:mb-[-32px]">
-          <span className="flex w-full flex-col items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
+        <div className="flex flex-row relative py-2 md:mb-[-16px] md:py-4 lg:mb-[-32px]">
+          <span className="flex flex-row w-full items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
             <OpenAIOptions />
             <PluginsOptions />
             <ChatGPTOptions />
             <GoogleOptions />
             <BingAIOptions show={showBingToneSetting} />
+            <ChatWidgetMenu />
           </span>
         </div>
         <div className="input-panel md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient relative w-full border-t bg-white py-2 dark:border-white/20 dark:bg-gray-800 md:border-t-0 md:border-transparent md:bg-transparent md:dark:border-transparent md:dark:bg-transparent">
