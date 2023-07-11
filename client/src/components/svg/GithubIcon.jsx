@@ -1,7 +1,7 @@
 import React from 'react';
 
 export default function GithubIcon() {
-    return (
+  return (
     <svg xmlns="http://www.w3.org/2000/svg" width="25" height="25" fill="none">
       <path
         fill="currentColor"
