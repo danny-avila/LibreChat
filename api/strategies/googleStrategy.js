@@ -5,7 +5,7 @@ const domains = config.domains;
 
 const User = require('../models/User');
 
-// google strategy
+// Google strategy
 const googleLogin = new GoogleStrategy(
   {
     clientID: process.env.GOOGLE_CLIENT_ID,
@@ -15,20 +15,26 @@ const googleLogin = new GoogleStrategy(
   },
   async (accessToken, refreshToken, profile, cb) => {
     try {
-      const oldUser = await User.findOne({ email: profile.emails[0].value });
-      if (oldUser) {
-        return cb(null, oldUser);
-      }
-    } catch (err) {
-      console.log(err);
-    }
+      const googleId = profile.id;
+      const email = profile.emails[0].value;
 
-    try {
+      const existingUser = await User.findOne({ googleId });
+      if (existingUser) {
+        return cb(null, existingUser);
+      }
+
+      const userWithEmail = await User.findOne({ email });
+      if (userWithEmail) {
+        userWithEmail.googleId = googleId;
+        await userWithEmail.save();
+        return cb(null, userWithEmail);
+      }
+
       const newUser = await new User({
         provider: 'google',
-        googleId: profile.id,
+        googleId,
         username: profile.name.givenName,
-        email: profile.emails[0].value,
+        email,
         emailVerified: profile.emails[0].verified,
         name: `${profile.name.givenName} ${profile.name.familyName}`,
         avatar: profile.photos[0].value

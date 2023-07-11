@@ -1,9 +1,11 @@
 const passport = require('passport');
 const { Strategy: DiscordStrategy } = require('passport-discord');
-const User = require('../models/User');
 const config = require('../../config/loader');
 const domains = config.domains;
 
+const User = require('../models/User');
+
+// Discord strategy
 const discordLogin = new DiscordStrategy(
   {
     clientID: process.env.DISCORD_CLIENT_ID,

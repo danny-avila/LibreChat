@@ -16,19 +16,24 @@ const githubLogin = new GitHubStrategy(
   },
   async (accessToken, refreshToken, profile, cb) => {
     try {
-      let email;
-      if (profile.emails && profile.emails.length > 0) {
-        email = profile.emails[0].value;
+      const githubId = profile.id;
+      const email = profile.email;
+
+      const existingUser = await User.findOne({ githubId });
+      if (existingUser) {
+        return cb(null, existingUser);
       }
 
-      const oldUser = await User.findOne({ email });
-      if (oldUser) {
-        return cb(null, oldUser);
+      const userWithEmail = await User.findOne({ email });
+      if (userWithEmail) {
+        userWithEmail.githubId = githubId;
+        await userWithEmail.save();
+        return cb(null, userWithEmail);
       }
 
       const newUser = await new User({
         provider: 'github',
-        githubId: profile.id,
+        githubId,
         username: profile.username,
         email,
         emailVerified: profile.emails[0].verified,
