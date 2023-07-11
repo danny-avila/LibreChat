@@ -17,5 +17,8 @@
   "legal_info_url": "https://webreader.webpilotai.com/legal_info.html",
   "headers": {
     "id": "WebPilot-Friend-UID"
+  },
+  "params": {
+    "user_has_request": true
   }
 }
