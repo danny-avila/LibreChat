@@ -10,7 +10,9 @@ const container = document.getElementById('root');
 const root = createRoot(container);
 const trackingId = process.env.GOOGLE_ANALYTICS_TRACKING_ID;
 
-ReactGA.initialize(trackingId);
+if (trackingId) {
+  ReactGA.initialize(trackingId);
+}
 
 root.render(
   <ApiErrorBoundaryProvider>
