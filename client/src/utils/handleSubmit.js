@@ -85,9 +85,9 @@ const useMessageHandler = () => {
           'claude-1',
         modelLabel: currentConversation?.modelLabel ?? null,
         promptPrefix: currentConversation?.promptPrefix ?? null,
-        temperature: currentConversation?.temperature ?? 0.2,
+        temperature: currentConversation?.temperature ?? 0.7,
         maxOutputTokens: currentConversation?.maxOutputTokens ?? 1024,
-        topP: currentConversation?.topP ?? 0.95,
+        topP: currentConversation?.topP ?? 0.7,
         topK: currentConversation?.topK ?? 40,
         token: endpointsConfig[endpoint]?.userProvide ? getToken() : null
       };

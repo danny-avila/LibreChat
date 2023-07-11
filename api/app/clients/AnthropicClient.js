@@ -50,8 +50,8 @@ class AnthropicClient extends BaseClient {
       ...modelOptions,
       // set some good defaults (check for undefined in some cases because they may be 0)
       model: modelOptions.model || 'claude-1',
-      temperature: typeof modelOptions.temperature === 'undefined' ? 0.2 : modelOptions.temperature, // 0 - 1, 0.2 is recommended
-      topP: typeof modelOptions.topP === 'undefined' ? 0.95 : modelOptions.topP, // 0 - 1, default: 0.95
+      temperature: typeof modelOptions.temperature === 'undefined' ? 0.7 : modelOptions.temperature, // 0 - 1, 0.7 is recommended
+      topP: typeof modelOptions.topP === 'undefined' ? 0.7 : modelOptions.topP, // 0 - 1, default: 0.7
       topK: typeof modelOptions.topK === 'undefined' ? 40 : modelOptions.topK, // 1-40, default: 40
       stop: modelOptions.stop // no stop method for now
     };
@@ -226,7 +226,6 @@ class AnthropicClient extends BaseClient {
     const client = this.getClient();
 
     let text = '';
-
     const response = await client.completions.create({
       prompt: payload,
       model: this.modelOptions.model,

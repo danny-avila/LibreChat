@@ -17,7 +17,7 @@ const getChatGPTBrowserModels = () => {
   return models;
 };
 const getAnthropicModels = () => {
-  let models = ['claude-1', 'claude-1-100k', 'claude-instant-1', 'claude-instant-1-100k'];
+  let models = ['claude-1', 'claude-1-100k', 'claude-instant-1', 'claude-instant-1-100k', 'claude-2', 'claude-2-100k'];
   if (process.env.ANTHROPIC_MODELS) models = String(process.env.ANTHROPIC_MODELS).split(',');
 
   return models;
