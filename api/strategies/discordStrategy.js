@@ -13,12 +13,25 @@ const discordLogin = new DiscordStrategy(
   },
   async (accessToken, refreshToken, profile, cb) => {
     try {
+      const discordId = profile.id;
       const email = profile.email;
-      const oldUser = await User.findOne({ email });
-      if (oldUser) {
-        return cb(null, oldUser);
+
+      // Controllo se esiste un utente con lo stesso discordId
+      const existingUser = await User.findOne({ discordId });
+      if (existingUser) {
+        return cb(null, existingUser);
       }
 
+      // Controllo se esiste un utente con la stessa email ma diverso discordId
+      const userWithEmail = await User.findOne({ email });
+      if (userWithEmail) {
+        // Aggiungo l'accesso a Discord all'utente esistente con la stessa email
+        userWithEmail.discordId = discordId;
+        await userWithEmail.save();
+        return cb(null, userWithEmail);
+      }
+
+      // Creo un nuovo utente con l'accesso a Discord
       let avatarURL;
       if (profile.avatar) {
         const format = profile.avatar.startsWith('a_') ? 'gif' : 'png';
@@ -30,10 +43,10 @@ const discordLogin = new DiscordStrategy(
 
       const newUser = await User.create({
         provider: 'discord',
-        discordId: profile.id,
-        username: profile.username,   // username is the username (the old tag discord#1111) of the user on discord
+        discordId,
+        username: profile.username,
         email,
-        name: profile.global_name,  // global_name is the name of the user on discord
+        name: profile.global_name,
         avatar: avatarURL
       });
 
