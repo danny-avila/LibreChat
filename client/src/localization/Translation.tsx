@@ -8,6 +8,7 @@ export const getTranslations = (langCode: string) => {
   if (langCode === 'en') return English;
   if (langCode === 'cn') return Chinese;
   // === add conditionals here for additional languages here === //
+  return English; // default to English
 };
 
 // input: language code in string & phrase key in string
