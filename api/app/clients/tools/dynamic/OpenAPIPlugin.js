@@ -5,6 +5,30 @@ const yaml = require('js-yaml');
 const path = require('path');
 const { DynamicStructuredTool } = require('langchain/tools');
 const { createOpenAPIChain } = require('langchain/chains');
+const SUFFIX = 'Prioritize utilizing API response parts in subsequent requests before query fulfillment.';
+// "auth": {
+//   "type": "service_http",
+//   "authorization_type": "bearer",
+//   "verification_tokens": {
+//     "openai": "ffc5226d1af346c08a98dee7deec9f76"
+//   }
+// },
+
+const AuthBearer = z.object({
+  type: z.string().includes('service_http'),
+  authorization_type: z.string().includes('bearer'),
+  verification_tokens: z.object({
+    openai: z.string(),
+  })
+}).catch(() => false);
+
+const AuthDefinition = z.object({
+  type: z.string(),
+  authorization_type: z.string(),
+  verification_tokens: z.object({
+    openai: z.string(),
+  })
+}).catch(() => false);
 
 async function readSpecFile(filePath) {
   try {
@@ -20,17 +44,14 @@ async function readSpecFile(filePath) {
 }
 
 async function getSpec(url) {
-  const regularUrl = z.string().url();
-  try {
-    if (regularUrl.parse(url) && path.extname(url) === '.json') {
-      const response = await fetch(url);
-      return await response.json();
-    }
-  } catch (error) {
-    console.log('not a json url');
+  const RegularUrl = z.string().url().catch(() => false);
+
+  if (RegularUrl.parse(url) && path.extname(url) === '.json') {
+    const response = await fetch(url);
+    return await response.json();
   }
 
-  const validSpecPath = z.string().url().catch(async () => {
+  const ValidSpecPath = z.string().url().catch(async () => {
     const spec = path.join(__dirname, '..', '.well-known', 'openapi', url);
     if (!fs.existsSync(spec)) {
       return false;
@@ -39,10 +60,10 @@ async function getSpec(url) {
     return await readSpecFile(spec);
   });
 
-  return validSpecPath.parse(url);
+  return ValidSpecPath.parse(url);
 }
 
-async function createOpenAPIPlugin({ data, llm, verbose = false }) {
+async function createOpenAPIPlugin({ data, llm, user, verbose = false }) {
   // TODO: url handling
   // const response = await fetch('https://scholar-ai.net/.well-known/ai-plugin.json');
   // const data = await response.json();
@@ -61,32 +82,46 @@ async function createOpenAPIPlugin({ data, llm, verbose = false }) {
     return null;
   };
 
+  const headers = {};
+  const { auth } = data;
+  if (auth && AuthDefinition.parse(auth)) {
+    verbose && console.debug('auth detected', auth);
+    const { openai } = auth.verification_tokens;
+    if (AuthBearer.parse(auth)) {
+      headers.authorization = `Bearer ${openai}`;
+      verbose && console.debug('added auth bearer', headers);
+    }
+  }
+
   return new DynamicStructuredTool({
     name: data.name_for_model,
-    description: data.description_for_human,
+    description: `${data.description_for_human}\n${data.description_for_model}`,
     schema: z.object({
-      query: z.string().describe('For your query, be specific in a conversational manner. It will be interpreted by a human.'),
-      variables: z.string().describe(`Define necessary variables to supplement query in a machine-readable format.
-  Anticipate required parameters for the API plugin call.
-  Plugin Description: ${data.description_for_model}`).optional(),
+      query: z.string().describe('For the query, be specific in a conversational manner. It will be interpreted by a human.'),
     }),
-    func: async ({ query, variables }) => {
+    func: async ({ query }) => {
       const chainOptions = {
         llm,
         verbose,
       };
+
+      if (data.headers && data.headers.id) {
+        verbose && console.debug('id detected', headers);
+        headers[data.headers.id] = user;
+      }
+
+      if (Object.keys(headers).length > 0) {
+        verbose && console.debug('headers detected', headers);
+        chainOptions.headers = headers;
+      }
 
       if (data.params) {
         verbose && console.debug('params detected', data.params);
         chainOptions.params = data.params;
       }
 
-      if (variables) {
-        query += variables;
-      }
-
       const chain = await createOpenAPIChain(spec, chainOptions);
-      const result = await chain.run(query);
+      const result = await chain.run(`${query}\n\n${SUFFIX}`);
       console.log('api chain run result', result);
       return result;
     }

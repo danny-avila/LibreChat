@@ -39,7 +39,7 @@ function validateJson(json, verbose = true) {
 }
 
 // omit the LLM to return the well known jsons as objects
-async function loadSpecs({ llm, map = false, verbose = true }) {
+async function loadSpecs({ llm, user, map = false, verbose = true }) {
   const directoryPath = path.join(__dirname, '..', '.well-known');
   const files = (await fs.promises.readdir(directoryPath)).filter((file) => path.extname(file) === '.json');
 
@@ -62,7 +62,7 @@ async function loadSpecs({ llm, map = false, verbose = true }) {
       }
 
       if (llm && map) {
-        constructorMap[json.name_for_model] = async () => await createOpenAPIPlugin({ data: json, llm, verbose });
+        constructorMap[json.name_for_model] = async () => await createOpenAPIPlugin({ data: json, llm, user, verbose });
         continue;
       }
 
