@@ -30,7 +30,6 @@ function Settings(props) {
     setOption
   } = props;
 
-  console.log("settings", props)
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   const setModel = setOption('model');

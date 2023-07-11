@@ -1,4 +1,4 @@
-import { Plugin, GPTIcon, BingIcon } from '~/components/svg';
+import { Plugin, GPTIcon, BingIcon, ClaudeIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 const getIcon = (props) => {
@@ -57,7 +57,7 @@ const getIcon = (props) => {
       name = modelLabel || 'PaLM2';
     } else if (endpoint === 'anthropic') {
       const { modelLabel } = props;
-      icon = <img src="/assets/claude.png" />;
+      icon = <ClaudeIcon size={size * 0.7} />;
       name = modelLabel || 'Claude';
     } else if (endpoint === 'bingAI') {
       const { jailbreak } = props;
