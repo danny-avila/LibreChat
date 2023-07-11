@@ -115,4 +115,32 @@ router.get(
   }
 );
 
+
+router.get(
+  '/discord',
+  passport.authenticate('discord', {
+    scope: ['identify', 'email'],
+    session: false
+  })
+);
+
+router.get(
+  '/discord/callback',
+  passport.authenticate('discord', {
+    failureRedirect: `${domains.client}/login`,
+    failureMessage: true,
+    session: false,
+    scope: ['identify', 'email']
+  }),
+  (req, res) => {
+    const token = req.user.generateToken();
+    res.cookie('token', token, {
+      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
+      httpOnly: false,
+      secure: isProduction
+    });
+    res.redirect(domains.client);
+  }
+);
+
 module.exports = router;
