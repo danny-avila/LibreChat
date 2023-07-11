@@ -2,6 +2,7 @@ const OpenAIClient = require('./OpenAIClient');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { CallbackManager } = require('langchain/callbacks');
 const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents/');
+const { findMessageContent } = require('../../utils');
 const { loadTools } = require('./tools/util');
 const { SelfReflectionTool } = require('./tools/');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
@@ -194,6 +195,7 @@ Only respond with your conversational reply to the following User Message:
       options: {
         openAIApiKey: this.openAIApiKey,
         debug: this.options?.debug,,
+        message,
       },
     });
     // load tools
@@ -291,6 +293,11 @@ Only respond with your conversational reply to the following User Message:
       } catch (err) {
         console.error(err);
         errorMessage = err.message;
+        const content = findMessageContent(message);
+        if (content) {
+          errorMessage = content;
+          break;
+        }
         if (attempts === maxAttempts) {
           this.result.output = `Encountered an error while attempting to respond. Error: ${err.message}`;
           this.result.intermediateSteps = this.actions;
@@ -409,7 +416,7 @@ Only respond with your conversational reply to the following User Message:
     if (this.agentOptions.skipCompletion && this.result.output) {
       responseMessage.text = this.result.output;
       this.addImages(this.result.intermediateSteps, responseMessage);
-      await this.generateTextStream(this.result.output, opts.onProgress);
+      await this.generateTextStream(this.result.output, opts.onProgress, { delay: 8 });
       return await this.handleResponseMessage(responseMessage, saveOptions, user);
     }
 

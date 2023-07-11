@@ -120,7 +120,13 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
   const requestedTools = {};
   let specs = null;
   if (functions) {
-    specs = await loadSpecs({ llm: model, user, map: true, verbose: options?.debug });
+    specs = await loadSpecs({
+      llm: model,
+      user,
+      message: options.message,
+      map: true,
+      verbose: options?.debug
+    });
     console.dir(specs, { depth: null });
   }
 

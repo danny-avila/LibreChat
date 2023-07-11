@@ -14,7 +14,7 @@ function transformSpec(input) {
 
 async function addOpenAPISpecs(availableTools) {
   try {
-    const specs = (await loadSpecs({ verbose: true })).map(transformSpec);
+    const specs = (await loadSpecs({})).map(transformSpec);
     if (specs.length > 0) {
       return [...specs, ...availableTools];
     }

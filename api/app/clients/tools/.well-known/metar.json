@@ -1,0 +1,18 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "Weather Report",
+  "name_for_model": "metar",
+  "description_for_human": "Current weather data for cities and airports using METAR aviation feeds.",
+  "description_for_model": "Retrieve METAR weather data for a specified airport using its ICAO code.",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://metar.pluginai.ai/openapi.yaml",
+    "is_user_authenticated": false
+  },
+  "logo_url": "https://metar.pluginai.ai/logo.png",
+  "contact_email": "support@pluginai.ai",
+  "legal_info_url": "https://metar.pluginai.ai/legal"
+}
