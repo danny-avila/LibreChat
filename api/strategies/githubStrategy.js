@@ -33,7 +33,7 @@ const githubLogin = new GitHubStrategy(
         email,
         emailVerified: profile.emails[0].verified,
         name: profile.displayName,
-        avatar: profile.photos[0].value        
+        avatar: profile.photos[0].value
       }).save();
 
       cb(null, newUser);
