@@ -252,8 +252,10 @@ export type TStartupConfig = {
   githubLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
+  discordLoginEnabled: boolean;
   serverDomain: string;
   registrationEnabled: boolean;
+  socialLoginEnabled: boolean;
 }
 
 export type TRefreshTokenResponse = {

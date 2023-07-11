@@ -27,7 +27,9 @@ const setup = ({
       openidLabel: 'Test OpenID',
       openidImageUrl: 'http://test-server.com',
       githubLoginEnabled: true,
+      discordLoginEnabled: true,
       registrationEnabled: true,
+      socialLoginEnabled: true,
       serverDomain: 'mock-server'
     }
   }
