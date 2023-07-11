@@ -61,7 +61,13 @@ class OpenAIClient extends BaseClient {
       };
     }
 
-    this.isChatCompletion =
+    if (process.env.OPENROUTER_API_KEY) {
+      console.log('<------Using OpenRouter------>');
+      this.apiKey = process.env.OPENROUTER_API_KEY;
+      this.useOpenRouter = true;
+    }
+
+    this.isChatCompletion = this.useOpenRouter ||
       this.options.reverseProxyUrl ||
       this.options.localAI ||
       this.modelOptions.model.startsWith('gpt-');
@@ -117,6 +123,14 @@ class OpenAIClient extends BaseClient {
 
     if (this.azureEndpoint && this.options.debug) {
       console.debug('Using Azure endpoint');
+    }
+
+    if (this.useOpenRouter) {
+      this.completionsUrl = 'https://openrouter.ai/api/v1/chat/completions';
+    }
+
+    if (this.useOpenRouter) {
+      this.completionsUrl = 'https://openrouter.ai/api/v1/chat/completions';
     }
 
     return this;
@@ -323,13 +337,16 @@ class OpenAIClient extends BaseClient {
           if (progressMessage === '[DONE]') {
             return;
           }
-
-          if (progressMessage.choices) {
-            streamResult = progressMessage;
+          console.log('progressMessage');
+          console.dir(progressMessage, { depth: null });
+          let token = null;
+          if (this.isChatCompletion) {
+            token = progressMessage.choices?.[0]?.delta?.content ?? progressMessage.choices?.[0]?.text;
           }
-          const token = this.isChatCompletion
-            ? progressMessage.choices?.[0]?.delta?.content
-            : progressMessage.choices?.[0]?.text;
+
+          if (!token && this.useOpenRouter) {
+            token = progressMessage.choices?.[0]?.message?.content;
+          }
           // first event's delta content is always undefined
           if (!token) {
             return;
