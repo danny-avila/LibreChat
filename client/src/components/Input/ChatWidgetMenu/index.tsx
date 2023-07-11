@@ -7,13 +7,14 @@ import { Settings2 } from 'lucide-react';
 import EndpointOptionsPopover from '~/components/Endpoints/EndpointOptionsPopover';
 
 function getWidget(widget: string) {
-  if (widget === '写作助手') return WritingAssistant();
+  if (widget === '写作助手') return <WritingAssistant />;
 }
 
 function ChatWidgetMenu() {
   const [chosenWidget, setChosenWidget] = useState<string>('无');
   const [advancedMode, setAdvancedMode] = useState<boolean>(false);
   const widgets = ['无', '写作助手'];
+  const widget = getWidget(chosenWidget);
 
   const cardStyle =
     'transition-colors shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 hover:border-black/10 focus:border-black/10 dark:border-black/10 dark:hover:border-black/10 dark:focus:border-black/10 border dark:bg-gray-700 text-black dark:text-white';
@@ -53,7 +54,7 @@ function ChatWidgetMenu() {
       </div>
       <EndpointOptionsPopover
         content={
-          getWidget(chosenWidget)
+          <div className="z-50 px-4 py-4">{widget}</div>
         }
         visible={advancedMode}
         saveAsPreset={null}
