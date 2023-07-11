@@ -6,21 +6,24 @@ import WritingAssistant from './WritingAssistant';
 import { Settings2 } from 'lucide-react';
 import EndpointOptionsPopover from '~/components/Endpoints/EndpointOptionsPopover';
 
-function getWidget(widget: string) {
-  if (widget === '写作助手') return <WritingAssistant />;
+function getWidget(widget: string, setText: React.Dispatch<React.SetStateAction<string>>) {
+  const setOption = (value: string) => setText(value);
+  if (widget === '写作助手') return <WritingAssistant setOption={setOption} />;
 }
 
 function ChatWidgetMenu() {
   const [chosenWidget, setChosenWidget] = useState<string>('无');
   const [advancedMode, setAdvancedMode] = useState<boolean>(false);
+  const [text, setText] = useState<string>('');
   const widgets = ['无', '写作助手'];
-  const widget = getWidget(chosenWidget);
+  const widget = getWidget(chosenWidget, setText);
 
   const cardStyle =
     'transition-colors shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 hover:border-black/10 focus:border-black/10 dark:border-black/10 dark:hover:border-black/10 dark:focus:border-black/10 border dark:bg-gray-700 text-black dark:text-white';
 
   const triggerAdvancedMode = () => setAdvancedMode((prev: boolean) => !prev);
   const switchToSimpleMode = () => {setAdvancedMode(false)};
+  const triggerSubmission = () => console.log(text);
 
   return (
     <>
@@ -31,6 +34,7 @@ function ChatWidgetMenu() {
         }
       >
         <SelectDropDown
+          title='小程序'
           value={chosenWidget}
           setValue={(value: string) => setChosenWidget(value)}
           availableValues={widgets}
@@ -57,8 +61,31 @@ function ChatWidgetMenu() {
           <div className="z-50 px-4 py-4">{widget}</div>
         }
         visible={advancedMode}
+        widget={true}
         saveAsPreset={null}
         switchToSimpleMode={switchToSimpleMode}
+        additionalButton={{
+          label: '发送',
+          buttonClass: '',
+          handler: triggerSubmission,
+          icon: <div className="mr-1 w-[14px]">
+            <svg
+              stroke="currentColor"
+              fill="none"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="mr-1 h-4 w-4 "
+              height="1em"
+              width="1em"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          </div>
+        }}
       />
     </>
   );

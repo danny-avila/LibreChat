@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { Label } from '~/components/ui/Label';
 import SelectDropDown from '../../../ui/SelectDropDown';
@@ -7,7 +7,7 @@ import { cn } from '~/utils/';
 /*
 作者职位、写作水平、字数、主题、布局、风格、引文、读者
 */
-function WritingAssistant() {
+function WritingAssistant({ setOption }) {
   // Essay basic bundle
   const [level, setLevel] = useState<string>('学士');
   const [wordCount, setWordCount] = useState<string>('500');
@@ -15,6 +15,10 @@ function WritingAssistant() {
 
   const defaultTextProps =
   	'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
+
+  useEffect(() => {
+    setOption(level + ' ' + wordCount + ' ' + topic);
+  }, [level, wordCount, topic]);
 
   return (
 	  <div className="h-[490px] overflow-y-auto md:h-[400px]">
@@ -62,7 +66,6 @@ function WritingAssistant() {
               disabled={false}
               value={topic || ''}
               onChange={(e) => setTopic(e.target.value || '')}
-              placeholder="Bing can use up to 7k tokens for 'context', which it can reference for the conversation. The specific limit is not known but may run into errors exceeding 7k tokens"
               className={cn(
                 defaultTextProps,
                 'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2'
