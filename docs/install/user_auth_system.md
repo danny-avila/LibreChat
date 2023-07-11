@@ -77,9 +77,13 @@ OPENID_CALLBACK_URL=/oauth/openid/callback
 5. Remove the Active checkbox in the Webhook section
 6. Save changes and generate a Client Secret
 7. In the Permissions & events tab select, open the Account Permissions and set Email addresses to Read-only
-8. Put the Client ID and Client Secret in the .env file
+8. Put the Client ID and Client Secret in the .env file:
+```
+GITHUB_CLIENT_ID=your_client_id
+GITHUB_CLIENT_SECRET=your_client_secret
+GITHUB_CALLBACK_URL=/oauth/github/callback # this should be the same for everyone
+```
 9. Save the .env file
-
 ---
 
 ## How to Set Up Discord Authentication
@@ -89,9 +93,13 @@ OPENID_CALLBACK_URL=/oauth/openid/callback
 4. In the OAuth2 general settings add a redirect URL and set it as "[Your DOMAIN_CLIENT](https://github.com/danny-avila/LibreChat/blob/main/.env.example#L219)/oauth/discord/callback" (example: http://localhost:3080/oauth/discord/callback)
 5. in the Default Authorization Link set applications.commands
 6. Save changes and reset the Client Secret
-8. Put the Client ID and Client Secret in the .env file
-9. Save the .env file
-
+7. Put the Client ID and Client Secret in the .env file:
+```
+DISCORD_CLIENT_ID=your_client_id
+DISCORD_CLIENT_SECRET=your_client_secret
+DISCORD_CALLBACK_URL=/oauth/discord/callback # this should be the same for everyone
+```
+8. Save the .env file
 ---
 ## **Email and Password Reset** 
 
