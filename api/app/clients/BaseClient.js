@@ -71,7 +71,7 @@ class BaseClient {
     };
   }
 
-  createUserMessage({ messageId, parentMessageId, conversationId, text}) {
+  createUserMessage({ messageId, parentMessageId, conversationId, text }) {
     const userMessage = {
       messageId,
       parentMessageId,
@@ -293,7 +293,7 @@ class BaseClient {
     };
   }
 
-  async handleContextStrategy({instructions, orderedMessages, formattedMessages}) {
+  async handleContextStrategy({ instructions, orderedMessages, formattedMessages }) {
     let payload = this.addInstructions(formattedMessages, instructions);
     let orderedWithInstructions = this.addInstructions(orderedMessages, instructions);
     let {
@@ -350,7 +350,7 @@ class BaseClient {
       }
 
       if (index === refineIndex) {
-        map.refined = { ...refinedMessage, messageId: message.messageId};
+        map.refined = { ...refinedMessage, messageId: message.messageId };
       }
 
       map[message.messageId] = payload[index].tokenCount;
@@ -457,7 +457,7 @@ class BaseClient {
   }
 
   async saveMessageToDatabase(message, endpointOptions, user = null) {
-    await saveMessage({ ...message, unfinished: false });
+    await saveMessage({ ...message, unfinished: false, cancelled: false });
     await saveConvo(user, {
       conversationId: message.conversationId,
       endpoint: this.options.endpoint,
