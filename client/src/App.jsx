@@ -1,5 +1,4 @@
-import { useEffect } from 'react';
-import { RouterProvider, useLocation } from 'react-router-dom';
+import { RouterProvider } from 'react-router-dom';
 import { ScreenshotProvider } from './utils/screenshotContext.jsx';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { RecoilRoot } from 'recoil';
@@ -7,11 +6,9 @@ import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-qu
 import { ThemeProvider } from './hooks/ThemeContext';
 import { useApiErrorBoundary } from './hooks/ApiErrorBoundaryContext';
 import { router } from './routes';
-import ReactGA from 'react-ga';
 
-const InnerApp = () => {
+const App = () => {
   const { setError } = useApiErrorBoundary();
-  const location = useLocation();
 
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
@@ -22,10 +19,6 @@ const InnerApp = () => {
       }
     })
   });
-
-  useEffect(() => {
-    ReactGA.pageview(location.pathname + location.search);
-  }, [location]);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -41,6 +34,6 @@ const InnerApp = () => {
 
 export default () => (
   <ScreenshotProvider>
-    <InnerApp />
+    <App />
   </ScreenshotProvider>
 );
