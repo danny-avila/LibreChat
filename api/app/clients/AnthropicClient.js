@@ -35,7 +35,7 @@ class AnthropicClient extends BaseClient {
       this.options = {
         ...this.options,
         ...options,
-        debug: true
+        debug: false
       };
     } else {
       this.options = options;
@@ -195,7 +195,7 @@ class AnthropicClient extends BaseClient {
       abortController = new AbortController();
     }
     console.log('AnthropicClient: getCompletion', payload);
-    // const { signal } = abortController;
+    const { signal } = abortController;
 
     const modelOptions = { ...this.modelOptions };
     if (typeof onProgress === 'function') {
@@ -234,19 +234,24 @@ class AnthropicClient extends BaseClient {
       ...modelOptions
     });
 
+    signal.addEventListener('abort', () => {
+      console.log('AnthropicClient: message aborted!');
+      response.controller.abort();
+    });
+
     for await (const completion of response) {
       if (this.options.debug) {
         console.debug(completion);
       }
-      // signal.addEventListener('abort', () => {
-      //   console.log('AnthropicClient: aborting');
-      //   return;
-      // });
       text += completion.completion;
       onProgress(completion.completion);
     }
 
-    // signal.removeEventListener('abort');
+    signal.removeEventListener('abort', () => {
+      console.log('AnthropicClient: message aborted!');
+      response.controller.abort();
+    });
+
     return text.trim();
   }
 

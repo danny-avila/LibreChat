@@ -18,7 +18,18 @@ router.post('/', requireJwtAuth, async (req, res) => {
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   if (endpoint !== 'anthropic') return handleError(res, { text: 'Illegal request' });
 
-  const endpointOption = {};
+  const endpointOption = {
+    promptPrefix: req.body?.promptPrefix ?? null,
+    token: req.body?.token ?? null,
+    modelOptions: {
+      model: req.body?.model ?? 'claude-1',
+      modelLabel: req.body?.modelLabel ?? null,
+      temperature: req.body?.temperature ?? 0.7,
+      maxOutputTokens: req.body?.maxOutputTokens ?? 1024,
+      topP: req.body?.topP ?? 0.7,
+      topK: req.body?.topK ?? 40
+    }
+  };
 
   const conversationId = oldConversationId || crypto.randomUUID();
 
