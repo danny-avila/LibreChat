@@ -41,10 +41,6 @@ class AnthropicClient extends BaseClient {
       this.options = options;
     }
 
-    // this.options.examples = this.options.examples.filter(
-    //   (obj) => obj.input.content !== '' && obj.output.content !== ''
-    // );
-
     const modelOptions = this.options.modelOptions || {};
     this.modelOptions = {
       ...modelOptions,
@@ -92,21 +88,21 @@ class AnthropicClient extends BaseClient {
       this.modelOptions.stop = stopTokens;
     }
 
-    // if (this.options.reverseProxyUrl) {
-    //   this.completionsUrl = this.options.reverseProxyUrl;
-    // } else {
-    //   this.completionsUrl = DEFAULT_API_URL
-    // }
-
     return this;
   }
 
   getClient() {
-    const client = new Anthropic({
-      apiKey: this.apiKey,
-    });
-
-    return client;
+    if(this.options.reverseProxyUrl) {
+      return new Anthropic({
+        apiKey: this.apiKey,
+        baseURL: this.options.reverseProxyUrl
+      });
+    }
+    else {
+      return new Anthropic({
+        apiKey: this.apiKey,
+      });
+    }
   };
 
   async buildMessages(messages, parentMessageId) {
