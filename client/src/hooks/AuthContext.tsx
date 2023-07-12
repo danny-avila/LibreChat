@@ -72,6 +72,36 @@ const AuthContextProvider = ({
     }
   };
 
+    function parseJwt(token) {
+      try {
+          const base64Url = token.split('.')[1];
+          const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+          const jsonPayload = decodeURIComponent(
+              atob(base64)
+                  .split('')
+                  .map(function (c) {
+                      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+                  })
+                  .join('')
+          );
+          return JSON.parse(jsonPayload);
+      } catch (error) {
+          return null;
+      }
+  };
+
+  function isTokenExpired(token) {
+      const parsedToken = parseJwt(token);
+      if (!parsedToken) {
+          return true;
+      }
+      const expirationDate = new Date(parsedToken.exp * 1000);
+      if (expirationDate < new Date()) {
+          return true;
+      }
+      return false;
+  };
+  
   const setUserContext = useCallback(
     (userContext: TUserContext) => {
       const { token, isAuthenticated, user, redirect } = userContext;
@@ -128,17 +158,37 @@ const AuthContextProvider = ({
     });
   };
 
+  const silentRefresh = useCallback(() => {
+    refreshToken.mutate(undefined, {
+      onSuccess: (data: TLoginResponse) => {
+        const { user, token } = data;
+        setUserContext({ token, isAuthenticated: true, user });
+      },
+      onError: error => {
+        console.log('refreshToken mutation error:', error);
+        navigate('/login'); 
+      }
+    });
+  }, [setUserContext, navigate]);
+
+  const [isLoadingUser, setIsLoadingUser] = useState(true);
+  
   useEffect(() => {
-    if (userQuery.data) {
+    setIsLoadingUser(true);
+    if (!token || isTokenExpired(token)) {
+      silentRefresh();
+    } else if (userQuery.data) {
       setUser(userQuery.data);
+      setIsLoadingUser(false);
     } else if (userQuery.isError) {
       doSetError((userQuery?.error as Error).message);
       navigate('/login', { replace: true });
+      setIsLoadingUser(false);
     }
     if (error && isAuthenticated) {
       doSetError(undefined);
     }
-    if (!token || !isAuthenticated) {
+    if (!isLoadingUser && (!token || !isAuthenticated)) {
       const tokenFromCookie = getCookieValue('token');
       if (tokenFromCookie) {
         setUserContext({ token: tokenFromCookie, isAuthenticated: true, user: userQuery.data });
@@ -154,26 +204,10 @@ const AuthContextProvider = ({
     userQuery.error,
     error,
     navigate,
-    setUserContext
+    setUserContext,
+    silentRefresh,
+    isLoadingUser
   ]);
-
-  // const silentRefresh = useCallback(() => {
-  //   refreshToken.mutate(undefined, {
-  //     onSuccess: (data: TLoginResponse) => {
-  //       const { user, token } = data;
-  //       setUserContext({ token, isAuthenticated: true, user });
-  //     },
-  //     onError: error => {
-  //       setError(error.message);
-  //     }
-  //   });
-  //
-  // }, [setUserContext]);
-
-  // useEffect(() => {
-  //   if (token)
-  //   silentRefresh();
-  // }, [token, silentRefresh]);
 
   // Make the provider update only when it should
   const memoedValue = useMemo(
