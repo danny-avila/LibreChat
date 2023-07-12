@@ -2,7 +2,7 @@
 
 ChatGPT plugins are API integrations for OpenAI models that extend their capabilities. They are structured around three key components: an API, an **OpenAPI specification** (spec for short), and a JSON **Plugin Manifest** file. To learn more about them, or how to make your own, read here: [ChatGPT Plugins: Getting Started](https://platform.openai.com/docs/plugins/getting-started).
 
-Thanks to the introduction of [OpenAI Functions](https://openai.com/blog/function-calling-and-other-api-updates) and their utilization in [Langchain](https://js.langchain.com/docs/modules/chains/openai_functions/openapi), it's now possible to directly use OpenAI Plugins from LibreChat, without building any custom langchain tools. The main use case we gain from integrating them to LibreChat is to allow use of plugins with gpt-3.5 models, and without ChatGPT Plus.
+Thanks to the introduction of [OpenAI Functions](https://openai.com/blog/function-calling-and-other-api-updates) and their utilization in [Langchain](https://js.langchain.com/docs/modules/chains/openai_functions/openapi), it's now possible to directly use OpenAI Plugins from LibreChat, without building any custom langchain tools. The main use case we gain from integrating them to LibreChat is to allow use of plugins with gpt-3.5 models, and without ChatGPT Plus. They also find a great use case when you want to limit your own private API's interactions with chat.openai.com and their servers in favor of a self-hosted LibreChat instance.
 
 Before continuing, it's important to fully distinguish what a Manifest file is vs. an OpenAPI specification.
 

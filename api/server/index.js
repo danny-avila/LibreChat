@@ -84,12 +84,13 @@ config.validate(); // Validate the config
   });
 
   app.listen(port, host, () => {
-    if (host == '0.0.0.0')
+    if (host == '0.0.0.0') {
       console.log(
         `Server listening on all interface at port ${port}. Use http://localhost:${port} to access it`,
       );
-    else
+    } else {
       console.log(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
+    }
   });
 })();
 

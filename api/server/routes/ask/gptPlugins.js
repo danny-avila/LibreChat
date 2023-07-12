@@ -20,8 +20,12 @@ router.post('/abort', requireJwtAuth, async (req, res) => {
 
 router.post('/', requireJwtAuth, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId } = req.body;
-  if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
-  if (endpoint !== 'gptPlugins') return handleError(res, { text: 'Illegal request' });
+  if (text.length === 0) {
+    return handleError(res, { text: 'Prompt empty or too short' });
+  }
+  if (endpoint !== 'gptPlugins') {
+    return handleError(res, { text: 'Illegal request' });
+  }
 
   const agentOptions = req.body?.agentOptions ?? {
     agent: 'functions',
@@ -156,7 +160,7 @@ const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, con
     const onStart = (userMessage) => {
       sendMessage(res, { message: userMessage, created: true });
       abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
-    }
+    };
 
     endpointOption.tools = await validateTools(user, endpointOption.tools);
     const clientOptions = {
@@ -179,11 +183,13 @@ const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, con
     }
     const chatAgent = new PluginsClient(openAIApiKey, clientOptions);
 
-    const onAgentAction = (action) => {
+    const onAgentAction = (action, start = false) => {
       const formattedAction = formatAction(action);
       plugin.inputs.push(formattedAction);
       plugin.latest = formattedAction.plugin;
-      saveMessage(userMessage);
+      if (!start) {
+        saveMessage(userMessage);
+      }
       sendIntermediateMessage(res, { plugin });
       // console.log('PLUGIN ACTION', formattedAction);
     };
