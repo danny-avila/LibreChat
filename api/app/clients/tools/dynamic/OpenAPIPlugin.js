@@ -5,7 +5,7 @@ const yaml = require('js-yaml');
 const path = require('path');
 const { DynamicStructuredTool } = require('langchain/tools');
 const { createOpenAPIChain } = require('langchain/chains');
-const SUFFIX = 'Prioritize utilizing API response parts in subsequent requests before fulfilling the query.';
+const SUFFIX = 'Prioritize using responses for subsequent requests to better fulfill the query.';
 
 const AuthBearer = z.object({
   type: z.string().includes('service_http'),
@@ -57,11 +57,6 @@ async function getSpec(url) {
 }
 
 async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }) {
-  // TODO: load Spec from url
-  // const response = await fetch('https://scholar-ai.net/.well-known/ai-plugin.json');
-  // const data = await response.json();
-  // console.log(data);
-
   let spec;
   try {
     spec = await getSpec(data.api.url, verbose);
@@ -88,7 +83,7 @@ async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }
 
   return new DynamicStructuredTool({
     name: data.name_for_model,
-    description: `${data.description_for_human}`,
+    description: `${data.description_for_human} ${SUFFIX}`,
     schema: z.object({
       query: z.string().describe('For the query, be specific in a conversational manner. It will be interpreted by a human.'),
     }),

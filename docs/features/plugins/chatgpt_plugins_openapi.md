@@ -24,6 +24,8 @@ Before continuing, it's important to fully distinguish what a Manifest file is v
 
 ## Adding a Plugin
 
+In a future update, you will be able to add plugins via url on the frontend; for now, you will have to add them to the project locally.
+
 Download the Plugin manifest file, or copy the raw JSON data into a new file, and drop it in the following project path:
 
 `api\app\clients\tools\.well-known`
@@ -145,7 +147,7 @@ LibreChat's implementation is not 1:1 with ChatGPT's, as OpenAI has a robust exc
 
 Some plugins may detect that the API call does not originate from OpenAI's servers, and/or will need special handling or editing of their manifest/spec files. This is not to say plugin use will not improve and more closely mirror how ChatGPT handles plugins, but there is still work to do to this end. In short, some will work perfectly while others may not work at all. 
 
-The use of ChatGPT Plugins with LibreChat does not violate OpenAI's Terms of Service. I have thoroughly reviewed the "Service Terms" and "Usage Policies" sections of the Terms of Service, and here are the key points. In most marketplace scenarios, the host, in this case OpenAI, is not responsible for the plugins and their usage outside of their platform, chat.openai.com. Furthermore, there is no explicit mention of restrictions on accessing data that is not directly displayed to the user. Therefore, accessing the payload of their plugins (which is how OpenPlugin obtains information about the marketplace plugins) for display purposes is not in violation of their Terms of Service.
+The use of ChatGPT Plugins with LibreChat does not violate OpenAI's Terms of Service. I have thoroughly reviewed the "Service Terms" and "Usage Policies" sections of the Terms of Service, and here are the key points. In most marketplace scenarios, the host, in this case OpenAI, is not responsible for the plugins and their usage outside of their platform, chat.openai.com. Furthermore, there is no explicit mention of restrictions on accessing data that is not directly displayed to the user. Therefore, accessing the payload of their plugins for display purposes is not in violation of their Terms of Service.
 
 Primary sources:
 
