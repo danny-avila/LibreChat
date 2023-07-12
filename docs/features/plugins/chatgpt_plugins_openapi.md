@@ -1,0 +1,159 @@
+# Using official ChatGPT Plugins / OpenAPI specs
+
+ChatGPT plugins are API integrations for OpenAI models that extend their capabilities. They are structured around three key components: an API, an **OpenAPI specification** (spec for short), and a JSON **Plugin Manifest** file. To learn more about them, or how to make your own, read here: [ChatGPT Plugins: Getting Started](https://platform.openai.com/docs/plugins/getting-started).
+
+Thanks to the introduction of [OpenAI Functions](https://openai.com/blog/function-calling-and-other-api-updates) and their utilization in [Langchain](https://js.langchain.com/docs/modules/chains/openai_functions/openapi), it's now possible to directly use OpenAI Plugins from LibreChat, without building any custom langchain tools. The main use case we gain from integrating them to LibreChat is to allow use of plugins with gpt-3.5 models, and without ChatGPT Plus.
+
+Before continuing, it's important to fully distinguish what a Manifest file is vs. an OpenAPI specification.
+
+### **[Plugin Manifest File:](https://platform.openai.com/docs/plugins/getting-started/plugin-manifest)**
+- Usually hosted on the API’s domain as `https://example.com/.well-known/ai-plugin.json`
+- The manifest file is required for LLMs to connect with your plugin. If there is no file found, the plugin cannot be installed.
+- Has required properties, and will error if they are missing. Check what they are in the [OpenAI Docs](https://platform.openai.com/docs/plugins/getting-started/plugin-manifest)
+- Has optional properties, specific to LibreChat, that will enable them to work consistently, or for customizing headers/params made by every API call (see below)
+
+### **[OpenAPI Spec](https://platform.openai.com/docs/plugins/getting-started/openapi-definition)**
+- The OpenAPI specification is used to document the API that the plugin will interact with. It is a [universal format](https://www.openapis.org/) meant to standardize API definitions.
+- Referenced by the Manifest file in its `api.url` property
+  - Usually as `https://example.com/openapi.yaml` or `.../swagger.yaml`
+  - Can be a .yaml or .json file
+- The LLM only knows about your API based on what is defined in this specification and the manifest file.
+- The specification can be tailored to expose specific endpoints of your API to the model, allowing you to control the functionality that the model can access.
+- The OpenAPI specification is the wrapper that sits on top of your API.
+- When a query is run by the LLM, it will look at the description that is defined in the info section of the OpenAPI specification to determine if the plugin is relevant for the user query.
+
+## Adding a Plugin
+
+Download the Plugin manifest file, or copy the raw JSON data into a new file, and drop it in the following project path:
+
+`api\app\clients\tools\.well-known`
+
+You should see multiple manifest files that I've already tested/edited and work with LibreChat as of 7/12/23. I've renamed them by their `name_for_model` property and it's recommended, but not required, that you do the same.
+
+After doing so, start/re-start the project server and they should now load in the Plugin store.
+
+---
+
+## Editing Manifest Files
+
+>Note: the following configurations are specific to optimizing manifest files for LibreChat, which is sometimes necessary for plugins to work properly with LibreChat, but also useful if you are developing your own plugins and want to make sure it's compatible with both ChatGPT and LibreChat
+
+If your plugin works right out of the box by adding it like above, that's great! However, in some cases, further configuration is desired or required.
+
+With the current implementation, for some ChatGPT plugins, the LLM will stubbornly ignore required values for specific parameters. I was having this issue with the ScholarAI plugin, where it would not obey the requirement to have either 'cited_by_count' or 'publication_date' as the value for its 'sort' parameter. I used the following as a reliable workaround this issue.
+
+### Override Parameter Values
+
+Add a params object with the desired parameters to include with every API call, to manually override whatever the LLM generates for these values. You can also exclude instructions for these parameters in your custom spec to optimize API calling (more on that later).
+
+```json
+  "params": {
+    "sort": "cited_by_count"
+  },
+```
+
+### Add Header Fields
+
+If you would like to add headers to every API call, you can specify them in the manifest file like this:
+
+```json
+  "headers": {
+    "librechat_user_id": "WebPilot-Friend-UID"
+  },
+```
+
+Note: as the name suggests, the "librechat_user_id" Header field is handled in a special way for LibreChat. Use this whenever you want to pass the userId of the current user as a header value. 
+
+In other words, the above is equivalent to:
+```bash
+curl -H "WebPilot-Friend-UID: <insert librechat_user_id here>" https://webreader.webpilotai.com/api/visit-web
+```
+
+Hard-coding header fields may also be useful for basic authentication; however, it's recommended you follow the authentication guide below instead to make your plugin compatible for ChatGPT as well.  
+
+### Custom OpenAPI Spec files
+
+Sometimes, manifest files are formatted perfectly but their corresponding spec files leave something to be desired. This was the case for me with the AskYourPDF Plugin, where the `server.url` field was omitted. You can also save on tokens by configuring a spec file to your liking, if you know you will never need certain endpoints. Or, this is useful if you are developing 
+
+In any case, you have two options. 
+
+**Option 1:** Replace the `api.url` value to another remotely hosted spec
+
+```json
+  "api": {
+    "type": "openapi",
+    "url": "https://some-other-domain.com/openapi.yaml",
+    "is_user_authenticated": false
+  },
+```
+
+**Option 2:** Place your yaml or json spec locally in the following project path:
+
+`api\app\clients\tools\.well-known\openapi\`
+
+- Replace the `api.url` value to the filename.
+
+```json
+  "api": {
+    "type": "openapi",
+    "url": "scholarai.yaml",
+    "is_user_authenticated": false
+  },
+```
+
+LibreChat will then load the following OpenAPI spec instead of fetching from the internet.
+
+`api\app\clients\tools\.well-known\openapi\scholarai.yaml`
+
+### Plugins with Authentication
+
+If you look at the VoxScript manifest file, you will notice it has an `auth` property like this:
+
+```json
+  "auth": {
+    "type": "service_http",
+    "authorization_type": "bearer",
+    "verification_tokens": {
+      "openai": "ffc5226d1af346c08a98dee7deec9f76"
+    }
+  },
+```
+
+This is equivalent to an HTTP curl request with the following header:
+
+```bash
+curl -H "Authorization: Bearer ffc5226d1af346c08a98dee7deec9f76" https://example.com/api/
+```
+
+As of now, LibreChat only supports plugins using Bearer Authentication, like in the example above.
+
+If your plugin requires authentication, it's necessary to have these fields filled in your manifest file according to [OpenAI definitions](https://platform.openai.com/docs/plugins/getting-started/plugin-manifest), which for Bearer Authentication must follow the schema above.
+
+Important: Some ChatGPT plugins may use Bearer Auth., but have either stale verification tokens in their manifest, or only support calls from OpenAI servers. Web Pilot is one with the latter case, and thankfully it has a required header field for allowing non-OpenAI origination. See above for editing headers. 
+
+>Note: some ChatGPT plugins use OAuth authentication, which is not foreseeable we will be able to use as it requires manual configurations (redirect uri and client secrets) for both the plugin's servers and OpenAI's servers. Sadly, an example of this is Noteable, which is one of my favorite plugins; however, OAuth that authorizes the domain of your LibreChat app will be possible in a future update. On Noteable: it may be possible to reverse-engineer the noteable plugin for a "code interpreter" experience, and is a stretch goal on the LibreChat roadmap.
+
+--- 
+
+## Disclaimers
+
+Use of ChatGPT Plugins is only possible with official OpenAI models and their use of [Functions](https://platform.openai.com/docs/api-reference/chat/create#chat/create-functions). If you are accessing OpenAI models via reverse proxy through some 3rd party service, function calling may not be supported.
+
+It is recommended to prefer custom Langchain Tools over ChatGPT Plugins/OpenAPI specs as this can be more token-efficient, especially with OpenAI Functions.
+
+LibreChat's implementation is not 1:1 with ChatGPT's, as OpenAI has a robust exclusive, and restricted authentication pipeline with its models & specific plugins, which are not as limited by context windows and token usage. Some plugins requiring authentication will not work, especially those with OAuth and some may not be used in the same manner, especially those requiring multi-step API calls. 
+
+Some plugins may detect that the API call does not originate from OpenAI's servers, and/or will need special handling or editing of their manifest/spec files. This is not to say plugin use will not improve and more closely mirror how ChatGPT handles plugins, but there is still work to do to this end. In short, some will work perfectly while others may not work at all. 
+
+The use of ChatGPT Plugins with LibreChat does not violate OpenAI's Terms of Service. I have thoroughly reviewed the "Service Terms" and "Usage Policies" sections of the Terms of Service, and here are the key points. In most marketplace scenarios, the host, in this case OpenAI, is not responsible for the plugins and their usage outside of their platform, chat.openai.com. Furthermore, there is no explicit mention of restrictions on accessing data that is not directly displayed to the user. Therefore, accessing the payload of their plugins (which is how OpenPlugin obtains information about the marketplace plugins) for display purposes is not in violation of their Terms of Service.
+
+Primary sources:
+
+https://openai.com/policies/terms-of-use
+
+https://openai.com/policies/usage-policies
+
+https://openai.com/policies/service-terms
+
+
+Please note that the ChatGPT Plugins integration is currently in an alpha state, and you may encounter errors. Although preliminary testing has been conducted, not all plugins have been thoroughly tested. Some of the errors may be caused by the plugin itself therefore will also not work on https://chat.openai.com/. If you encounter any errors, double checking if they work on the official site is advisable before reporting them as a GitHub issue. I can only speak for the ones I tested.

@@ -98,9 +98,9 @@ async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }
         verbose,
       };
 
-      if (data.headers && data.headers.id) {
+      if (data.headers && data.headers['librechat_user_id']) {
         verbose && console.debug('id detected', headers);
-        headers[data.headers.id] = user;
+        headers[data.headers['librechat_user_id']] = user;
       }
 
       if (Object.keys(headers).length > 0) {
