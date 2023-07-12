@@ -1,13 +1,14 @@
 export default function ClaudeIcon({ size = 25 }) {
   return (
-    <div className="bg-[#d09a74] rounded-sm flex items-center p-0.5">
+    <div className="flex items-center rounded-sm bg-[#d09a74] p-0.5">
       <svg viewBox="0 0 24 16" overflow="visible" width={size} height={size}>
         <g
           style={{
             transform: 'translateX(13px) rotateZ(0deg)',
-            transformOrigin: '4.775px 7.73501px'
+            transformorigin: '4.775px 7.73501px'
           }}
-          transformOrigin="4.7750020027160645px 7.735011100769043px"
+          // eslint-disable-next-line react/no-unknown-property
+          transformorigin="4.7750020027160645px 7.735011100769043px"
         >
           <path
             shapeRendering="geometricPrecision"
@@ -19,10 +20,11 @@ export default function ClaudeIcon({ size = 25 }) {
         <g
           style={{
             transform: 'none',
-            transformOrigin: '7.935px 7.73501px'
+            transformorigin: '7.935px 7.73501px'
           }}
           opacity="1"
-          transformOrigin="7.93500280380249px 7.735011100769043px"
+          // eslint-disable-next-line react/no-unknown-property
+          transformorigin="7.93500280380249px 7.735011100769043px"
         >
           <path
             shapeRendering="geometricPrecision"
