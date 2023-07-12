@@ -7,7 +7,7 @@ import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
 import { useGetStartupConfig } from '@librechat/data-provider';
-import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components'
+import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
 
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();
