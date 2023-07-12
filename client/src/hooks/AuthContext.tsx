@@ -159,6 +159,11 @@ const AuthContextProvider = ({
   };
 
   const silentRefresh = useCallback(() => {
+    if (!refreshToken) {
+      console.error('refreshToken is not defined');
+      return;
+    }
+
     refreshToken.mutate(undefined, {
       onSuccess: (data: TLoginResponse) => {
         const { user, token } = data;
