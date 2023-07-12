@@ -10,7 +10,6 @@ type TLoginFormProps = {
 
 function LoginForm({ onSubmit }: TLoginFormProps) {
   const lang = useRecoilValue(store.lang);
-  
   const {
     register,
     handleSubmit,
