@@ -7,8 +7,8 @@ const {
 } = require('@dqbd/tiktoken');
 const Anthropic = require('@anthropic-ai/sdk');
 
-const HUMAN_PROMPT = "\n\nHuman";
-const AI_PROMPT = "\n\nAssistant";
+const HUMAN_PROMPT = '\n\nHuman';
+const AI_PROMPT = '\n\nAssistant';
 
 const tokenizersCache = {};
 
@@ -19,7 +19,7 @@ class AnthropicClient extends BaseClient {
     cacheOptions.namespace = cacheOptions.namespace || 'anthropic';
     this.conversationsCache = new Keyv(cacheOptions);
     this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
-    this.sender = "Anthropic";
+    this.sender = 'Anthropic';
     this.setOptions(options);
   }
 
@@ -116,7 +116,7 @@ class AnthropicClient extends BaseClient {
       content: message?.content ?? message.text
     }));
 
-    const defaultPrefix = `\nRemember your instructions:\nYou are Claude, a large language model trained by Anthropic. Respond conversationally.\nCurrent date: ${this.currentDateString}${this.endToken}`
+    // const defaultPrefix = `\nRemember your instructions:\nYou are Claude, a large language model trained by Anthropic. Respond conversationally.\nCurrent date: ${this.currentDateString}${this.endToken}`
 
     let promptPrefix = (this.options.promptPrefix || '').trim();
     if (promptPrefix) {
@@ -125,8 +125,6 @@ class AnthropicClient extends BaseClient {
         promptPrefix = `${promptPrefix.trim()}${this.endToken}\n\n`;
       }
       promptPrefix = `\nRemember your instructions:\n${promptPrefix}`;
-    } else {
-      promptPrefix = defaultPrefix;
     }
 
     const promptSuffix = `${promptPrefix}${this.assistantLabel}:\n`; // Prompt AI to respond.
@@ -204,20 +202,6 @@ class AnthropicClient extends BaseClient {
       console.debug(modelOptions);
       console.debug();
     }
-
-    // TODO: We should support proxies/aborting
-    // const opts = {
-    //   method: 'POST',
-    //   agent: new Agent({
-    //     bodyTimeout: 0,
-    //     headersTimeout: 0
-    //   }),
-    //   signal: abortController.signal
-    // };
-
-    // if (this.options.proxy) {
-    //   opts.agent = new ProxyAgent(this.options.proxy);
-    // }
 
     const client = this.getClient();
 
