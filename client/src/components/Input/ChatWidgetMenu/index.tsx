@@ -1,35 +1,50 @@
 import React, { useState } from 'react';
+import { useRecoilState } from 'recoil';
 import SelectDropDown from '../../ui/SelectDropDown';
 import { Button } from '../../ui/Button';
 import { cn } from '~/utils/';
 import WritingAssistant from './WritingAssistant';
 import { Settings2 } from 'lucide-react';
 import EndpointOptionsPopover from '~/components/Endpoints/EndpointOptionsPopover';
+import { useMessageHandler } from '~/utils/handleSubmit';
 
-function getWidget(widget: string, setText: React.Dispatch<React.SetStateAction<string>>) {
-  const setOption = (value: string) => setText(value);
+import store from '~/store';
+
+function getWidget(widget: string, setParams: React.Dispatch<React.SetStateAction<object>>) {
+  const setOption = (value: object) => setParams(value);
   if (widget === '写作助手') return <WritingAssistant setOption={setOption} />;
 }
 
 function ChatWidgetMenu() {
+  const [conversation, setConversation] = useRecoilState(store.conversation) || {};
+  const { conversationId } = conversation;
+
   const [chosenWidget, setChosenWidget] = useState<string>('无');
   const [advancedMode, setAdvancedMode] = useState<boolean>(false);
-  const [text, setText] = useState<string>('');
+  const [params, setParams] = useState<object>({});
   const widgets = ['无', '写作助手'];
-  const widget = getWidget(chosenWidget, setText);
+  const widget = getWidget(chosenWidget, setParams);
+
+  const { ask } = useMessageHandler();
 
   const cardStyle =
     'transition-colors shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 hover:border-black/10 focus:border-black/10 dark:border-black/10 dark:hover:border-black/10 dark:focus:border-black/10 border dark:bg-gray-700 text-black dark:text-white';
 
   const triggerAdvancedMode = () => setAdvancedMode((prev: boolean) => !prev);
   const switchToSimpleMode = () => {setAdvancedMode(false)};
-  const triggerSubmission = () => console.log(text);
+  const triggerSubmission = () => {
+    if (params.easyMode) {
+      const text = params.submissionText;
+      ask({ text });
+      setAdvancedMode(false);
+    }
+  };
 
   return (
     <>
       <div
         className={
-          'openAIOptions-simple-container flex w-full flex-wrap items-center justify-start gap-2' +
+          `openAIOptions-simple-container flex w-full flex-wrap items-center gap-2 justify-${conversationId === 'new' ? 'start' : 'center'}`+
           (!advancedMode ? ' show' : '')
         }
       >

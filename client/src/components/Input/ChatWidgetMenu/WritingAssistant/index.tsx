@@ -57,9 +57,25 @@ function WritingAssistant({ setOption }) {
   	'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
 
   useEffect(() => {
-    const finalTopic = easyMode ? topic : paraTopic.join(', ');
-    setOption(level + ' ' + wordCount + ' ' + finalTopic);
-  }, [level, wordCount, topic]);
+    if (easyMode) {
+      setOption({
+        easyMode: easyMode,
+        submissionText: `以${level}的水平写一篇${wordCount}字的作文。作文要分成${paragraphCount}个段落，主题是：${topic}`
+      });
+    } else {
+      const topics: string[] = [];
+      topics.push(`以${level}的水平写一篇${wordCount}字的作文。作文要分成${paragraphCount}个段落，第1段的主题是：${paraTopic[0]}`);
+
+      for (let i = 1; i < paraTopic.length; i++) {
+        topics.push(`根据上文，第${i + 1}段的主题是${paraTopic[i]}`);
+      }
+
+      setOption({
+        easyMode: easyMode,
+        submissionText: topics
+      });
+    }
+  }, [level, wordCount, topic, easyMode, paraTopic, paragraphCount]);
 
   return (
 	  <div className="h-[490px] overflow-y-auto md:h-[400px]">
@@ -121,15 +137,20 @@ function WritingAssistant({ setOption }) {
             <div className="grid w-full items-center gap-2">
               <div className='flex flex-row gap-6'>
                 <Label htmlFor="context" className="text-left text-sm font-medium">
-                主题 <small className="opacity-40">(默认值: 空白)</small>
+                  主题 <small className="opacity-40">(默认值: 空白)</small>
                 </Label>
-                <Switch.Root
-                  className="w-[30px] h-[16px] bg-blue-500 rounded-full relative data-[state=checked]:bg-violet-700 outline-none cursor-default"
-                  id="easy-mode"
-                  onCheckedChange={(prev) => setEasyMode(!prev)}
-                >
-                  <Switch.Thumb className="block w-[14px] h-[14px] bg-white rounded-full transition-transform duration-100 translate-x-0.5 will-change-transform data-[state=checked]:translate-x-[13px]" />
-                </Switch.Root>
+                <div className='flex flex-row gap-2 items-center'>
+                  <Switch.Root
+                    className="w-[30px] h-[16px] bg-blue-500 rounded-full relative data-[state=checked]:bg-violet-700 outline-none cursor-default"
+                    id="easy-mode"
+                    onCheckedChange={(prev) => setEasyMode(!prev)}
+                  >
+                    <Switch.Thumb className="block w-[14px] h-[14px] bg-white rounded-full transition-transform duration-100 translate-x-0.5 will-change-transform data-[state=checked]:translate-x-[13px]" />
+                  </Switch.Root>
+                  <Label htmlFor="context" className="text-left text-sm font-medium">
+                    {easyMode ? '简约' : '微调'}
+                  </Label>
+                </div>
               </div>
               {
                 easyMode ? <TextareaAutosize
