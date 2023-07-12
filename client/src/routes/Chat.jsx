@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useAuthContext } from '~/hooks/AuthContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 
@@ -14,6 +15,7 @@ import {
 } from '@librechat/data-provider';
 
 export default function Chat() {
+  const { isAuthenticated } = useAuthContext();
   const [shouldNavigate, setShouldNavigate] = useState(true);
   const searchQuery = useRecoilValue(store.searchQuery);
   const [conversation, setConversation] = useRecoilState(store.conversation);
@@ -30,6 +32,18 @@ export default function Chat() {
   const { data: config } = useGetStartupConfig();
 
   useEffect(() => {
+    let timeout = setTimeout(() => {
+      if (!isAuthenticated) {
+        navigate('/login', { replace: true });
+      }
+    }, 300)
+
+    return () => {
+      clearTimeout(timeout);
+    }
+  }, [isAuthenticated, navigate]);
+
+  useEffect(() => {
     if (!isSubmitting && !shouldNavigate) {
       setShouldNavigate(true);
     }
@@ -41,7 +55,7 @@ export default function Chat() {
     if (conversation === null && conversationId === 'new') {
       newConversation();
       setShouldNavigate(true);
-    } 
+    }
     // No current conversation and conversationId exists
     else if (conversation === null && conversationId) {
       getConversationMutation.mutate(conversationId, {
@@ -53,24 +67,24 @@ export default function Chat() {
         onError: (error) => {
           console.error('Failed to fetch the conversation');
           console.error(error);
-          navigate(`/chat/new`);
+          navigate('/chat/new');
           newConversation();
           setShouldNavigate(true);
         }
       });
       setMessages(null);
-    } 
+    }
     // No current conversation and no conversationId
     else if (conversation === null) {
-      navigate(`/chat/new`);
+      navigate('/chat/new');
       setShouldNavigate(true);
-    } 
+    }
     // Current conversationId is 'search'
     else if (conversation?.conversationId === 'search') {
       navigate(`/search/${searchQuery}`);
       setShouldNavigate(true);
-    } 
-    // Conversation change and isSubmitting 
+    }
+    // Conversation change and isSubmitting
     else if (conversation?.conversationId !== conversationId && isSubmitting) {
       setShouldNavigate(false);
     }
@@ -100,6 +114,10 @@ export default function Chat() {
       setMessages(null);
     }
   }, [messagesQuery.data, messagesQuery.isError, setMessages]);
+
+  if (!isAuthenticated) {
+    return null;
+  }
 
   // if not a conversation
   if (conversation?.conversationId === 'search') return null;
