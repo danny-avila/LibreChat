@@ -83,7 +83,7 @@ const AuthContextProvider = ({
       setTokenHeader(token);
       setIsAuthenticated(isAuthenticated);
       if (redirect) {
-        navigate(redirect);
+        navigate(redirect, { replace: true });
       }
     },
     [navigate]
@@ -101,7 +101,8 @@ const AuthContextProvider = ({
         setUserContext({ token, isAuthenticated: true, user, redirect: '/chat/new' });
       },
       onError: (error) => {
-        doSetError(error.message);
+        doSetError((error as Error).message);
+        navigate('/login', { replace: true });
       }
     });
   };
@@ -122,7 +123,7 @@ const AuthContextProvider = ({
         });
       },
       onError: (error) => {
-        doSetError(error.message);
+        doSetError((error as Error).message);
       }
     });
   };
@@ -131,9 +132,8 @@ const AuthContextProvider = ({
     if (userQuery.data) {
       setUser(userQuery.data);
     } else if (userQuery.isError) {
-      //@ts-ignore - userQuery.error is of type unknown
-      doSetError(userQuery?.error.message);
-      navigate('/login');
+      doSetError((userQuery?.error as Error).message);
+      navigate('/login', { replace: true });
     }
     if (error && isAuthenticated) {
       doSetError(undefined);
@@ -143,7 +143,7 @@ const AuthContextProvider = ({
       if (tokenFromCookie) {
         setUserContext({ token: tokenFromCookie, isAuthenticated: true, user: userQuery.data });
       } else {
-        navigate('/login');
+        navigate('/login', { replace: true });
       }
     }
   }, [
