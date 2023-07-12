@@ -6,8 +6,9 @@ const { browserClient } = require('../../../app/');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
+const rateLimit = require('../../../middleware/rateLimit');
 
-router.post('/', requireJwtAuth, async (req, res) => {
+router.post('/', requireJwtAuth, rateLimit, async (req, res) => {
   const {
     endpoint,
     text,

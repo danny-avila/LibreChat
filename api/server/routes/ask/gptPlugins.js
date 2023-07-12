@@ -11,6 +11,7 @@ const {
   formatAction
 } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
+const rateLimit = require('../../../middleware/rateLimit');
 
 const abortControllers = new Map();
 
@@ -18,7 +19,7 @@ router.post('/abort', requireJwtAuth, async (req, res) => {
   return await abortMessage(req, res, abortControllers);
 });
 
-router.post('/', requireJwtAuth, async (req, res) => {
+router.post('/', requireJwtAuth, rateLimit, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   if (endpoint !== 'gptPlugins') return handleError(res, { text: 'Illegal request' });

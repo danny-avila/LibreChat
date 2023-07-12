@@ -6,8 +6,9 @@ const { titleConvo, GoogleClient } = require('../../../app');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
+const rateLimit = require('../../../middleware/rateLimit');
 
-router.post('/', requireJwtAuth, async (req, res) => {
+router.post('/', requireJwtAuth, rateLimit, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId: oldConversationId } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   if (endpoint !== 'google') return handleError(res, { text: 'Illegal request' });
