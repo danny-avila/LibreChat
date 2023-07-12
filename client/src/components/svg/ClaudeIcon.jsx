@@ -1,6 +1,6 @@
 export default function ClaudeIcon({ size = 25 }) {
   return (
-    <div className="bg-[#efede6] rounded-2 flex items-center p-1">
+    <div className="bg-[#d09a74] rounded-2 flex items-center p-1">
       <svg viewBox="0 0 24 16" overflow="visible" width={size} height={size}>
         <g
           style={{
