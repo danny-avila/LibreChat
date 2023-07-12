@@ -1,11 +1,16 @@
 import { useForm } from 'react-hook-form';
-import { TLoginUser } from '~/data-provider';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
+import { localize } from '~/localization/Translation';
+import { TLoginUser } from '@librechat/data-provider';
 
 type TLoginFormProps = {
   onSubmit: (data: TLoginUser) => void;
 };
 
 function LoginForm({ onSubmit }: TLoginFormProps) {
+  const lang = useRecoilValue(store.lang);
+
   const {
     register,
     handleSubmit,
@@ -25,20 +30,20 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
             type="text"
             id="email"
             autoComplete="email"
-            aria-label="Email"
+            aria-label={localize(lang, 'com_auth_email')}
             {...register('email', {
-              required: 'Email is required',
+              required: localize(lang, 'com_auth_email_required'),
               minLength: {
                 value: 3,
-                message: 'Email must be at least 6 characters'
+                message: localize(lang, 'com_auth_email_min_length')
               },
               maxLength: {
                 value: 120,
-                message: 'Email should not be longer than 120 characters'
+                message: localize(lang, 'com_auth_email_max_length')
               },
               pattern: {
                 value: /\S+@\S+\.\S+/,
-                message: 'You must enter a valid email address'
+                message: localize(lang, 'com_auth_email_pattern')
               }
             })}
             aria-invalid={!!errors.email}
@@ -49,7 +54,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
             htmlFor="email"
             className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
           >
-            Email address
+            {localize(lang, 'com_auth_email_address')}
           </label>
         </div>
         {errors.email && (
@@ -65,16 +70,16 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
             type="password"
             id="password"
             autoComplete="current-password"
-            aria-label="Password"
+            aria-label={localize(lang, 'com_auth_password')}
             {...register('password', {
-              required: 'Password is required',
+              required: localize(lang, 'com_auth_password_required'),
               minLength: {
                 value: 8,
-                message: 'Password must be at least 8 characters'
+                message: localize(lang, 'com_auth_password_min_length')
               },
               maxLength: {
                 value: 40,
-                message: 'Password must be 128 characters or less'
+                message: localize(lang, 'com_auth_password_max_length')
               }
             })}
             aria-invalid={!!errors.password}
@@ -85,7 +90,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
             htmlFor="password"
             className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
           >
-            Password
+            {localize(lang, 'com_auth_password')}
           </label>
         </div>
 
@@ -97,7 +102,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
         )}
       </div>
       <a href="/forgot-password" className="text-sm text-green-500 hover:underline">
-        Forgot Password?
+        {localize(lang, 'com_auth_password_forgot')}
       </a>
       <div className="mt-6">
         <button
@@ -105,7 +110,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
           type="submit"
           className="w-full transform rounded-sm bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none"
         >
-          Continue
+          {localize(lang, 'com_auth_continue')}
         </button>
       </div>
     </form>

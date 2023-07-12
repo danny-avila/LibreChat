@@ -1,6 +1,6 @@
 import React from 'react';
-import { useGetStartupConfig } from '~/data-provider';
 import getAppTitle from '~/utils/getAppTitle';
+import { useGetStartupConfig } from '@librechat/data-provider';
 
 export default function Footer() {
   const { data: config } = useGetStartupConfig();

@@ -5,12 +5,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../ui/Dialog.tsx";
-import { General, Billing } from "./SettingsTabs/";
-import { CogIcon } from "~/components/svg"; // Make sure to import the BillingIcon
 import { useEffect, useState } from "react";
-import { cn } from "~/utils/";
-import { useClearConversationsMutation } from "~/data-provider";
-import store from "~/store";
+import { General, Billing } from "./SettingsTabs/";
+import { CogIcon } from '~/components/svg';
+import { cn } from '~/utils/';
+import { useClearConversationsMutation } from '@librechat/data-provider';
+import store from '~/store';
 
 export default function Settings({ open, onOpenChange }) {
   const { newConversation } = store.useConversation();

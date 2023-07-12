@@ -11,10 +11,25 @@ router.get('/', async function (req, res) {
       && !!process.env.OPENID_SESSION_SECRET;
     const openidLabel = process.env.OPENID_BUTTON_LABEL || 'Login with OpenID';
     const openidImageUrl = process.env.OPENID_IMAGE_URL;
+    const githubLoginEnabled = !!process.env.GITHUB_CLIENT_ID && !!process.env.GITHUB_CLIENT_SECRET;
+    const discordLoginEnabled = !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET;
     const serverDomain = process.env.DOMAIN_SERVER || 'http://localhost:3080';
     const registrationEnabled = process.env.ALLOW_REGISTRATION === 'true';
-
-    return res.status(200).send({appTitle, googleLoginEnabled, openidLoginEnabled, openidLabel, openidImageUrl, serverDomain, registrationEnabled});
+    const socialLoginEnabled = process.env.ALLOW_SOCIAL_LOGIN === 'true';
+    
+    return res.status(200).send({
+      appTitle,
+      googleLoginEnabled,
+      openidLoginEnabled,
+      openidLabel,
+      openidImageUrl,
+      githubLoginEnabled,
+      discordLoginEnabled,
+      serverDomain,
+      registrationEnabled,
+      socialLoginEnabled
+    });
+    
   } catch (err) {
     console.error(err);
     return res.status(500).send({error: err.message});

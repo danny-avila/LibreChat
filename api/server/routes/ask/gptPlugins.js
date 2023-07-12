@@ -117,8 +117,8 @@ const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, con
             parentMessageId: overrideParentMessageId || userMessageId,
             text: partialText,
             model: endpointOption.modelOptions.model,
-            unfinished: false,
-            cancelled: true,
+            unfinished: true,
+            cancelled: false,
             error: false
           });
         }
@@ -167,11 +167,16 @@ const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, con
       ...endpointOption
     };
 
-    if (process.env.PLUGINS_USE_AZURE === 'true') {
+    let oaiApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
+    if (process.env.PLUGINS_USE_AZURE) {
       clientOptions.azure = getAzureCredentials();
+      oaiApiKey = clientOptions.azure.azureOpenAIApiKey;
     }
 
-    const oaiApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
+    if (oaiApiKey && oaiApiKey.includes('azure') && !clientOptions.azure) {
+      clientOptions.azure = JSON.parse(req.body?.token) ?? getAzureCredentials();
+      oaiApiKey = clientOptions.azure.azureOpenAIApiKey;
+    }
     const chatAgent = new PluginsClient(oaiApiKey, clientOptions);
 
     const onAgentAction = (action) => {

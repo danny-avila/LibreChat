@@ -64,6 +64,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Mac Install](docs/install/mac_install.md)
   * [Windows Install](docs/install/windows_install.md)
   * [APIs and Tokens](docs/install/apis_and_tokens.md)
+  * [User Auth System](docs/install/user_auth_system.md)
 </details>
 
 <details>
@@ -85,7 +86,6 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
     * [Wolfram](docs/features/plugins/wolfram.md)
     * [Make Your Own Plugin](docs/features/plugins/make_your_own.md)
 
-  * [User Auth System](docs/features/user_auth_system.md)
   * [Proxy](docs/features/proxy.md)
   * [Bing Jailbreak](docs/features/bing_jailbreak.md)
 </details>
@@ -97,6 +97,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Heroku](docs/deployment/heroku.md)
   * [Linode](docs/deployment/linode.md)
   * [Cloudflare](docs/deployment/cloudflare.md)
+  * [Ngrok](docs/deployment/ngrok.md)
 </details>
 
 <details>

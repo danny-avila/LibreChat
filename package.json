@@ -1,19 +1,22 @@
 {
   "name": "LibreChat",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "",
   "workspaces": [
     "api",
-    "client"
+    "client",
+    "packages/data-provider"
   ],
   "scripts": {
     "install": "node config/install.js",
     "upgrade": "node config/upgrade.js",
     "create-user": "node config/create-user.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
-    "backend-dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
-    "frontend": "cd client && npm run build",
-    "frontend-dev": "cd client && npm run dev",
+    "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
+    "build:data-provider": "cd packages/data-provider && npm run build && npm link && cd ../../client && npm link @librechat/data-provider",
+    "frontend": "npm run build:data-provider && cd client && npm run build",
+    "frontend:ci": "npm run build:data-provider && cd client && npm run build:ci",
+    "frontend:dev": "cd client && npm run dev",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
     "e2e:ci": "playwright test --config=e2e/playwright.config.ts",
     "e2e:debug": "cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
@@ -60,15 +63,20 @@
     "@reach/dialog": "^0.18.0",
     "@stripe/react-stripe-js": "^2.1.0",
     "@stripe/stripe-js": "^1.54.0",
-    "axios": "^1.4.0",
     "langchain": "^0.0.91",
-    "stripe": "^12.9.0"
+    "stripe": "^12.9.0",
+    "axios": "^1.4.0",
+    "passport": "^0.6.0",
+    "passport-discord": "^0.1.4",
+    "passport-github2": "^0.1.12"
   },
   "nodemonConfig": {
     "ignore": [
       "api/data/",
       "data",
-      "client/"
+      "client/",
+      "admin/",
+      "packages/"
     ]
   }
 }

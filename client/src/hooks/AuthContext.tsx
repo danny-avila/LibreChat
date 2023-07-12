@@ -16,7 +16,7 @@ import {
   useGetUserQuery,
   useRefreshTokenMutation,
   TLoginUser
-} from '~/data-provider';
+} from '@librechat/data-provider';
 import { useNavigate } from 'react-router-dom';
 
 export type TAuthContext = {
@@ -35,10 +35,20 @@ export type TUserContext = {
   redirect?: string;
 };
 
+export type TAuthConfig = {
+  loginRedirect: string;
+};
+//@ts-ignore - index expression is not of type number
 window['errorTimeout'] = undefined;
 const AuthContext = createContext<TAuthContext | undefined>(undefined);
 
-const AuthContextProvider = ({ children }: { children: ReactNode }) => {
+const AuthContextProvider = ({
+  authConfig,
+  children
+}: {
+  authConfig: TAuthConfig;
+  children: ReactNode;
+}) => {
   const [user, setUser] = useState<TUser | undefined>(undefined);
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -60,7 +70,7 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
         setError(error);
       }, 400);
     }
-  }
+  };
 
   const setUserContext = useCallback(
     (userContext: TUserContext) => {
@@ -73,13 +83,13 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
       setTokenHeader(token);
       setIsAuthenticated(isAuthenticated);
       if (redirect) {
-        navigate(redirect);
+        navigate(redirect, { replace: true });
       }
     },
     [navigate]
   );
 
-  const getCookieValue = (key) => {
+  const getCookieValue = (key: string) => {
     let keyValue = document.cookie.match('(^|;) ?' + key + '=([^;]*)(;|$)');
     return keyValue ? keyValue[2] : null;
   };
@@ -91,7 +101,8 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
         setUserContext({ token, isAuthenticated: true, user, redirect: '/chat/new' });
       },
       onError: (error) => {
-        doSetError(error.message);
+        doSetError((error as Error).message);
+        navigate('/login', { replace: true });
       }
     });
   };
@@ -112,7 +123,7 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
         });
       },
       onError: (error) => {
-        doSetError(error.message);
+        doSetError((error as Error).message);
       }
     });
   };
@@ -121,9 +132,8 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
     if (userQuery.data) {
       setUser(userQuery.data);
     } else if (userQuery.isError) {
-      //@ts-ignore - userQuery.error is of type unknown
-      doSetError(userQuery?.error.message);
-      navigate('/login');
+      doSetError((userQuery?.error as Error).message);
+      navigate('/login', { replace: true });
     }
     if (error && isAuthenticated) {
       doSetError(undefined);
@@ -133,7 +143,7 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
       if (tokenFromCookie) {
         setUserContext({ token: tokenFromCookie, isAuthenticated: true, user: userQuery.data });
       } else {
-        navigate('/login');
+        navigate('/login', { replace: true });
       }
     }
   }, [
@@ -157,7 +167,7 @@ const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   //       setError(error.message);
   //     }
   //   });
-  //   
+  //
   // }, [setUserContext]);
 
   // useEffect(() => {

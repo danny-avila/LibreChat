@@ -3,7 +3,7 @@ const Token = require('../../models/schema/tokenSchema');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { registerSchema } = require('../../strategies/validators');
-const { migrateDataToFirstUser, sendEmail } = require('../../utils');
+const { sendEmail } = require('../../utils');
 const config = require('../../../config/loader');
 const domains = config.domains;
 
@@ -91,9 +91,6 @@ const registerUser = async (user) => {
     newUser.password = hash;
     newUser.save();
 
-    if (isFirstRegisteredUser) {
-      migrateDataToFirstUser(newUser);
-    }
     return { status: 200, user: newUser };
   } catch (err) {
     return { status: 500, message: err?.message || 'Something went wrong' };

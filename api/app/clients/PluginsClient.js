@@ -86,7 +86,7 @@ class PluginsClient extends OpenAIClient {
     const preliminaryAnswer =
       result.output?.length > 0 ? `Preliminary Answer: "${result.output.trim()}"` : '';
     const prefix = preliminaryAnswer
-      ? `review and improve the answer you generated using plugins in response to the User Message below. The user hasn't seen your answer or thoughts yet.`
+      ? 'review and improve the answer you generated using plugins in response to the User Message below. The user hasn\'t seen your answer or thoughts yet.'
       : 'respond to the User Message below based on your preliminary thoughts & actions.';
 
     return `As a helpful AI Assistant, ${prefix}${errorMessage}\n${internalActions}
@@ -153,8 +153,13 @@ Only respond with your conversational reply to the following User Message:
 
   createLLM(modelOptions, configOptions) {
     let credentials = { openAIApiKey: this.openAIApiKey };
+    let configuration = {
+      apiKey: this.openAIApiKey,
+    };
+
     if (this.azure) {
-      credentials = { ...this.azure };
+      credentials = {};
+      configuration = {};
     }
 
     if (this.options.debug) {
@@ -162,7 +167,7 @@ Only respond with your conversational reply to the following User Message:
       console.debug(configOptions);
     }
 
-    return new ChatOpenAI({ credentials, ...modelOptions }, configOptions);
+    return new ChatOpenAI({ credentials, configuration, ...modelOptions }, configOptions);
   }
 
   async initialize({ user, message, onAgentAction, onChainEnd, signal }) {
@@ -230,17 +235,10 @@ Only respond with your conversational reply to the following User Message:
     };
 
     // Map Messages to Langchain format
-    const pastMessages = this.currentMessages.map(
+    const pastMessages = this.currentMessages.slice(0, -1).map(
       msg => msg?.isCreatedByUser || msg?.role?.toLowerCase() === 'user'
         ? new HumanChatMessage(msg.text)
         : new AIChatMessage(msg.text));
-
-    if (this.options.debug) {
-      console.debug('Current Messages');
-      console.debug(this.currentMessages);
-      console.debug('Past Messages');
-      console.debug(pastMessages);
-    }
 
     // initialize agent
     const initializer = this.functionsAgent ? initializeFunctionsAgent : initializeCustomAgent;
@@ -346,6 +344,8 @@ Only respond with your conversational reply to the following User Message:
       onChainEnd,
     } = await this.handleStartMethods(message, opts);
 
+    this.currentMessages.push(userMessage);
+
     let { prompt: payload, tokenCountMap, promptTokens, messages } = await this.buildMessages(
       this.currentMessages,
       userMessage.messageId,
@@ -355,19 +355,15 @@ Only respond with your conversational reply to the following User Message:
       }),
     );
 
-    if (this.options.debug) {
-      console.debug('buildMessages: Messages');
-      console.debug(messages);
-    }
-
     if (tokenCountMap) {
-      payload = payload.map((message, i) => {
-        const { tokenCount, ...messageWithoutTokenCount } = message;
-        // userMessage is always the last one in the payload
-        if (i === payload.length - 1) {
-          userMessage.tokenCount = message.tokenCount;
-          console.debug(`Token count for user message: ${tokenCount}`, `Instruction Tokens: ${tokenCountMap.instructions || 'N/A'}`);
-        }
+      console.dir(tokenCountMap, { depth: null })
+      if (tokenCountMap[userMessage.messageId]) {
+        userMessage.tokenCount = tokenCountMap[userMessage.messageId];
+        console.log('userMessage.tokenCount', userMessage.tokenCount);
+      }
+      payload = payload.map((message) => {
+        const messageWithoutTokenCount = message;
+        delete messageWithoutTokenCount.tokenCount;
         return messageWithoutTokenCount;
       });
       this.handleTokenCountMap(tokenCountMap);
@@ -477,25 +473,15 @@ Only respond with your conversational reply to the following User Message:
 
     let promptBody = '';
     const maxTokenCount = this.maxPromptTokens;
-
     // Iterate backwards through the messages, adding them to the prompt until we reach the max token count.
     // Do this within a recursive async function so that it doesn't block the event loop for too long.
     const buildPromptBody = async () => {
       if (currentTokenCount < maxTokenCount && orderedMessages.length > 0) {
         const message = orderedMessages.pop();
-        // const roleLabel = message.role === 'User' ? this.userLabel : this.chatGptLabel;
-        const roleLabel = message.role;
+        const isCreatedByUser = message.isCreatedByUser || message.role?.toLowerCase() === 'user';
+        const roleLabel = isCreatedByUser ? this.userLabel : this.chatGptLabel;
         let messageString = `${this.startToken}${roleLabel}:\n${message.text}${this.endToken}\n`;
-        let newPromptBody;
-        if (promptBody) {
-          newPromptBody = `${messageString}${promptBody}`;
-        } else {
-          // Always insert prompt prefix before the last user message, if not gpt-3.5-turbo.
-          // This makes the AI obey the prompt instructions better, which is important for custom instructions.
-          // After a bunch of testing, it doesn't seem to cause the AI any confusion, even if you ask it things
-          // like "what's the last thing I wrote?".
-          newPromptBody = `${promptPrefix}${messageString}${promptBody}`;
-        }
+        let newPromptBody = `${messageString}${promptBody}`;
 
         const tokenCountForMessage = this.getTokenCount(messageString);
         const newTokenCount = currentTokenCount + tokenCountForMessage;
@@ -525,7 +511,7 @@ Only respond with your conversational reply to the following User Message:
     currentTokenCount += 2;
 
     if (this.isGpt3 && messagePayload.content.length > 0) {
-      const context = `Chat History:\n`;
+      const context = 'Chat History:\n';
       messagePayload.content = `${context}${prompt}`;
       currentTokenCount += this.getTokenCount(context);
     }
@@ -544,7 +530,7 @@ Only respond with your conversational reply to the following User Message:
     const result = [messagePayload, instructionsPayload];
 
     if (this.functionsAgent && !this.isGpt3) {
-      result[1].content = `${result[1].content}\nSure thing! Here is the output you requested:\n`;
+      result[1].content = `${result[1].content}\n${this.startToken}${this.chatGptLabel}:\nSure thing! Here is the output you requested:\n`;
     }
 
     return result.filter((message) => message.content.length > 0);

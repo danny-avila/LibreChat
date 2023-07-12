@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useAuthContext } from '~/hooks/AuthContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 
@@ -11,9 +12,10 @@ import {
   useGetMessagesByConvoId,
   useGetConversationByIdMutation,
   useGetStartupConfig
-} from '~/data-provider';
+} from '@librechat/data-provider';
 
 export default function Chat() {
+  const { isAuthenticated } = useAuthContext();
   const [shouldNavigate, setShouldNavigate] = useState(true);
   const searchQuery = useRecoilValue(store.searchQuery);
   const [conversation, setConversation] = useRecoilState(store.conversation);
@@ -28,6 +30,18 @@ export default function Chat() {
   const messagesQuery = useGetMessagesByConvoId(conversationId, { enabled: false });
   const getConversationMutation = useGetConversationByIdMutation(conversationId);
   const { data: config } = useGetStartupConfig();
+
+  useEffect(() => {
+    let timeout = setTimeout(() => {
+      if (!isAuthenticated) {
+        navigate('/login', { replace: true });
+      }
+    }, 300)
+
+    return () => {
+      clearTimeout(timeout);
+    }
+  }, [isAuthenticated, navigate]);
 
   useEffect(() => {
     if (!isSubmitting && !shouldNavigate) {
@@ -53,7 +67,7 @@ export default function Chat() {
         onError: (error) => {
           console.error('Failed to fetch the conversation');
           console.error(error);
-          navigate(`/chat/new`);
+          navigate('/chat/new');
           newConversation();
           setShouldNavigate(true);
         }
@@ -62,7 +76,7 @@ export default function Chat() {
     }
     // No current conversation and no conversationId
     else if (conversation === null) {
-      navigate(`/chat/new`);
+      navigate('/chat/new');
       setShouldNavigate(true);
     }
     // Current conversationId is 'search'
@@ -100,6 +114,10 @@ export default function Chat() {
       setMessages(null);
     }
   }, [messagesQuery.data, messagesQuery.isError, setMessages]);
+
+  if (!isAuthenticated) {
+    return null;
+  }
 
   // if not a conversation
   if (conversation?.conversationId === 'search') return null;

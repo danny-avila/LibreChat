@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import StopGeneratingIcon from '../svg/StopGeneratingIcon';
+import { StopGeneratingIcon } from '~/components';
 import { Settings } from 'lucide-react';
-import SetTokenDialog from './SetTokenDialog';
-import store from '../../store';
+import { SetTokenDialog } from './SetTokenDialog';
+import store from '~/store';
 
 export default function SubmitButton({
   endpoint,
@@ -16,6 +16,7 @@ export default function SubmitButton({
   const { getToken } = store.useToken(endpoint);
 
   const isTokenProvided = endpointsConfig?.[endpoint]?.userProvide ? !!getToken() : true;
+  const endpointsToHideSetTokens = new Set(['openAI', 'azureOpenAI', 'bingAI']);
 
   const clickHandler = (e) => {
     e.preventDefault();
@@ -38,7 +39,7 @@ export default function SubmitButton({
         </div>
       </button>
     );
-  } else if (!isTokenProvided && (endpoint !== 'openAI' || endpoint !== 'azureOpenAI' )) {
+  } else if (!isTokenProvided && (!endpointsToHideSetTokens.has(endpoint))) {
     return (
       <>
         <button
