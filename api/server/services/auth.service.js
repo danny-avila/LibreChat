@@ -1,32 +1,35 @@
+const Session = require('../../models/Session');
 const User = require('../../models/User');
 const Token = require('../../models/schema/tokenSchema');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { registerSchema } = require('../../strategies/validators');
 const { sendEmail } = require('../../utils');
+const jwt = require('jsonwebtoken');
 const config = require('../../../config/loader');
 const domains = config.domains;
+const isProduction = config.isProduction;
 
 /**
  * Logout user
  *
- * @param {Object} user
+ * @param {String} userId
  * @param {*} refreshToken
  * @returns
  */
-const logoutUser = async (user, refreshToken) => {
+const logoutUser = async (userId, refreshToken) => {
   try {
-    const userFound = await User.findById(user._id);
-    const tokenIndex = userFound.refreshToken.findIndex(
-      (item) => item.refreshToken === refreshToken
-    );
+    // Compute the SHA-256 hash of the refreshToken
+    const hash = crypto.createHash('sha256').update(refreshToken).digest('hex');
 
-    if (tokenIndex !== -1) {
-      userFound.refreshToken.id(userFound.refreshToken[tokenIndex]._id).remove();
+    // Find the session with the matching user and refreshTokenHash
+    const session = await Session.findOne({ user: userId, refreshTokenHash: hash });
+    console.log('Removing Session: ', session);
+    if (session) {
+      await Session.deleteOne({ _id: session._id });
     }
-
-    await userFound.save();
-
+          
+    
     return { status: 200, message: 'Logout successful' };
   } catch (err) {
     return { status: 500, message: err.message };
@@ -83,9 +86,6 @@ const registerUser = async (user) => {
       role: isFirstRegisteredUser ? 'ADMIN' : 'USER'
     });
 
-    // todo: implement refresh token
-    // const refreshToken = newUser.generateRefreshToken();
-    // newUser.refreshToken.push({ refreshToken });
     const salt = bcrypt.genSaltSync(10);
     const hash = bcrypt.hashSync(newUser.password, salt);
     newUser.password = hash;
@@ -176,9 +176,45 @@ const resetPassword = async (userId, token, password) => {
   return { message: 'Password reset was successful' };
 };
 
+/**
+ * Set Auth Tokens
+ *
+ * @param {String} userId
+ * @param {Object} res
+ * @returns
+ */
+const setAuthTokens = async (userId, res) => {
+  const user = await User.findOne({ _id: userId });
+  const token = await user.generateToken();
+  
+  let session = new Session({ user: userId });
+  let refreshToken = await session.generateRefreshToken();
+
+  const tokenExpires = eval(process.env.SESSION_EXPIRY);
+  const refreshTokenExpires = eval(process.env.REFRESH_TOKEN_EXPIRY);
+
+  res.cookie('token', token, {
+      expires: new Date(Date.now() + tokenExpires),
+      httpOnly: false,
+      secure: isProduction
+    }
+  );
+
+  res.cookie('refreshToken', refreshToken, {
+      expires: new Date(Date.now() + refreshTokenExpires),
+      httpOnly: true, // This cookie must be httpOnly
+      secure: isProduction,
+      sameSite: 'strict',
+      signed: true
+    }
+  );
+  return token;
+};
+
 module.exports = {
   registerUser,
   logoutUser,
   requestPasswordReset,
-  resetPassword
+  resetPassword,
+  setAuthTokens
 };

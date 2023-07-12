@@ -11,6 +11,8 @@ const passport = require('passport');
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
 const projectPath = path.join(__dirname, '..', '..', 'client');
+const cookieParser = require('cookie-parser');
+const cookieSecret = process.env.COOKIE_SECRET;
 
 // Init the config and validate it
 const config = require('../../config/loader');
@@ -37,6 +39,7 @@ config.validate(); // Validate the config
   }
 
   // OAUTH
+  app.use(cookieParser(cookieSecret));
   app.use(passport.initialize());
   require('../strategies/jwtStrategy');
   require('../strategies/localStrategy');

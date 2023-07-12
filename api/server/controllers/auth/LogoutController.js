@@ -3,8 +3,11 @@ const { logoutUser } = require('../../services/auth.service');
 const logoutController = async (req, res) => {
   const { signedCookies = {} } = req;
   const { refreshToken } = signedCookies;
+  if (!refreshToken) {
+    return res.status(400).json({ message: "Refresh token not found" });
+  } 
   try {
-    const logout = await logoutUser(req.user, refreshToken);
+    const logout = await logoutUser(req.user._id, refreshToken);
     const { status, message } = logout;
     res.clearCookie('token');
     res.clearCookie('refreshToken');
