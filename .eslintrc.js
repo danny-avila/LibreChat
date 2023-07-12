@@ -13,6 +13,9 @@ module.exports = {
     'plugin:jest/recommended',
     'prettier'
   ],
+  ignorePatterns: [
+    'packages/data-provider/types/**/*',
+  ],
   parser: '@typescript-eslint/parser',
   parserOptions: {
     ecmaVersion: 'latest',
