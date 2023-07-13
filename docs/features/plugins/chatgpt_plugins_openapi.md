@@ -1,8 +1,22 @@
 # Using official ChatGPT Plugins / OpenAPI specs
 
-ChatGPT plugins are API integrations for OpenAI models that extend their capabilities. They are structured around three key components: an API, an **OpenAPI specification** (spec for short), and a JSON **Plugin Manifest** file. To learn more about them, or how to make your own, read here: [ChatGPT Plugins: Getting Started](https://platform.openai.com/docs/plugins/getting-started).
+ChatGPT plugins are API integrations for OpenAI models that extend their capabilities. They are structured around three key components: an API, an **OpenAPI specification** (spec for short), and a JSON **Plugin Manifest** file. 
 
-Thanks to the introduction of [OpenAI Functions](https://openai.com/blog/function-calling-and-other-api-updates) and their utilization in [Langchain](https://js.langchain.com/docs/modules/chains/openai_functions/openapi), it's now possible to directly use OpenAI Plugins from LibreChat, without building any custom langchain tools. The main use case we gain from integrating them to LibreChat is to allow use of plugins with gpt-3.5 models, and without ChatGPT Plus. They also find a great use case when you want to limit your own private API's interactions with chat.openai.com and their servers in favor of a self-hosted LibreChat instance.
+To learn more about them, or how to make your own, read here: [ChatGPT Plugins: Getting Started](https://platform.openai.com/docs/plugins/getting-started).
+
+Thanks to the introduction of [OpenAI Functions](https://openai.com/blog/function-calling-and-other-api-updates) and their utilization in [Langchain](https://js.langchain.com/docs/modules/chains/openai_functions/openapi), it's now possible to directly use OpenAI Plugins through LibreChat, without building any custom langchain tools. The main use case we gain from integrating them to LibreChat is to allow use of plugins with gpt-3.5 models, and without ChatGPT Plus. They also find a great use case when you want to limit your own private API's interactions with chat.openai.com and their servers in favor of a self-hosted LibreChat instance.
+
+### Table of Contents
+- [Intro](#intro)
+- [Adding a Plugin](#adding-a-plugin)
+- [Editing Manifest Files](#editing-manifest-files)
+  - [Override Parameter Values](#override-parameter-values)
+  - [Add Header Fields](#add-header-fields)
+  - [Custom OpenAPI Spec files](#custom-openapi-spec-files)
+  - [Plugins with Authentication](#plugins-with-authentication)
+- [Disclaimers](#disclaimers)
+
+## Intro
 
 Before continuing, it's important to fully distinguish what a Manifest file is vs. an OpenAPI specification.
 
@@ -141,21 +155,12 @@ Important: Some ChatGPT plugins may use Bearer Auth., but have either stale veri
 
 Use of ChatGPT Plugins is only possible with official OpenAI models and their use of [Functions](https://platform.openai.com/docs/api-reference/chat/create#chat/create-functions). If you are accessing OpenAI models via reverse proxy through some 3rd party service, function calling may not be supported.
 
-It is recommended to prefer custom Langchain Tools over ChatGPT Plugins/OpenAPI specs as this can be more token-efficient, especially with OpenAI Functions.
+Custom Langchain Tools are preferred over ChatGPT Plugins/OpenAPI specs as this can be more token-efficient, especially with OpenAI Functions. A better alternative may be to make a Langchain tool modelled after an OpenAPI spec, for which I'll make a guide soon.
 
-LibreChat's implementation is not 1:1 with ChatGPT's, as OpenAI has a robust exclusive, and restricted authentication pipeline with its models & specific plugins, which are not as limited by context windows and token usage. Some plugins requiring authentication will not work, especially those with OAuth and some may not be used in the same manner, especially those requiring multi-step API calls. 
+LibreChat's implementation is not 1:1 with ChatGPT's, as OpenAI has a robust, exclusive, and restricted authentication pipeline with its models & specific plugins, which are not as limited by context windows and token usage. Furthermore, some of their hosted plugins requiring authentication will not work, especially those with OAuth or stale verification tokens, and some may not be handled by the LLM in the same manner, especially those requiring multi-step API calls.
 
-Some plugins may detect that the API call does not originate from OpenAI's servers, and/or will need special handling or editing of their manifest/spec files. This is not to say plugin use will not improve and more closely mirror how ChatGPT handles plugins, but there is still work to do to this end. In short, some will work perfectly while others may not work at all. 
+Some plugins may detect that the API call does not originate from OpenAI's servers, will either be defunct outside of chat.openai.com or need special handling, and/or editing of their manifest/spec files. This is not to say plugin use will not improve and more closely mirror how ChatGPT handles plugins, but there is still work to this end. In short, some will work perfectly while others may not work at all. 
 
-The use of ChatGPT Plugins with LibreChat does not violate OpenAI's Terms of Service. I have thoroughly reviewed the "Service Terms" and "Usage Policies" sections of the Terms of Service, and here are the key points. In most marketplace scenarios, the host, in this case OpenAI, is not responsible for the plugins and their usage outside of their platform, chat.openai.com. Furthermore, there is no explicit mention of restrictions on accessing data that is not directly displayed to the user. Therefore, accessing the payload of their plugins for display purposes is not in violation of their Terms of Service.
+The use of ChatGPT Plugins with LibreChat does not violate OpenAI's [Terms of Service](https://openai.com/policies/terms-of-use). According to their [Service Terms](https://openai.com/policies/service-terms) and [Usage Policies](https://openai.com/policies/usage-policies), the host, in this case OpenAI, is not responsible for the plugins hosted on their site and their usage outside of their platform, chat.openai.com. Furthermore, there is no explicit mention of restrictions on accessing data that is not directly displayed to the user. Therefore, accessing the payload of their plugins for display purposes is not in violation of their Terms of Service.
 
-Primary sources:
-
-https://openai.com/policies/terms-of-use
-
-https://openai.com/policies/usage-policies
-
-https://openai.com/policies/service-terms
-
-
-Please note that the ChatGPT Plugins integration is currently in an alpha state, and you may encounter errors. Although preliminary testing has been conducted, not all plugins have been thoroughly tested. Some of the errors may be caused by the plugin itself therefore will also not work on https://chat.openai.com/. If you encounter any errors, double checking if they work on the official site is advisable before reporting them as a GitHub issue. I can only speak for the ones I tested.
+Please note that the ChatGPT Plugins integration is currently in an alpha state, and you may encounter errors. Although preliminary testing has been conducted, not all plugins have been thoroughly tested, and you may find that some I haven't added will not work for any one of the reasons I've mentioned above. Some of the errors may be caused by the plugin itself, and will also not work on https://chat.openai.com/. If you encounter any errors, double checking if they work on the official site is advisable before reporting them as a GitHub issue. I can only speak for the ones I tested and included, and the date of inclusion.
