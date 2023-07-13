@@ -1,6 +1,6 @@
 import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router-dom';
 import React, { useEffect } from 'react';
-import ReactGA from 'react-ga';
+import { gtag, install } from 'ga-gtag';
 import Root from './Root';
 import Chat from './Chat';
 import Search from './Search';
@@ -12,8 +12,8 @@ const AuthLayout = () => {
   const location = useLocation();
 
   useEffect(() => {
-    ReactGA.initialize('G-2HYZSSFTSV');
-    ReactGA.pageview(location.pathname + location.search);
+    install('G-2HYZSSFTSV'); // replace 'G-2HYZSSFTSV' with your GA measurement ID
+    gtag('event', 'page_view', { 'page_path': location.pathname + location.search });
   }, [location]);
 
   return (

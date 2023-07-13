@@ -64,6 +64,7 @@
     "@stripe/react-stripe-js": "^2.1.0",
     "@stripe/stripe-js": "^1.54.0",
     "axios": "^1.4.0",
+    "ga-gtag": "^1.1.7",
     "langchain": "^0.0.91",
     "passport": "^0.6.0",
     "passport-discord": "^0.1.4",
