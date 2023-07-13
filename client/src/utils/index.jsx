@@ -42,6 +42,6 @@ export const alternateName = {
   chatGPTBrowser: 'ChatGPT',
   gptPlugins: 'Plugins',
   google: 'PaLM',
-  claude: 'Claude',
+  anthropic: 'Anthropic',
 };
 

@@ -16,10 +16,6 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const endpointName = alternateName[preset?.endpoint] ?? 'Endpoint';
 
-  if (endpointName === 'anthropic') {
-    setEndpointName('Claude');
-  }
-
   const setOption = (param) => (newValue) => {
     let update = {};
     update[param] = newValue;
