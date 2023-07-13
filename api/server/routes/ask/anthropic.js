@@ -18,7 +18,6 @@ router.post('/', requireJwtAuth, async (req, res) => {
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   if (endpoint !== 'anthropic') return handleError(res, { text: 'Illegal request' });
 
-  console.log('ask log', req.body);
   const endpointOption = {
     promptPrefix: req.body?.promptPrefix ?? null,
     modelLabel: req.body?.modelLabel ?? null,
@@ -124,7 +123,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
 
     let response = await client.sendMessage(text, {
       getIds,
-      debug: true,
+      debug: false,
       user: req.user.id,
       conversationId,
       parentMessageId,

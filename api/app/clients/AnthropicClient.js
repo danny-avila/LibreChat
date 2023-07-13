@@ -141,24 +141,44 @@ class AnthropicClient extends BaseClient {
 
     // Iterate backwards through the messages, adding them to the prompt until we reach the max token count.
     // Do this within a recursive async function so that it doesn't block the event loop for too long.
+    // Also, remove the next message when the message that puts us over the token limit is created by the user.
+    // Otherwise, remove only the exceeding message. This is due to Anthropic's strict payload rule to start with "Human:".
+    const nextMessage = {
+      remove: false,
+      tokenCount: 0,
+      messageString: '',
+    };
+
     const buildPromptBody = async () => {
       if (currentTokenCount < maxTokenCount && formattedMessages.length > 0) {
         const message = formattedMessages.pop();
-        const roleLabel = message.author;
-        const messageString = `${roleLabel}\n${message.content}${this.endToken}\n`;
+        const isCreatedByUser = message.author === this.userLabel;
+        const messageString = `${message.author}\n${message.content}${this.endToken}\n`;
         let newPromptBody = `${messageString}${promptBody}`;
 
         context.unshift(message);
 
         const tokenCountForMessage = this.getTokenCount(messageString);
         const newTokenCount = currentTokenCount + tokenCountForMessage;
+
+        if (!isCreatedByUser) {
+          nextMessage.messageString = messageString;
+          nextMessage.tokenCount = tokenCountForMessage;
+        }
+
         if (newTokenCount > maxTokenCount) {
-          if (promptBody) {
-            // This message would put us over the token limit, so don't add it.
-            return false;
+          if (!promptBody) {
+            // This is the first message, so we can't add it. Just throw an error.
+            throw new Error(`Prompt is too long. Max token count is ${maxTokenCount}, but prompt is ${newTokenCount} tokens long.`);
           }
-          // This is the first message, so we can't add it. Just throw an error.
-          throw new Error(`Prompt is too long. Max token count is ${maxTokenCount}, but prompt is ${newTokenCount} tokens long.`);
+
+          // Otherwise, ths message would put us over the token limit, so don't add it.
+          // if created by user, remove next message, otherwise remove only this message
+          if (isCreatedByUser) {
+            nextMessage.remove = true;
+          }
+
+          return false;
         }
         promptBody = newPromptBody;
         currentTokenCount = newTokenCount;
@@ -170,12 +190,19 @@ class AnthropicClient extends BaseClient {
     };
 
     await buildPromptBody();
+
+    if (nextMessage.remove) {
+      promptBody = promptBody.replace(nextMessage.messageString, '');
+      currentTokenCount -= nextMessage.tokenCount;
+      context.shift();
+    }
+
     const prompt = `${promptBody}${promptSuffix}`;
     // Add 2 tokens for metadata after all messages have been counted.
     currentTokenCount += 2;
 
     // Use up to `this.maxContextTokens` tokens (prompt + response), but try to leave `this.maxTokens` tokens for the response.
-    this.modelOptions.max_tokens = Math.min(this.maxContextTokens - currentTokenCount, this.maxResponseTokens);
+    this.modelOptions.maxOutputTokens = Math.min(this.maxContextTokens - currentTokenCount, this.maxResponseTokens);
 
     return { prompt, context };
   }
