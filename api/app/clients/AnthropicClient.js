@@ -53,13 +53,8 @@ class AnthropicClient extends BaseClient {
       stop: modelOptions.stop // no stop method for now
     };
 
-    this.maxContextTokens = this.options.maxContextTokens || 16000;
-
-    if(this.modelOptions.model.endsWith('100k')) {
-      this.maxContextTokens = 100000;
-    }
-
-    this.maxResponseTokens = this.modelOptions.maxOutputTokens || 1024;
+    this.maxContextTokens = this.options.maxContextTokens || 99999;
+    this.maxResponseTokens = this.modelOptions.maxOutputTokens || 1500;
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
 
@@ -219,7 +214,7 @@ class AnthropicClient extends BaseClient {
       prompt: payload,
       model: this.modelOptions.model,
       stream: this.modelOptions.stream || true,
-      max_tokens_to_sample: this.modelOptions.maxOutputTokens || 1024,
+      max_tokens_to_sample: this.modelOptions.maxOutputTokens || 1500,
       metadata,
       ...modelOptions
     };

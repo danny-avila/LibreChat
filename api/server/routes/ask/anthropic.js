@@ -120,7 +120,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
     }
 
-    const client = new AnthropicClient();
+    const client = new AnthropicClient(endpointOption.token);
 
     let response = await client.sendMessage(text, {
       getIds,
