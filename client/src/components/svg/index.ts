@@ -9,4 +9,4 @@ export { default as GoogleIcon } from './GoogleIcon';
 export { default as OpenIDIcon } from './OpenIDIcon';
 export { default as GithubIcon } from './GithubIcon';
 export { default as DiscordIcon } from './DiscordIcon';
-export { default as ClaudeIcon } from './ClaudeIcon';
+export { default as AnthropicIcon } from './AnthropicIcon';

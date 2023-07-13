@@ -1,5 +1,6 @@
-import { Plugin, GPTIcon, BingIcon, ClaudeIcon } from '~/components/svg';
+import { Plugin, GPTIcon, BingIcon, AnthropicIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { cn } from '~/utils'
 
 const getIcon = (props) => {
   const { size = 30, isCreatedByUser, button, model, message = true } = props;
@@ -57,7 +58,8 @@ const getIcon = (props) => {
       name = modelLabel || 'PaLM2';
     } else if (endpoint === 'anthropic') {
       const { modelLabel } = props;
-      icon = <ClaudeIcon size={size * 0.7} />;
+      icon = <AnthropicIcon size={size * 0.7} />;
+      bg = '#d09a74';
       name = modelLabel || 'Claude';
     } else if (endpoint === 'bingAI') {
       const { jailbreak } = props;
@@ -89,9 +91,10 @@ const getIcon = (props) => {
           width: size,
           height: size
         }}
-        className={
-          'relative flex items-center justify-center rounded-sm text-white ' + props?.className
-        }
+        className={cn(
+          'relative flex items-center justify-center rounded-sm text-white ',
+          props?.className ?? '',
+        )}
       >
         {icon}
         {error && (

@@ -17,7 +17,7 @@ const getChatGPTBrowserModels = () => {
   return models;
 };
 const getAnthropicModels = () => {
-  let models = ['claude-1', 'claude-1-100k', 'claude-instant-1', 'claude-instant-1-100k', 'claude-2', 'claude-2-100k'];
+  let models = ['claude-1', 'claude-1-100k', 'claude-instant-1', 'claude-instant-1-100k', 'claude-2'];
   if (process.env.ANTHROPIC_MODELS) models = String(process.env.ANTHROPIC_MODELS).split(',');
 
   return models;
@@ -61,7 +61,7 @@ router.get('/', async function (req, res) {
     ? { availableModels: getOpenAIModels(), userProvide: openAIApiKey === 'user_provided' }
     : false;
   const azureOpenAI = azureOpenAIApiKey
-    ? { availableModels: getOpenAIModels({ azure: true}), userProvide: azureOpenAIApiKey === 'user_provided' }
+    ? { availableModels: getOpenAIModels({ azure: true }), userProvide: azureOpenAIApiKey === 'user_provided' }
     : false;
   const gptPlugins = openAIApiKey || azureOpenAIApiKey
     ? { availableModels: getPluginModels(), availableTools, availableAgents: ['classic', 'functions'], userProvide: userProvidedOpenAI }
