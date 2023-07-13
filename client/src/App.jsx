@@ -6,10 +6,6 @@ import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-qu
 import { ThemeProvider } from './hooks/ThemeContext';
 import { useApiErrorBoundary } from './hooks/ApiErrorBoundaryContext';
 import { router } from './routes';
-import ReactGA from 'react-ga';
-import { useLocation } from 'react-router-dom';
-
-ReactGA.initialize('G-2HYZSSFTSV');
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
@@ -28,24 +24,12 @@ const App = () => {
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
         <ThemeProvider>
-          <RouterProvider router={router}>
-            <PageViewTracker />
-          </RouterProvider>
+          <RouterProvider router={router} />
           <ReactQueryDevtools initialIsOpen={false} position="top-right" />
         </ThemeProvider>
       </RecoilRoot>
     </QueryClientProvider>
   );
-};
-
-const PageViewTracker = () => {
-  const location = useLocation();
-
-  React.useEffect(() => {
-    ReactGA.pageview(location.pathname + location.search);
-  }, [location]);
-
-  return null;
 };
 
 export default () => (

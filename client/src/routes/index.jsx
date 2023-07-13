@@ -1,4 +1,6 @@
-import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
+import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import ReactGA from 'react-ga';
 import Root from './Root';
 import Chat from './Chat';
 import Search from './Search';
@@ -6,12 +8,21 @@ import { Login, Registration, RequestPasswordReset, ResetPassword } from '../com
 import { AuthContextProvider } from '../hooks/AuthContext';
 import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
 
-const AuthLayout = () => (
-  <AuthContextProvider>
-    <Outlet />
-    <ApiErrorWatcher />
-  </AuthContextProvider>
-);
+const AuthLayout = () => {
+  const location = useLocation();
+
+  useEffect(() => {
+    ReactGA.initialize('G-2HYZSSFTSV');
+    ReactGA.pageview(location.pathname + location.search);
+  }, [location]);
+
+  return (
+    <AuthContextProvider>
+      <Outlet />
+      <ApiErrorWatcher />
+    </AuthContextProvider>
+  );
+};
 
 export const router = createBrowserRouter([
   {
