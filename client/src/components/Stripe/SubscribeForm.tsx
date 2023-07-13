@@ -9,7 +9,7 @@ import { loadStripe } from "@stripe/stripe-js";
 import './SubscribeForm.css';
 
 // Add your publishable key
-const stripePromise = loadStripe("pk_test_51MwvEEHKD0byXXClhlIY96bsuIIIcdGgTenVqBnktRp8fzoUHlcI29yTj9ktyqumu2Xk1uz7KptFryWfTZz5Sdj200f3cPZSa3");
+const stripePromise = loadStripe("pk_live_51MwvEEHKD0byXXCl8IzAvUl0oZ7RE6vIz72lWUVYl5rW3zy0u3FiGtIAgsbmqSHbhkTJeZjs5VEbQMNStaaQL9xQ001pwxI3RP");
 
 const SubscribeForm = () => {
   const { user } = useAuthContext();
