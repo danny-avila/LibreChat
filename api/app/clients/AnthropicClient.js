@@ -136,7 +136,7 @@ class AnthropicClient extends BaseClient {
       promptPrefix = `${identityPrefix}${promptPrefix}`;
     }
 
-    let promptSuffix = `${promptPrefix}${this.assistantLabel}\n`; // Prompt AI to respond.
+    const promptSuffix = `${promptPrefix}${this.assistantLabel}\n`; // Prompt AI to respond.
     let currentTokenCount = this.getTokenCount(promptSuffix);
 
     let promptBody = '';
