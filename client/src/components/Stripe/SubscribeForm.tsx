@@ -52,7 +52,7 @@ const SubscribeForm = () => {
       const createSubscriptionResult = await axios.post("/api/stripe/create-subscription", {
         customerId,
         userId: user.id,
-        priceId: "price_1NHVdDHKD0byXXClbugzBz84"
+        priceId: "price_1NHVPpHKD0byXXClYlrta1Qu"
       });
   
       console.log("Subscription Created:", createSubscriptionResult.data);
