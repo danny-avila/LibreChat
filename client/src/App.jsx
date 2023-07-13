@@ -13,7 +13,6 @@ ReactGA.initialize('G-2HYZSSFTSV');
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
-  const location = useLocation();
 
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
@@ -25,20 +24,28 @@ const App = () => {
     })
   });
 
-  useEffect(() => {
-    ReactGA.pageview(location.pathname + location.search);
-  }, [location]);
-
   return (
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
         <ThemeProvider>
-          <RouterProvider router={router} />
+          <RouterProvider router={router}>
+            <PageViewTracker />
+          </RouterProvider>
           <ReactQueryDevtools initialIsOpen={false} position="top-right" />
         </ThemeProvider>
       </RecoilRoot>
     </QueryClientProvider>
   );
+};
+
+const PageViewTracker = () => {
+  const location = useLocation();
+
+  React.useEffect(() => {
+    ReactGA.pageview(location.pathname + location.search);
+  }, [location]);
+
+  return null;
 };
 
 export default () => (
