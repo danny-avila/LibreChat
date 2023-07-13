@@ -2,31 +2,34 @@ import { Plugin, GPTIcon, BingIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 const getIcon = (props) => {
-  const { size = 30, isCreatedByUser, button, model, message = true } = props;
+  const { size = 30, isCreatedByUser, button, model, message = true, hideUser = false } = props;
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const { user } = useAuthContext();
 
-  if (isCreatedByUser)
+  if (isCreatedByUser) {
+    const title = hideUser ? 'User' : user?.name || 'User';
+    const username = hideUser ? 'User' : user.name;
+
     return (
       <div
-        title={user?.name || 'User'}
+        title={title}
         style={{
           width: size,
           height: size
         }}
-        className={`relative flex items-center justify-center` + props?.className}
+        className={'relative flex items-center justify-center' + props?.className}
       >
         <img
           className="rounded-sm"
           src={
             user?.avatar ||
-            `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name || 'User'}&fontFamily=Verdana&fontSize=36`
+            `https://api.dicebear.com/6.x/initials/svg?seed=${username}&fontFamily=Verdana&fontSize=36`
           }
           alt="avatar"
         />
       </div>
     );
-  else if (!isCreatedByUser) {
+  } else if (!isCreatedByUser) {
     const { endpoint, error } = props;
 
     let icon, bg, name;
@@ -51,12 +54,12 @@ const getIcon = (props) => {
       name = 'Plugins';
     } else if (endpoint === 'google') {
       const { modelLabel } = props;
-      icon = <img src="/assets/palm.png" />;
+      icon = <img src="/assets/google-palm.svg" alt="Palm Icon"/>;
       name = modelLabel || 'PaLM2';
     } else if (endpoint === 'bingAI') {
       const { jailbreak } = props;
       icon = <BingIcon size={size * 0.7} />;
-      bg = jailbreak ? `radial-gradient(circle at 90% 110%, #F0F0FA, #D0E0F9)` : `transparent`;
+      bg = jailbreak ? 'radial-gradient(circle at 90% 110%, #F0F0FA, #D0E0F9)' : 'transparent';
       name = jailbreak ? 'Sydney' : 'BingAI';
     } else if (endpoint === 'chatGPTBrowser') {
       icon = <GPTIcon size={size * 0.7} />;
@@ -67,11 +70,11 @@ const getIcon = (props) => {
       name = 'ChatGPT';
     } else if (endpoint === null) {
       icon = <GPTIcon size={size * 0.7} />;
-      bg = `grey`;
+      bg = 'grey';
       name = 'N/A';
     } else {
       icon = <GPTIcon size={size * 0.7} />;
-      bg = `grey`;
+      bg = 'grey';
       name = 'UNKNOWN';
     }
 
@@ -84,7 +87,7 @@ const getIcon = (props) => {
           height: size
         }}
         className={
-          `relative flex items-center justify-center rounded-sm text-white ` + props?.className
+          'relative flex items-center justify-center rounded-sm text-white ' + props?.className
         }
       >
         {icon}

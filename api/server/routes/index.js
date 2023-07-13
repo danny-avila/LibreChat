@@ -11,6 +11,7 @@ const { router: endpoints } = require('./endpoints');
 const plugins = require('./plugins');
 const user = require('./user');
 const config = require('./config');
+const leaderboard = require('./leaderboard');
 
 module.exports = {
   search,
@@ -25,5 +26,6 @@ module.exports = {
   tokenizer,
   endpoints,
   plugins,
-  config
+  config,
+  leaderboard
 };

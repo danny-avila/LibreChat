@@ -1,16 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('Navigation suite', () => {
-  let myBrowser;
-
-  test.beforeEach(async ({ browser }) => {
-    myBrowser = await browser.newContext({
-      storageState: 'e2e/auth.json',
-    });
-  });
-
-  test('Navigation bar', async () => {
-    const page = await myBrowser.newPage();
+  test('Navigation bar', async ({ page }) => {
     await page.goto('http://localhost:3080/');
 
     await page.locator('[id="headlessui-menu-button-\\:r0\\:"]').click();
@@ -18,8 +9,7 @@ test.describe('Navigation suite', () => {
     expect(navBar).toBeTruthy();
   });
 
-  test('Settings modal', async () => {
-    const page = await myBrowser.newPage();
+  test('Settings modal', async ({ page }) => {
     await page.goto('http://localhost:3080/');
     await page.locator('[id="headlessui-menu-button-\\:r0\\:"]').click();
     await page.getByText('Settings').click();

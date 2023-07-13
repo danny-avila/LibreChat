@@ -39,6 +39,7 @@ meili_data/
 api/node_modules/
 client/node_modules/
 bower_components/
+types/
 
 # Floobits
 .floo
@@ -48,10 +49,9 @@ bower_components/
 
 # Environment
 .npmrc
-.env
-!.env.example
-!.env.test.example
 .env*
+!**/.env.example
+!**/.env.test.example
 cache.json
 api/data/
 owner.yml
@@ -66,10 +66,13 @@ src/style - official.css
 .idea
 *.pem
 config.local.ts
-storageState.json
+**/storageState.json
 junit.xml
 
 # meilisearch
 meilisearch
 data.ms/*
 auth.json
+
+/packages/ux-shared/
+/images

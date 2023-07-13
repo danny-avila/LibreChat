@@ -1,6 +1,6 @@
 # Plugins Endpoint
 
-![image](https://github.com/danny-avila/LibreChat/assets/110412045/0ba6c38c-4014-4c3a-a671-d2d64bb2490a)
+![introduction-1](https://github.com/danny-avila/LibreChat/assets/32828263/7e426681-2bef-4dfc-9b4e-0cf2c09cb1d5)
 
 The plugins endpoint opens the door to prompting LLMs in new ways other than traditional input/output prompting.
 
@@ -17,17 +17,17 @@ More than this, you can use this endpoint for changing your conversation setting
 
 The LLM process when using Plugins is illustrated below.
 
-![Untitled-2023-06-04-1543(1)](https://github.com/danny-avila/LibreChat/assets/110412045/88483ba0-6b09-43dd-9b70-fb9778871c91)
+![introduction-2](https://github.com/danny-avila/LibreChat/assets/32828263/789406e1-7345-43d2-823b-8aed0588bb78)
 
 **When you open the settings with the Plugins endpoint selected, you will view the default settings for the Completion Phase.**
 
 Clicking on **"Show Agent Settings"** will allow you to modify parameters for the thinking phase
 
-![image](https://github.com/danny-avila/LibreChat/assets/110412045/3d0a1e23-b111-459a-a1bc-19ff9262c2b6)
+![introduction-3](https://github.com/danny-avila/LibreChat/assets/32828263/f3cf33d0-701f-409d-8ef6-f336993df55d)
 
 ---
 
-![image](https://github.com/danny-avila/LibreChat/assets/110412045/87e5ba8a-194b-4ca3-bec4-820f7434c8c8)
+![introduction-4](https://github.com/danny-avila/LibreChat/assets/32828263/c6a33fb2-aa14-4a88-9467-9f2c429e6338)
 
 - You can specify which plugins you would like to select from by installing/uninstalling them in the Plugin store
 - See this guide on how to create your own plugins (WIP)
@@ -68,8 +68,7 @@ Clicking on **"Show Agent Settings"** will allow you to modify parameters for th
 
 ### Showcase
 
-![image](https://github.com/danny-avila/LibreChat/assets/110412045/c5d3aba8-8ab5-4f41-a1fa-202ece5849db)
+![introduction-5](https://github.com/danny-avila/LibreChat/assets/32828263/40cd1989-437f-49bb-9055-010e3efc468b)
 
-
-![image](https://github.com/danny-avila/LibreChat/assets/110412045/9ddeb874-4323-45a3-b2aa-5492bc324716)
+![introduction-6](https://github.com/danny-avila/LibreChat/assets/32828263/b009a094-7311-45fb-a7ea-f5010f32ec45)
 
