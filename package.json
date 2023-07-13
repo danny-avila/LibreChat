@@ -63,12 +63,13 @@
     "@reach/dialog": "^0.18.0",
     "@stripe/react-stripe-js": "^2.1.0",
     "@stripe/stripe-js": "^1.54.0",
-    "langchain": "^0.0.91",
-    "stripe": "^12.9.0",
     "axios": "^1.4.0",
+    "langchain": "^0.0.91",
     "passport": "^0.6.0",
     "passport-discord": "^0.1.4",
-    "passport-github2": "^0.1.12"
+    "passport-github2": "^0.1.12",
+    "react-ga": "^3.3.1",
+    "stripe": "^12.9.0"
   },
   "nodemonConfig": {
     "ignore": [
