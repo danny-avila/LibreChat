@@ -7,8 +7,8 @@ const {
 } = require('@dqbd/tiktoken');
 const Anthropic = require('@anthropic-ai/sdk');
 
-const HUMAN_PROMPT = '\n\nHuman';
-const AI_PROMPT = '\n\nAssistant';
+const HUMAN_PROMPT = '\n\nHuman:';
+const AI_PROMPT = '\n\nAssistant:';
 
 const tokenizersCache = {};
 
@@ -20,6 +20,8 @@ class AnthropicClient extends BaseClient {
     this.conversationsCache = new Keyv(cacheOptions);
     this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
     this.sender = 'Anthropic';
+    this.userLabel = HUMAN_PROMPT;
+    this.assistantLabel = AI_PROMPT;
     this.setOptions(options);
   }
 
@@ -35,7 +37,6 @@ class AnthropicClient extends BaseClient {
       this.options = {
         ...this.options,
         ...options,
-        debug: false
       };
     } else {
       this.options = options;
@@ -70,9 +71,6 @@ class AnthropicClient extends BaseClient {
       );
     }
 
-    this.userLabel = this.options.userLabel || HUMAN_PROMPT;
-    this.assistantLabel = this.options.modelLabel || AI_PROMPT;
-
     this.startToken = '||>';
     this.endToken = '';
     this.gptEncoder = this.constructor.getTokenizer('cl100k_base');
@@ -82,7 +80,7 @@ class AnthropicClient extends BaseClient {
       if (this.endToken && this.endToken !== this.startToken) {
         stopTokens.push(this.endToken);
       }
-      stopTokens.push(`\n${this.userLabel}:`);
+      stopTokens.push(`${this.userLabel}`);
       stopTokens.push('<|diff_marker|>');
 
       this.modelOptions.stop = stopTokens;
@@ -116,7 +114,14 @@ class AnthropicClient extends BaseClient {
       content: message?.content ?? message.text
     }));
 
-    // const defaultPrefix = `\nRemember your instructions:\nYou are Claude, a large language model trained by Anthropic. Respond conversationally.\nCurrent date: ${this.currentDateString}${this.endToken}`
+    let identityPrefix = '';
+    if (this.options.userLabel) {
+      identityPrefix = `\nHuman's name: ${this.options.userLabel}`;
+    }
+
+    if (this.options.modelLabel) {
+      identityPrefix = `${identityPrefix}\nYou are ${this.options.modelLabel}`;
+    }
 
     let promptPrefix = (this.options.promptPrefix || '').trim();
     if (promptPrefix) {
@@ -124,10 +129,14 @@ class AnthropicClient extends BaseClient {
       if (!promptPrefix.endsWith(`${this.endToken}`)) {
         promptPrefix = `${promptPrefix.trim()}${this.endToken}\n\n`;
       }
-      promptPrefix = `\nRemember your instructions:\n${promptPrefix}`;
+      promptPrefix = `\nContext:\n${promptPrefix}`;
     }
 
-    const promptSuffix = `${promptPrefix}${this.assistantLabel}:\n`; // Prompt AI to respond.
+    if (identityPrefix) {
+      promptPrefix = `${identityPrefix}${promptPrefix}`;
+    }
+
+    let promptSuffix = `${promptPrefix}${this.assistantLabel}\n`; // Prompt AI to respond.
     let currentTokenCount = this.getTokenCount(promptSuffix);
 
     let promptBody = '';
@@ -141,7 +150,7 @@ class AnthropicClient extends BaseClient {
       if (currentTokenCount < maxTokenCount && formattedMessages.length > 0) {
         const message = formattedMessages.pop();
         const roleLabel = message.author;
-        const messageString = `${roleLabel}:\n${message.content}${this.endToken}\n`;
+        const messageString = `${roleLabel}\n${message.content}${this.endToken}\n`;
         let newPromptBody = `${messageString}${promptBody}`;
 
         context.unshift(message);
@@ -167,9 +176,6 @@ class AnthropicClient extends BaseClient {
 
     await buildPromptBody();
     const prompt = `${promptBody}${promptSuffix}`;
-    if (this.options.debug) {
-      console.debug(prompt);
-    }
     // Add 2 tokens for metadata after all messages have been counted.
     currentTokenCount += 2;
 
@@ -188,7 +194,7 @@ class AnthropicClient extends BaseClient {
     if (!abortController) {
       abortController = new AbortController();
     }
-    console.log('AnthropicClient: getCompletion', payload);
+
     const { signal } = abortController;
 
     const modelOptions = { ...this.modelOptions };
@@ -204,31 +210,45 @@ class AnthropicClient extends BaseClient {
     }
 
     const client = this.getClient();
+    const metadata = {
+      user_id: this.user,
+    };
 
     let text = '';
-    const response = await client.completions.create({
+    const requestOptions = {
       prompt: payload,
       model: this.modelOptions.model,
       stream: this.modelOptions.stream || true,
       max_tokens_to_sample: this.modelOptions.maxOutputTokens || 1024,
+      metadata,
       ...modelOptions
-    });
+    };
+    if (this.options.debug) {
+      console.log('AnthropicClient: requestOptions');
+      console.dir(requestOptions, { depth: null });
+    }
+    const response = await client.completions.create(requestOptions);
 
     signal.addEventListener('abort', () => {
-      console.log('AnthropicClient: message aborted!');
+      if (this.options.debug) {
+        console.log('AnthropicClient: message aborted!');
+      }
       response.controller.abort();
     });
 
     for await (const completion of response) {
       if (this.options.debug) {
-        console.debug(completion);
+        // Uncomment to debug message stream
+        // console.debug(completion);
       }
       text += completion.completion;
       onProgress(completion.completion);
     }
 
     signal.removeEventListener('abort', () => {
-      console.log('AnthropicClient: message aborted!');
+      if (this.options.debug) {
+        console.log('AnthropicClient: message aborted!');
+      }
       response.controller.abort();
     });
 
@@ -250,7 +270,9 @@ class AnthropicClient extends BaseClient {
   }
 
   getBuildMessagesOptions() {
-    console.log('AnthropicClient doesn\'t use getBuildMessagesOptions');
+    if (this.options.debug) {
+      console.log('AnthropicClient doesn\'t use getBuildMessagesOptions');
+    }
   }
 
   static getTokenizer(encoding, isModelName = false, extendSpecialTokens = {}) {
