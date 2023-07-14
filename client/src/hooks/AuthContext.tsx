@@ -164,11 +164,11 @@ const AuthContextProvider = ({
         if (response.status === 200) {
           setUserContext({ token: response.data.token, isAuthenticated: true, user: response.data.user });
         } else {
-          navigate('/login');
+          navigate('/login', { replace: true });
         }
       } catch (error) {
         doSetError((error as Error).message);
-        navigate('/login');
+        navigate('/login', { replace: true });
       }
     };
 
