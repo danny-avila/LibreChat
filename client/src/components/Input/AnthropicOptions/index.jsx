@@ -14,13 +14,14 @@ function AnthropicOptions() {
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
 
   const [conversation, setConversation] = useRecoilState(store.conversation) || {};
-  const { endpoint, conversationId } = conversation;
+  const { endpoint } = conversation;
   const { model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens } =
     conversation;
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
-  if (endpoint !== 'anthropic') return null;
-  if (conversationId !== 'new') return null;
+  if (endpoint !== 'anthropic') {
+    return null;
+  }
 
   const models = endpointsConfig?.['anthropic']?.['availableModels'] || [];
 
