@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import SelectDropDown from '../../ui/SelectDropDown';
 import { Button } from '../../ui/Button';
 import { cn } from '~/utils/';
@@ -33,11 +33,9 @@ function ChatWidgetMenu() {
   const triggerAdvancedMode = () => setAdvancedMode((prev: boolean) => !prev);
   const switchToSimpleMode = () => {setAdvancedMode(false)};
   const triggerSubmission = () => {
-    if (params.easyMode) {
-      const text = params.submissionText;
-      ask({ text });
-      setAdvancedMode(false);
-    }
+    const text = params.submissionText;
+    ask({ text });
+    setAdvancedMode(false);
   };
 
   return (
