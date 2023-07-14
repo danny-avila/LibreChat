@@ -1,10 +1,7 @@
 const { getUserPluginAuthValue } = require('../../../../server/services/PluginService');
 const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
 const { ZapierToolKit } = require('langchain/agents');
-const {
-  SerpAPI,
-  ZapierNLAWrapper
-} = require('langchain/tools');
+const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { Calculator } = require('langchain/tools/calculator');
 const { WebBrowser } = require('langchain/tools/webbrowser');
@@ -24,7 +21,7 @@ const validateTools = async (user, tools = []) => {
   try {
     const validToolsSet = new Set(tools);
     const availableToolsToValidate = availableTools.filter((tool) =>
-      validToolsSet.has(tool.pluginKey)
+      validToolsSet.has(tool.pluginKey),
     );
 
     const validateCredentials = async (authField, toolName) => {
@@ -79,14 +76,14 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
     google: GoogleSearchAPI,
     wolfram: functions ? StructuredWolfram : WolframAlphaAPI,
     'dall-e': OpenAICreateImage,
-    'stable-diffusion': functions ? StructuredSD : StableDiffusionAPI
+    'stable-diffusion': functions ? StructuredSD : StableDiffusionAPI,
   };
 
   const customConstructors = {
     browser: async () => {
       let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
       openAIApiKey = openAIApiKey === 'user_provided' ? null : openAIApiKey;
-      openAIApiKey = openAIApiKey || await getUserPluginAuthValue(user, 'OPENAI_API_KEY');
+      openAIApiKey = openAIApiKey || (await getUserPluginAuthValue(user, 'OPENAI_API_KEY'));
       return new WebBrowser({ model, embeddings: new OpenAIEmbeddings({ openAIApiKey }) });
     },
     serpapi: async () => {
@@ -97,7 +94,7 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
       return new SerpAPI(apiKey, {
         location: 'Austin,Texas,United States',
         hl: 'en',
-        gl: 'us'
+        gl: 'us',
       });
     },
     zapier: async () => {
@@ -113,16 +110,16 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
         new HttpRequestTool(),
         await AIPluginTool.fromPluginUrl(
           'https://www.klarna.com/.well-known/ai-plugin.json',
-          new ChatOpenAI({ openAIApiKey: options.openAIApiKey, temperature: 0 })
-        )
+          new ChatOpenAI({ openAIApiKey: options.openAIApiKey, temperature: 0 }),
+        ),
       ];
-    }
+    },
   };
 
   const requestedTools = {};
 
   const toolOptions = {
-    serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' }
+    serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
   };
 
   const toolAuthFields = {};
@@ -147,7 +144,7 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
         user,
         toolAuthFields[tool],
         toolConstructors[tool],
-        options
+        options,
       );
       requestedTools[tool] = toolInstance;
     }
@@ -158,5 +155,5 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
 
 module.exports = {
   validateTools,
-  loadTools
+  loadTools,
 };

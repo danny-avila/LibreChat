@@ -12,13 +12,13 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:3080',
-        changeOrigin: true
+        changeOrigin: true,
       },
       '/oauth': {
         target: 'http://localhost:3080',
-        changeOrigin: true
-      }
-    }
+        changeOrigin: true,
+      },
+    },
   },
   // All other env variables are filtered out
   envDir: '../',
@@ -35,15 +35,15 @@ export default defineConfig({
           if (id.includes('node_modules')) {
             return 'vendor';
           }
-        }
-      }
-    }
+        },
+      },
+    },
   },
   resolve: {
     alias: {
-      '~': path.join(__dirname, 'src/')
-    }
-  }
+      '~': path.join(__dirname, 'src/'),
+    },
+  },
 });
 
 interface SourcemapExclude {
@@ -57,10 +57,10 @@ export function sourcemapExclude(opts?: SourcemapExclude): Plugin {
         return {
           code,
           // https://github.com/rollup/rollup/blob/master/docs/plugin-development/index.md#source-code-transformations
-          map: { mappings: '' }
+          map: { mappings: '' },
         };
       }
-    }
+    },
   };
 }
 
@@ -69,7 +69,7 @@ function htmlPlugin(env: ReturnType<typeof loadEnv>) {
     name: 'html-transform',
     transformIndexHtml: {
       enforce: 'pre' as const,
-      transform: (html: string): string => html.replace(/%(.*?)%/g, (match, p1) => env[p1] ?? match)
-    }
+      transform: (html: string): string => html.replace(/%(.*?)%/g, (match, p1) => env[p1] ?? match),
+    },
   };
 }

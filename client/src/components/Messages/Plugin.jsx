@@ -35,7 +35,7 @@ export default function Plugin({ plugin }) {
     if (!loading && plugin.latest === 'Self Reflection') {
       return 'Finished';
     } else if (plugin.latest === 'Self Reflection') {
-      return "I'm  thinking...";
+      return 'I\'m  thinking...';
     } else {
       return (
         <>
@@ -54,7 +54,7 @@ export default function Plugin({ plugin }) {
             <div
               className={cn(
                 loading ? 'bg-green-100' : 'bg-[#ECECF1]',
-                'flex items-center rounded p-3 text-sm text-gray-900'
+                'flex items-center rounded p-3 text-sm text-gray-900',
               )}
             >
               <div>

@@ -10,7 +10,7 @@ function isUUID(uuid) {
 
 test.describe('Messaging suite', () => {
 
-  test('textbox should be focused after receiving message & test expected navigation', async ({page}) => {
+  test('textbox should be focused after receiving message & test expected navigation', async ({ page }) => {
     test.setTimeout(120000);
     const message = 'hi';
     const endpoint = endpoints[1];
@@ -26,12 +26,12 @@ test.describe('Messaging suite', () => {
       page.waitForResponse(async (response) => {
         return response.url().includes(`/api/ask/${endpoint}`) && response.status() === 200;
       }),
-      page.locator('form').getByRole('textbox').press('Enter')
+      page.locator('form').getByRole('textbox').press('Enter'),
     ];
 
     const [response] = await Promise.all(responsePromise);
     const responseBody = await response.body();
-    const messageSuccess = responseBody.includes(`"final":true`);
+    const messageSuccess = responseBody.includes('"final":true');
     expect(messageSuccess).toBe(true);
 
     // Check if textbox is focused

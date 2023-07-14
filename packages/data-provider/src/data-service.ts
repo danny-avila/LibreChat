@@ -9,7 +9,7 @@ export function getConversations(pageNumber: string): Promise<t.TGetConversation
 export function abortRequestWithMessage(
   endpoint: string,
   abortKey: string,
-  message: string
+  message: string,
 ): Promise<void> {
   return request.post(endpoints.abortRequest(endpoint), { arg: { abortKey, message } });
 }
@@ -32,7 +32,7 @@ export function getConversationById(id: string): Promise<t.TConversation> {
 }
 
 export function updateConversation(
-  payload: t.TUpdateConversationRequest
+  payload: t.TUpdateConversationRequest,
 ): Promise<t.TUpdateConversationResponse> {
   return request.post(endpoints.updateConversation(), { arg: payload });
 }
@@ -63,7 +63,7 @@ export function getUser(): Promise<t.TUser> {
 
 export const searchConversations = async (
   q: string,
-  pageNumber: string
+  pageNumber: string,
 ): Promise<t.TSearchResults> => {
   return request.get(endpoints.search(q, pageNumber));
 };
@@ -96,7 +96,9 @@ export const getLoginGoogle = () => {
   return request.get(endpoints.loginGoogle());
 };
 
-export const requestPasswordReset = (payload: t.TRequestPasswordReset): Promise<t.TRequestPasswordResetResponse> => {
+export const requestPasswordReset = (
+  payload: t.TRequestPasswordReset,
+): Promise<t.TRequestPasswordResetResponse> => {
   return request.post(endpoints.requestPasswordReset(), payload);
 };
 
@@ -114,4 +116,4 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
 
 export const getStartupConfig = (): Promise<t.TStartupConfig> => {
   return request.get(endpoints.config());
-}
+};

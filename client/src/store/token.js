@@ -2,7 +2,7 @@ import { atom, useRecoilState } from 'recoil';
 
 const tokenRefreshHints = atom({
   key: 'tokenRefreshHints',
-  default: 1
+  default: 1,
 });
 
 const useToken = (endpoint) => {
@@ -18,5 +18,5 @@ const useToken = (endpoint) => {
 };
 
 export default {
-  useToken
+  useToken,
 };

@@ -13,7 +13,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
     text,
     overrideParentMessageId = null,
     parentMessageId,
-    conversationId: oldConversationId
+    conversationId: oldConversationId,
   } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   if (endpoint !== 'chatGPTBrowser') return handleError(res, { text: 'Illegal request' });
@@ -29,13 +29,13 @@ router.post('/', requireJwtAuth, async (req, res) => {
     text,
     parentMessageId: userParentMessageId,
     conversationId,
-    isCreatedByUser: true
+    isCreatedByUser: true,
   };
 
   // build endpoint option
   const endpointOption = {
     model: req.body?.model ?? 'text-davinci-002-render-sha',
-    token: req.body?.token ?? null
+    token: req.body?.token ?? null,
   };
 
   // const availableModels = getChatGPTBrowserModels();
@@ -45,7 +45,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
   console.log('ask log', {
     userMessage,
     endpointOption,
-    conversationId
+    conversationId,
   });
 
   if (!overrideParentMessageId) {
@@ -54,7 +54,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
       ...userMessage,
       ...endpointOption,
       conversationId,
-      endpoint
+      endpoint,
     });
   }
 
@@ -67,7 +67,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
     preSendRequest: true,
     overrideParentMessageId,
     req,
-    res
+    res,
   });
 });
 
@@ -78,7 +78,7 @@ const ask = async ({
   conversationId,
   overrideParentMessageId = null,
   req,
-  res
+  res,
 }) => {
   let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
   const userId = req.user.id;
@@ -88,7 +88,7 @@ const ask = async ({
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
     'Access-Control-Allow-Origin': '*',
-    'X-Accel-Buffering': 'no'
+    'X-Accel-Buffering': 'no',
   });
 
   let responseMessageId = crypto.randomUUID();
@@ -108,10 +108,10 @@ const ask = async ({
             text: text,
             unfinished: true,
             cancelled: false,
-            error: false
+            error: false,
           });
         }
-      }
+      },
     });
 
     getPartialMessage = getPartialText;
@@ -134,9 +134,9 @@ const ask = async ({
 
         sendMessage(res, {
           message: { ...userMessage, conversationId: data.conversation_id },
-          created: true
+          created: true,
         });
-      }
+      },
     });
 
     console.log('CLIENT RESPONSE', response);
@@ -157,7 +157,7 @@ const ask = async ({
       sender: endpointOption?.chatGptLabel || 'ChatGPT',
       unfinished: false,
       cancelled: false,
-      error: false
+      error: false,
     };
 
     await saveMessage(responseMessage);
@@ -173,13 +173,13 @@ const ask = async ({
         conversationUpdate = {
           ...conversationUpdate,
           conversationId: conversationId,
-          newConversationId: newConversationId
+          newConversationId: newConversationId,
         };
       } else {
         // create new conversation
         conversationUpdate = {
           ...conversationUpdate,
-          ...endpointOption
+          ...endpointOption,
         };
       }
 
@@ -195,7 +195,7 @@ const ask = async ({
       await saveMessage({
         ...userMessage,
         messageId: userMessageId,
-        newMessageId: newUserMassageId
+        newMessageId: newUserMassageId,
       });
     userMessageId = newUserMassageId;
 
@@ -204,7 +204,7 @@ const ask = async ({
       final: true,
       conversation: await getConvo(req.user.id, conversationId),
       requestMessage: userMessage,
-      responseMessage: responseMessage
+      responseMessage: responseMessage,
     });
     res.end();
 
@@ -213,7 +213,7 @@ const ask = async ({
       const title = await response.details.title;
       await saveConvo(req.user.id, {
         conversationId: conversationId,
-        title
+        title,
       });
     }
   } catch (error) {
@@ -225,7 +225,7 @@ const ask = async ({
       unfinished: false,
       cancelled: false,
       // error: true,
-      text: `${getPartialMessage() ?? ''}\n\nError message: "${error.message}"`
+      text: `${getPartialMessage() ?? ''}\n\nError message: "${error.message}"`,
     };
     await saveMessage(errorMessage);
     handleError(res, errorMessage);

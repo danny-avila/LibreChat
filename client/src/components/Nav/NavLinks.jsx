@@ -39,7 +39,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
             <Menu.Button
               className={cn(
                 'group-ui-open:bg-gray-800 flex w-full items-center gap-2.5 rounded-md px-3 py-3 text-sm transition-colors duration-200 hover:bg-gray-800',
-                open ? 'bg-gray-800' : ''
+                open ? 'bg-gray-800' : '',
               )}
             >
               <div className="-ml-0.5 h-5 w-5 flex-shrink-0">
@@ -78,7 +78,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                   <NavLink
                     className={cn(
                       'flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none',
-                      exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-white/50'
+                      exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-white/50',
                     )}
                     svg={() => <Download size={16} />}
                     text="Export conversation"

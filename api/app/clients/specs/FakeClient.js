@@ -32,9 +32,11 @@ class FakeClient extends BaseClient {
       this.modelOptions = {
         ...modelOptions,
         model: modelOptions.model || 'gpt-3.5-turbo',
-        temperature: typeof modelOptions.temperature === 'undefined' ? 0.8 : modelOptions.temperature,
+        temperature:
+          typeof modelOptions.temperature === 'undefined' ? 0.8 : modelOptions.temperature,
         top_p: typeof modelOptions.top_p === 'undefined' ? 1 : modelOptions.top_p,
-        presence_penalty: typeof modelOptions.presence_penalty === 'undefined' ? 1 : modelOptions.presence_penalty,
+        presence_penalty:
+          typeof modelOptions.presence_penalty === 'undefined' ? 1 : modelOptions.presence_penalty,
         stop: modelOptions.stop,
       };
     }
@@ -66,7 +68,7 @@ const initializeFakeClient = (apiKey, options, fakeMessages) => {
 
       const orderedMessages = TestClient.constructor.getMessagesForConversation(
         fakeMessages,
-        parentMessageId
+        parentMessageId,
       );
 
       TestClient.currentMessages = orderedMessages;
@@ -98,7 +100,7 @@ const initializeFakeClient = (apiKey, options, fakeMessages) => {
 
     this.pastMessages = await TestClient.loadHistory(
       conversationId,
-      TestClient.options?.parentMessageId
+      TestClient.options?.parentMessageId,
     );
 
     const userMessage = {
@@ -107,7 +109,7 @@ const initializeFakeClient = (apiKey, options, fakeMessages) => {
       isCreatedByUser: true,
       messageId: userMessageId,
       parentMessageId,
-      conversationId
+      conversationId,
     };
 
     const response = {
@@ -116,7 +118,7 @@ const initializeFakeClient = (apiKey, options, fakeMessages) => {
       isCreatedByUser: false,
       messageId: crypto.randomUUID(),
       parentMessageId: userMessage.messageId,
-      conversationId
+      conversationId,
     };
 
     fakeMessages.push(userMessage);
@@ -126,7 +128,7 @@ const initializeFakeClient = (apiKey, options, fakeMessages) => {
       opts.getIds({
         userMessage,
         conversationId,
-        responseMessageId: response.messageId
+        responseMessageId: response.messageId,
       });
     }
 
@@ -146,7 +148,10 @@ const initializeFakeClient = (apiKey, options, fakeMessages) => {
         // userMessage is always the last one in the payload
         if (i === payload.length - 1) {
           userMessage.tokenCount = message.tokenCount;
-          console.debug(`Token count for user message: ${tokenCount}`, `Instruction Tokens: ${tokenCountMap.instructions || 'N/A'}`);
+          console.debug(
+            `Token count for user message: ${tokenCount}`,
+            `Instruction Tokens: ${tokenCountMap.instructions || 'N/A'}`,
+          );
         }
         return messageWithoutTokenCount;
       });
@@ -163,7 +168,10 @@ const initializeFakeClient = (apiKey, options, fakeMessages) => {
   });
 
   TestClient.buildMessages = jest.fn(async (messages, parentMessageId) => {
-    const orderedMessages = TestClient.constructor.getMessagesForConversation(messages, parentMessageId);
+    const orderedMessages = TestClient.constructor.getMessagesForConversation(
+      messages,
+      parentMessageId,
+    );
     const formattedMessages = orderedMessages.map((message) => {
       let { role: _role, sender, text } = message;
       const role = _role ?? sender;
@@ -180,6 +188,6 @@ const initializeFakeClient = (apiKey, options, fakeMessages) => {
   });
 
   return TestClient;
-}
+};
 
 module.exports = { FakeClient, initializeFakeClient };

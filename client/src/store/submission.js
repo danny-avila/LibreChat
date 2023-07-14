@@ -13,15 +13,15 @@ import { atom } from 'recoil';
 
 const submission = atom({
   key: 'submission',
-  default: null
+  default: null,
 });
 
 const isSubmitting = atom({
   key: 'isSubmitting',
-  default: false
+  default: false,
 });
 
 export default {
   submission,
-  isSubmitting
+  isSubmitting,
 };

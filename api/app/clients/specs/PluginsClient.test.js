@@ -7,7 +7,7 @@ jest.mock('../../../models/Conversation', () => {
   return function () {
     return {
       save: jest.fn(),
-      deleteConvos: jest.fn()
+      deleteConvos: jest.fn(),
     };
   };
 });
@@ -19,11 +19,11 @@ describe('PluginsClient', () => {
     modelOptions: {
       model: 'gpt-3.5-turbo',
       temperature: 0,
-      max_tokens: 2
+      max_tokens: 2,
     },
     agentOptions: {
-      model: 'gpt-3.5-turbo'
-    }
+      model: 'gpt-3.5-turbo',
+    },
   };
   let parentMessageId;
   let conversationId;
@@ -43,13 +43,13 @@ describe('PluginsClient', () => {
 
         const orderedMessages = TestAgent.constructor.getMessagesForConversation(
           fakeMessages,
-          parentMessageId
+          parentMessageId,
         );
 
         const chatMessages = orderedMessages.map((msg) =>
           msg?.isCreatedByUser || msg?.role?.toLowerCase() === 'user'
             ? new HumanChatMessage(msg.text)
-            : new AIChatMessage(msg.text)
+            : new AIChatMessage(msg.text),
         );
 
         TestAgent.currentMessages = orderedMessages;
@@ -64,7 +64,7 @@ describe('PluginsClient', () => {
       const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
       this.pastMessages = await TestAgent.loadHistory(
         conversationId,
-        TestAgent.options?.parentMessageId
+        TestAgent.options?.parentMessageId,
       );
 
       const userMessage = {
@@ -73,7 +73,7 @@ describe('PluginsClient', () => {
         isCreatedByUser: true,
         messageId: userMessageId,
         parentMessageId,
-        conversationId
+        conversationId,
       };
 
       const response = {
@@ -82,7 +82,7 @@ describe('PluginsClient', () => {
         isCreatedByUser: false,
         messageId: crypto.randomUUID(),
         parentMessageId: userMessage.messageId,
-        conversationId
+        conversationId,
       };
 
       fakeMessages.push(userMessage);
@@ -107,7 +107,7 @@ describe('PluginsClient', () => {
         isCreatedByUser: false,
         messageId: expect.any(String),
         parentMessageId: expect.any(String),
-        conversationId: expect.any(String)
+        conversationId: expect.any(String),
       });
 
       const response = await TestAgent.sendMessage(userMessage);
@@ -121,7 +121,7 @@ describe('PluginsClient', () => {
       const userMessage = 'Second message in the conversation';
       const opts = {
         conversationId,
-        parentMessageId
+        parentMessageId,
       };
 
       const expectedResult = expect.objectContaining({
@@ -130,7 +130,7 @@ describe('PluginsClient', () => {
         isCreatedByUser: false,
         messageId: expect.any(String),
         parentMessageId: expect.any(String),
-        conversationId: opts.conversationId
+        conversationId: opts.conversationId,
       });
 
       const response = await TestAgent.sendMessage(userMessage, opts);

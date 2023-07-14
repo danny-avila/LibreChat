@@ -2,9 +2,9 @@ import { atom } from 'recoil';
 
 const user = atom({
   key: 'user',
-  default: null
+  default: null,
 });
 
 export default {
-  user
+  user,
 };

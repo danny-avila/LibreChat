@@ -3,24 +3,24 @@ import buildTree from '~/utils/buildTree';
 
 const isSearchEnabled = atom({
   key: 'isSearchEnabled',
-  default: null
+  default: null,
 });
 
 const searchQuery = atom({
   key: 'searchQuery',
-  default: ''
+  default: '',
 });
 
 const searchResultMessages = atom({
   key: 'searchResultMessages',
-  default: null
+  default: null,
 });
 
 const searchResultMessagesTree = selector({
   key: 'searchResultMessagesTree',
   get: ({ get }) => {
     return buildTree(get(searchResultMessages), true);
-  }
+  },
 });
 
 const isSearching = selector({
@@ -28,7 +28,7 @@ const isSearching = selector({
   get: ({ get }) => {
     const data = get(searchQuery);
     return !!data;
-  }
+  },
 });
 
 export default {
@@ -36,5 +36,5 @@ export default {
   isSearching,
   searchResultMessages,
   searchResultMessagesTree,
-  searchQuery
+  searchQuery,
 };

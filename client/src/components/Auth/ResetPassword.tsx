@@ -12,7 +12,7 @@ function ResetPassword() {
     register,
     handleSubmit,
     watch,
-    formState: { errors }
+    formState: { errors },
   } = useForm<TResetPassword>();
   const resetPassword = useResetPasswordMutation();
   const [resetError, setResetError] = useState<boolean>(false);
@@ -24,7 +24,7 @@ function ResetPassword() {
     resetPassword.mutate(data, {
       onError: () => {
         setResetError(true);
-      }
+      },
     });
   };
 
@@ -97,12 +97,12 @@ function ResetPassword() {
                     required: localize(lang, 'com_auth_password_required'),
                     minLength: {
                       value: 8,
-                      message: localize(lang, 'com_auth_password_min_length')
+                      message: localize(lang, 'com_auth_password_min_length'),
                     },
                     maxLength: {
                       value: 128,
-                      message: localize(lang, 'com_auth_password_max_length')
-                    }
+                      message: localize(lang, 'com_auth_password_max_length'),
+                    },
                   })}
                   aria-invalid={!!errors.password}
                   className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -135,7 +135,7 @@ function ResetPassword() {
                     return false;
                   }}
                   {...register('confirm_password', {
-                    validate: (value) => value === password || localize(lang, 'com_auth_password_not_match')
+                    validate: (value) => value === password || localize(lang, 'com_auth_password_not_match'),
                   })}
                   aria-invalid={!!errors.confirm_password}
                   className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"

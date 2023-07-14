@@ -13,10 +13,10 @@ const logger = pino({
       'env.JWT_SECRET',
       'env.JWT_SECRET_DEV',
       'env.JWT_SECRET_PROD',
-      'newUser.password'
+      'newUser.password',
     ], // See example to filter object class instances
-    censor: '***' // Redaction character
-  }
+    censor: '***', // Redaction character
+  },
 });
 
 // Sanitize outside the logger paths. This is useful for sanitizing variables directly with Regex and patterns.
@@ -33,7 +33,7 @@ const redactPatterns = [
   /authorization[-_]?login[-_]?hint/i,
   /authorization[-_]?acr[-_]?values/i,
   /authorization[-_]?response[-_]?mode/i,
-  /authorization[-_]?nonce/i
+  /authorization[-_]?nonce/i,
 ];
 
 /*
@@ -58,7 +58,7 @@ const levels = {
   INFO: 30,
   WARN: 40,
   ERROR: 50,
-  FATAL: 60
+  FATAL: 60,
 };
 
 let level = levels.INFO;
@@ -121,6 +121,6 @@ module.exports = {
       if (level < levels.DEBUG) return next();
       logger.debug({ query: req.query, body: req.body }, `Hit URL ${req.url} with following`);
       return next();
-    }
-  }
+    },
+  },
 };

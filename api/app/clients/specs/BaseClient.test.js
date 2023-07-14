@@ -10,7 +10,7 @@ jest.mock('../../../models', () => {
       getMessages: jest.fn(),
       saveMessage: jest.fn(),
       updateMessage: jest.fn(),
-      saveConvo: jest.fn()
+      saveConvo: jest.fn(),
     };
   };
 });
@@ -52,7 +52,7 @@ describe('BaseClient', () => {
     modelOptions: {
       model: 'gpt-3.5-turbo',
       temperature: 0,
-    }
+    },
   };
 
   beforeEach(() => {
@@ -60,22 +60,14 @@ describe('BaseClient', () => {
   });
 
   test('returns the input messages without instructions when addInstructions() is called with empty instructions', () => {
-    const messages = [
-      { content: 'Hello' },
-      { content: 'How are you?' },
-      { content: 'Goodbye' },
-    ];
+    const messages = [{ content: 'Hello' }, { content: 'How are you?' }, { content: 'Goodbye' }];
     const instructions = '';
     const result = TestClient.addInstructions(messages, instructions);
     expect(result).toEqual(messages);
   });
 
   test('returns the input messages with instructions properly added when addInstructions() is called with non-empty instructions', () => {
-    const messages = [
-      { content: 'Hello' },
-      { content: 'How are you?' },
-      { content: 'Goodbye' },
-    ];
+    const messages = [{ content: 'Hello' }, { content: 'How are you?' }, { content: 'Goodbye' }];
     const instructions = { content: 'Please respond to the question.' };
     const result = TestClient.addInstructions(messages, instructions);
     const expected = [
@@ -94,20 +86,21 @@ describe('BaseClient', () => {
       { name: 'User', content: 'I have a question.' },
     ];
     const result = TestClient.concatenateMessages(messages);
-    const expected = `User:\nHello\n\nAssistant:\nHow can I help you?\n\nUser:\nI have a question.\n\n`;
+    const expected =
+      'User:\nHello\n\nAssistant:\nHow can I help you?\n\nUser:\nI have a question.\n\n';
     expect(result).toBe(expected);
   });
 
   test('refines messages correctly in refineMessages()', async () => {
     const messagesToRefine = [
       { role: 'user', content: 'Hello', tokenCount: 10 },
-      { role: 'assistant', content: 'How can I help you?', tokenCount: 20 }
+      { role: 'assistant', content: 'How can I help you?', tokenCount: 20 },
     ];
     const remainingContextTokens = 100;
     const expectedRefinedMessage = {
       role: 'assistant',
       content: 'Refined answer',
-      tokenCount: 14 // 'Refined answer'.length
+      tokenCount: 14, // 'Refined answer'.length
     };
 
     const result = await TestClient.refineMessages(messagesToRefine, remainingContextTokens);
@@ -120,7 +113,7 @@ describe('BaseClient', () => {
     TestClient.refineMessages = jest.fn().mockResolvedValue({
       role: 'assistant',
       content: 'Refined answer',
-      tokenCount: 30
+      tokenCount: 30,
     });
 
     const messages = [
@@ -148,7 +141,7 @@ describe('BaseClient', () => {
     TestClient.refineMessages = jest.fn().mockResolvedValue({
       role: 'assistant',
       content: 'Refined answer',
-      tokenCount: 4
+      tokenCount: 4,
     });
 
     const messages = [
@@ -176,28 +169,28 @@ describe('BaseClient', () => {
   });
 
   test('handles context strategy correctly in handleContextStrategy()', async () => {
-    TestClient.addInstructions = jest.fn().mockReturnValue([
-      { content: 'Hello' },
-      { content: 'How can I help you?' },
-      { content: 'Please provide more details.' },
-      { content: 'I can assist you with that.' }
-    ]);
+    TestClient.addInstructions = jest
+      .fn()
+      .mockReturnValue([
+        { content: 'Hello' },
+        { content: 'How can I help you?' },
+        { content: 'Please provide more details.' },
+        { content: 'I can assist you with that.' },
+      ]);
     TestClient.getMessagesWithinTokenLimit = jest.fn().mockReturnValue({
       context: [
         { content: 'How can I help you?' },
         { content: 'Please provide more details.' },
-        { content: 'I can assist you with that.' }
+        { content: 'I can assist you with that.' },
       ],
       remainingContextTokens: 80,
-      messagesToRefine: [
-        { content: 'Hello' },
-      ],
+      messagesToRefine: [{ content: 'Hello' }],
       refineIndex: 3,
     });
     TestClient.refineMessages = jest.fn().mockResolvedValue({
       role: 'assistant',
       content: 'Refined answer',
-      tokenCount: 30
+      tokenCount: 30,
     });
     TestClient.getTokenCountForResponse = jest.fn().mockReturnValue(40);
 
@@ -206,24 +199,24 @@ describe('BaseClient', () => {
       { content: 'Hello' },
       { content: 'How can I help you?' },
       { content: 'Please provide more details.' },
-      { content: 'I can assist you with that.' }
+      { content: 'I can assist you with that.' },
     ];
     const formattedMessages = [
       { content: 'Hello' },
       { content: 'How can I help you?' },
       { content: 'Please provide more details.' },
-      { content: 'I can assist you with that.' }
+      { content: 'I can assist you with that.' },
     ];
     const expectedResult = {
       payload: [
         {
           content: 'Refined answer',
           role: 'assistant',
-          tokenCount: 30
+          tokenCount: 30,
         },
         { content: 'How can I help you?' },
         { content: 'Please provide more details.' },
-        { content: 'I can assist you with that.' }
+        { content: 'I can assist you with that.' },
       ],
       promptTokens: expect.any(Number),
       tokenCountMap: {},
@@ -246,7 +239,7 @@ describe('BaseClient', () => {
         isCreatedByUser: false,
         messageId: expect.any(String),
         parentMessageId: expect.any(String),
-        conversationId: expect.any(String)
+        conversationId: expect.any(String),
       });
 
       const response = await TestClient.sendMessage(userMessage);
@@ -261,7 +254,7 @@ describe('BaseClient', () => {
         conversationId,
         parentMessageId,
         getIds: jest.fn(),
-        onStart: jest.fn()
+        onStart: jest.fn(),
       };
 
       const expectedResult = expect.objectContaining({
@@ -270,7 +263,7 @@ describe('BaseClient', () => {
         isCreatedByUser: false,
         messageId: expect.any(String),
         parentMessageId: expect.any(String),
-        conversationId: opts.conversationId
+        conversationId: opts.conversationId,
       });
 
       const response = await TestClient.sendMessage(userMessage, opts);
@@ -300,7 +293,10 @@ describe('BaseClient', () => {
     test('loadHistory is called with the correct arguments', async () => {
       const opts = { conversationId: '123', parentMessageId: '456' };
       await TestClient.sendMessage('Hello, world!', opts);
-      expect(TestClient.loadHistory).toHaveBeenCalledWith(opts.conversationId, opts.parentMessageId);
+      expect(TestClient.loadHistory).toHaveBeenCalledWith(
+        opts.conversationId,
+        opts.parentMessageId,
+      );
     });
 
     test('getIds is called with the correct arguments', async () => {
@@ -310,7 +306,7 @@ describe('BaseClient', () => {
       expect(getIds).toHaveBeenCalledWith({
         userMessage: expect.objectContaining({ text: 'Hello, world!' }),
         conversationId: response.conversationId,
-        responseMessageId: response.messageId
+        responseMessageId: response.messageId,
       });
     });
 
@@ -333,10 +329,10 @@ describe('BaseClient', () => {
           isCreatedByUser: expect.any(Boolean),
           messageId: expect.any(String),
           parentMessageId: expect.any(String),
-          conversationId: expect.any(String)
+          conversationId: expect.any(String),
         }),
         saveOptions,
-        user
+        user,
       );
     });
 
@@ -358,14 +354,16 @@ describe('BaseClient', () => {
 
     test('returns an object with the correct shape', async () => {
       const response = await TestClient.sendMessage('Hello, world!', {});
-      expect(response).toEqual(expect.objectContaining({
-        sender: expect.any(String),
-        text: expect.any(String),
-        isCreatedByUser: expect.any(Boolean),
-        messageId: expect.any(String),
-        parentMessageId: expect.any(String),
-        conversationId: expect.any(String)
-      }));
+      expect(response).toEqual(
+        expect.objectContaining({
+          sender: expect.any(String),
+          text: expect.any(String),
+          isCreatedByUser: expect.any(Boolean),
+          messageId: expect.any(String),
+          parentMessageId: expect.any(String),
+          conversationId: expect.any(String),
+        }),
+      );
     });
   });
 });

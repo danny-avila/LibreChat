@@ -7,7 +7,7 @@ import { localize } from '~/localization/Translation';
 import {
   useRegisterUserMutation,
   TRegisterUser,
-  useGetStartupConfig
+  useGetStartupConfig,
 } from '@librechat/data-provider';
 import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components'
 
@@ -21,7 +21,7 @@ function Registration() {
     register,
     watch,
     handleSubmit,
-    formState: { errors }
+    formState: { errors },
   } = useForm<TRegisterUser>({ mode: 'onChange' });
 
   const [error, setError] = useState<boolean>(false);
@@ -42,7 +42,7 @@ function Registration() {
           //@ts-ignore - error is of type unknown
           setErrorMessage(error.response?.data?.message);
         }
-      }
+      },
     });
   };
 
@@ -81,12 +81,12 @@ function Registration() {
                   required: localize(lang, 'com_auth_name_required'),
                   minLength: {
                     value: 3,
-                    message: localize(lang, 'com_auth_name_min_length')
+                    message: localize(lang, 'com_auth_name_min_length'),
                   },
                   maxLength: {
                     value: 80,
-                    message: localize(lang, 'com_auth_name_max_length')
-                  }
+                    message: localize(lang, 'com_auth_name_max_length'),
+                  },
                 })}
                 aria-invalid={!!errors.name}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -117,12 +117,12 @@ function Registration() {
                   required: localize(lang, 'com_auth_username_required'),
                   minLength: {
                     value: 3,
-                    message: localize(lang, 'com_auth_username_min_length')
+                    message: localize(lang, 'com_auth_username_min_length'),
                   },
                   maxLength: {
                     value: 20,
-                    message: localize(lang, 'com_auth_username_max_length')
-                  }
+                    message: localize(lang, 'com_auth_username_max_length'),
+                  },
                 })}
                 aria-invalid={!!errors.username}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -155,16 +155,16 @@ function Registration() {
                   required: localize(lang, 'com_auth_email_required'),
                   minLength: {
                     value: 3,
-                    message: localize(lang, 'com_auth_email_min_length')
+                    message: localize(lang, 'com_auth_email_min_length'),
                   },
                   maxLength: {
                     value: 120,
-                    message: localize(lang, 'com_auth_email_max_length')
+                    message: localize(lang, 'com_auth_email_max_length'),
                   },
                   pattern: {
                     value: /\S+@\S+\.\S+/,
-                    message: localize(lang, 'com_auth_email_pattern')
-                  }
+                    message: localize(lang, 'com_auth_email_pattern'),
+                  },
                 })}
                 aria-invalid={!!errors.email}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -196,12 +196,12 @@ function Registration() {
                   required: localize(lang, 'com_auth_password_required'),
                   minLength: {
                     value: 8,
-                    message: localize(lang, 'com_auth_password_min_length')
+                    message: localize(lang, 'com_auth_password_min_length'),
                   },
                   maxLength: {
                     value: 128,
-                    message: localize(lang, 'com_auth_password_max_length')
-                  }
+                    message: localize(lang, 'com_auth_password_max_length'),
+                  },
                 })}
                 aria-invalid={!!errors.password}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -235,7 +235,7 @@ function Registration() {
                 //   return false;
                 // }}
                 {...register('confirm_password', {
-                  validate: (value) => value === password || localize(lang, 'com_auth_password_not_match')
+                  validate: (value) => value === password || localize(lang, 'com_auth_password_not_match'),
                 })}
                 aria-invalid={!!errors.confirm_password}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"

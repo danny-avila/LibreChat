@@ -67,7 +67,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const debouncedSearchTerm = useDebounce(searchQuery, 750);
   const searchQueryFn = useSearchQuery(debouncedSearchTerm, pageNumber, {
     enabled:
-      !!debouncedSearchTerm && debouncedSearchTerm.length > 0 && isSearchEnabled && isSearching
+      !!debouncedSearchTerm && debouncedSearchTerm.length > 0 && isSearchEnabled && isSearching,
   });
 
   const onSearchSuccess = (data, expectedPage) => {
@@ -127,7 +127,7 @@ export default function Nav({ navVisible, setNavVisible }) {
       } else {
         if (!isSearching) {
           conversations = conversations.sort(
-            (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+            (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
           );
         }
         setConversations(conversations);

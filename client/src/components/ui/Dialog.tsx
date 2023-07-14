@@ -25,7 +25,7 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     className={cn(
       'data-[state=closed]:animate-out data-[state=open]:fade-in data-[state=closed]:fade-out fixed inset-0 z-[999] bg-gray-500/90 dark:bg-gray-800/90 transition-all duration-100',
-      className
+      className,
     )}
     {...props}
     ref={ref}
@@ -44,7 +44,7 @@ const DialogContent = React.forwardRef<
       className={cn(
         'animate-in data-[state=open]:fade-in-90 data-[state=open]:slide-in-from-bottom-10 sm:zoom-in-90 data-[state=open]:sm:slide-in-from-bottom-0 fixed z-[999] grid w-full gap-4 rounded-b-lg bg-white pb-6 sm:rounded-lg md:w-[680px] overflow-y-auto',
         'dark:bg-slate-900',
-        className
+        className,
       )}
       {...props}
     >
@@ -62,7 +62,7 @@ const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
   <div
     className={cn(
       'flex flex-col space-y-2 border-b border-black/10 p-6 text-center dark:border-white/10 sm:text-left',
-      className
+      className,
     )}
     {...props}
   />
@@ -109,7 +109,7 @@ const DialogClose = React.forwardRef<
     ref={ref}
     className={cn(
       'mt-2 inline-flex h-10 items-center justify-center rounded-md border border-slate-200 bg-transparent px-4 py-2 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-gray-900 dark:focus:ring-slate-400 dark:focus:ring-offset-slate-900 sm:mt-0',
-      className
+      className,
     )}
     {...props}
   />
@@ -125,7 +125,7 @@ const DialogButton = React.forwardRef<
     variant="outline"
     className={cn(
       'mt-2 inline-flex h-10 items-center justify-center rounded-md border border-slate-200 bg-transparent px-4 py-2 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-gray-900 dark:focus:ring-slate-400 dark:focus:ring-offset-slate-900 sm:mt-0',
-      className
+      className,
     )}
     {...props}
   />
@@ -141,5 +141,5 @@ export {
   DialogTitle,
   DialogDescription,
   DialogClose,
-  DialogButton
+  DialogButton,
 };

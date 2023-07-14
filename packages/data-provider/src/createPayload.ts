@@ -21,7 +21,7 @@ export default function createPayload(submission: TSubmission) {
   const payload = {
     ...message,
     ...endpointOption,
-    conversationId
+    conversationId,
   };
 
   return { server, payload };

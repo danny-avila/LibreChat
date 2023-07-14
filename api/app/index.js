@@ -13,5 +13,5 @@ module.exports = {
   titleConvoBing,
   getCitations,
   citeText,
-  ...clients
+  ...clients,
 };

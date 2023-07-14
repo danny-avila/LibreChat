@@ -4,7 +4,7 @@ export default function AnthropicIcon({ size = 25 }) {
       <g
         style={{
           transform: 'translateX(13px) rotateZ(0deg)',
-          transformorigin: '4.775px 7.73501px'
+          transformorigin: '4.775px 7.73501px',
         }}
         // eslint-disable-next-line react/no-unknown-property
         transformorigin="4.7750020027160645px 7.735011100769043px"
@@ -19,7 +19,7 @@ export default function AnthropicIcon({ size = 25 }) {
       <g
         style={{
           transform: 'none',
-          transformorigin: '7.935px 7.73501px'
+          transformorigin: '7.935px 7.73501px',
         }}
         opacity="1"
         // eslint-disable-next-line react/no-unknown-property
