@@ -32,6 +32,10 @@ config.validate(); // Validate the config
   app.set('trust proxy', 1); // trust first proxy
   app.use(cors());
 
+  if (!process.env.ALLOW_SOCIAL_LOGIN) {
+    console.warn('Social logins are disabled. Set Envrionment Variable "ALLOW_SOCIAL_LOGIN" to true to enable them.')
+  }
+
   // OAUTH
   app.use(passport.initialize());
   require('../strategies/jwtStrategy');
