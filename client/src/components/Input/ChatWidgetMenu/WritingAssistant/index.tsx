@@ -21,6 +21,7 @@ function getParagraphFields({ paragraphCount, paraTopic, setParaTopic }) {
       defaultTextProps,
       'flex max-h-[300px] h-[30px] w-full resize-none px-3 py-2'
     )}
+    key={`paragraph${i + 1}`}
     value={paraTopic[i]}
     placeholder={`段落${i + 1}`}
     title={`段落${i + 1}`}
@@ -58,23 +59,25 @@ function WritingAssistant({ setOption }) {
 
   useEffect(() => {
     if (easyMode) {
+      const finalTopic = `以${level}的水平写一篇${wordCount}字的作文。作文要分成${paragraphCount}个段落，主题是：${topic}`;
+
       setOption({
-        easyMode: easyMode,
-        submissionText: `以${level}的水平写一篇${wordCount}字的作文。作文要分成${paragraphCount}个段落，主题是：${topic}`
+        submissionText: finalTopic
       });
     } else {
       const topics: string[] = [];
-      topics.push(`以${level}的水平写一篇${wordCount}字的作文。作文要分成${paragraphCount}个段落，第1段的主题是：${paraTopic[0]}`);
+
+      topics.push(`以${level}的水平写一篇${wordCount}字的作文。作文要分成${paragraphCount}个段落，第1段的主题是：${paraTopic[0]}。`);
 
       for (let i = 1; i < paraTopic.length; i++) {
-        topics.push(`根据上文，第${i + 1}段的主题是${paraTopic[i]}`);
+        topics.push(`第${i + 1}段的主题是${paraTopic[i]}。`);
       }
 
       setOption({
-        easyMode: easyMode,
-        submissionText: topics
+        submissionText: topics.join('')
       });
     }
+
   }, [level, wordCount, topic, easyMode, paraTopic, paragraphCount]);
 
   return (
