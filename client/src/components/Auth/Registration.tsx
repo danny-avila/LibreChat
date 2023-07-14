@@ -288,7 +288,6 @@ function Registration() {
             {localize(lang, 'com_auth_login')}
           </a>
         </p>
-        {startupConfig?.socialLoginEnabled && (
           <>
             <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
               <div className="absolute bg-white px-3 text-xs">Or</div>
@@ -344,8 +343,14 @@ function Registration() {
               </div>
             )}
           </>
-        )}
       </div>
+      <a href="/terms" className="p-1 text-green-500 hover:underline">
+        Terms & Conditions
+      </a>
+
+      <a href="/privacy" className="p-1 text-green-500 hover:underline">
+        Privacy Policy
+      </a> 
     </div>
   );
 }

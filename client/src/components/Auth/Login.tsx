@@ -115,6 +115,13 @@ function Login() {
           </>
         )}
       </div>
+      <a href="/terms" className="p-1 text-green-500 hover:underline">
+        Terms & Conditions
+      </a>
+
+      <a href="/privacy" className="p-1 text-green-500 hover:underline">
+        Privacy Policy
+      </a> 
     </div>
   );
 };

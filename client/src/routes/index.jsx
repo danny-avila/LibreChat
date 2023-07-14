@@ -4,6 +4,8 @@ import { gtag, install } from 'ga-gtag';
 import Root from './Root';
 import Chat from './Chat';
 import Search from './Search';
+import TermsAndConditions from '../components/ui/TermsAndConditions';
+import PrivacyPolicy from '../components/ui/PrivacyPolicy';
 import { Login, Registration, RequestPasswordReset, ResetPassword } from '../components/Auth';
 import { AuthContextProvider } from '../hooks/AuthContext';
 import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
@@ -36,6 +38,14 @@ export const router = createBrowserRouter([
   {
     path: 'reset-password',
     element: <ResetPassword />
+  },
+  {
+    path: 'terms',
+    element: <TermsAndConditions />
+  },
+  {
+    path: 'privacy',
+    element: <PrivacyPolicy />
   },
   {
     element: <AuthLayout />,
