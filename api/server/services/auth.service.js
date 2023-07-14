@@ -5,7 +5,6 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { registerSchema } = require('../../strategies/validators');
 const { sendEmail } = require('../../utils');
-const jwt = require('jsonwebtoken');
 const config = require('../../../config/loader');
 const domains = config.domains;
 const isProduction = config.isProduction;
