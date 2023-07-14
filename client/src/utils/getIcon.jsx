@@ -1,4 +1,4 @@
-import { Plugin, GPTIcon, BingIcon, AnthropicIcon } from '~/components/svg';
+import { Plugin, GPTIcon, BingIcon, BingJbIcon, AnthropicIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { cn } from '~/utils'
 
@@ -63,9 +63,13 @@ const getIcon = (props) => {
       name = modelLabel || 'Claude';
     } else if (endpoint === 'bingAI') {
       const { jailbreak } = props;
-      icon = <BingIcon size={size * 0.7} />;
-      bg = jailbreak ? 'radial-gradient(circle at 90% 110%, #F0F0FA, #D0E0F9)' : 'transparent';
-      name = jailbreak ? 'Sydney' : 'BingAI';
+      if (jailbreak) {
+        icon = <BingJbIcon size={size * 0.7} />;
+        name = 'Sydney';
+      } else {
+        icon = <BingIcon size={size * 0.7} />;
+        name = 'BingAI';
+      }
     } else if (endpoint === 'chatGPTBrowser') {
       icon = <GPTIcon size={size * 0.7} />;
       bg =
