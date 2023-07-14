@@ -40,6 +40,7 @@ config.validate(); // Validate the config
 
   // OAUTH
   app.use(cookieParser(cookieSecret));
+  require('./jobs/removeExpiredSessions.js');
   app.use(passport.initialize());
   require('../strategies/jwtStrategy');
   require('../strategies/localStrategy');
