@@ -163,7 +163,7 @@ const ask = async ({
 
     const partialText = getPartialText();
     let unfinished = false;
-    if (partialText?.length > response.text.length) {
+    if (partialText?.trim()?.length > response.text.length) {
       response.text = partialText;
       unfinished = true;
     }
