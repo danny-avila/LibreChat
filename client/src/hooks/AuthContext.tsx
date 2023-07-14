@@ -159,9 +159,18 @@ const AuthContextProvider = ({
 
   useEffect(() => {
     const checkRefreshToken = async () => {
-      const response = await refreshToken();
-      if (response?.status === 200) {
-        setUserContext({ token: response?.data?.token, isAuthenticated: true, user: response?.data?.user });
+      try {
+        const response = await refreshToken();
+        if (response?.status === 200) {
+          setUserContext({ token: response?.data?.token, isAuthenticated: true, user: response?.data?.user });
+        } else {
+          navigate('/login', { replace: true });
+        }
+      } catch (error) {
+        if (error.response && error.response.status === 401) {
+        console.log("Refresh token has expired, please log in again.");
+      }
+        navigate('/login', { replace: true });
       }
     };
 
