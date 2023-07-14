@@ -25,6 +25,8 @@ Important: When you run the app for the first time, you need to create a new acc
 
 ## **OAuth2/Social Login**
 
+## Before enabling Social Authentication, set ALLOW_SOCIAL_LOGIN=true in the .env file
+
 ## How to Set Up Google Authentication
 
 To enable Google login, you must create an application in the [Google Cloud Console](https://cloud.google.com) and provide the client ID and client secret in the `/.env` file.
