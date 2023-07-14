@@ -45,7 +45,7 @@ const getAvailablePluginsController = async (req, res) => {
           });
           res.status(200).json(authenticatedPlugins);
         }
-      }
+      },
     );
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -53,5 +53,5 @@ const getAvailablePluginsController = async (req, res) => {
 };
 
 module.exports = {
-  getAvailablePluginsController
+  getAvailablePluginsController,
 };

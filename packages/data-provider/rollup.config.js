@@ -24,7 +24,7 @@ export default [
       preserveSymlinks: true,
       plugins: [
         resolve(),
-        typescript({useTsconfigDeclarationDir: true, tsconfig: './tsconfig.json'}),
+        typescript({ useTsconfigDeclarationDir: true, tsconfig: './tsconfig.json' }),
       ],
     },
   },

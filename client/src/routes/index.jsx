@@ -16,22 +16,22 @@ const AuthLayout = () => (
 export const router = createBrowserRouter([
   {
     path: 'register',
-    element: <Registration />
+    element: <Registration />,
   },
   {
     path: 'forgot-password',
-    element: <RequestPasswordReset />
+    element: <RequestPasswordReset />,
   },
   {
     path: 'reset-password',
-    element: <ResetPassword />
+    element: <ResetPassword />,
   },
   {
     element: <AuthLayout />,
     children: [
       {
         path: 'login',
-        element: <Login />
+        element: <Login />,
       },
       {
         path: '/',
@@ -39,18 +39,18 @@ export const router = createBrowserRouter([
         children: [
           {
             index: true,
-            element: <Navigate to="/chat/new" replace={true} />
+            element: <Navigate to="/chat/new" replace={true} />,
           },
           {
             path: 'chat/:conversationId?',
-            element: <Chat />
+            element: <Chat />,
           },
           {
             path: 'search/:query?',
-            element: <Search />
-          }
-        ]
-      }
-    ]
-  }
+            element: <Search />,
+          },
+        ],
+      },
+    ],
+  },
 ]);

@@ -63,9 +63,9 @@ export default function Messages({ isSearchView = false }) {
         setShowScrollButton(false);
       },
       750,
-      { leading: true }
+      { leading: true },
     ),
-    [messagesEndRef]
+    [messagesEndRef],
   );
 
   let timeoutId = null;

@@ -13,7 +13,7 @@ export default function resetConvo(messages, sender) {
       'last model: ',
       lastModel,
       'sender: ',
-      sender
+      sender,
     );
     return true;
   }

@@ -6,26 +6,26 @@ const presetSchema = mongoose.Schema(
       type: String,
       unique: true,
       required: true,
-      index: true
+      index: true,
     },
     title: {
       type: String,
       default: 'New Chat',
-      meiliIndex: true
+      meiliIndex: true,
     },
     user: {
       type: String,
-      default: null
+      default: null,
     },
     // google only
     examples: [{ type: mongoose.Schema.Types.Mixed }],
     ...conversationPreset,
     agentOptions: {
       type: mongoose.Schema.Types.Mixed,
-      default: null
-    }
+      default: null,
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 const Preset = mongoose.models.Preset || mongoose.model('Preset', presetSchema);

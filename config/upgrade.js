@@ -48,9 +48,9 @@ if (!fs.existsSync(clientEnvPath)) {
 /**
  * Refactor the ENV if it has a prod_/dev_ version
  *
- * @param {*} varDev 
- * @param {*} varProd 
- * @param {*} varName 
+ * @param {*} varDev
+ * @param {*} varProd
+ * @param {*} varName
  */
 function refactorPairedEnvVar(varDev, varProd, varName) {
   // Lets validate if either of these are undefined, if so lets use the non-undefined one
@@ -103,7 +103,7 @@ const removeEnvs = {
   '# Don\'t forget to set Node env to development in the Server configuration section above': 'remove',
   '# if you want to run in dev mode': 'remove',
   '# Change these values to domain if deploying:': 'remove',
-  '# Set Node env to development if running in dev mode.': 'remove'
+  '# Set Node env to development if running in dev mode.': 'remove',
 }
 loader.writeEnvFile(rootEnvPath, removeEnvs)
 
@@ -119,13 +119,13 @@ loader.addSecureEnvVar(rootEnvPath, 'CREDS_IV', 16);
 loader.addSecureEnvVar(rootEnvPath, 'JWT_SECRET', 32);
 
 // Lets update the openai key name, not the best spot in the env file but who cares ¯\_(ツ)_/¯
-loader.writeEnvFile(rootEnvPath, {'OPENAI_API_KEY': initEnv['OPENAI_KEY']})
+loader.writeEnvFile(rootEnvPath, { 'OPENAI_API_KEY': initEnv['OPENAI_KEY'] })
 
 // TODO: we need to copy over the value of: APP_TITLE
 fs.appendFileSync(rootEnvPath, '\n\n##########################\n# Frontend Vite Variables:\n##########################\n');
 const frontend = {
   'APP_TITLE': initEnv['VITE_APP_TITLE'] || '"LibreChat"',
-  'ALLOW_REGISTRATION': 'true'
+  'ALLOW_REGISTRATION': 'true',
 }
 loader.writeEnvFile(rootEnvPath, frontend)
 

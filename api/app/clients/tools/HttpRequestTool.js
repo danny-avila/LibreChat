@@ -55,7 +55,8 @@ class HttpRequestTool extends Tool {
     this.headers = headers;
     this.name = 'http_request';
     this.maxOutputLength = maxOutputLength;
-    this.description = `Executes HTTP methods (GET, POST, PUT, DELETE, etc.). The input is an object with three keys: "url", "method", and "data". Even for GET or DELETE, include "data" key as an empty string. "method" is the HTTP method, and "url" is the desired endpoint. If POST or PUT, "data" should contain a stringified JSON representing the body to send. Only one url per use.`;
+    this.description =
+      'Executes HTTP methods (GET, POST, PUT, DELETE, etc.). The input is an object with three keys: "url", "method", and "data". Even for GET or DELETE, include "data" key as an empty string. "method" is the HTTP method, and "url" is the desired endpoint. If POST or PUT, "data" should contain a stringified JSON representing the body to send. Only one url per use.';
   }
 
   async _call(input) {
@@ -77,7 +78,7 @@ class HttpRequestTool extends Tool {
 
       let options = {
         method: method,
-        headers: this.headers
+        headers: this.headers,
       };
 
       if (['POST', 'PUT', 'PATCH'].includes(method.toUpperCase()) && data) {

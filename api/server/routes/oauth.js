@@ -2,8 +2,8 @@ const passport = require('passport');
 const express = require('express');
 const router = express.Router();
 const config = require('../../../config/loader');
-const { setAuthTokens } = require('../services/auth.service');
 const domains = config.domains;
+const isProduction = config.isProduction;
 
 /**
  * Google Routes
@@ -12,8 +12,8 @@ router.get(
   '/google',
   passport.authenticate('google', {
     scope: ['openid', 'profile', 'email'],
-    session: false
-  })
+    session: false,
+  }),
 );
 
 router.get(
@@ -22,24 +22,25 @@ router.get(
     failureRedirect: `${domains.client}/login`,
     failureMessage: true,
     session: false,
-    scope: ['openid', 'profile', 'email']
+    scope: ['openid', 'profile', 'email'],
   }),
-  async (req, res) => {
-    try {
-      await setAuthTokens(req.user._id, res);
-      res.redirect(domains.client);
-    } catch (err) {
-      console.error('Error in setting authentication tokens:', err);
-    }
-  }
+  (req, res) => {
+    const token = req.user.generateToken();
+    res.cookie('token', token, {
+      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
+      httpOnly: false,
+      secure: isProduction,
+    });
+    res.redirect(domains.client);
+  },
 );
 
 router.get(
   '/facebook',
   passport.authenticate('facebook', {
     scope: ['public_profile', 'email'],
-    session: false
-  })
+    session: false,
+  }),
 );
 
 router.get(
@@ -48,23 +49,24 @@ router.get(
     failureRedirect: `${domains.client}/login`,
     failureMessage: true,
     session: false,
-    scope: ['public_profile', 'email']
+    scope: ['public_profile', 'email'],
   }),
-  async (req, res) => {
-    try {
-      await setAuthTokens(req.user._id, res);
-      res.redirect(domains.client);
-    } catch (err) {
-      console.error('Error in setting authentication tokens:', err);
-    }
-  }
+  (req, res) => {
+    const token = req.user.generateToken();
+    res.cookie('token', token, {
+      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
+      httpOnly: false,
+      secure: isProduction,
+    });
+    res.redirect(domains.client);
+  },
 );
 
 router.get(
   '/openid',
   passport.authenticate('openid', {
-    session: false
-  })
+    session: false,
+  }),
 );
 
 router.get(
@@ -72,24 +74,25 @@ router.get(
   passport.authenticate('openid', {
     failureRedirect: `${domains.client}/login`,
     failureMessage: true,
-    session: false
+    session: false,
   }),
-  async (req, res) => {
-    try {
-      await setAuthTokens(req.user._id, res);
-      res.redirect(domains.client);
-    } catch (err) {
-      console.error('Error in setting authentication tokens:', err);
-    }
-  }
+  (req, res) => {
+    const token = req.user.generateToken();
+    res.cookie('token', token, {
+      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
+      httpOnly: false,
+      secure: isProduction,
+    });
+    res.redirect(domains.client);
+  },
 );
 
 router.get(
   '/github',
   passport.authenticate('github', {
     scope: ['user:email', 'read:user'],
-    session: false
-  })
+    session: false,
+  }),
 );
 
 router.get(
@@ -98,24 +101,25 @@ router.get(
     failureRedirect: `${domains.client}/login`,
     failureMessage: true,
     session: false,
-    scope: ['user:email', 'read:user']
+    scope: ['user:email', 'read:user'],
   }),
-  async (req, res) => {
-    try {
-      await setAuthTokens(req.user._id, res);
-      res.redirect(domains.client);
-    } catch (err) {
-      console.error('Error in setting authentication tokens:', err);
-    }
-  }
+  (req, res) => {
+    const token = req.user.generateToken();
+    res.cookie('token', token, {
+      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
+      httpOnly: false,
+      secure: isProduction,
+    });
+    res.redirect(domains.client);
+  },
 );
 
 router.get(
   '/discord',
   passport.authenticate('discord', {
     scope: ['identify', 'email'],
-    session: false
-  })
+    session: false,
+  }),
 );
 
 router.get(
@@ -124,16 +128,17 @@ router.get(
     failureRedirect: `${domains.client}/login`,
     failureMessage: true,
     session: false,
-    scope: ['identify', 'email']
+    scope: ['identify', 'email'],
   }),
-  async (req, res) => {
-    try {
-      await setAuthTokens(req.user._id, res);
-      res.redirect(domains.client);
-    } catch (err) {
-      console.error('Error in setting authentication tokens:', err);
-    }
-  }
+  (req, res) => {
+    const token = req.user.generateToken();
+    res.cookie('token', token, {
+      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
+      httpOnly: false,
+      secure: isProduction,
+    });
+    res.redirect(domains.client);
+  },
 );
 
 module.exports = router;

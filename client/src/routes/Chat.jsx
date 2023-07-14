@@ -11,7 +11,7 @@ import store from '~/store';
 import {
   useGetMessagesByConvoId,
   useGetConversationByIdMutation,
-  useGetStartupConfig
+  useGetStartupConfig,
 } from '@librechat/data-provider';
 
 export default function Chat() {
@@ -70,7 +70,7 @@ export default function Chat() {
           navigate('/chat/new');
           newConversation();
           setShouldNavigate(true);
-        }
+        },
       });
       setMessages(null);
     }

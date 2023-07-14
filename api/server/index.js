@@ -61,7 +61,7 @@ config.validate(); // Validate the config
     app.use(session({
       secret: process.env.OPENID_SESSION_SECRET,
       resave: false,
-      saveUninitialized: false
+      saveUninitialized: false,
     }));
     app.use(passport.session());
     require('../strategies/openidStrategy');
@@ -89,7 +89,7 @@ config.validate(); // Validate the config
   app.listen(port, host, () => {
     if (host == '0.0.0.0')
       console.log(
-        `Server listening on all interface at port ${port}. Use http://localhost:${port} to access it`
+        `Server listening on all interface at port ${port}. Use http://localhost:${port} to access it`,
       );
     else
       console.log(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);

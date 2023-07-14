@@ -27,8 +27,8 @@ router.post('/', requireJwtAuth, async (req, res) => {
       temperature: req.body?.temperature ?? 0.7,
       maxOutputTokens: req.body?.maxOutputTokens ?? 1024,
       topP: req.body?.topP ?? 0.7,
-      topK: req.body?.topK ?? 40
-    }
+      topK: req.body?.topK ?? 40,
+    },
   };
 
   const conversationId = oldConversationId || crypto.randomUUID();
@@ -39,7 +39,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
     conversationId,
     parentMessageId,
     req,
-    res
+    res,
   });
 });
 
@@ -49,7 +49,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
     'Access-Control-Allow-Origin': '*',
-    'X-Accel-Buffering': 'no'
+    'X-Accel-Buffering': 'no',
   });
 
   let userMessage;
@@ -81,10 +81,10 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
             text: partialText,
             unfinished: true,
             cancelled: false,
-            error: false
+            error: false,
           });
         }
-      }
+      },
     });
 
     const abortController = new AbortController();
@@ -110,7 +110,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
         final: true,
         conversation: await getConvo(req.user.id, conversationId),
         requestMessage: userMessage,
-        responseMessage: responseMessage
+        responseMessage: responseMessage,
       };
     };
 
@@ -132,10 +132,10 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       onProgress: progressCallback.call(null, {
         res,
         text,
-        parentMessageId: overrideParentMessageId || userMessageId
+        parentMessageId: overrideParentMessageId || userMessageId,
       }),
       onStart,
-      abortController
+      abortController,
     });
 
     if (overrideParentMessageId) {
@@ -146,7 +146,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       ...endpointOption,
       ...endpointOption.modelOptions,
       conversationId,
-      endpoint: 'anthropic'
+      endpoint: 'anthropic',
     });
 
     await saveMessage(response);
@@ -155,7 +155,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       final: true,
       conversation: await getConvo(req.user.id, conversationId),
       requestMessage: userMessage,
-      responseMessage: response
+      responseMessage: response,
     });
     res.end();
 
@@ -163,7 +163,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       const title = await titleConvo({ text, response });
       await saveConvo(req.user.id, {
         conversationId,
-        title
+        title,
       });
     }
   } catch (error) {
@@ -176,7 +176,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       unfinished: false,
       cancelled: false,
       error: true,
-      text: error.message
+      text: error.message,
     };
     await saveMessage(errorMessage);
     handleError(res, errorMessage);

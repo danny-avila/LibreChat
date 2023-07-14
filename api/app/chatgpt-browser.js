@@ -10,11 +10,11 @@ const browserClient = async ({
   onProgress,
   onEventMessage,
   abortController,
-  userId
+  userId,
 }) => {
   const { ChatGPTBrowserClient } = await import('@waylaidwanderer/chatgpt-api');
   const store = {
-    store: new KeyvFile({ filename: './data/cache.json' })
+    store: new KeyvFile({ filename: './data/cache.json' }),
   };
 
   const clientOptions = {
@@ -27,7 +27,7 @@ const browserClient = async ({
     model: model,
     debug: false,
     proxy: process.env.PROXY || null,
-    user: userId
+    user: userId,
   };
 
   const client = new ChatGPTBrowserClient(clientOptions, store);
