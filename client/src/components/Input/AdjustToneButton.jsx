@@ -1,6 +1,6 @@
 import React from 'react';
 import { Settings2 } from 'lucide-react';
-export default function AdjustButton({ onClick }) {
+export default function AdjustToneButton({ onClick }) {
   const clickHandler = (e) => {
     e.preventDefault();
     onClick();
