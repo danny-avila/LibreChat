@@ -41,7 +41,7 @@ export default function TextChat({ isSearchView = false }) {
       return;
     }
 
-    // Prevents Settings from not showing on new conversation, also prevents toneStyle change without jailbreak
+    // Prevents Settings from not showing on new conversation, also prevents showing toneStyle change without jailbreak
     if (conversationId === 'new' || !conversation?.jailbreak) {
       setShowBingToneSetting(false);
     }
@@ -158,7 +158,7 @@ export default function TextChat({ isSearchView = false }) {
               >
                 <NewConversationMenu />
                 <TextareaAutosize
-                // set test id for e2e testing
+                  // set test id for e2e testing
                   data-testid="text-input"
                   tabIndex="0"
                   autoFocus
