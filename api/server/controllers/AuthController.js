@@ -15,14 +15,7 @@ const registrationController = async (req, res) => {
     const response = await registerUser(req.body);
     if (response.status === 200) {
       const { status, user } = response;
-      const newUser = await User.findById(user._id);
-
-      // If user doesn't exist, return error
-      if (!newUser) {
-        return res.status(400).json({ message: 'User not found' });
-      }
-
-      await setAuthTokens( newUser._id, res );
+      const token = await setAuthTokens( user._id, res );
       res.status(status).send({ user });
     } else {
       const { status, message } = response;
