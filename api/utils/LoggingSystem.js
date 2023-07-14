@@ -68,45 +68,65 @@ module.exports = {
   setLevel: (l) => (level = l),
   log: {
     trace: (msg) => {
-      if (level <= levels.TRACE) return;
+      if (level <= levels.TRACE) {
+        return;
+      }
       logger.trace(msg);
     },
     debug: (msg) => {
-      if (level <= levels.DEBUG) return;
+      if (level <= levels.DEBUG) {
+        return;
+      }
       logger.debug(msg);
     },
     info: (msg) => {
-      if (level <= levels.INFO) return;
+      if (level <= levels.INFO) {
+        return;
+      }
       logger.info(msg);
     },
     warn: (msg) => {
-      if (level <= levels.WARN) return;
+      if (level <= levels.WARN) {
+        return;
+      }
       logger.warn(msg);
     },
     error: (msg) => {
-      if (level <= levels.ERROR) return;
+      if (level <= levels.ERROR) {
+        return;
+      }
       logger.error(msg);
     },
     fatal: (msg) => {
-      if (level <= levels.FATAL) return;
+      if (level <= levels.FATAL) {
+        return;
+      }
       logger.fatal(msg);
     },
 
     // Custom loggers
     parameters: (parameters) => {
-      if (level <= levels.TRACE) return;
+      if (level <= levels.TRACE) {
+        return;
+      }
       logger.debug({ parameters }, 'Function Parameters');
     },
     functionName: (name) => {
-      if (level <= levels.TRACE) return;
+      if (level <= levels.TRACE) {
+        return;
+      }
       logger.debug(`EXECUTING: ${name}`);
     },
     flow: (flow) => {
-      if (level <= levels.INFO) return;
+      if (level <= levels.INFO) {
+        return;
+      }
       logger.debug(`BEGIN FLOW: ${flow}`);
     },
     variable: ({ name, value }) => {
-      if (level <= levels.DEBUG) return;
+      if (level <= levels.DEBUG) {
+        return;
+      }
       // Check if the variable name matches any of the redact patterns and redact the value
       let sanitizedValue = value;
       for (const pattern of redactPatterns) {
@@ -118,7 +138,9 @@ module.exports = {
       logger.debug({ variable: { name, value: sanitizedValue } }, `VARIABLE ${name}`);
     },
     request: () => (req, res, next) => {
-      if (level < levels.DEBUG) return next();
+      if (level < levels.DEBUG) {
+        return next();
+      }
       logger.debug({ query: req.query, body: req.body }, `Hit URL ${req.url} with following`);
       return next();
     },

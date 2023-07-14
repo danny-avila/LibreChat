@@ -30,4 +30,4 @@ function findMessageContent(message) {
   return content;
 }
 
-module.exports = findMessageContent
+module.exports = findMessageContent;

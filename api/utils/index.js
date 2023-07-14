@@ -12,5 +12,5 @@ module.exports = {
   tiktokenModels,
   sendEmail,
   abortMessage,
-  findMessageContent,,
-}
+  findMessageContent,
+};

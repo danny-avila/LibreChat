@@ -125,7 +125,7 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
       user,
       message: options.message,
       map: true,
-      verbose: options?.debug
+      verbose: options?.debug,
     });
     console.dir(specs, { depth: null });
   }

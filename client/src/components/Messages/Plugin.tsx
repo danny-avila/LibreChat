@@ -46,16 +46,19 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
   const finished = plugin.outputs && plugin.outputs.length > 0;
   const plugins: PluginsMap = useRecoilValue(store.plugins);
 
-  const getPluginName = useCallback((pluginKey: string) => {
-    if (!pluginKey) {
-      return null;
-    }
+  const getPluginName = useCallback(
+    (pluginKey: string) => {
+      if (!pluginKey) {
+        return null;
+      }
 
-    if (pluginKey === 'n/a' || pluginKey === 'self reflection') {
-      return pluginKey;
-    }
-    return plugins[pluginKey] ?? 'self reflection';
-  }, [plugins]);
+      if (pluginKey === 'n/a' || pluginKey === 'self reflection') {
+        return pluginKey;
+      }
+      return plugins[pluginKey] ?? 'self reflection';
+    },
+    [plugins],
+  );
 
   if (!plugin || !plugin.latest) {
     return null;
@@ -94,7 +97,7 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
             <div
               className={cn(
                 loading ? 'bg-green-100' : 'bg-[#ECECF1]',
-                'flex items-center rounded p-3 text-sm text-gray-900'
+                'flex items-center rounded p-3 text-sm text-gray-900',
               )}
             >
               <div>
@@ -129,6 +132,6 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
       </Disclosure>
     </div>
   );
-}
+};
 
 export default memo(Plugin);

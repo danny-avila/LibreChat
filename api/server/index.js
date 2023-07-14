@@ -33,7 +33,9 @@ config.validate(); // Validate the config
   app.use(cors());
 
   if (!process.env.ALLOW_SOCIAL_LOGIN) {
-    console.warn('Social logins are disabled. Set Envrionment Variable "ALLOW_SOCIAL_LOGIN" to true to enable them.')
+    console.warn(
+      'Social logins are disabled. Set Envrionment Variable "ALLOW_SOCIAL_LOGIN" to true to enable them.',
+    );
   }
 
   // OAUTH
@@ -52,14 +54,20 @@ config.validate(); // Validate the config
   if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
     require('../strategies/discordStrategy');
   }
-  if (process.env.OPENID_CLIENT_ID && process.env.OPENID_CLIENT_SECRET &&
-      process.env.OPENID_ISSUER && process.env.OPENID_SCOPE &&
-      process.env.OPENID_SESSION_SECRET) {
-    app.use(session({
-      secret: process.env.OPENID_SESSION_SECRET,
-      resave: false,
-      saveUninitialized: false,
-    }));
+  if (
+    process.env.OPENID_CLIENT_ID &&
+    process.env.OPENID_CLIENT_SECRET &&
+    process.env.OPENID_ISSUER &&
+    process.env.OPENID_SCOPE &&
+    process.env.OPENID_SESSION_SECRET
+  ) {
+    app.use(
+      session({
+        secret: process.env.OPENID_SESSION_SECRET,
+        resave: false,
+        saveUninitialized: false,
+      }),
+    );
     app.use(passport.session());
     require('../strategies/openidStrategy');
   }

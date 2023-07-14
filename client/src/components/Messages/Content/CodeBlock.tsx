@@ -21,11 +21,12 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(({ lang, codeRef, plugin = nu
           className="ml-auto flex gap-2"
           onClick={async () => {
             const codeString = codeRef.current?.textContent;
-            if (codeString)
+            if (codeString) {
               navigator.clipboard.writeText(codeString).then(() => {
                 setIsCopied(true);
                 setTimeout(() => setIsCopied(false), 3000);
               });
+            }
           }}
         >
           {isCopied ? (
@@ -52,7 +53,12 @@ interface CodeBlockProps {
   plugin?: boolean;
 }
 
-const CodeBlock: React.FC<CodeBlockProps> = ({ lang, codeChildren, classProp = '', plugin = null }) => {
+const CodeBlock: React.FC<CodeBlockProps> = ({
+  lang,
+  codeChildren,
+  classProp = '',
+  plugin = null,
+}) => {
   const codeRef = useRef<HTMLElement>(null);
   const language = plugin ? 'json' : lang;
 

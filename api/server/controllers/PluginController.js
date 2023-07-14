@@ -29,7 +29,7 @@ const getAvailablePluginsController = async (req, res) => {
   try {
     const manifestFile = await fs.readFile(
       path.join(__dirname, '..', '..', 'app', 'clients', 'tools', 'manifest.json'),
-      'utf8'
+      'utf8',
     );
 
     const jsonData = JSON.parse(manifestFile);

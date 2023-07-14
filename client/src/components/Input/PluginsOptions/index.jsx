@@ -59,7 +59,9 @@ function PluginsOptions() {
   const triggerAgentSettings = () => setShowAgentSettings((prev) => !prev);
   const { endpoint, agentOptions } = conversation;
 
-  if (endpoint !== 'gptPlugins') return null;
+  if (endpoint !== 'gptPlugins') {
+    return null;
+  }
   const models = endpointsConfig?.['gptPlugins']?.['availableModels'] || [];
 
   const triggerAdvancedMode = () => setAdvancedMode((prev) => !prev);
@@ -73,7 +75,9 @@ function PluginsOptions() {
   };
 
   function checkIfSelected(value) {
-    if (!conversation.tools) return false;
+    if (!conversation.tools) {
+      return false;
+    }
     return conversation.tools.find((el) => el.pluginKey === value) ? true : false;
   }
 
@@ -129,12 +133,18 @@ function PluginsOptions() {
           (!advancedMode ? opacityClass : '')
         }
         onMouseEnter={() => {
-          if (advancedMode) return;
+          if (advancedMode) {
+            return;
+          }
           setOpacityClass('full-opacity');
         }}
         onMouseLeave={() => {
-          if (advancedMode) return;
-          if (!messagesTree || messagesTree.length === 0) return;
+          if (advancedMode) {
+            return;
+          }
+          if (!messagesTree || messagesTree.length === 0) {
+            return;
+          }
           setOpacityClass('show');
         }}
       >

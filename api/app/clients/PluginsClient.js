@@ -194,7 +194,7 @@ Only respond with your conversational reply to the following User Message:
       functions: this.functionsAgent,
       options: {
         openAIApiKey: this.openAIApiKey,
-        debug: this.options?.debug,,
+        debug: this.options?.debug,
         message,
       },
     });
@@ -270,11 +270,14 @@ Only respond with your conversational reply to the following User Message:
       console.debug('Loaded agent.');
     }
 
-    onAgentAction({
-      tool: 'self-reflection',
-      toolInput: `Processing the User's message:\n"${message}"`,
-      log: ''
-    }, true);
+    onAgentAction(
+      {
+        tool: 'self-reflection',
+        toolInput: `Processing the User's message:\n"${message}"`,
+        log: '',
+      },
+      true,
+    );
   }
 
   async executorCall(message, signal) {

@@ -7,21 +7,25 @@ const { DynamicStructuredTool } = require('langchain/tools');
 const { createOpenAPIChain } = require('langchain/chains');
 const SUFFIX = 'Prioritize using responses for subsequent requests to better fulfill the query.';
 
-const AuthBearer = z.object({
-  type: z.string().includes('service_http'),
-  authorization_type: z.string().includes('bearer'),
-  verification_tokens: z.object({
-    openai: z.string(),
+const AuthBearer = z
+  .object({
+    type: z.string().includes('service_http'),
+    authorization_type: z.string().includes('bearer'),
+    verification_tokens: z.object({
+      openai: z.string(),
+    }),
   })
-}).catch(() => false);
+  .catch(() => false);
 
-const AuthDefinition = z.object({
-  type: z.string(),
-  authorization_type: z.string(),
-  verification_tokens: z.object({
-    openai: z.string(),
+const AuthDefinition = z
+  .object({
+    type: z.string(),
+    authorization_type: z.string(),
+    verification_tokens: z.object({
+      openai: z.string(),
+    }),
   })
-}).catch(() => false);
+  .catch(() => false);
 
 async function readSpecFile(filePath) {
   try {
@@ -37,21 +41,27 @@ async function readSpecFile(filePath) {
 }
 
 async function getSpec(url) {
-  const RegularUrl = z.string().url().catch(() => false);
+  const RegularUrl = z
+    .string()
+    .url()
+    .catch(() => false);
 
   if (RegularUrl.parse(url) && path.extname(url) === '.json') {
     const response = await fetch(url);
     return await response.json();
   }
 
-  const ValidSpecPath = z.string().url().catch(async () => {
-    const spec = path.join(__dirname, '..', '.well-known', 'openapi', url);
-    if (!fs.existsSync(spec)) {
-      return false;
-    }
+  const ValidSpecPath = z
+    .string()
+    .url()
+    .catch(async () => {
+      const spec = path.join(__dirname, '..', '.well-known', 'openapi', url);
+      if (!fs.existsSync(spec)) {
+        return false;
+      }
 
-    return await readSpecFile(spec);
-  });
+      return await readSpecFile(spec);
+    });
 
   return ValidSpecPath.parse(url);
 }
@@ -68,7 +78,7 @@ async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }
   if (!spec) {
     verbose && console.debug('No spec found');
     return null;
-  };
+  }
 
   const headers = {};
   const { auth, description_for_model } = data;
@@ -85,7 +95,11 @@ async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }
     name: data.name_for_model,
     description: `${data.description_for_human} ${SUFFIX}`,
     schema: z.object({
-      query: z.string().describe('For the query, be specific in a conversational manner. It will be interpreted by a human.'),
+      query: z
+        .string()
+        .describe(
+          'For the query, be specific in a conversational manner. It will be interpreted by a human.',
+        ),
     }),
     func: async () => {
       const chainOptions = {
@@ -109,10 +123,12 @@ async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }
       }
 
       const chain = await createOpenAPIChain(spec, chainOptions);
-      const result = await chain.run(`${message}\n\n||>Instructions: ${description_for_model}\n${SUFFIX}`);
+      const result = await chain.run(
+        `${message}\n\n||>Instructions: ${description_for_model}\n${SUFFIX}`,
+      );
       console.log('api chain run result', result);
       return result;
-    }
+    },
   });
 }
 

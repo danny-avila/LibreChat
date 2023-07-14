@@ -5,7 +5,7 @@ const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { DynamicStructuredTool } = require('langchain/tools');
 const { createOpenAPIChain } = require('langchain/chains');
 
-(async function() {
+(async function () {
   const response = await fetch('https://scholar-ai.net/.well-known/ai-plugin.json');
   const data = await response.json();
   console.log(data);
@@ -17,7 +17,7 @@ const { createOpenAPIChain } = require('langchain/chains');
     name: data.name_for_model,
     description: data.description_for_model,
     schema: z.object({
-      query: z.string().describe(`Natural language query for API: ${data.description_for_human}`)
+      query: z.string().describe(`Natural language query for API: ${data.description_for_human}`),
     }),
     func: async ({ query }) => {
       const chain = await createOpenAPIChain(yaml, {
@@ -29,16 +29,20 @@ const { createOpenAPIChain } = require('langchain/chains');
       const result = await chain.run(query);
       console.log('api chain run result', result);
       return result;
-    }
+    },
   });
 
   const executor = await initializeAgentExecutorWithOptions(
     [Plugin],
-    new ChatOpenAI({ modelName: 'gpt-4-0613', temperature: 0, openAIApiKey: process.env.OPENAI_API_KEY }),
+    new ChatOpenAI({
+      modelName: 'gpt-4-0613',
+      temperature: 0,
+      openAIApiKey: process.env.OPENAI_API_KEY,
+    }),
     {
       agentType: 'openai-functions',
       verbose: true,
-    }
+    },
   );
 
   const result = await executor.run(query);

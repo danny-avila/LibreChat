@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { createOpenAPIChain } = require('langchain/chains');
 
-(async function() {
+(async function () {
   const response = await fetch('https://scholar-ai.net/.well-known/ai-plugin.json');
   const data = await response.json();
   console.log(data);
@@ -16,7 +16,7 @@ const { createOpenAPIChain } = require('langchain/chains');
     verbose: true,
     params: {
       sort: 'cited_by_count',
-    }
+    },
   });
   const result = await chain.run(query);
   console.log('api chain run result', result);

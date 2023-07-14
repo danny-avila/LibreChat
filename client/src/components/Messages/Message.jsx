@@ -78,9 +78,10 @@ export default function Message({
     model: message?.model || conversation?.model,
   });
 
-  if (!isCreatedByUser)
+  if (!isCreatedByUser) {
     props.className =
       'w-full border-b border-black/10 bg-gray-50 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-100 dark:bg-gray-1000';
+  }
 
   if (message.bg && searchResult) {
     props.className = message.bg.split('hover')[0];
@@ -101,7 +102,9 @@ export default function Message({
   };
 
   const regenerateMessage = () => {
-    if (!isSubmitting && !message?.isCreatedByUser) regenerate(message);
+    if (!isSubmitting && !message?.isCreatedByUser) {
+      regenerate(message);
+    }
   };
 
   const copyToClipboard = (setIsCopied) => {
@@ -114,7 +117,9 @@ export default function Message({
   };
 
   const clickSearchResult = async () => {
-    if (!searchResult) return;
+    if (!searchResult) {
+      return;
+    }
     getConversationQuery.refetch(message.conversationId).then((response) => {
       switchToConversation(response.data);
     });

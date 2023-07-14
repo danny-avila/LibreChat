@@ -1,4 +1,3 @@
-
 const isJson = (str) => {
   try {
     JSON.parse(str);
@@ -6,7 +5,7 @@ const isJson = (str) => {
     return false;
   }
   return true;
-}
+};
 
 const getError = (text) => {
   const errorMessage = text.length > 512 ? text.slice(0, 512) + '...' : text;
