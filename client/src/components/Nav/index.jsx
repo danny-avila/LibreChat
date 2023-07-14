@@ -223,7 +223,7 @@ export default function Nav({ navVisible, setNavVisible }) {
       {!navVisible && (
         <button
           type="button"
-          className="nav-open-button mt-1 fixed left-2 top-0.5 z-10 flex p-3 items-center gap-3 transition-colors duration-200 text-white cursor-pointer text-sm rounded-md border bg-white dark:bg-gray-800 border-black/10 dark:border-white/20 hover:bg-gray-50 dark:hover:bg-gray-700 h-11 w-11"
+          className="nav-open-button mt-1 fixed left-2 top-0.5 z-10 flex p-3 items-center gap-3 transition-colors duration-200 cursor-pointer text-sm rounded-md border bg-white dark:bg-gray-800 border-black/10 dark:border-white/20 hover:bg-gray-50 dark:hover:bg-gray-700 h-11 w-11 text-gray-900"
           onClick={toggleNavVisible}
         >
           <div className="flex items-center justify-center">

@@ -2,8 +2,6 @@ import { Menu, Transition } from '@headlessui/react';
 import { Fragment, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import SearchBar from './SearchBar';
-import TrashIcon from '../svg/TrashIcon';
-import GearIcon from '../svg/GearIcon';
 import Settings from './Settings';
 import { Download } from 'lucide-react';
 import NavLink from './NavLink';
@@ -14,7 +12,7 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { cn } from '~/utils/';
 
 import store from '~/store';
-import { LinkIcon, DotsIcon } from '~/components';
+import { LinkIcon, DotsIcon, GearIcon, TrashIcon } from '~/components';
 
 export default function NavLinks({ clearSearch, isSearchEnabled }) {
   const [showExports, setShowExports] = useState(false);
