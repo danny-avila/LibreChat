@@ -160,19 +160,14 @@ const AuthContextProvider = ({
   useEffect(() => {
     const checkRefreshToken = async () => {
       try {
-        // Call the /refresh endpoint or similar
         const response = await refreshToken();
-
         if (response.status === 200) {
-          // refreshToken is valid, set the user as logged in
           setUserContext({ token: response.data.token, isAuthenticated: true, user: response.data.user });
         } else {
-          // refreshToken is not valid, show an error or redirect to login
           navigate('/login');
         }
       } catch (error) {
-        // Request failed, show an error or redirect to login
-        console.error('Failed to refresh token:', error);
+        console.log('Failed to refresh token:', error);
         navigate('/login');
       }
     };
