@@ -285,14 +285,17 @@ function Registration() {
           </a>
         </p>
         {startupConfig?.socialLoginEnabled && (
-          <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
-            <div className="absolute bg-white px-3 text-xs">Or</div>
-          </div>
+          <>
+            <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
+              <div className="absolute bg-white px-3 text-xs">Or</div>
+            </div>
+            <div className="mt-8" />
+          </>
         )}
         {startupConfig?.googleLoginEnabled && startupConfig?.socialLoginEnabled && (
           <>
 
-            <div className="mt-4 flex gap-x-2">
+            <div className="mt-2 flex gap-x-2">
               <a
                 aria-label="Login with Google"
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
@@ -305,8 +308,7 @@ function Registration() {
         )}
         {startupConfig?.openidLoginEnabled && startupConfig?.socialLoginEnabled && (
           <>
-
-            <div className="mt-4 flex gap-x-2">
+            <div className="mt-2 flex gap-x-2">
               <a
                 aria-label="Login with OpenID"
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
@@ -325,14 +327,14 @@ function Registration() {
         {startupConfig?.githubLoginEnabled && startupConfig?.socialLoginEnabled && (
           <>
 
-            <div className="mt-4 flex gap-x-2">
+            <div className="mt-2 flex gap-x-2">
               <a
                 aria-label="Login with GitHub"
 
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
                 href={`${startupConfig.serverDomain}/oauth/github`}>
                 <GithubIcon />
-                <p>Login with Github</p>
+                <p>{localize(lang, 'com_auth_github_login')}</p>
               </a>
             </div>
           </>
@@ -340,13 +342,13 @@ function Registration() {
         {startupConfig?.discordLoginEnabled && startupConfig?.socialLoginEnabled && (
           <>
 
-            <div className="mt-4 flex gap-x-2">
+            <div className="mt-2 flex gap-x-2">
               <a
                 aria-label="Login with Discord"
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
                 href={`${startupConfig.serverDomain}/oauth/discord`}>
                 <DiscordIcon />
-                <p>Login with Discord</p>
+                <p>{localize(lang, 'com_auth_discord_login')}</p>
               </a>
             </div>
           </>

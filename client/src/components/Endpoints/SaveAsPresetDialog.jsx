@@ -43,7 +43,7 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
               id="chatGptLabel"
               value={title || ''}
               onChange={(e) => setTitle(e.target.value || '')}
-              placeholder="Set a custom name, in case you can find this preset"
+              placeholder="Set a custom name for this preset"
               className={cn(
                 defaultTextProps,
                 'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'

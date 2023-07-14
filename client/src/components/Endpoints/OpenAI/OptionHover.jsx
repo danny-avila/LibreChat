@@ -10,17 +10,12 @@ const types = {
 };
 
 function OptionHover({ type, side }) {
-  // const options = {};
-  // if (type === 'pres') {
-  //   options.sideOffset = 45;
-  // }
 
   return (
     <HoverCardPortal>
       <HoverCardContent
         side={side}
         className="w-80 "
-        // {...options}
       >
         <div className="space-y-2">
           <p className="text-sm text-gray-600 dark:text-gray-300">{types[type]}</p>

@@ -16,6 +16,12 @@ const getChatGPTBrowserModels = () => {
 
   return models;
 };
+const getAnthropicModels = () => {
+  let models = ['claude-1', 'claude-1-100k', 'claude-instant-1', 'claude-instant-1-100k', 'claude-2'];
+  if (process.env.ANTHROPIC_MODELS) models = String(process.env.ANTHROPIC_MODELS).split(',');
+
+  return models;
+};
 
 const getPluginModels = () => {
   let models = ['gpt-4', 'gpt-4-0613', 'gpt-3.5-turbo', 'gpt-3.5-turbo-16k', 'gpt-3.5-turbo-0613', 'gpt-3.5-turbo-0301'];
@@ -55,7 +61,7 @@ router.get('/', async function (req, res) {
     ? { availableModels: getOpenAIModels(), userProvide: openAIApiKey === 'user_provided' }
     : false;
   const azureOpenAI = azureOpenAIApiKey
-    ? { availableModels: getOpenAIModels({ azure: true}), userProvide: azureOpenAIApiKey === 'user_provided' }
+    ? { availableModels: getOpenAIModels({ azure: true }), userProvide: azureOpenAIApiKey === 'user_provided' }
     : false;
   const gptPlugins = openAIApiKey || azureOpenAIApiKey
     ? { availableModels: getPluginModels(), availableTools, availableAgents: ['classic', 'functions'], userProvide: userProvidedOpenAI }
@@ -69,8 +75,14 @@ router.get('/', async function (req, res) {
       availableModels: getChatGPTBrowserModels()
     }
     : false;
+  const anthropic = process.env.ANTHROPIC_API_KEY
+    ? {
+      userProvide: process.env.ANTHROPIC_API_KEY == 'user_provided',
+      availableModels: getAnthropicModels()
+    }
+    : false;
 
-  res.send(JSON.stringify({ azureOpenAI, openAI, google, bingAI, chatGPTBrowser, gptPlugins }));
+  res.send(JSON.stringify({ azureOpenAI, openAI, google, bingAI, chatGPTBrowser, gptPlugins, anthropic }));
 });
 
 module.exports = { router, getOpenAIModels, getChatGPTBrowserModels };

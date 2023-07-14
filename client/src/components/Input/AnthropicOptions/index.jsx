@@ -1,35 +1,31 @@
 import { useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { SelectDropDown, Button, MessagesSquared } from '~/components';
+import { SelectDropDown, Button } from '~/components';
 import EndpointOptionsPopover from '../../Endpoints/EndpointOptionsPopover';
 import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
-import Settings from '../../Endpoints/Google/Settings.jsx';
-import Examples from '../../Endpoints/Google/Examples.jsx';
+import Settings from '../../Endpoints/Anthropic/Settings.jsx';
 import { cn } from '~/utils/';
 
 import store from '~/store';
 
-function GoogleOptions() {
+function AnthropicOptions() {
   const [advancedMode, setAdvancedMode] = useState(false);
-  const [showExamples, setShowExamples] = useState(false);
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
 
   const [conversation, setConversation] = useRecoilState(store.conversation) || {};
   const { endpoint } = conversation;
-  const { model, modelLabel, promptPrefix, examples, temperature, topP, topK, maxOutputTokens } =
+  const { model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens } =
     conversation;
-
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
-  if (endpoint !== 'google') {
+  if (endpoint !== 'anthropic') {
     return null;
   }
 
-  const models = endpointsConfig?.['google']?.['availableModels'] || [];
+  const models = endpointsConfig?.['anthropic']?.['availableModels'] || [];
 
   const triggerAdvancedMode = () => setAdvancedMode((prev) => !prev);
-  const triggerExamples = () => setShowExamples((prev) => !prev);
 
   const switchToSimpleMode = () => {
     setAdvancedMode(false);
@@ -48,53 +44,9 @@ function GoogleOptions() {
     }));
   };
 
-  const setExample = (i, type, newValue = null) => {
-    let update = {};
-    let current = conversation?.examples.slice() || [];
-    let currentExample = { ...current[i] } || {};
-    currentExample[type] = { content: newValue };
-    current[i] = currentExample;
-    update.examples = current;
-    setConversation((prevState) => ({
-      ...prevState,
-      ...update
-    }));
-  };
-
-  const addExample = () => {
-    let update = {};
-    let current = conversation?.examples.slice() || [];
-    current.push({ input: { content: '' }, output: { content: '' } });
-    update.examples = current;
-    setConversation((prevState) => ({
-      ...prevState,
-      ...update
-    }));
-  };
-
-  const removeExample = () => {
-    let update = {};
-    let current = conversation?.examples.slice() || [];
-    if (current.length <= 1) {
-      update.examples = [{ input: { content: '' }, output: { content: '' } }];
-      setConversation((prevState) => ({
-        ...prevState,
-        ...update
-      }));
-      return;
-    }
-    current.pop();
-    update.examples = current;
-    setConversation((prevState) => ({
-      ...prevState,
-      ...update
-    }));
-  };
-
   const cardStyle =
     'transition-colors shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 hover:border-black/10 focus:border-black/10 dark:border-black/10 dark:hover:border-black/10 dark:focus:border-black/10 border dark:bg-gray-700 text-black dark:text-white';
 
-  const isCodeChat = model?.startsWith('codechat-');
   return (
     <>
       <div
@@ -128,36 +80,21 @@ function GoogleOptions() {
       <EndpointOptionsPopover
         content={
           <div className="px-4 py-4">
-            {showExamples && !isCodeChat ? (
-              <Examples
-                examples={examples}
-                setExample={setExample}
-                addExample={addExample}
-                removeExample={removeExample}
-              />
-            ) : (
-              <Settings
-                model={model}
-                modelLabel={modelLabel}
-                promptPrefix={promptPrefix}
-                temperature={temperature}
-                topP={topP}
-                topK={topK}
-                maxOutputTokens={maxOutputTokens}
-                setOption={setOption}
-              />
-            )}
+            <Settings
+              model={model}
+              modelLabel={modelLabel}
+              promptPrefix={promptPrefix}
+              temperature={temperature}
+              topP={topP}
+              topK={topK}
+              maxOutputTokens={maxOutputTokens}
+              setOption={setOption}
+            />
           </div>
         }
         visible={advancedMode}
         saveAsPreset={saveAsPreset}
         switchToSimpleMode={switchToSimpleMode}
-        additionalButton={{
-          label: (showExamples ? 'Hide' : 'Show') + ' Examples',
-          buttonClass: isCodeChat ? 'disabled' : '',
-          handler: triggerExamples,
-          icon: <MessagesSquared className="mr-1 w-[14px]" />
-        }}
       />
       <SaveAsPresetDialog
         open={saveAsDialogShow}
@@ -168,4 +105,4 @@ function GoogleOptions() {
   );
 }
 
-export default GoogleOptions;
+export default AnthropicOptions;

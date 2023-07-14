@@ -1,7 +1,5 @@
 const { setAuthTokens } = require('../../services/auth.service');
-const Session = require('../../../models/Session');
 const User = require('../../../models/User');
-const jwt = require('jsonwebtoken');
 
 const loginController = async (req, res) => {
   try {

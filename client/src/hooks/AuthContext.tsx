@@ -14,7 +14,7 @@ import {
   useLoginUserMutation,
   useLogoutUserMutation,
   useGetUserQuery,
-  useRefreshTokenMutation,
+  refreshToken,
   TLoginUser
 } from '@librechat/data-provider';
 import { useNavigate } from 'react-router-dom';
@@ -59,7 +59,6 @@ const AuthContextProvider = ({
   const loginUser = useLoginUserMutation();
   const logoutUser = useLogoutUserMutation();
   const userQuery = useGetUserQuery({ enabled: !!token });
-  const refreshToken = useRefreshTokenMutation();
 
   // This seems to prevent the error flashing issue
   const doSetError = (error: string | undefined) => {
@@ -72,6 +71,36 @@ const AuthContextProvider = ({
     }
   };
 
+    function parseJwt(token) {
+      try {
+          const base64Url = token.split('.')[1];
+          const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+          const jsonPayload = decodeURIComponent(
+              atob(base64)
+                  .split('')
+                  .map(function (c) {
+                      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+                  })
+                  .join('')
+          );
+          return JSON.parse(jsonPayload);
+      } catch (error) {
+          return null;
+      }
+  };
+
+  function isTokenExpired(token) {
+      const parsedToken = parseJwt(token);
+      if (!parsedToken) {
+          return true;
+      }
+      const expirationDate = new Date(parsedToken.exp * 1000);
+      if (expirationDate < new Date()) {
+          return true;
+      }
+      return false;
+  };
+  
   const setUserContext = useCallback(
     (userContext: TUserContext) => {
       const { token, isAuthenticated, user, redirect } = userContext;
@@ -129,7 +158,25 @@ const AuthContextProvider = ({
   };
 
   useEffect(() => {
-    if (userQuery.data) {
+    const checkRefreshToken = async () => {
+      try {
+        const response = await refreshToken();
+        if (response?.status === 200) {
+          setUserContext({ token: response?.data?.token, isAuthenticated: true, user: response?.data?.user });
+        } else {
+          navigate('/login', { replace: true });
+        }
+      } catch (error) {
+        if (error.response && error.response.status === 401) {
+        console.log("Refresh token has expired, please log in again.");
+      }
+        navigate('/login', { replace: true });
+      }
+    };
+
+    if (!token || isTokenExpired(token)) {
+      checkRefreshToken();
+    } else if (userQuery.data) {
       setUser(userQuery.data);
     } else if (userQuery.isError) {
       doSetError((userQuery?.error as Error).message);
@@ -156,24 +203,6 @@ const AuthContextProvider = ({
     navigate,
     setUserContext
   ]);
-
-  // const silentRefresh = useCallback(() => {
-  //   refreshToken.mutate(undefined, {
-  //     onSuccess: (data: TLoginResponse) => {
-  //       const { user, token } = data;
-  //       setUserContext({ token, isAuthenticated: true, user });
-  //     },
-  //     onError: error => {
-  //       setError(error.message);
-  //     }
-  //   });
-  //
-  // }, [setUserContext]);
-
-  // useEffect(() => {
-  //   if (token)
-  //   silentRefresh();
-  // }, [token, silentRefresh]);
 
   // Make the provider update only when it should
   const memoedValue = useMemo(
