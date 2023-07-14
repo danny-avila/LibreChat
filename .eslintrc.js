@@ -13,7 +13,14 @@ module.exports = {
     'plugin:jest/recommended',
     'prettier',
   ],
-  ignorePatterns: ['packages/data-provider/types/**/*'],
+  // ignorePatterns: ['packages/data-provider/types/**/*'],
+  ignorePatterns: [
+    'client/dist/**/*',
+    'client/public/**/*',
+    'e2e/playwright-report/**/*',
+    'packages/data-provider/types/**/*',
+    'packages/data-provider/dist/**/*',
+  ],
   parser: '@typescript-eslint/parser',
   parserOptions: {
     ecmaVersion: 'latest',
