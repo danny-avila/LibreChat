@@ -71,7 +71,7 @@ export default function Settings({ open, onOpenChange }) {
               aria-orientation="vertical"
               className={cn(
                 '-ml-[8px] flex min-w-[180px] flex-shrink-0 flex-col',
-                isMobile && 'flex-row rounded-lg bg-gray-100 p-1 dark:bg-gray-800/30'
+                isMobile && 'flex-row rounded-lg bg-gray-100 p-1 dark:bg-gray-800/30',
               )}
               style={{ outline: 'none' }}
             >
@@ -79,7 +79,7 @@ export default function Settings({ open, onOpenChange }) {
                 className={cn(
                   'radix-state-active:bg-gray-800 radix-state-active:text-white flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm',
                   isMobile &&
-                    'dark:radix-state-active:text-white group flex-1 items-center justify-center text-sm dark:text-gray-500'
+                    'dark:radix-state-active:text-white group flex-1 items-center justify-center text-sm dark:text-gray-500',
                 )}
                 value="general"
               >

@@ -13,8 +13,8 @@ const sendEmail = async (email, subject, payload, template) => {
       port: 465,
       auth: {
         user: process.env.EMAIL_USERNAME,
-        pass: process.env.EMAIL_PASSWORD
-      }
+        pass: process.env.EMAIL_PASSWORD,
+      },
     });
 
     const source = fs.readFileSync(path.join(__dirname, template), 'utf8');
@@ -24,7 +24,7 @@ const sendEmail = async (email, subject, payload, template) => {
         from: process.env.FROM_EMAIL,
         to: email,
         subject: subject,
-        html: compiledTemplate(payload)
+        html: compiledTemplate(payload),
       };
     };
 
@@ -34,7 +34,7 @@ const sendEmail = async (email, subject, payload, template) => {
         return error;
       } else {
         return res.status(200).json({
-          success: true
+          success: true,
         });
       }
     });

@@ -11,5 +11,5 @@ function replaceSup(text) {
 
 module.exports = {
   cleanUpPrimaryKeyValue,
-  replaceSup
+  replaceSup,
 };

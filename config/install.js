@@ -58,29 +58,29 @@ let env = {};
 
   // Ask for the app title
   const title = await askQuestion(
-    'Enter the app title (default: "LibreChat"): '
+    'Enter the app title (default: "LibreChat"): ',
   );
   env['APP_TITLE'] = title || 'LibreChat';
 
   // Ask for OPENAI_API_KEY
   const key = await askQuestion(
-    'Enter your OPENAI_API_KEY (default: "user_provided"): '
+    'Enter your OPENAI_API_KEY (default: "user_provided"): ',
   );
   env['OPENAI_API_KEY'] = key || 'user_provided';
 
   // GPT4???
   const gpt4 = await askQuestion(
-    'Do you have access to the GPT4 api (y/n)? Default: n'
+    'Do you have access to the GPT4 api (y/n)? Default: n',
   );
   if (gpt4 == 'y' || gpt4 == 'yes') {
-    env['OPENAI_MODELS'] = "gpt-3.5-turbo,gpt-3.5-turbo-0301,text-davinci-003,gpt-4,gpt-4-0314"
+    env['OPENAI_MODELS'] = 'gpt-3.5-turbo,gpt-3.5-turbo-0301,text-davinci-003,gpt-4,gpt-4-0314'
   } else {
-    env['OPENAI_MODELS'] = "gpt-3.5-turbo,gpt-3.5-turbo-0301,text-davinci-003"
+    env['OPENAI_MODELS'] = 'gpt-3.5-turbo,gpt-3.5-turbo-0301,text-davinci-003'
   }
 
   // Ask about mongodb
   const mongodb = await askQuestion(
-    'What is your mongodb url? (default: mongodb://127.0.0.1:27017/LibreChat)'
+    'What is your mongodb url? (default: mongodb://127.0.0.1:27017/LibreChat)',
   );
   env['MONGO_URI'] = mongodb || 'mongodb://127.0.0.1:27017/LibreChat';
   // Very basic check to make sure they entered a url
@@ -90,7 +90,7 @@ let env = {};
 
   // Lets ask about open registration
   const openReg = await askQuestion(
-    'Do you want to allow user registration (y/n)? Default: y'
+    'Do you want to allow user registration (y/n)? Default: y',
   );
   if (openReg === 'n' || openReg === 'no') {
     env['ALLOW_REGISTRATION'] = 'false';

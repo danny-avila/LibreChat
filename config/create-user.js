@@ -1,8 +1,8 @@
-const connectDb = require("@librechat/backend/lib/db/connectDb");
-const migrateDb = require("@librechat/backend/lib/db/migrateDb");
-const { registerUser } = require("@librechat/backend/server/services/auth.service");
-const { askQuestion } = require("./helpers");
-const User = require("@librechat/backend/models/User");
+const connectDb = require('@librechat/backend/lib/db/connectDb');
+const migrateDb = require('@librechat/backend/lib/db/migrateDb');
+const { registerUser } = require('@librechat/backend/server/services/auth.service');
+const { askQuestion } = require('./helpers');
+const User = require('@librechat/backend/models/User');
 
 const silentExit = (code = 0) => {
   console.log = () => {};
@@ -130,6 +130,6 @@ const silentExit = (code = 0) => {
   }
 
   // Done!
-  console.green("User created successfully!")
+  console.green('User created successfully!')
   silentExit(0);
 })();

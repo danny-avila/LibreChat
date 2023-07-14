@@ -62,10 +62,10 @@ const Content = React.memo(({ content, message }) => {
       {
         detect: true,
         ignoreMissing: true,
-        subset: langSubset
-      }
+        subset: langSubset,
+      },
     ],
-    [rehypeRaw]
+    [rehypeRaw],
   ];
 
   if (!isInitializing || !isLatestMessage) {
@@ -79,7 +79,7 @@ const Content = React.memo(({ content, message }) => {
       linkTarget="_new"
       components={{
         code,
-        p
+        p,
       }}
     >
       {isLatestMessage && isSubmitting && !isInitializing ? (content ?? '') + cursor : content}

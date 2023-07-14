@@ -31,8 +31,8 @@ router.post('/', requireJwtAuth, async (req, res) => {
       temperature: req.body?.temperature ?? 1,
       top_p: req.body?.top_p ?? 1,
       presence_penalty: req.body?.presence_penalty ?? 0,
-      frequency_penalty: req.body?.frequency_penalty ?? 0
-    }
+      frequency_penalty: req.body?.frequency_penalty ?? 0,
+    },
   };
 
   console.log('ask log');
@@ -46,7 +46,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
     parentMessageId,
     endpoint,
     req,
-    res
+    res,
   });
 });
 
@@ -56,7 +56,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
     'Access-Control-Allow-Origin': '*',
-    'X-Accel-Buffering': 'no'
+    'X-Accel-Buffering': 'no',
   });
   let userMessage;
   let userMessageId;
@@ -90,10 +90,10 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
           model: endpointOption.modelOptions.model,
           unfinished: true,
           cancelled: false,
-          error: false
+          error: false,
         });
       }
-    }
+    },
   });
 
   const abortController = new AbortController();
@@ -119,7 +119,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
       final: true,
       conversation: await getConvo(req.user.id, conversationId),
       requestMessage: userMessage,
-      responseMessage: responseMessage
+      responseMessage: responseMessage,
     };
   };
 
@@ -135,7 +135,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
       reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
       proxy: process.env.PROXY || null,
       endpoint,
-      ...endpointOption
+      ...endpointOption,
     };
 
     let openAIApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
@@ -157,9 +157,9 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
       onProgress: progressCallback.call(null, {
         res,
         text,
-        parentMessageId: overrideParentMessageId || userMessageId
+        parentMessageId: overrideParentMessageId || userMessageId,
       }),
-      abortController
+      abortController,
     });
 
     if (overrideParentMessageId) {
@@ -174,7 +174,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
       final: true,
       conversation: await getConvo(req.user.id, conversationId),
       requestMessage: userMessage,
-      responseMessage: response
+      responseMessage: response,
     });
     res.end();
 
@@ -183,11 +183,11 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
         text,
         response,
         openAIApiKey,
-        azure: endpoint === 'azureOpenAI'
+        azure: endpoint === 'azureOpenAI',
       });
       await saveConvo(req.user.id, {
         conversationId,
-        title
+        title,
       });
     }
   } catch (error) {
@@ -204,7 +204,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
         unfinished: false,
         cancelled: false,
         error: true,
-        text: error.message
+        text: error.message,
       };
       await saveMessage(errorMessage);
       handleError(res, errorMessage);

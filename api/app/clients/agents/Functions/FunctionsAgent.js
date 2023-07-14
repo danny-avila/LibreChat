@@ -5,9 +5,9 @@ const {
   ChatPromptTemplate,
   MessagesPlaceholder,
   SystemMessagePromptTemplate,
-  HumanMessagePromptTemplate
+  HumanMessagePromptTemplate,
 } = require('langchain/prompts');
-const PREFIX = `You are a helpful AI assistant.`;
+const PREFIX = 'You are a helpful AI assistant.';
 
 function parseOutput(message) {
   if (message.additional_kwargs.function_call) {
@@ -15,7 +15,7 @@ function parseOutput(message) {
     return {
       tool: function_call.name,
       toolInput: function_call.arguments ? JSON.parse(function_call.arguments) : {},
-      log: message.text
+      log: message.text,
     };
   } else {
     return { returnValues: { output: message.text }, log: message.text };
@@ -52,7 +52,7 @@ class FunctionsAgent extends Agent {
     return ChatPromptTemplate.fromPromptMessages([
       SystemMessagePromptTemplate.fromTemplate(`Date: ${currentDateString}\n${prefix}`),
       new MessagesPlaceholder('chat_history'),
-      HumanMessagePromptTemplate.fromTemplate(`Query: {input}`),
+      HumanMessagePromptTemplate.fromTemplate('Query: {input}'),
       new MessagesPlaceholder('agent_scratchpad'),
     ]);
   }
@@ -63,12 +63,12 @@ class FunctionsAgent extends Agent {
     const chain = new LLMChain({
       prompt,
       llm,
-      callbacks: args?.callbacks
+      callbacks: args?.callbacks,
     });
     return new FunctionsAgent({
       llmChain: chain,
       allowedTools: tools.map((t) => t.name),
-      tools
+      tools,
     });
   }
 
@@ -77,10 +77,10 @@ class FunctionsAgent extends Agent {
       new AIChatMessage('', {
         function_call: {
           name: action.tool,
-          arguments: JSON.stringify(action.toolInput)
-        }
+          arguments: JSON.stringify(action.toolInput),
+        },
       }),
-      new FunctionChatMessage(observation, action.tool)
+      new FunctionChatMessage(observation, action.tool),
     ]);
   }
 
@@ -96,7 +96,7 @@ class FunctionsAgent extends Agent {
     const llm = this.llmChain.llm;
     const valuesForPrompt = Object.assign({}, newInputs);
     const valuesForLLM = {
-      tools: this.tools
+      tools: this.tools,
     };
     for (let i = 0; i < this.llmChain.llm.callKeys.length; i++) {
       const key = this.llmChain.llm.callKeys[i];
@@ -110,7 +110,7 @@ class FunctionsAgent extends Agent {
     const message = await llm.predictMessages(
       promptValue.toChatMessages(),
       valuesForLLM,
-      callbackManager
+      callbackManager,
     );
     console.log('message', message);
     return parseOutput(message);

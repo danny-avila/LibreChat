@@ -5,8 +5,8 @@ export default defineConfig({
   globalSetup: require.resolve('./setup/global-setup'),
   testDir: 'specs/',
   outputDir: 'specs/.test-results',
-  /* Run tests in files in parallel. 
-  NOTE: This sometimes causes issues on Windows. 
+  /* Run tests in files in parallel.
+  NOTE: This sometimes causes issues on Windows.
   Set to false if you experience issues running on a Windows machine. */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
@@ -25,16 +25,16 @@ export default defineConfig({
     ignoreHTTPSErrors: true,
     headless: true,
     storageState: path.resolve('./e2e/storageState.json'),
-    screenshot: 'only-on-failure'
+    screenshot: 'only-on-failure',
   },
   expect: {
-    timeout: 10000
+    timeout: 10000,
   },
   /* Configure projects for major browsers */
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] }
+      use: { ...devices['Desktop Chrome'] },
     },
     /* Test against mobile viewports. */
     // {
@@ -53,6 +53,6 @@ export default defineConfig({
     port: 3080,
     // url: 'http://localhost:3080',
     timeout: 30_000,
-    reuseExistingServer: true
+    reuseExistingServer: true,
   },
 });

@@ -15,13 +15,13 @@ test.describe('Settings suite', () => {
     const button2 = await page.getByRole('button', { name: 'Mode: Sydney' });
 
     try {
-      await button1.click({ timeout: 100});
+      await button1.click({ timeout: 100 });
     } catch (e) {
       // console.log('Bing button', e);
     }
 
     try {
-      await button2.click({ timeout: 100});
+      await button2.click({ timeout: 100 });
     } catch (e) {
       // console.log('Sydney button', e);
     }

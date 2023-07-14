@@ -4,7 +4,7 @@ import {
   useMutation,
   useQueryClient,
   UseMutationResult,
-  QueryObserverResult
+  QueryObserverResult,
 } from '@tanstack/react-query';
 import * as t from './types';
 import * as dataService from './data-service';
@@ -29,25 +29,25 @@ export const useAbortRequestWithMessage = (): UseMutationResult<
   { endpoint: string; abortKey: string; message: string }
 > => {
   return useMutation(({ endpoint, abortKey, message }) =>
-    dataService.abortRequestWithMessage(endpoint, abortKey, message)
+    dataService.abortRequestWithMessage(endpoint, abortKey, message),
   );
 };
 
 export const useGetUserQuery = (
-  config?: UseQueryOptions<t.TUser>
+  config?: UseQueryOptions<t.TUser>,
 ): QueryObserverResult<t.TUser> => {
   return useQuery<t.TUser>([QueryKeys.user], () => dataService.getUser(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
     retry: false,
-    ...config
+    ...config,
   });
 };
 
 export const useGetMessagesByConvoId = (
   id: string,
-  config?: UseQueryOptions<t.TMessage[]>
+  config?: UseQueryOptions<t.TMessage[]>,
 ): QueryObserverResult<t.TMessage[]> => {
   return useQuery<t.TMessage[]>(
     [QueryKeys.messages, id],
@@ -56,14 +56,14 @@ export const useGetMessagesByConvoId = (
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
-      ...config
-    }
+      ...config,
+    },
   );
 };
 
 export const useGetConversationByIdQuery = (
   id: string,
-  config?: UseQueryOptions<t.TConversation>
+  config?: UseQueryOptions<t.TConversation>,
 ): QueryObserverResult<t.TConversation> => {
   return useQuery<t.TConversation>(
     [QueryKeys.conversation, id],
@@ -72,8 +72,8 @@ export const useGetConversationByIdQuery = (
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
-      ...config
-    }
+      ...config,
+    },
   );
 };
 
@@ -85,12 +85,12 @@ export const useGetConversationByIdMutation = (id: string): UseMutationResult<t.
     // onSuccess: (res: t.TConversation) => {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.conversation, id]);
-    }
+    },
   });
 };
 
 export const useUpdateConversationMutation = (
-  id: string
+  id: string,
 ): UseMutationResult<
   t.TUpdateConversationResponse,
   unknown,
@@ -104,13 +104,13 @@ export const useUpdateConversationMutation = (
       onSuccess: () => {
         queryClient.invalidateQueries([QueryKeys.conversation, id]);
         queryClient.invalidateQueries([QueryKeys.allConversations]);
-      }
-    }
+      },
+    },
   );
 };
 
 export const useDeleteConversationMutation = (
-  id?: string
+  id?: string,
 ): UseMutationResult<
   t.TDeleteConversationResponse,
   unknown,
@@ -124,8 +124,8 @@ export const useDeleteConversationMutation = (
       onSuccess: () => {
         queryClient.invalidateQueries([QueryKeys.conversation, id]);
         queryClient.invalidateQueries([QueryKeys.allConversations]);
-      }
-    }
+      },
+    },
   );
 };
 
@@ -134,13 +134,13 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
   return useMutation(() => dataService.clearAllConversations(), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.allConversations]);
-    }
+    },
   });
 };
 
 export const useGetConversationsQuery = (
   pageNumber: string,
-  config?: UseQueryOptions<t.TGetConversationsResponse>
+  config?: UseQueryOptions<t.TGetConversationsResponse>,
 ): QueryObserverResult<t.TGetConversationsResponse> => {
   return useQuery<t.TGetConversationsResponse>(
     [QueryKeys.allConversations, pageNumber],
@@ -149,19 +149,19 @@ export const useGetConversationsQuery = (
       refetchOnReconnect: false,
       refetchOnMount: false,
       retry: 1,
-      ...config
-    }
+      ...config,
+    },
   );
 };
 
 export const useGetSearchEnabledQuery = (
-  config?: UseQueryOptions<boolean>
+  config?: UseQueryOptions<boolean>,
 ): QueryObserverResult<boolean> => {
   return useQuery<boolean>([QueryKeys.searchEnabled], () => dataService.getSearchEnabled(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    ...config
+    ...config,
   });
 };
 
@@ -169,7 +169,7 @@ export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpoints> => {
   return useQuery([QueryKeys.endpoints], () => dataService.getAIEndpoints(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    refetchOnMount: false
+    refetchOnMount: false,
   });
 };
 
@@ -183,7 +183,7 @@ export const useCreatePresetMutation = (): UseMutationResult<
   return useMutation((payload: t.TPreset) => dataService.createPreset(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.presets]);
-    }
+    },
   });
 };
 
@@ -197,18 +197,18 @@ export const useUpdatePresetMutation = (): UseMutationResult<
   return useMutation((payload: t.TPreset) => dataService.updatePreset(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.presets]);
-    }
+    },
   });
 };
 
 export const useGetPresetsQuery = (
-  config?: UseQueryOptions<t.TPreset[]>
+  config?: UseQueryOptions<t.TPreset[]>,
 ): QueryObserverResult<t.TPreset[], unknown> => {
   return useQuery<t.TPreset[]>([QueryKeys.presets], () => dataService.getPresets(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    ...config
+    ...config,
   });
 };
 
@@ -222,14 +222,14 @@ export const useDeletePresetMutation = (): UseMutationResult<
   return useMutation((payload: t.TPreset | object) => dataService.deletePreset(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.presets]);
-    }
+    },
   });
 };
 
 export const useSearchQuery = (
   searchQuery: string,
   pageNumber: string,
-  config?: UseQueryOptions<t.TSearchResults>
+  config?: UseQueryOptions<t.TSearchResults>,
 ): QueryObserverResult<t.TSearchResults> => {
   return useQuery<t.TSearchResults>(
     [QueryKeys.searchResults, pageNumber, searchQuery],
@@ -238,8 +238,8 @@ export const useSearchQuery = (
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
-      ...config
-    }
+      ...config,
+    },
   );
 };
 
@@ -253,7 +253,7 @@ export const useUpdateTokenCountMutation = (): UseMutationResult<
   return useMutation((text: string) => dataService.updateTokenCount(text), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.tokenCount]);
-    }
+    },
   });
 };
 
@@ -267,7 +267,7 @@ export const useLoginUserMutation = (): UseMutationResult<
   return useMutation((payload: t.TLoginUser) => dataService.login(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.user]);
-    }
+    },
   });
 };
 
@@ -281,7 +281,7 @@ export const useRegisterUserMutation = (): UseMutationResult<
   return useMutation((payload: t.TRegisterUser) => dataService.register(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.user]);
-    }
+    },
   });
 };
 
@@ -290,7 +290,7 @@ export const useLogoutUserMutation = (): UseMutationResult<unknown> => {
   return useMutation(() => dataService.logout(), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.user]);
-    }
+    },
   });
 };
 
@@ -303,9 +303,14 @@ export const useRefreshTokenMutation = (): UseMutationResult<
   return useMutation(() => dataService.refreshToken(), {});
 };
 
-export const useRequestPasswordResetMutation = (): UseMutationResult<t.TRequestPasswordResetResponse, unknown, t.TRequestPasswordReset, unknown> => {
+export const useRequestPasswordResetMutation = (): UseMutationResult<
+  t.TRequestPasswordResetResponse,
+  unknown,
+  t.TRequestPasswordReset,
+  unknown
+> => {
   return useMutation((payload: t.TRequestPasswordReset) =>
-    dataService.requestPasswordReset(payload)
+    dataService.requestPasswordReset(payload),
   );
 };
 
@@ -325,8 +330,8 @@ export const useAvailablePluginsQuery = (): QueryObserverResult<t.TPlugin[]> => 
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
-      refetchOnMount: false
-    }
+      refetchOnMount: false,
+    },
   );
 };
 
@@ -340,14 +345,18 @@ export const useUpdateUserPluginsMutation = (): UseMutationResult<
   return useMutation((payload: t.TUpdateUserPlugins) => dataService.updateUserPlugins(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.user]);
-    }
+    },
   });
 };
 
 export const useGetStartupConfig = (): QueryObserverResult<t.TStartupConfig> => {
-  return useQuery<t.TStartupConfig>([QueryKeys.startupConfig], () => dataService.getStartupConfig(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false
-  });
-}
+  return useQuery<t.TStartupConfig>(
+    [QueryKeys.startupConfig],
+    () => dataService.getStartupConfig(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+    },
+  );
+};

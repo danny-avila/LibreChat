@@ -18,7 +18,9 @@ Guidelines include:
 - Make separate calls for each property and choose relevant 'Assumptions' if results aren't relevant.
 - The tool also performs data analysis, plotting, and information retrieval.`;
     this.schema = z.object({
-      nl_query: z.string().describe("Natural language query to WolframAlpha following the guidelines"),
+      nl_query: z
+        .string()
+        .describe('Natural language query to WolframAlpha following the guidelines'),
     });
   }
 
@@ -61,7 +63,7 @@ Guidelines include:
         console.log('Error data:', error.response.data);
         return error.response.data;
       } else {
-        console.log(`Error querying Wolfram Alpha`, error.message);
+        console.log('Error querying Wolfram Alpha', error.message);
         // throw error;
         return 'There was an error querying Wolfram Alpha.';
       }

@@ -17,7 +17,7 @@ function reduceMessages(hits) {
   for (const [conversationId, count] of Object.entries(counts)) {
     result.push({
       conversationId,
-      count
+      count,
     });
   }
 
@@ -49,7 +49,7 @@ function reduceHits(hits, titles = []) {
     result.push({
       conversationId,
       count,
-      title: titleMap[conversationId] ? titleMap[conversationId] : null
+      title: titleMap[conversationId] ? titleMap[conversationId] : null,
     });
   }
 

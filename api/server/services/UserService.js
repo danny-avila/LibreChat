@@ -5,13 +5,13 @@ const updateUserPluginsService = async (user, pluginKey, action) => {
     if (action === 'install') {
       const response = await User.updateOne(
         { _id: user._id },
-        { $set: { plugins: [...user.plugins, pluginKey] } }
+        { $set: { plugins: [...user.plugins, pluginKey] } },
       );
       return response;
     } else if (action === 'uninstall') {
       const response = await User.updateOne(
         { _id: user._id },
-        { $set: { plugins: user.plugins.filter((plugin) => plugin !== pluginKey) } }
+        { $set: { plugins: user.plugins.filter((plugin) => plugin !== pluginKey) } },
       );
       return response;
     }

@@ -7,7 +7,7 @@ import { PluginStoreItem, PluginPagination, PluginAuthForm } from '.';
 import {
   useAvailablePluginsQuery,
   useUpdateUserPluginsMutation,
-  TPlugin
+  TPlugin,
 } from '@librechat/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 
@@ -51,7 +51,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     updateUserPlugins.mutate(pluginAction, {
       onError: (error) => {
         handleInstallError(error);
-      }
+      },
     });
     setShowPluginAuthForm(false);
   };
@@ -72,10 +72,10 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
           localStorage.setItem('lastSelectedTools', JSON.stringify(tools));
           setConversation((prevState: any) => ({
             ...prevState,
-            tools
+            tools,
           }));
-        }
-      }
+        },
+      },
     );
   };
 
@@ -119,7 +119,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
         resizeObserver.observe(node);
       }
     },
-    [itemsPerPage]
+    [itemsPerPage],
   );
 
   useEffect(() => {

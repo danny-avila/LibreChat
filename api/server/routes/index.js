@@ -25,5 +25,5 @@ module.exports = {
   tokenizer,
   endpoints,
   plugins,
-  config
+  config,
 };

@@ -23,7 +23,7 @@ module.exports = {
 
       return await Conversation.findOneAndUpdate({ conversationId: conversationId, user }, update, {
         new: true,
-        upsert: true
+        upsert: true,
       }).exec();
     } catch (error) {
       console.log(error);
@@ -61,9 +61,9 @@ module.exports = {
         promises.push(
           Conversation.findOne({
             user,
-            conversationId: convo.conversationId
-          }).exec()
-        )
+            conversationId: convo.conversationId,
+          }).exec(),
+        ),
       );
 
       const results = (await Promise.all(promises)).filter((convo, i) => {
@@ -94,7 +94,7 @@ module.exports = {
         pageSize,
         // will handle a syncing solution soon
         filter: new Set(deletedConvoIds),
-        convoMap
+        convoMap,
       };
     } catch (error) {
       console.log(error);
@@ -124,5 +124,5 @@ module.exports = {
     let deleteCount = await Conversation.deleteMany({ ...filter, user }).exec();
     deleteCount.messages = await deleteMessages({ conversationId: { $in: ids } });
     return deleteCount;
-  }
+  },
 };

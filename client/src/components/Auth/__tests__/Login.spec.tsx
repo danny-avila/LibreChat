@@ -9,14 +9,14 @@ const setup = ({
   useGetUserQueryReturnValue = {
     isLoading: false,
     isError: false,
-    data: {}
+    data: {},
   },
   useLoginUserReturnValue = {
     isLoading: false,
     isError: false,
     mutate: jest.fn(),
     data: {},
-    isSuccess: false
+    isSuccess: false,
   },
   useGetStartupCongfigReturnValue = {
     isLoading: false,
@@ -30,9 +30,9 @@ const setup = ({
       discordLoginEnabled: true,
       registrationEnabled: true,
       socialLoginEnabled: true,
-      serverDomain: 'mock-server'
-    }
-  }
+      serverDomain: 'mock-server',
+    },
+  },
 } = {}) => {
   const mockUseLoginUser = jest
     .spyOn(mockDataProvider, 'useLoginUserMutation')
@@ -51,7 +51,7 @@ const setup = ({
     ...renderResult,
     mockUseLoginUser,
     mockUseGetUserQuery,
-    mockUseGetStartupConfig
+    mockUseGetStartupConfig,
   };
 };
 
@@ -65,7 +65,7 @@ test('renders login form', () => {
   expect(getByRole('link', { name: /Login with Google/i })).toBeInTheDocument();
   expect(getByRole('link', { name: /Login with Google/i })).toHaveAttribute(
     'href',
-    'mock-server/oauth/google'
+    'mock-server/oauth/google',
   );
 });
 
@@ -76,8 +76,8 @@ test('calls loginUser.mutate on login', async () => {
     useLoginUserReturnValue: {
       isLoading: false,
       mutate: mutate,
-      isError: false
-    }
+      isError: false,
+    },
   });
 
   const emailInput = getByLabelText(/email/i);
@@ -98,8 +98,8 @@ test('Navigates to / on successful login', async () => {
       isLoading: false,
       mutate: jest.fn(),
       isError: false,
-      isSuccess: true
-    }
+      isSuccess: true,
+    },
   });
 
   const emailInput = getByLabelText(/email/i);

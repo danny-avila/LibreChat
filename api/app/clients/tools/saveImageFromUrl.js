@@ -7,7 +7,7 @@ async function saveImageFromUrl(url, outputPath, outputFilename) {
     // Fetch the image from the URL
     const response = await axios({
       url,
-      responseType: 'stream'
+      responseType: 'stream',
     });
 
     // Check if the output directory exists, if not, create it

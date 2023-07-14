@@ -56,11 +56,17 @@ Guidelines:
   }
 
   replaceUnwantedChars(inputString) {
-    return inputString.replace(/\r\n|\r|\n/g, ' ').replace('"', '').trim();
+    return inputString
+      .replace(/\r\n|\r|\n/g, ' ')
+      .replace('"', '')
+      .trim();
   }
 
   getMarkdownImageUrl(imageName) {
-    const imageUrl = path.join(this.relativeImageUrl, imageName).replace(/\\/g, '/').replace('public/', '');
+    const imageUrl = path
+      .join(this.relativeImageUrl, imageName)
+      .replace(/\\/g, '/')
+      .replace('public/', '');
     return `![generated image](/${imageUrl})`;
   }
 
@@ -70,13 +76,13 @@ Guidelines:
       // TODO: Future idea -- could we ask an LLM to extract these arguments from an input that might contain them?
       n: 1,
       // size: '1024x1024'
-      size: '512x512'
+      size: '512x512',
     });
 
     const theImageUrl = resp.data.data[0].url;
 
     if (!theImageUrl) {
-      throw new Error(`No image URL returned from OpenAI API.`);
+      throw new Error('No image URL returned from OpenAI API.');
     }
 
     const regex = /img-[\w\d]+.png/;

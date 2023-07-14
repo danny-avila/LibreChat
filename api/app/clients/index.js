@@ -13,5 +13,5 @@ module.exports = {
   GoogleClient,
   TextStream,
   AnthropicClient,
-  ...toolUtils
+  ...toolUtils,
 };
