@@ -29,7 +29,6 @@ const SearchBar = forwardRef((props, ref) => {
       setShowClearIcon(true);
     }
   }, [searchQuery])
-  
 
   return (
     <div

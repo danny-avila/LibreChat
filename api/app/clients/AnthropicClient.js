@@ -3,7 +3,7 @@ const Keyv = require('keyv');
 const BaseClient = require('./BaseClient');
 const {
   encoding_for_model: encodingForModel,
-  get_encoding: getEncoding
+  get_encoding: getEncoding,
 } = require('@dqbd/tiktoken');
 const Anthropic = require('@anthropic-ai/sdk');
 
@@ -13,9 +13,8 @@ const AI_PROMPT = '\n\nAssistant:';
 const tokenizersCache = {};
 
 class AnthropicClient extends BaseClient {
-
   constructor(apiKey, options = {}, cacheOptions = {}) {
-    super(apiKey, options, cacheOptions)
+    super(apiKey, options, cacheOptions);
     cacheOptions.namespace = cacheOptions.namespace || 'anthropic';
     this.conversationsCache = new Keyv(cacheOptions);
     this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
@@ -30,7 +29,7 @@ class AnthropicClient extends BaseClient {
       // nested options aren't spread properly, so we need to do this manually
       this.options.modelOptions = {
         ...this.options.modelOptions,
-        ...options.modelOptions
+        ...options.modelOptions,
       };
       delete options.modelOptions;
       // now we can merge options
@@ -50,7 +49,7 @@ class AnthropicClient extends BaseClient {
       temperature: typeof modelOptions.temperature === 'undefined' ? 0.7 : modelOptions.temperature, // 0 - 1, 0.7 is recommended
       topP: typeof modelOptions.topP === 'undefined' ? 0.7 : modelOptions.topP, // 0 - 1, default: 0.7
       topK: typeof modelOptions.topK === 'undefined' ? 40 : modelOptions.topK, // 1-40, default: 40
-      stop: modelOptions.stop // no stop method for now
+      stop: modelOptions.stop, // no stop method for now
     };
 
     this.maxContextTokens = this.options.maxContextTokens || 99999;
@@ -62,7 +61,7 @@ class AnthropicClient extends BaseClient {
       throw new Error(
         `maxPromptTokens + maxOutputTokens (${this.maxPromptTokens} + ${this.maxResponseTokens} = ${
           this.maxPromptTokens + this.maxResponseTokens
-        }) must be less than or equal to maxContextTokens (${this.maxContextTokens})`
+        }) must be less than or equal to maxContextTokens (${this.maxContextTokens})`,
       );
     }
 
@@ -85,18 +84,17 @@ class AnthropicClient extends BaseClient {
   }
 
   getClient() {
-    if(this.options.reverseProxyUrl) {
+    if (this.options.reverseProxyUrl) {
       return new Anthropic({
         apiKey: this.apiKey,
-        baseURL: this.options.reverseProxyUrl
+        baseURL: this.options.reverseProxyUrl,
       });
-    }
-    else {
+    } else {
       return new Anthropic({
         apiKey: this.apiKey,
       });
     }
-  };
+  }
 
   async buildMessages(messages, parentMessageId) {
     const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
@@ -106,7 +104,7 @@ class AnthropicClient extends BaseClient {
 
     const formattedMessages = orderedMessages.map((message) => ({
       author: message.isCreatedByUser ? this.userLabel : this.assistantLabel,
-      content: message?.content ?? message.text
+      content: message?.content ?? message.text,
     }));
 
     let identityPrefix = '';
@@ -169,7 +167,9 @@ class AnthropicClient extends BaseClient {
         if (newTokenCount > maxTokenCount) {
           if (!promptBody) {
             // This is the first message, so we can't add it. Just throw an error.
-            throw new Error(`Prompt is too long. Max token count is ${maxTokenCount}, but prompt is ${newTokenCount} tokens long.`);
+            throw new Error(
+              `Prompt is too long. Max token count is ${maxTokenCount}, but prompt is ${newTokenCount} tokens long.`,
+            );
           }
 
           // Otherwise, ths message would put us over the token limit, so don't add it.
@@ -183,7 +183,7 @@ class AnthropicClient extends BaseClient {
         promptBody = newPromptBody;
         currentTokenCount = newTokenCount;
         // wait for next tick to avoid blocking the event loop
-        await new Promise(resolve => setImmediate(resolve));
+        await new Promise((resolve) => setImmediate(resolve));
         return buildPromptBody();
       }
       return true;
@@ -202,7 +202,10 @@ class AnthropicClient extends BaseClient {
     currentTokenCount += 2;
 
     // Use up to `this.maxContextTokens` tokens (prompt + response), but try to leave `this.maxTokens` tokens for the response.
-    this.modelOptions.maxOutputTokens = Math.min(this.maxContextTokens - currentTokenCount, this.maxResponseTokens);
+    this.modelOptions.maxOutputTokens = Math.min(
+      this.maxContextTokens - currentTokenCount,
+      this.maxResponseTokens,
+    );
 
     return { prompt, context };
   }
@@ -243,7 +246,7 @@ class AnthropicClient extends BaseClient {
       stream: this.modelOptions.stream || true,
       max_tokens_to_sample: this.modelOptions.maxOutputTokens || 1500,
       metadata,
-      ...modelOptions
+      ...modelOptions,
     };
     if (this.options.debug) {
       console.log('AnthropicClient: requestOptions');
@@ -289,7 +292,7 @@ class AnthropicClient extends BaseClient {
     return {
       promptPrefix: this.options.promptPrefix,
       modelLabel: this.options.modelLabel,
-      ...this.modelOptions
+      ...this.modelOptions,
     };
   }
 

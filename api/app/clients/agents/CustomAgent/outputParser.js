@@ -57,7 +57,7 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
       const output = text.substring(finalMatch.index + finalMatch[0].length).trim();
       return {
         returnValues: { output },
-        log: text
+        log: text,
       };
     }
 
@@ -66,7 +66,7 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
     if (!match) {
       console.log(
         '\n\n<----------------------HIT NO MATCH PARSING ERROR---------------------->\n\n',
-        match
+        match,
       );
       const thoughts = text.replace(/[tT]hought:/, '').split('\n');
       // return {
@@ -77,7 +77,7 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
 
       return {
         returnValues: { output: thoughts[0] },
-        log: thoughts.slice(1).join('\n')
+        log: thoughts.slice(1).join('\n'),
       };
     }
 
@@ -86,12 +86,12 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
     if (match && selectedTool === 'n/a') {
       console.log(
         '\n\n<----------------------HIT N/A PARSING ERROR---------------------->\n\n',
-        match
+        match,
       );
       return {
         tool: 'self-reflection',
         toolInput: match[2]?.trim().replace(/^"+|"+$/g, '') ?? '',
-        log: text
+        log: text,
       };
     }
 
@@ -99,7 +99,7 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
     if (match && !toolIsValid) {
       console.log(
         '\n\n<----------------Tool invalid: Re-assigning Selected Tool---------------->\n\n',
-        match
+        match,
       );
       selectedTool = this.getValidTool(selectedTool);
     }
@@ -107,7 +107,7 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
     if (match && !selectedTool) {
       console.log(
         '\n\n<----------------------HIT INVALID TOOL PARSING ERROR---------------------->\n\n',
-        match
+        match,
       );
       selectedTool = 'self-reflection';
     }
@@ -115,7 +115,7 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
     if (match && !match[2]) {
       console.log(
         '\n\n<----------------------HIT NO ACTION INPUT PARSING ERROR---------------------->\n\n',
-        match
+        match,
       );
 
       // In case there is no action input, let's double-check if there is an action input in 'text' variable
@@ -125,7 +125,7 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
         return {
           tool: selectedTool,
           toolInput: actionInputMatch[1].trim(),
-          log: text
+          log: text,
         };
       }
 
@@ -133,7 +133,7 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
         return {
           tool: selectedTool,
           toolInput: thoughtMatch[1].trim(),
-          log: text
+          log: text,
         };
       }
     }
@@ -158,12 +158,12 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
       if (action && actionInputMatch) {
         console.log(
           '\n\n<------Matched Action Input in Long Parsing Error------>\n\n',
-          actionInputMatch
+          actionInputMatch,
         );
         return {
           tool: action,
           toolInput: actionInputMatch[1].trim().replaceAll('"', ''),
-          log: text
+          log: text,
         };
       }
 
@@ -180,7 +180,7 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
         const returnValues = {
           tool: action,
           toolInput: input,
-          log: thought || inputText
+          log: thought || inputText,
         };
 
         const inputMatch = this.actionValues.exec(returnValues.log); //new
@@ -197,7 +197,7 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
         return {
           tool: 'self-reflection',
           toolInput: 'Hypothetical actions: \n"' + text + '"\n',
-          log: 'Thought: I need to look at my hypothetical actions and try one'
+          log: 'Thought: I need to look at my hypothetical actions and try one',
         };
       }
 
@@ -210,7 +210,7 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
     return {
       tool: selectedTool,
       toolInput: match[2]?.trim()?.replace(/^"+|"+$/g, '') ?? '',
-      log: text
+      log: text,
     };
   }
 }

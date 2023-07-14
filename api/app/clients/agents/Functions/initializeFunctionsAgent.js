@@ -8,7 +8,6 @@ const initializeFunctionsAgent = async ({
   // currentDateString,
   ...rest
 }) => {
-
   const memory = new BufferMemory({
     chatHistory: new ChatMessageHistory(pastMessages),
     memoryKey: 'chat_history',
@@ -19,17 +18,11 @@ const initializeFunctionsAgent = async ({
     returnMessages: true,
   });
 
-  return await initializeAgentExecutorWithOptions(
-    tools,
-    model,
-    {
-      agentType: 'openai-functions',
-      memory,
-      ...rest,
-    }
-  );
-
+  return await initializeAgentExecutorWithOptions(tools, model, {
+    agentType: 'openai-functions',
+    memory,
+    ...rest,
+  });
 };
 
 module.exports = initializeFunctionsAgent;
-

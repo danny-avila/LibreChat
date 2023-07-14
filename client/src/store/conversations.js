@@ -3,7 +3,7 @@ import { useCallback } from 'react';
 
 const refreshConversationsHint = atom({
   key: 'refreshConversationsHint',
-  default: 1
+  default: 1,
 });
 
 const useConversations = () => {

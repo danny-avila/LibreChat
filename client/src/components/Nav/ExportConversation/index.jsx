@@ -26,7 +26,7 @@ const ExportConversation = forwardRef(() => {
       <button
         className={cn(
           'flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700',
-          exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-gray-400'
+          exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-gray-400',
         )}
         onClick={clickHandler}
       >

@@ -6,7 +6,7 @@ const User = require('../models/User');
 const jwtLogin = new JwtStrategy(
   {
     jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-    secretOrKey: process.env.JWT_SECRET
+    secretOrKey: process.env.JWT_SECRET,
   },
   async (payload, done) => {
     try {
@@ -20,7 +20,7 @@ const jwtLogin = new JwtStrategy(
     } catch (err) {
       done(err, false);
     }
-  }
+  },
 );
 
 passport.use(jwtLogin);

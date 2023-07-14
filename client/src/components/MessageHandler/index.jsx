@@ -26,9 +26,9 @@ export default function MessageHandler() {
           parentMessageId: message?.overrideParentMessageId,
           messageId: message?.overrideParentMessageId + '_',
           plugin: plugin ? plugin : null,
-          submitting: true
+          submitting: true,
           // unfinished: true
-        }
+        },
       ]);
     } else {
       setMessages([
@@ -40,9 +40,9 @@ export default function MessageHandler() {
           parentMessageId: message?.messageId,
           messageId: message?.messageId + '_',
           plugin: plugin ? plugin : null,
-          submitting: true
+          submitting: true,
           // unfinished: true
-        }
+        },
       ]);
     }
   };
@@ -74,7 +74,7 @@ export default function MessageHandler() {
 
     setConversation((prevState) => ({
       ...prevState,
-      ...conversation
+      ...conversation,
     }));
   };
 
@@ -88,8 +88,8 @@ export default function MessageHandler() {
           ...initialResponse,
           parentMessageId: message?.overrideParentMessageId,
           messageId: message?.overrideParentMessageId + '_',
-          submitting: true
-        }
+          submitting: true,
+        },
       ]);
     else
       setMessages([
@@ -99,14 +99,14 @@ export default function MessageHandler() {
           ...initialResponse,
           parentMessageId: message?.messageId,
           messageId: message?.messageId + '_',
-          submitting: true
-        }
+          submitting: true,
+        },
       ]);
 
     const { conversationId } = message;
     setConversation((prevState) => ({
       ...prevState,
-      conversationId
+      conversationId,
     }));
     resetLatestMessage();
   };
@@ -138,7 +138,7 @@ export default function MessageHandler() {
 
     setConversation((prevState) => ({
       ...prevState,
-      ...conversation
+      ...conversation,
     }));
   };
 
@@ -149,7 +149,7 @@ export default function MessageHandler() {
     const errorResponse = {
       ...data,
       error: true,
-      parentMessageId: message?.messageId
+      parentMessageId: message?.messageId,
     };
     setIsSubmitting(false);
     setMessages([...messages, message, errorResponse]);
@@ -164,11 +164,11 @@ export default function MessageHandler() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        abortKey: conversationId
-      })
+        abortKey: conversationId,
+      }),
     })
       .then((response) => response.json())
       .then((data) => {
@@ -193,7 +193,7 @@ export default function MessageHandler() {
 
     const events = new SSE(server, {
       payload: JSON.stringify(payload),
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
 
     events.onmessage = (e) => {
@@ -206,7 +206,7 @@ export default function MessageHandler() {
       if (data.created) {
         message = {
           ...data.message,
-          overrideParentMessageId: message?.overrideParentMessageId
+          overrideParentMessageId: message?.overrideParentMessageId,
         };
         createdHandler(data, { ...submission, message });
         console.log('created', message);

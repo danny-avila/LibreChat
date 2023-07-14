@@ -3,5 +3,5 @@ const initializeFunctionsAgent = require('./Functions/initializeFunctionsAgent')
 
 module.exports = {
   initializeCustomAgent,
-  initializeFunctionsAgent
+  initializeFunctionsAgent,
 };

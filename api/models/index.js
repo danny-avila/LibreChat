@@ -16,5 +16,5 @@ module.exports = {
   getPreset,
   getPresets,
   savePreset,
-  deletePresets
+  deletePresets,
 };

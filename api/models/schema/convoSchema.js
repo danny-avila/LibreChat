@@ -8,48 +8,48 @@ const convoSchema = mongoose.Schema(
       unique: true,
       required: true,
       index: true,
-      meiliIndex: true
+      meiliIndex: true,
     },
     title: {
       type: String,
       default: 'New Chat',
-      meiliIndex: true
+      meiliIndex: true,
     },
     user: {
       type: String,
-      default: null
+      default: null,
     },
     messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
     // google only
     examples: [{ type: mongoose.Schema.Types.Mixed }],
     agentOptions: {
       type: mongoose.Schema.Types.Mixed,
-      default: null
+      default: null,
     },
     ...conversationPreset,
     // for bingAI only
     bingConversationId: {
       type: String,
-      default: null
+      default: null,
     },
     jailbreakConversationId: {
       type: String,
-      default: null
+      default: null,
     },
     conversationSignature: {
       type: String,
-      default: null
+      default: null,
     },
     clientId: {
       type: String,
-      default: null
+      default: null,
     },
     invocationId: {
       type: Number,
-      default: 1
-    }
+      default: 1,
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
@@ -57,7 +57,7 @@ if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
     host: process.env.MEILI_HOST,
     apiKey: process.env.MEILI_MASTER_KEY,
     indexName: 'convos', // Will get created automatically if it doesn't exist already
-    primaryKey: 'conversationId'
+    primaryKey: 'conversationId',
   });
 }
 
