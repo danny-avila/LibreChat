@@ -167,17 +167,17 @@ const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, con
       ...endpointOption
     };
 
-    let oaiApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
+    let openAIApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
     if (process.env.PLUGINS_USE_AZURE) {
       clientOptions.azure = getAzureCredentials();
-      oaiApiKey = clientOptions.azure.azureOpenAIApiKey;
+      openAIApiKey = clientOptions.azure.azureOpenAIApiKey;
     }
 
-    if (oaiApiKey && oaiApiKey.includes('azure') && !clientOptions.azure) {
+    if (openAIApiKey && openAIApiKey.includes('azure') && !clientOptions.azure) {
       clientOptions.azure = JSON.parse(req.body?.token) ?? getAzureCredentials();
-      oaiApiKey = clientOptions.azure.azureOpenAIApiKey;
+      openAIApiKey = clientOptions.azure.azureOpenAIApiKey;
     }
-    const chatAgent = new PluginsClient(oaiApiKey, clientOptions);
+    const chatAgent = new PluginsClient(openAIApiKey, clientOptions);
 
     const onAgentAction = (action) => {
       const formattedAction = formatAction(action);
@@ -235,7 +235,12 @@ const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, con
     res.end();
 
     if (parentMessageId == '00000000-0000-0000-0000-000000000000' && newConvo) {
-      const title = await titleConvo({ text, response });
+      const title = await titleConvo({
+        text,
+        response,
+        openAIApiKey,
+        azure: !!clientOptions.azure,
+      });
       await saveConvo(req.user.id, {
         conversationId: conversationId,
         title
