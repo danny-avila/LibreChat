@@ -102,6 +102,3 @@ module.exports = {
   validateJson,
   ManifestDefinition,
 };
-
-// debugging
-// loadSpecs({ llm: { hi: 'hello' }, map: true, verbose: true }).catch(console.error);

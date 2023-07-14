@@ -26,5 +26,6 @@ async function addOpenAPISpecs(availableTools) {
 }
 
 module.exports = {
+  transformSpec,
   addOpenAPISpecs,
 };
