@@ -167,7 +167,7 @@ const AuthContextProvider = ({
           navigate('/login', { replace: true });
         }
       } catch (error) {
-        doSetError((error as Error).message);
+        // doSetError((error as Error).message);
         navigate('/login', { replace: true });
       }
     };
