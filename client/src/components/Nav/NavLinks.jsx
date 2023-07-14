@@ -15,7 +15,7 @@ import { cn } from '~/utils/';
 import DotsIcon from '../svg/DotsIcon';
 
 import store from '~/store';
-import LinkIcon from '../svg/LinkIcon';
+import { LinkIcon } from '~/components/svg';
 
 export default function NavLinks({ clearSearch, isSearchEnabled }) {
   const [showExports, setShowExports] = useState(false);
