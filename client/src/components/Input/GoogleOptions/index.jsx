@@ -16,14 +16,15 @@ function GoogleOptions() {
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
 
   const [conversation, setConversation] = useRecoilState(store.conversation) || {};
-  const { endpoint, conversationId } = conversation;
+  const { endpoint } = conversation;
   const { model, modelLabel, promptPrefix, examples, temperature, topP, topK, maxOutputTokens } =
     conversation;
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
-  if (endpoint !== 'google') return null;
-  if (conversationId !== 'new') return null;
+  if (endpoint !== 'google') {
+    return null;
+  }
 
   const models = endpointsConfig?.['google']?.['availableModels'] || [];
 

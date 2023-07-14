@@ -216,6 +216,8 @@ class GoogleClient extends BaseClient {
 
   getSaveOptions() {
     return {
+      promptPrefix: this.options.promptPrefix,
+      modelLabel: this.options.modelLabel,
       ...this.modelOptions
     };
   }

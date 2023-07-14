@@ -2,7 +2,7 @@
 const _ = require('lodash');
 const { genAzureChatCompletion, getAzureCredentials } = require('../utils/');
 
-const titleConvo = async ({ text, response, oaiApiKey }) => {
+const titleConvo = async ({ text, response, openAIApiKey, azure = false }) => {
   let title = 'New Chat';
   const ChatGPTClient = (await import('@waylaidwanderer/chatgpt-api')).default;
 
@@ -19,7 +19,6 @@ const titleConvo = async ({ text, response, oaiApiKey }) => {
     ||>Title:`
     };
 
-    const azure = process.env.AZURE_API_KEY ? true : false;
     const options = {
       azure,
       reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
@@ -35,7 +34,9 @@ const titleConvo = async ({ text, response, oaiApiKey }) => {
       frequency_penalty: 0
     };
 
-    let apiKey = oaiApiKey || process.env.OPENAI_API_KEY;
+    let apiKey = openAIApiKey ?? process.env.OPENAI_API_KEY;
+
+    console.log('title api key', apiKey);
 
     if (azure) {
       apiKey = process.env.AZURE_API_KEY;
