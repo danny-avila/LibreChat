@@ -152,7 +152,7 @@ The last thing you need is to create a MongoDB Atlas Database.
 | --- | --- |
 | MONGO_URI | `mongodb+srv://USERNAME:PASSWORD@render-librechat.fgycwpi.mongodb.net/?retryWrites=true&w=majority` |
 
-**2.** **Important**: Remember to replace `<password>` with the database password you created earlier (when you did step 6 of the database creation **(do not leave the `<` `>` each side of the password)**
+**2.** **Important**: Remember to replace `<password>` with the database password you created earlier (when you did [step 6](render.md#L101) of the database creation **(do not leave the `<` `>` each side of the password)**
 
 **3.** Save Changes
 
