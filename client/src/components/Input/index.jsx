@@ -11,7 +11,7 @@ import NewConversationMenu from './NewConversationMenu';
 import AdjustToneButton from './AdjustToneButton';
 import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
-import { useMessageHandler } from '../../utils/handleSubmit';
+import { useMessageHandler } from '~/utils/handleSubmit';
 
 import store from '~/store';
 
@@ -36,8 +36,20 @@ export default function TextChat({ isSearchView = false }) {
 
   // auto focus to input, when enter a conversation.
   useEffect(() => {
-    if (conversation?.conversationId !== 'search') inputRef.current?.focus();
-  }, [conversation?.conversationId]);
+    const { conversationId } = conversation || {};
+    if (!conversationId) {
+      return;
+    }
+
+    // Prevents Settings from not showing on new conversation, also prevents toneStyle change without jailbreak
+    if (conversationId === 'new' || !conversation?.jailbreak) {
+      setShowBingToneSetting(false);
+    }
+
+    if (conversationId !== 'search') {
+      inputRef.current?.focus();
+    }
+  }, [conversation]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
