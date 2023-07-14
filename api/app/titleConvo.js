@@ -1,4 +1,3 @@
-
 const _ = require('lodash');
 const { genAzureChatCompletion, getAzureCredentials } = require('../utils/');
 
@@ -16,13 +15,13 @@ const titleConvo = async ({ text, response, openAIApiKey, azure = false }) => {
     ||>Response:
     "${JSON.stringify(response?.text)}"
     
-    ||>Title:`
+    ||>Title:`,
     };
 
     const options = {
       azure,
       reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
-      proxy: process.env.PROXY || null
+      proxy: process.env.PROXY || null,
     };
 
     const titleGenClientOptions = JSON.parse(JSON.stringify(options));
@@ -31,12 +30,10 @@ const titleConvo = async ({ text, response, openAIApiKey, azure = false }) => {
       model: 'gpt-3.5-turbo',
       temperature: 0,
       presence_penalty: 0,
-      frequency_penalty: 0
+      frequency_penalty: 0,
     };
 
     let apiKey = openAIApiKey ?? process.env.OPENAI_API_KEY;
-
-    console.log('title api key', apiKey);
 
     if (azure) {
       apiKey = process.env.AZURE_API_KEY;
