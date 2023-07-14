@@ -162,8 +162,6 @@ const AuthContextProvider = ({
       const response = await refreshToken();
       if (response?.status === 200) {
         setUserContext({ token: response?.data?.token, isAuthenticated: true, user: response?.data?.user });
-      } else {
-        navigate('/login', { replace: true });
       }
     };
 
