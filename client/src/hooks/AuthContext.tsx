@@ -161,7 +161,7 @@ const AuthContextProvider = ({
 
   const silentRefresh = useCallback(() => {
     if (!refreshToken) {
-      console.log('refreshToken is not defined');
+      // console.log('refreshToken is not defined');
       navigate('/login', { replace: true });
       return;
     }
