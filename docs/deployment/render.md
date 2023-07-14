@@ -175,4 +175,7 @@ The last thing you need is to create a MongoDB Atlas Database.
 
   ![image](https://github.com/fuegovic/LibreChat/assets/32828263/c200e052-8a12-46b2-9f64-b3cdff146980)
 
-**4.** You can now access it by clicking the link!
+## Conclusion
+You can now access it by clicking the link, congrattulation, you've sucessfully deployed LibreChat on render.com
+
+### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
