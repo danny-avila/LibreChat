@@ -108,32 +108,33 @@ const ask = async ({
 
   if (preSendRequest) sendMessage(res, { message: userMessage, created: true });
 
+  let lastSavedTimestamp = 0;
+  const { onProgress: progressCallback, getPartialText } = createOnProgress({
+    onProgress: ({ text }) => {
+      const currentTimestamp = Date.now();
+      if (currentTimestamp - lastSavedTimestamp > 500) {
+        lastSavedTimestamp = currentTimestamp;
+        saveMessage({
+          messageId: responseMessageId,
+          sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
+          conversationId,
+          parentMessageId: overrideParentMessageId || userMessageId,
+          text: text,
+          unfinished: true,
+          cancelled: false,
+          error: false,
+        });
+      }
+    },
+  });
+  const abortController = new AbortController();
+  let bingConversationId = null;
+  if (!isNewConversation) {
+    const convo = await getConvo(req.user.id, conversationId);
+    bingConversationId = convo.bingConversationId;
+  }
+
   try {
-    let lastSavedTimestamp = 0;
-    const { onProgress: progressCallback } = createOnProgress({
-      onProgress: ({ text }) => {
-        const currentTimestamp = Date.now();
-        if (currentTimestamp - lastSavedTimestamp > 500) {
-          lastSavedTimestamp = currentTimestamp;
-          saveMessage({
-            messageId: responseMessageId,
-            sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
-            conversationId,
-            parentMessageId: overrideParentMessageId || userMessageId,
-            text: text,
-            unfinished: true,
-            cancelled: false,
-            error: false,
-          });
-        }
-      },
-    });
-    const abortController = new AbortController();
-    let bingConversationId = null;
-    if (!isNewConversation) {
-      const convo = await getConvo(req.user.id, conversationId);
-      bingConversationId = convo.bingConversationId;
-    }
     let response = await askBing({
       text,
       parentMessageId: userParentMessageId,
@@ -160,6 +161,13 @@ const ask = async ({
     response.text =
       response.response || response.details.spokenText || '**Bing refused to answer.**';
 
+    const partialText = getPartialText();
+    let unfinished = false;
+    if (partialText?.length > response.text.length) {
+      response.text = partialText;
+      unfinished = true;
+    }
+
     let responseMessage = {
       conversationId,
       bingConversationId: newConversationId,
@@ -171,7 +179,7 @@ const ask = async ({
       suggestions:
         response.details.suggestedResponses &&
         response.details.suggestedResponses.map((s) => s.text),
-      unfinished: false,
+      unfinished,
       cancelled: false,
       error: false,
     };
@@ -179,7 +187,11 @@ const ask = async ({
     await saveMessage(responseMessage);
     responseMessage.messageId = newResponseMessageId;
 
-    let conversationUpdate = { conversationId, bingConversationId: newConversationId, endpoint: 'bingAI' };
+    let conversationUpdate = {
+      conversationId,
+      bingConversationId: newConversationId,
+      endpoint: 'bingAI',
+    };
 
     if (endpointOption?.jailbreak) {
       conversationUpdate.jailbreak = true;
@@ -224,19 +236,45 @@ const ask = async ({
       });
     }
   } catch (error) {
-    console.log(error);
-    const errorMessage = {
-      messageId: responseMessageId,
-      sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
-      conversationId,
-      parentMessageId: overrideParentMessageId || userMessageId,
-      unfinished: false,
-      cancelled: false,
-      error: true,
-      text: error.message,
-    };
-    await saveMessage(errorMessage);
-    handleError(res, errorMessage);
+    console.error(error);
+    const partialText = getPartialText();
+    if (partialText?.length > 2) {
+      const responseMessage = {
+        messageId: responseMessageId,
+        sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
+        conversationId,
+        parentMessageId: overrideParentMessageId || userMessageId,
+        text: partialText,
+        model: endpointOption.modelOptions.model,
+        unfinished: true,
+        cancelled: false,
+        error: false,
+      };
+
+      saveMessage(responseMessage);
+
+      return {
+        title: await getConvoTitle(req.user.id, conversationId),
+        final: true,
+        conversation: await getConvo(req.user.id, conversationId),
+        requestMessage: userMessage,
+        responseMessage: responseMessage,
+      };
+    } else {
+      console.log(error);
+      const errorMessage = {
+        messageId: responseMessageId,
+        sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
+        conversationId,
+        parentMessageId: overrideParentMessageId || userMessageId,
+        unfinished: false,
+        cancelled: false,
+        error: true,
+        text: error.message,
+      };
+      await saveMessage(errorMessage);
+      handleError(res, errorMessage);
+    }
   }
 };
 
