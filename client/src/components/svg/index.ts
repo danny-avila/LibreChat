@@ -12,3 +12,4 @@ export { default as GithubIcon } from './GithubIcon';
 export { default as DiscordIcon } from './DiscordIcon';
 export { default as AnthropicIcon } from './AnthropicIcon';
 export { default as LinkIcon } from './LinkIcon';
+export { default as DotsIcon } from './DotsIcon';
