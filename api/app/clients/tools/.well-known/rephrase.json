@@ -1,0 +1,18 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "Prompt Perfect",
+  "name_for_model": "rephrase",
+  "description_for_human": "Type 'perfect' to craft the perfect prompt, every time.",
+  "description_for_model": "Plugin that can rephrase user inputs to improve the quality of ChatGPT's responses. The plugin evaluates user inputs and, if necessary, transforms them into clearer, more specific, and contextual prompts. It processes a JSON object containing the user input to be rephrased and uses the GPT-3.5-turbo model for the rephrasing process. The rephrased input is then returned as raw data to be incorporated into ChatGPT's response. The user can initiate the plugin by typing 'perfect'.",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://promptperfect.xyz/openapi.yaml",
+    "is_user_authenticated": false
+  },
+  "logo_url": "https://promptperfect.xyz/static/prompt_perfect_logo.png",
+  "contact_email": "heyo@promptperfect.xyz",
+  "legal_info_url": "https://promptperfect.xyz/static/terms.html"
+}
