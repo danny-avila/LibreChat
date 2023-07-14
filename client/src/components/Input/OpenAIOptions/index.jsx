@@ -15,7 +15,7 @@ function OpenAIOptions() {
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
 
   const [conversation, setConversation] = useRecoilState(store.conversation) || {};
-  const { endpoint, conversationId } = conversation;
+  const { endpoint } = conversation;
   const {
     model,
     chatGptLabel,
@@ -28,8 +28,9 @@ function OpenAIOptions() {
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const isOpenAI = endpoint === 'openAI' || endpoint === 'azureOpenAI';
-  if (!isOpenAI) return null;
-  if (conversationId !== 'new') return null;
+  if (!isOpenAI) {
+    return null;
+  }
 
   const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
 
