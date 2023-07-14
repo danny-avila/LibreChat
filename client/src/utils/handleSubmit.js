@@ -76,6 +76,22 @@ const useMessageHandler = () => {
         token: endpointsConfig[endpoint]?.userProvide ? getToken() : null
       };
       responseSender = endpointOption.jailbreak ? 'Sydney' : 'BingAI';
+    } else if (endpoint === 'anthropic') {
+      endpointOption = {
+        endpoint,
+        model:
+          currentConversation?.model ??
+          endpointsConfig[endpoint]?.availableModels?.[0] ??
+          'claude-1',
+        modelLabel: currentConversation?.modelLabel ?? null,
+        promptPrefix: currentConversation?.promptPrefix ?? null,
+        temperature: currentConversation?.temperature ?? 0.7,
+        maxOutputTokens: currentConversation?.maxOutputTokens ?? 1024,
+        topP: currentConversation?.topP ?? 0.7,
+        topK: currentConversation?.topK ?? 40,
+        token: endpointsConfig[endpoint]?.userProvide ? getToken() : null
+      };
+      responseSender = 'Anthropic';
     } else if (endpoint === 'chatGPTBrowser') {
       endpointOption = {
         endpoint,
