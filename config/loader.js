@@ -40,7 +40,7 @@ class Env {
     } else {
       console.warn('The default .env file was not found');
     }
-    
+
     const environment = this.currentEnvironment();
 
     // Load the environment specific env file
@@ -95,8 +95,8 @@ class Env {
   /**
    * Resolve the location of the env file
    *
-   * @param {String} envFile 
-   * @returns 
+   * @param {String} envFile
+   * @returns
    */
   resolve(envFile) {
     return path.resolve(process.cwd(), envFile);
@@ -157,7 +157,7 @@ class Env {
       }
       // Skip lines with quotes and numbers already
       // Todo: this could be one regex
-      const wrappedValue = value.includes(' ') && ! value.includes('"') && ! value.includes("'") && !/\d/.test(value) ? `"${value}"` : value;
+      const wrappedValue = value.includes(' ') && ! value.includes('"') && ! value.includes('\'') && !/\d/.test(value) ? `"${value}"` : value;
       return `${key}=${wrappedValue}`;
     });
 
@@ -165,12 +165,11 @@ class Env {
     fs.writeFileSync(filePath, updatedContent);
   }
 
-
   /**
    * Generate Secure Random Strings
    *
    * @param {Number} length The length of the random string
-   * @returns 
+   * @returns
    */
   generateSecureRandomString(length = 32) {
     return crypto.randomBytes(length).toString('hex');
@@ -186,8 +185,8 @@ class Env {
   /**
    * Get an environment variable
    *
-   * @param {String} variable 
-   * @returns 
+   * @param {String} variable
+   * @returns
    */
   get(variable) {
     return process.env[variable];

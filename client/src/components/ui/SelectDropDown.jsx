@@ -13,18 +13,18 @@ function SelectDropDown({
   showLabel = true,
   containerClassName,
   subContainerClassName,
-  className
+  className,
 }) {
   return (
     <div className={cn('flex items-center justify-center gap-2', containerClassName)}>
-      <div className={cn("relative w-full", subContainerClassName)}>
+      <div className={cn('relative w-full', subContainerClassName)}>
         <Listbox value={value} onChange={setValue} disabled={disabled}>
           {({ open }) => (
             <>
               <Listbox.Button
                 className={cn(
                   'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:border-green-600 focus:outline-none focus:ring-1 focus:ring-green-600 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
-                  className
+                  className,
                 )}
               >
                 {' '}
@@ -41,7 +41,7 @@ function SelectDropDown({
                   <span
                     className={cn(
                       'flex h-6 items-center gap-1 truncate text-sm text-gray-900 dark:text-white',
-                      !showLabel ? 'text-xs' : ''
+                      !showLabel ? 'text-xs' : '',
                     )}
                   >
                     {!showLabel && (
@@ -87,7 +87,7 @@ function SelectDropDown({
                         <span
                           className={cn(
                             'flex h-6 items-center gap-1 text-gray-800 dark:text-gray-100',
-                            option === value ? 'font-semibold' : ''
+                            option === value ? 'font-semibold' : '',
                           )}
                         >
                           {option}

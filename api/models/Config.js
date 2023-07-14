@@ -29,23 +29,23 @@ const configSchema = mongoose.Schema(
           }
           return true;
         },
-        message: 'Invalid tag value'
-      }
+        message: 'Invalid tag value',
+      },
     },
     searchEnabled: {
       type: Boolean,
-      default: false
+      default: false,
     },
     usersEnabled: {
       type: Boolean,
-      default: false
+      default: false,
     },
     startupCounts: {
       type: Number,
-      default: 0
-    }
+      default: 0,
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Instance method
@@ -80,5 +80,5 @@ module.exports = {
       console.error(error);
       return { config: 'Error deleting configs' };
     }
-  }
+  },
 };

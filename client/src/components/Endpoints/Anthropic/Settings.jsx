@@ -27,7 +27,7 @@ function Settings(props) {
     topP,
     topK,
     maxOutputTokens,
-    setOption
+    setOption,
   } = props;
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
@@ -43,7 +43,7 @@ function Settings(props) {
   const models = endpointsConfig?.['anthropic']?.['availableModels'] || [];
 
   return (
-    <div className={`h-[490px] overflow-y-auto md:h-[350px]`}>
+    <div className={'h-[490px] overflow-y-auto md:h-[350px]'}>
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
@@ -54,7 +54,7 @@ function Settings(props) {
               disabled={readonly}
               className={cn(
                 defaultTextProps,
-                'z-50 flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                'z-50 flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
               )}
               containerClassName="flex w-full resize-none"
             />
@@ -71,7 +71,7 @@ function Settings(props) {
               placeholder="Set a custom name for Claude"
               className={cn(
                 defaultTextProps,
-                'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
               )}
             />
           </div>
@@ -87,7 +87,7 @@ function Settings(props) {
               placeholder="Set custom instructions or context. Ignored if empty."
               className={cn(
                 defaultTextProps,
-                'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 '
+                'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 ',
               )}
             />
           </div>
@@ -112,8 +112,8 @@ function Settings(props) {
                     defaultTextProps,
                     cn(
                       optionText,
-                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
-                    )
+                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    ),
                   )}
                 />
               </div>
@@ -149,8 +149,8 @@ function Settings(props) {
                     defaultTextProps,
                     cn(
                       optionText,
-                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
-                    )
+                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    ),
                   )}
                 />
               </div>
@@ -187,8 +187,8 @@ function Settings(props) {
                     defaultTextProps,
                     cn(
                       optionText,
-                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
-                    )
+                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    ),
                   )}
                 />
               </div>
@@ -224,8 +224,8 @@ function Settings(props) {
                     defaultTextProps,
                     cn(
                       optionText,
-                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
-                    )
+                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    ),
                   )}
                 />
               </div>

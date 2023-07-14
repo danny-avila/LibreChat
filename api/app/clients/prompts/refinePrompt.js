@@ -16,7 +16,7 @@ REFINED CONVERSATION SUMMARY:`;
 
 const refinePrompt = new PromptTemplate({
   template: refinePromptTemplate,
-  inputVariables: ["existing_answer", "text"],
+  inputVariables: ['existing_answer', 'text'],
 });
 
 module.exports = {

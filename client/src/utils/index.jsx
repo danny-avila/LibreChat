@@ -32,7 +32,7 @@ export const languages = [
   'x86asm',
   'matlab',
   'perl',
-  'pascal'
+  'pascal',
 ];
 
 export const alternateName = {

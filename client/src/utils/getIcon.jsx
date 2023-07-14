@@ -13,7 +13,7 @@ const getIcon = (props) => {
         title={user?.name || 'User'}
         style={{
           width: size,
-          height: size
+          height: size,
         }}
         className={'relative flex items-center justify-center' + props?.className}
       >
@@ -93,7 +93,7 @@ const getIcon = (props) => {
         style={{
           background: bg || 'transparent',
           width: size,
-          height: size
+          height: size,
         }}
         className={cn(
           'relative flex items-center justify-center rounded-sm text-white ',

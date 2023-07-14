@@ -8,7 +8,7 @@ class CustomAgent extends ZeroShotAgent {
   }
 
   _stop() {
-    return [`\nObservation:`, `\nObservation 1:`];
+    return ['\nObservation:', '\nObservation 1:'];
   }
 
   static createPrompt(tools, opts = {}) {
@@ -32,17 +32,17 @@ class CustomAgent extends ZeroShotAgent {
       .join('\n');
     const toolNames = tools.map((tool) => tool.name);
     const formatInstructions = (0, renderTemplate)(instructions, 'f-string', {
-      tool_names: toolNames
+      tool_names: toolNames,
     });
     const template = [
       `Date: ${currentDateString}\n${prefix}`,
       toolStrings,
       formatInstructions,
-      suffix
+      suffix,
     ].join('\n\n');
     return new PromptTemplate({
       template,
-      inputVariables
+      inputVariables,
     });
   }
 }

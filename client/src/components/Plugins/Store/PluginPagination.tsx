@@ -9,7 +9,7 @@ type TPluginPaginationProps = {
 const PluginPagination: React.FC<TPluginPaginationProps> = ({
   currentPage,
   maxPage,
-  onChangePage
+  onChangePage,
 }) => {
   const pages = [...Array(maxPage).keys()].map((i) => i + 1);
 

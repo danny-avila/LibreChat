@@ -10,14 +10,14 @@ const passportLogin = new PassportLocalStrategy(
     usernameField: 'email',
     passwordField: 'password',
     session: false,
-    passReqToCallback: true
+    passReqToCallback: true,
   },
   async (req, email, password, done) => {
     const { error } = loginSchema.validate(req.body);
     if (error) {
       log({
         title: 'Passport Local Strategy - Validation Error',
-        parameters: [{ name: 'req.body', value: req.body }]
+        parameters: [{ name: 'req.body', value: req.body }],
       });
       return done(null, false, { message: error.details[0].message });
     }
@@ -27,7 +27,7 @@ const passportLogin = new PassportLocalStrategy(
       if (!user) {
         log({
           title: 'Passport Local Strategy - User Not Found',
-          parameters: [{ name: 'email', value: email }]
+          parameters: [{ name: 'email', value: email }],
         });
         return done(null, false, { message: 'Email does not exists.' });
       }
@@ -36,14 +36,14 @@ const passportLogin = new PassportLocalStrategy(
         if (err) {
           log({
             title: 'Passport Local Strategy - Compare password error',
-            parameters: [{ name: 'error', value: err }]
+            parameters: [{ name: 'error', value: err }],
           });
           return done(err);
         }
         if (!isMatch) {
           log({
             title: 'Passport Local Strategy - Password does not match',
-            parameters: [{ name: 'isMatch', value: isMatch }]
+            parameters: [{ name: 'isMatch', value: isMatch }],
           });
           return done(null, false, { message: 'Incorrect password.' });
         }
@@ -53,7 +53,7 @@ const passportLogin = new PassportLocalStrategy(
     } catch (err) {
       return done(err);
     }
-  }
+  },
 );
 
 passport.use(passportLogin);

@@ -14,5 +14,5 @@ module.exports = {
   //     lines: 57,
   //   },
   // },
-  restoreMocks: true
+  restoreMocks: true,
 };

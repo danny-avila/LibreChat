@@ -17,5 +17,5 @@ const logoutController = async (req, res) => {
 };
 
 module.exports = {
-  logoutController
+  logoutController,
 };

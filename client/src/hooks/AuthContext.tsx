@@ -5,7 +5,7 @@ import {
   ReactNode,
   useCallback,
   createContext,
-  useContext
+  useContext,
 } from 'react';
 import {
   TUser,
@@ -15,7 +15,7 @@ import {
   useLogoutUserMutation,
   useGetUserQuery,
   useRefreshTokenMutation,
-  TLoginUser
+  TLoginUser,
 } from '@librechat/data-provider';
 import { useNavigate } from 'react-router-dom';
 
@@ -44,7 +44,7 @@ const AuthContext = createContext<TAuthContext | undefined>(undefined);
 
 const AuthContextProvider = ({
   authConfig,
-  children
+  children,
 }: {
   authConfig: TAuthConfig;
   children: ReactNode;
@@ -86,7 +86,7 @@ const AuthContextProvider = ({
         navigate(redirect, { replace: true });
       }
     },
-    [navigate]
+    [navigate],
   );
 
   const getCookieValue = (key: string) => {
@@ -103,7 +103,7 @@ const AuthContextProvider = ({
       onError: (error) => {
         doSetError((error as Error).message);
         navigate('/login', { replace: true });
-      }
+      },
     });
   };
 
@@ -119,12 +119,12 @@ const AuthContextProvider = ({
           token: undefined,
           isAuthenticated: false,
           user: undefined,
-          redirect: '/login'
+          redirect: '/login',
         });
       },
       onError: (error) => {
         doSetError((error as Error).message);
-      }
+      },
     });
   };
 
@@ -154,7 +154,7 @@ const AuthContextProvider = ({
     userQuery.error,
     error,
     navigate,
-    setUserContext
+    setUserContext,
   ]);
 
   // const silentRefresh = useCallback(() => {
@@ -183,10 +183,10 @@ const AuthContextProvider = ({
       isAuthenticated,
       error,
       login,
-      logout
+      logout,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [user, error, isAuthenticated, token]
+    [user, error, isAuthenticated, token],
   );
 
   return <AuthContext.Provider value={memoedValue}>{children}</AuthContext.Provider>;

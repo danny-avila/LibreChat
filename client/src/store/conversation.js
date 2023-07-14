@@ -6,7 +6,7 @@ import {
   atomFamily,
   useSetRecoilState,
   useResetRecoilState,
-  useRecoilCallback
+  useRecoilCallback,
 } from 'recoil';
 import buildTree from '~/utils/buildTree';
 import getDefaultConversation from '~/utils/getDefaultConversation';
@@ -14,7 +14,7 @@ import submission from './submission.js';
 
 const conversation = atom({
   key: 'conversation',
-  default: null
+  default: null,
 });
 
 // current messages of the conversation, must be an array
@@ -22,24 +22,24 @@ const conversation = atom({
 // [{text, sender, messageId, parentMessageId, isCreatedByUser}]
 const messages = atom({
   key: 'messages',
-  default: []
+  default: [],
 });
 
 const messagesTree = selector({
   key: 'messagesTree',
   get: ({ get }) => {
     return buildTree(get(messages), false);
-  }
+  },
 });
 
 const latestMessage = atom({
   key: 'latestMessage',
-  default: null
+  default: null,
 });
 
 const messagesSiblingIdxFamily = atomFamily({
   key: 'messagesSiblingIdx',
-  default: 0
+  default: 0,
 });
 
 const useConversation = () => {
@@ -52,7 +52,7 @@ const useConversation = () => {
     conversation,
     messages = null,
     preset = null,
-    { endpointsConfig = {}, prevConversation = {} }
+    { endpointsConfig = {}, prevConversation = {} },
   ) => {
     let { endpoint = null } = conversation;
 
@@ -62,7 +62,7 @@ const useConversation = () => {
         conversation,
         endpointsConfig,
         prevConversation,
-        preset
+        preset,
       });
 
     setConversation(conversation);
@@ -78,10 +78,10 @@ const useConversation = () => {
         const endpointsConfig = await snapshot.getPromise(endpoints.endpointsConfig);
         _switchToConversation(_conversation, messages, preset, {
           endpointsConfig,
-          prevConversation
+          prevConversation,
         });
       },
-    []
+    [],
   );
 
   const newConversation = useCallback((template = {}, preset) => {
@@ -89,10 +89,10 @@ const useConversation = () => {
       {
         conversationId: 'new',
         title: 'New Chat',
-        ...template
+        ...template,
       },
       [],
-      preset
+      preset,
     );
   }, [switchToConversation]);
 
@@ -100,9 +100,9 @@ const useConversation = () => {
     switchToConversation(
       {
         conversationId: 'search',
-        title: 'Search'
+        title: 'Search',
       },
-      []
+      [],
     );
   };
 
@@ -115,5 +115,5 @@ export default {
   messagesTree,
   latestMessage,
   messagesSiblingIdxFamily,
-  useConversation
+  useConversation,
 };

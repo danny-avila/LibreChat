@@ -18,7 +18,7 @@ const logoutUser = async (user, refreshToken) => {
   try {
     const userFound = await User.findById(user._id);
     const tokenIndex = userFound.refreshToken.findIndex(
-      (item) => item.refreshToken === refreshToken
+      (item) => item.refreshToken === refreshToken,
     );
 
     if (tokenIndex !== -1) {
@@ -45,7 +45,7 @@ const registerUser = async (user) => {
     console.info(
       'Route: register - Joi Validation Error',
       { name: 'Request params:', value: user },
-      { name: 'Validation error:', value: error.details }
+      { name: 'Validation error:', value: error.details },
     );
 
     return { status: 422, message: error.details[0].message };
@@ -60,7 +60,7 @@ const registerUser = async (user) => {
       console.info(
         'Register User - Email in use',
         { name: 'Request params:', value: user },
-        { name: 'Existing user:', value: existingUser }
+        { name: 'Existing user:', value: existingUser },
       );
 
       // Sleep for 1 second
@@ -80,7 +80,7 @@ const registerUser = async (user) => {
       username,
       name,
       avatar: null,
-      role: isFirstRegisteredUser ? 'ADMIN' : 'USER'
+      role: isFirstRegisteredUser ? 'ADMIN' : 'USER',
     });
 
     // todo: implement refresh token
@@ -118,7 +118,7 @@ const requestPasswordReset = async (email) => {
   await new Token({
     userId: user._id,
     token: hash,
-    createdAt: Date.now()
+    createdAt: Date.now(),
   }).save();
 
   const link = `${domains.client}/reset-password?token=${resetToken}&userId=${user._id}`;
@@ -128,9 +128,9 @@ const requestPasswordReset = async (email) => {
     'Password Reset Request',
     {
       name: user.name,
-      link: link
+      link: link,
     },
-    './template/requestResetPassword.handlebars'
+    './template/requestResetPassword.handlebars',
   );
   return { link };
 };
@@ -166,9 +166,9 @@ const resetPassword = async (userId, token, password) => {
     user.email,
     'Password Reset Successfully',
     {
-      name: user.name
+      name: user.name,
     },
-    './template/resetPassword.handlebars'
+    './template/resetPassword.handlebars',
   );
 
   await passwordResetToken.deleteOne();
@@ -180,5 +180,5 @@ module.exports = {
   registerUser,
   logoutUser,
   requestPasswordReset,
-  resetPassword
+  resetPassword,
 };
