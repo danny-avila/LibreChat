@@ -25,8 +25,12 @@ function Login() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
+      <img src="/assets/logo-no-background.png" alt="GPTChina.io" className="h-16 w-auto mb-6" />
+      <p className="mb-4 text-center text-lg px-5">
+        Your one stop solution for AI in China.
+      </p>
       <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl font-semibold">{localize(lang, 'com_auth_welcome_back')}</h1>
+        <h1 className="mb-4 text-center text-3xl">{localize(lang, 'com_auth_welcome_back')}</h1>
         {error && (
           <div
             className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
