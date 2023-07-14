@@ -14,7 +14,7 @@ import {
   useLoginUserMutation,
   useLogoutUserMutation,
   useGetUserQuery,
-  useRefreshTokenMutation,
+  refreshToken,
   TLoginUser
 } from '@librechat/data-provider';
 import { useNavigate } from 'react-router-dom';
@@ -59,7 +59,6 @@ const AuthContextProvider = ({
   const loginUser = useLoginUserMutation();
   const logoutUser = useLogoutUserMutation();
   const userQuery = useGetUserQuery({ enabled: !!token });
-  const refreshToken = useRefreshTokenMutation();
 
   // This seems to prevent the error flashing issue
   const doSetError = (error: string | undefined) => {
@@ -158,42 +157,38 @@ const AuthContextProvider = ({
     });
   };
 
-  const silentRefresh = useCallback(() => {
-    if (!refreshToken) {
-      console.log('refreshToken is not defined');
-      return;
-    }
-
-    refreshToken.mutate(undefined, {
-      onSuccess: (data: TLoginResponse) => {
-        const { user, token } = data;
-        setUserContext({ token, isAuthenticated: true, user });
-      },
-      onError: error => {
-        console.log('refreshToken mutation error:', error);
-        navigate('/login'); 
-      }
-    });
-  }, [setUserContext, navigate]);
-
-  const [isLoadingUser, setIsLoadingUser] = useState(true);
-  
   useEffect(() => {
-    setIsLoadingUser(true);
+    const checkRefreshToken = async () => {
+      try {
+        // Call the /refresh endpoint or similar
+        const response = await refreshToken();
+
+        if (response.status === 200) {
+          // refreshToken is valid, set the user as logged in
+          setUserContext({ token: response.data.token, isAuthenticated: true, user: response.data.user });
+        } else {
+          // refreshToken is not valid, show an error or redirect to login
+          navigate('/login');
+        }
+      } catch (error) {
+        // Request failed, show an error or redirect to login
+        console.error('Failed to refresh token:', error);
+        navigate('/login');
+      }
+    };
+
     if (!token || isTokenExpired(token)) {
-      silentRefresh();
+      checkRefreshToken();
     } else if (userQuery.data) {
       setUser(userQuery.data);
-      setIsLoadingUser(false);
     } else if (userQuery.isError) {
       doSetError((userQuery?.error as Error).message);
       navigate('/login', { replace: true });
-      setIsLoadingUser(false);
     }
     if (error && isAuthenticated) {
       doSetError(undefined);
     }
-    if (!isLoadingUser && (!token || !isAuthenticated)) {
+    if (!token || !isAuthenticated) {
       const tokenFromCookie = getCookieValue('token');
       if (tokenFromCookie) {
         setUserContext({ token: tokenFromCookie, isAuthenticated: true, user: userQuery.data });
@@ -209,9 +204,7 @@ const AuthContextProvider = ({
     userQuery.error,
     error,
     navigate,
-    setUserContext,
-    silentRefresh,
-    isLoadingUser
+    setUserContext
   ]);
 
   // Make the provider update only when it should
