@@ -12,7 +12,7 @@ export default {
   com_ui_capability_decline_requests: 'Trained to decline inappropriate requests',
   com_ui_limitations: 'Limitations',
   com_ui_limitation_incorrect_info: 'May occasionally generate incorrect information',
-  com_ui_limitation_harmful_biased: 'May occasionally produce harmful instructions or biased content',
+  com_ui_limitation_harmful_biased: 'May occasionally produce harmful or biased content',
   com_ui_limitation_limited_2021: 'Limited knowledge of world and events after 2021',
   com_ui_input: 'Input',
   com_ui_close: 'Close',

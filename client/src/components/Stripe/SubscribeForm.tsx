@@ -21,7 +21,7 @@ const SubscribeForm = () => {
 
   useEffect(() => {
     // Initialize Google AdWords gtag
-    install('G-LL9W9MWZPP'); // replace 'G-LL9W9MWZPP' with your AdWords ID
+    install('G-LL9W9MWZPP');
   }, []);
 
   const onSubmit = async () => {
@@ -80,19 +80,28 @@ const SubscribeForm = () => {
   
 
   return (
-    <form className="subscription-form" onSubmit={handleSubmit(onSubmit)}>
-      <h2>Subscribe</h2>
-      <label htmlFor="card" className="card-label">Card details</label>
-      <div className="card-element-wrapper">
-        <CardElement id="card" className="card-element" />
+    <form className="subscription-form bg-white rounded " onSubmit={handleSubmit(onSubmit)}>
+      <div className="subscription-info mb-4">
+        <p className="font-semibold text-gray-700">By subscribing, you will gain:</p>
+        <ul className="list-disc list-inside text-gray-600">
+          <li>Exclusive access to the gpt-4 model. 25 messages daily.</li>
+          <li>Increased daily messaging limit: 500 messages/day (as opposed to 25 messages/day for unsubscribed users)</li>
+        </ul>
       </div>
-      <Button variant="green" className="w-full" type="submit" disabled={isLoading}>
+      
+      <label htmlFor="card" className="card-label block text-gray-700 text-sm font-bold mb-2">Card details</label>
+      <div className="card-element-wrapper mb-6">
+        <CardElement id="card" className="card-element shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" />
+      </div>
+      <Button variant="green" className="w-full bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" type="submit" disabled={isLoading}>
         {isLoading ? <Spinner /> : 'Submit'}
       </Button>
 
     </form>
   );
 };
+
+
 
 const WrappedSubscribeForm = () => {
   return (
