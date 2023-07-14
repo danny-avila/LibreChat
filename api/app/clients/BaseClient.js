@@ -370,7 +370,6 @@ class BaseClient {
   }
 
   async sendMessage(message, opts = {}) {
-    console.log('BaseClient: sendMessage', message, opts);
     const {
       user,
       conversationId,
@@ -379,6 +378,7 @@ class BaseClient {
       userMessage,
     } = await this.handleStartMethods(message, opts);
 
+    this.user = user;
     // It's not necessary to push to currentMessages
     // depending on subclass implementation of handling messages
     this.currentMessages.push(userMessage);

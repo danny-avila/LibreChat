@@ -29,6 +29,19 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
       topK: _preset?.topK ?? 40,
       title: _preset?.title ?? 'New Preset'
     };
+  } else if (endpoint === 'anthropic') {
+    preset = {
+      endpoint,
+      presetId: _preset?.presetId ?? null,
+      model: _preset?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'claude-1',
+      modelLabel: _preset?.modelLabel ?? null,
+      promptPrefix: _preset?.promptPrefix ?? null,
+      temperature: _preset?.temperature ?? 0.7,
+      maxOutputTokens: _preset?.maxOutputTokens ?? 1024,
+      topP: _preset?.topP ?? 0.7,
+      topK: _preset?.topK ?? 40,
+      title: _preset?.title ?? 'New Preset'
+    };
   } else if (endpoint === 'bingAI') {
     preset = {
       endpoint,

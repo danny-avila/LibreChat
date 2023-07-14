@@ -47,6 +47,8 @@ const MessageHeader = ({ isSearchView = false }) => {
         if (model) _title += `: ${model}`;
       } else if (endpoint === 'gptPlugins') {
         return plugins;
+      } else if (endpoint === 'anthropic') {
+        _title = 'Claude';
       } else if (endpoint === null) {
         null;
       } else {
