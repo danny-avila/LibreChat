@@ -133,5 +133,7 @@ async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }
 }
 
 module.exports = {
+  getSpec,
+  readSpecFile,
   createOpenAPIPlugin,
 };
