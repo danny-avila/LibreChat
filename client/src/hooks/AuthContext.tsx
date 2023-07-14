@@ -159,15 +159,11 @@ const AuthContextProvider = ({
 
   useEffect(() => {
     const checkRefreshToken = async () => {
-      try {
-        const response = await refreshToken();
-        if (response.status === 200) {
-          setUserContext({ token: response.data.token, isAuthenticated: true, user: response.data.user });
-        } else {
-          navigate('/login', { replace: true });
-        }
-      } catch (error) {
-        console.log(error);
+      const response = await refreshToken();
+      if (response.status === 200) {
+        setUserContext({ token: response.data.token, isAuthenticated: true, user: response.data.user });
+      } else {
+        navigate('/login', { replace: true });
       }
     };
 
