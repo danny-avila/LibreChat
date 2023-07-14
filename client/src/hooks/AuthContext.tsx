@@ -167,7 +167,7 @@ const AuthContextProvider = ({
           navigate('/login');
         }
       } catch (error) {
-        console.log('Failed to refresh token:', error);
+        doSetError((error as Error).message);
         navigate('/login');
       }
     };
