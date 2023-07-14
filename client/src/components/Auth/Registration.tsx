@@ -59,7 +59,7 @@ function Registration() {
         Your one stop solution for AI in China.
       </p>
       <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl font-semibold">Create your account</h1>
+        <h1 className="mb-4 text-center text-3xl">Create your account</h1>
         {error && (
           <div
             className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
