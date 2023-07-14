@@ -138,15 +138,15 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
       ...endpointOption
     };
 
-    let oaiApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
+    let openAIApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
 
     if (process.env.AZURE_API_KEY && endpoint === 'azureOpenAI') {
       clientOptions.azure = JSON.parse(req.body?.token) ?? getAzureCredentials();
       // clientOptions.reverseProxyUrl = process.env.AZURE_REVERSE_PROXY ?? genAzureChatCompletion({ ...clientOptions.azure });
-      oaiApiKey = clientOptions.azure.azureOpenAIApiKey;
+      openAIApiKey = clientOptions.azure.azureOpenAIApiKey;
     }
 
-    const client = new OpenAIClient(oaiApiKey, clientOptions);
+    const client = new OpenAIClient(openAIApiKey, clientOptions);
 
     let response = await client.sendMessage(text, {
       user,
@@ -180,7 +180,12 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
     res.end();
 
     if (parentMessageId == '00000000-0000-0000-0000-000000000000' && newConvo) {
-      const title = await titleConvo({ text, response });
+      const title = await titleConvo({
+        text,
+        response,
+        openAIApiKey,
+        azure: endpoint === 'azureOpenAI'
+      });
       await saveConvo(req.user.id, {
         conversationId,
         title
