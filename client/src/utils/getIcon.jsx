@@ -1,5 +1,6 @@
-import { Plugin, GPTIcon, BingIcon } from '~/components/svg';
+import { Plugin, GPTIcon, BingIcon, BingJbIcon, AnthropicIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { cn } from '~/utils'
 
 const getIcon = (props) => {
   const { size = 30, isCreatedByUser, button, model, message = true } = props;
@@ -20,7 +21,9 @@ const getIcon = (props) => {
           className="rounded-sm"
           src={
             user?.avatar ||
-            `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name || 'User'}&fontFamily=Verdana&fontSize=36`
+            `https://api.dicebear.com/6.x/initials/svg?seed=${
+              user?.name || 'User'
+            }&fontFamily=Verdana&fontSize=36`
           }
           alt="avatar"
         />
@@ -53,11 +56,20 @@ const getIcon = (props) => {
       const { modelLabel } = props;
       icon = <img src="/assets/google-palm.svg" alt="Palm Icon"/>;
       name = modelLabel || 'PaLM2';
+    } else if (endpoint === 'anthropic') {
+      const { modelLabel } = props;
+      icon = <AnthropicIcon size={size * 0.7} />;
+      bg = '#d09a74';
+      name = modelLabel || 'Claude';
     } else if (endpoint === 'bingAI') {
       const { jailbreak } = props;
-      icon = <BingIcon size={size * 0.7} />;
-      bg = jailbreak ? 'radial-gradient(circle at 90% 110%, #F0F0FA, #D0E0F9)' : 'transparent';
-      name = jailbreak ? 'Sydney' : 'BingAI';
+      if (jailbreak) {
+        icon = <BingJbIcon size={size * 0.7} />;
+        name = 'Sydney';
+      } else {
+        icon = <BingIcon size={size * 0.7} />;
+        name = 'BingAI';
+      }
     } else if (endpoint === 'chatGPTBrowser') {
       icon = <GPTIcon size={size * 0.7} />;
       bg =
@@ -83,9 +95,10 @@ const getIcon = (props) => {
           width: size,
           height: size
         }}
-        className={
-          'relative flex items-center justify-center rounded-sm text-white ' + props?.className
-        }
+        className={cn(
+          'relative flex items-center justify-center rounded-sm text-white ',
+          props?.className ?? '',
+        )}
       >
         {icon}
         {error && (

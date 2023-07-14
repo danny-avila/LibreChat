@@ -24,8 +24,8 @@ config.validate(); // Validate the config
 
   const app = express();
   app.use(errorController);
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ limit: '3mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(express.static(path.join(projectPath, 'dist')));
   app.use(express.static(path.join(projectPath, 'public')));
 

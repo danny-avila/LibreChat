@@ -1,6 +1,7 @@
 export { default as Plugin } from './Plugin';
 export { default as GPTIcon } from './GPTIcon';
 export { default as BingIcon } from './BingIcon';
+export { default as BingJbIcon } from './BingJbIcon';
 export { default as CogIcon } from './CogIcon';
 export { default as Spinner } from './Spinner';
 export { default as MessagesSquared } from './MessagesSquared';
@@ -9,3 +10,4 @@ export { default as GoogleIcon } from './GoogleIcon';
 export { default as OpenIDIcon } from './OpenIDIcon';
 export { default as GithubIcon } from './GithubIcon';
 export { default as DiscordIcon } from './DiscordIcon';
+export { default as AnthropicIcon } from './AnthropicIcon';
