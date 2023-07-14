@@ -68,8 +68,8 @@ const createMeiliMongooseModel = function ({ index, indexName, client, attribute
             function (results, value, key) {
               return { ...results, [key]: 1 };
             },
-            { _id: 1 }
-          )
+            { _id: 1 },
+          ),
         );
 
         // Add additional data from mongodb into Meili search hits
@@ -80,7 +80,7 @@ const createMeiliMongooseModel = function ({ index, indexName, client, attribute
 
           return {
             ...(originalHit ? originalHit.toJSON() : {}),
-            ...hit
+            ...hit,
           };
         });
         data.hits = populatedHits;
@@ -161,8 +161,8 @@ module.exports = function mongoMeili(schema, options) {
       type: Boolean,
       required: false,
       select: false,
-      default: false
-    }
+      default: false,
+    },
   });
 
   const { host, apiKey, indexName, primaryKey } = options;
@@ -183,8 +183,8 @@ module.exports = function mongoMeili(schema, options) {
         return value.meiliIndex ? [...results, key] : results;
         // }, []), '_id'];
       },
-      []
-    )
+      [],
+    ),
   ];
 
   schema.loadClass(createMeiliMongooseModel({ index, indexName, client, attributesToIndex }));

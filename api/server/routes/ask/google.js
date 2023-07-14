@@ -23,13 +23,13 @@ router.post('/', requireJwtAuth, async (req, res) => {
       temperature: req.body?.temperature ?? 0.2,
       maxOutputTokens: req.body?.maxOutputTokens ?? 1024,
       topP: req.body?.topP ?? 0.95,
-      topK: req.body?.topK ?? 40
-    }
+      topK: req.body?.topK ?? 40,
+    },
   };
 
   const availableModels = ['chat-bison', 'text-bison', 'codechat-bison'];
   if (availableModels.find((model) => model === endpointOption.modelOptions.model) === undefined) {
-    return handleError(res, { text: `Illegal request: model` });
+    return handleError(res, { text: 'Illegal request: model' });
   }
 
   const conversationId = oldConversationId || crypto.randomUUID();
@@ -41,7 +41,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
     conversationId,
     parentMessageId,
     req,
-    res
+    res,
   });
 });
 
@@ -51,7 +51,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
     'Access-Control-Allow-Origin': '*',
-    'X-Accel-Buffering': 'no'
+    'X-Accel-Buffering': 'no',
   });
   let userMessage;
   let userMessageId;
@@ -84,10 +84,10 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
             text: partialText,
             unfinished: true,
             cancelled: false,
-            error: false
+            error: false,
           });
         }
-      }
+      },
     });
 
     const abortController = new AbortController();
@@ -104,14 +104,14 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
         key = require('../../../data/auth.json');
       }
     } catch (e) {
-      console.log("No 'auth.json' file (service account key) found in /api/data/ for PaLM models");
+      console.log('No \'auth.json\' file (service account key) found in /api/data/ for PaLM models');
     }
 
     const clientOptions = {
       // debug: true, // for testing
       reverseProxyUrl: process.env.GOOGLE_REVERSE_PROXY || null,
       proxy: process.env.PROXY || null,
-      ...endpointOption
+      ...endpointOption,
     };
 
     const client = new GoogleClient(key, clientOptions);
@@ -125,9 +125,9 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       onProgress: progressCallback.call(null, {
         res,
         text,
-        parentMessageId: overrideParentMessageId || userMessageId
+        parentMessageId: overrideParentMessageId || userMessageId,
       }),
-      abortController
+      abortController,
     });
 
     if (overrideParentMessageId) {
@@ -138,7 +138,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       ...endpointOption,
       ...endpointOption.modelOptions,
       conversationId,
-      endpoint: 'google'
+      endpoint: 'google',
     });
 
     await saveMessage(response);
@@ -147,7 +147,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       final: true,
       conversation: await getConvo(req.user.id, conversationId),
       requestMessage: userMessage,
-      responseMessage: response
+      responseMessage: response,
     });
     res.end();
 
@@ -155,7 +155,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       const title = await titleConvo({ text, response });
       await saveConvo(req.user.id, {
         conversationId,
-        title
+        title,
       });
     }
   } catch (error) {
@@ -168,7 +168,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       unfinished: false,
       cancelled: false,
       error: true,
-      text: error.message
+      text: error.message,
     };
     await saveMessage(errorMessage);
     handleError(res, errorMessage);

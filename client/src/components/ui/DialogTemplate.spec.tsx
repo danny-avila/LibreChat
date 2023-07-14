@@ -20,9 +20,9 @@ describe('DialogTemplate', () => {
           main={<div>Main Content</div>}
           buttons={<button>Button</button>}
           leftButtons={<button>Left Button</button>}
-          selection={{ selectHandler: mockSelectHandler, selectText: "Select" }}
+          selection={{ selectHandler: mockSelectHandler, selectText: 'Select' }}
         />
-      </Dialog>
+      </Dialog>,
     );
 
     expect(getByText('Test Dialog')).toBeInTheDocument();
@@ -40,7 +40,7 @@ describe('DialogTemplate', () => {
         <DialogTemplate
           title="Test Dialog"
         />
-      </Dialog>
+      </Dialog>,
     );
 
     expect(getByText('Test Dialog')).toBeInTheDocument();
@@ -57,9 +57,9 @@ describe('DialogTemplate', () => {
       <Dialog open onOpenChange={() => {}}>
         <DialogTemplate
           title="Test Dialog"
-          selection={{ selectHandler: mockSelectHandler, selectText: "Select" }}
+          selection={{ selectHandler: mockSelectHandler, selectText: 'Select' }}
         />
-      </Dialog>
+      </Dialog>,
     );
 
     fireEvent.click(getByText('Select'));

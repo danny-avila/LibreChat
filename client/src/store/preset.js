@@ -7,9 +7,9 @@ import { atom } from 'recoil';
 // [preset1, preset2, preset3]
 const presets = atom({
   key: 'presets',
-  default: []
+  default: [],
 });
 
 export default {
-  presets
+  presets,
 };

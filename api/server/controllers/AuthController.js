@@ -1,7 +1,7 @@
 const {
   registerUser,
   requestPasswordReset,
-  resetPassword
+  resetPassword,
 } = require('../services/auth.service');
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -16,7 +16,7 @@ const registrationController = async (req, res) => {
       res.cookie('token', token, {
         expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
         httpOnly: false,
-        secure: isProduction
+        secure: isProduction,
       });
       res.status(status).send({ user });
     } else {
@@ -52,7 +52,7 @@ const resetPasswordController = async (req, res) => {
     const resetPasswordService = await resetPassword(
       req.body.userId,
       req.body.token,
-      req.body.password
+      req.body.password,
     );
     if (resetPasswordService instanceof Error) {
       return res.status(400).json(resetPasswordService);
@@ -120,5 +120,5 @@ module.exports = {
   // refreshController,
   registrationController,
   resetPasswordRequestController,
-  resetPasswordController
+  resetPasswordController,
 };

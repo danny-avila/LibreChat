@@ -34,9 +34,9 @@ module.exports = {
           cancelled,
           tokenCount,
           plugin,
-          model
+          model,
         },
-        { upsert: true, new: true }
+        { upsert: true, new: true },
       );
 
       return {
@@ -59,7 +59,7 @@ module.exports = {
       const updatedMessage = await Message.findOneAndUpdate(
         { messageId },
         update,
-        { new: true }
+        { new: true },
       );
 
       if (!updatedMessage) {
@@ -111,5 +111,5 @@ module.exports = {
       console.error(`Error deleting messages: ${err}`);
       throw new Error('Failed to delete messages.');
     }
-  }
+  },
 };

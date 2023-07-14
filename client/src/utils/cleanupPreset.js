@@ -13,7 +13,7 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
       top_p: _preset?.top_p ?? 1,
       presence_penalty: _preset?.presence_penalty ?? 0,
       frequency_penalty: _preset?.frequency_penalty ?? 0,
-      title: _preset?.title ?? 'New Preset'
+      title: _preset?.title ?? 'New Preset',
     };
   } else if (endpoint === 'google') {
     preset = {
@@ -27,7 +27,7 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
       maxOutputTokens: _preset?.maxOutputTokens ?? 1024,
       topP: _preset?.topP ?? 0.95,
       topK: _preset?.topK ?? 40,
-      title: _preset?.title ?? 'New Preset'
+      title: _preset?.title ?? 'New Preset',
     };
   } else if (endpoint === 'anthropic') {
     preset = {
@@ -40,7 +40,7 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
       maxOutputTokens: _preset?.maxOutputTokens ?? 1024,
       topP: _preset?.topP ?? 0.7,
       topK: _preset?.topK ?? 40,
-      title: _preset?.title ?? 'New Preset'
+      title: _preset?.title ?? 'New Preset',
     };
   } else if (endpoint === 'bingAI') {
     preset = {
@@ -50,7 +50,7 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
       context: _preset?.context ?? null,
       systemMessage: _preset?.systemMessage ?? null,
       toneStyle: _preset?.toneStyle ?? 'creative',
-      title: _preset?.title ?? 'New Preset'
+      title: _preset?.title ?? 'New Preset',
     };
   } else if (endpoint === 'chatGPTBrowser') {
     preset = {
@@ -60,7 +60,7 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
         _preset?.model ??
         endpointsConfig[endpoint]?.availableModels?.[0] ??
         'text-davinci-002-render-sha',
-      title: _preset?.title ?? 'New Preset'
+      title: _preset?.title ?? 'New Preset',
     };
   } else if (endpoint === 'gptPlugins') {
     const agentOptions = _preset?.agentOptions ?? {
@@ -84,20 +84,20 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
       presence_penalty: _preset?.presence_penalty ?? 0,
       frequency_penalty: _preset?.frequency_penalty ?? 0,
       agentOptions,
-      title: _preset?.title ?? 'New Preset'
+      title: _preset?.title ?? 'New Preset',
     };
   } else if (endpoint === null) {
     preset = {
       endpoint,
       presetId: _preset?.presetId || null,
-      title: _preset?.title ?? 'New Preset'
+      title: _preset?.title ?? 'New Preset',
     };
   } else {
     console.error(`Unknown endpoint ${endpoint}`);
     preset = {
       endpoint: null,
       presetId: _preset?.presetId ?? null,
-      title: _preset?.title ?? 'New Preset'
+      title: _preset?.title ?? 'New Preset',
     };
   }
 

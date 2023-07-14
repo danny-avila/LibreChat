@@ -7,7 +7,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuRadioItem
+  DropdownMenuRadioItem,
 } from './DropdownMenu.tsx';
 import store from '~/store';
 import { useRecoilValue } from 'recoil';

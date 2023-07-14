@@ -1,9 +1,9 @@
 export const user = () => {
-  return `/api/user`;
+  return '/api/user';
 };
 
 export const userPlugins = () => {
-  return `/api/user/plugins`;
+  return '/api/user/plugins';
 };
 
 export const messages = (id: string) => {
@@ -23,11 +23,11 @@ export const conversationById = (id: string) => {
 };
 
 export const updateConversation = () => {
-  return `/api/convos/update`;
+  return '/api/convos/update';
 };
 
 export const deleteConversation = () => {
-  return `/api/convos/clear`;
+  return '/api/convos/clear';
 };
 
 export const search = (q: string, pageNumber: string) => {
@@ -35,23 +35,23 @@ export const search = (q: string, pageNumber: string) => {
 };
 
 export const searchEnabled = () => {
-  return `/api/search/enable`;
+  return '/api/search/enable';
 };
 
 export const presets = () => {
-  return `/api/presets`;
+  return '/api/presets';
 };
 
 export const deletePreset = () => {
-  return `/api/presets/delete`;
+  return '/api/presets/delete';
 };
 
 export const aiEndpoints = () => {
-  return `/api/endpoints`;
+  return '/api/endpoints';
 };
 
 export const tokenizer = () => {
-  return `/api/tokenizer`;
+  return '/api/tokenizer';
 };
 
 export const login = () => {
@@ -92,4 +92,4 @@ export const plugins = () => {
 
 export const config = () => {
   return '/api/config';
-}
+};

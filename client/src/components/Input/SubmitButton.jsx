@@ -10,7 +10,7 @@ export default function SubmitButton({
   handleStopGenerating,
   disabled,
   isSubmitting,
-  endpointsConfig
+  endpointsConfig,
 }) {
   const [setTokenDialogOpen, setSetTokenDialogOpen] = useState(false);
   const { getToken } = store.useToken(endpoint);

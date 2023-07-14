@@ -19,5 +19,5 @@ module.exports = {
   StructuredSD,
   WolframAlphaAPI,
   StructuredWolfram,
-  SelfReflectionTool
-}
+  SelfReflectionTool,
+};

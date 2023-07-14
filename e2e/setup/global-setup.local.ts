@@ -1,4 +1,4 @@
-import {FullConfig} from '@playwright/test';
+import { FullConfig } from '@playwright/test';
 import localUser from '../config.local';
 import authenticate from './authenticate';
 

@@ -7,7 +7,7 @@ import {
   Slider,
   InputNumber,
   HoverCard,
-  HoverCardTrigger
+  HoverCardTrigger,
 } from '~/components';
 import OptionHover from './OptionHover';
 const defaultTextProps =
@@ -41,7 +41,6 @@ function Settings(props) {
   const onCheckedChangeSkip = (checked) => {
     setSkipCompletion(checked);
   };
-  
 
   const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
 
@@ -58,7 +57,7 @@ function Settings(props) {
               disabled={readonly}
               className={cn(
                 defaultTextProps,
-                'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
               )}
               containerClassName="flex w-full resize-none"
             />
@@ -110,8 +109,8 @@ function Settings(props) {
                     defaultTextProps,
                     cn(
                       optionText,
-                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
-                    )
+                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    ),
                   )}
                 />
               </div>

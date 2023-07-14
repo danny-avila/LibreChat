@@ -29,9 +29,9 @@ const pluginsQueryResult = [
       {
         authField: 'GOOGLE_CSE_ID',
         label: 'Google CSE ID',
-        description: 'This is your Google Custom Search Engine ID.'
-      }
-    ]
+        description: 'This is your Google Custom Search Engine ID.',
+      },
+    ],
   },
   {
     name: 'Wolfram',
@@ -43,66 +43,66 @@ const pluginsQueryResult = [
       {
         authField: 'WOLFRAM_APP_ID',
         label: 'Wolfram App ID',
-        description: 'An AppID must be supplied in all calls to the Wolfram|Alpha API.'
-      }
-    ]
+        description: 'An AppID must be supplied in all calls to the Wolfram|Alpha API.',
+      },
+    ],
   },
   {
     name: 'Calculator',
     pluginKey: 'calculator',
     description: 'A simple calculator plugin',
     icon: 'https://i.imgur.com/SMmVkNB.png',
-    authConfig: []
+    authConfig: [],
   },
   {
     name: 'Plugin 1',
     pluginKey: 'plugin1',
     description: 'description for Plugin 1.',
     icon: 'mock-icon',
-    authConfig: []
+    authConfig: [],
   },
   {
     name: 'Plugin 2',
     pluginKey: 'plugin2',
     description: 'description for Plugin 2.',
     icon: 'mock-icon',
-    authConfig: []
+    authConfig: [],
   },
   {
     name: 'Plugin 3',
     pluginKey: 'plugin3',
     description: 'description for Plugin 3.',
     icon: 'mock-icon',
-    authConfig: []
+    authConfig: [],
   },
   {
     name: 'Plugin 4',
     pluginKey: 'plugin4',
     description: 'description for Plugin 4.',
     icon: 'mock-icon',
-    authConfig: []
+    authConfig: [],
   },
   {
     name: 'Plugin 5',
     pluginKey: 'plugin5',
     description: 'description for Plugin 5.',
     icon: 'mock-icon',
-    authConfig: []
+    authConfig: [],
   },
   {
     name: 'Plugin 6',
     pluginKey: 'plugin6',
     description: 'description for Plugin 6.',
     icon: 'mock-icon',
-    authConfig: []
+    authConfig: [],
   },
   {
     name: 'Plugin 7',
     pluginKey: 'plugin7',
     description: 'description for Plugin 7.',
     icon: 'mock-icon',
-    authConfig: []
-  }
+    authConfig: [],
+  },
 ];
 
 const setup = ({
@@ -110,20 +110,20 @@ const setup = ({
     isLoading: false,
     isError: false,
     data: {
-      plugins: ['wolfram']
-    }
+      plugins: ['wolfram'],
+    },
   },
   useAvailablePluginsQueryReturnValue = {
     isLoading: false,
     isError: false,
-    data: pluginsQueryResult
+    data: pluginsQueryResult,
   },
   useUpdateUserPluginsMutationReturnValue = {
     isLoading: false,
     isError: false,
     mutate: jest.fn(),
-    data: {}
-  }
+    data: {},
+  },
 } = {}) => {
   const mockUseAvailablePluginsQuery = jest
     .spyOn(mockDataProvider, 'useAvailablePluginsQuery')
@@ -145,7 +145,7 @@ const setup = ({
     mockUseGetUserQuery,
     mockUseAvailablePluginsQuery,
     mockUseUpdateUserPluginsMutation,
-    mockSetIsOpen
+    mockSetIsOpen,
   };
 };
 

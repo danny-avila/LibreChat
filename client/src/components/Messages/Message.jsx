@@ -23,7 +23,7 @@ export default function Message({
   setCurrentEditId,
   siblingIdx,
   siblingCount,
-  setSiblingIdx
+  setSiblingIdx,
 }) {
   const { text, searchResult, isCreatedByUser, error, submitting, unfinished } = message;
   const isSubmitting = useRecoilValue(store.isSubmitting);
@@ -36,7 +36,7 @@ export default function Message({
   const { switchToConversation } = store.useConversation();
   const blinker = submitting && isSubmitting;
   const getConversationQuery = useGetConversationByIdQuery(message.conversationId, {
-    enabled: false
+    enabled: false,
   });
 
   // debugging
@@ -69,13 +69,13 @@ export default function Message({
 
   const props = {
     className:
-      'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 bg-white dark:text-gray-100 group dark:bg-gray-800'
+      'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 bg-white dark:text-gray-100 group dark:bg-gray-800',
   };
 
   const icon = getIcon({
     ...conversation,
     ...message,
-    model: message?.model || conversation?.model
+    model: message?.model || conversation?.model,
   });
 
   if (!isCreatedByUser)
@@ -93,7 +93,7 @@ export default function Message({
     ask({
       text,
       parentMessageId: message?.parentMessageId,
-      conversationId: message?.conversationId
+      conversationId: message?.conversationId,
     });
 
     setSiblingIdx(siblingCount - 1);
@@ -185,7 +185,7 @@ export default function Message({
                   <div
                     className={cn(
                       'flex min-h-[20px] flex-grow flex-col items-start gap-4 ',
-                      isCreatedByUser ? 'whitespace-pre-wrap' : ''
+                      isCreatedByUser ? 'whitespace-pre-wrap' : '',
                     )}
                   >
                     {/* <div className={`${blinker ? 'result-streaming' : ''} markdown prose dark:prose-invert light w-full break-words`}> */}
@@ -209,7 +209,7 @@ export default function Message({
                   {!isSubmitting && unfinished ? (
                     <div className="flex flex min-h-[20px] flex-grow flex-col items-start gap-2 gap-4  text-red-500">
                       <div className="rounded-md border border-blue-400 bg-blue-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-100">
-                        {`This is an unfinished message. The AI may still be generating a response or it was aborted. Refresh or visit later to see more updates.`}
+                        {'This is an unfinished message. The AI may still be generating a response or it was aborted. Refresh or visit later to see more updates.'}
                       </div>
                     </div>
                   ) : null}

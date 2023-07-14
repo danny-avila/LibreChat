@@ -10,7 +10,7 @@ const discordLogin = new DiscordStrategy(
     clientSecret: process.env.DISCORD_CLIENT_SECRET,
     callbackURL: `${domains.server}${process.env.DISCORD_CALLBACK_URL}`,
     scope: ['identify', 'email'], // Request scopes
-    authorizationURL: 'https://discord.com/api/oauth2/authorize?prompt=none' // Add the prompt query parameter
+    authorizationURL: 'https://discord.com/api/oauth2/authorize?prompt=none', // Add the prompt query parameter
   },
   async (accessToken, refreshToken, profile, cb) => {
     try {
@@ -37,7 +37,7 @@ const discordLogin = new DiscordStrategy(
         username: profile.username,
         email,
         name: profile.global_name,
-        avatar: avatarURL
+        avatar: avatarURL,
       });
 
       cb(null, newUser);
@@ -45,7 +45,7 @@ const discordLogin = new DiscordStrategy(
       console.error(err);
       cb(err);
     }
-  }
+  },
 );
 
 passport.use(discordLogin);

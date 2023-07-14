@@ -4,17 +4,17 @@ const promptSchema = mongoose.Schema(
   {
     title: {
       type: String,
-      required: true
+      required: true,
     },
     prompt: {
       type: String,
-      required: true
+      required: true,
     },
     category: {
-      type: String
-    }
+      type: String,
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 const Prompt = mongoose.models.Prompt || mongoose.model('Prompt', promptSchema);
@@ -24,7 +24,7 @@ module.exports = {
     try {
       await Prompt.create({
         title,
-        prompt
+        prompt,
       });
       return { title, prompt };
     } catch (error) {
@@ -47,5 +47,5 @@ module.exports = {
       console.error(error);
       return { prompt: 'Error deleting prompts' };
     }
-  }
+  },
 };

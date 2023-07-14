@@ -1,6 +1,9 @@
 const BaseClient = require('./BaseClient');
 const ChatGPTClient = require('./ChatGPTClient');
-const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('@dqbd/tiktoken');
+const {
+  encoding_for_model: encodingForModel,
+  get_encoding: getEncoding,
+} = require('@dqbd/tiktoken');
 const { maxTokensMap, genAzureChatCompletion } = require('../../utils');
 
 const tokenizersCache = {};
@@ -12,7 +15,9 @@ class OpenAIClient extends BaseClient {
     this.buildPrompt = this.ChatGPTClient.buildPrompt.bind(this);
     this.getCompletion = this.ChatGPTClient.getCompletion.bind(this);
     this.sender = options.sender ?? 'ChatGPT';
-    this.contextStrategy = options.contextStrategy ? options.contextStrategy.toLowerCase() : 'discard';
+    this.contextStrategy = options.contextStrategy
+      ? options.contextStrategy.toLowerCase()
+      : 'discard';
     this.shouldRefineContext = this.contextStrategy === 'refine';
     this.azure = options.azure || false;
     if (this.azure) {
@@ -45,27 +50,39 @@ class OpenAIClient extends BaseClient {
       this.modelOptions = {
         ...modelOptions,
         model: modelOptions.model || 'gpt-3.5-turbo',
-        temperature: typeof modelOptions.temperature === 'undefined' ? 0.8 : modelOptions.temperature,
+        temperature:
+          typeof modelOptions.temperature === 'undefined' ? 0.8 : modelOptions.temperature,
         top_p: typeof modelOptions.top_p === 'undefined' ? 1 : modelOptions.top_p,
-        presence_penalty: typeof modelOptions.presence_penalty === 'undefined' ? 1 : modelOptions.presence_penalty,
+        presence_penalty:
+          typeof modelOptions.presence_penalty === 'undefined' ? 1 : modelOptions.presence_penalty,
         stop: modelOptions.stop,
       };
     }
 
-    this.isChatCompletion = this.options.reverseProxyUrl || this.options.localAI || this.modelOptions.model.startsWith('gpt-');
+    this.isChatCompletion =
+      this.options.reverseProxyUrl ||
+      this.options.localAI ||
+      this.modelOptions.model.startsWith('gpt-');
     this.isChatGptModel = this.isChatCompletion;
     if (this.modelOptions.model === 'text-davinci-003') {
       this.isChatCompletion = false;
       this.isChatGptModel = false;
     }
     const { isChatGptModel } = this;
-    this.isUnofficialChatGptModel = this.modelOptions.model.startsWith('text-chat') || this.modelOptions.model.startsWith('text-davinci-002-render');
+    this.isUnofficialChatGptModel =
+      this.modelOptions.model.startsWith('text-chat') ||
+      this.modelOptions.model.startsWith('text-davinci-002-render');
     this.maxContextTokens = maxTokensMap[this.modelOptions.model] ?? 4095; // 1 less than maximum
     this.maxResponseTokens = this.modelOptions.max_tokens || 1024;
-    this.maxPromptTokens = this.options.maxPromptTokens || (this.maxContextTokens - this.maxResponseTokens);
+    this.maxPromptTokens =
+      this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
 
     if (this.maxPromptTokens + this.maxResponseTokens > this.maxContextTokens) {
-      throw new Error(`maxPromptTokens + max_tokens (${this.maxPromptTokens} + ${this.maxResponseTokens} = ${this.maxPromptTokens + this.maxResponseTokens}) must be less than or equal to maxContextTokens (${this.maxContextTokens})`);
+      throw new Error(
+        `maxPromptTokens + max_tokens (${this.maxPromptTokens} + ${this.maxResponseTokens} = ${
+          this.maxPromptTokens + this.maxResponseTokens
+        }) must be less than or equal to maxContextTokens (${this.maxContextTokens})`,
+      );
     }
 
     this.userLabel = this.options.userLabel || 'User';
@@ -185,7 +202,7 @@ class OpenAIClient extends BaseClient {
     return {
       chatGptLabel: this.options.chatGptLabel,
       promptPrefix: this.options.promptPrefix,
-      ...this.modelOptions
+      ...this.modelOptions,
     };
   }
 
@@ -197,9 +214,16 @@ class OpenAIClient extends BaseClient {
     };
   }
 
-  async buildMessages(messages, parentMessageId, { isChatCompletion = false, promptPrefix = null }) {
+  async buildMessages(
+    messages,
+    parentMessageId,
+    { isChatCompletion = false, promptPrefix = null },
+  ) {
     if (!isChatCompletion) {
-      return await this.buildPrompt(messages, parentMessageId, { isChatGptModel: isChatCompletion, promptPrefix });
+      return await this.buildPrompt(messages, parentMessageId, {
+        isChatGptModel: isChatCompletion,
+        promptPrefix,
+      });
     }
 
     let payload;
@@ -214,7 +238,7 @@ class OpenAIClient extends BaseClient {
       instructions = {
         role: 'system',
         name: 'instructions',
-        content: promptPrefix
+        content: promptPrefix,
       };
 
       if (this.contextStrategy) {
@@ -236,7 +260,8 @@ class OpenAIClient extends BaseClient {
       }
 
       if (this.contextStrategy) {
-        formattedMessage.tokenCount = message.tokenCount ?? this.getTokenCountForMessage(formattedMessage);
+        formattedMessage.tokenCount =
+          message.tokenCount ?? this.getTokenCountForMessage(formattedMessage);
       }
 
       return formattedMessage;
@@ -244,8 +269,11 @@ class OpenAIClient extends BaseClient {
 
     // TODO: need to handle interleaving instructions better
     if (this.contextStrategy) {
-      ({ payload, tokenCountMap, promptTokens, messages } =
-        await this.handleContextStrategy({ instructions, orderedMessages, formattedMessages }));
+      ({ payload, tokenCountMap, promptTokens, messages } = await this.handleContextStrategy({
+        instructions,
+        orderedMessages,
+        formattedMessages,
+      }));
     }
 
     const result = {
@@ -272,8 +300,9 @@ class OpenAIClient extends BaseClient {
           if (progressMessage === '[DONE]') {
             return;
           }
-          const token =
-            this.isChatCompletion ? progressMessage.choices?.[0]?.delta?.content : progressMessage.choices?.[0]?.text;
+          const token = this.isChatCompletion
+            ? progressMessage.choices?.[0]?.delta?.content
+            : progressMessage.choices?.[0]?.text;
           // first event's delta content is always undefined
           if (!token) {
             return;

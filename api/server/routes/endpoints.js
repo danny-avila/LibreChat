@@ -72,13 +72,13 @@ router.get('/', async function (req, res) {
   const chatGPTBrowser = process.env.CHATGPT_TOKEN
     ? {
       userProvide: process.env.CHATGPT_TOKEN == 'user_provided',
-      availableModels: getChatGPTBrowserModels()
+      availableModels: getChatGPTBrowserModels(),
     }
     : false;
   const anthropic = process.env.ANTHROPIC_API_KEY
     ? {
       userProvide: process.env.ANTHROPIC_API_KEY == 'user_provided',
-      availableModels: getAnthropicModels()
+      availableModels: getAnthropicModels(),
     }
     : false;
 

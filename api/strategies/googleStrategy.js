@@ -11,7 +11,7 @@ const googleLogin = new GoogleStrategy(
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     callbackURL: `${domains.server}${process.env.GOOGLE_CALLBACK_URL}`,
-    proxy: true
+    proxy: true,
   },
   async (accessToken, refreshToken, profile, cb) => {
     try {
@@ -31,13 +31,13 @@ const googleLogin = new GoogleStrategy(
         email: profile.emails[0].value,
         emailVerified: profile.emails[0].verified,
         name: `${profile.name.givenName} ${profile.name.familyName}`,
-        avatar: profile.photos[0].value
+        avatar: profile.photos[0].value,
       }).save();
       cb(null, newUser);
     } catch (err) {
       console.log(err);
     }
-  }
+  },
 );
 
 passport.use(googleLogin);

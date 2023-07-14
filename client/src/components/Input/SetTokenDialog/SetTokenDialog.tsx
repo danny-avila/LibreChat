@@ -21,7 +21,7 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
     'openAI': OpenAIConfig,
     'azureOpenAI': OpenAIConfig,
     'gptPlugins': OpenAIConfig,
-    'default': OtherConfig
+    'default': OtherConfig,
   };
 
   const EndpointComponent = endpointComponents[endpoint] || endpointComponents['default'];
@@ -42,7 +42,7 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
         selection={{
           selectHandler: submit,
           selectClasses: 'bg-green-600 hover:bg-green-700 dark:hover:bg-green-800 text-white',
-          selectText: 'Submit'
+          selectText: 'Submit',
         }}
       />
     </Dialog>
