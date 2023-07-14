@@ -3,7 +3,6 @@ const express = require('express');
 const router = express.Router();
 const config = require('../../../config/loader');
 const { setAuthTokens } = require('../services/auth.service');
-const Session = require('../../models/Session');
 const domains = config.domains;
 
 /**
