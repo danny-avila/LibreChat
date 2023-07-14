@@ -1,6 +1,6 @@
 import React from 'react';
 
-function HelpText({ endpoint } : { endpoint: string }) {
+function HelpText({ endpoint }: { endpoint: string }) {
   const textMap = {
     bingAI: (
       <small className="break-all text-gray-600">
@@ -11,7 +11,7 @@ function HelpText({ endpoint } : { endpoint: string }) {
           rel="noreferrer"
           className="text-blue-600 underline"
         >
-        https://www.bing.com
+          https://www.bing.com
         </a>
         {`. Use dev tools or an extension while logged into the site to copy the content of the _U cookie.
       If this fails, follow these `}
@@ -21,7 +21,7 @@ function HelpText({ endpoint } : { endpoint: string }) {
           rel="noreferrer"
           className="text-blue-600 underline"
         >
-        instructions
+          instructions
         </a>
         {' to provide the full cookie strings.'}
       </small>
@@ -35,48 +35,47 @@ function HelpText({ endpoint } : { endpoint: string }) {
           rel="noreferrer"
           className="text-blue-600 underline"
         >
-        https://chat.openai.com
+          https://chat.openai.com
         </a>
-      , then visit{' '}
+        , then visit{' '}
         <a
           target="_blank"
           href="https://chat.openai.com/api/auth/session"
           rel="noreferrer"
           className="text-blue-600 underline"
         >
-        https://chat.openai.com/api/auth/session
+          https://chat.openai.com/api/auth/session
         </a>
-      . Copy access token.
+        . Copy access token.
       </small>
     ),
     google: (
       <small className="break-all text-gray-600">
-      You need to{' '}
+        You need to{' '}
         <a
           target="_blank"
           href="https://console.cloud.google.com/vertex-ai"
           rel="noreferrer"
           className="text-blue-600 underline"
         >
-        Enable Vertex AI
+          Enable Vertex AI
         </a>{' '}
-      API on Google Cloud, then{' '}
+        API on Google Cloud, then{' '}
         <a
           target="_blank"
           href="https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts/create?walkthrough_id=iam--create-service-account#step_index=1"
           rel="noreferrer"
           className="text-blue-600 underline"
         >
-        Create a Service Account
+          Create a Service Account
         </a>
         {`. Make sure to click 'Create and Continue' to give at least the 'Vertex AI User' role.
       Lastly, create a JSON key to import here.`}
       </small>
     ),
-
   };
 
   return textMap[endpoint] || null;
-};
+}
 
 export default React.memo(HelpText);

@@ -71,7 +71,15 @@ router.post('/', requireJwtAuth, async (req, res) => {
   });
 });
 
-const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, conversationId, req, res }) => {
+const ask = async ({
+  text,
+  endpoint,
+  endpointOption,
+  parentMessageId = null,
+  conversationId,
+  req,
+  res,
+}) => {
   res.writeHead(200, {
     Connection: 'keep-alive',
     'Content-Type': 'text/event-stream',
@@ -104,7 +112,11 @@ const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, con
       }
     };
 
-    const { onProgress: progressCallback, sendIntermediateMessage, getPartialText } = createOnProgress({
+    const {
+      onProgress: progressCallback,
+      sendIntermediateMessage,
+      getPartialText,
+    } = createOnProgress({
       onProgress: ({ text: partialText }) => {
         const currentTimestamp = Date.now();
 

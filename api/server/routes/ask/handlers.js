@@ -61,7 +61,12 @@ const createOnProgress = ({ onProgress: _onProgress }) => {
   };
 
   const sendIntermediateMessage = (res, payload) => {
-    sendMessage(res, { text: tokens?.length === 0 ? cursor : tokens, message: true, initial: i === 0, ...payload });
+    sendMessage(res, {
+      text: tokens?.length === 0 ? cursor : tokens,
+      message: true,
+      initial: i === 0,
+      ...payload,
+    });
     i++;
   };
 
@@ -92,7 +97,7 @@ const handleText = async (response, bing = false) => {
 };
 
 const isObject = (item) => item && typeof item === 'object' && !Array.isArray(item);
-const getString = (input) => isObject(input) ? JSON.stringify(input) : input ;
+const getString = (input) => (isObject(input) ? JSON.stringify(input) : input);
 
 function formatSteps(steps) {
   let output = '';
