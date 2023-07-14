@@ -305,7 +305,6 @@ function Registration() {
         )}
         {startupConfig?.openidLoginEnabled && startupConfig?.socialLoginEnabled && (
           <>
-
             <div className="mt-4 flex gap-x-2">
               <a
                 aria-label="Login with OpenID"

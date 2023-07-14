@@ -1,5 +1,5 @@
 const conversationPreset = {
-  // endpoint: [azureOpenAI, openAI, bingAI, chatGPTBrowser]
+  // endpoint: [azureOpenAI, openAI, bingAI, anthropic, chatGPTBrowser]
   endpoint: {
     type: String,
     default: null,
@@ -151,7 +151,7 @@ const agentOptions = {
     default: null
   }
 };
-  
+
 module.exports = {
   conversationPreset,
   agentOptions

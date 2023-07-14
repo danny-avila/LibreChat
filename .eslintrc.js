@@ -52,7 +52,6 @@ module.exports = {
     'no-restricted-syntax': 'off',
     'react/prop-types': ['off'],
     'react/display-name': ['off'],
-    'quotes': ['error', 'single'],
   },
   overrides: [
     {

@@ -57,6 +57,22 @@ const buildDefaultConversation = ({
       clientId: null,
       invocationId: 1
     };
+  } else if (endpoint === 'anthropic') {
+    conversation = {
+      ...conversation,
+      endpoint,
+      model:
+        lastConversationSetup?.model ??
+        lastSelectedModel[endpoint] ??
+        endpointsConfig[endpoint]?.availableModels?.[0] ??
+        'claude-1',
+      modelLabel: lastConversationSetup?.modelLabel ?? null,
+      promptPrefix: lastConversationSetup?.promptPrefix ?? null,
+      temperature: lastConversationSetup?.temperature ?? 0.7,
+      maxOutputTokens: lastConversationSetup?.maxOutputTokens ?? 1024,
+      topP: lastConversationSetup?.topP ?? 0.7,
+      topK: lastConversationSetup?.topK ?? 40
+    };
   } else if (endpoint === 'chatGPTBrowser') {
     conversation = {
       ...conversation,
@@ -165,7 +181,8 @@ const getDefaultConversation = ({ conversation, endpointsConfig, preset }) => {
     'bingAI',
     'chatGPTBrowser',
     'gptPlugins',
-    'google'
+    'google',
+    'anthropic'
   ].find((e) => endpointsConfig?.[e]);
   if (endpoint) {
     conversation = buildDefaultConversation({ conversation, endpoint, endpointsConfig });
