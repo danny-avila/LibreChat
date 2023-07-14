@@ -53,7 +53,6 @@ export default function TextChat({ isSearchView = false }) {
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      console.log('useEffect');
       inputRef.current?.focus();
     }, 100);
 
