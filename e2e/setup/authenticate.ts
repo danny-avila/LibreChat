@@ -28,19 +28,12 @@ async function authenticate(config: FullConfig, user: User) {
   const refreshToken = refreshTokenCookie ? refreshTokenCookie.value : null;
   console.log('Token:', token);
   console.log('Refresh Token:', refreshToken);
-  const requestOptions = {
-    headers: {
-      Authorization: `Bearer ${token}`, // Include the access token in the request headers
-      Cookie: `refreshToken=${refreshToken}` // Include the refreshToken as a cookie in the request headers
-    },
-  };
   await page.context().addInitScript(() => {
     localStorage.setItem('navVisible', 'true');
   });
   console.log('🤖: ✔️  localStorage: set Nav as Visible', storageState);
   await page.context().storageState({ path: storageState as string });
   console.log('🤖: ✔️  authentication state successfully saved in', storageState);
-  await page.goto(baseURL, requestOptions);
   await browser.close();
   console.log('🤖: global setup has been finished');
 }
