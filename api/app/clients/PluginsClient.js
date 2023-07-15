@@ -112,8 +112,8 @@ Only respond with your conversational reply to the following User Message:
     super.setOptions(options);
     this.isGpt3 = this.modelOptions.model.startsWith('gpt-3');
 
-    if (this.reverseProxyUrl) {
-      this.langchainProxy = this.reverseProxyUrl.match(/.*v1/)[0];
+    if (this.options.reverseProxyUrl) {
+      this.langchainProxy = this.options.reverseProxyUrl.match(/.*v1/)[0];
     }
   }
 
@@ -469,7 +469,7 @@ Only respond with your conversational reply to the following User Message:
     }
 
     // testing if this works with browser endpoint
-    if (!this.isGpt3 && this.reverseProxyUrl) {
+    if (!this.isGpt3 && this.options.reverseProxyUrl) {
       instructionsPayload.role = 'user';
     }
 
