@@ -3,11 +3,6 @@
   visibility: visible;
 }
 
-.nav-open-button {
-  display: block;
-  position: absolute;
-}
-
 .nav-close-button {
   margin-left: 8px;
 }
@@ -17,7 +12,7 @@
   z-index: 40;
   top: 0;
 
-  max-width: 260px;
+  /* max-width: 260px; */
 
   bottom: 0;
   opacity: 0;
@@ -36,8 +31,8 @@
 
 @media (max-width: 767px) {
   .nav {
-    width: calc(100% - 60px)  ;
-    transition: all 0.5s;
+    width: calc(100% - 10px)  ;
+    transition: all 0.2s;
   }
   .nav-mask {
     position: fixed;
@@ -52,6 +47,10 @@
     opacity: 0;
     transition: all 0.5s;
     pointer-events: none;
+  }
+
+  .nav-open-button {
+    opacity: 0;
   }
 
   .nav-mask.active {

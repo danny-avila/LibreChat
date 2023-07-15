@@ -6,8 +6,7 @@ import Conversations from '../Conversations';
 import NavLinks from './NavLinks';
 import NewChat from './NewChat';
 import Pages from '../Conversations/Pages';
-import Panel from '../svg/Panel';
-import Spinner from '../svg/Spinner';
+import { Panel, Spinner } from '~/components';
 import { cn } from '~/utils/';
 import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -131,16 +130,13 @@ export default function Nav({ navVisible, setNavVisible }) {
       ? 'flex flex-col gap-2 text-gray-100 text-sm h-full justify-center items-center'
       : 'flex flex-col gap-2 text-gray-100 text-sm';
 
-  // const maxWidth = isMobile ? 'calc(100vw - 2rem)' : '260px';
   return (
     <>
       <div
-        className={cn(
-          'nav dark flex-shrink-0 overflow-x-hidden bg-gray-900 transition-all duration-200 ease-in-out',
-          navVisible ? 'active' : '',
-        )}
+        className="nav active dark flex-shrink-0 overflow-x-hidden bg-gray-900 transition-all duration-200 ease-in-out"
         style={{
-          width: navVisible ? 'maxWidth' : '0px',
+          width: navVisible ? '260px' : '0px',
+          visibility: navVisible ? 'visible' : 'hidden',
         }}
       >
         <div className="h-full w-[260px]">
@@ -196,7 +192,7 @@ export default function Nav({ navVisible, setNavVisible }) {
         <div className="absolute left-2 top-2 z-10 hidden md:inline-block">
           <button
             type="button"
-            className="flex h-11 cursor-pointer items-center gap-3 rounded-md border border-black/10 bg-white p-3 text-sm text-black transition-colors duration-200 hover:bg-gray-50 dark:border-white/20 dark:bg-gray-800 dark:hover:bg-gray-700"
+            className="nav-open-button flex h-11 cursor-pointer items-center gap-3 rounded-md border border-black/10 bg-white p-3 text-sm text-black transition-colors duration-200 hover:bg-gray-50 dark:border-white/20 dark:bg-gray-800 dark:hover:bg-gray-700"
             onClick={toggleNavVisible}
           >
             <div className="flex items-center justify-center">
