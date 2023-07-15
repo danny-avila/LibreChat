@@ -175,7 +175,12 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   return (
     <>
-      <div className={'nav dark bg-gray-900 md:inset-y-0' + (navVisible ? ' active' : '')}>
+      <div
+        className={
+          'nav dark bg-gray-900 transition-all duration-500 md:inset-y-0' +
+          (navVisible ? ' active' : '')
+        }
+      >
         <div className="flex h-full min-h-0 flex-col ">
           <div className="scrollbar-trigger relative flex h-full w-full flex-1 items-start border-white/20">
             <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
