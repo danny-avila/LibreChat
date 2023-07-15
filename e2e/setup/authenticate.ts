@@ -13,19 +13,34 @@ async function authenticate(config: FullConfig, user: User) {
   const { baseURL, storageState } = config.projects[0].use;
   console.log('🤖: using baseURL', baseURL);
   const browser = await chromium.launch();
-  const page = await browser.newPage();
+  const context = await browser.newContext();
+  const page = await context.newPage();
   console.log('🤖: 🗝  authenticating user:', user.username);
   await page.goto(baseURL);
   await login(page, user);
   await page.locator('h1:has-text("LibreChat")').waitFor();
+  const cookies = await context.cookies();
   console.log('🤖: ✔️  user successfully authenticated');
   // Set localStorage before navigating to the page
+  const tokenCookie = cookies.find(cookie => cookie.name === 'token');
+  const refreshTokenCookie = cookies.find(cookie => cookie.name === 'refreshToken');
+  const token = tokenCookie ? tokenCookie.value : null;
+  const refreshToken = refreshTokenCookie ? refreshTokenCookie.value : null;
+  console.log('Token:', token);
+  console.log('Refresh Token:', refreshToken);
+  const requestOptions = {
+    headers: {
+      Authorization: `Bearer ${token}`, // Include the access token in the request headers
+      Cookie: `refreshToken=${refreshToken}` // Include the refreshToken as a cookie in the request headers
+    },
+  };
   await page.context().addInitScript(() => {
     localStorage.setItem('navVisible', 'true');
   });
   console.log('🤖: ✔️  localStorage: set Nav as Visible', storageState);
   await page.context().storageState({ path: storageState as string });
   console.log('🤖: ✔️  authentication state successfully saved in', storageState);
+  await page.goto(baseURL, requestOptions);
   await browser.close();
   console.log('🤖: global setup has been finished');
 }
