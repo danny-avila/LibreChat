@@ -1,29 +1,30 @@
 version: "3.4"
 
 services:
-  # client:
-  #   image: nginx-client
-  #   build:
-  #     context: .
-  #     target: nginx-client
-  #   restart: always
-  #   ports:
-  #     - 3080:80
-  #   volumes:
-  #     - /client/node_modules
-  #   depends_on:
-  #     - api
-  api:
-    container_name: LibreChat
+  client:
+    image: nginx-client
+    build:
+      context: .
+      target: nginx-client
+    restart: always
     ports:
-      - 3080:3080               # Change it to 9000:3080 to use nginx
+      - 3080:80
+    volumes:
+      - /client/node_modules
+    depends_on:
+      - api
+  api:
+    container_name: QIMA-GPT
+    ports:
+      - 9000:3080
     depends_on:
       - mongodb
-    image: librechat                # Comment this & uncomment below to build from docker hub image
-    build:                                   # ^------
-      context: .                              # ^------
-      target: node                             # ^------v
-    # image: ghcr.io/danny-avila/librechat:latest # Uncomment this & comment above to build from docker hub image
+    image: librechat                
+    build:                          
+      context: .               
+      target: node  
+      args:
+        APP_TITLE: QIMA-GPT                         
     restart: always
     extra_hosts: # if you are running APIs on docker you need access to, you will need to uncomment this line and next
     - "host.docker.internal:host-gateway"
