@@ -175,23 +175,31 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   return (
     <>
-      <div className={'nav dark bg-gray-900 md:inset-y-0' + (navVisible ? ' active' : '')}>
+      <div
+        className={
+          'nav dark bg-gray-900 transition-all duration-500 md:inset-y-0' +
+          (navVisible ? ' active' : '')
+        }
+      >
         <div className="flex h-full min-h-0 flex-col ">
           <div className="scrollbar-trigger relative flex h-full w-full flex-1 items-start border-white/20">
             <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
-              <div className='flex flex-row h-11 mb-2'>
+              <div className="mb-2 flex h-11 flex-row">
                 <NewChat />
                 <button
-                  type='button'
-                  className={cn('nav-close-button inline-flex h-11 w-11 border border-white/20 items-center justify-center rounded-md text-white hover:bg-gray-500/10')}
+                  type="button"
+                  className={cn(
+                    'nav-close-button inline-flex h-11 w-11 items-center justify-center rounded-md border border-white/20 text-white hover:bg-gray-500/10',
+                  )}
                   onClick={toggleNavVisible}
                 >
-                  <span className='sr-only'>Close sidebar</span>
+                  <span className="sr-only">Close sidebar</span>
                   <Panel open={false} />
                 </button>
               </div>
               <div
-                className={`flex-1 flex-col overflow-y-auto ${isHovering ? '' : 'scrollbar-transparent'
+                className={`flex-1 flex-col overflow-y-auto ${
+                  isHovering ? '' : 'scrollbar-transparent'
                 } border-b border-white/20`}
                 onMouseEnter={() => setIsHovering(true)}
                 onMouseLeave={() => setIsHovering(false)}
@@ -223,7 +231,7 @@ export default function Nav({ navVisible, setNavVisible }) {
       {!navVisible && (
         <button
           type="button"
-          className="nav-open-button mt-1 fixed left-2 top-0.5 z-10 flex p-3 items-center gap-3 transition-colors duration-200 cursor-pointer text-sm rounded-md border bg-white dark:bg-gray-800 border-black/10 dark:border-white/20 hover:bg-gray-50 dark:hover:bg-gray-700 h-11 w-11 text-gray-900"
+          className="nav-open-button fixed left-2 top-0.5 z-10 mt-1 flex h-11 w-11 cursor-pointer items-center gap-3 rounded-md border border-black/10 bg-white p-3 text-sm text-gray-900 transition-colors duration-200 hover:bg-gray-50 dark:border-white/20 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
           onClick={toggleNavVisible}
         >
           <div className="flex items-center justify-center">
