@@ -63,5 +63,6 @@ services:
     environment:
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_HTTP_ADDR=meilisearch:7700
+      - MEILI_NO_ANALYTICS=true
     volumes:
       - ./meili_data:/meili_data
