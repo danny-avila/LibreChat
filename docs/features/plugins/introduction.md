@@ -9,7 +9,8 @@ The first step is using chain-of-thought prompting & ["agency"](https://zapier.c
 More than this, you can use this endpoint for changing your conversation settings mid-conversation. Unlike the official ChatGPT site and all other endpoints, you can switch models, presets, and settings mid-convo, even when you have no plugins selected. This is useful if you first want a creative response from GPT-4, and then a deterministic, lower cost response from GPT-3. Soon, you will be able to use PaLM2 and HuggingFace models, all in this endpoint in the same modular manner.
 
 ### Roadmap:
-- More plugins and advanced plugin usage
+- More plugins and advanced plugin usage (ongoing)
+- **[ChatGPT Plugins/OpenAPI Specs (complete)](./chatgpt_plugins_openapi.md)**
 - More LLMs to choose from for both Thinking and Completion Phases
 - Alternative prompting methods such as Tree-of-Thought
 
