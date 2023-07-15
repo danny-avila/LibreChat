@@ -1,6 +1,6 @@
-import { Plugin, GPTIcon, BingIcon, BingJbIcon, AnthropicIcon } from '~/components/svg';
+import { Plugin, GPTIcon, AnthropicIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
-import { cn } from '~/utils'
+import { cn } from '~/utils';
 
 const getIcon = (props) => {
   const { size = 30, isCreatedByUser, button, model, message = true } = props;
@@ -54,7 +54,7 @@ const getIcon = (props) => {
       name = 'Plugins';
     } else if (endpoint === 'google') {
       const { modelLabel } = props;
-      icon = <img src="/assets/google-palm.svg" alt="Palm Icon"/>;
+      icon = <img src="/assets/google-palm.svg" alt="Palm Icon" />;
       name = modelLabel || 'PaLM2';
     } else if (endpoint === 'anthropic') {
       const { modelLabel } = props;
@@ -64,10 +64,10 @@ const getIcon = (props) => {
     } else if (endpoint === 'bingAI') {
       const { jailbreak } = props;
       if (jailbreak) {
-        icon = <BingJbIcon size={size * 0.7} />;
+        icon = <img src="/assets/bingai-jb.png" alt="Bing Icon" />;
         name = 'Sydney';
       } else {
-        icon = <BingIcon size={size * 0.7} />;
+        icon = <img src="/assets/bingai.png" alt="Sydney Icon" />;
         name = 'BingAI';
       }
     } else if (endpoint === 'chatGPTBrowser') {
