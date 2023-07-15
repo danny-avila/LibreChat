@@ -19,15 +19,26 @@ export default function Root() {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : false;
   });
+  // const [isMobile, setIsMobile] = useState(false);
 
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
   const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
   const setPresets = useSetRecoilState(store.presets);
   const { user, isAuthenticated } = useAuthContext();
+  // const conversation = useRecoilValue(store.conversation);
+  // const { conversationId } = conversation || {};
 
   const searchEnabledQuery = useGetSearchEnabledQuery();
   const endpointsQuery = useGetEndpointsQuery();
   const presetsQuery = useGetPresetsQuery({ enabled: !!user });
+
+  // const checkMobile = () => window.matchMedia('(max-width: 767px)').matches;
+
+  // useEffect(() => {
+  //   if (checkMobile()) {
+  //     setIsMobile(true);
+  //   }
+  // }, [conversationId]);
 
   useEffect(() => {
     localStorage.setItem('navVisible', JSON.stringify(navVisible));
