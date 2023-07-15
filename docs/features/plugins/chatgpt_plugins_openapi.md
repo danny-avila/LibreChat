@@ -14,6 +14,7 @@ Thanks to the introduction of [OpenAI Functions](https://openai.com/blog/functio
   - [Add Header Fields](#add-header-fields)
   - [Custom OpenAPI Spec files](#custom-openapi-spec-files)
   - [Plugins with Authentication](#plugins-with-authentication)
+- [Showcase](#showcase)
 - [Disclaimers](#disclaimers)
 
 ## Intro
@@ -149,11 +150,19 @@ Important: Some ChatGPT plugins may use Bearer Auth., but have either stale veri
 
 >Note: some ChatGPT plugins use OAuth authentication, which is not foreseeable we will be able to use as it requires manual configurations (redirect uri and client secrets) for both the plugin's servers and OpenAI's servers. Sadly, an example of this is Noteable, which is one of my favorite plugins; however, OAuth that authorizes the domain of your LibreChat app will be possible in a future update. On Noteable: it may be possible to reverse-engineer the noteable plugin for a "code interpreter" experience, and is a stretch goal on the LibreChat roadmap.
 
---- 
+---
+
+### Showcase
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/245cd671-c0fc-42a5-b395-fb8cf8ea8d5f)
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/ea5a6fe5-abfb-42e9-98d0-21f7c24f7b6c)
+
+---
 
 ## Disclaimers
 
 Use of ChatGPT Plugins is only possible with official OpenAI models and their use of [Functions](https://platform.openai.com/docs/api-reference/chat/create#chat/create-functions). If you are accessing OpenAI models via reverse proxy through some 3rd party service, function calling may not be supported.
+
+This implementation depends on the [LangChain OpenAPI Chain](https://js.langchain.com/docs/modules/chains/openai_functions/openapi) and general improvements to its use here will have to be made to the LangChainJS library.
 
 Custom Langchain Tools are preferred over ChatGPT Plugins/OpenAPI specs as this can be more token-efficient, especially with OpenAI Functions. A better alternative may be to make a Langchain tool modelled after an OpenAPI spec, for which I'll make a guide soon.
 
