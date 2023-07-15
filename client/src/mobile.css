@@ -27,18 +27,8 @@
 
 .nav.active {
   position: relative;
-  animation: nav-open 1000ms ease-in-out forwards;
   left: 0;
   opacity: 1;
-}
-
-@keyframes nav-open {
-  0% {
-    width: 0%;
-  }
-  100%{
-    width: 100%;
-  }
 }
 
 .nav-mask.active {
@@ -48,9 +38,9 @@
 
 @media (max-width: 767px) {
   .nav {
-    width: calc(100% - 60px);
+    width: calc(100% - 60px)  ;
+    transition: all 0.5s;
   }
-  
   .nav-mask {
     position: fixed;
     z-index: 35;
@@ -62,6 +52,7 @@
     padding-left: 420px;
     padding-top: 12px;
     opacity: 0;
+    transition: all 0.5s;
     pointer-events: none;
   }
 
@@ -72,7 +63,6 @@
 
   .nav.active {
     position: fixed;
-    animation: none;
   }
 }
 

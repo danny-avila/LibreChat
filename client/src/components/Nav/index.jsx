@@ -175,12 +175,7 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   return (
     <>
-      <div
-        className={
-          'nav dark bg-gray-900 transition-all duration-500 md:inset-y-0' +
-          (navVisible ? ' active' : '')
-        }
-      >
+      <div className={'nav dark bg-gray-900 md:inset-y-0' + (navVisible ? ' active' : '')}>
         <div className="flex h-full min-h-0 flex-col ">
           <div className="scrollbar-trigger relative flex h-full w-full flex-1 items-start border-white/20">
             <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
@@ -231,7 +226,7 @@ export default function Nav({ navVisible, setNavVisible }) {
       {!navVisible && (
         <button
           type="button"
-          className="nav-open-button fixed left-2 top-0.5 z-10 mt-1 flex h-11 w-11 cursor-pointer items-center gap-3 rounded-md border border-black/10 bg-white p-3 text-sm text-gray-900 transition-colors duration-200 hover:bg-gray-50 dark:border-white/20 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
+          className="nav-open-button fixed left-2 top-0.5 z-10 mt-1 flex h-11 w-11 cursor-pointer items-center gap-3 rounded-md border border-black/10 bg-white p-3 text-sm text-gray-900 transition-colors duration-200 hover:bg-gray-50 dark:border-white/20 dark:bg-gray-800 dark:hover:bg-gray-700"
           onClick={toggleNavVisible}
         >
           <div className="flex items-center justify-center">
