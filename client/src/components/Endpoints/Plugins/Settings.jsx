@@ -97,7 +97,7 @@ function Settings(props) {
                 placeholder={
                   toolsSelected
                     ? 'Disabled with Tools Selected'
-                    : 'Set custom instructions. Defaults to: \'You are ChatGPT, a large language model trained by OpenAI.\''
+                    : 'Set custom instructions to include in System Message. Default: none'
                 }
                 className={cn(
                   defaultTextProps,
