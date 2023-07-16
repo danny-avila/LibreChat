@@ -87,6 +87,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
     * [Stable Diffusion](docs/features/plugins/stable_diffusion.md)
     * [Wolfram](docs/features/plugins/wolfram.md)
     * [Make Your Own Plugin](docs/features/plugins/make_your_own.md)
+    * [Using official ChatGPT Plugins](docs/features/plugins/chatgpt_plugins_openapi.md)
 
   * [Proxy](docs/features/proxy.md)
   * [Bing Jailbreak](docs/features/bing_jailbreak.md)
