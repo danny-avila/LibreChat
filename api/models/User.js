@@ -145,7 +145,9 @@ userSchema.methods.generateRefreshToken = function () {
 
 userSchema.methods.comparePassword = function (candidatePassword, callback) {
   bcrypt.compare(candidatePassword, this.password, (err, isMatch) => {
-    if (err) return callback(err);
+    if (err) {
+      return callback(err);
+    }
     callback(null, isMatch);
   });
 };
@@ -153,8 +155,11 @@ userSchema.methods.comparePassword = function (candidatePassword, callback) {
 module.exports.hashPassword = async (password) => {
   const hashedPassword = await new Promise((resolve, reject) => {
     bcrypt.hash(password, 10, function (err, hash) {
-      if (err) reject(err);
-      else resolve(hash);
+      if (err) {
+        reject(err);
+      } else {
+        resolve(hash);
+      }
     });
   });
 

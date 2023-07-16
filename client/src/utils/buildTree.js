@@ -4,7 +4,9 @@ const odd =
   'w-full border-b border-black/10 bg-gray-50 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-100 dark:bg-gray-1000 hover:bg-gray-100/40 hover:text-gray-700 dark:hover:bg-[#3b3d49] dark:hover:text-gray-200';
 
 export default function buildTree(messages, groupAll = false) {
-  if (messages === null) return null;
+  if (messages === null) {
+    return null;
+  }
 
   let messageMap = {};
   let rootMessages = [];
@@ -18,8 +20,11 @@ export default function buildTree(messages, groupAll = false) {
       messageMap[message.messageId] = { ...message, children: [] };
 
       const parentMessage = messageMap[message.parentMessageId];
-      if (parentMessage) parentMessage.children.push(messageMap[message.messageId]);
-      else rootMessages.push(messageMap[message.messageId]);
+      if (parentMessage) {
+        parentMessage.children.push(messageMap[message.messageId]);
+      } else {
+        rootMessages.push(messageMap[message.messageId]);
+      }
     });
 
     return rootMessages;

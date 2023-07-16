@@ -19,7 +19,7 @@ const downloadImage = async (url, imagePath, accessToken) => {
   try {
     const response = await axios.get(url, {
       headers: {
-        'Authorization': `Bearer ${accessToken}`,
+        Authorization: `Bearer ${accessToken}`,
       },
       responseType: 'arraybuffer',
     });
@@ -37,7 +37,7 @@ const downloadImage = async (url, imagePath, accessToken) => {
 };
 
 Issuer.discover(process.env.OPENID_ISSUER)
-  .then(issuer => {
+  .then((issuer) => {
     const client = new issuer.Client({
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
@@ -96,9 +96,22 @@ Issuer.discover(process.env.OPENID_ISSUER)
               fileName = userinfo.sub + '.png';
             }
 
-            const imagePath = path.join(__dirname, '..', '..', 'client', 'public', 'images', 'openid', fileName);
+            const imagePath = path.join(
+              __dirname,
+              '..',
+              '..',
+              'client',
+              'public',
+              'images',
+              'openid',
+              fileName,
+            );
 
-            const imagePathOrEmpty = await downloadImage(imageUrl, imagePath, tokenset.access_token);
+            const imagePathOrEmpty = await downloadImage(
+              imageUrl,
+              imagePath,
+              tokenset.access_token,
+            );
 
             user.avatar = imagePathOrEmpty;
           } else {
@@ -115,8 +128,7 @@ Issuer.discover(process.env.OPENID_ISSUER)
     );
 
     passport.use('openid', openidLogin);
-
   })
-  .catch(err => {
+  .catch((err) => {
     console.error(err);
   });

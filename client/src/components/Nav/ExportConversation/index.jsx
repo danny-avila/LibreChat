@@ -18,7 +18,9 @@ const ExportConversation = forwardRef(() => {
     conversation?.conversationId !== 'search';
 
   const clickHandler = () => {
-    if (exportable) setOpen(true);
+    if (exportable) {
+      setOpen(true);
+    }
   };
 
   return (

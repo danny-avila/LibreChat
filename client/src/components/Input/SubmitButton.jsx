@@ -39,7 +39,7 @@ export default function SubmitButton({
         </div>
       </button>
     );
-  } else if (!isTokenProvided && (!endpointsToHideSetTokens.has(endpoint))) {
+  } else if (!isTokenProvided && !endpointsToHideSetTokens.has(endpoint)) {
     return (
       <>
         <button

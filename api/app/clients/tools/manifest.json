@@ -32,7 +32,7 @@
   },
   {
     "name": "Browser",
-    "pluginKey": "browser",
+    "pluginKey": "web-browser",
     "description": "Scrape and summarize webpage data",
     "icon": "/assets/web-browser.svg",
     "authConfig": [
