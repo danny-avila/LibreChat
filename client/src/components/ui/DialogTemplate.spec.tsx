@@ -37,9 +37,7 @@ describe('DialogTemplate', () => {
   it('renders correctly without optional props', () => {
     const { getByText, queryByText } = render(
       <Dialog open onOpenChange={() => {}}>
-        <DialogTemplate
-          title="Test Dialog"
-        />
+        <DialogTemplate title="Test Dialog" />
       </Dialog>,
     );
 

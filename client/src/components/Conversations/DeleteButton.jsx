@@ -15,7 +15,9 @@ export default function DeleteButton({ conversationId, renaming, cancelHandler, 
 
   useEffect(() => {
     if (deleteConvoMutation.isSuccess) {
-      if (currentConversation?.conversationId == conversationId) newConversation();
+      if (currentConversation?.conversationId == conversationId) {
+        newConversation();
+      }
 
       refreshConversations();
       retainView();

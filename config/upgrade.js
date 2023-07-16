@@ -81,31 +81,35 @@ if (fs.existsSync(apiEnvPath)) {
 }
 
 // Clean up Domain variables
-fs.appendFileSync(rootEnvPath, '\n\n##########################\n# Domain Variables:\n# Note: DOMAIN_ vars are passed to vite\n##########################\n');
+fs.appendFileSync(
+  rootEnvPath,
+  '\n\n##########################\n# Domain Variables:\n# Note: DOMAIN_ vars are passed to vite\n##########################\n',
+);
 refactorPairedEnvVar('CLIENT_URL_DEV', 'CLIENT_URL_PROD', 'DOMAIN_CLIENT');
 refactorPairedEnvVar('SERVER_URL_DEV', 'SERVER_URL_PROD', 'DOMAIN_SERVER');
 
 // Remove the old vars
 const removeEnvs = {
-  'NODE_ENV': 'remove',
-  'OPENAI_KEY': 'remove',
-  'CLIENT_URL_DEV': 'remove',
-  'CLIENT_URL_PROD': 'remove',
-  'SERVER_URL_DEV': 'remove',
-  'SERVER_URL_PROD': 'remove',
-  'JWT_SECRET_DEV': 'remove', // Lets regen
-  'JWT_SECRET_PROD': 'remove', // Lets regen
-  'VITE_APP_TITLE': 'remove',
+  NODE_ENV: 'remove',
+  OPENAI_KEY: 'remove',
+  CLIENT_URL_DEV: 'remove',
+  CLIENT_URL_PROD: 'remove',
+  SERVER_URL_DEV: 'remove',
+  SERVER_URL_PROD: 'remove',
+  JWT_SECRET_DEV: 'remove', // Lets regen
+  JWT_SECRET_PROD: 'remove', // Lets regen
+  VITE_APP_TITLE: 'remove',
   // Comments to remove:
   '#JWT:': 'remove',
   '# Add a secure secret for production if deploying to live domain.': 'remove',
   '# Site URLs:': 'remove',
-  '# Don\'t forget to set Node env to development in the Server configuration section above': 'remove',
+  '# Don\'t forget to set Node env to development in the Server configuration section above':
+    'remove',
   '# if you want to run in dev mode': 'remove',
   '# Change these values to domain if deploying:': 'remove',
   '# Set Node env to development if running in dev mode.': 'remove',
-}
-loader.writeEnvFile(rootEnvPath, removeEnvs)
+};
+loader.writeEnvFile(rootEnvPath, removeEnvs);
 
 /**
  * Lets make things more secure!
@@ -113,21 +117,27 @@ loader.writeEnvFile(rootEnvPath, removeEnvs)
  * 2. Add CREDS_IV
  * 3. Add JWT_SECRET
  */
-fs.appendFileSync(rootEnvPath, '\n\n##########################\n# Secure Keys:\n##########################\n');
+fs.appendFileSync(
+  rootEnvPath,
+  '\n\n##########################\n# Secure Keys:\n##########################\n',
+);
 loader.addSecureEnvVar(rootEnvPath, 'CREDS_KEY', 32);
 loader.addSecureEnvVar(rootEnvPath, 'CREDS_IV', 16);
 loader.addSecureEnvVar(rootEnvPath, 'JWT_SECRET', 32);
 
 // Lets update the openai key name, not the best spot in the env file but who cares ¯\_(ツ)_/¯
-loader.writeEnvFile(rootEnvPath, { 'OPENAI_API_KEY': initEnv['OPENAI_KEY'] })
+loader.writeEnvFile(rootEnvPath, { OPENAI_API_KEY: initEnv['OPENAI_KEY'] });
 
 // TODO: we need to copy over the value of: APP_TITLE
-fs.appendFileSync(rootEnvPath, '\n\n##########################\n# Frontend Vite Variables:\n##########################\n');
+fs.appendFileSync(
+  rootEnvPath,
+  '\n\n##########################\n# Frontend Vite Variables:\n##########################\n',
+);
 const frontend = {
-  'APP_TITLE': initEnv['VITE_APP_TITLE'] || '"LibreChat"',
-  'ALLOW_REGISTRATION': 'true',
-}
-loader.writeEnvFile(rootEnvPath, frontend)
+  APP_TITLE: initEnv['VITE_APP_TITLE'] || '"LibreChat"',
+  ALLOW_REGISTRATION: 'true',
+};
+loader.writeEnvFile(rootEnvPath, frontend);
 
 // Ensure .env.development and .env.production files end with a newline
 if (fs.existsSync(devEnvPath)) {
@@ -140,12 +150,14 @@ if (fs.existsSync(prodEnvPath)) {
 fs.copyFileSync(clientEnvPath, rootEnvPath + '.client.bak');
 fs.unlinkSync(clientEnvPath);
 
-console.log('###############################################')
+console.log('###############################################');
 console.log('Upgrade completed! Please review the new .env file and make any changes as needed.');
-console.log('###############################################')
+console.log('###############################################');
 
 // if the .env.development file exists, lets tell the user
 if (fs.existsSync(devEnvPath)) {
-  console.log('NOTE: A .env.development file was created. This will take precedence over the .env file when running in dev mode.');
-  console.log('###############################################')
+  console.log(
+    'NOTE: A .env.development file was created. This will take precedence over the .env file when running in dev mode.',
+  );
+  console.log('###############################################');
 }
