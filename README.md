@@ -44,7 +44,9 @@ https://github.com/danny-avila/LibreChat/assets/110412045/c1eb0c0f-41f6-4335-b98
 
 ---
 
-## ⚠️ [Breaking Changes as of v0.5.0](docs/general_info/breaking_changes.md#v050) ⚠️
+## ⚠️ [Breaking Changes](docs/general_info/breaking_changes.md) ⚠️
+**Applies to [v0.5.4](docs/general_info/breaking_changes.md#v054) & [v0.5.5](docs/general_info/breaking_changes.md#v055)**
+
 **Please read this before updating from a previous version**
 
 ---
