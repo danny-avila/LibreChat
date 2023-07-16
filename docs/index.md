@@ -57,6 +57,13 @@ With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use f
 
 ---
 
+## ⚠️ [Breaking Changes](general_info/breaking_changes.md) ⚠️
+**Applies to [v0.5.4](general_info/breaking_changes.md#v054) & [v0.5.5](general_info/breaking_changes.md#v055)**
+
+**Please read this before updating from a previous version**
+
+---
+
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date)](https://star-history.com/#danny-avila/LibreChat&Date)
