@@ -11,7 +11,7 @@ test('renders login form', () => {
 });
 
 test('submits login form', async () => {
-  const { getByLabelText, getByRole } = render(<Login onSubmit={mockLogin}/>);
+  const { getByLabelText, getByRole } = render(<Login onSubmit={mockLogin} />);
   const emailInput = getByLabelText(/email/i);
   const passwordInput = getByLabelText(/password/i);
   const submitButton = getByRole('button', { name: /Sign in/i });
@@ -24,7 +24,7 @@ test('submits login form', async () => {
 });
 
 test('displays validation error messages', async () => {
-  const { getByLabelText, getByRole, getByText } = render(<Login onSubmit={mockLogin}/>);
+  const { getByLabelText, getByRole, getByText } = render(<Login onSubmit={mockLogin} />);
   const emailInput = getByLabelText(/email/i);
   const passwordInput = getByLabelText(/password/i);
   const submitButton = getByRole('button', { name: /Sign in/i });
@@ -36,4 +36,3 @@ test('displays validation error messages', async () => {
   expect(getByText(/You must enter a valid email address/i)).toBeInTheDocument();
   expect(getByText(/Password must be at least 8 characters/i)).toBeInTheDocument();
 });
-

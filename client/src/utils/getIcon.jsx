@@ -7,7 +7,7 @@ const getIcon = (props) => {
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const { user } = useAuthContext();
 
-  if (isCreatedByUser)
+  if (isCreatedByUser) {
     return (
       <div
         title={user?.name || 'User'}
@@ -29,7 +29,7 @@ const getIcon = (props) => {
         />
       </div>
     );
-  else if (!isCreatedByUser) {
+  } else if (!isCreatedByUser) {
     const { endpoint, error } = props;
 
     let icon, bg, name;
@@ -54,7 +54,7 @@ const getIcon = (props) => {
       name = 'Plugins';
     } else if (endpoint === 'google') {
       const { modelLabel } = props;
-      icon = <img src="/assets/google-palm.svg" alt="Palm Icon"/>;
+      icon = <img src="/assets/google-palm.svg" alt="Palm Icon" />;
       name = modelLabel || 'PaLM2';
     } else if (endpoint === 'anthropic') {
       const { modelLabel } = props;

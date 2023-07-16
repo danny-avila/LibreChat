@@ -9,8 +9,9 @@ function isUUID(uuid) {
 }
 
 test.describe('Messaging suite', () => {
-
-  test('textbox should be focused after receiving message & test expected navigation', async ({ page }) => {
+  test('textbox should be focused after receiving message & test expected navigation', async ({
+    page,
+  }) => {
     test.setTimeout(120000);
     const message = 'hi';
     const endpoint = endpoints[1];

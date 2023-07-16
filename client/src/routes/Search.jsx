@@ -27,7 +27,9 @@ export default function Search() {
       }
     } else if (conversation?.conversationId === 'search') {
       // jump to search page
-      if (searchQuery !== query) navigate(`/search/${searchQuery}`);
+      if (searchQuery !== query) {
+        navigate(`/search/${searchQuery}`);
+      }
     } else {
       // conversationId (in url) should always follow conversation?.conversationId, unless conversation is null
       navigate(`/chat/${conversation?.conversationId}`);
@@ -35,11 +37,17 @@ export default function Search() {
   }, [conversation, query, searchQuery]);
 
   // if not a search
-  if (conversation?.conversationId !== 'search') return null;
+  if (conversation?.conversationId !== 'search') {
+    return null;
+  }
   // if query not match
-  if (searchQuery !== query) return null;
+  if (searchQuery !== query) {
+    return null;
+  }
   // if query is null
-  if (!query) return null;
+  if (!query) {
+    return null;
+  }
 
   return (
     <>

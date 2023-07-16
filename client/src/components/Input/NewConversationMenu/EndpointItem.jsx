@@ -29,7 +29,7 @@ export default function ModelItem({ endpoint, value, isSelected }) {
         value={value}
         className={cn(
           'group dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800',
-          isSelected && 'dark:bg-gray-800 bg-gray-50 active',
+          isSelected && 'active bg-gray-50 dark:bg-gray-800',
         )}
         id={endpoint}
       >

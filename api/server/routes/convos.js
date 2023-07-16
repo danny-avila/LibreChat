@@ -13,8 +13,11 @@ router.get('/:conversationId', requireJwtAuth, async (req, res) => {
   const { conversationId } = req.params;
   const convo = await getConvo(req.user.id, conversationId);
 
-  if (convo) res.status(200).send(convo.toObject());
-  else res.status(404).end();
+  if (convo) {
+    res.status(200).send(convo.toObject());
+  } else {
+    res.status(404).end();
+  }
 });
 
 router.post('/clear', requireJwtAuth, async (req, res) => {

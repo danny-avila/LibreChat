@@ -32,6 +32,6 @@ const InputWithLabel: FC<InputWithLabelProps> = ({ value, onChange, label, id })
       />
     </>
   );
-}
+};
 
 export default InputWithLabel;

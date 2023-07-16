@@ -28,7 +28,9 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
     conversation?.conversationId !== 'search';
 
   const clickHandler = () => {
-    if (exportable) setShowExports(true);
+    if (exportable) {
+      setShowExports(true);
+    }
   };
 
   return (
@@ -47,7 +49,10 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                   <img
                     className="rounded-sm"
                     src={
-                      user?.avatar || `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name || 'User'}&fontFamily=Verdana&fontSize=36`
+                      user?.avatar ||
+                      `https://api.dicebear.com/6.x/initials/svg?seed=${
+                        user?.name || 'User'
+                      }&fontFamily=Verdana&fontSize=36`
                     }
                     alt=""
                   />
@@ -77,7 +82,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                 <Menu.Item as="div">
                   <NavLink
                     className={cn(
-                      'flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none',
+                      'flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700',
                       exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-white/50',
                     )}
                     svg={() => <Download size={16} />}
@@ -88,7 +93,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                 <div className="my-1.5 h-px bg-white/20" role="none" />
                 <Menu.Item as="div">
                   <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none"
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <TrashIcon />}
                     text="Clear conversations"
                     clickHandler={() => setShowClearConvos(true)}
@@ -96,7 +101,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                 </Menu.Item>
                 <Menu.Item as="div">
                   <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none"
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <LinkIcon />}
                     text="Help & FAQ"
                     clickHandler={() => window.open('https://docs.librechat.ai/', '_blank')}
@@ -104,7 +109,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                 </Menu.Item>
                 <Menu.Item as="div">
                   <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none"
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <GearIcon />}
                     text="Settings"
                     clickHandler={() => setShowSettings(true)}
