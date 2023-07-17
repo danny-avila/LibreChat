@@ -1,0 +1,18 @@
+{
+  "schema_version": "v1",
+  "name_for_model": "solana",
+  "name_for_human": "Solana Labs",
+  "description_for_model": "This extension is for querying the Solana blockchain to find answers to questions and retrieve relevant information. Use it whenever a user asks something that might be related to their Solana account. Can also be used to create QR codes to send tokens and buy NFTs.",
+  "description_for_human": "Explore Solana blockchain data.",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "solana.yaml",
+    "has_user_authentication": false
+  },
+  "logo_url": "https://chatgpt.solanalabs.com/logo.ico",
+  "contact_email": "noah.gundotra@solana.com",
+  "legal_info_url": "https://solanapay.com/tos"
+}

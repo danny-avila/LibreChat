@@ -1,0 +1,927 @@
+openapi: 3.0.2
+info:
+  title: Retrieval Plugin API
+  description:
+    A retrieval API for querying and filtering documents based on natural language queries and
+    metadata
+  version: 1.0.0
+servers:
+  - url: https://chatgpt.solanalabs.com
+paths:
+  /api/handlers/getAssetsByOwner:
+    post:
+      summary: getAssetsByOwner
+      description: Accepts Solana publicKey address. Returns Metaplex NFTs owned by the address
+      operationId: query_assets_by_owner
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/getAccountInfoRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/getAssetsByOwnerResponse'
+        '500':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - HTTPBearer: []
+  /api/handlers/getAccountInfo:
+    post:
+      summary: getAccountInfo
+      description: Accepts Solana publicKey address. Returns information the account data
+      operationId: query_account_info
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/getAccountInfoRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/getAccountInfoResponse'
+        '500':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - HTTPBearer: []
+  /api/handlers/getTokenAccounts:
+    post:
+      summary: getTokenAccounts
+      description:
+        Returns the fungible and non-fungible tokens and amounts owned by the address. May show
+        tokens not listed in /getAssetsByOwner
+      operationId: query_token_accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/getBalanceRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/getTokenAccountsResponse'
+        '500':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - HTTPBearer: []
+  /api/handlers/getBalance:
+    post:
+      summary: getBalance
+      description:
+        Accepts Solana publicKey address. Returns the amount of lamports that the account has
+        available.
+      operationId: query_balance
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/getBalanceRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/getBalanceResponse'
+        '500':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - HTTPBearer: []
+  /api/handlers/getTransaction:
+    post:
+      summary: getTransaction
+      description:
+        Accepts a transaction signature. Returns the publicly available transaction information and
+        metadata. Only high level summaries based on instruction data should be provided to users
+        unless otherwise specified. Logs, compute units, and fees are available in devMode.
+      operationId: query_transaction
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/getTransactionRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/getTransactionResponse'
+        '500':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - HTTPBearer: []
+  /api/handlers/getSignaturesForAddress:
+    post:
+      summary: getSignaturesForAddress
+      description:
+        Accepts Solana publicKey address. Returns the latest transaction signatures that involve
+        that address
+      operationId: query_signatures_for_address
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/getSignaturesForAddressRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/getSignaturesForAddressResponse'
+        '500':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - HTTPBearer: []
+  /api/handlers/getCollectionsByFloorPrice:
+    post:
+      summary: Search through Solana NFT collections by floor price
+      operationId: query_nft_collections_by_fp
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/getCollectionsByFloorPriceRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/getCollectionsByFloorPriceResponse'
+        '500':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - HTTPBearer: []
+  /api/handlers/getListedCollectionNFTs:
+    post:
+      summary: Returns the listed NFTs in a collection available to purchase
+      operationId: query_listed_nfts_for_collection
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/getListedCollectionNFTsRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/getListedCollectionNFTsResponse'
+        '500':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - HTTPBearer: []
+  /api/handlers/getCollectionsByName:
+    post:
+      summary: Searches for NFT collections based on project name
+      operationId: query_nfts_collections_by_name
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/getCollectionsByNameRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/getListedCollectionNFTsResponse'
+        '500':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - HTTPBearer: []
+  /api/handlers/getTotalValue:
+    post:
+      summary:
+        Calculates the total value of a the address's holdings in USD, with breakdown by NFTs and
+        tokens.
+      operationId: query_total_value
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/getTotalValueRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/getTotalValueResponse'
+        '500':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - HTTPBearer: []
+  /api/handlers/tx-link/createTransferSol:
+    post:
+      summary: Allows the user to transfer Sol to another account
+      operationId: create_transfer_sol_tx
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/createTransferSolRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/transactionResponse'
+        '500':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - HTTPBearer: []
+  /api/handlers/tx-link/createBuyNFT:
+    post:
+      summary: Accepts accounts needed to buy the NFT represented by the token
+      operationId: create_buy_nft_tx
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NFTExchangeTransactionRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/transactionResponse'
+        '500':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - HTTPBearer: []
+components:
+  schemas:
+    getAccountInfoRequest:
+      title: GetAccountInfoRequest
+      type: object
+      required:
+        - address
+      properties:
+        address:
+          title: Address
+          type: string
+    getAccountInfoResponse:
+      title: GetAccountInfoResponse
+      type: object
+      properties:
+        message:
+          title: Message
+          type: object
+          properties:
+            data:
+              title: Data
+              type: object
+              properties:
+                type:
+                  title: Type
+                  type: string
+                data:
+                  title: Data
+                  type: array
+                  items: { type: string }
+            executable:
+              title: Executable
+              type: boolean
+            lamports:
+              title: Lamports
+              type: number
+            owner:
+              title: Owner
+              type: string
+            rentEpoch:
+              title: Owner
+              type: number
+            extended:
+              title: Extended
+              type: string
+    getSignaturesForAddressResponse:
+      title: GetSignaturesForAddressResponse
+      type: object
+      required:
+        - hasMore
+        - signatures
+      properties:
+        hasMore:
+          type: boolean
+        nextPage:
+          type: object
+          properties:
+            beforeSignature:
+              type: string
+        signatures:
+          type: array
+          items:
+            type: object
+            required:
+              - signature
+              - slot
+            properties:
+              blockTime:
+                type: number
+              confirmationStatus:
+                type: string
+              err:
+                type: object
+              signature:
+                type: string
+              slot:
+                type: number
+    getSignaturesForAddressRequest:
+      title: GetSignaturesForAddressRequest
+      type: object
+      required:
+        - address
+      properties:
+        address:
+          type: string
+        beforeSignature:
+          type: string
+        untilSignature:
+          type: string
+    getBalanceRequest:
+      title: GetBalanceRequest
+      type: object
+      required:
+        - address
+      properties:
+        address:
+          title: Address
+          type: string
+    getBalanceResponse:
+      title: GetBalanceResponse
+      type: object
+      properties:
+        sol:
+          title: sol
+          type: number
+    getTokenAccountsResponse:
+      type: array
+      items:
+        type: object
+        properties:
+          mint:
+            type: string
+          amount:
+            type: string
+    HTTPValidationError:
+      title: HTTPValidationError
+      type: object
+      properties:
+        message:
+          title: Message
+          type: string
+    ValidationError:
+      title: ValidationError
+      required:
+        - loc
+        - msg
+        - type
+      type: object
+      properties:
+        loc:
+          title: Location
+          type: array
+          items:
+            anyOf:
+              - type: string
+              - type: integer
+        msg:
+          title: Message
+          type: string
+        type:
+          title: Error Type
+          type: string
+    getAssetsByOwnerResponse:
+      title: GetAssetsByOwnerResponse
+      type: object
+      properties:
+        total:
+          title: Total
+          type: number
+        limit:
+          title: Limit
+          type: number
+        page:
+          title: Page
+          type: number
+        items:
+          title: Items
+          type: array
+          items: { $ref: '#/components/schemas/Asset' }
+    Asset:
+      title: Asset
+      type: object
+      required:
+        - version
+        - id
+      properties:
+        interface:
+          type: string
+          enum:
+            - V1_NFT
+            - V1_PRINT
+            - LEGACY_NFT
+            - V2_NFT
+            - FungibleAsset
+            - Custom
+            - Identity
+            - Executable
+        id:
+          type: string
+        content:
+          type: object
+          properties:
+            $schema:
+              type: string
+            json_uri:
+              type: string
+            metadata:
+              type: object
+              properties:
+                description:
+                  type: string
+                name:
+                  type: string
+                symbol:
+                  type: string
+            files:
+              type: array
+              items:
+                type: object
+                properties:
+                  uri:
+                    type: string
+                  mime:
+                    type: string
+                  quality:
+                    type: object
+                    properties:
+                      $$schema:
+                        type: string
+                  links:
+                    type: array
+                    items:
+                      type: object
+        authorities:
+          type: array
+          items:
+            type: object
+            properties:
+              address:
+                type: string
+              scopes:
+                type: array
+                items:
+                  type: string
+        compression:
+          type: object
+          properties:
+            eligible:
+              type: boolean
+            compressed:
+              type: boolean
+        grouping:
+          type: array
+          items:
+            type: object
+            required:
+              - $$schema
+            properties:
+              $$schema:
+                type: string
+              group_key:
+                type: string
+              group_value:
+                type: string
+        royalty:
+          type: object
+          properties:
+            royalty_model:
+              type: string
+              enum:
+                - creators
+                - fanout
+                - single
+            target:
+              type: string
+            percent:
+              type: number
+            locked:
+              type: boolean
+        creators:
+          type: array
+          items:
+            type: object
+            properties:
+              address:
+                type: string
+              share:
+                type: string
+              verified:
+                type: boolean
+        ownership:
+          type: object
+          properties:
+            frozen:
+              type: boolean
+            delegated:
+              type: boolean
+            delegate:
+              type: string
+            ownership_model:
+              type: string
+              enum:
+                - Single
+                - Token
+            address:
+              type: string
+            version:
+              type: string
+    getTransactionRequest:
+      type: object
+      required:
+        - signature
+      properties:
+        signature:
+          type: string
+        devMode:
+          type: boolean
+    # TODO: verify this actually describes the response
+    getTransactionResponse:
+      type: object
+      properties:
+        feePayer:
+          type: string
+        success:
+          type: boolean
+        timestamp:
+          type: string
+        tokenBalanceChanges:
+          type: object
+        solBalanceChanges:
+          type: object
+        instructions:
+          type: array
+          items:
+            type: object
+            properties:
+              keys:
+                type: array
+                items:
+                  type: string
+              programId:
+                type: string
+              ixData:
+                oneOf:
+                  - type: string
+                  - type: object
+        transaction:
+          oneOf:
+            - type: object
+            - type: array
+              items:
+                type: string
+              minItems: 2
+        computeUnitsConsumed:
+          type: integer
+          nullable: true
+        txFeeInLamports:
+          type: integer
+          nullable: true
+        logs:
+          type: array
+          items:
+            type: string
+          nullabel: true
+        txVersion:
+          type: string
+          nullable: true
+    Meta:
+      type: object
+      properties:
+        err:
+          type: object
+          nullable: true
+        fee:
+          type: integer
+          format: uint64
+        preBalances:
+          type: array
+          items:
+            type: integer
+            format: uint64
+        postBalances:
+          type: array
+          items:
+            type: integer
+            format: uint64
+        innerInstructions:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/InnerInstruction'
+        preTokenBalances:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/TokenBalance'
+        postTokenBalances:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/TokenBalance'
+        logMessages:
+          type: array
+          nullable: true
+          items:
+            type: string
+        rewards:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Reward'
+    InnerInstruction:
+      type: object
+      properties:
+        index:
+          type: integer
+          format: int32
+        instructions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Instruction'
+    Instruction:
+      type: object
+      properties:
+        programIdIndex:
+          type: integer
+          format: int32
+        accounts:
+          type: array
+          items:
+            type: integer
+            format: int32
+        data:
+          type: string
+    TokenBalance:
+      type: object
+      properties:
+        accountIndex:
+          type: integer
+          format: int32
+        mint:
+          type: string
+        owner:
+          type: string
+          nullable: true
+        programId:
+          type: string
+          nullable: true
+        uiTokenAmount:
+          $ref: '#/components/schemas/UiTokenAmount'
+    UiTokenAmount:
+      type: object
+      properties:
+        amount:
+          type: string
+        decimals:
+          type: integer
+          format: int32
+        uiAmount:
+          type: number
+          nullable: true
+          deprecated: true
+        uiAmountString:
+          type: string
+    Reward:
+      type: object
+      properties:
+        pubkey:
+          type: string
+        lamports:
+          type: integer
+          format: int64
+        postBalance:
+          type: integer
+          format: uint64
+        rewardType:
+          type: string
+        commission:
+          type: integer
+          format: uint8
+          nullable: true
+    getCollectionsByFloorPriceRequest:
+      type: object
+      properties:
+        maxFloorPrice:
+          type: number
+          nullable: true
+        minFloorPrice:
+          type: number
+          nullable: true
+        orderBy:
+          type: string
+          enum:
+            - ASC
+            - DESC
+          nullable: true
+    getCollectionsByFloorPriceResponse:
+      type: object
+      properties:
+        hasMore:
+          type: boolean
+        currentPage:
+          type: number
+        projects:
+          type: array
+          items: { $ref: '#/components/schemas/CollectionResponse' }
+    CollectionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        desc:
+          type: string
+        img:
+          type: string
+        website:
+          type: string
+        floor_price:
+          type: number
+    getCollectionsByNameRequest:
+      type: object
+      properties:
+        projectName:
+          type: string
+    getListedCollectionNFTsRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+        priceOrder:
+          type: string
+          nullable: true
+        pageSize:
+          type: number
+          nullable: true
+    getCollectionNFTsByNameResponse:
+      type: object
+      properties:
+        projects:
+          type: array
+          items: { $ref: '#/components/schemas/CollectionInfo' }
+    CollectionInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        verified:
+          type: boolean
+        name:
+          type: string
+        img:
+          type: string
+        website:
+          type: string
+        floorPrice:
+          type: number
+        twitterFollowers:
+          type: number
+        twitter:
+          type: string
+    getListedCollectionNFTsResponse:
+      type: object
+      properties:
+        listings:
+          type: array
+          items: { $ref: '#/components/schemas/ListedNFT' }
+        hasMore:
+          type: boolean
+    ListedNFT:
+      type: object
+      properties:
+        price:
+          type: number
+        token:
+          type: string
+        image:
+          type: string
+        marketplace:
+          type: string
+    getTotalValueRequest:
+      type: object
+      properties:
+        address:
+          type: string
+    getTotalValueResponse:
+      type: object
+      properties:
+        total:
+          type: number
+        nftTotal:
+          type: number
+        tokenTotal:
+          type: number
+    NFTExchangeTransactionRequest:
+      type: object
+      properties:
+        token:
+          type: string
+        price:
+          type: number
+    createTransferTokenRequest:
+      type: object
+      properties:
+        amount:
+          type: string
+        destination:
+          type: string
+        mint:
+          type: string
+    createTransferSolRequest:
+      type: object
+      properties:
+        amount:
+          type: string
+        destination:
+          type: string
+    transactionResponse:
+      type: object
+      properties:
+        qrCode:
+          type: string
+        disclaimer:
+          type: string
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      scheme: bearer
