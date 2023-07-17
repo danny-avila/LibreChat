@@ -61,7 +61,7 @@ const Settings = ({ preset, ...props }) => {
           {...props}
         />
       );
-    }  else if (endpoint === 'gptPlugins') {
+    } else if (endpoint === 'gptPlugins') {
       return (
         <PluginsSettings
           model={preset?.model}

@@ -56,7 +56,7 @@ const useConversation = () => {
   ) => {
     let { endpoint = null } = conversation;
 
-    if (endpoint === null)
+    if (endpoint === null) {
       // get the default model
       conversation = getDefaultConversation({
         conversation,
@@ -64,6 +64,7 @@ const useConversation = () => {
         prevConversation,
         preset,
       });
+    }
 
     setConversation(conversation);
     setMessages(messages);
@@ -84,17 +85,20 @@ const useConversation = () => {
     [],
   );
 
-  const newConversation = useCallback((template = {}, preset) => {
-    switchToConversation(
-      {
-        conversationId: 'new',
-        title: 'New Chat',
-        ...template,
-      },
-      [],
-      preset,
-    );
-  }, [switchToConversation]);
+  const newConversation = useCallback(
+    (template = {}, preset) => {
+      switchToConversation(
+        {
+          conversationId: 'new',
+          title: 'New Chat',
+          ...template,
+        },
+        [],
+        preset,
+      );
+    },
+    [switchToConversation],
+  );
 
   const searchPlaceholderConversation = () => {
     switchToConversation(
@@ -106,7 +110,12 @@ const useConversation = () => {
     );
   };
 
-  return { _switchToConversation, newConversation, switchToConversation, searchPlaceholderConversation };
+  return {
+    _switchToConversation,
+    newConversation,
+    switchToConversation,
+    searchPlaceholderConversation,
+  };
 };
 
 export default {

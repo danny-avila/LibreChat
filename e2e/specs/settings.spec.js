@@ -7,7 +7,7 @@ test.describe('Settings suite', () => {
     await newTopicButton.click();
 
     // includes the icon + endpoint names in obj property
-    const endpointItem = await page.getByRole('menuitemradio', { name: 'BingAI Bing' })
+    const endpointItem = await page.getByRole('menuitemradio', { name: 'BingAI Bing' });
     await endpointItem.click();
 
     await page.getByTestId('text-input').click();
@@ -44,6 +44,6 @@ test.describe('Settings suite', () => {
     expect(jailbreak).toBeTruthy();
     expect(toneStyle).toEqual('balanced');
     const button = await page.getByRole('button', { name: 'Mode: Sydney' });
-    expect((button).count()).toBeTruthy();
+    expect(button.count()).toBeTruthy();
   });
 });

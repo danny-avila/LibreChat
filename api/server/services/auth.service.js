@@ -109,7 +109,9 @@ const requestPasswordReset = async (email) => {
   }
 
   let token = await Token.findOne({ userId: user._id });
-  if (token) await token.deleteOne();
+  if (token) {
+    await token.deleteOne();
+  }
 
   let resetToken = crypto.randomBytes(32).toString('hex');
   const hash = await bcrypt.hashSync(resetToken, 10);

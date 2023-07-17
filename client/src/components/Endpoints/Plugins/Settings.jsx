@@ -47,7 +47,7 @@ function Settings(props) {
   const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
 
   return (
-    <div className="md:h-[350px] h-[490px] overflow-y-auto">
+    <div className="h-[490px] overflow-y-auto md:h-[350px]">
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
@@ -67,7 +67,8 @@ function Settings(props) {
           <>
             <div className="grid w-full items-center gap-2">
               <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-                Custom Name <small className="opacity-40">(default: empty | disabled with tools)</small>
+                Custom Name{' '}
+                <small className="opacity-40">(default: empty | disabled with tools)</small>
               </Label>
               <Input
                 id="chatGptLabel"
@@ -85,7 +86,8 @@ function Settings(props) {
             </div>
             <div className="grid w-full items-center gap-2">
               <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
-                Prompt Prefix <small className="opacity-40">(default: empty | disabled with tools)</small>
+                Prompt Prefix{' '}
+                <small className="opacity-40">(default: empty | disabled with tools)</small>
               </Label>
               <TextareaAutosize
                 id="promptPrefix"
@@ -95,7 +97,7 @@ function Settings(props) {
                 placeholder={
                   toolsSelected
                     ? 'Disabled with Tools Selected'
-                    : 'Set custom instructions. Defaults to: \'You are ChatGPT, a large language model trained by OpenAI.\''
+                    : 'Set custom instructions to include in System Message. Default: none'
                 }
                 className={cn(
                   defaultTextProps,

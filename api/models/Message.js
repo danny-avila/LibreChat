@@ -56,11 +56,7 @@ module.exports = {
   async updateMessage(message) {
     try {
       const { messageId, ...update } = message;
-      const updatedMessage = await Message.findOneAndUpdate(
-        { messageId },
-        update,
-        { new: true },
-      );
+      const updatedMessage = await Message.findOneAndUpdate({ messageId }, update, { new: true });
 
       if (!updatedMessage) {
         throw new Error('Message not found.');

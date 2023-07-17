@@ -20,9 +20,7 @@ describe('ThemeSelector', () => {
   });
 
   it('calls onChange when the select value changes', () => {
-    const { getByDisplayValue } = render(
-      <ThemeSelector theme="system" onChange={mockOnChange} />,
-    );
+    const { getByDisplayValue } = render(<ThemeSelector theme="system" onChange={mockOnChange} />);
 
     fireEvent.change(getByDisplayValue('System'), { target: { value: 'dark' } });
 

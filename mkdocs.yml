@@ -94,6 +94,7 @@ nav:
       - Stable Diffusion: 'features/plugins/stable_diffusion.md'
       - Wolfram: 'features/plugins/wolfram.md'
       - Make Your Own Plugin: 'features/plugins/make_your_own.md'
+      - Using official ChatGPT Plugins: 'features/plugins/chatgpt_plugins_openapi.md'
     - Proxy: 'features/proxy.md'
     - Bing Jailbreak: 'features/bing_jailbreak.md' 
   - Cloud Deployment:

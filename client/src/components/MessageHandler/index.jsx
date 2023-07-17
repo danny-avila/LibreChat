@@ -81,7 +81,7 @@ export default function MessageHandler() {
   const createdHandler = (data, submission) => {
     const { messages, message, initialResponse, isRegenerate = false } = submission;
 
-    if (isRegenerate)
+    if (isRegenerate) {
       setMessages([
         ...messages,
         {
@@ -91,7 +91,7 @@ export default function MessageHandler() {
           submitting: true,
         },
       ]);
-    else
+    } else {
       setMessages([
         ...messages,
         message,
@@ -102,6 +102,7 @@ export default function MessageHandler() {
           submitting: true,
         },
       ]);
+    }
 
     const { conversationId } = message;
     setConversation((prevState) => ({
@@ -184,8 +185,12 @@ export default function MessageHandler() {
   };
 
   useEffect(() => {
-    if (submission === null) return;
-    if (Object.keys(submission).length === 0) return;
+    if (submission === null) {
+      return;
+    }
+    if (Object.keys(submission).length === 0) {
+      return;
+    }
 
     let { message } = submission;
 
@@ -213,7 +218,9 @@ export default function MessageHandler() {
       } else {
         let text = data.text || data.response;
         let { initial, plugin } = data;
-        if (initial) console.log(data);
+        if (initial) {
+          console.log(data);
+        }
 
         if (data.message) {
           messageHandler(text, { ...submission, plugin, message });

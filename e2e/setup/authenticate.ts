@@ -1,6 +1,6 @@
 import { Page, FullConfig, chromium } from '@playwright/test';
 
-type User = {username: string; password: string};
+type User = { username: string; password: string };
 
 async function login(page: Page, user: User) {
   await page.locator('input[name="email"]').fill(user.username);
