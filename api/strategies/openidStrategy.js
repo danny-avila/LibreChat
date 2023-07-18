@@ -109,6 +109,7 @@ Issuer.discover(process.env.OPENID_ISSUER)
 
           done(null, user);
         } catch (err) {
+          console.log('error has occured in Issuer.discover prior to calling done')
           done(err);
         }
       },
@@ -118,5 +119,6 @@ Issuer.discover(process.env.OPENID_ISSUER)
 
   })
   .catch(err => {
+    console.log('error has occured in Issuer.discover')
     console.error(err);
   });
