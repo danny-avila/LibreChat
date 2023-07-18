@@ -9,7 +9,7 @@ import {
   TRegisterUser,
   useGetStartupConfig,
 } from '@librechat/data-provider';
-import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components'
+import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
 
 function Registration() {
   const navigate = useNavigate();
@@ -235,7 +235,8 @@ function Registration() {
                 //   return false;
                 // }}
                 {...register('confirm_password', {
-                  validate: (value) => value === password || localize(lang, 'com_auth_password_not_match'),
+                  validate: (value) =>
+                    value === password || localize(lang, 'com_auth_password_not_match'),
                 })}
                 aria-invalid={!!errors.confirm_password}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -294,12 +295,12 @@ function Registration() {
         )}
         {startupConfig?.googleLoginEnabled && startupConfig?.socialLoginEnabled && (
           <>
-
             <div className="mt-2 flex gap-x-2">
               <a
                 aria-label="Login with Google"
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/google`}>
+                href={`${startupConfig.serverDomain}/oauth/google`}
+              >
                 <GoogleIcon />
                 <p>{localize(lang, 'com_auth_google_login')}</p>
               </a>
@@ -326,13 +327,12 @@ function Registration() {
         )}
         {startupConfig?.githubLoginEnabled && startupConfig?.socialLoginEnabled && (
           <>
-
             <div className="mt-2 flex gap-x-2">
               <a
                 aria-label="Login with GitHub"
-
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/github`}>
+                href={`${startupConfig.serverDomain}/oauth/github`}
+              >
                 <GithubIcon />
                 <p>{localize(lang, 'com_auth_github_login')}</p>
               </a>
@@ -341,12 +341,12 @@ function Registration() {
         )}
         {startupConfig?.discordLoginEnabled && startupConfig?.socialLoginEnabled && (
           <>
-
             <div className="mt-2 flex gap-x-2">
               <a
                 aria-label="Login with Discord"
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/discord`}>
+                href={`${startupConfig.serverDomain}/oauth/discord`}
+              >
                 <DiscordIcon />
                 <p>{localize(lang, 'com_auth_discord_login')}</p>
               </a>

@@ -16,9 +16,13 @@ export default function Templates({ showTemplates }) {
 
           <div className="flex flex-1 flex-col items-center gap-3.5">
             <span className="text-sm text-gray-700 dark:text-gray-400">
-              {localize(lang, 'com_ui_showing')} <span className="font-semibold text-gray-900 dark:text-white">1</span> {localize(lang, 'com_ui_of')}{' '}
+              {localize(lang, 'com_ui_showing')}{' '}
+              <span className="font-semibold text-gray-900 dark:text-white">1</span>{' '}
+              {localize(lang, 'com_ui_of')}{' '}
               <a id="prompt-link">
-                <span className="font-semibold text-gray-900 dark:text-white">1 {localize(lang, 'com_ui_entries')}</span>
+                <span className="font-semibold text-gray-900 dark:text-white">
+                  1 {localize(lang, 'com_ui_entries')}
+                </span>
               </a>
             </span>
             <button

@@ -24,7 +24,14 @@ describe('PluginStoreItem', () => {
 
   it('calls onUninstall when the uninstall button is clicked', async () => {
     const onUninstall = jest.fn();
-    render(<PluginStoreItem plugin={mockPlugin} onInstall={() => {}} onUninstall={onUninstall} isInstalled />);
+    render(
+      <PluginStoreItem
+        plugin={mockPlugin}
+        onInstall={() => {}}
+        onUninstall={onUninstall}
+        isInstalled
+      />,
+    );
     await userEvent.click(screen.getByText('Uninstall'));
     expect(onUninstall).toHaveBeenCalled();
   });

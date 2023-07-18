@@ -15,8 +15,12 @@ router.post('/abort', requireJwtAuth, async (req, res) => {
 
 router.post('/', requireJwtAuth, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId: oldConversationId } = req.body;
-  if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
-  if (endpoint !== 'anthropic') return handleError(res, { text: 'Illegal request' });
+  if (text.length === 0) {
+    return handleError(res, { text: 'Prompt empty or too short' });
+  }
+  if (endpoint !== 'anthropic') {
+    return handleError(res, { text: 'Illegal request' });
+  }
 
   const endpointOption = {
     promptPrefix: req.body?.promptPrefix ?? null,
@@ -117,7 +121,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     const onStart = (userMessage) => {
       sendMessage(res, { message: userMessage, created: true });
       abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
-    }
+    };
 
     const client = new AnthropicClient(endpointOption.token);
 

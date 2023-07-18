@@ -131,7 +131,9 @@ export default function TextChat({ isSearchView = false }) {
     setShowBingToneSetting((show) => !show);
   };
 
-  if (isSearchView) return <></>;
+  if (isSearchView) {
+    return <></>;
+  }
 
   return (
     <>

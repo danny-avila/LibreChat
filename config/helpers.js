@@ -31,4 +31,4 @@ console.gray = (msg) => console.log('\x1b[90m%s\x1b[0m', msg);
 
 module.exports = {
   askQuestion,
-}
+};

@@ -39,7 +39,11 @@ test.describe('Navigation suite', () => {
       await page.waitForTimeout(1000);
 
       // Check if the HTML element has the theme class
-      const html = await page.$eval('html', (element, theme) => element.classList.contains(theme.toLowerCase()), theme);
+      const html = await page.$eval(
+        'html',
+        (element, theme) => element.classList.contains(theme.toLowerCase()),
+        theme,
+      );
       expect(html).toBeTruthy();
     }
 
