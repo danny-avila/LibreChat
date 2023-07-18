@@ -40,18 +40,6 @@ config.validate(); // Validate the config
   app.use(passport.initialize());
   require('../strategies/jwtStrategy');
   require('../strategies/localStrategy');
-  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-    require('../strategies/googleStrategy');
-  }
-  if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
-    require('../strategies/facebookStrategy');
-  }
-  if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
-    require('../strategies/githubStrategy');
-  }
-  if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
-    require('../strategies/discordStrategy');
-  }
   if (process.env.OPENID_CLIENT_ID && process.env.OPENID_CLIENT_SECRET &&
       process.env.OPENID_ISSUER && process.env.OPENID_SCOPE &&
       process.env.OPENID_SESSION_SECRET) {
