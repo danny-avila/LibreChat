@@ -3,11 +3,7 @@ const router = express.Router();
 const { titleConvo, OpenAIClient } = require('../../../app');
 const { getAzureCredentials, abortMessage } = require('../../../utils');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const {
-  handleError,
-  sendMessage,
-  createOnProgress,
-} = require('./handlers');
+const { handleError, sendMessage, createOnProgress } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 
 const abortControllers = new Map();
@@ -18,9 +14,13 @@ router.post('/abort', requireJwtAuth, async (req, res) => {
 
 router.post('/', requireJwtAuth, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId } = req.body;
-  if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
+  if (text.length === 0) {
+    return handleError(res, { text: 'Prompt empty or too short' });
+  }
   const isOpenAI = endpoint === 'openAI' || endpoint === 'azureOpenAI';
-  if (!isOpenAI) return handleError(res, { text: 'Illegal request' });
+  if (!isOpenAI) {
+    return handleError(res, { text: 'Illegal request' });
+  }
 
   // build endpoint option
   const endpointOption = {
@@ -50,7 +50,15 @@ router.post('/', requireJwtAuth, async (req, res) => {
   });
 });
 
-const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, conversationId, req, res }) => {
+const ask = async ({
+  text,
+  endpointOption,
+  parentMessageId = null,
+  endpoint,
+  conversationId,
+  req,
+  res,
+}) => {
   res.writeHead(200, {
     Connection: 'keep-alive',
     'Content-Type': 'text/event-stream',
@@ -166,7 +174,11 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
       response.parentMessageId = overrideParentMessageId;
     }
 
-    console.log('promptTokens, completionTokens:', response.promptTokens, response.completionTokens);
+    console.log(
+      'promptTokens, completionTokens:',
+      response.promptTokens,
+      response.completionTokens,
+    );
     await saveMessage(response);
 
     sendMessage(res, {

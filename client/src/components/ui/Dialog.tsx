@@ -24,7 +24,7 @@ const DialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     className={cn(
-      'data-[state=closed]:animate-out data-[state=open]:fade-in data-[state=closed]:fade-out fixed inset-0 z-[999] bg-gray-500/90 dark:bg-gray-800/90 transition-all duration-100',
+      'data-[state=closed]:animate-out data-[state=open]:fade-in data-[state=closed]:fade-out fixed inset-0 z-[999] bg-gray-500/90 transition-all duration-100 dark:bg-gray-800/90',
       className,
     )}
     {...props}
@@ -42,7 +42,7 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'animate-in data-[state=open]:fade-in-90 data-[state=open]:slide-in-from-bottom-10 sm:zoom-in-90 data-[state=open]:sm:slide-in-from-bottom-0 fixed z-[999] grid w-full gap-4 rounded-b-lg bg-white pb-6 sm:rounded-lg md:w-[680px] overflow-y-auto',
+        'animate-in data-[state=open]:fade-in-90 data-[state=open]:slide-in-from-bottom-10 sm:zoom-in-90 data-[state=open]:sm:slide-in-from-bottom-0 fixed z-[999] grid w-full gap-4 overflow-y-auto rounded-b-lg bg-white pb-6 sm:rounded-lg md:w-[680px]',
         'dark:bg-slate-900',
         className,
       )}
@@ -71,7 +71,10 @@ DialogHeader.displayName = 'DialogHeader';
 
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn('flex flex-col-reverse sm:flex-row sm:justify-between sm:space-x-2 px-6', className)}
+    className={cn(
+      'flex flex-col-reverse px-6 sm:flex-row sm:justify-between sm:space-x-2',
+      className,
+    )}
     {...props}
   />
 );

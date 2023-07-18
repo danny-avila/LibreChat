@@ -44,7 +44,7 @@ function Settings(props) {
   const codeChat = model.startsWith('codechat-');
 
   return (
-    <div className={'md:h-[350px] h-[490px] overflow-y-auto'}>
+    <div className={'h-[490px] overflow-y-auto md:h-[350px]'}>
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
@@ -55,7 +55,7 @@ function Settings(props) {
               disabled={readonly}
               className={cn(
                 defaultTextProps,
-                'flex w-full z-50 resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
+                'z-50 flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
               )}
               containerClassName="flex w-full resize-none"
             />
@@ -141,7 +141,7 @@ function Settings(props) {
                 <HoverCardTrigger className="grid w-full items-center gap-2">
                   <div className="flex justify-between">
                     <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
-                  Top P <small className="opacity-40">(default: 0.95)</small>
+                      Top P <small className="opacity-40">(default: 0.95)</small>
                     </Label>
                     <InputNumber
                       id="top-p-int"
@@ -179,7 +179,7 @@ function Settings(props) {
                 <HoverCardTrigger className="grid w-full items-center gap-2">
                   <div className="flex justify-between">
                     <Label htmlFor="top-k-int" className="text-left text-sm font-medium">
-                  Top K <small className="opacity-40">(default: 40)</small>
+                      Top K <small className="opacity-40">(default: 40)</small>
                     </Label>
                     <InputNumber
                       id="top-k-int"
@@ -212,14 +212,13 @@ function Settings(props) {
                 </HoverCardTrigger>
                 <OptionHover type="topk" side="left" />
               </HoverCard>
-
             </>
           )}
           <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="max-tokens-int" className="text-left text-sm font-medium">
-              Max Output Tokens <small className="opacity-40">(default: 1024)</small>
+                  Max Output Tokens <small className="opacity-40">(default: 1024)</small>
                 </Label>
                 <InputNumber
                   id="max-tokens-int"

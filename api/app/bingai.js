@@ -39,7 +39,7 @@ const askBing = async ({
     jailbreakConversationId = false;
   }
 
-  if (jailbreak)
+  if (jailbreak) {
     options = {
       jailbreakConversationId: jailbreakConversationId || jailbreak,
       context,
@@ -48,7 +48,7 @@ const askBing = async ({
       toneStyle,
       onProgress,
     };
-  else {
+  } else {
     options = {
       conversationId,
       context,

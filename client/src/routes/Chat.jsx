@@ -36,11 +36,11 @@ export default function Chat() {
       if (!isAuthenticated) {
         navigate('/login', { replace: true });
       }
-    }, 300)
+    }, 300);
 
     return () => {
       clearTimeout(timeout);
-    }
+    };
   }, [isAuthenticated, navigate]);
 
   useEffect(() => {
@@ -120,11 +120,17 @@ export default function Chat() {
   }
 
   // if not a conversation
-  if (conversation?.conversationId === 'search') return null;
+  if (conversation?.conversationId === 'search') {
+    return null;
+  }
   // if conversationId not match
-  if (conversation?.conversationId !== conversationId && !conversation) return null;
+  if (conversation?.conversationId !== conversationId && !conversation) {
+    return null;
+  }
   // if conversationId is null
-  if (!conversationId) return null;
+  if (!conversationId) {
+    return null;
+  }
 
   if (conversationId && !messagesTree) {
     return (
@@ -132,7 +138,7 @@ export default function Chat() {
         <Messages />
         <TextChat />
       </>
-    )
+    );
   }
 
   return (

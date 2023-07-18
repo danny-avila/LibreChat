@@ -3,7 +3,15 @@ import { useRecoilValue, useRecoilCallback } from 'recoil';
 import filenamify from 'filenamify';
 import exportFromJSON from 'export-from-json';
 import download from 'downloadjs';
-import { Dialog, DialogButton, DialogTemplate, Input, Label, Checkbox, Dropdown } from '~/components/ui/';
+import {
+  Dialog,
+  DialogButton,
+  DialogTemplate,
+  Input,
+  Label,
+  Checkbox,
+  Dropdown,
+} from '~/components/ui/';
 import { cn } from '~/utils/';
 import { useScreenshot } from '~/utils/screenshotContext';
 
@@ -70,9 +78,9 @@ export default function ExportModel({ open, onOpenChange }) {
     recursive = false,
   }) => {
     let children = [];
-    if (messages?.length)
-      if (branches)
-        for (const message of messages)
+    if (messages?.length) {
+      if (branches) {
+        for (const message of messages) {
           children.push(
             await buildMessageTree({
               messageId: message?.messageId,
@@ -82,7 +90,8 @@ export default function ExportModel({ open, onOpenChange }) {
               recursive,
             }),
           );
-      else {
+        }
+      } else {
         let message = messages[0];
         if (messages?.length > 1) {
           const siblingIdx = await getSiblingIdx(messageId);
@@ -99,16 +108,20 @@ export default function ExportModel({ open, onOpenChange }) {
           }),
         ];
       }
+    }
 
-    if (recursive) return { ...message, children: children };
-    else {
+    if (recursive) {
+      return { ...message, children: children };
+    } else {
       let ret = [];
       if (message) {
         let _message = { ...message };
         delete _message.children;
         ret = [_message];
       }
-      for (const child of children) ret = ret.concat(child);
+      for (const child of children) {
+        ret = ret.concat(child);
+      }
       return ret;
     }
   };
@@ -204,9 +217,15 @@ export default function ExportModel({ open, onOpenChange }) {
     data += '\n## History\n';
     for (const message of messages) {
       data += `**${message?.sender}:**\n${message?.text}\n`;
-      if (message.error) data += '*(This is an error message)*\n';
-      if (message.unfinished) data += '*(This is an unfinished message)*\n';
-      if (message.cancelled) data += '*(This is a cancelled message)*\n';
+      if (message.error) {
+        data += '*(This is an error message)*\n';
+      }
+      if (message.unfinished) {
+        data += '*(This is an unfinished message)*\n';
+      }
+      if (message.cancelled) {
+        data += '*(This is a cancelled message)*\n';
+      }
       data += '\n\n';
     }
 
@@ -247,9 +266,15 @@ export default function ExportModel({ open, onOpenChange }) {
     data += '\nHistory\n########################\n';
     for (const message of messages) {
       data += `>> ${message?.sender}:\n${message?.text}\n`;
-      if (message.error) data += '(This is an error message)\n';
-      if (message.unfinished) data += '(This is an unfinished message)\n';
-      if (message.cancelled) data += '(This is a cancelled message)\n';
+      if (message.error) {
+        data += '(This is an error message)\n';
+      }
+      if (message.unfinished) {
+        data += '(This is an unfinished message)\n';
+      }
+      if (message.cancelled) {
+        data += '(This is a cancelled message)\n';
+      }
       data += '\n\n';
     }
 
@@ -271,7 +296,9 @@ export default function ExportModel({ open, onOpenChange }) {
       recursive: recursive,
     };
 
-    if (includeOptions) data.options = cleanupPreset({ preset: conversation, endpointsConfig });
+    if (includeOptions) {
+      data.options = cleanupPreset({ preset: conversation, endpointsConfig });
+    }
 
     const messages = await buildMessageTree({
       messageId: conversation?.conversationId,
@@ -281,8 +308,11 @@ export default function ExportModel({ open, onOpenChange }) {
       recursive: recursive,
     });
 
-    if (recursive) data.messagesTree = messages.children;
-    else data.messages = messages;
+    if (recursive) {
+      data.messagesTree = messages.children;
+    } else {
+      data.messages = messages;
+    }
 
     exportFromJSON({
       data: data,
@@ -293,11 +323,17 @@ export default function ExportModel({ open, onOpenChange }) {
   };
 
   const exportConversation = () => {
-    if (type === 'json') exportJSON();
-    else if (type == 'text') exportText();
-    else if (type == 'markdown') exportMarkdown();
-    else if (type == 'csv') exportCSV();
-    else if (type == 'screenshot') exportScreenshot();
+    if (type === 'json') {
+      exportJSON();
+    } else if (type == 'text') {
+      exportText();
+    } else if (type == 'markdown') {
+      exportMarkdown();
+    } else if (type == 'csv') {
+      exportCSV();
+    } else if (type == 'screenshot') {
+      exportScreenshot();
+    }
   };
 
   const defaultTextProps =
