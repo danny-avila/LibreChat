@@ -9,19 +9,6 @@
   - Install Homebrew (if not already installed) by following the instructions on https://brew.sh/
   - Install Node.js and npm by running `brew install node`
   - Install MongoDB (if not using Docker) by running `brew tap mongodb/brew` and `brew install mongodb-community`
-  
-  - **Create a MongoDB database**
-    
-    - Navigate to https://www.mongodb.com/ and Sign In or Create an account
-    - Create a new project
-    - Build a Database using the free plan and name the cluster (example: LibreChat)
-    - Use the "Username and Password" method for authentication
-    - Add your current IP to the access list
-    - Then in the Database Deployment tab click on Connect
-    - In "Choose a connection method" select "Connect your application"
-    - Driver = Node.js / Version = 4.1 or later
-    - Copy the connection string and save it somewhere(you will need it later)
-
 
  ## Instructions:
 
@@ -29,6 +16,8 @@
   - Change into the cloned directory by running cd LibreChat
   - If using MongoDB Atlas, remove &w=majority from the default connection string
 Follow the instructions for setting up proxies, access tokens, and user system:
+  
+## [Create a MongoDB database](mongodb.md) (Required)
 
 ## [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
 - You must set up at least one of these tokens or APIs to run the app.

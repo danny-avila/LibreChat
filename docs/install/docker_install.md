@@ -110,18 +110,7 @@ To update LibreChat. enter these commands one after the other from the root dir:
 
 ### **[LibreChat on Docker Hub](https://hub.docker.com/r/chatgptclone/app/tags)**
 
-### **Create a MongoDB database** (Not required if you'd like to use the local database installed by Docker)
-
-Navigate to https://www.mongodb.com/ and Sign In or Create an account
-
-- Create a new project
-- Build a Database using the free plan and name the cluster (example: LibreChat)
-- Use the "Username and Password" method for authentication
-- Add your current IP to the access list
-- In the Database Deployment tab, click on Connect
-- "Choose a connection method" select "Connect your application"
-- Driver = Node.js / Version = 4.1 or later
-- Copy the connection string, fill in your password and remove `&w=majority` from default connection string.
+### **[Create a MongoDB database](mongodb.md)** (Not required if you'd like to use the local database installed by Docker)
 
 ---
 
