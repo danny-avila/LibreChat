@@ -6,9 +6,15 @@ import Italy from './languages/It';
 // input: language code in string
 // returns an object of translated strings in the language
 export const getTranslations = (langCode: string) => {
-  if (langCode === 'en') return English;
-  if (langCode === 'cn') return Chinese;
-  if (langCode === 'it') return Italy;
+  if (langCode === 'en') {
+    return English;
+  }
+  if (langCode === 'cn') {
+    return Chinese;
+  }
+  if (langCode === 'it') {
+    return Italy;
+  }
   // === add conditionals here for additional languages here === //
   return English; // default to English
 };

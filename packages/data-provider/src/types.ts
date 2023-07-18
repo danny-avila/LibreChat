@@ -61,7 +61,7 @@ export type TEndpointOption = {
   model?: string;
   promptPrefix?: string;
   temperature?: number;
-}
+};
 
 export type TPluginAuthConfig = {
   authField: string;
@@ -257,7 +257,7 @@ export type TStartupConfig = {
   serverDomain: string;
   registrationEnabled: boolean;
   socialLoginEnabled: boolean;
-}
+};
 
 export type TRefreshTokenResponse = {
   token: string;

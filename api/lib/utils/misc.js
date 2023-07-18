@@ -4,7 +4,9 @@ const cleanUpPrimaryKeyValue = (value) => {
 };
 
 function replaceSup(text) {
-  if (!text.includes('<sup>')) return text;
+  if (!text.includes('<sup>')) {
+    return text;
+  }
   const replacedText = text.replace(/<sup>/g, '^').replace(/\s+<\/sup>/g, '^');
   return replacedText;
 }

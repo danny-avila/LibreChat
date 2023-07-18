@@ -44,4 +44,3 @@ export const alternateName = {
   google: 'PaLM',
   anthropic: 'Anthropic',
 };
-

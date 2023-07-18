@@ -11,8 +11,12 @@ function ChatGPTOptions() {
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
-  if (endpoint !== 'chatGPTBrowser') return null;
-  if (conversationId !== 'new') return null;
+  if (endpoint !== 'chatGPTBrowser') {
+    return null;
+  }
+  if (conversationId !== 'new') {
+    return null;
+  }
 
   const models = endpointsConfig?.['chatGPTBrowser']?.['availableModels'] || [];
 

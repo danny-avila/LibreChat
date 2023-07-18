@@ -19,14 +19,7 @@ const optionText =
 import store from '~/store';
 
 function Settings(props) {
-  const {
-    readonly,
-    agent,
-    skipCompletion,
-    model,
-    temperature,
-    setOption,
-  } = props;
+  const { readonly, agent, skipCompletion, model, temperature, setOption } = props;
   const endpoint = 'gptPlugins';
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
@@ -45,7 +38,7 @@ function Settings(props) {
   const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
 
   return (
-    <div className="md:h-[350px] h-[490px] overflow-y-auto">
+    <div className="h-[490px] overflow-y-auto md:h-[350px]">
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
@@ -62,28 +55,40 @@ function Settings(props) {
               containerClassName="flex w-full resize-none"
             />
           </div>
-          <div className="grid w-full items-center gap-2 grid-cols-2">
+          <div className="grid w-full grid-cols-2 items-center gap-2">
             <HoverCard openDelay={500}>
-              <HoverCardTrigger className='w-[100px]'>
+              <HoverCardTrigger className="w-[100px]">
                 <label
                   htmlFor="functions-agent"
                   className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                 >
                   <small>Use Functions</small>
                 </label>
-                <Switch id="functions-agent" checked={agent === 'functions'} onCheckedChange={onCheckedChangeAgent} disabled={readonly} className="mt-2 ml-4"/>
+                <Switch
+                  id="functions-agent"
+                  checked={agent === 'functions'}
+                  onCheckedChange={onCheckedChangeAgent}
+                  disabled={readonly}
+                  className="ml-4 mt-2"
+                />
               </HoverCardTrigger>
               <OptionHover type="func" side="right" />
             </HoverCard>
             <HoverCard openDelay={500}>
-              <HoverCardTrigger className='w-[100px] ml-[-60px]'>
+              <HoverCardTrigger className="ml-[-60px] w-[100px]">
                 <label
                   htmlFor="skip-completion"
                   className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                 >
                   <small>Skip Completion</small>
                 </label>
-                <Switch id="skip-completion" checked={skipCompletion === true} onCheckedChange={onCheckedChangeSkip} disabled={readonly} className="mt-2 ml-4"/>
+                <Switch
+                  id="skip-completion"
+                  checked={skipCompletion === true}
+                  onCheckedChange={onCheckedChangeSkip}
+                  disabled={readonly}
+                  className="ml-4 mt-2"
+                />
               </HoverCardTrigger>
               <OptionHover type="skip" side="right" />
             </HoverCard>

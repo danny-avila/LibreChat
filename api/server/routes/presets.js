@@ -33,7 +33,9 @@ router.post('/delete', requireJwtAuth, async (req, res) => {
   let filter = {};
   const { presetId } = req.body.arg || {};
 
-  if (presetId) filter = { presetId };
+  if (presetId) {
+    filter = { presetId };
+  }
 
   console.log('delete preset filter', filter);
 

@@ -6,7 +6,7 @@ type ConfigProps = {
   setToken: React.Dispatch<React.SetStateAction<string>>;
 };
 
-const OtherConfig = ({ token, setToken } : ConfigProps) => {
+const OtherConfig = ({ token, setToken }: ConfigProps) => {
   return (
     <InputWithLabel
       id={'chatGPTLabel'}

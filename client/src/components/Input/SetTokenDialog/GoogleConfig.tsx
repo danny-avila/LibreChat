@@ -1,7 +1,7 @@
 import React from 'react';
 import FileUpload from '../NewConversationMenu/FileUpload';
 
-const GoogleConfig = ({ setToken } : { setToken: React.Dispatch<React.SetStateAction<string>> }) => {
+const GoogleConfig = ({ setToken }: { setToken: React.Dispatch<React.SetStateAction<string>> }) => {
   return (
     <FileUpload
       id="googleKey"
@@ -16,24 +16,24 @@ const GoogleConfig = ({ setToken } : { setToken: React.Dispatch<React.SetStateAc
 
         if (
           !credentials.client_email ||
-        typeof credentials.client_email !== 'string' ||
-        credentials.client_email.length <= 2
+          typeof credentials.client_email !== 'string' ||
+          credentials.client_email.length <= 2
         ) {
           return false;
         }
 
         if (
           !credentials.project_id ||
-        typeof credentials.project_id !== 'string' ||
-        credentials.project_id.length <= 2
+          typeof credentials.project_id !== 'string' ||
+          credentials.project_id.length <= 2
         ) {
           return false;
         }
 
         if (
           !credentials.private_key ||
-        typeof credentials.private_key !== 'string' ||
-        credentials.private_key.length <= 600
+          typeof credentials.private_key !== 'string' ||
+          credentials.private_key.length <= 600
         ) {
           return false;
         }
