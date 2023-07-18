@@ -36,15 +36,6 @@ function Login() {
           </div>
         )}
         <LoginForm onSubmit={login} />
-        {startupConfig?.registrationEnabled && (
-          <p className="my-4 text-center text-sm font-light text-gray-700">
-            {' '}
-            {localize(lang, 'com_auth_no_account')}{' '}
-            <a href="/register" className="p-1 text-green-500 hover:underline">
-              {localize(lang, 'com_auth_sign_up')}
-            </a>
-          </p>
-        )}
         {startupConfig?.socialLoginEnabled && (
           <>
             <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
@@ -53,25 +44,11 @@ function Login() {
             <div className="mt-8" />
           </>
         )}
-        {startupConfig?.googleLoginEnabled && startupConfig?.socialLoginEnabled && (
-          <>
-
-            <div className="mt-2 flex gap-x-2">
-              <a
-                aria-label="Login with Google"
-                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/google`}>
-                <GoogleIcon />
-                <p>{localize(lang, 'com_auth_google_login')}</p>
-              </a>
-            </div>
-          </>
-        )}
         {startupConfig?.openidLoginEnabled && startupConfig?.socialLoginEnabled && (
           <>
             <div className="mt-2 flex gap-x-2">
               <a
-                aria-label="Login with OpenID"
+                aria-label="Login with Office365"
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
                 href={`${startupConfig.serverDomain}/oauth/openid`}
               >
@@ -81,34 +58,6 @@ function Login() {
                   <OpenIDIcon />
                 )}
                 <p>{startupConfig.openidLabel}</p>
-              </a>
-            </div>
-          </>
-        )}
-        {startupConfig?.githubLoginEnabled && startupConfig?.socialLoginEnabled && (
-          <>
-
-            <div className="mt-2 flex gap-x-2">
-              <a
-                aria-label="Login with GitHub"
-                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/github`}>
-                <GithubIcon />
-                <p>{localize(lang, 'com_auth_github_login')}</p>
-              </a>
-            </div>
-          </>
-        )}
-        {startupConfig?.discordLoginEnabled && startupConfig?.socialLoginEnabled && (
-          <>
-
-            <div className="mt-2 flex gap-x-2">
-              <a
-                aria-label="Login with Discord"
-                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/discord`}>
-                <DiscordIcon />
-                <p>{localize(lang, 'com_auth_discord_login')}</p>
               </a>
             </div>
           </>
