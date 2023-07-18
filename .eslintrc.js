@@ -61,7 +61,7 @@ module.exports = {
     'no-restricted-syntax': 'off',
     'react/prop-types': ['off'],
     'react/display-name': ['off'],
-    quotes: ['error', 'single'],
+    // quotes: ['error', 'single'],
   },
   overrides: [
     {
@@ -104,7 +104,7 @@ module.exports = {
       files: ['**/*.ts', '**/*.tsx'],
       parser: '@typescript-eslint/parser',
       parserOptions: {
-        project: './tsconfig.json'
+        project: './tsconfig.json',
       },
       plugins: ['@typescript-eslint/eslint-plugin', 'jest'],
       extends: [

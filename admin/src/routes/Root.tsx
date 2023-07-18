@@ -10,7 +10,7 @@ import {
   UsersIcon,
   // UserGroupIcon,
   CogIcon,
-  XMarkIcon
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { PageContainer } from '@/common/components';
@@ -25,13 +25,13 @@ export type TNavItem = {
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: HomeIcon, current: true },
+  { name: 'Settings', href: '/settings', icon: WrenchScrewdriverIcon, current: false },
   { name: 'Users', href: '/users', icon: UsersIcon, current: false },
   // { name: 'Groups', href: '#', icon: UserGroupIcon, current: false },
   { name: 'Models', href: '#', icon: CpuChipIcon, current: false },
   { name: 'Plugins', href: '#', icon: CogIcon, current: false },
   { name: 'Templates', href: '#', icon: DocumentDuplicateIcon, current: false },
   { name: 'Reports', href: '#', icon: ChartPieIcon, current: false },
-  { name: 'Settings', href: '#', icon: WrenchScrewdriverIcon, current: false }
 ];
 
 function classNames(...classes) {
@@ -50,7 +50,7 @@ export default function Example() {
     const updatedNavigation = sidebarNavigation.map((navItem) => {
       return {
         ...navItem,
-        current: navItem.name === item.name ? true : false
+        current: navItem.name === item.name ? true : false,
       };
     });
     setSidebarNavigation(updatedNavigation);
@@ -127,7 +127,7 @@ export default function Example() {
                                     item.current
                                       ? 'bg-gray-50 text-indigo-600'
                                       : 'text-gray-700 hover:bg-gray-50 hover:text-indigo-600',
-                                    'group flex cursor-pointer gap-x-3 rounded-md p-2 text-sm font-semibold leading-6'
+                                    'group flex cursor-pointer gap-x-3 rounded-md p-2 text-sm font-semibold leading-6',
                                   )}
                                 >
                                   <item.icon
@@ -135,7 +135,7 @@ export default function Example() {
                                       item.current
                                         ? 'text-indigo-600'
                                         : 'text-gray-400 group-hover:text-indigo-600',
-                                      'h-6 w-6 shrink-0'
+                                      'h-6 w-6 shrink-0',
                                     )}
                                     aria-hidden="true"
                                   />
@@ -177,7 +177,7 @@ export default function Example() {
                             item.current
                               ? 'bg-green-100 text-indigo-600'
                               : 'text-gray-700 hover:bg-gray-100 hover:text-indigo-600',
-                            'group flex cursor-pointer gap-x-3 rounded-md p-2 text-sm font-semibold leading-6'
+                            'group flex cursor-pointer gap-x-3 rounded-md p-2 text-sm font-semibold leading-6',
                           )}
                         >
                           <item.icon
@@ -185,7 +185,7 @@ export default function Example() {
                               item.current
                                 ? 'text-indigo-600'
                                 : 'text-gray-400 group-hover:text-indigo-600',
-                              'h-6 w-6 shrink-0'
+                              'h-6 w-6 shrink-0',
                             )}
                             aria-hidden="true"
                           />
