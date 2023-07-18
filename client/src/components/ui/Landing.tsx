@@ -5,16 +5,14 @@ import SunIcon from '../svg/SunIcon';
 import LightningIcon from '../svg/LightningIcon';
 import CautionIcon from '../svg/CautionIcon';
 import store from '~/store';
-import { localize } from '~/localization/Translation';
 import { useGetStartupConfig } from '@librechat/data-provider';
 
 export default function Landing() {
   const { data: config } = useGetStartupConfig();
   const setText = useSetRecoilState(store.text);
   const conversation = useRecoilValue(store.conversation);
-  const lang = useRecoilValue(store.lang);
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
-  const { title = localize(lang, 'com_ui_new_chat') } = conversation || {};
+  const { title = 'New Chat' } = conversation || {};
 
   useDocumentTitle(title);
 
@@ -32,66 +30,66 @@ export default function Landing() {
           id="landing-title"
           className="mb-10 ml-auto mr-auto mt-6 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-16 md:mt-[10vh]"
         >
-          {config?.appTitle || 'LibreChat'}
+          {config?.appTitle || 'AITok Chat'}
         </h1>
         <div className="items-start gap-3.5 text-center md:flex">
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
             <h2 className="m-auto flex items-center gap-3 text-lg font-normal md:flex-col md:gap-2">
               <SunIcon />
-              {localize(lang, 'com_ui_examples')}
+              Examples
             </h2>
             <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
               <button
                 onClick={clickHandler}
                 className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
               >
-                &quot;{localize(lang, 'com_ui_example_quantum_computing')}&quot; →
+                &quot;Explain quantum computing in simple terms&quot; →
               </button>
               <button
                 onClick={clickHandler}
                 className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
               >
-                &quot;{localize(lang, 'com_ui_example_10_year_old_b_day')}&quot; →
+                &quot;Got any creative ideas for a 10 year old&apos;s birthday?&quot; →
               </button>
               <button
                 onClick={clickHandler}
                 className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
               >
-                &quot;{localize(lang, 'com_ui_example_http_in_js')}&quot; →
+                &quot;How do I make an HTTP request in Javascript?&quot; →
               </button>
             </ul>
           </div>
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
             <h2 className="m-auto flex items-center gap-3 text-lg font-normal md:flex-col md:gap-2">
               <LightningIcon />
-              {localize(lang, 'com_ui_capabilities')}
+              Capabilities
             </h2>
             <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {localize(lang, 'com_ui_capability_remember')}
+                Remembers what user said earlier in the conversation
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {localize(lang, 'com_ui_capability_correction')}
+                Allows user to provide follow-up corrections
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {localize(lang, 'com_ui_capability_decline_requests')}
+                Trained to decline inappropriate requests
               </li>
             </ul>
           </div>
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
             <h2 className="m-auto flex items-center gap-3 text-lg font-normal md:flex-col md:gap-2">
               <CautionIcon />
-              {localize(lang, 'com_ui_limitations')}
+              Limitations
             </h2>
             <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {localize(lang, 'com_ui_limitation_incorrect_info')}
+                May occasionally generate incorrect information
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {localize(lang, 'com_ui_limitation_harmful_biased')}
+                May occasionally produce harmful instructions or biased content
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {localize(lang, 'com_ui_limitation_limited_2021')}
+                Limited knowledge of world and events after 2021
               </li>
             </ul>
           </div>
