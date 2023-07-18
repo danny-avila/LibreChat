@@ -1,4 +1,4 @@
-# Mac Install
+# Mac Installation Guide
 ## **Recommended : [Docker Install](docker_install.md)**
 
 ---

@@ -1,7 +1,43 @@
-# Linux Installation
-## **Recommended: [Docker Install](docker_install.md)**
+# Linux Installation Guide
+## **Recommended:**
+
+[![Watch the video](https://img.youtube.com/vi/w7VqivpdfZk/maxresdefault.jpg)](https://youtu.be/w7VqivpdfZk)
+Click on the thumbnail to open the video☝️
+---
+
+In this video, you will learn how to install and run LibreChat, using Docker on Ubuntu 22.04 LTS.
+
+#### Timestamps
+
+- 0:00 - Intro
+- 0:14 - Update the system
+- 0:29 - Clone the repository
+- 0:37 - Docker installation 
+- 1:03 - Enter in the folder
+- 1:07 - Create the .env file
+- 1:14 - Build using docker-compose
+- 1:29 - Start LibreChat
+- 1:43 - Test
+
+#### Instructions
+
+Here are the steps to follow:
+- Update the system: `sudo apt update`
+- Clone LibreChat: `git clone https://github.com/danny-avila/LibreChat.git`
+- Install Docker: `sudo apt install docker.io && apt install docker-compose -y`
+- Enter the folder: `cd LibreChat`
+- Create the .env file: `cp .env.example .env`
+- Build the Docker image: `docker-compose build`
+- Start LibreChat: `docker-compose up -d`
+
+Note: If you run the command on the same computer and want to access it, navigate to `localhost:3080`. You should see a login page where you can create or sign in to your account. Then you can choose an AI model and start chatting. 
+
+Have fun!
 
 ---
+## **[Docker Install](docker_install.md)** (General documentation)
+--- 
+
 ## **Manual Installation:**
 
 ## Prerequisites
@@ -50,17 +86,7 @@ curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
 sudo apt-get install -y nodejs
 ```
 
-## Create a MongoDB database:
-
-- Navigate to https://www.mongodb.com/ and sign in or create an account.
-- Create a new project.
-- Build a Database using the free plan and name the cluster (example: LibreChat).
-- Use the "Username and Password" method for authentication.
-- Add your current IP to the access list.
-- Then in the Database Deployment tab click on Connect.
-- In "Choose a connection method" select "Connect your application".
-- Driver = Node.js / Version = 4.1 or later.
-- Copy the connection string and save it somewhere (you will need it later).
+## [Create a MongoDB database](mongodb.md) (Required)
 
 ## [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
 - You must set up at least one of these tokens or APIs to run the app.
