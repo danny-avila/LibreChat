@@ -2,6 +2,7 @@
   "name": "LibreChat",
   "version": "0.5.4",
   "description": "",
+  "proxy": "<http://localhost:4242>",
   "workspaces": [
     "api",
     "client",

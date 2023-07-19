@@ -29,7 +29,11 @@ const rawBodyBuffer = (req, res, buf, encoding) => {
 
   const app = express();
   app.use(errorController);
-  app.use(express.json({ limit: '3mb' }));
+  app.use(express.json({
+    verify: function(req, res, buf) {
+      req.rawBody = buf.toString();
+    }
+  }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(express.static(path.join(projectPath, 'dist')));
   app.use(express.static(path.join(projectPath, 'public')));

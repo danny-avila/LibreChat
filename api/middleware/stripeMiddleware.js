@@ -5,7 +5,12 @@ const User = require('../models/User');
 
 async function updateSubscriptionStatus(subscription) {
   // Find the user with the given subscription ID
-  const user = await User.findOne({ stripeSubscriptionId: subscription.id });
+  let user = await User.findOne({ stripeSubscriptionId: subscription.id });
+
+  // If the user is not found with the subscription ID, find the user with the customer ID
+  if (!user) {
+    user = await User.findOne({ stripeCustomerId: subscription.customer });
+  }
 
   // Update the user's subscription status
   if (user) {
@@ -14,7 +19,7 @@ async function updateSubscriptionStatus(subscription) {
     });
     console.log(`Updated subscription status for User ${user.id}`);
   } else {
-    console.log("User not found with the given subscription ID.");
+    console.log("User not found with the given subscription ID or customer ID.");
   }
 }
 
@@ -23,17 +28,19 @@ async function handleSuccessfulPayment(paymentInvoice) {
   const subscription = await stripe.subscriptions.retrieve(paymentInvoice.subscription);
 
   // Get the user to update
-  const user = await User.findOne({ stripeSubscriptionId: subscription.id });
+  const user = await User.findOne({ stripeCustomerId: subscription.customer });
+  console.log("User:", user);
 
-  // Update the user's subscription status
+  // Update the user's subscription status and stripeSubscriptionId
   if (user) {
     await User.findByIdAndUpdate(user._id, {
+      stripeSubscriptionId: subscription.id, // update stripeSubscriptionId
       subscriptionStatus: subscription.status,
     });
 
     console.log(`Payment succeeded for invoice ID: ${paymentInvoice.id}`);
   } else {
-    console.log("User not found with the given subscription ID.");
+    console.log("User not found with the given customer ID.");
   }
 }
 
@@ -51,10 +58,11 @@ function handleStripeWebhook() {
 
     switch (event.type) {
       case "customer.subscription.updated":
-      case "customer.subscription.deleted":
         {
           const subscription = event.data.object;
-          await updateSubscriptionStatus(subscription);
+          if (subscription.status === 'active') {
+            await updateSubscriptionStatus(subscription);
+          }
         }
         break;
       case "invoice.payment_succeeded":
@@ -71,5 +79,6 @@ function handleStripeWebhook() {
     res.status(200).json({ received: true });
   };
 }
+
 
 module.exports = { handleStripeWebhook };

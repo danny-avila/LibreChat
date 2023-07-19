@@ -1,55 +1,34 @@
 require('dotenv').config();
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const YOUR_DOMAIN = 'http://localhost:3090'; // Change this to the domain you want to return to after Checkout
 
 async function createCustomer(name, email) {
   const customer = await stripe.customers.create({
-    name,
-    email,
+    name: name,
+    email: email,
   });
-
-  return customer.id; // return the created customer ID
+  return customer.id;
 }
 
-
-async function createSubscription(customerId, priceId) {
-  return await stripe.subscriptions.create({
-    customer: customerId,
-    items: [{ price: priceId }],
-    expand: ["latest_invoice.payment_intent"],
-  });
-}
-
-async function cancelSubscription(subscriptionId) {
-  return await stripe.subscriptions.del(subscriptionId);
-}
-
-async function updatePaymentMethod(customerId, paymentMethodId) {
-  try {
-    // Attach the payment method to the customer
-    await stripe.paymentMethods.attach(paymentMethodId, { customer: customerId });
-    console.log("Payment Method Attached:", paymentMethodId);
-
-    // Update the customer's invoice settings to use the attached payment method
-    const customer = await stripe.customers.update(customerId, {
-      invoice_settings: {
-        default_payment_method: paymentMethodId,
+async function createCheckoutSession(priceId, customerId) {
+  const session = await stripe.checkout.sessions.create({
+    customer: customerId, // Add this line
+    line_items: [
+      {
+        price: priceId,
+        quantity: 1,
       },
-    });
+    ],
+    mode: 'subscription',
+    success_url: `${YOUR_DOMAIN}?success=true`,
+    cancel_url: `${YOUR_DOMAIN}?canceled=true`,
+    automatic_tax: {enabled: false},
+  });
 
-    console.log("Customer Updated:", customer);
-    return customer;
-
-  } catch (error) {
-    console.error("Stripe Error:", error);
-    throw error;
-  }
+  return session.url; // return the URL of the Checkout session
 }
-
-
 
 module.exports = {
-  createCustomer,
-  createSubscription,
-  cancelSubscription,
-  updatePaymentMethod,
+  createCustomer, // Export createCustomer function
+  createCheckoutSession,
 };
