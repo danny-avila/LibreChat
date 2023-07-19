@@ -16,3 +16,8 @@ import '@testing-library/jest-dom/extend-expect';
 // Mock canvas when run unit test cases with jest.
 // 'react-lottie' uses canvas
 import 'jest-canvas-mock';
+
+// Polyfills text encoder and text decoder to jsdom
+// allows code transformation of AgGridReact
+import { TextEncoder, TextDecoder } from 'util';
+Object.assign(global, { TextDecoder, TextEncoder });
