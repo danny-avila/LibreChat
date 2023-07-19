@@ -6,7 +6,7 @@ import { useClearConversationsMutation } from '@librechat/data-provider';
 
 export const ThemeSelector = ({
   theme,
-  onChange
+  onChange,
 }: {
   theme: string;
   onChange: (value: string) => void;
@@ -28,7 +28,7 @@ export const ThemeSelector = ({
 export const ClearChatsButton = ({
   confirmClear,
   showText = true,
-  onClick
+  onClick,
 }: {
   confirmClear: boolean;
   showText: boolean;
@@ -74,7 +74,7 @@ function General() {
     (value: string) => {
       setTheme(value);
     },
-    [setTheme]
+    [setTheme],
   );
 
   return (

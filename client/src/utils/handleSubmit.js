@@ -17,7 +17,7 @@ const useMessageHandler = () => {
 
   const ask = (
     { text, parentMessageId = null, conversationId = null, messageId = null },
-    { isRegenerate = false } = {}
+    { isRegenerate = false } = {},
   ) => {
     if (!!isSubmitting || text === '') {
       return;
@@ -40,7 +40,7 @@ const useMessageHandler = () => {
         top_p: currentConversation?.top_p ?? 1,
         presence_penalty: currentConversation?.presence_penalty ?? 0,
         frequency_penalty: currentConversation?.frequency_penalty ?? 0,
-        token: endpointsConfig[endpoint]?.userProvide ? getToken() : null
+        token: endpointsConfig[endpoint]?.userProvide ? getToken() : null,
       };
       responseSender = endpointOption.chatGptLabel ?? 'ChatGPT';
     } else if (endpoint === 'google') {
@@ -53,13 +53,13 @@ const useMessageHandler = () => {
         modelLabel: currentConversation?.modelLabel ?? null,
         promptPrefix: currentConversation?.promptPrefix ?? null,
         examples: currentConversation?.examples ?? [
-          { input: { content: '' }, output: { content: '' } }
+          { input: { content: '' }, output: { content: '' } },
         ],
         temperature: currentConversation?.temperature ?? 0.2,
         maxOutputTokens: currentConversation?.maxOutputTokens ?? 1024,
         topP: currentConversation?.topP ?? 0.95,
         topK: currentConversation?.topK ?? 40,
-        token: endpointsConfig[endpoint]?.userProvide ? getToken() : null
+        token: endpointsConfig[endpoint]?.userProvide ? getToken() : null,
       };
       responseSender = endpointOption.chatGptLabel ?? 'ChatGPT';
     } else if (endpoint === 'bingAI') {
@@ -73,9 +73,25 @@ const useMessageHandler = () => {
         conversationSignature: currentConversation?.conversationSignature ?? null,
         clientId: currentConversation?.clientId ?? null,
         invocationId: currentConversation?.invocationId ?? 1,
-        token: endpointsConfig[endpoint]?.userProvide ? getToken() : null
+        token: endpointsConfig[endpoint]?.userProvide ? getToken() : null,
       };
       responseSender = endpointOption.jailbreak ? 'Sydney' : 'BingAI';
+    } else if (endpoint === 'anthropic') {
+      endpointOption = {
+        endpoint,
+        model:
+          currentConversation?.model ??
+          endpointsConfig[endpoint]?.availableModels?.[0] ??
+          'claude-1',
+        modelLabel: currentConversation?.modelLabel ?? null,
+        promptPrefix: currentConversation?.promptPrefix ?? null,
+        temperature: currentConversation?.temperature ?? 0.7,
+        maxOutputTokens: currentConversation?.maxOutputTokens ?? 1024,
+        topP: currentConversation?.topP ?? 0.7,
+        topK: currentConversation?.topK ?? 40,
+        token: endpointsConfig[endpoint]?.userProvide ? getToken() : null,
+      };
+      responseSender = 'Anthropic';
     } else if (endpoint === 'chatGPTBrowser') {
       endpointOption = {
         endpoint,
@@ -83,7 +99,7 @@ const useMessageHandler = () => {
           currentConversation?.model ??
           endpointsConfig[endpoint]?.availableModels?.[0] ??
           'text-davinci-002-render-sha',
-        token: endpointsConfig[endpoint]?.userProvide ? getToken() : null
+        token: endpointsConfig[endpoint]?.userProvide ? getToken() : null,
       };
       responseSender = 'ChatGPT';
     } else if (endpoint === 'gptPlugins') {
@@ -107,7 +123,7 @@ const useMessageHandler = () => {
         presence_penalty: currentConversation?.presence_penalty ?? 0,
         frequency_penalty: currentConversation?.frequency_penalty ?? 0,
         token: endpointsConfig[endpoint]?.userProvide ? getToken() : null,
-        agentOptions
+        agentOptions,
       };
       responseSender = 'ChatGPT';
     } else if (endpoint === null) {
@@ -143,7 +159,7 @@ const useMessageHandler = () => {
       isCreatedByUser: true,
       parentMessageId,
       conversationId,
-      messageId: fakeMessageId
+      messageId: fakeMessageId,
     };
 
     // construct the placeholder response message
@@ -154,22 +170,22 @@ const useMessageHandler = () => {
       messageId: (isRegenerate ? messageId : fakeMessageId) + '_',
       conversationId,
       unfinished: endpoint === 'azureOpenAI' || endpoint === 'openAI' ? false : true,
-      submitting: true
+      submitting: true,
     };
 
     const submission = {
       conversation: {
         ...currentConversation,
-        conversationId
+        conversationId,
       },
       endpointOption,
       message: {
         ...currentMsg,
-        overrideParentMessageId: isRegenerate ? messageId : null
+        overrideParentMessageId: isRegenerate ? messageId : null,
       },
       messages: currentMessages,
       isRegenerate,
-      initialResponse
+      initialResponse,
     };
 
     console.log('User Input:', text, submission);
@@ -189,7 +205,7 @@ const useMessageHandler = () => {
       ask({ ...parentMessage }, { isRegenerate: true });
     else
       console.error(
-        'Failed to regenerate the message: parentMessage not found or not created by user.'
+        'Failed to regenerate the message: parentMessage not found or not created by user.',
       );
   };
 

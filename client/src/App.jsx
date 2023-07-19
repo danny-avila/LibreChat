@@ -16,8 +16,8 @@ const App = () => {
         if (error?.response?.status === 401) {
           setError(error);
         }
-      }
-    })
+      },
+    }),
   });
 
   return (

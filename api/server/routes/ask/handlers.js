@@ -134,7 +134,7 @@ function formatAction(action) {
     input: getString(action.toolInput),
     thought: action.log.includes('Thought: ')
       ? action.log.split('\n')[0].replace('Thought: ', '')
-      : action.log.split('\n')[0]
+      : action.log.split('\n')[0],
   };
 
   formattedAction.thought = getString(formattedAction.thought);
@@ -161,5 +161,5 @@ module.exports = {
   createOnProgress,
   handleText,
   formatSteps,
-  formatAction
+  formatAction,
 };

@@ -11,7 +11,7 @@ export default function PresetItem({ preset = {}, value, onChangePreset, onDelet
     endpoint: preset?.endpoint,
     model: preset?.model,
     error: false,
-    className: 'mr-2'
+    className: 'mr-2',
   });
 
   const getPresetTitle = () => {
@@ -28,7 +28,7 @@ export default function PresetItem({ preset = {}, value, onChangePreset, onDelet
     } else if (endpoint === 'bingAI') {
       const { jailbreak, toneStyle } = preset;
       if (toneStyle) _title += `: ${toneStyle}`;
-      if (jailbreak) _title += ` as Sydney`;
+      if (jailbreak) _title += ' as Sydney';
     } else if (endpoint === 'chatGPTBrowser') {
       const { model } = preset;
       if (model) _title += `: ${model}`;

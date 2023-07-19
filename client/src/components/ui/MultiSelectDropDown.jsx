@@ -16,7 +16,7 @@ function MultiSelectDropDown({
   containerClassName,
   isSelected,
   className,
-  optionValueKey = 'value'
+  optionValueKey = 'value',
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
@@ -37,7 +37,7 @@ function MultiSelectDropDown({
               <Listbox.Button
                 className={cn(
                   'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:border-green-600 focus:outline-none focus:ring-1 focus:ring-green-600 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
-                  className
+                  className,
                 )}
                 id={excludeIds[0]}
                 onClick={() => setIsOpen((prev) => !prev)}
@@ -57,7 +57,7 @@ function MultiSelectDropDown({
                   <span
                     className={cn(
                       'flex h-6 items-center gap-1 truncate text-sm text-gray-900 dark:text-white',
-                      !showLabel ? 'text-xs' : ''
+                      !showLabel ? 'text-xs' : '',
                     )}
                   >
                     {!showLabel && title.length > 0 && (
@@ -148,7 +148,7 @@ function MultiSelectDropDown({
                           <span
                             className={cn(
                               'flex h-6 items-center gap-1 text-gray-800 dark:text-gray-100',
-                              selected ? 'font-semibold' : ''
+                              selected ? 'font-semibold' : '',
                             )}
                           >
                             {option.name}

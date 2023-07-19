@@ -19,5 +19,5 @@ export default {
   ...search,
   ...preset,
   ...token,
-  ...lang
+  ...lang,
 };

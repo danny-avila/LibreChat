@@ -27,5 +27,5 @@ module.exports = {
   endpoints,
   stripe,
   plugins,
-  config
+  config,
 };

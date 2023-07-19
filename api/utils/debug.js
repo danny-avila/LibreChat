@@ -2,7 +2,7 @@ const levels = {
   NONE: 0,
   LOW: 1,
   MEDIUM: 2,
-  HIGH: 3
+  HIGH: 3,
 };
 
 let level = levels.HIGH;
@@ -41,6 +41,6 @@ module.exports = {
       console.log('Body:', req.body);
       console.groupEnd();
       return next();
-    }
-  }
+    },
+  },
 };

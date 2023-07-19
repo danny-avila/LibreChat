@@ -14,11 +14,11 @@ const askBing = async ({
   invocationId,
   toneStyle,
   token,
-  onProgress
+  onProgress,
 }) => {
   const { BingAIClient } = await import('@waylaidwanderer/chatgpt-api');
   const store = {
-    store: new KeyvFile({ filename: './data/cache.json' })
+    store: new KeyvFile({ filename: './data/cache.json' }),
   };
 
   const bingAIClient = new BingAIClient({
@@ -30,7 +30,7 @@ const askBing = async ({
     debug: false,
     cache: store,
     host: process.env.BINGAI_HOST || null,
-    proxy: process.env.PROXY || null
+    proxy: process.env.PROXY || null,
   });
 
   let options = {};
@@ -46,7 +46,7 @@ const askBing = async ({
       systemMessage,
       parentMessageId,
       toneStyle,
-      onProgress
+      onProgress,
     };
   else {
     options = {
@@ -55,7 +55,7 @@ const askBing = async ({
       systemMessage,
       parentMessageId,
       toneStyle,
-      onProgress
+      onProgress,
     };
 
     // don't give those parameters for new conversation

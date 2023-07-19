@@ -42,16 +42,16 @@ router.get('/', requireJwtAuth, async function (req, res) {
         {
           attributesToHighlight: ['text'],
           highlightPreTag: '**',
-          highlightPostTag: '**'
+          highlightPostTag: '**',
         },
-        true
+        true,
       )
     ).hits.map((message) => {
       const { _formatted, ...rest } = message;
       return {
         ...rest,
         searchResult: true,
-        text: _formatted.text
+        text: _formatted.text,
       };
     });
     const titles = (await Conversation.meiliSearch(q)).hits;
@@ -111,7 +111,7 @@ router.get('/enable', async function (req, res) {
   try {
     const client = new MeiliSearch({
       host: process.env.MEILI_HOST,
-      apiKey: process.env.MEILI_MASTER_KEY
+      apiKey: process.env.MEILI_MASTER_KEY,
     });
 
     const { status } = await client.health();

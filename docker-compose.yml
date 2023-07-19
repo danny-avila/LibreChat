@@ -31,7 +31,7 @@ services:
       - .env
     environment:
       - HOST=0.0.0.0
-      - MONGO_URI=mongodb://mongodb:27017/LibreChat
+      - MONGO_URI=mongodb+srv://noobskie:3hCOCrlQUfgMkt0K@gptchina.zwogdqy.mongodb.net/gptchina
       # - CHATGPT_REVERSE_PROXY=http://host.docker.internal:8080/api/conversation # if you are hosting your own chatgpt reverse proxy with docker
       # - OPENAI_REVERSE_PROXY=http://host.docker.internal:8070/v1/chat/completions # if you are hosting your own chatgpt reverse proxy with docker
       - MEILI_HOST=http://meilisearch:7700
@@ -63,5 +63,6 @@ services:
     environment:
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_HTTP_ADDR=meilisearch:7700
+      - MEILI_NO_ANALYTICS=true
     volumes:
       - ./meili_data:/meili_data

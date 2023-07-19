@@ -1,8 +1,7 @@
-
 const _ = require('lodash');
 const { genAzureChatCompletion, getAzureCredentials } = require('../utils/');
 
-const titleConvo = async ({ text, response, oaiApiKey }) => {
+const titleConvo = async ({ text, response, openAIApiKey, azure = false }) => {
   let title = 'New Chat';
   const ChatGPTClient = (await import('@waylaidwanderer/chatgpt-api')).default;
 
@@ -16,14 +15,13 @@ const titleConvo = async ({ text, response, oaiApiKey }) => {
     ||>Response:
     "${JSON.stringify(response?.text)}"
     
-    ||>Title:`
+    ||>Title:`,
     };
 
-    const azure = process.env.AZURE_API_KEY ? true : false;
     const options = {
       azure,
       reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
-      proxy: process.env.PROXY || null
+      proxy: process.env.PROXY || null,
     };
 
     const titleGenClientOptions = JSON.parse(JSON.stringify(options));
@@ -32,10 +30,10 @@ const titleConvo = async ({ text, response, oaiApiKey }) => {
       model: 'gpt-3.5-turbo',
       temperature: 0,
       presence_penalty: 0,
-      frequency_penalty: 0
+      frequency_penalty: 0,
     };
 
-    let apiKey = oaiApiKey || process.env.OPENAI_API_KEY;
+    let apiKey = openAIApiKey ?? process.env.OPENAI_API_KEY;
 
     if (azure) {
       apiKey = process.env.AZURE_API_KEY;

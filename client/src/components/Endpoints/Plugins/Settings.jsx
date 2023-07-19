@@ -8,7 +8,7 @@ import {
   Slider,
   InputNumber,
   HoverCard,
-  HoverCardTrigger
+  HoverCardTrigger,
 } from '~/components';
 import OptionHover from './OptionHover';
 const defaultTextProps =
@@ -30,7 +30,7 @@ function Settings(props) {
     freqP,
     presP,
     setOption,
-    tools
+    tools,
   } = props;
   const endpoint = 'gptPlugins';
 
@@ -59,7 +59,7 @@ function Settings(props) {
               disabled={readonly}
               className={cn(
                 defaultTextProps,
-                'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
               )}
               containerClassName="flex w-full resize-none"
             />
@@ -79,7 +79,7 @@ function Settings(props) {
                 }
                 className={cn(
                   defaultTextProps,
-                  'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                  'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
                 )}
               />
             </div>
@@ -95,11 +95,11 @@ function Settings(props) {
                 placeholder={
                   toolsSelected
                     ? 'Disabled with Tools Selected'
-                    : "Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
+                    : 'Set custom instructions. Defaults to: \'You are ChatGPT, a large language model trained by OpenAI.\''
                 }
                 className={cn(
                   defaultTextProps,
-                  'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 '
+                  'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 ',
                 )}
               />
             </div>
@@ -125,8 +125,8 @@ function Settings(props) {
                     defaultTextProps,
                     cn(
                       optionText,
-                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
-                    )
+                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    ),
                   )}
                 />
               </div>
@@ -162,8 +162,8 @@ function Settings(props) {
                     defaultTextProps,
                     cn(
                       optionText,
-                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
-                    )
+                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    ),
                   )}
                 />
               </div>
@@ -200,8 +200,8 @@ function Settings(props) {
                     defaultTextProps,
                     cn(
                       optionText,
-                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
-                    )
+                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    ),
                   )}
                 />
               </div>
@@ -238,8 +238,8 @@ function Settings(props) {
                     defaultTextProps,
                     cn(
                       optionText,
-                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200'
-                    )
+                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    ),
                   )}
                 />
               </div>

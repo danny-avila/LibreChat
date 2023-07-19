@@ -2,8 +2,6 @@ import { Menu, Transition } from '@headlessui/react';
 import { Fragment, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import SearchBar from './SearchBar';
-import TrashIcon from '../svg/TrashIcon';
-import GearIcon from '../svg/GearIcon';
 import Settings from './Settings';
 import { Download } from 'lucide-react';
 import NavLink from './NavLink';
@@ -12,13 +10,13 @@ import ClearConvos from './ClearConvos';
 import Logout from './Logout';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { cn } from '~/utils/';
-import DotsIcon from '../svg/DotsIcon';
 import SubscribeForm from "../Stripe/SubscribeForm.tsx";
 import { DialogOverlay, DialogContent } from "@reach/dialog";
 import { Button } from '../ui/Button';
 import "@reach/dialog/styles.css";
 
 import store from '~/store';
+import { LinkIcon, DotsIcon, GearIcon, TrashIcon } from '~/components';
 
 export default function NavLinks({ clearSearch, isSearchEnabled }) {
   const [showExports, setShowExports] = useState(false);
@@ -73,7 +71,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
             <Menu.Button
               className={cn(
                 'group-ui-open:bg-gray-800 flex w-full items-center gap-2.5 rounded-md px-3 py-3 text-sm transition-colors duration-200 hover:bg-gray-800',
-                open ? 'bg-gray-800' : ''
+                open ? 'bg-gray-800' : '',
               )}
             >
               <div className="-ml-0.5 h-5 w-5 flex-shrink-0">
@@ -112,7 +110,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                   <NavLink
                     className={cn(
                       'flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none',
-                      exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-white/50'
+                      exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-white/50',
                     )}
                     svg={() => <Download size={16} />}
                     text="Export conversation"
@@ -126,6 +124,14 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                     svg={() => <TrashIcon />}
                     text="Clear conversations"
                     clickHandler={() => setShowClearConvos(true)}
+                  />
+                </Menu.Item>
+                <Menu.Item as="div">
+                  <NavLink
+                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none"
+                    svg={() => <LinkIcon />}
+                    text="Help & FAQ"
+                    clickHandler={() => window.open('https://docs.librechat.ai/', '_blank')}
                   />
                 </Menu.Item>
                 <Menu.Item as="div">

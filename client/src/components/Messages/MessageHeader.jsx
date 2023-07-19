@@ -47,6 +47,8 @@ const MessageHeader = ({ isSearchView = false }) => {
         if (model) _title += `: ${model}`;
       } else if (endpoint === 'gptPlugins') {
         return plugins;
+      } else if (endpoint === 'anthropic') {
+        _title = 'Claude';
       } else if (endpoint === null) {
         null;
       } else {
@@ -61,7 +63,7 @@ const MessageHeader = ({ isSearchView = false }) => {
       <div
         className={cn(
           'dark:text-gray-450 w-full gap-1 border-b border-black/10 bg-gray-50 text-sm text-gray-500 transition-all hover:bg-gray-100 hover:bg-opacity-30 dark:border-gray-900/50 dark:bg-gray-700 dark:hover:bg-gray-600 dark:hover:bg-opacity-100 dark:text-gray-500',
-          isNotClickable ? '' : 'cursor-pointer '
+          isNotClickable ? '' : 'cursor-pointer ',
         )}
         onClick={() => (isNotClickable ? null : setSaveAsDialogShow(true))}
       >

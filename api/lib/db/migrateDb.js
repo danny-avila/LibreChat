@@ -13,7 +13,7 @@ const migrateToStrictFollowParentMessageIdChain = async () => {
     for (let convo of conversations) {
       const messages = await getMessages({
         conversationId: convo.conversationId,
-        messageId: { $exists: false }
+        messageId: { $exists: false },
       });
 
       let model;
@@ -45,14 +45,14 @@ const migrateToStrictFollowParentMessageIdChain = async () => {
       await Conversation.findOneAndUpdate(
         { conversationId: convo.conversationId },
         { model },
-        { new: true }
+        { new: true },
       ).exec();
     }
 
     try {
       await mongoose.connection.db.collection('messages').dropIndex('id_1');
     } catch (error) {
-      console.log("[Migrate] Index doesn't exist or already dropped");
+      console.log('[Migrate] Index doesn\'t exist or already dropped');
     }
   } catch (error) {
     console.log(error);

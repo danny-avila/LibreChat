@@ -13,13 +13,13 @@ const requireLocalAuth = (req, res, next) => {
     if (err) {
       log({
         title: '(requireLocalAuth) Error at passport.authenticate',
-        parameters: [{ name: 'error', value: err }]
+        parameters: [{ name: 'error', value: err }],
       });
       return next(err);
     }
     if (!user) {
       log({
-        title: '(requireLocalAuth) Error: No user'
+        title: '(requireLocalAuth) Error: No user',
       });
       return res.status(422).send(info);
     }

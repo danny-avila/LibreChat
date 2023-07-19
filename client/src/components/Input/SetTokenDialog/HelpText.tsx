@@ -72,7 +72,7 @@ function HelpText({ endpoint } : { endpoint: string }) {
         {`. Make sure to click 'Create and Continue' to give at least the 'Vertex AI User' role.
       Lastly, create a JSON key to import here.`}
       </small>
-    )
+    ),
 
   };
 

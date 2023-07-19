@@ -5,11 +5,7 @@ const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents/')
 const { loadTools } = require('./tools/util');
 const { SelfReflectionTool } = require('./tools/');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
-const {
-  instructions,
-  imageInstructions,
-  errorInstructions,
-} = require('./prompts/instructions');
+const { instructions, imageInstructions, errorInstructions } = require('./prompts/instructions');
 
 class PluginsClient extends OpenAIClient {
   constructor(apiKey, options = {}) {
@@ -28,11 +24,13 @@ class PluginsClient extends OpenAIClient {
 
     if (actions[0]?.action && this.functionsAgent) {
       actions = actions.map((step) => ({
-        log: `Action: ${step.action?.tool || ''}\nInput: ${JSON.stringify(step.action?.toolInput) || ''}\nObservation: ${step.observation}`
+        log: `Action: ${step.action?.tool || ''}\nInput: ${
+          JSON.stringify(step.action?.toolInput) || ''
+        }\nObservation: ${step.observation}`,
       }));
     } else if (actions[0]?.action) {
       actions = actions.map((step) => ({
-        log: `${step.action.log}\nObservation: ${step.observation}`
+        log: `${step.action.log}\nObservation: ${step.observation}`,
       }));
     }
 
@@ -114,8 +112,8 @@ Only respond with your conversational reply to the following User Message:
     super.setOptions(options);
     this.isGpt3 = this.modelOptions.model.startsWith('gpt-3');
 
-    if (this.reverseProxyUrl) {
-      this.langchainProxy = this.reverseProxyUrl.match(/.*v1/)[0];
+    if (this.options.reverseProxyUrl) {
+      this.langchainProxy = this.options.reverseProxyUrl.match(/.*v1/)[0];
     }
   }
 
@@ -136,10 +134,10 @@ Only respond with your conversational reply to the following User Message:
     const prefixMap = {
       'gpt-4': 'gpt-4-0613',
       'gpt-4-32k': 'gpt-4-32k-0613',
-      'gpt-3.5-turbo': 'gpt-3.5-turbo-0613'
+      'gpt-3.5-turbo': 'gpt-3.5-turbo-0613',
     };
 
-    const prefix = Object.keys(prefixMap).find(key => input.startsWith(key));
+    const prefix = Object.keys(prefixMap).find((key) => input.startsWith(key));
     return prefix ? prefixMap[prefix] : 'gpt-3.5-turbo-0613';
   }
 
@@ -173,7 +171,7 @@ Only respond with your conversational reply to the following User Message:
   async initialize({ user, message, onAgentAction, onChainEnd, signal }) {
     const modelOptions = {
       modelName: this.agentOptions.model,
-      temperature: this.agentOptions.temperature
+      temperature: this.agentOptions.temperature,
     };
 
     const configOptions = {};
@@ -194,8 +192,8 @@ Only respond with your conversational reply to the following User Message:
       tools: this.options.tools,
       functions: this.functionsAgent,
       options: {
-        openAIApiKey: this.openAIApiKey
-      }
+        openAIApiKey: this.openAIApiKey,
+      },
     });
     // load tools
     for (const tool of this.options.tools) {
@@ -235,10 +233,13 @@ Only respond with your conversational reply to the following User Message:
     };
 
     // Map Messages to Langchain format
-    const pastMessages = this.currentMessages.slice(0, -1).map(
-      msg => msg?.isCreatedByUser || msg?.role?.toLowerCase() === 'user'
-        ? new HumanChatMessage(msg.text)
-        : new AIChatMessage(msg.text));
+    const pastMessages = this.currentMessages
+      .slice(0, -1)
+      .map((msg) =>
+        msg?.isCreatedByUser || msg?.role?.toLowerCase() === 'user'
+          ? new HumanChatMessage(msg.text)
+          : new AIChatMessage(msg.text),
+      );
 
     // initialize agent
     const initializer = this.functionsAgent ? initializeFunctionsAgent : initializeCustomAgent;
@@ -258,8 +259,8 @@ Only respond with your conversational reply to the following User Message:
           if (typeof onChainEnd === 'function') {
             onChainEnd(action);
           }
-        }
-      })
+        },
+      }),
     });
 
     if (this.options.debug) {
@@ -304,7 +305,7 @@ Only respond with your conversational reply to the following User Message:
       return;
     }
 
-    intermediateSteps.forEach(step => {
+    intermediateSteps.forEach((step) => {
       const { observation } = step;
       if (!observation || !observation.includes('![')) {
         return;
@@ -346,7 +347,12 @@ Only respond with your conversational reply to the following User Message:
 
     this.currentMessages.push(userMessage);
 
-    let { prompt: payload, tokenCountMap, promptTokens, messages } = await this.buildMessages(
+    let {
+      prompt: payload,
+      tokenCountMap,
+      promptTokens,
+      messages,
+    } = await this.buildMessages(
       this.currentMessages,
       userMessage.messageId,
       this.getBuildMessagesOptions({
@@ -356,7 +362,7 @@ Only respond with your conversational reply to the following User Message:
     );
 
     if (tokenCountMap) {
-      console.dir(tokenCountMap, { depth: null })
+      console.dir(tokenCountMap, { depth: null });
       if (tokenCountMap[userMessage.messageId]) {
         userMessage.tokenCount = tokenCountMap[userMessage.messageId];
         console.log('userMessage.tokenCount', userMessage.tokenCount);
@@ -389,7 +395,7 @@ Only respond with your conversational reply to the following User Message:
       message,
       onAgentAction,
       onChainEnd,
-      signal: this.abortController.signal
+      signal: this.abortController.signal,
     });
     await this.executorCall(message, this.abortController.signal);
 
@@ -448,12 +454,12 @@ Only respond with your conversational reply to the following User Message:
     const instructionsPayload = {
       role: 'system',
       name: 'instructions',
-      content: promptPrefix
+      content: promptPrefix,
     };
 
     const messagePayload = {
       role: 'system',
-      content: promptSuffix
+      content: promptSuffix,
     };
 
     if (this.isGpt3) {
@@ -463,13 +469,13 @@ Only respond with your conversational reply to the following User Message:
     }
 
     // testing if this works with browser endpoint
-    if (!this.isGpt3 && this.reverseProxyUrl) {
+    if (!this.isGpt3 && this.options.reverseProxyUrl) {
       instructionsPayload.role = 'user';
     }
 
     let currentTokenCount =
-        this.getTokenCountForMessage(instructionsPayload) +
-        this.getTokenCountForMessage(messagePayload);
+      this.getTokenCountForMessage(instructionsPayload) +
+      this.getTokenCountForMessage(messagePayload);
 
     let promptBody = '';
     const maxTokenCount = this.maxPromptTokens;
@@ -492,7 +498,7 @@ Only respond with your conversational reply to the following User Message:
           }
           // This is the first message, so we can't add it. Just throw an error.
           throw new Error(
-            `Prompt is too long. Max token count is ${maxTokenCount}, but prompt is ${newTokenCount} tokens long.`
+            `Prompt is too long. Max token count is ${maxTokenCount}, but prompt is ${newTokenCount} tokens long.`,
           );
         }
         promptBody = newPromptBody;
@@ -519,7 +525,7 @@ Only respond with your conversational reply to the following User Message:
     // Use up to `this.maxContextTokens` tokens (prompt + response), but try to leave `this.maxTokens` tokens for the response.
     this.modelOptions.max_tokens = Math.min(
       this.maxContextTokens - currentTokenCount,
-      this.maxResponseTokens
+      this.maxResponseTokens,
     );
 
     if (this.isGpt3) {

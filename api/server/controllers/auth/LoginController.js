@@ -3,7 +3,7 @@ const User = require('../../../models/User');
 const loginController = async (req, res) => {
   try {
     const user = await User.findById(
-      req.user._id
+      req.user._id,
     );
 
     // If user doesn't exist, return error
@@ -21,8 +21,8 @@ const loginController = async (req, res) => {
       {
         expires: new Date(Date.now() + expires),
         httpOnly: false,
-        secure: process.env.NODE_ENV === 'production'
-      }
+        secure: process.env.NODE_ENV === 'production',
+      },
     );
 
     return res.status(200).send({ token, user });
@@ -35,5 +35,5 @@ const loginController = async (req, res) => {
 };
 
 module.exports = {
-  loginController
+  loginController,
 };

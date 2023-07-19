@@ -1,6 +1,6 @@
 async function abortMessage(req, res, abortControllers) {
   const { abortKey } = req.body;
-  console.log(`req.body`, req.body);
+  console.log('req.body', req.body);
   if (!abortControllers.has(abortKey)) {
     return res.status(404).send('Request not found');
   }

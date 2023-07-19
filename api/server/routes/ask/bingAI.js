@@ -14,7 +14,7 @@ router.post('/', requireJwtAuth, rateLimit, async (req, res) => {
     messageId,
     overrideParentMessageId = null,
     parentMessageId,
-    conversationId: oldConversationId
+    conversationId: oldConversationId,
   } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   if (endpoint !== 'bingAI') return handleError(res, { text: 'Illegal request' });
@@ -30,7 +30,7 @@ router.post('/', requireJwtAuth, rateLimit, async (req, res) => {
     text,
     parentMessageId: userParentMessageId,
     conversationId,
-    isCreatedByUser: true
+    isCreatedByUser: true,
   };
 
   // build endpoint option
@@ -42,7 +42,7 @@ router.post('/', requireJwtAuth, rateLimit, async (req, res) => {
       systemMessage: req.body?.systemMessage ?? null,
       context: req.body?.context ?? null,
       toneStyle: req.body?.toneStyle ?? 'creative',
-      token: req.body?.token ?? null
+      token: req.body?.token ?? null,
     };
   else
     endpointOption = {
@@ -53,13 +53,13 @@ router.post('/', requireJwtAuth, rateLimit, async (req, res) => {
       clientId: req.body?.clientId ?? null,
       invocationId: req.body?.invocationId ?? null,
       toneStyle: req.body?.toneStyle ?? 'creative',
-      token: req.body?.token ?? null
+      token: req.body?.token ?? null,
     };
 
   console.log('ask log', {
     userMessage,
     endpointOption,
-    conversationId
+    conversationId,
   });
 
   if (!overrideParentMessageId) {
@@ -68,7 +68,7 @@ router.post('/', requireJwtAuth, rateLimit, async (req, res) => {
       ...userMessage,
       ...endpointOption,
       conversationId,
-      endpoint
+      endpoint,
     });
   }
 
@@ -81,7 +81,7 @@ router.post('/', requireJwtAuth, rateLimit, async (req, res) => {
     preSendRequest: true,
     overrideParentMessageId,
     req,
-    res
+    res,
   });
 });
 
@@ -93,7 +93,7 @@ const ask = async ({
   preSendRequest = true,
   overrideParentMessageId = null,
   req,
-  res
+  res,
 }) => {
   let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
 
@@ -104,37 +104,38 @@ const ask = async ({
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
     'Access-Control-Allow-Origin': '*',
-    'X-Accel-Buffering': 'no'
+    'X-Accel-Buffering': 'no',
   });
 
   if (preSendRequest) sendMessage(res, { message: userMessage, created: true });
 
-  try {
-    let lastSavedTimestamp = 0;
-    const { onProgress: progressCallback } = createOnProgress({
-      onProgress: ({ text }) => {
-        const currentTimestamp = Date.now();
-        if (currentTimestamp - lastSavedTimestamp > 500) {
-          lastSavedTimestamp = currentTimestamp;
-          saveMessage({
-            messageId: responseMessageId,
-            sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
-            conversationId,
-            parentMessageId: overrideParentMessageId || userMessageId,
-            text: text,
-            unfinished: true,
-            cancelled: false,
-            error: false
-          });
-        }
+  let lastSavedTimestamp = 0;
+  const { onProgress: progressCallback, getPartialText } = createOnProgress({
+    onProgress: ({ text }) => {
+      const currentTimestamp = Date.now();
+      if (currentTimestamp - lastSavedTimestamp > 500) {
+        lastSavedTimestamp = currentTimestamp;
+        saveMessage({
+          messageId: responseMessageId,
+          sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
+          conversationId,
+          parentMessageId: overrideParentMessageId || userMessageId,
+          text: text,
+          unfinished: true,
+          cancelled: false,
+          error: false,
+        });
       }
-    });
-    const abortController = new AbortController();
-    let bingConversationId = null;
-    if (!isNewConversation) {
-      const convo = await getConvo(req.user.id, conversationId);
-      bingConversationId = convo.bingConversationId;
-    }
+    },
+  });
+  const abortController = new AbortController();
+  let bingConversationId = null;
+  if (!isNewConversation) {
+    const convo = await getConvo(req.user.id, conversationId);
+    bingConversationId = convo.bingConversationId;
+  }
+
+  try {
     let response = await askBing({
       text,
       parentMessageId: userParentMessageId,
@@ -143,9 +144,9 @@ const ask = async ({
       onProgress: progressCallback.call(null, {
         res,
         text,
-        parentMessageId: overrideParentMessageId || userMessageId
+        parentMessageId: overrideParentMessageId || userMessageId,
       }),
-      abortController
+      abortController,
     });
 
     console.log('BING RESPONSE', response);
@@ -161,6 +162,13 @@ const ask = async ({
     response.text =
       response.response || response.details.spokenText || '**Bing refused to answer.**';
 
+    const partialText = getPartialText();
+    let unfinished = false;
+    if (partialText?.trim()?.length > response.text.length) {
+      response.text = partialText;
+      unfinished = true;
+    }
+
     let responseMessage = {
       conversationId,
       bingConversationId: newConversationId,
@@ -172,15 +180,19 @@ const ask = async ({
       suggestions:
         response.details.suggestedResponses &&
         response.details.suggestedResponses.map((s) => s.text),
-      unfinished: false,
+      unfinished,
       cancelled: false,
-      error: false
+      error: false,
     };
 
     await saveMessage(responseMessage);
     responseMessage.messageId = newResponseMessageId;
 
-    let conversationUpdate = { conversationId, bingConversationId: newConversationId, endpoint: 'bingAI' };
+    let conversationUpdate = {
+      conversationId,
+      bingConversationId: newConversationId,
+      endpoint: 'bingAI',
+    };
 
     if (endpointOption?.jailbreak) {
       conversationUpdate.jailbreak = true;
@@ -200,7 +212,7 @@ const ask = async ({
       await saveMessage({
         ...userMessage,
         messageId: userMessageId,
-        newMessageId: newUserMessageId
+        newMessageId: newUserMessageId,
       });
     userMessageId = newUserMessageId;
 
@@ -209,35 +221,61 @@ const ask = async ({
       final: true,
       conversation: await getConvo(req.user.id, conversationId),
       requestMessage: userMessage,
-      responseMessage: responseMessage
+      responseMessage: responseMessage,
     });
     res.end();
 
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
       const title = await titleConvoBing({
         text,
-        response: responseMessage
+        response: responseMessage,
       });
 
       await saveConvo(req.user.id, {
         conversationId: conversationId,
-        title
+        title,
       });
     }
   } catch (error) {
-    console.log(error);
-    const errorMessage = {
-      messageId: responseMessageId,
-      sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
-      conversationId,
-      parentMessageId: overrideParentMessageId || userMessageId,
-      unfinished: false,
-      cancelled: false,
-      error: true,
-      text: error.message
-    };
-    await saveMessage(errorMessage);
-    handleError(res, errorMessage);
+    console.error(error);
+    const partialText = getPartialText();
+    if (partialText?.length > 2) {
+      const responseMessage = {
+        messageId: responseMessageId,
+        sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
+        conversationId,
+        parentMessageId: overrideParentMessageId || userMessageId,
+        text: partialText,
+        model: endpointOption.modelOptions.model,
+        unfinished: true,
+        cancelled: false,
+        error: false,
+      };
+
+      saveMessage(responseMessage);
+
+      return {
+        title: await getConvoTitle(req.user.id, conversationId),
+        final: true,
+        conversation: await getConvo(req.user.id, conversationId),
+        requestMessage: userMessage,
+        responseMessage: responseMessage,
+      };
+    } else {
+      console.log(error);
+      const errorMessage = {
+        messageId: responseMessageId,
+        sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
+        conversationId,
+        parentMessageId: overrideParentMessageId || userMessageId,
+        unfinished: false,
+        cancelled: false,
+        error: true,
+        text: error.message,
+      };
+      await saveMessage(errorMessage);
+      handleError(res, errorMessage);
+    }
   }
 };
 

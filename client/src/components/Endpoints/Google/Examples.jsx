@@ -33,7 +33,7 @@ function Examples({ readonly, examples, setExample, addExample, removeExample, e
                     placeholder="Set example input. Example is ignored if empty."
                     className={cn(
                       defaultTextProps,
-                      'flex max-h-[300px] min-h-[75px] w-full resize-none px-3 py-2 '
+                      'flex max-h-[300px] min-h-[75px] w-full resize-none px-3 py-2 ',
                     )}
                   />
                 </div>
@@ -54,10 +54,10 @@ function Examples({ readonly, examples, setExample, addExample, removeExample, e
                     disabled={readonly}
                     value={example?.output?.content || ''}
                     onChange={(e) => setExample(idx, 'output', e.target.value || null)}
-                    placeholder={`Set example output. Example is ignored if empty.`}
+                    placeholder={'Set example output. Example is ignored if empty.'}
                     className={cn(
                       defaultTextProps,
-                      'flex max-h-[300px] min-h-[75px] w-full resize-none px-3 py-2 '
+                      'flex max-h-[300px] min-h-[75px] w-full resize-none px-3 py-2 ',
                     )}
                   />
                 </div>

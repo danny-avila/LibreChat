@@ -10,7 +10,7 @@ export default function MultiMessage({
   scrollToBottom,
   currentEditId,
   setCurrentEditId,
-  isSearchView
+  isSearchView,
 }) {
   // const [siblingIdx, setSiblingIdx] = useState(0);
 

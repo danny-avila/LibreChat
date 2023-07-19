@@ -14,7 +14,7 @@ class BaseClient {
     this.currentDateString = new Date().toLocaleDateString('en-us', {
       year: 'numeric',
       month: 'long',
-      day: 'numeric'
+      day: 'numeric',
     });
   }
 
@@ -58,7 +58,7 @@ class BaseClient {
     const responseMessageId = crypto.randomUUID();
     const saveOptions = this.getSaveOptions();
     this.abortController = opts.abortController || new AbortController();
-    this.currentMessages = await this.loadHistory(conversationId, parentMessageId) ?? [];
+    this.currentMessages = (await this.loadHistory(conversationId, parentMessageId)) ?? [];
 
     return {
       ...opts,
@@ -78,20 +78,14 @@ class BaseClient {
       conversationId,
       sender: 'User',
       text,
-      isCreatedByUser: true
+      isCreatedByUser: true,
     };
     return userMessage;
   }
 
   async handleStartMethods(message, opts) {
-    const {
-      user,
-      conversationId,
-      parentMessageId,
-      userMessageId,
-      responseMessageId,
-      saveOptions,
-    } = await this.setMessageOptions(opts);
+    const { user, conversationId, parentMessageId, userMessageId, responseMessageId, saveOptions } =
+      await this.setMessageOptions(opts);
 
     const userMessage = this.createUserMessage({
       messageId: userMessageId,
@@ -104,7 +98,7 @@ class BaseClient {
       opts.getIds({
         userMessage,
         conversationId,
-        responseMessageId
+        responseMessageId,
       });
     }
 
@@ -189,24 +183,32 @@ class BaseClient {
 
   async refineMessages(messagesToRefine, remainingContextTokens) {
     const model = new ChatOpenAI({ temperature: 0 });
-    const chain = loadSummarizationChain(model, { type: 'refine', verbose: this.options.debug, refinePrompt });
+    const chain = loadSummarizationChain(model, {
+      type: 'refine',
+      verbose: this.options.debug,
+      refinePrompt,
+    });
     const splitter = new RecursiveCharacterTextSplitter({
       chunkSize: 1500,
       chunkOverlap: 100,
     });
-    const userMessages = this.concatenateMessages(messagesToRefine.filter(m => m.role === 'user'));
-    const assistantMessages = this.concatenateMessages(messagesToRefine.filter(m => m.role !== 'user'));
-    const userDocs = await splitter.createDocuments([userMessages],[],{
+    const userMessages = this.concatenateMessages(
+      messagesToRefine.filter((m) => m.role === 'user'),
+    );
+    const assistantMessages = this.concatenateMessages(
+      messagesToRefine.filter((m) => m.role !== 'user'),
+    );
+    const userDocs = await splitter.createDocuments([userMessages], [], {
       chunkHeader: 'DOCUMENT NAME: User Message\n\n---\n\n',
       appendChunkOverlapHeader: true,
     });
-    const assistantDocs = await splitter.createDocuments([assistantMessages],[],{
+    const assistantDocs = await splitter.createDocuments([assistantMessages], [], {
       chunkHeader: 'DOCUMENT NAME: Assistant Message\n\n---\n\n',
       appendChunkOverlapHeader: true,
     });
     // const chunkSize = Math.round(concatenatedMessages.length / 512);
     const input_documents = userDocs.concat(assistantDocs);
-    if (this.options.debug ) {
+    if (this.options.debug) {
       console.debug('Refining messages...');
     }
     try {
@@ -219,11 +221,15 @@ class BaseClient {
         role: 'assistant',
         content: res.output_text,
         tokenCount: this.getTokenCount(res.output_text),
-      }
+      };
 
-      if (this.options.debug ) {
+      if (this.options.debug) {
         console.debug('Refined messages', refinedMessage);
-        console.debug(`remainingContextTokens: ${remainingContextTokens}, after refining: ${remainingContextTokens - refinedMessage.tokenCount}`);
+        console.debug(
+          `remainingContextTokens: ${remainingContextTokens}, after refining: ${
+            remainingContextTokens - refinedMessage.tokenCount
+          }`,
+        );
       }
 
       return refinedMessage;
@@ -235,15 +241,15 @@ class BaseClient {
   }
 
   /**
- * This method processes an array of messages and returns a context of messages that fit within a token limit.
- * It iterates over the messages from newest to oldest, adding them to the context until the token limit is reached.
- * If the token limit would be exceeded by adding a message, that message and possibly the previous one are added to a separate array of messages to refine.
- * The method uses `push` and `pop` operations for efficient array manipulation, and reverses the arrays at the end to maintain the original order of the messages.
- * The method also includes a mechanism to avoid blocking the event loop by waiting for the next tick after each iteration.
- *
- * @param {Array} messages - An array of messages, each with a `tokenCount` property. The messages should be ordered from oldest to newest.
- * @returns {Object} An object with three properties: `context`, `remainingContextTokens`, and `messagesToRefine`. `context` is an array of messages that fit within the token limit. `remainingContextTokens` is the number of tokens remaining within the limit after adding the messages to the context. `messagesToRefine` is an array of messages that were not added to the context because they would have exceeded the token limit.
- */
+   * This method processes an array of messages and returns a context of messages that fit within a token limit.
+   * It iterates over the messages from newest to oldest, adding them to the context until the token limit is reached.
+   * If the token limit would be exceeded by adding a message, that message and possibly the previous one are added to a separate array of messages to refine.
+   * The method uses `push` and `pop` operations for efficient array manipulation, and reverses the arrays at the end to maintain the original order of the messages.
+   * The method also includes a mechanism to avoid blocking the event loop by waiting for the next tick after each iteration.
+   *
+   * @param {Array} messages - An array of messages, each with a `tokenCount` property. The messages should be ordered from oldest to newest.
+   * @returns {Object} An object with three properties: `context`, `remainingContextTokens`, and `messagesToRefine`. `context` is an array of messages that fit within the token limit. `remainingContextTokens` is the number of tokens remaining within the limit after adding the messages to the context. `messagesToRefine` is an array of messages that were not added to the context because they would have exceeded the token limit.
+   */
   async getMessagesWithinTokenLimit(messages) {
     let currentTokenCount = 0;
     let context = [];
@@ -282,26 +288,22 @@ class BaseClient {
       context.push(message);
       currentTokenCount = newTokenCount;
       remainingContextTokens = this.maxContextTokens - currentTokenCount;
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
     }
 
     return {
       context: context.reverse(),
       remainingContextTokens,
       messagesToRefine: messagesToRefine.reverse(),
-      refineIndex
+      refineIndex,
     };
   }
 
   async handleContextStrategy({ instructions, orderedMessages, formattedMessages }) {
     let payload = this.addInstructions(formattedMessages, instructions);
     let orderedWithInstructions = this.addInstructions(orderedMessages, instructions);
-    let {
-      context,
-      remainingContextTokens,
-      messagesToRefine,
-      refineIndex
-    } = await this.getMessagesWithinTokenLimit(payload);
+    let { context, remainingContextTokens, messagesToRefine, refineIndex } =
+      await this.getMessagesWithinTokenLimit(payload);
 
     payload = context;
     let refinedMessage;
@@ -325,8 +327,14 @@ class BaseClient {
 
     if (this.options.debug) {
       console.debug('<---------------------------------DIFF--------------------------------->');
-      console.debug(`Difference between payload (${payload.length}) and orderedWithInstructions (${orderedWithInstructions.length}): ${diff}`);
-      console.debug('remainingContextTokens, this.maxContextTokens (1/2)', remainingContextTokens, this.maxContextTokens);
+      console.debug(
+        `Difference between payload (${payload.length}) and orderedWithInstructions (${orderedWithInstructions.length}): ${diff}`,
+      );
+      console.debug(
+        'remainingContextTokens, this.maxContextTokens (1/2)',
+        remainingContextTokens,
+        this.maxContextTokens,
+      );
     }
 
     // If the difference is positive, slice the orderedWithInstructions array
@@ -341,7 +349,11 @@ class BaseClient {
     }
 
     if (this.options.debug) {
-      console.debug('remainingContextTokens, this.maxContextTokens (2/2)', remainingContextTokens, this.maxContextTokens);
+      console.debug(
+        'remainingContextTokens, this.maxContextTokens (2/2)',
+        remainingContextTokens,
+        this.maxContextTokens,
+      );
     }
 
     let tokenCountMap = orderedWithInstructions.reduce((map, message, index) => {
@@ -370,20 +382,19 @@ class BaseClient {
   }
 
   async sendMessage(message, opts = {}) {
-    console.log('BaseClient: sendMessage', message, opts);
-    const {
-      user,
-      conversationId,
-      responseMessageId,
-      saveOptions,
-      userMessage,
-    } = await this.handleStartMethods(message, opts);
+    const { user, conversationId, responseMessageId, saveOptions, userMessage } =
+      await this.handleStartMethods(message, opts);
 
+    this.user = user;
     // It's not necessary to push to currentMessages
     // depending on subclass implementation of handling messages
     this.currentMessages.push(userMessage);
 
-    let { prompt: payload, tokenCountMap, promptTokens } = await this.buildMessages(
+    let {
+      prompt: payload,
+      tokenCountMap,
+      promptTokens,
+    } = await this.buildMessages(
       this.currentMessages,
       // When the userMessage is pushed to currentMessages, the parentMessage is the userMessageId.
       // this only matters when buildMessages is utilizing the parentMessageId, and may vary on implementation
@@ -397,7 +408,7 @@ class BaseClient {
     }
 
     if (tokenCountMap) {
-      console.dir(tokenCountMap, { depth: null })
+      console.dir(tokenCountMap, { depth: null });
       if (tokenCountMap[userMessage.messageId]) {
         userMessage.tokenCount = tokenCountMap[userMessage.messageId];
         console.log('userMessage.tokenCount', userMessage.tokenCount);
@@ -461,7 +472,7 @@ class BaseClient {
     await saveConvo(user, {
       conversationId: message.conversationId,
       endpoint: this.options.endpoint,
-      ...endpointOptions
+      ...endpointOptions,
     });
   }
 
@@ -470,12 +481,12 @@ class BaseClient {
   }
 
   /**
-     * Iterate through messages, building an array based on the parentMessageId.
-     * Each message has an id and a parentMessageId. The parentMessageId is the id of the message that this message is a reply to.
-     * @param messages
-     * @param parentMessageId
-     * @returns {*[]} An array containing the messages in the order they should be displayed, starting with the root message.
-     */
+   * Iterate through messages, building an array based on the parentMessageId.
+   * Each message has an id and a parentMessageId. The parentMessageId is the id of the message that this message is a reply to.
+   * @param messages
+   * @param parentMessageId
+   * @returns {*[]} An array containing the messages in the order they should be displayed, starting with the root message.
+   */
   static getMessagesForConversation(messages, parentMessageId, mapMethod = null) {
     if (!messages || messages.length === 0) {
       return [];
@@ -484,7 +495,7 @@ class BaseClient {
     const orderedMessages = [];
     let currentMessageId = parentMessageId;
     while (currentMessageId) {
-      const message = messages.find(msg => {
+      const message = messages.find((msg) => {
         const messageId = msg.messageId ?? msg.id;
         return messageId === currentMessageId;
       });
@@ -503,13 +514,13 @@ class BaseClient {
   }
 
   /**
- * Algorithm adapted from "6. Counting tokens for chat API calls" of
- * https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
- *
- * An additional 2 tokens need to be added for metadata after all messages have been counted.
- *
- * @param {*} message
- */
+   * Algorithm adapted from "6. Counting tokens for chat API calls" of
+   * https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
+   *
+   * An additional 2 tokens need to be added for metadata after all messages have been counted.
+   *
+   * @param {*} message
+   */
   getTokenCountForMessage(message) {
     let tokensPerMessage;
     let nameAdjustment;
@@ -534,7 +545,7 @@ class BaseClient {
       const numTokens = this.getTokenCount(value);
 
       // Adjust by `nameAdjustment` tokens if the property key is 'name'
-      const adjustment = (key === 'name') ? nameAdjustment : 0;
+      const adjustment = key === 'name' ? nameAdjustment : 0;
       return numTokens + adjustment;
     });
 

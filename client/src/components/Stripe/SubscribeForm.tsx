@@ -10,7 +10,7 @@ import { gtag, install } from 'ga-gtag'; // Import ga-gtag
 import './SubscribeForm.css';
 
 // Add your publishable key
-const stripePromise = loadStripe("pk_live_51MwvEEHKD0byXXCl8IzAvUl0oZ7RE6vIz72lWUVYl5rW3zy0u3FiGtIAgsbmqSHbhkTJeZjs5VEbQMNStaaQL9xQ001pwxI3RP");
+const stripePromise = loadStripe("pk_test_51MwvEEHKD0byXXClhlIY96bsuIIIcdGgTenVqBnktRp8fzoUHlcI29yTj9ktyqumu2Xk1uz7KptFryWfTZz5Sdj200f3cPZSa3");
 
 const SubscribeForm = () => {
   const { user } = useAuthContext();
@@ -58,7 +58,7 @@ const SubscribeForm = () => {
       const createSubscriptionResult = await axios.post("/api/stripe/create-subscription", {
         customerId,
         userId: user.id,
-        priceId: "price_1NHVPpHKD0byXXClYlrta1Qu"
+        priceId: "price_1NHVdDHKD0byXXClbugzBz84"
       });
   
       console.log("Subscription Created:", createSubscriptionResult.data);

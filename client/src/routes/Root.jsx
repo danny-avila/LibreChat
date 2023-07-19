@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import {
   useGetEndpointsQuery,
   useGetPresetsQuery,
-  useGetSearchEnabledQuery
+  useGetSearchEnabledQuery,
 } from '@librechat/data-provider';
 
 import MessageHandler from '../components/MessageHandler';

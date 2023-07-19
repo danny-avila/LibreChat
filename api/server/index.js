@@ -29,13 +29,17 @@ const rawBodyBuffer = (req, res, buf, encoding) => {
 
   const app = express();
   app.use(errorController);
-  app.use(express.json({ verify: rawBodyBuffer }));
-  app.use(express.urlencoded({ verify: rawBodyBuffer, extended: true }));
+  app.use(express.json({ limit: '3mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(express.static(path.join(projectPath, 'dist')));
   app.use(express.static(path.join(projectPath, 'public')));
 
   app.set('trust proxy', 1); // trust first proxy
   app.use(cors());
+
+  if (!process.env.ALLOW_SOCIAL_LOGIN) {
+    console.warn('Social logins are disabled. Set Envrionment Variable "ALLOW_SOCIAL_LOGIN" to true to enable them.')
+  }
 
   // OAUTH
   app.use(passport.initialize());
@@ -59,7 +63,7 @@ const rawBodyBuffer = (req, res, buf, encoding) => {
     app.use(session({
       secret: process.env.OPENID_SESSION_SECRET,
       resave: false,
-      saveUninitialized: false
+      saveUninitialized: false,
     }));
     app.use(passport.session());
     require('../strategies/openidStrategy');
@@ -88,7 +92,7 @@ const rawBodyBuffer = (req, res, buf, encoding) => {
   app.listen(port, host, () => {
     if (host == '0.0.0.0')
       console.log(
-        `Server listening on all interface at port ${port}. Use http://localhost:${port} to access it`
+        `Server listening on all interface at port ${port}. Use http://localhost:${port} to access it`,
       );
     else
       console.log(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);

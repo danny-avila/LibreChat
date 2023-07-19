@@ -58,7 +58,7 @@ export default function Landing() {
                 onClick={clickHandler}
                 className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
               >
-                &quot;;{localize(lang, 'com_ui_example_10_year_old_b_day')}&quot; →
+                &quot;{localize(lang, 'com_ui_example_10_year_old_b_day')}&quot; →
               </button>
               <button
                 onClick={clickHandler}

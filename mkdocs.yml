@@ -102,6 +102,7 @@ nav:
     - Heroku: 'deployment/heroku.md'
     - Linode: 'deployment/linode.md'
     - Ngrok: 'deployment/ngrok.md'
+    - Render: 'deployment/render.md'
   - Contributions:
     - Documentation Guidelines: 'contributions/documentation_guidelines.md'
     - Code Standards and Conventions: 'contributions/coding_conventions.md'

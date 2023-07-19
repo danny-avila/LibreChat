@@ -2,7 +2,7 @@
  * Helper functions
  * This allows us to give the console some colour when running in a terminal
  */
-const readline = require("readline");
+const readline = require('readline');
 
 const askQuestion = (query) => {
   const rl = readline.createInterface({
@@ -11,10 +11,10 @@ const askQuestion = (query) => {
   });
 
   return new Promise((resolve) =>
-    rl.question("\x1b[36m" + query + "\n> " + "\x1b[0m", (ans) => {
+    rl.question('\x1b[36m' + query + '\n> ' + '\x1b[0m', (ans) => {
       rl.close();
       resolve(ans);
-    })
+    }),
   );
 };
 

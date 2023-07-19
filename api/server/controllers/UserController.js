@@ -51,5 +51,5 @@ const updateUserPluginsController = async (req, res) => {
 
 module.exports = {
   getUserController,
-  updateUserPluginsController
+  updateUserPluginsController,
 };

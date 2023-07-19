@@ -30,7 +30,7 @@ module.exports = {
       return await Preset.findOneAndUpdate(
         { presetId, user },
         { $set: update },
-        { new: true, upsert: true }
+        { new: true, upsert: true },
       ).exec();
     } catch (error) {
       console.log(error);
@@ -42,5 +42,5 @@ module.exports = {
     // const ids = toRemove.map((instance) => instance.presetId);
     let deleteCount = await Preset.deleteMany({ ...filter, user }).exec();
     return deleteCount;
-  }
+  },
 };

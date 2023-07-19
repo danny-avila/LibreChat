@@ -28,7 +28,7 @@ export default function ExportModel({ open, onOpenChange }) {
     ({ snapshot }) =>
       async (messageId) =>
         await snapshot.getPromise(store.messagesSiblingIdxFamily(messageId)),
-    []
+    [],
   );
 
   const typeOptions = [
@@ -36,7 +36,7 @@ export default function ExportModel({ open, onOpenChange }) {
     { value: 'text', display: 'text (.txt)' },
     { value: 'markdown', display: 'markdown (.md)' },
     { value: 'json', display: 'json (.json)' },
-    { value: 'csv', display: 'csv (.csv)' }
+    { value: 'csv', display: 'csv (.csv)' },
   ]; //,, 'webpage'];
 
   useEffect(() => {
@@ -67,7 +67,7 @@ export default function ExportModel({ open, onOpenChange }) {
     message,
     messages,
     branches = false,
-    recursive = false
+    recursive = false,
   }) => {
     let children = [];
     if (messages?.length)
@@ -79,8 +79,8 @@ export default function ExportModel({ open, onOpenChange }) {
               message: message,
               messages: message?.children,
               branches,
-              recursive
-            })
+              recursive,
+            }),
           );
       else {
         let message = messages[0];
@@ -95,8 +95,8 @@ export default function ExportModel({ open, onOpenChange }) {
             message: message,
             messages: message?.children,
             branches,
-            recursive
-          })
+            recursive,
+          }),
         ];
       }
 
@@ -126,7 +126,7 @@ export default function ExportModel({ open, onOpenChange }) {
       message: null,
       messages: messagesTree,
       branches: exportBranches,
-      recursive: false
+      recursive: false,
     });
 
     for (const message of messages) {
@@ -141,51 +141,51 @@ export default function ExportModel({ open, onOpenChange }) {
       beforeTableEncode: (entries) => [
         {
           fieldName: 'sender',
-          fieldValues: entries.find((e) => e.fieldName == 'sender').fieldValues
+          fieldValues: entries.find((e) => e.fieldName == 'sender').fieldValues,
         },
         { fieldName: 'text', fieldValues: entries.find((e) => e.fieldName == 'text').fieldValues },
         {
           fieldName: 'isCreatedByUser',
-          fieldValues: entries.find((e) => e.fieldName == 'isCreatedByUser').fieldValues
+          fieldValues: entries.find((e) => e.fieldName == 'isCreatedByUser').fieldValues,
         },
         {
           fieldName: 'error',
-          fieldValues: entries.find((e) => e.fieldName == 'error').fieldValues
+          fieldValues: entries.find((e) => e.fieldName == 'error').fieldValues,
         },
         {
           fieldName: 'unfinished',
-          fieldValues: entries.find((e) => e.fieldName == 'unfinished').fieldValues
+          fieldValues: entries.find((e) => e.fieldName == 'unfinished').fieldValues,
         },
         {
           fieldName: 'cancelled',
-          fieldValues: entries.find((e) => e.fieldName == 'cancelled').fieldValues
+          fieldValues: entries.find((e) => e.fieldName == 'cancelled').fieldValues,
         },
         {
           fieldName: 'messageId',
-          fieldValues: entries.find((e) => e.fieldName == 'messageId').fieldValues
+          fieldValues: entries.find((e) => e.fieldName == 'messageId').fieldValues,
         },
         {
           fieldName: 'parentMessageId',
-          fieldValues: entries.find((e) => e.fieldName == 'parentMessageId').fieldValues
+          fieldValues: entries.find((e) => e.fieldName == 'parentMessageId').fieldValues,
         },
         {
           fieldName: 'createdAt',
-          fieldValues: entries.find((e) => e.fieldName == 'createdAt').fieldValues
-        }
-      ]
+          fieldValues: entries.find((e) => e.fieldName == 'createdAt').fieldValues,
+        },
+      ],
     });
   };
 
   const exportMarkdown = async () => {
     let data =
-      `# Conversation\n` +
+      '# Conversation\n' +
       `- conversationId: ${conversation?.conversationId}\n` +
       `- endpoint: ${conversation?.endpoint}\n` +
       `- title: ${conversation?.title}\n` +
       `- exportAt: ${new Date().toTimeString()}\n`;
 
     if (includeOptions) {
-      data += `\n## Options\n`;
+      data += '\n## Options\n';
       const options = cleanupPreset({ preset: conversation, endpointsConfig });
 
       for (const key of Object.keys(options)) {
@@ -198,15 +198,15 @@ export default function ExportModel({ open, onOpenChange }) {
       message: null,
       messages: messagesTree,
       branches: false,
-      recursive: false
+      recursive: false,
     });
 
-    data += `\n## History\n`;
+    data += '\n## History\n';
     for (const message of messages) {
       data += `**${message?.sender}:**\n${message?.text}\n`;
-      if (message.error) data += `*(This is an error message)*\n`;
-      if (message.unfinished) data += `*(This is an unfinished message)*\n`;
-      if (message.cancelled) data += `*(This is a cancelled message)*\n`;
+      if (message.error) data += '*(This is an error message)*\n';
+      if (message.unfinished) data += '*(This is an unfinished message)*\n';
+      if (message.cancelled) data += '*(This is a cancelled message)*\n';
       data += '\n\n';
     }
 
@@ -214,21 +214,21 @@ export default function ExportModel({ open, onOpenChange }) {
       data: data,
       fileName: filename,
       extension: 'md',
-      exportType: exportFromJSON.types.text
+      exportType: exportFromJSON.types.text,
     });
   };
 
   const exportText = async () => {
     let data =
-      `Conversation\n` +
-      `########################\n` +
+      'Conversation\n' +
+      '########################\n' +
       `conversationId: ${conversation?.conversationId}\n` +
       `endpoint: ${conversation?.endpoint}\n` +
       `title: ${conversation?.title}\n` +
       `exportAt: ${new Date().toTimeString()}\n`;
 
     if (includeOptions) {
-      data += `\nOptions\n########################\n`;
+      data += '\nOptions\n########################\n';
       const options = cleanupPreset({ preset: conversation, endpointsConfig });
 
       for (const key of Object.keys(options)) {
@@ -241,15 +241,15 @@ export default function ExportModel({ open, onOpenChange }) {
       message: null,
       messages: messagesTree,
       branches: false,
-      recursive: false
+      recursive: false,
     });
 
-    data += `\nHistory\n########################\n`;
+    data += '\nHistory\n########################\n';
     for (const message of messages) {
       data += `>> ${message?.sender}:\n${message?.text}\n`;
-      if (message.error) data += `(This is an error message)\n`;
-      if (message.unfinished) data += `(This is an unfinished message)\n`;
-      if (message.cancelled) data += `(This is a cancelled message)\n`;
+      if (message.error) data += '(This is an error message)\n';
+      if (message.unfinished) data += '(This is an unfinished message)\n';
+      if (message.cancelled) data += '(This is a cancelled message)\n';
       data += '\n\n';
     }
 
@@ -257,7 +257,7 @@ export default function ExportModel({ open, onOpenChange }) {
       data: data,
       fileName: filename,
       extension: 'txt',
-      exportType: exportFromJSON.types.text
+      exportType: exportFromJSON.types.text,
     });
   };
 
@@ -268,7 +268,7 @@ export default function ExportModel({ open, onOpenChange }) {
       title: conversation?.title,
       exportAt: new Date().toTimeString(),
       branches: exportBranches,
-      recursive: recursive
+      recursive: recursive,
     };
 
     if (includeOptions) data.options = cleanupPreset({ preset: conversation, endpointsConfig });
@@ -278,7 +278,7 @@ export default function ExportModel({ open, onOpenChange }) {
       message: null,
       messages: messagesTree,
       branches: exportBranches,
-      recursive: recursive
+      recursive: recursive,
     });
 
     if (recursive) data.messagesTree = messages.children;
@@ -288,7 +288,7 @@ export default function ExportModel({ open, onOpenChange }) {
       data: data,
       fileName: filename,
       extension: 'json',
-      exportType: exportFromJSON.types.json
+      exportType: exportFromJSON.types.json,
     });
   };
 
@@ -322,7 +322,7 @@ export default function ExportModel({ open, onOpenChange }) {
                   placeholder="Set the filename"
                   className={cn(
                     defaultTextProps,
-                    'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                    'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
                   )}
                 />
               </div>
@@ -337,7 +337,7 @@ export default function ExportModel({ open, onOpenChange }) {
                   options={typeOptions}
                   className={cn(
                     defaultTextProps,
-                    'flex h-10 max-h-10 w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                    'flex h-10 max-h-10 w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
                   )}
                   containerClassName="flex w-full resize-none"
                 />

@@ -33,8 +33,8 @@ function Settings(props) {
         {
           onSuccess: (data) => {
             setTokenCount(data.count);
-          }
-        }
+          },
+        },
       );
     };
 
@@ -59,7 +59,7 @@ function Settings(props) {
               disabled={readonly}
               className={cn(
                 defaultTextProps,
-                'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
               )}
               containerClassName="flex w-full resize-none"
             />
@@ -76,7 +76,7 @@ function Settings(props) {
               placeholder="Bing can use up to 7k tokens for 'context', which it can reference for the conversation. The specific limit is not known but may run into errors exceeding 7k tokens"
               className={cn(
                 defaultTextProps,
-                'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2'
+                'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2',
               )}
             />
             <small className="mb-5 text-black dark:text-white">{`Token count: ${tokenCount}`}</small>
@@ -129,7 +129,7 @@ function Settings(props) {
                 placeholder="WARNING: Misuse of this feature can get you BANNED from using Bing! Click on 'System Message' for full instructions and the default message if omitted, which is the 'Sydney' preset that is considered safe."
                 className={cn(
                   defaultTextProps,
-                  'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 placeholder:text-red-400'
+                  'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 placeholder:text-red-400',
                 )}
               />
             </div>

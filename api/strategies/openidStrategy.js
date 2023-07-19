@@ -19,9 +19,9 @@ const downloadImage = async (url, imagePath, accessToken) => {
   try {
     const response = await axios.get(url, {
       headers: {
-        'Authorization': `Bearer ${accessToken}`
+        'Authorization': `Bearer ${accessToken}`,
       },
-      responseType: 'arraybuffer'
+      responseType: 'arraybuffer',
     });
 
     fs.mkdirSync(path.dirname(imagePath), { recursive: true });
@@ -41,15 +41,15 @@ Issuer.discover(process.env.OPENID_ISSUER)
     const client = new issuer.Client({
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
-      redirect_uris: [domains.server + process.env.OPENID_CALLBACK_URL]
+      redirect_uris: [domains.server + process.env.OPENID_CALLBACK_URL],
     });
 
     const openidLogin = new OpenIDStrategy(
       {
         client,
         params: {
-          scope: process.env.OPENID_SCOPE
-        }
+          scope: process.env.OPENID_SCOPE,
+        },
       },
       async (tokenset, userinfo, done) => {
         try {
@@ -75,7 +75,7 @@ Issuer.discover(process.env.OPENID_ISSUER)
               username: userinfo.given_name || '',
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
-              name: fullName
+              name: fullName,
             });
           } else {
             user.provider = 'openid';
@@ -111,7 +111,7 @@ Issuer.discover(process.env.OPENID_ISSUER)
         } catch (err) {
           done(err);
         }
-      }
+      },
     );
 
     passport.use('openid', openidLogin);

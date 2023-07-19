@@ -47,7 +47,7 @@ const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
     if (pluginAuth) {
       const pluginAuth = await PluginAuth.updateOne(
         { userId, authField },
-        { $set: { value: encryptedValue } }
+        { $set: { value: encryptedValue } },
       );
       return pluginAuth;
     } else {
@@ -55,7 +55,7 @@ const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
         userId,
         authField,
         value: encryptedValue,
-        pluginKey
+        pluginKey,
       });
       newPluginAuth.save();
       return newPluginAuth;
@@ -79,5 +79,5 @@ const deleteUserPluginAuth = async (userId, authField) => {
 module.exports = {
   getUserPluginAuthValue,
   updateUserPluginAuth,
-  deleteUserPluginAuth
+  deleteUserPluginAuth,
 };
