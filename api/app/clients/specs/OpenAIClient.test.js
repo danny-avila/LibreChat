@@ -5,7 +5,7 @@ describe('OpenAIClient', () => {
   const model = 'gpt-4';
   const parentMessageId = '1';
   const messages = [
-    { role: 'user', sender: 'User', text: 'Hello', messageId: parentMessageId},
+    { role: 'user', sender: 'User', text: 'Hello', messageId: parentMessageId },
     { role: 'assistant', sender: 'Assistant', text: 'Hi', messageId: '2' },
   ];
 
@@ -22,7 +22,7 @@ describe('OpenAIClient', () => {
     client.refineMessages = jest.fn().mockResolvedValue({
       role: 'assistant',
       content: 'Refined answer',
-      tokenCount: 30
+      tokenCount: 30,
     });
   });
 
@@ -100,60 +100,83 @@ describe('OpenAIClient', () => {
 
   describe('buildMessages', () => {
     it('should build messages correctly for chat completion', async () => {
-      const result = await client.buildMessages(messages, parentMessageId, { isChatCompletion: true });
+      const result = await client.buildMessages(messages, parentMessageId, {
+        isChatCompletion: true,
+      });
       expect(result).toHaveProperty('prompt');
     });
 
     it('should build messages correctly for non-chat completion', async () => {
-      const result = await client.buildMessages(messages, parentMessageId, { isChatCompletion: false });
+      const result = await client.buildMessages(messages, parentMessageId, {
+        isChatCompletion: false,
+      });
       expect(result).toHaveProperty('prompt');
     });
 
     it('should build messages correctly with a promptPrefix', async () => {
-      const result = await client.buildMessages(messages, parentMessageId, { isChatCompletion: true, promptPrefix: 'Test Prefix' });
+      const result = await client.buildMessages(messages, parentMessageId, {
+        isChatCompletion: true,
+        promptPrefix: 'Test Prefix',
+      });
       expect(result).toHaveProperty('prompt');
-      const instructions = result.prompt.find(item => item.name === 'instructions');
+      const instructions = result.prompt.find((item) => item.name === 'instructions');
       expect(instructions).toBeDefined();
       expect(instructions.content).toContain('Test Prefix');
     });
 
     it('should handle context strategy correctly', async () => {
       client.contextStrategy = 'refine';
-      const result = await client.buildMessages(messages, parentMessageId, { isChatCompletion: true });
+      const result = await client.buildMessages(messages, parentMessageId, {
+        isChatCompletion: true,
+      });
       expect(result).toHaveProperty('prompt');
       expect(result).toHaveProperty('tokenCountMap');
     });
 
     it('should assign name property for user messages when options.name is set', async () => {
       client.options.name = 'Test User';
-      const result = await client.buildMessages(messages, parentMessageId, { isChatCompletion: true });
-      const hasUserWithName = result.prompt.some(item => item.role === 'user' && item.name === 'Test User');
+      const result = await client.buildMessages(messages, parentMessageId, {
+        isChatCompletion: true,
+      });
+      const hasUserWithName = result.prompt.some(
+        (item) => item.role === 'user' && item.name === 'Test User',
+      );
       expect(hasUserWithName).toBe(true);
     });
 
     it('should calculate tokenCount for each message when contextStrategy is set', async () => {
       client.contextStrategy = 'refine';
-      const result = await client.buildMessages(messages, parentMessageId, { isChatCompletion: true });
-      const hasUserWithTokenCount = result.prompt.some(item => item.role === 'user' && item.tokenCount > 0);
+      const result = await client.buildMessages(messages, parentMessageId, {
+        isChatCompletion: true,
+      });
+      const hasUserWithTokenCount = result.prompt.some(
+        (item) => item.role === 'user' && item.tokenCount > 0,
+      );
       expect(hasUserWithTokenCount).toBe(true);
     });
 
     it('should handle promptPrefix from options when promptPrefix argument is not provided', async () => {
       client.options.promptPrefix = 'Test Prefix from options';
-      const result = await client.buildMessages(messages, parentMessageId, { isChatCompletion: true });
-      const instructions = result.prompt.find(item => item.name === 'instructions');
+      const result = await client.buildMessages(messages, parentMessageId, {
+        isChatCompletion: true,
+      });
+      const instructions = result.prompt.find((item) => item.name === 'instructions');
       expect(instructions.content).toContain('Test Prefix from options');
     });
 
     it('should handle case when neither promptPrefix argument nor options.promptPrefix is set', async () => {
-      const result = await client.buildMessages(messages, parentMessageId, { isChatCompletion: true });
-      const instructions = result.prompt.find(item => item.name === 'instructions');
+      const result = await client.buildMessages(messages, parentMessageId, {
+        isChatCompletion: true,
+      });
+      const instructions = result.prompt.find((item) => item.name === 'instructions');
       expect(instructions).toBeUndefined();
     });
 
     it('should handle case when getMessagesForConversation returns null or an empty array', async () => {
       const messages = [];
-      const result = await client.buildMessages(messages, parentMessageId, { isChatCompletion: true });
+      const result = await client.buildMessages(messages, parentMessageId, {
+        isChatCompletion: true,
+      });
       expect(result.prompt).toEqual([]);
     });
   });

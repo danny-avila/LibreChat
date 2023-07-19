@@ -37,8 +37,8 @@ function Settings(props) {
         {
           onSuccess: (data) => {
             setTokenCount(data.count);
-          }
-        }
+          },
+        },
       );
     };
 
@@ -63,7 +63,7 @@ function Settings(props) {
               disabled={readonly}
               className={cn(
                 defaultTextProps,
-                'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
               )}
               containerClassName="flex w-full resize-none"
             />
@@ -80,7 +80,7 @@ function Settings(props) {
               placeholder={localize(lang, 'com_endpoint_bing_context_placeholder')}
               className={cn(
                 defaultTextProps,
-                'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2'
+                'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2',
               )}
             />
             <small className="mb-5 text-black dark:text-white">{`${localize(lang, 'com_endpoint_token_count')}: ${tokenCount}`}</small>
@@ -115,7 +115,7 @@ function Settings(props) {
                 style={{ opacity: showSystemMessage ? '1' : '0' }}
               >
                 <a
-                  href="https://github.com/danny-avila/LibreChat/blob/main/client/defaultSystemMessage.md"
+                  href="https://github.com/danny-avila/LibreChat/blob/main/docs/features/bing_jailbreak.md#default-system-message-for-jailbreak-mode-sydney"
                   target="_blank"
                   className="text-blue-500 transition-colors duration-200 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-500"
                   rel="noreferrer"
@@ -133,7 +133,7 @@ function Settings(props) {
                 placeholder={localize(lang, 'com_endpoint_bing_system_message_placeholder')}
                 className={cn(
                   defaultTextProps,
-                  'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 placeholder:text-red-400'
+                  'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 placeholder:text-red-400',
                 )}
               />
             </div>

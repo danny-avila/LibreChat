@@ -10,7 +10,7 @@ const facebookLogin = new FacebookStrategy(
     clientID: process.env.FACEBOOK_APP_ID,
     clientSecret: process.env.FACEBOOK_SECRET,
     callbackURL: `${domains.server}${process.env.FACEBOOK_CALLBACK_URL}`,
-    proxy: true
+    proxy: true,
     // profileFields: [
     //   'id',
     //   'email',
@@ -46,14 +46,14 @@ const facebookLogin = new FacebookStrategy(
         username: profile.name.givenName + profile.name.familyName,
         email: profile.emails[0].value,
         name: profile.displayName,
-        avatar: profile.photos[0].value
+        avatar: profile.photos[0].value,
       }).save();
 
       done(null, newUser);
     } catch (err) {
       console.log(err);
     }
-  }
+  },
 );
 
 passport.use(facebookLogin);

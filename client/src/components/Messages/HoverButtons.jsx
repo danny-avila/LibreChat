@@ -12,16 +12,22 @@ export default function HoverButtons({
   conversation,
   isSubmitting,
   message,
-  regenerate
+  regenerate,
 }) {
   const { endpoint } = conversation;
   const [isCopied, setIsCopied] = React.useState(false);
 
   const branchingSupported =
     // azureOpenAI, openAI, chatGPTBrowser support branching, so edit enabled // 5/21/23: Bing is allowing editing and Message regenerating
-    !!['azureOpenAI', 'openAI', 'chatGPTBrowser', 'google', 'bingAI', 'gptPlugins'].find(
-      (e) => e === endpoint
-    );
+    !![
+      'azureOpenAI',
+      'openAI',
+      'chatGPTBrowser',
+      'google',
+      'bingAI',
+      'gptPlugins',
+      'anthropic',
+    ].find((e) => e === endpoint);
   // Sydney in bingAI supports branching, so edit enabled
 
   const editEnabled =
@@ -68,7 +74,7 @@ export default function HoverButtons({
       <button
         className={cn(
           'hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible',
-          message?.isCreatedByUser ? '' : 'active'
+          message?.isCreatedByUser ? '' : 'active',
         )}
         onClick={() => copyToClipboard(setIsCopied)}
         type="button"

@@ -17,11 +17,11 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
   };
 
   const endpointComponents = {
-    'google': GoogleConfig,
-    'openAI': OpenAIConfig,
-    'azureOpenAI': OpenAIConfig,
-    'gptPlugins': OpenAIConfig,
-    'default': OtherConfig
+    google: GoogleConfig,
+    openAI: OpenAIConfig,
+    azureOpenAI: OpenAIConfig,
+    gptPlugins: OpenAIConfig,
+    default: OtherConfig,
   };
 
   const EndpointComponent = endpointComponents[endpoint] || endpointComponents['default'];
@@ -32,17 +32,17 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
         title={`Set Token for ${alternateName[endpoint] ?? endpoint}`}
         main={
           <div className="grid w-full items-center gap-2">
-            <EndpointComponent token={token} setToken={setToken} endpoint={endpoint}/>
+            <EndpointComponent token={token} setToken={setToken} endpoint={endpoint} />
             <small className="text-red-600">
-        Your token will be sent to the server, but not saved.
+              Your token will be sent to the server, but not saved.
             </small>
-            <HelpText endpoint={endpoint}/>
+            <HelpText endpoint={endpoint} />
           </div>
         }
         selection={{
           selectHandler: submit,
           selectClasses: 'bg-green-600 hover:bg-green-700 dark:hover:bg-green-800 text-white',
-          selectText: 'Submit'
+          selectText: 'Submit',
         }}
       />
     </Dialog>

@@ -1,6 +1,6 @@
-import {Page, FullConfig, chromium} from '@playwright/test';
+import { Page, FullConfig, chromium } from '@playwright/test';
 
-type User = {username: string; password: string};
+type User = { username: string; password: string };
 
 async function login(page: Page, user: User) {
   await page.locator('input[name="email"]').fill(user.username);
@@ -10,7 +10,7 @@ async function login(page: Page, user: User) {
 
 async function authenticate(config: FullConfig, user: User) {
   console.log('🤖: global setup has been started');
-  const {baseURL, storageState} = config.projects[0].use;
+  const { baseURL, storageState } = config.projects[0].use;
   console.log('🤖: using baseURL', baseURL);
   const browser = await chromium.launch();
   const page = await browser.newPage();
@@ -24,7 +24,7 @@ async function authenticate(config: FullConfig, user: User) {
     localStorage.setItem('navVisible', 'true');
   });
   console.log('🤖: ✔️  localStorage: set Nav as Visible', storageState);
-  await page.context().storageState({path: storageState as string});
+  await page.context().storageState({ path: storageState as string });
   console.log('🤖: ✔️  authentication state successfully saved in', storageState);
   await browser.close();
   console.log('🤖: global setup has been finished');

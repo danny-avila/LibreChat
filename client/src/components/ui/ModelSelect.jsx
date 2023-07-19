@@ -7,7 +7,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuRadioItem
+  DropdownMenuRadioItem,
 } from './DropdownMenu.tsx';
 import store from '~/store';
 import { useRecoilValue } from 'recoil';
@@ -21,14 +21,18 @@ const ModelSelect = ({ model, onChange, availableModels, ...props }) => {
     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
         <Button {...props}>
-          <span className="w-full text-center text-xs font-medium font-normal">{localize(lang, 'com_ui_model')}: {model}</span>
+          <span className="w-full text-center text-xs font-medium font-normal">
+            {localize(lang, 'com_ui_model')}: {model}
+          </span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         className="w-56 dark:bg-gray-700"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        <DropdownMenuLabel className="dark:text-gray-300">{localize(lang, 'com_ui_select_model')}</DropdownMenuLabel>
+        <DropdownMenuLabel className="dark:text-gray-300">
+          {localize(lang, 'com_ui_select_model')}
+        </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuRadioGroup value={model} onValueChange={onChange} className="overflow-y-auto">
           {availableModels.map((model) => (

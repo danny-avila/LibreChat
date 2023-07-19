@@ -32,7 +32,7 @@ export const languages = [
   'x86asm',
   'matlab',
   'perl',
-  'pascal'
+  'pascal',
 ];
 
 export const alternateName = {
@@ -41,6 +41,6 @@ export const alternateName = {
   bingAI: 'Bing',
   chatGPTBrowser: 'ChatGPT',
   gptPlugins: 'Plugins',
-  google: 'PaLM'
+  google: 'PaLM',
+  anthropic: 'Anthropic',
 };
-

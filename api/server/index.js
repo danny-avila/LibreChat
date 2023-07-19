@@ -24,13 +24,19 @@ config.validate(); // Validate the config
 
   const app = express();
   app.use(errorController);
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ limit: '3mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(express.static(path.join(projectPath, 'dist')));
   app.use(express.static(path.join(projectPath, 'public')));
 
   app.set('trust proxy', 1); // trust first proxy
   app.use(cors());
+
+  if (!process.env.ALLOW_SOCIAL_LOGIN) {
+    console.warn(
+      'Social logins are disabled. Set Envrionment Variable "ALLOW_SOCIAL_LOGIN" to true to enable them.',
+    );
+  }
 
   // OAUTH
   app.use(passport.initialize());
@@ -48,14 +54,20 @@ config.validate(); // Validate the config
   if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
     require('../strategies/discordStrategy');
   }
-  if (process.env.OPENID_CLIENT_ID && process.env.OPENID_CLIENT_SECRET &&
-      process.env.OPENID_ISSUER && process.env.OPENID_SCOPE &&
-      process.env.OPENID_SESSION_SECRET) {
-    app.use(session({
-      secret: process.env.OPENID_SESSION_SECRET,
-      resave: false,
-      saveUninitialized: false
-    }));
+  if (
+    process.env.OPENID_CLIENT_ID &&
+    process.env.OPENID_CLIENT_SECRET &&
+    process.env.OPENID_ISSUER &&
+    process.env.OPENID_SCOPE &&
+    process.env.OPENID_SESSION_SECRET
+  ) {
+    app.use(
+      session({
+        secret: process.env.OPENID_SESSION_SECRET,
+        resave: false,
+        saveUninitialized: false,
+      }),
+    );
     app.use(passport.session());
     require('../strategies/openidStrategy');
   }
@@ -80,12 +92,13 @@ config.validate(); // Validate the config
   });
 
   app.listen(port, host, () => {
-    if (host == '0.0.0.0')
+    if (host == '0.0.0.0') {
       console.log(
-        `Server listening on all interface at port ${port}. Use http://localhost:${port} to access it`
+        `Server listening on all interface at port ${port}. Use http://localhost:${port} to access it`,
       );
-    else
+    } else {
       console.log(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
+    }
   });
 })();
 

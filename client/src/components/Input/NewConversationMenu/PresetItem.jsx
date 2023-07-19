@@ -11,7 +11,7 @@ export default function PresetItem({ preset = {}, value, onChangePreset, onDelet
     endpoint: preset?.endpoint,
     model: preset?.model,
     error: false,
-    className: 'mr-2'
+    className: 'mr-2',
   });
 
   const getPresetTitle = () => {
@@ -19,22 +19,38 @@ export default function PresetItem({ preset = {}, value, onChangePreset, onDelet
 
     if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
       const { chatGptLabel, model } = preset;
-      if (model) _title += `: ${model}`;
-      if (chatGptLabel) _title += ` as ${chatGptLabel}`;
+      if (model) {
+        _title += `: ${model}`;
+      }
+      if (chatGptLabel) {
+        _title += ` as ${chatGptLabel}`;
+      }
     } else if (endpoint === 'google') {
       const { modelLabel, model } = preset;
-      if (model) _title += `: ${model}`;
-      if (modelLabel) _title += ` as ${modelLabel}`;
+      if (model) {
+        _title += `: ${model}`;
+      }
+      if (modelLabel) {
+        _title += ` as ${modelLabel}`;
+      }
     } else if (endpoint === 'bingAI') {
       const { jailbreak, toneStyle } = preset;
-      if (toneStyle) _title += `: ${toneStyle}`;
-      if (jailbreak) _title += ` as Sydney`;
+      if (toneStyle) {
+        _title += `: ${toneStyle}`;
+      }
+      if (jailbreak) {
+        _title += ' as Sydney';
+      }
     } else if (endpoint === 'chatGPTBrowser') {
       const { model } = preset;
-      if (model) _title += `: ${model}`;
+      if (model) {
+        _title += `: ${model}`;
+      }
     } else if (endpoint === 'gptPlugins') {
       const { model } = preset;
-      if (model) _title += `: ${model}`;
+      if (model) {
+        _title += `: ${model}`;
+      }
     } else if (endpoint === null) {
       null;
     } else {

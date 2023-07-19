@@ -7,9 +7,9 @@ import { localize } from '~/localization/Translation';
 import {
   useRegisterUserMutation,
   TRegisterUser,
-  useGetStartupConfig
+  useGetStartupConfig,
 } from '@librechat/data-provider';
-import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components'
+import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
 
 function Registration() {
   const navigate = useNavigate();
@@ -21,7 +21,7 @@ function Registration() {
     register,
     watch,
     handleSubmit,
-    formState: { errors }
+    formState: { errors },
   } = useForm<TRegisterUser>({ mode: 'onChange' });
 
   const [error, setError] = useState<boolean>(false);
@@ -42,7 +42,7 @@ function Registration() {
           //@ts-ignore - error is of type unknown
           setErrorMessage(error.response?.data?.message);
         }
-      }
+      },
     });
   };
 
@@ -81,12 +81,12 @@ function Registration() {
                   required: localize(lang, 'com_auth_name_required'),
                   minLength: {
                     value: 3,
-                    message: localize(lang, 'com_auth_name_min_length')
+                    message: localize(lang, 'com_auth_name_min_length'),
                   },
                   maxLength: {
                     value: 80,
-                    message: localize(lang, 'com_auth_name_max_length')
-                  }
+                    message: localize(lang, 'com_auth_name_max_length'),
+                  },
                 })}
                 aria-invalid={!!errors.name}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -117,12 +117,12 @@ function Registration() {
                   required: localize(lang, 'com_auth_username_required'),
                   minLength: {
                     value: 3,
-                    message: localize(lang, 'com_auth_username_min_length')
+                    message: localize(lang, 'com_auth_username_min_length'),
                   },
                   maxLength: {
                     value: 20,
-                    message: localize(lang, 'com_auth_username_max_length')
-                  }
+                    message: localize(lang, 'com_auth_username_max_length'),
+                  },
                 })}
                 aria-invalid={!!errors.username}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -155,16 +155,16 @@ function Registration() {
                   required: localize(lang, 'com_auth_email_required'),
                   minLength: {
                     value: 3,
-                    message: localize(lang, 'com_auth_email_min_length')
+                    message: localize(lang, 'com_auth_email_min_length'),
                   },
                   maxLength: {
                     value: 120,
-                    message: localize(lang, 'com_auth_email_max_length')
+                    message: localize(lang, 'com_auth_email_max_length'),
                   },
                   pattern: {
                     value: /\S+@\S+\.\S+/,
-                    message: localize(lang, 'com_auth_email_pattern')
-                  }
+                    message: localize(lang, 'com_auth_email_pattern'),
+                  },
                 })}
                 aria-invalid={!!errors.email}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -196,12 +196,12 @@ function Registration() {
                   required: localize(lang, 'com_auth_password_required'),
                   minLength: {
                     value: 8,
-                    message: localize(lang, 'com_auth_password_min_length')
+                    message: localize(lang, 'com_auth_password_min_length'),
                   },
                   maxLength: {
                     value: 128,
-                    message: localize(lang, 'com_auth_password_max_length')
-                  }
+                    message: localize(lang, 'com_auth_password_max_length'),
+                  },
                 })}
                 aria-invalid={!!errors.password}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -235,7 +235,8 @@ function Registration() {
                 //   return false;
                 // }}
                 {...register('confirm_password', {
-                  validate: (value) => value === password || localize(lang, 'com_auth_password_not_match')
+                  validate: (value) =>
+                    value === password || localize(lang, 'com_auth_password_not_match'),
                 })}
                 aria-invalid={!!errors.confirm_password}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -285,18 +286,21 @@ function Registration() {
           </a>
         </p>
         {startupConfig?.socialLoginEnabled && (
-          <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
-            <div className="absolute bg-white px-3 text-xs">Or</div>
-          </div>
+          <>
+            <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
+              <div className="absolute bg-white px-3 text-xs">Or</div>
+            </div>
+            <div className="mt-8" />
+          </>
         )}
         {startupConfig?.googleLoginEnabled && startupConfig?.socialLoginEnabled && (
           <>
-
-            <div className="mt-4 flex gap-x-2">
+            <div className="mt-2 flex gap-x-2">
               <a
                 aria-label="Login with Google"
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/google`}>
+                href={`${startupConfig.serverDomain}/oauth/google`}
+              >
                 <GoogleIcon />
                 <p>{localize(lang, 'com_auth_google_login')}</p>
               </a>
@@ -305,8 +309,7 @@ function Registration() {
         )}
         {startupConfig?.openidLoginEnabled && startupConfig?.socialLoginEnabled && (
           <>
-
-            <div className="mt-4 flex gap-x-2">
+            <div className="mt-2 flex gap-x-2">
               <a
                 aria-label="Login with OpenID"
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
@@ -324,29 +327,28 @@ function Registration() {
         )}
         {startupConfig?.githubLoginEnabled && startupConfig?.socialLoginEnabled && (
           <>
-
-            <div className="mt-4 flex gap-x-2">
+            <div className="mt-2 flex gap-x-2">
               <a
                 aria-label="Login with GitHub"
-
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/github`}>
+                href={`${startupConfig.serverDomain}/oauth/github`}
+              >
                 <GithubIcon />
-                <p>Login with Github</p>
+                <p>{localize(lang, 'com_auth_github_login')}</p>
               </a>
             </div>
           </>
         )}
         {startupConfig?.discordLoginEnabled && startupConfig?.socialLoginEnabled && (
           <>
-
-            <div className="mt-4 flex gap-x-2">
+            <div className="mt-2 flex gap-x-2">
               <a
                 aria-label="Login with Discord"
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/discord`}>
+                href={`${startupConfig.serverDomain}/oauth/discord`}
+              >
                 <DiscordIcon />
-                <p>Login with Discord</p>
+                <p>{localize(lang, 'com_auth_discord_login')}</p>
               </a>
             </div>
           </>

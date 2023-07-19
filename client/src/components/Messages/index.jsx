@@ -63,9 +63,9 @@ export default function Messages({ isSearchView = false }) {
         setShowScrollButton(false);
       },
       750,
-      { leading: true }
+      { leading: true },
     ),
-    [messagesEndRef]
+    [messagesEndRef],
   );
 
   let timeoutId = null;
@@ -89,7 +89,7 @@ export default function Messages({ isSearchView = false }) {
         <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
           <MessageHeader isSearchView={isSearchView} />
           {_messagesTree === null ? (
-            <div className="h-screen flex items-center justify-center">
+            <div className="flex h-screen items-center justify-center">
               <Spinner />
             </div>
           ) : _messagesTree?.length == 0 && isSearchView ? (

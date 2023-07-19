@@ -20,9 +20,9 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
     const _preset = cleanupPreset({
       preset: {
         ...preset,
-        title
+        title,
       },
-      endpointsConfig
+      endpointsConfig,
     });
     createPresetMutation.mutate(_preset);
   };
@@ -45,10 +45,10 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
               id="chatGptLabel"
               value={title || ''}
               onChange={(e) => setTitle(e.target.value || '')}
-              placeholder="Set a custom name, in case you can find this preset"
+              placeholder="Set a custom name for this preset"
               className={cn(
                 defaultTextProps,
-                'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
               )}
             />
           </div>
@@ -56,7 +56,7 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
         selection={{
           selectHandler: submitPreset,
           selectClasses: 'bg-green-600 hover:bg-green-700 dark:hover:bg-green-800 text-white',
-          selectText: 'Save'
+          selectText: 'Save',
         }}
       />
     </Dialog>

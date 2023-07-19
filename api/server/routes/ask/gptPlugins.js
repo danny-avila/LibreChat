@@ -8,7 +8,7 @@ const {
   sendMessage,
   createOnProgress,
   formatSteps,
-  formatAction
+  formatAction,
 } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 
@@ -20,8 +20,12 @@ router.post('/abort', requireJwtAuth, async (req, res) => {
 
 router.post('/', requireJwtAuth, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId } = req.body;
-  if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
-  if (endpoint !== 'gptPlugins') return handleError(res, { text: 'Illegal request' });
+  if (text.length === 0) {
+    return handleError(res, { text: 'Prompt empty or too short' });
+  }
+  if (endpoint !== 'gptPlugins') {
+    return handleError(res, { text: 'Illegal request' });
+  }
 
   const agentOptions = req.body?.agentOptions ?? {
     agent: 'functions',
@@ -44,12 +48,12 @@ router.post('/', requireJwtAuth, async (req, res) => {
       temperature: req.body?.temperature ?? 0,
       top_p: req.body?.top_p ?? 1,
       presence_penalty: req.body?.presence_penalty ?? 0,
-      frequency_penalty: req.body?.frequency_penalty ?? 0
+      frequency_penalty: req.body?.frequency_penalty ?? 0,
     },
     agentOptions: {
       ...agentOptions,
       // agent: 'functions'
-    }
+    },
   };
 
   console.log('ask log');
@@ -63,17 +67,25 @@ router.post('/', requireJwtAuth, async (req, res) => {
     conversationId,
     parentMessageId,
     req,
-    res
+    res,
   });
 });
 
-const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, conversationId, req, res }) => {
+const ask = async ({
+  text,
+  endpoint,
+  endpointOption,
+  parentMessageId = null,
+  conversationId,
+  req,
+  res,
+}) => {
   res.writeHead(200, {
     Connection: 'keep-alive',
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
     'Access-Control-Allow-Origin': '*',
-    'X-Accel-Buffering': 'no'
+    'X-Accel-Buffering': 'no',
   });
   let userMessage;
   let userMessageId;
@@ -87,7 +99,7 @@ const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, con
     loading: true,
     inputs: [],
     latest: null,
-    outputs: null
+    outputs: null,
   };
 
   try {
@@ -100,7 +112,11 @@ const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, con
       }
     };
 
-    const { onProgress: progressCallback, sendIntermediateMessage, getPartialText } = createOnProgress({
+    const {
+      onProgress: progressCallback,
+      sendIntermediateMessage,
+      getPartialText,
+    } = createOnProgress({
       onProgress: ({ text: partialText }) => {
         const currentTimestamp = Date.now();
 
@@ -119,10 +135,10 @@ const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, con
             model: endpointOption.modelOptions.model,
             unfinished: true,
             cancelled: false,
-            error: false
+            error: false,
           });
         }
-      }
+      },
     });
 
     const abortController = new AbortController();
@@ -149,14 +165,14 @@ const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, con
         final: true,
         conversation: await getConvo(req.user.id, conversationId),
         requestMessage: userMessage,
-        responseMessage: responseMessage
+        responseMessage: responseMessage,
       };
     };
 
     const onStart = (userMessage) => {
       sendMessage(res, { message: userMessage, created: true });
       abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
-    }
+    };
 
     endpointOption.tools = await validateTools(user, endpointOption.tools);
     const clientOptions = {
@@ -164,26 +180,28 @@ const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, con
       endpoint,
       reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
       proxy: process.env.PROXY || null,
-      ...endpointOption
+      ...endpointOption,
     };
 
-    let oaiApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
+    let openAIApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
     if (process.env.PLUGINS_USE_AZURE) {
       clientOptions.azure = getAzureCredentials();
-      oaiApiKey = clientOptions.azure.azureOpenAIApiKey;
+      openAIApiKey = clientOptions.azure.azureOpenAIApiKey;
     }
 
-    if (oaiApiKey && oaiApiKey.includes('azure') && !clientOptions.azure) {
+    if (openAIApiKey && openAIApiKey.includes('azure') && !clientOptions.azure) {
       clientOptions.azure = JSON.parse(req.body?.token) ?? getAzureCredentials();
-      oaiApiKey = clientOptions.azure.azureOpenAIApiKey;
+      openAIApiKey = clientOptions.azure.azureOpenAIApiKey;
     }
-    const chatAgent = new PluginsClient(oaiApiKey, clientOptions);
+    const chatAgent = new PluginsClient(openAIApiKey, clientOptions);
 
-    const onAgentAction = (action) => {
+    const onAgentAction = (action, start = false) => {
       const formattedAction = formatAction(action);
       plugin.inputs.push(formattedAction);
       plugin.latest = formattedAction.plugin;
-      saveMessage(userMessage);
+      if (!start) {
+        saveMessage(userMessage);
+      }
       sendIntermediateMessage(res, { plugin });
       // console.log('PLUGIN ACTION', formattedAction);
     };
@@ -211,9 +229,9 @@ const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, con
         res,
         text,
         plugin,
-        parentMessageId: overrideParentMessageId || userMessageId
+        parentMessageId: overrideParentMessageId || userMessageId,
       }),
-      abortController
+      abortController,
     });
 
     if (overrideParentMessageId) {
@@ -230,15 +248,20 @@ const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, con
       final: true,
       conversation: await getConvo(req.user.id, conversationId),
       requestMessage: userMessage,
-      responseMessage: response
+      responseMessage: response,
     });
     res.end();
 
     if (parentMessageId == '00000000-0000-0000-0000-000000000000' && newConvo) {
-      const title = await titleConvo({ text, response });
+      const title = await titleConvo({
+        text,
+        response,
+        openAIApiKey,
+        azure: !!clientOptions.azure,
+      });
       await saveConvo(req.user.id, {
         conversationId: conversationId,
-        title
+        title,
       });
     }
   } catch (error) {
@@ -251,7 +274,7 @@ const ask = async ({ text, endpoint, endpointOption, parentMessageId = null, con
       unfinished: false,
       cancelled: false,
       error: true,
-      text: error.message
+      text: error.message,
     };
     await saveMessage(errorMessage);
     handleError(res, errorMessage);

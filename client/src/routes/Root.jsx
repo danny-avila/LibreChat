@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import {
   useGetEndpointsQuery,
   useGetPresetsQuery,
-  useGetSearchEnabledQuery
+  useGetSearchEnabledQuery,
 } from '@librechat/data-provider';
 
 import MessageHandler from '../components/MessageHandler';
@@ -23,7 +23,7 @@ export default function Root() {
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
   const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
   const setPresets = useSetRecoilState(store.presets);
-  const { user } = useAuthContext();
+  const { user, isAuthenticated } = useAuthContext();
 
   const searchEnabledQuery = useGetSearchEnabledQuery();
   const endpointsQuery = useGetEndpointsQuery();
@@ -56,6 +56,10 @@ export default function Root() {
       console.error('Failed to get search enabled', searchEnabledQuery.error);
     }
   }, [searchEnabledQuery.data, searchEnabledQuery.isError]);
+
+  if (!isAuthenticated) {
+    return null;
+  }
 
   return (
     <>

@@ -26,9 +26,9 @@ export default function MessageHandler() {
           parentMessageId: message?.overrideParentMessageId,
           messageId: message?.overrideParentMessageId + '_',
           plugin: plugin ? plugin : null,
-          submitting: true
+          submitting: true,
           // unfinished: true
-        }
+        },
       ]);
     } else {
       setMessages([
@@ -40,9 +40,9 @@ export default function MessageHandler() {
           parentMessageId: message?.messageId,
           messageId: message?.messageId + '_',
           plugin: plugin ? plugin : null,
-          submitting: true
+          submitting: true,
           // unfinished: true
-        }
+        },
       ]);
     }
   };
@@ -74,24 +74,24 @@ export default function MessageHandler() {
 
     setConversation((prevState) => ({
       ...prevState,
-      ...conversation
+      ...conversation,
     }));
   };
 
   const createdHandler = (data, submission) => {
     const { messages, message, initialResponse, isRegenerate = false } = submission;
 
-    if (isRegenerate)
+    if (isRegenerate) {
       setMessages([
         ...messages,
         {
           ...initialResponse,
           parentMessageId: message?.overrideParentMessageId,
           messageId: message?.overrideParentMessageId + '_',
-          submitting: true
-        }
+          submitting: true,
+        },
       ]);
-    else
+    } else {
       setMessages([
         ...messages,
         message,
@@ -99,14 +99,15 @@ export default function MessageHandler() {
           ...initialResponse,
           parentMessageId: message?.messageId,
           messageId: message?.messageId + '_',
-          submitting: true
-        }
+          submitting: true,
+        },
       ]);
+    }
 
     const { conversationId } = message;
     setConversation((prevState) => ({
       ...prevState,
-      conversationId
+      conversationId,
     }));
     resetLatestMessage();
   };
@@ -138,7 +139,7 @@ export default function MessageHandler() {
 
     setConversation((prevState) => ({
       ...prevState,
-      ...conversation
+      ...conversation,
     }));
   };
 
@@ -149,7 +150,7 @@ export default function MessageHandler() {
     const errorResponse = {
       ...data,
       error: true,
-      parentMessageId: message?.messageId
+      parentMessageId: message?.messageId,
     };
     setIsSubmitting(false);
     setMessages([...messages, message, errorResponse]);
@@ -164,11 +165,11 @@ export default function MessageHandler() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        abortKey: conversationId
-      })
+        abortKey: conversationId,
+      }),
     })
       .then((response) => response.json())
       .then((data) => {
@@ -184,8 +185,12 @@ export default function MessageHandler() {
   };
 
   useEffect(() => {
-    if (submission === null) return;
-    if (Object.keys(submission).length === 0) return;
+    if (submission === null) {
+      return;
+    }
+    if (Object.keys(submission).length === 0) {
+      return;
+    }
 
     let { message } = submission;
 
@@ -193,7 +198,7 @@ export default function MessageHandler() {
 
     const events = new SSE(server, {
       payload: JSON.stringify(payload),
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
 
     events.onmessage = (e) => {
@@ -206,14 +211,16 @@ export default function MessageHandler() {
       if (data.created) {
         message = {
           ...data.message,
-          overrideParentMessageId: message?.overrideParentMessageId
+          overrideParentMessageId: message?.overrideParentMessageId,
         };
         createdHandler(data, { ...submission, message });
         console.log('created', message);
       } else {
         let text = data.text || data.response;
         let { initial, plugin } = data;
-        if (initial) console.log(data);
+        if (initial) {
+          console.log(data);
+        }
 
         if (data.message) {
           messageHandler(text, { ...submission, plugin, message });

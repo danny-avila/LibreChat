@@ -23,7 +23,8 @@ class GoogleSearchAPI extends Tool {
    * A description for the agent to use
    * @type {string}
    */
-  description = `Use the 'google' tool to retrieve internet search results relevant to your input. The results will return links and snippets of text from the webpages`;
+  description =
+    'Use the \'google\' tool to retrieve internet search results relevant to your input. The results will return links and snippets of text from the webpages';
 
   getCx() {
     const cx = process.env.GOOGLE_CSE_ID || '';
@@ -79,7 +80,7 @@ class GoogleSearchAPI extends Tool {
         q: input,
         cx: this.cx,
         auth: this.apiKey,
-        num: 5 // Limit the number of results to 5
+        num: 5, // Limit the number of results to 5
       });
 
       // return response.data;
@@ -87,7 +88,7 @@ class GoogleSearchAPI extends Tool {
 
       if (!response.data.items || response.data.items.length === 0) {
         return this.resultsToReadableFormat([
-          { title: 'No good Google Search Result was found', link: '' }
+          { title: 'No good Google Search Result was found', link: '' },
         ]);
       }
 
@@ -97,7 +98,7 @@ class GoogleSearchAPI extends Tool {
       for (const result of results) {
         const metadataResult = {
           title: result.title || '',
-          link: result.link || ''
+          link: result.link || '',
         };
         if (result.snippet) {
           metadataResult.snippet = result.snippet;

@@ -37,6 +37,12 @@ To get your Bing Access Token, you have a few options:
   - Expand the "Cookies" (Under "Storage")
   - Copy the value of the "\_U" cookie and save it in ./.env as BING_ACCESS_TOKEN
 
+## Anthropic Endpoint (Claude)
+
+- Create an account at [https://console.anthropic.com/](https://console.anthropic.com/)
+- Go to [https://console.anthropic.com/account/keys](https://console.anthropic.com/account/keys) and get your api key
+- add it to `ANTHROPIC_API_KEY=` in the `.env` file
+
 ## Google's PaLM 2
 
 To setup PaLM 2 (via Google Cloud Vertex AI API), you need to:

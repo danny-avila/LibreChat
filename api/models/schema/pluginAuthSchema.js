@@ -8,17 +8,17 @@ const pluginAuthSchema = mongoose.Schema(
     },
     value: {
       type: String,
-      required: true
+      required: true,
     },
     userId: {
       type: String,
-      required: true
+      required: true,
     },
     pluginKey: {
       type: String,
-    }
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 const PluginAuth = mongoose.models.Plugin || mongoose.model('PluginAuth', pluginAuthSchema);

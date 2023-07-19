@@ -28,18 +28,17 @@ const SearchBar = forwardRef((props, ref) => {
     } else {
       setShowClearIcon(true);
     }
-  }, [searchQuery])
-  
+  }, [searchQuery]);
 
   return (
     <div
       ref={ref}
-      className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 relative"
+      className="relative flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
     >
-      {<Search className="h-4 w-4 absolute left-3" />}
+      {<Search className="absolute left-3 h-4 w-4" />}
       <input
         type="text"
-        className="m-0 mr-0 w-full border-none bg-transparent p-0 text-sm leading-tight outline-none pl-7"
+        className="m-0 mr-0 w-full border-none bg-transparent p-0 pl-7 text-sm leading-tight outline-none"
         value={searchQuery}
         onChange={onChange}
         onKeyDown={(e) => {
@@ -49,7 +48,9 @@ const SearchBar = forwardRef((props, ref) => {
         onKeyUp={handleKeyUp}
       />
       <X
-        className={`h-5 w-5 absolute right-3 cursor-pointer ${showClearIcon ? 'opacity-100' : 'opacity-0'} transition-opacity duration-1000`}
+        className={`absolute right-3 h-5 w-5 cursor-pointer ${
+          showClearIcon ? 'opacity-100' : 'opacity-0'
+        } transition-opacity duration-1000`}
         onClick={() => {
           setSearchQuery('');
           clearSearch();

@@ -13,19 +13,11 @@ const types = {
 };
 
 function OptionHover({ type, side }) {
-  // const options = {};
-  // if (type === 'pres') {
-  //   options.sideOffset = 45;
-  // }
   const lang = useRecoilValue(store.lang);
 
   return (
     <HoverCardPortal>
-      <HoverCardContent
-        side={side}
-        className="w-80 "
-        // {...options}
-      >
+      <HoverCardContent side={side} className="w-80 ">
         <div className="space-y-2">
           <p className="text-sm text-gray-600 dark:text-gray-300">{localize(lang, types[type])}</p>
         </div>

@@ -20,8 +20,16 @@ Guidelines:
 "negative_prompt":"semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime, out of frame, low quality, ugly, mutation, deformed"
 - Generate images only once per human query unless explicitly requested by the user`;
     this.schema = z.object({
-      prompt: z.string().describe("Detailed keywords to describe the subject, using at least 7 keywords to accurately describe the image, separated by comma"),
-      negative_prompt: z.string().describe("Keywords we want to exclude from the final image, using at least 7 keywords to accurately describe the image, separated by comma")
+      prompt: z
+        .string()
+        .describe(
+          'Detailed keywords to describe the subject, using at least 7 keywords to accurately describe the image, separated by comma',
+        ),
+      negative_prompt: z
+        .string()
+        .describe(
+          'Keywords we want to exclude from the final image, using at least 7 keywords to accurately describe the image, separated by comma',
+        ),
     });
   }
 
@@ -30,7 +38,10 @@ Guidelines:
   }
 
   getMarkdownImageUrl(imageName) {
-    const imageUrl = path.join(this.relativeImageUrl, imageName).replace(/\\/g, '/').replace('public/', '');
+    const imageUrl = path
+      .join(this.relativeImageUrl, imageName)
+      .replace(/\\/g, '/')
+      .replace('public/', '');
     return `![generated image](/${imageUrl})`;
   }
 
@@ -48,7 +59,7 @@ Guidelines:
     const payload = {
       prompt,
       negative_prompt,
-      steps: 20
+      steps: 20,
     };
     const response = await axios.post(`${url}/sdapi/v1/txt2img`, payload);
     const image = response.data.images[0];
@@ -58,7 +69,17 @@ Guidelines:
 
     // Generate unique name
     const imageName = `${Date.now()}.png`;
-    this.outputPath = path.resolve(__dirname, '..', '..', '..', '..', '..', 'client', 'public', 'images');
+    this.outputPath = path.resolve(
+      __dirname,
+      '..',
+      '..',
+      '..',
+      '..',
+      '..',
+      'client',
+      'public',
+      'images',
+    );
     const appRoot = path.resolve(__dirname, '..', '..', '..', '..', '..', 'client');
     this.relativeImageUrl = path.relative(appRoot, this.outputPath);
 
@@ -72,8 +93,8 @@ Guidelines:
       await sharp(buffer)
         .withMetadata({
           iptcpng: {
-            parameters: info
-          }
+            parameters: info,
+          },
         })
         .toFile(this.outputPath + '/' + imageName);
       this.result = this.getMarkdownImageUrl(imageName);

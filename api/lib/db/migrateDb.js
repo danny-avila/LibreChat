@@ -6,14 +6,16 @@ const migrateToStrictFollowParentMessageIdChain = async () => {
   try {
     const conversations = await Conversation.find({ endpoint: null, model: null }).exec();
 
-    if (!conversations || conversations.length === 0) return { noNeed: true };
+    if (!conversations || conversations.length === 0) {
+      return { noNeed: true };
+    }
 
     console.log('Migration: To strict follow the parentMessageId chain.');
 
     for (let convo of conversations) {
       const messages = await getMessages({
         conversationId: convo.conversationId,
-        messageId: { $exists: false }
+        messageId: { $exists: false },
       });
 
       let model;
@@ -45,14 +47,14 @@ const migrateToStrictFollowParentMessageIdChain = async () => {
       await Conversation.findOneAndUpdate(
         { conversationId: convo.conversationId },
         { model },
-        { new: true }
+        { new: true },
       ).exec();
     }
 
     try {
       await mongoose.connection.db.collection('messages').dropIndex('id_1');
     } catch (error) {
-      console.log("[Migrate] Index doesn't exist or already dropped");
+      console.log('[Migrate] Index doesn\'t exist or already dropped');
     }
   } catch (error) {
     console.log(error);
@@ -64,7 +66,9 @@ const migrateToSupportBetterCustomization = async () => {
   try {
     const conversations = await Conversation.find({ endpoint: null }).exec();
 
-    if (!conversations || conversations.length === 0) return { noNeed: true };
+    if (!conversations || conversations.length === 0) {
+      return { noNeed: true };
+    }
 
     console.log('Migration: To support better customization.');
 
@@ -112,7 +116,9 @@ async function migrateDb() {
 
   const isMigrated = !!ret.find((element) => !element?.noNeed);
 
-  if (!isMigrated) console.log('[Migrate] Nothing to migrate');
+  if (!isMigrated) {
+    console.log('[Migrate] Nothing to migrate');
+  }
 }
 
 module.exports = migrateDb;

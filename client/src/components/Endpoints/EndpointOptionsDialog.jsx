@@ -23,7 +23,7 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
     update[param] = newValue;
     setPreset((prevState) => ({
       ...prevState,
-      ...update
+      ...update,
     }));
   };
 
@@ -35,7 +35,7 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
     exportFromJSON({
       data: cleanupPreset({ preset, endpointsConfig }),
       fileName: `${preset?.title}.json`,
-      exportType: exportFromJSON.types.json
+      exportType: exportFromJSON.types.json,
     });
   };
 

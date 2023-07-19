@@ -13,7 +13,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
   const {
     register,
     handleSubmit,
-    formState: { errors }
+    formState: { errors },
   } = useForm<TLoginUser>();
 
   return (
@@ -34,16 +34,16 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
               required: localize(lang, 'com_auth_email_required'),
               minLength: {
                 value: 3,
-                message: localize(lang, 'com_auth_email_min_length')
+                message: localize(lang, 'com_auth_email_min_length'),
               },
               maxLength: {
                 value: 120,
-                message: localize(lang, 'com_auth_email_max_length')
+                message: localize(lang, 'com_auth_email_max_length'),
               },
               pattern: {
                 value: /\S+@\S+\.\S+/,
-                message: localize(lang, 'com_auth_email_pattern')
-              }
+                message: localize(lang, 'com_auth_email_pattern'),
+              },
             })}
             aria-invalid={!!errors.email}
             className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -74,12 +74,12 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
               required: localize(lang, 'com_auth_password_required'),
               minLength: {
                 value: 8,
-                message: localize(lang, 'com_auth_password_min_length')
+                message: localize(lang, 'com_auth_password_min_length'),
               },
               maxLength: {
                 value: 40,
-                message: localize(lang, 'com_auth_password_max_length')
-              }
+                message: localize(lang, 'com_auth_password_max_length'),
+              },
             })}
             aria-invalid={!!errors.password}
             className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"

@@ -12,7 +12,7 @@ function ResetPassword() {
     register,
     handleSubmit,
     watch,
-    formState: { errors }
+    formState: { errors },
   } = useForm<TResetPassword>();
   const resetPassword = useResetPasswordMutation();
   const [resetError, setResetError] = useState<boolean>(false);
@@ -24,7 +24,7 @@ function ResetPassword() {
     resetPassword.mutate(data, {
       onError: () => {
         setResetError(true);
-      }
+      },
     });
   };
 
@@ -32,7 +32,9 @@ function ResetPassword() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
         <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
-          <h1 className="mb-4 text-center text-3xl font-semibold">{localize(lang, 'com_auth_reset_password_success')}</h1>
+          <h1 className="mb-4 text-center text-3xl font-semibold">
+            {localize(lang, 'com_auth_reset_password_success')}
+          </h1>
           <div
             className="relative mb-8 mt-4 rounded border border-green-400 bg-green-100 px-4 py-3 text-center text-green-700"
             role="alert"
@@ -53,7 +55,9 @@ function ResetPassword() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
         <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
-          <h1 className="mb-4 text-center text-3xl font-semibold">{localize(lang, 'com_auth_reset_password')}</h1>
+          <h1 className="mb-4 text-center text-3xl font-semibold">
+            {localize(lang, 'com_auth_reset_password')}
+          </h1>
           {resetError && (
             <div
               className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
@@ -97,12 +101,12 @@ function ResetPassword() {
                     required: localize(lang, 'com_auth_password_required'),
                     minLength: {
                       value: 8,
-                      message: localize(lang, 'com_auth_password_min_length')
+                      message: localize(lang, 'com_auth_password_min_length'),
                     },
                     maxLength: {
                       value: 128,
-                      message: localize(lang, 'com_auth_password_max_length')
-                    }
+                      message: localize(lang, 'com_auth_password_max_length'),
+                    },
                   })}
                   aria-invalid={!!errors.password}
                   className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -135,7 +139,8 @@ function ResetPassword() {
                     return false;
                   }}
                   {...register('confirm_password', {
-                    validate: (value) => value === password || localize(lang, 'com_auth_password_not_match')
+                    validate: (value) =>
+                      value === password || localize(lang, 'com_auth_password_not_match'),
                   })}
                   aria-invalid={!!errors.confirm_password}
                   className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"

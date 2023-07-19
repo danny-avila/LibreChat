@@ -7,88 +7,88 @@ const messageSchema = mongoose.Schema(
       unique: true,
       required: true,
       index: true,
-      meiliIndex: true
+      meiliIndex: true,
     },
     conversationId: {
       type: String,
       required: true,
-      meiliIndex: true
+      meiliIndex: true,
     },
     model: {
-      type: String
+      type: String,
     },
     conversationSignature: {
-      type: String
+      type: String,
       // required: true
     },
     clientId: {
-      type: String
+      type: String,
     },
     invocationId: {
-      type: String
+      type: String,
     },
     parentMessageId: {
-      type: String
+      type: String,
       // required: true
     },
     tokenCount: {
-      type: Number
+      type: Number,
     },
     refinedTokenCount: {
-      type: Number
+      type: Number,
     },
     sender: {
       type: String,
       required: true,
-      meiliIndex: true
+      meiliIndex: true,
     },
     text: {
       type: String,
       required: true,
-      meiliIndex: true
+      meiliIndex: true,
     },
     refinedMessageText: {
-      type: String
+      type: String,
     },
     isCreatedByUser: {
       type: Boolean,
       required: true,
-      default: false
+      default: false,
     },
     unfinished: {
       type: Boolean,
-      default: false
+      default: false,
     },
     cancelled: {
       type: Boolean,
-      default: false
+      default: false,
     },
     error: {
       type: Boolean,
-      default: false
+      default: false,
     },
     _meiliIndex: {
       type: Boolean,
       required: false,
       select: false,
-      default: false
+      default: false,
     },
     plugin: {
       latest: {
         type: String,
-        required: false
+        required: false,
       },
       inputs: {
         type: [mongoose.Schema.Types.Mixed],
-        required: false
+        required: false,
       },
       outputs: {
         type: String,
-        required: false
-      }
-    }
+        required: false,
+      },
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
@@ -96,7 +96,7 @@ if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
     host: process.env.MEILI_HOST,
     apiKey: process.env.MEILI_MASTER_KEY,
     indexName: 'messages',
-    primaryKey: 'messageId'
+    primaryKey: 'messageId',
   });
 }
 

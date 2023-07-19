@@ -1,17 +1,48 @@
-# Windows Install
+# Windows Installation Guide
 
-## **Recommended: [Docker Install](docker_install.md)**
+## **Recommended:**
 
-**or**
-## **[Windows Installer](https://github.com/fuegovic/LibreChat-Windows-Installer)**
+[![Watch the video](https://img.youtube.com/vi/naUHHqpyOo4/maxresdefault.jpg)](https://youtu.be/naUHHqpyOo4)
+Click on the thumbnail to open the video☝️
+---
+
+In this video we're going to install LibreChat on Windows 11 using Docker and Git.
+
+#### Timestamps
+0:00 - Intro
+0:10 - Requirements
+0:31 - Docker Installation
+1:50 - Git Installation
+2:27 - LibreChat Installation
+3:07 - Start LibreChat
+3:59 - Access to LibreChat
+4:23 - Outro
+
+#### Instructions
+- To install LibreChat, you need Docker desktop and Git. Download them from these links:
+  - Docker desktop: https://www.docker.com/products/docke...
+  - Git: https://git-scm.com/download/win
+- Follow the steps in the video to install and run Docker desktop and Git.
+- Open a terminal in the root of the C drive and enter these commands:
+  - `git clone https://github.com/danny-avila/LibreC...`
+  - `cd LibreChat`
+  - `cp .env.example .env`
+  - `docker-compose up`
+- Visit http://localhost:3080/ to access LibreChat. Create an account and start chatting.
+
+Have fun!
+
+--- 
+## **Other installation methods:**
+### **[Windows Installer](https://github.com/fuegovic/LibreChat-Windows-Installer)**
 (Includes a Startup and Update Utility)
 
 ---
 
-## Manual Installation
-### Install the prerequisites on your machine
+## **Manual Installation**
+## Install the prerequisites on your machine
 
-### **Download LibreChat**
+## **Download LibreChat**
    
   - Download the latest release here: https://github.com/danny-avila/LibreChat/releases/
   - Or by clicking on the green code button in the top of the page and selecting "Download ZIP"
@@ -19,7 +50,7 @@
   - If you downloaded a zip file, extract the content in "C:/LibreChat/" 
   - **IMPORTANT : If you install the files somewhere else modify the instructions accordingly**
   
-### **Enable the Conversation search feature:** (optional)
+## **Enable the Conversation search feature:** (optional)
 		
   - Download MeiliSearch latest release from : https://github.com/meilisearch/meilisearch/releases
   - Copy it to "C:/LibreChat/"
@@ -27,41 +58,31 @@
   - Open it by double clicking on it
   - Copy the generated Master Key and save it somewhere (You will need it later)
 
-### **Download and Install Node.js**
+## **Download and Install Node.js**
     
   - Navigate to https://nodejs.org/en/download and to download the latest Node.js version for your OS (The Node.js installer includes the NPM package manager.)
     
-### **Create a MongoDB database**
+## [Create a MongoDB database](mongodb.md) (Required)
     
-  - Navigate to https://www.mongodb.com/ and Sign In or Create an account
-  - Create a new project
-  - Build a Database using the free plan and name the cluster (example: LibreChat)
-  - Use the "Username and Password" method for authentication
-  - Add your current IP to the access list
-  - Then in the Database Deployment tab click on Connect
-  - In "Choose a connection method" select "Connect your application"
-  - Driver = Node.js / Version = 4.1 or later
-  - Copy the connection string and save it somewhere(you will need it later)
-    
-### [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
+## [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
 - You must set up at least one of these tokens or APIs to run the app.
 
-### [User/Auth System](../install/user_auth_system.md) (Optional)
+## [User/Auth System](../install/user_auth_system.md) (Optional)
 - How to set up the user/auth system and Google login.
 
 ## Setup and Run the app
 
-### Using the command line (in the root directory)
-#### To setup the app:
+## Using the command line (in the root directory)
+### To setup the app:
 1. Run `npm ci` (this step will also create the env file)
 2. Run `npm run frontend`
 
-#### To use the app:
+### To use the app:
 1. Run `npm run backend`
 2. Run `meilisearch --master-key <meilisearch_Master_Key>` (Only if SEARCH=TRUE)
 3. Visit http://localhost:3080 (default port) & enjoy
 
-#### Using a batch file
+### Using a batch file
 
 - **Make a batch file to automate the starting process**
   - Open a text editor
@@ -71,16 +92,18 @@
   - Save the file as "C:/LibreChat/LibreChat.bat"
   - you can make a shortcut of this batch file and put it anywhere
 
-``` bat title="LibreChat.bat"
-start "MeiliSearch" cmd /k "meilisearch --master-key <meilisearch_Master_Key>
+  ```bat title="LibreChat.bat"
+  start "MeiliSearch" cmd /k "meilisearch --master-key <meilisearch_Master_Key>
 
-start "LibreChat" cmd /k "npm run backend"
+  start "LibreChat" cmd /k "npm run backend"
 
-REM this batch file goes at the root of the LibreChat directory (C:/LibreChat/)
-```
-##
+  REM this batch file goes at the root of the LibreChat directory (C:/LibreChat/)
+  ```
+
+---
 
 ## **Update**
+To update LibreChat:
 - run `git pull` from the root dir
 - Run npm ci from root directory `npm ci`
 - Build the client by running `npm run frontend`

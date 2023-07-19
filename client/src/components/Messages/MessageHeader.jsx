@@ -15,8 +15,7 @@ const MessageHeader = ({ isSearchView = false }) => {
   const { model } = conversation;
   const plugins = (
     <>
-      <Plugin />{' '}
-      <span className="px-1">•</span>
+      <Plugin /> <span className="px-1">•</span>
       <span className="py-0.25 ml-1 rounded bg-blue-200 px-1 text-[10px] font-semibold uppercase text-[#4559A4]">
         beta
       </span>
@@ -26,27 +25,44 @@ const MessageHeader = ({ isSearchView = false }) => {
   );
 
   const getConversationTitle = () => {
-    if (isSearchView) return `Search: ${searchQuery}`;
-    else {
+    if (isSearchView) {
+      return `Search: ${searchQuery}`;
+    } else {
       let _title = `${alternateName[endpoint] ?? endpoint}`;
 
       if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
         const { chatGptLabel } = conversation;
-        if (model) _title += `: ${model}`;
-        if (chatGptLabel) _title += ` as ${chatGptLabel}`;
+        if (model) {
+          _title += `: ${model}`;
+        }
+        if (chatGptLabel) {
+          _title += ` as ${chatGptLabel}`;
+        }
       } else if (endpoint === 'google') {
         _title = 'PaLM';
         const { modelLabel, model } = conversation;
-        if (model) _title += `: ${model}`;
-        if (modelLabel) _title += ` as ${modelLabel}`;
+        if (model) {
+          _title += `: ${model}`;
+        }
+        if (modelLabel) {
+          _title += ` as ${modelLabel}`;
+        }
       } else if (endpoint === 'bingAI') {
         const { jailbreak, toneStyle } = conversation;
-        if (toneStyle) _title += `: ${toneStyle}`;
-        if (jailbreak) _title += ' as Sydney';
+        if (toneStyle) {
+          _title += `: ${toneStyle}`;
+        }
+        if (jailbreak) {
+          _title += ' as Sydney';
+        }
       } else if (endpoint === 'chatGPTBrowser') {
-        if (model) _title += `: ${model}`;
+        if (model) {
+          _title += `: ${model}`;
+        }
       } else if (endpoint === 'gptPlugins') {
         return plugins;
+      } else if (endpoint === 'anthropic') {
+        _title = 'Claude';
       } else if (endpoint === null) {
         null;
       } else {
@@ -60,8 +76,8 @@ const MessageHeader = ({ isSearchView = false }) => {
     <>
       <div
         className={cn(
-          'dark:text-gray-450 w-full gap-1 border-b border-black/10 bg-gray-50 text-sm text-gray-500 transition-all hover:bg-gray-100 hover:bg-opacity-30 dark:border-gray-900/50 dark:bg-gray-700 dark:hover:bg-gray-600 dark:hover:bg-opacity-100 dark:text-gray-500',
-          isNotClickable ? '' : 'cursor-pointer '
+          'dark:text-gray-450 w-full gap-1 border-b border-black/10 bg-gray-50 text-sm text-gray-500 transition-all hover:bg-gray-100 hover:bg-opacity-30 dark:border-gray-900/50 dark:bg-gray-700 dark:text-gray-500 dark:hover:bg-gray-600 dark:hover:bg-opacity-100',
+          isNotClickable ? '' : 'cursor-pointer ',
         )}
         onClick={() => (isNotClickable ? null : setSaveAsDialogShow(true))}
       >

@@ -34,9 +34,9 @@ module.exports = {
           cancelled,
           tokenCount,
           plugin,
-          model
+          model,
         },
-        { upsert: true, new: true }
+        { upsert: true, new: true },
       );
 
       return {
@@ -56,11 +56,7 @@ module.exports = {
   async updateMessage(message) {
     try {
       const { messageId, ...update } = message;
-      const updatedMessage = await Message.findOneAndUpdate(
-        { messageId },
-        update,
-        { new: true }
-      );
+      const updatedMessage = await Message.findOneAndUpdate({ messageId }, update, { new: true });
 
       if (!updatedMessage) {
         throw new Error('Message not found.');
@@ -111,5 +107,5 @@ module.exports = {
       console.error(`Error deleting messages: ${err}`);
       throw new Error('Failed to delete messages.');
     }
-  }
+  },
 };

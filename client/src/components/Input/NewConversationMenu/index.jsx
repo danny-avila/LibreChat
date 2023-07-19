@@ -20,7 +20,7 @@ import {
   DropdownMenuTrigger,
   DialogTemplate,
   Dialog,
-  DialogTrigger
+  DialogTrigger,
 } from '../../ui/';
 import { cn } from '~/utils/';
 
@@ -37,8 +37,8 @@ export default function NewConversationMenu() {
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const [presets, setPresets] = useRecoilState(store.presets);
+  const modularEndpoints = new Set(['gptPlugins', 'anthropic', 'google', 'openAI']);
 
-  // const conversation = useRecoilValue(store.conversation) || {};
   const { endpoint, conversationId } = conversation;
   const { newConversation } = store.useConversation();
 
@@ -54,8 +54,8 @@ export default function NewConversationMenu() {
         },
         onError: (error) => {
           console.error('Error uploading the preset:', error);
-        }
-      }
+        },
+      },
     );
   };
 
@@ -79,7 +79,7 @@ export default function NewConversationMenu() {
       const lastSelectedModel = JSON.parse(localStorage.getItem('lastSelectedModel')) || {};
       localStorage.setItem(
         'lastSelectedModel',
-        JSON.stringify({ ...lastSelectedModel, [endpoint]: conversation.model })
+        JSON.stringify({ ...lastSelectedModel, [endpoint]: conversation.model }),
       );
       localStorage.setItem('lastConversationSetup', JSON.stringify(conversation));
     }
@@ -89,7 +89,7 @@ export default function NewConversationMenu() {
       const { jailbreak, toneStyle } = conversation;
       localStorage.setItem(
         'lastBingSettings',
-        JSON.stringify({ ...lastBingSettings, jailbreak, toneStyle })
+        JSON.stringify({ ...lastBingSettings, jailbreak, toneStyle }),
       );
     }
   }, [conversation]);
@@ -108,11 +108,11 @@ export default function NewConversationMenu() {
   const onSelectPreset = (newPreset) => {
     setMenuOpen(false);
 
-    if (endpoint === 'gptPlugins' && newPreset?.endpoint === 'gptPlugins') {
+    if (modularEndpoints.has(endpoint) && modularEndpoints.has(newPreset?.endpoint)) {
       const currentConvo = getDefaultConversation({
         conversation,
         endpointsConfig,
-        preset: newPreset
+        preset: newPreset,
       });
 
       setConversation(currentConvo);
@@ -145,7 +145,7 @@ export default function NewConversationMenu() {
     ...conversation,
     isCreatedByUser: false,
     error: false,
-    button: true
+    button: true,
   });
 
   return (
@@ -155,7 +155,9 @@ export default function NewConversationMenu() {
           <Button
             id="new-conversation-menu"
             variant="outline"
-            className={`group relative mb-[-12px] ml-0 mt-[-8px] items-center rounded-md border-0 p-1 outline-none focus:ring-0 focus:ring-offset-0 dark:data-[state=open]:bg-opacity-50 md:left-1 md:ml-[-12px] md:pl-1`}
+            className={
+              'group relative mb-[-12px] ml-0 mt-[-8px] items-center rounded-md border-0 p-1 outline-none focus:ring-0 focus:ring-offset-0 dark:data-[state=open]:bg-opacity-50 md:left-1 md:ml-[-12px] md:pl-1'
+            }
           >
             {icon}
             <span className="max-w-0 overflow-hidden whitespace-nowrap px-0 text-slate-600 transition-all group-hover:max-w-[80px] group-hover:px-2 group-data-[state=open]:max-w-[80px] group-data-[state=open]:px-2 dark:text-slate-300">
@@ -224,7 +226,7 @@ export default function NewConversationMenu() {
                 selection={{
                   selectHandler: clearAllPresets,
                   selectClasses: 'bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
-                  selectText: 'Clear'
+                  selectText: 'Clear',
                 }}
               />
             </Dialog>
@@ -234,7 +236,7 @@ export default function NewConversationMenu() {
             onValueChange={onSelectPreset}
             className={cn(
               'overflow-y-auto overflow-x-hidden',
-              showEndpoints ? 'max-h-[210px]' : 'max-h-[315px]'
+              showEndpoints ? 'max-h-[210px]' : 'max-h-[315px]',
             )}
           >
             {showPresets &&

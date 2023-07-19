@@ -26,7 +26,7 @@ async function connectDb() {
     const opts = {
       useNewUrlParser: true,
       useUnifiedTopology: true,
-      bufferCommands: false
+      bufferCommands: false,
       // bufferMaxEntries: 0,
       // useFindAndModify: true,
       // useCreateIndex: true

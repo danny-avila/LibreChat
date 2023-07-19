@@ -6,7 +6,7 @@ import { localize } from '~/localization/Translation';
 import {
   useRequestPasswordResetMutation,
   TRequestPasswordReset,
-  TRequestPasswordResetResponse
+  TRequestPasswordResetResponse,
 } from '@librechat/data-provider';
 
 function RequestPasswordReset() {
@@ -14,7 +14,7 @@ function RequestPasswordReset() {
   const {
     register,
     handleSubmit,
-    formState: { errors }
+    formState: { errors },
   } = useForm<TRequestPasswordReset>();
   const requestPasswordReset = useRequestPasswordResetMutation();
   const [success, setSuccess] = useState<boolean>(false);
@@ -32,14 +32,16 @@ function RequestPasswordReset() {
         setTimeout(() => {
           setRequestError(false);
         }, 5000);
-      }
+      },
     });
   };
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
       <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl font-semibold">{localize(lang, 'com_auth_reset_password')}</h1>
+        <h1 className="mb-4 text-center text-3xl font-semibold">
+          {localize(lang, 'com_auth_reset_password')}
+        </h1>
         {success && (
           <div
             className="relative mt-4 rounded border border-green-400 bg-green-100 px-4 py-3 text-green-700"
@@ -78,16 +80,16 @@ function RequestPasswordReset() {
                   required: localize(lang, 'com_auth_email_required'),
                   minLength: {
                     value: 3,
-                    message: localize(lang, 'com_auth_email_min_length')
+                    message: localize(lang, 'com_auth_email_min_length'),
                   },
                   maxLength: {
                     value: 120,
-                    message: localize(lang, 'com_auth_email_max_length')
+                    message: localize(lang, 'com_auth_email_max_length'),
                   },
                   pattern: {
                     value: /\S+@\S+\.\S+/,
-                    message: localize(lang, 'com_auth_email_pattern')
-                  }
+                    message: localize(lang, 'com_auth_email_pattern'),
+                  },
                 })}
                 aria-invalid={!!errors.email}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"

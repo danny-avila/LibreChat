@@ -6,11 +6,12 @@ import PluginsOptions from './PluginsOptions';
 import ChatGPTOptions from './ChatGPTOptions';
 import BingAIOptions from './BingAIOptions';
 import GoogleOptions from './GoogleOptions';
+import AnthropicOptions from './AnthropicOptions';
 import NewConversationMenu from './NewConversationMenu';
 import AdjustToneButton from './AdjustToneButton';
 import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
-import { useMessageHandler } from '../../utils/handleSubmit';
+import { useMessageHandler } from '~/utils/handleSubmit';
 
 import store from '~/store';
 
@@ -32,11 +33,23 @@ export default function TextChat({ isSearchView = false }) {
   const [showBingToneSetting, setShowBingToneSetting] = useState(false);
 
   const isNotAppendable = latestMessage?.unfinished & !isSubmitting || latestMessage?.error;
+  const { conversationId, jailbreak } = conversation || {};
 
   // auto focus to input, when enter a conversation.
   useEffect(() => {
-    if (conversation?.conversationId !== 'search') inputRef.current?.focus();
-  }, [conversation?.conversationId]);
+    if (!conversationId) {
+      return;
+    }
+
+    // Prevents Settings from not showing on new conversation, also prevents showing toneStyle change without jailbreak
+    if (conversationId === 'new' || !jailbreak) {
+      setShowBingToneSetting(false);
+    }
+
+    if (conversationId !== 'search') {
+      inputRef.current?.focus();
+    }
+  }, [conversationId, jailbreak]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -118,11 +131,13 @@ export default function TextChat({ isSearchView = false }) {
     setShowBingToneSetting((show) => !show);
   };
 
-  if (isSearchView) return <></>;
+  if (isSearchView) {
+    return <></>;
+  }
 
   return (
     <>
-      <div className="fixed bottom-0 left-0 w-full md:absolute">
+      <div className="fixed bottom-0 left-0 w-full border-transparent bg-gradient-to-b from-transparent via-white to-white pt-6 dark:border-white/20 dark:via-gray-800 dark:to-gray-800 md:absolute">
         <div className="relative py-2 md:mb-[-16px] md:py-4 lg:mb-[-32px]">
           <span className="flex w-full flex-col items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
             <OpenAIOptions />
@@ -130,6 +145,7 @@ export default function TextChat({ isSearchView = false }) {
             <ChatGPTOptions />
             <GoogleOptions />
             <BingAIOptions show={showBingToneSetting} />
+            <AnthropicOptions />
           </span>
         </div>
         <div className="input-panel md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient relative w-full border-t bg-white py-2 dark:border-white/20 dark:bg-gray-800 md:border-t-0 md:border-transparent md:bg-transparent md:dark:border-transparent md:dark:bg-transparent">
@@ -144,7 +160,7 @@ export default function TextChat({ isSearchView = false }) {
               >
                 <NewConversationMenu />
                 <TextareaAutosize
-                // set test id for e2e testing
+                  // set test id for e2e testing
                   data-testid="text-input"
                   tabIndex="0"
                   autoFocus

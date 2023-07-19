@@ -9,7 +9,7 @@ const ApiErrorBoundaryContext = React.createContext<ApiError | undefined>(undefi
 
 export const ApiErrorBoundaryProvider = ({
   value,
-  children
+  children,
 }: {
   value?: ApiError;
   children: React.ReactNode;

@@ -10,7 +10,7 @@ export default function MultiMessage({
   scrollToBottom,
   currentEditId,
   setCurrentEditId,
-  isSearchView
+  isSearchView,
 }) {
   // const [siblingIdx, setSiblingIdx] = useState(0);
 
@@ -37,7 +37,7 @@ export default function MultiMessage({
   }
 
   const message = messagesTree[messagesTree.length - siblingIdx - 1];
-  if (isSearchView)
+  if (isSearchView) {
     return (
       <>
         {messagesTree
@@ -57,6 +57,7 @@ export default function MultiMessage({
           : null}
       </>
     );
+  }
   return (
     <Message
       key={message.messageId}

@@ -9,7 +9,6 @@ const logoutController = async (req, res) => {
     res.clearCookie('token');
     res.clearCookie('refreshToken');
     return res.status(status).send({ message });
-
   } catch (err) {
     console.log(err);
     return res.status(500).json({ message: err.message });
@@ -17,5 +16,5 @@ const logoutController = async (req, res) => {
 };
 
 module.exports = {
-  logoutController
+  logoutController,
 };

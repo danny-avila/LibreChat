@@ -12,7 +12,8 @@ export default function createPayload(submission: TSubmission) {
     bingAI: '/api/ask/bingAI',
     chatGPT: '/api/ask/chatGPT',
     chatGPTBrowser: '/api/ask/chatGPTBrowser',
-    gptPlugins: '/api/ask/gptPlugins'
+    gptPlugins: '/api/ask/gptPlugins',
+    anthropic: '/api/ask/anthropic',
   };
 
   const server = endpointUrlMap[endpoint];
@@ -20,7 +21,7 @@ export default function createPayload(submission: TSubmission) {
   const payload = {
     ...message,
     ...endpointOption,
-    conversationId
+    conversationId,
   };
 
   return { server, payload };

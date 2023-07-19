@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
 import remarkMath from 'remark-math';
-import supersub from 'remark-supersub'
+import supersub from 'remark-supersub';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import CodeBlock from './CodeBlock';
@@ -62,10 +62,10 @@ const Content = React.memo(({ content, message }) => {
       {
         detect: true,
         ignoreMissing: true,
-        subset: langSubset
-      }
+        subset: langSubset,
+      },
     ],
-    [rehypeRaw]
+    [rehypeRaw],
   ];
 
   if (!isInitializing || !isLatestMessage) {
@@ -79,7 +79,7 @@ const Content = React.memo(({ content, message }) => {
       linkTarget="_new"
       components={{
         code,
-        p
+        p,
       }}
     >
       {isLatestMessage && isSubmitting && !isInitializing ? (content ?? '') + cursor : content}

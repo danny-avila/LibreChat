@@ -26,7 +26,7 @@ const Slider = React.forwardRef<React.ElementRef<typeof SliderPrimitive.Root>, S
         className="block h-4 w-4 rounded-full border-2 border-gray-400 bg-white transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 dark:border-gray-100 dark:bg-gray-400 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900"
       />
     </SliderPrimitive.Root>
-  )
+  ),
 );
 Slider.displayName = SliderPrimitive.Root.displayName;
 

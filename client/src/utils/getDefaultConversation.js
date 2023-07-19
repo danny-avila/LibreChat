@@ -2,7 +2,7 @@ const buildDefaultConversation = ({
   conversation,
   endpoint,
   endpointsConfig = {},
-  lastConversationSetup = {}
+  lastConversationSetup = {},
 }) => {
   const lastSelectedModel = JSON.parse(localStorage.getItem('lastSelectedModel')) || {};
   const lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools')) || [];
@@ -22,7 +22,7 @@ const buildDefaultConversation = ({
       temperature: lastConversationSetup?.temperature ?? 1,
       top_p: lastConversationSetup?.top_p ?? 1,
       presence_penalty: lastConversationSetup?.presence_penalty ?? 0,
-      frequency_penalty: lastConversationSetup?.frequency_penalty ?? 0
+      frequency_penalty: lastConversationSetup?.frequency_penalty ?? 0,
     };
   } else if (endpoint === 'google') {
     conversation = {
@@ -36,12 +36,12 @@ const buildDefaultConversation = ({
       modelLabel: lastConversationSetup?.modelLabel ?? null,
       promptPrefix: lastConversationSetup?.promptPrefix ?? null,
       examples: lastConversationSetup?.examples ?? [
-        { input: { content: '' }, output: { content: '' } }
+        { input: { content: '' }, output: { content: '' } },
       ],
       temperature: lastConversationSetup?.temperature ?? 0.2,
       maxOutputTokens: lastConversationSetup?.maxOutputTokens ?? 1024,
       topP: lastConversationSetup?.topP ?? 0.95,
-      topK: lastConversationSetup?.topK ?? 40
+      topK: lastConversationSetup?.topK ?? 40,
     };
   } else if (endpoint === 'bingAI') {
     const { jailbreak, toneStyle } = lastBingSettings;
@@ -55,7 +55,23 @@ const buildDefaultConversation = ({
       jailbreakConversationId: lastConversationSetup?.jailbreakConversationId ?? null,
       conversationSignature: null,
       clientId: null,
-      invocationId: 1
+      invocationId: 1,
+    };
+  } else if (endpoint === 'anthropic') {
+    conversation = {
+      ...conversation,
+      endpoint,
+      model:
+        lastConversationSetup?.model ??
+        lastSelectedModel[endpoint] ??
+        endpointsConfig[endpoint]?.availableModels?.[0] ??
+        'claude-1',
+      modelLabel: lastConversationSetup?.modelLabel ?? null,
+      promptPrefix: lastConversationSetup?.promptPrefix ?? null,
+      temperature: lastConversationSetup?.temperature ?? 0.7,
+      maxOutputTokens: lastConversationSetup?.maxOutputTokens ?? 1024,
+      topP: lastConversationSetup?.topP ?? 0.7,
+      topK: lastConversationSetup?.topK ?? 40,
     };
   } else if (endpoint === 'chatGPTBrowser') {
     conversation = {
@@ -65,7 +81,7 @@ const buildDefaultConversation = ({
         lastConversationSetup?.model ??
         lastSelectedModel[endpoint] ??
         endpointsConfig[endpoint]?.availableModels?.[0] ??
-        'text-davinci-002-render-sha'
+        'text-davinci-002-render-sha',
     };
   } else if (endpoint === 'gptPlugins') {
     const agentOptions = lastConversationSetup?.agentOptions ?? {
@@ -92,18 +108,18 @@ const buildDefaultConversation = ({
       top_p: lastConversationSetup?.top_p ?? 1,
       presence_penalty: lastConversationSetup?.presence_penalty ?? 0,
       frequency_penalty: lastConversationSetup?.frequency_penalty ?? 0,
-      agentOptions
+      agentOptions,
     };
   } else if (endpoint === null) {
     conversation = {
       ...conversation,
-      endpoint
+      endpoint,
     };
   } else {
     console.error(`Unknown endpoint ${endpoint}`);
     conversation = {
       ...conversation,
-      endpoint: null
+      endpoint: null,
     };
   }
 
@@ -121,7 +137,7 @@ const getDefaultConversation = ({ conversation, endpointsConfig, preset }) => {
         conversation,
         endpoint,
         lastConversationSetup: preset,
-        endpointsConfig
+        endpointsConfig,
       });
       return conversation;
     } else {
@@ -147,7 +163,10 @@ const getDefaultConversation = ({ conversation, endpointsConfig, preset }) => {
   try {
     // try to read latest selected model from local storage
     const lastConversationSetup = JSON.parse(localStorage.getItem('lastConversationSetup'));
-    const { endpoint = null } = lastConversationSetup;
+    let endpoint = null;
+    if (lastConversationSetup) {
+      ({ endpoint } = lastConversationSetup);
+    }
 
     if (endpointsConfig?.[endpoint]) {
       conversation = buildDefaultConversation({ conversation, endpoint, endpointsConfig });
@@ -165,7 +184,8 @@ const getDefaultConversation = ({ conversation, endpointsConfig, preset }) => {
     'bingAI',
     'chatGPTBrowser',
     'gptPlugins',
-    'google'
+    'google',
+    'anthropic',
   ].find((e) => endpointsConfig?.[e]);
   if (endpoint) {
     conversation = buildDefaultConversation({ conversation, endpoint, endpointsConfig });

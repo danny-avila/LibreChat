@@ -14,7 +14,7 @@ function EndpointOptionsPopover({
   visible,
   saveAsPreset,
   switchToSimpleMode,
-  additionalButton = null
+  additionalButton = null,
 }) {
   const lang = useRecoilValue(store.lang);
   const cardStyle =
@@ -24,7 +24,7 @@ function EndpointOptionsPopover({
     <>
       <div
         className={
-          ' endpointOptionsPopover-container absolute bottom-[-10px] flex w-full flex-col items-center md:px-4 z-0' +
+          ' endpointOptionsPopover-container absolute bottom-[-10px] z-0 flex w-full flex-col items-center md:px-4' +
           (visible ? ' show' : '')
         }
       >
@@ -47,7 +47,10 @@ function EndpointOptionsPopover({
             {additionalButton && (
               <Button
                 type="button"
-                className={cn(additionalButton.buttonClass, "ml-1 h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0")}
+                className={cn(
+                  additionalButton.buttonClass,
+                  'ml-1 h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0',
+                )}
                 onClick={additionalButton.handler}
               >
                 {additionalButton.icon}

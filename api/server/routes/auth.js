@@ -3,7 +3,7 @@ const {
   resetPasswordRequestController,
   resetPasswordController,
   // refreshController,
-  registrationController
+  registrationController,
 } = require('../controllers/AuthController');
 const { loginController } = require('../controllers/auth/LoginController');
 const { logoutController } = require('../controllers/auth/LogoutController');

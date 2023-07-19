@@ -16,7 +16,7 @@ import {
   Dialog,
   DialogClose,
   DialogButton,
-  DialogTemplate
+  DialogTemplate,
 } from '~/components/';
 import { cn } from '~/utils/';
 import cleanupPreset from '~/utils/cleanupPreset';
@@ -44,10 +44,10 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
       cleanupPreset({
         preset: {
           ...prevState,
-          ...update
+          ...update,
         },
-        endpointsConfig
-      })
+        endpointsConfig,
+      }),
     );
   };
 
@@ -60,10 +60,10 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
       cleanupPreset({
         preset: {
           ...prevState,
-          agentOptions
+          agentOptions,
         },
-        endpointsConfig
-      })
+        endpointsConfig,
+      }),
     );
   };
 
@@ -78,10 +78,10 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
       cleanupPreset({
         preset: {
           ...prevState,
-          ...update
+          ...update,
         },
-        endpointsConfig
-      })
+        endpointsConfig,
+      }),
     );
   };
 
@@ -94,10 +94,10 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
       cleanupPreset({
         preset: {
           ...prevState,
-          ...update
+          ...update,
         },
-        endpointsConfig
-      })
+        endpointsConfig,
+      }),
     );
   };
 
@@ -110,10 +110,10 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
         cleanupPreset({
           preset: {
             ...prevState,
-            ...update
+            ...update,
           },
-          endpointsConfig
-        })
+          endpointsConfig,
+        }),
       );
       return;
     }
@@ -123,10 +123,10 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
       cleanupPreset({
         preset: {
           ...prevState,
-          ...update
+          ...update,
         },
-        endpointsConfig
-      })
+        endpointsConfig,
+      }),
     );
   };
 
@@ -138,7 +138,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
       method: 'post',
       url: '/api/presets',
       data: cleanupPreset({ preset, endpointsConfig }),
-      withCredentials: true
+      withCredentials: true,
     }).then((res) => {
       setPresets(res?.data);
     });
@@ -149,7 +149,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
     exportFromJSON({
       data: cleanupPreset({ preset, endpointsConfig }),
       fileName,
-      exportType: exportFromJSON.types.json
+      exportType: exportFromJSON.types.json,
     });
   };
 
@@ -170,7 +170,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={`${title || 'Edit Preset'} - ${preset?.title}`}
-        className="max-w-full sm:max-w-4xl h-[675px] "
+        className="h-[675px] max-w-full sm:max-w-4xl "
         main={
           <div className="flex w-full flex-col items-center gap-2 md:h-[475px]">
             <div className="grid w-full gap-6 sm:grid-cols-2">
@@ -185,7 +185,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
                   placeholder={localize(lang, 'com_endpoint_set_custom_name')}
                   className={cn(
                     defaultTextProps,
-                    'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                    'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
                   )}
                 />
               </div>
@@ -200,7 +200,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
                   options={availableEndpoints}
                   className={cn(
                     defaultTextProps,
-                    'flex h-10 max-h-10 w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                    'flex h-10 max-h-10 w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
                   )}
                   containerClassName="flex w-full resize-none"
                 />
@@ -235,7 +235,9 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
             <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
             <div className="w-full p-0">
               {shouldShowSettings && <Settings preset={preset} setOption={setOption} />}
-              {preset?.endpoint === 'google' && showExamples && !preset?.model?.startsWith('codechat-') && (
+              {preset?.endpoint === 'google' &&
+                showExamples &&
+                !preset?.model?.startsWith('codechat-') && (
                 <Examples
                   examples={preset.examples}
                   setExample={setExample}

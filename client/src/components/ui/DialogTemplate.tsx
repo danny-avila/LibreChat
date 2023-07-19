@@ -5,7 +5,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle
+  DialogTitle,
 } from './';
 import { cn } from '~/utils/';
 
@@ -34,7 +34,9 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
   return (
     <DialogContent ref={ref} className={cn('shadow-2xl dark:bg-gray-900', className || '')}>
       <DialogHeader>
-        <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">{title}</DialogTitle>
+        <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
+          {title}
+        </DialogTitle>
         {description && (
           <DialogDescription className="text-gray-600 dark:text-gray-300">
             {description}

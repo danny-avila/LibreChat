@@ -1,5 +1,4 @@
 const passport = require('passport');
-const jwt = require('jsonwebtoken');
 const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
 const axios = require('axios');
 const fs = require('fs');
@@ -20,11 +19,11 @@ const downloadImage = async (url, imagePath, accessToken) => {
   try {
     const response = await axios.get(url, {
       headers: {
-        'Authorization': `Bearer ${accessToken}`
+        Authorization: `Bearer ${accessToken}`,
       },
-      responseType: 'arraybuffer'
+      responseType: 'arraybuffer',
     });
-    
+
     fs.mkdirSync(path.dirname(imagePath), { recursive: true });
     fs.writeFileSync(imagePath, response.data);
 
@@ -38,19 +37,19 @@ const downloadImage = async (url, imagePath, accessToken) => {
 };
 
 Issuer.discover(process.env.OPENID_ISSUER)
-  .then(issuer => {
+  .then((issuer) => {
     const client = new issuer.Client({
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
-      redirect_uris: [domains.server + process.env.OPENID_CALLBACK_URL]
+      redirect_uris: [domains.server + process.env.OPENID_CALLBACK_URL],
     });
 
     const openidLogin = new OpenIDStrategy(
       {
         client,
         params: {
-          scope: process.env.OPENID_SCOPE
-        }
+          scope: process.env.OPENID_SCOPE,
+        },
       },
       async (tokenset, userinfo, done) => {
         try {
@@ -68,7 +67,7 @@ Issuer.discover(process.env.OPENID_ISSUER)
           } else if (userinfo.family_name) {
             fullName = userinfo.family_name;
           }
-          
+
           if (!user) {
             user = new User({
               provider: 'openid',
@@ -76,7 +75,7 @@ Issuer.discover(process.env.OPENID_ISSUER)
               username: userinfo.given_name || '',
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
-              name: fullName
+              name: fullName,
             });
           } else {
             user.provider = 'openid';
@@ -97,27 +96,39 @@ Issuer.discover(process.env.OPENID_ISSUER)
               fileName = userinfo.sub + '.png';
             }
 
-            const imagePath = path.join(__dirname, '..', '..', 'client', 'public', 'images', 'openid', fileName);
+            const imagePath = path.join(
+              __dirname,
+              '..',
+              '..',
+              'client',
+              'public',
+              'images',
+              'openid',
+              fileName,
+            );
 
-            const imagePathOrEmpty = await downloadImage(imageUrl, imagePath, tokenset.access_token);
+            const imagePathOrEmpty = await downloadImage(
+              imageUrl,
+              imagePath,
+              tokenset.access_token,
+            );
 
             user.avatar = imagePathOrEmpty;
           } else {
             user.avatar = '';
           }
-          
+
           await user.save();
-          
+
           done(null, user);
         } catch (err) {
           done(err);
         }
-      }
+      },
     );
 
     passport.use('openid', openidLogin);
-
   })
-  .catch(err => {
+  .catch((err) => {
     console.error(err);
   });

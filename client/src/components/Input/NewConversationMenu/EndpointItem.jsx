@@ -17,7 +17,7 @@ export default function ModelItem({ endpoint, value, isSelected }) {
     endpoint,
     error: false,
     className: 'mr-2',
-    message: false
+    message: false,
   });
 
   const isUserProvided = endpointsConfig?.[endpoint]?.userProvide;
@@ -29,7 +29,7 @@ export default function ModelItem({ endpoint, value, isSelected }) {
         value={value}
         className={cn(
           'group dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800',
-          isSelected && 'dark:bg-gray-800 bg-gray-50 active'
+          isSelected && 'active bg-gray-50 dark:bg-gray-800',
         )}
         id={endpoint}
       >
@@ -45,7 +45,7 @@ export default function ModelItem({ endpoint, value, isSelected }) {
           <button
             className={cn(
               'invisible m-0 mr-1 flex-initial rounded-md p-0 text-xs font-medium text-gray-400 hover:text-gray-700 group-hover:visible dark:font-normal dark:text-gray-400 dark:hover:text-gray-200',
-              isSelected && 'visible text-gray-700 dark:text-gray-200'
+              isSelected && 'visible text-gray-700 dark:text-gray-200',
             )}
             onClick={(e) => {
               e.preventDefault();

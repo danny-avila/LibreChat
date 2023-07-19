@@ -6,7 +6,7 @@ import {
   PluginStoreDialog,
   MultiSelectDropDown,
   Button,
-  GPTIcon
+  GPTIcon,
 } from '~/components';
 import EndpointOptionsPopover from '../../Endpoints/EndpointOptionsPopover';
 import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
@@ -59,9 +59,10 @@ function PluginsOptions() {
   const triggerAgentSettings = () => setShowAgentSettings((prev) => !prev);
   const { endpoint, agentOptions } = conversation;
 
-  if (endpoint !== 'gptPlugins') return null;
+  if (endpoint !== 'gptPlugins') {
+    return null;
+  }
   const models = endpointsConfig?.['gptPlugins']?.['availableModels'] || [];
-  // const availableTools = endpointsConfig?.['gptPlugins']?.['availableTools'] || [];
 
   const triggerAdvancedMode = () => setAdvancedMode((prev) => !prev);
 
@@ -74,7 +75,9 @@ function PluginsOptions() {
   };
 
   function checkIfSelected(value) {
-    if (!conversation.tools) return false;
+    if (!conversation.tools) {
+      return false;
+    }
     return conversation.tools.find((el) => el.pluginKey === value) ? true : false;
   }
 
@@ -83,7 +86,7 @@ function PluginsOptions() {
     update[param] = newValue;
     setConversation((prevState) => ({
       ...prevState,
-      ...update
+      ...update,
     }));
   };
 
@@ -94,7 +97,7 @@ function PluginsOptions() {
     agentOptions[param] = newValue;
     setConversation((prevState) => ({
       ...prevState,
-      agentOptions
+      agentOptions,
     }));
   };
 
@@ -115,7 +118,7 @@ function PluginsOptions() {
     localStorage.setItem('lastSelectedTools', JSON.stringify(update.tools));
     setConversation((prevState) => ({
       ...prevState,
-      ...update
+      ...update,
     }));
   };
 
@@ -130,12 +133,18 @@ function PluginsOptions() {
           (!advancedMode ? opacityClass : '')
         }
         onMouseEnter={() => {
-          if (advancedMode) return;
+          if (advancedMode) {
+            return;
+          }
           setOpacityClass('full-opacity');
         }}
         onMouseLeave={() => {
-          if (advancedMode) return;
-          if (!messagesTree || messagesTree.length === 0) return;
+          if (advancedMode) {
+            return;
+          }
+          if (!messagesTree || messagesTree.length === 0) {
+            return;
+          }
           setOpacityClass('show');
         }}
       >
@@ -143,14 +152,14 @@ function PluginsOptions() {
           type="button"
           className={cn(
             cardStyle,
-            'min-w-4 z-40 flex h-[40px] flex-none items-center justify-center px-4 hover:bg-white focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700'
+            'min-w-4 z-40 flex h-[40px] flex-none items-center justify-center px-4 hover:bg-white focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700',
           )}
           onClick={() => setVisibility((prev) => !prev)}
         >
           <ChevronDownIcon
             className={cn(
               !visibile ? 'rotate-180 transform' : '',
-              'w-4 text-gray-600 dark:text-white'
+              'w-4 text-gray-600 dark:text-white',
             )}
           />
         </Button>
@@ -175,7 +184,7 @@ function PluginsOptions() {
           className={cn(
             cardStyle,
             'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-4 hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-600',
-            !visibile && 'hidden'
+            !visibile && 'hidden',
           )}
           onClick={triggerAdvancedMode}
         >
@@ -220,7 +229,7 @@ function PluginsOptions() {
         additionalButton={{
           label: `Show ${showAgentSettings ? 'Completion' : 'Agent'} Settings`,
           handler: triggerAgentSettings,
-          icon: <GPTIcon className="mr-1 mt-[2px] w-[14px]" size={14} />
+          icon: <GPTIcon className="mr-1 mt-[2px] w-[14px]" size={14} />,
         }}
       />
       <SaveAsPresetDialog

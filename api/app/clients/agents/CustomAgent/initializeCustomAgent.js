@@ -6,7 +6,7 @@ const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
 const {
   ChatPromptTemplate,
   SystemMessagePromptTemplate,
-  HumanMessagePromptTemplate
+  HumanMessagePromptTemplate,
 } = require('langchain/prompts');
 
 const initializeCustomAgent = async ({
@@ -22,7 +22,7 @@ const initializeCustomAgent = async ({
     new SystemMessagePromptTemplate(prompt),
     HumanMessagePromptTemplate.fromTemplate(`{chat_history}
 Query: {input}
-{agent_scratchpad}`)
+{agent_scratchpad}`),
   ]);
 
   const outputParser = new CustomOutputParser({ tools });
@@ -34,18 +34,18 @@ Query: {input}
     humanPrefix: 'User',
     aiPrefix: 'Assistant',
     inputKey: 'input',
-    outputKey: 'output'
+    outputKey: 'output',
   });
 
   const llmChain = new LLMChain({
     prompt: chatPrompt,
-    llm: model
+    llm: model,
   });
 
   const agent = new CustomAgent({
     llmChain,
     outputParser,
-    allowedTools: tools.map((tool) => tool.name)
+    allowedTools: tools.map((tool) => tool.name),
   });
 
   return AgentExecutor.fromAgentAndTools({ agent, tools, memory, ...rest });

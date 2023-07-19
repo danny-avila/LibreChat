@@ -8,7 +8,9 @@ const meiliEnabled = process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY && s
 const validateOptions = function (options) {
   const requiredKeys = ['host', 'apiKey', 'indexName'];
   requiredKeys.forEach((key) => {
-    if (!options[key]) throw new Error(`Missing mongoMeili Option: ${key}`);
+    if (!options[key]) {
+      throw new Error(`Missing mongoMeili Option: ${key}`);
+    }
   });
 };
 
@@ -68,8 +70,8 @@ const createMeiliMongooseModel = function ({ index, indexName, client, attribute
             function (results, value, key) {
               return { ...results, [key]: 1 };
             },
-            { _id: 1 }
-          )
+            { _id: 1 },
+          ),
         );
 
         // Add additional data from mongodb into Meili search hits
@@ -80,7 +82,7 @@ const createMeiliMongooseModel = function ({ index, indexName, client, attribute
 
           return {
             ...(originalHit ? originalHit.toJSON() : {}),
-            ...hit
+            ...hit,
           };
         });
         data.hits = populatedHits;
@@ -96,12 +98,12 @@ const createMeiliMongooseModel = function ({ index, indexName, client, attribute
       if (object.conversationId && object.conversationId.includes('|')) {
         object.conversationId = object.conversationId.replace(/\|/g, '--');
       }
-      return object
+      return object;
     }
 
     // Push new document to Meili
     async addObjectToMeili() {
-      const object = this.preprocessObjectForIndex()
+      const object = this.preprocessObjectForIndex();
       try {
         // console.log('Adding document to Meili', object);
         await index.addDocuments([object]);
@@ -161,8 +163,8 @@ module.exports = function mongoMeili(schema, options) {
       type: Boolean,
       required: false,
       select: false,
-      default: false
-    }
+      default: false,
+    },
   });
 
   const { host, apiKey, indexName, primaryKey } = options;
@@ -183,8 +185,8 @@ module.exports = function mongoMeili(schema, options) {
         return value.meiliIndex ? [...results, key] : results;
         // }, []), '_id'];
       },
-      []
-    )
+      [],
+    ),
   ];
 
   schema.loadClass(createMeiliMongooseModel({ index, indexName, client, attributesToIndex }));
@@ -228,7 +230,9 @@ module.exports = function mongoMeili(schema, options) {
       return next();
     } catch (error) {
       if (meiliEnabled) {
-        console.log('[Meilisearch] There was an issue deleting conversation indexes upon deletion, next startup may be slow due to syncing');
+        console.log(
+          '[Meilisearch] There was an issue deleting conversation indexes upon deletion, next startup may be slow due to syncing',
+        );
         console.error(error);
       }
       return next();

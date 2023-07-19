@@ -27,11 +27,11 @@ const InputWithLabel: FC<InputWithLabelProps> = ({ value, onChange, label, id })
         placeholder={`Enter ${label}`}
         className={cn(
           defaultTextProps,
-          'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+          'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
         )}
       />
     </>
   );
-}
+};
 
 export default InputWithLabel;

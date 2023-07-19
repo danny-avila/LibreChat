@@ -9,23 +9,17 @@ const discordLogin = new DiscordStrategy(
     clientID: process.env.DISCORD_CLIENT_ID,
     clientSecret: process.env.DISCORD_CLIENT_SECRET,
     callbackURL: `${domains.server}${process.env.DISCORD_CALLBACK_URL}`,
-    scope: ['identify', 'email'] // Request scopes
+    scope: ['identify', 'email'], // Request scopes
+    authorizationURL: 'https://discord.com/api/oauth2/authorize?prompt=none', // Add the prompt query parameter
   },
   async (accessToken, refreshToken, profile, cb) => {
     try {
-      const discordId = profile.id;
       const email = profile.email;
+      const discordId = profile.id;
 
-      const existingUser = await User.findOne({ discordId });
-      if (existingUser) {
-        return cb(null, existingUser);
-      }
-
-      const userWithEmail = await User.findOne({ email });
-      if (userWithEmail) {
-        userWithEmail.discordId = discordId;
-        await userWithEmail.save();
-        return cb(null, userWithEmail);
+      const oldUser = await User.findOne({ email });
+      if (oldUser) {
+        return cb(null, oldUser);
       }
 
       let avatarURL;
@@ -43,7 +37,7 @@ const discordLogin = new DiscordStrategy(
         username: profile.username,
         email,
         name: profile.global_name,
-        avatar: avatarURL
+        avatar: avatarURL,
       });
 
       cb(null, newUser);
@@ -51,7 +45,7 @@ const discordLogin = new DiscordStrategy(
       console.error(err);
       cb(err);
     }
-  }
+  },
 );
 
 passport.use(discordLogin);
