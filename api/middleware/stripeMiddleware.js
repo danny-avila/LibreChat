@@ -58,17 +58,28 @@ function handleStripeWebhook() {
 
     switch (event.type) {
       case "customer.subscription.updated":
-        {
-          const subscription = event.data.object;
-          if (subscription.status === 'active') {
-            await updateSubscriptionStatus(subscription);
-          }
+        // Existing case for subscription updates
+        const subscription = event.data.object;
+        if (subscription.status === 'active') {
+          await updateSubscriptionStatus(subscription);
         }
         break;
       case "invoice.payment_succeeded":
-        {
-          const paymentInvoice = event.data.object;
-          await handleSuccessfulPayment(paymentInvoice);
+        // Existing case for successful invoice payments
+        const paymentInvoice = event.data.object;
+        await handleSuccessfulPayment(paymentInvoice);
+        break;
+      case "payment_intent.succeeded":
+        // New case for successful one-time payments
+        const paymentIntent = event.data.object;
+        const user = await User.findOne({ stripeCustomerId: paymentIntent.customer });
+        if (user) {
+          await User.findByIdAndUpdate(user._id, {
+            subscriptionStatus: 'active',
+          });
+          console.log(`Payment succeeded for Payment Intent ID: ${paymentIntent.id}`);
+        } else {
+          console.log("User not found with the given customer ID.");
         }
         break;
       default:
@@ -79,6 +90,7 @@ function handleStripeWebhook() {
     res.status(200).json({ received: true });
   };
 }
+
 
 
 module.exports = { handleStripeWebhook };

@@ -10,25 +10,27 @@ async function createCustomer(name, email) {
   return customer.id;
 }
 
-async function createCheckoutSession(priceId, customerId) {
+async function createCheckoutSession(priceId, customerId, paymentMethod) {
   const session = await stripe.checkout.sessions.create({
-    customer: customerId, // Add this line
-    line_items: [
-      {
-        price: priceId,
-        quantity: 1,
+    customer: customerId,
+    payment_method_types: [paymentMethod],
+    payment_method_options: paymentMethod === 'wechat_pay' ? {
+      wechat_pay: {
+        client: 'web',
       },
-    ],
-    mode: 'subscription',
+    } : {},
+    line_items: [{
+      price: priceId,
+      quantity: 1,
+    }],
+    mode: paymentMethod === 'wechat_pay' ? 'payment' : 'subscription',
     success_url: `${YOUR_DOMAIN}?success=true`,
     cancel_url: `${YOUR_DOMAIN}?canceled=true`,
-    automatic_tax: {enabled: false},
   });
 
-  return session.url; // return the URL of the Checkout session
+  return session.url;
 }
-
 module.exports = {
-  createCustomer, // Export createCustomer function
+  createCustomer, 
   createCheckoutSession,
 };

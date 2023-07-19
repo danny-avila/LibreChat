@@ -70,17 +70,16 @@ router.post('/update-payment-method', async (req, res) => {
   }
 });
 
-// New route to handle Checkout Session creation
 router.post('/create-checkout-session', async (req, res) => {
-  console.log("Request body:", req.body);
-  const { priceId, customerId, userId } = req.body;
+  const { priceId, customerId, paymentMethod } = req.body;
   try {
-    const sessionUrl = await createCheckoutSession(priceId, customerId);
-    res.status(200).send({ url: sessionUrl }); // Send the Checkout session URL
+    const sessionUrl = await createCheckoutSession(priceId, customerId, paymentMethod);
+    res.status(200).send({ url: sessionUrl });
   } catch (error) {
     res.status(400).send({ error: error.message });
   }
 });
+
 
 
 router.post('/webhook', handleStripeWebhook());
