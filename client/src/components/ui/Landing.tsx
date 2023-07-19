@@ -30,7 +30,7 @@ export default function Landing() {
             cardStyle +
             ' z-50 flex h-[40px] flex-none items-center justify-center px-0 hover:bg-slate-50 dark:hover:bg-gray-600'
           }
-          onValueChange={(value) => setTabsValue(value)}
+          onValueChange={(value: string) => setTabsValue(value)}
         >
           <TabsList className="bg-white/[.60] dark:bg-gray-700">
             <TabsTrigger
