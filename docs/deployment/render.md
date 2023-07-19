@@ -76,73 +76,9 @@ Also:
 
 ## Create and Configure your Database
 
-The last thing you need is to create a MongoDB Atlas Database.
+The last thing you need is to create a MongoDB Atlas Database and get your connection string.
 
-**1.** Open a new tab and go to [https://account.mongodb.com/account/register](https://account.mongodb.com/account/register) to create an account
-
-**2.** Once you have set up your account, create a new project and name it:
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/5cdeeba0-2982-47c3-8228-17e8500fd0d7)
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/97da7454-63a9-42dc-8eeb-7a3ae861c7c4)
-
-**3.** Now select build a database:
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/f6fc986e-83fe-472c-a720-618c27bab801)
-
-**4.** Select the free tier:
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/87037310-52f6-4217-822b-d47168464067)
-
-**5.** Name your cluster (leave everything else default) and click create:
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/e8aa62b5-ff85-4c76-befc-2a99563e6c81)
-
-**6.** Enter a user name and a secure password:
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/df2c407f-2124-4c5e-bc0e-f5868811e59d)
-
-**7.** Select Cloud environement:
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/1b0d3cae-2e87-4330-920c-61be1589f041)
-
-**8.** Click /Finish and Close:
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/103f8958-2744-42ab-9cda-75c2f33296cb)
-
-**9.** Go to database:
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/9c487530-8b4a-4db0-8e56-cb06f7c2ff74)
-
-**10.** Click on network access in the side menu:
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/29f287ee-caa1-4a2b-a705-bcb33f4735bb)
-
-**11.** Add a IP Adress:
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/b870fa3f-9da2-4e2e-bd00-20bc0a67b562)
-
-**12.** Select allow access from everywhere and confirm:
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/5cd80bda-ae6d-48f0-94c1-67b122b68357)
-
-**13.** Now Select Database in the side menu:
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/55d15f51-b890-4664-8d0a-686597984e2f)
-
-**14.** Connect:
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/198ca6cf-8a90-4b95-b7f7-1149a09fddfe)
-
-**15.** Select the first option (driver)
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/d8aaf0e4-285d-4e76-bb78-591355569da7)
-
-**16.** Copy the connection string:
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/ccc52648-39fa-4f45-8e2b-96c93ffede4a)
-
-
+Follow the instructions in this document: [Online MongoDB Database](..\install\mongodb.md)
 
 ## Complete the Environment Variables configuration 
 

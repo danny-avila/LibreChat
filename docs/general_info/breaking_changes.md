@@ -1,5 +1,57 @@
 # ⚠️ **Breaking Changes** ⚠️
 
+## v0.5.5
+Some users have reported an error after updating their docker containers.
+
+![image](https://github.com/fuegovic/LibreChat/assets/32828263/1265d664-5a9c-47d2-b405-47bc0d029a8d)
+
+- To fix this error, you need to:
+  - Delete the LibreChat image in docker 🗑️
+    
+    **(leave mongo intact to preserve your profiles and history)** 
+    ![image](https://github.com/fuegovic/LibreChat/assets/32828263/acf15682-435e-44bd-8873-a5dceb3121cc)
+  - Repeat the docker update process: 🚀
+    - `docker-compose build`
+    - `docker-compose up -d`
+
+## v0.5.4
+Some changes were made in the .env file  
+**Look at the .env.example for reference.**
+
+- If you previously used social login, you need to:
+  - Add this to your .env file: 👇
+
+```env
+##########################
+# User System:
+##########################
+
+# Allow Public Registration
+ALLOW_REGISTRATION=true
+
+# Allow Social Registration
+ALLOW_SOCIAL_LOGIN=false
+```
+
+  - Set ALLOW_SOCIAL_LOGIN to true if you want to enable social login 🔥
+
+- If you want to enable the Anthropic Endpoint (Claude), you need to:
+  - Add this part in your .env file: 👇
+
+```env
+##########################
+# Anthropic Endpoint: 
+##########################
+# Access key from https://console.anthropic.com/
+# Leave it blank to disable this feature.
+# Set to "user_provided" to allow the user to provide their API key from the UI.
+# Note that access to claude-1 may potentially become unavailable with the release of claude-2.
+ANTHROPIC_API_KEY="user_provided"
+ANTHROPIC_MODELS=claude-1,claude-instant-1,claude-2
+```
+
+  - Choose from ANTHROPIC_MODELS which models you want to enable 🤖
+
 ## v0.5.0
 
 **Note: These changes only apply to users who are updating from a previous version of the app.**
