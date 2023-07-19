@@ -10,6 +10,8 @@ import {
   HoverCardTrigger
 } from '~/components';
 import OptionHover from './OptionHover';
+import { localize } from '~/localization/Translation';
+
 const defaultTextProps =
   'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
 
@@ -28,6 +30,7 @@ function Settings(props) {
     setOption,
   } = props;
   const endpoint = 'gptPlugins';
+  const lang = useRecoilValue(store.lang);
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const setModel = setOption('model');
@@ -70,7 +73,7 @@ function Settings(props) {
                   htmlFor="functions-agent"
                   className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                 >
-                  <small>Use Functions</small>
+                  <small>{localize(lang, 'com_endpoint_plug_use_functions')}</small>
                 </label>
                 <Switch id="functions-agent" checked={agent === 'functions'} onCheckedChange={onCheckedChangeAgent} disabled={readonly} className="mt-2 ml-4"/>
               </HoverCardTrigger>
@@ -82,7 +85,7 @@ function Settings(props) {
                   htmlFor="skip-completion"
                   className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                 >
-                  <small>Skip Completion</small>
+                  <small>{localize(lang, 'com_endpoint_plug_skip_completion')}</small>
                 </label>
                 <Switch id="skip-completion" checked={skipCompletion === true} onCheckedChange={onCheckedChangeSkip} disabled={readonly} className="mt-2 ml-4"/>
               </HoverCardTrigger>
@@ -95,7 +98,7 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="temp-int" className="text-left text-sm font-medium">
-                  Temperature <small className="opacity-40">{'(default: 0)'}</small>
+                  {localize(lang, 'com_endpoint_temperature')} <small className="opacity-40">({localize(lang, 'com_endpoint_default')}: 0)</small>
                 </Label>
                 <InputNumber
                   id="temp-int"

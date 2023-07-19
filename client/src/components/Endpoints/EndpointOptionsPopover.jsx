@@ -5,6 +5,10 @@ import CrossIcon from '../svg/CrossIcon';
 import { Save } from 'lucide-react';
 import { cn } from '~/utils/';
 
+import store from '~/store';
+import { useRecoilValue } from 'recoil';
+import { localize } from '~/localization/Translation';
+
 function EndpointOptionsPopover({
   content,
   visible,
@@ -12,6 +16,7 @@ function EndpointOptionsPopover({
   switchToSimpleMode,
   additionalButton = null
 }) {
+  const lang = useRecoilValue(store.lang);
   const cardStyle =
     'shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white';
 
@@ -37,7 +42,7 @@ function EndpointOptionsPopover({
               onClick={saveAsPreset}
             >
               <Save className="mr-1 w-[14px]" />
-              Save as preset
+              {localize(lang, 'com_endpoint_save_as_preset')}
             </Button>
             {additionalButton && (
               <Button

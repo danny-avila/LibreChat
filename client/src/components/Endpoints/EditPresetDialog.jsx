@@ -20,10 +20,12 @@ import {
 } from '~/components/';
 import { cn } from '~/utils/';
 import cleanupPreset from '~/utils/cleanupPreset';
+import { localize } from '~/localization/Translation';
 
 import store from '~/store';
 
 const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
+  const lang = useRecoilValue(store.lang);
   const [preset, setPreset] = useState(_preset);
   const setPresets = useSetRecoilState(store.presets);
   const [showExamples, setShowExamples] = useState(false);
@@ -174,13 +176,13 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-                  Preset Name
+                  {localize(lang, 'com_endpoint_preset_name')}
                 </Label>
                 <Input
                   id="chatGptLabel"
                   value={preset?.title || ''}
                   onChange={(e) => setOption('title')(e.target.value || '')}
-                  placeholder="Set a custom name, in case you can find this preset"
+                  placeholder={localize(lang, 'com_endpoint_set_custom_name')}
                   className={cn(
                     defaultTextProps,
                     'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
@@ -189,7 +191,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
               </div>
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="endpoint" className="text-left text-sm font-medium">
-                  Endpoint
+                  {localize(lang, 'com_endpoint')}
                 </Label>
                 <Dropdown
                   id="endpoint"
@@ -209,7 +211,9 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
                     onClick={triggerExamples}
                   >
                     <MessagesSquared className="mr-1 w-[14px]" />
-                    {(showExamples ? 'Hide' : 'Show') + ' Examples'}
+                    {(showExamples
+                        ? localize(lang, 'com_endpoint_hide')
+                        : localize(lang, 'com_endpoint_show')) + localize(lang, 'com_endpoint_examples')}
                   </Button>
                 )}
                 {preset?.endpoint === 'gptPlugins' && (
@@ -220,6 +224,10 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
                   >
                     <GPTIcon className="mr-1 mt-[2px] w-[14px]" size={14} />
                     {`Show ${showAgentSettings ? 'Completion' : 'Agent'} Settings`}
+                    {localize(lang, 'com_endpoint_show_what_settings',
+                      showAgentSettings
+                        ? localize(lang, 'com_endpoint_completion')
+                        : localize(lang, 'com_endpoint_agent'))}
                   </Button>
                 )}
               </div>
@@ -259,14 +267,14 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
               onClick={submitPreset}
               className="dark:hover:gray-400 border-gray-700 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
             >
-              Save
+              {localize(lang, 'com_endpoint_save')}
             </DialogClose>
           </>
         }
         leftButtons={
           <>
             <DialogButton onClick={exportPreset} className="dark:hover:gray-400 border-gray-700">
-              Export
+              {localize(lang, 'com_endpoint_export')}
             </DialogButton>
           </>
         }

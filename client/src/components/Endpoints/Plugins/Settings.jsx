@@ -11,6 +11,8 @@ import {
   HoverCardTrigger
 } from '~/components';
 import OptionHover from './OptionHover';
+import { localize } from '~/localization/Translation';
+
 const defaultTextProps =
   'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
 
@@ -33,6 +35,7 @@ function Settings(props) {
     tools
   } = props;
   const endpoint = 'gptPlugins';
+  const lang = useRecoilValue(store.lang);
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const setModel = setOption('model');
@@ -67,7 +70,7 @@ function Settings(props) {
           <>
             <div className="grid w-full items-center gap-2">
               <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-                Custom Name <small className="opacity-40">(default: empty | disabled with tools)</small>
+                {localize(lang, 'com_endpoint_custom_name')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_empty')} | {localize(lang, 'com_endpoint_disabled_with_tools')})</small>
               </Label>
               <Input
                 id="chatGptLabel"
@@ -75,7 +78,9 @@ function Settings(props) {
                 value={chatGptLabel || ''}
                 onChange={(e) => setChatGptLabel(e.target.value || null)}
                 placeholder={
-                  toolsSelected ? 'Disabled with Tools Selected' : 'Set a custom name for ChatGPT.'
+                  toolsSelected
+                    ? localize(lang, 'com_endpoint_disabled_with_tools_placeholder')
+                    : localize(lang, 'com_endpoint_plug_set_custom_name_for_gpt_placeholder')
                 }
                 className={cn(
                   defaultTextProps,
@@ -85,7 +90,7 @@ function Settings(props) {
             </div>
             <div className="grid w-full items-center gap-2">
               <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
-                Prompt Prefix <small className="opacity-40">(default: empty | disabled with tools)</small>
+                {localize(lang, 'com_endpoint_prompt_prefix')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_empty')} | {localize(lang, 'com_endpoint_disabled_with_tools')})</small>
               </Label>
               <TextareaAutosize
                 id="promptPrefix"
@@ -94,8 +99,8 @@ function Settings(props) {
                 onChange={(e) => setPromptPrefix(e.target.value || null)}
                 placeholder={
                   toolsSelected
-                    ? 'Disabled with Tools Selected'
-                    : "Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
+                    ? localize(lang, 'com_endpoint_disabled_with_tools_placeholder')
+                    : localize(lang, 'com_endpoint_plug_set_custom_instructions_for_gpt_placeholder')
                 }
                 className={cn(
                   defaultTextProps,
@@ -147,7 +152,7 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
-                  Top P <small className="opacity-40">(default: 1)</small>
+                  {localize(lang, 'com_endpoint_top_p')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_with_num', 1)})</small>
                 </Label>
                 <InputNumber
                   id="top-p-int"
@@ -185,7 +190,7 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="freq-penalty-int" className="text-left text-sm font-medium">
-                  Frequency Penalty <small className="opacity-40">(default: 0)</small>
+                  {localize(lang, 'com_endpoint_frequency_penalty')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_with_num', 0)})</small>
                 </Label>
                 <InputNumber
                   id="freq-penalty-int"
@@ -223,7 +228,7 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="pres-penalty-int" className="text-left text-sm font-medium">
-                  Presence Penalty <small className="opacity-40">(default: 0)</small>
+                  {localize(lang, 'com_endpoint_presence_penalty')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_with_num', 0)})</small>
                 </Label>
                 <InputNumber
                   id="pres-penalty-int"
