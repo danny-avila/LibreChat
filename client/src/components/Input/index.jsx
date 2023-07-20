@@ -101,15 +101,21 @@ export default function TextChat({ isSearchView = false }) {
 
   const getPlaceholderText = () => {
     if (isSearchView) {
-      return 'Click a message title to open its conversation.';
+      return navigator.languages[0] === 'zh-CN'
+        ? '单击消息标题以打开其对话。'
+        : 'Click a message title to open its conversation.';
     }
 
     if (disabled) {
-      return 'Choose another model or customize GPT again';
+      return navigator.languages[0] === 'zh-CN'
+        ? '选择其他型号或再次自定义GPT'
+        : 'Choose another model or customize GPT again';
     }
 
     if (isNotAppendable) {
-      return 'Edit your message or Regenerate.';
+      return navigator.languages[0] === 'zh-CN'
+        ? '编辑您的消息或重新生成。'
+        : 'Edit your message or Regenerate.';
     }
 
     return '';

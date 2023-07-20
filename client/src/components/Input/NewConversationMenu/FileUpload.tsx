@@ -57,7 +57,9 @@ const FileUpload: React.FC<FileUploadProps> = ({
     >
       <FileUp className="mr-1 flex w-[22px] items-center stroke-1" />
       <span className="flex text-xs ">
-        {!status ? text || 'Import' : status === 'success' ? successText : invalidText}
+        {!status
+          ? text || (navigator.languages[0] === 'zh-CN' ? '导入' : 'Import')
+          : status === 'success' ? successText : invalidText}
       </span>
       <input
         id={`file-upload-${id}`}
