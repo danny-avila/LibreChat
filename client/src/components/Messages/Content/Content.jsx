@@ -69,7 +69,8 @@ const Content = React.memo(({ content, message }) => {
   ];
 
   if (!isInitializing || !isLatestMessage) {
-    rehypePlugins.pop();
+    //commented out to fix bing image creator errors
+    //rehypePlugins.pop();
   }
 
   return (
