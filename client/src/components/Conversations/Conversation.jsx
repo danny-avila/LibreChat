@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRecoilState, useSetRecoilState } from 'recoil';
-import { useUpdateConversationMutation } from '~/data-provider';
+import { useUpdateConversationMutation } from '@librechat/data-provider';
 import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
 import ConvoIcon from '../svg/ConvoIcon';
 
 import store from '~/store';
 import PrivateButton from './PrivateButton';
+import LikeIcon from '../svg/LikeIcon';
 
 export default function Conversation({ conversation, retainView }) {
   const [currentConversation, setCurrentConversation] = useRecoilState(store.conversation);
@@ -25,7 +26,32 @@ export default function Conversation({ conversation, retainView }) {
   const [titleInput, setTitleInput] = useState(title);
 
   const [privateState, setPrivateState] = useState(isPrivate);
+  const [isLiked, setIsLiked] = useState(false);
 
+  const handleLikeClick = async () => {
+    try {
+      const response = await fetch('/api/convos/like', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          conversationId: conversationId,
+          isLiked: !isLiked
+        })
+      });
+      const data = await response.json();
+      if (data.conversation) {
+        console.log(data.conversation);
+        return;
+      }
+      // Update the isLiked state based on the API response
+      setIsLiked((prev) => !prev);
+
+    } catch (error) {
+      console.log('Error liking conversation:', error);
+    }
+  };
   const clickHandler = async () => {
     if (currentConversation?.conversationId === conversationId) {
       return;
@@ -44,6 +70,7 @@ export default function Conversation({ conversation, retainView }) {
     } else {
       switchToConversation(conversation);
     }
+
   };
 
   const setPrivateHandler = (e) => {
@@ -105,9 +132,9 @@ export default function Conversation({ conversation, retainView }) {
   }
 
   return (
-    <a onClick={() => clickHandler()} {...aProps}>
+    <a data-testid="convo-item" onClick={() => clickHandler()} {...aProps}>
       <ConvoIcon />
-      <div className="relative max-h-5 flex-1 overflow-hidden text-ellipsis break-all">
+      <div className="relative max-h-5 flex-1 overflow-hidden text-ellipsis break-all pr-8">
         {renaming === true ? (
           <input
             ref={inputRef}
@@ -122,8 +149,14 @@ export default function Conversation({ conversation, retainView }) {
           title
         )}
       </div>
+
       {currentConversation?.conversationId === conversationId ? (
-        <div className="visible absolute right-1 z-10 flex text-gray-300">
+        <div className="visible absolute right-1 z-10 flex text-gray-300 ml-3">
+          <LikeIcon
+            filled={isLiked}
+            style={{ marginTop: '0.25rem' }}
+            onClick={handleLikeClick}
+          />
           <PrivateButton
             conversationId={conversationId}
             isPrivate={privateState}
@@ -141,6 +174,7 @@ export default function Conversation({ conversation, retainView }) {
             cancelHandler={cancelHandler}
             retainView={retainView}
           />
+
         </div>
       ) : (
         <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-gray-900 group-hover:from-gray-700/70" />

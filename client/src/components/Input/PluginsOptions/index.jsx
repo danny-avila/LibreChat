@@ -14,7 +14,7 @@ import { Settings, AgentSettings } from '../../Endpoints/Plugins/';
 import { cn } from '~/utils/';
 import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
-import { useAvailablePluginsQuery } from '~/data-provider';
+import { useAvailablePluginsQuery } from '@librechat/data-provider';
 
 function PluginsOptions() {
   const { data: allPlugins } = useAvailablePluginsQuery();
@@ -126,7 +126,7 @@ function PluginsOptions() {
     <>
       <div
         className={
-          'pluginOptions flex w-full flex-wrap items-center justify-center gap-2 ' +
+          'pluginOptions flex w-full flex-wrap items-center justify-end gap-2 ' +
           (!advancedMode ? opacityClass : '')
         }
         onMouseEnter={() => {

@@ -1,0 +1,6 @@
+/*example youtube color scheme*/
+[data-md-color-scheme="youtube"] {
+    --md-primary-fg-color: #eee; 
+    --md-primary-bg-color: #555;
+    --md-accent-fg-color: #f00;
+  }

@@ -8,7 +8,7 @@ import {
   useGetRecentConversations,
   useGetMessagesByConvoId,
   useDuplicateConvoMutation,
-} from '~/data-provider';
+} from '@librechat/data-provider';
 import SwitchPage from './SwitchPage';
 import DuplicateConvoButton from './DuplicateConvoButton';
 import store from '~/store';
@@ -23,7 +23,7 @@ export default function Recommendations() {
   const title = '首页';
 
   const RecentConversations = useGetRecentConversations();
-  
+
   const convoData = RecentConversations.data;
   const messages = useGetMessagesByConvoId(convoData?.length ? convoData[convoIdx].conversationId : ''); // sometimes returns a string
   const msgData = messages?.data;

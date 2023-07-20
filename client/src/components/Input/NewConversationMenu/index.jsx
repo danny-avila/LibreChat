@@ -9,7 +9,7 @@ import { Trash2 } from 'lucide-react';
 import FileUpload from './FileUpload';
 import getIcon from '~/utils/getIcon';
 import getDefaultConversation from '~/utils/getDefaultConversation';
-import { useDeletePresetMutation, useCreatePresetMutation } from '~/data-provider';
+import { useDeletePresetMutation, useCreatePresetMutation } from '@librechat/data-provider';
 import {
   Button,
   DropdownMenu,
@@ -19,7 +19,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   DialogTemplate,
-  Dialog, DialogTrigger
+  Dialog,
+  DialogTrigger
 } from '../../ui/';
 import { cn } from '~/utils/';
 
@@ -82,13 +83,23 @@ export default function NewConversationMenu() {
       );
       localStorage.setItem('lastConversationSetup', JSON.stringify(conversation));
     }
+
+    if (endpoint === 'bingAI') {
+      const lastBingSettings = JSON.parse(localStorage.getItem('lastBingSettings')) || {};
+      const { jailbreak, toneStyle } = conversation;
+      localStorage.setItem(
+        'lastBingSettings',
+        JSON.stringify({ ...lastBingSettings, jailbreak, toneStyle })
+      );
+    }
   }, [conversation]);
 
   // set the current model
   const onSelectEndpoint = (newEndpoint) => {
     setMenuOpen(false);
-    if (!newEndpoint) { return; }
-    else {
+    if (!newEndpoint) {
+      return;
+    } else {
       newConversation({}, { endpoint: newEndpoint });
     }
   };
@@ -96,12 +107,12 @@ export default function NewConversationMenu() {
   // set the current model
   const onSelectPreset = (newPreset) => {
     setMenuOpen(false);
-    
+
     if (endpoint === 'gptPlugins' && newPreset?.endpoint === 'gptPlugins') {
       const currentConvo = getDefaultConversation({
         conversation,
         endpointsConfig,
-        preset: newPreset,
+        preset: newPreset
       });
 
       setConversation(currentConvo);
@@ -144,16 +155,16 @@ export default function NewConversationMenu() {
           <Button
             id="new-conversation-menu"
             variant="outline"
-            className={`group relative mb-[-12px] ml-0 mt-[-8px] items-center rounded-md border-0 p-1 outline-none focus:ring-0 focus:ring-offset-0 dark:data-[state=open]:bg-opacity-50 md:left-1 md:ml-[-12px] md:pl-1`}
+            className={'group relative mb-[-12px] ml-0 mt-[-8px] items-center rounded-md border-0 p-1 outline-none focus:ring-0 focus:ring-offset-0 dark:data-[state=open]:bg-opacity-50 md:left-1 md:ml-[-12px] md:pl-1'}
           >
             {icon}
             <span className="max-w-0 overflow-hidden whitespace-nowrap px-0 text-slate-600 transition-all group-hover:max-w-[80px] group-hover:px-2 group-data-[state=open]:max-w-[80px] group-data-[state=open]:px-2 dark:text-slate-300">
-              {navigator.languages[0]==='zh-CN'? "新建话题":"New Topic"}
+              {navigator.languages[0]==='zh-CN'? '新建话题':'New Topic'}
             </span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
-          className="w-96 dark:bg-gray-900 z-[100]"
+          className="z-[100] w-96 dark:bg-gray-900"
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
           <DropdownMenuLabel
@@ -166,14 +177,18 @@ export default function NewConversationMenu() {
           <DropdownMenuRadioGroup
             value={endpoint}
             onValueChange={onSelectEndpoint}
-            className="overflow-y-auto gap-1 flex flex-col"
+            className="flex flex-col gap-1 overflow-y-auto"
           >
             {showEndpoints &&
               (availableEndpoints.length ? (
-                <EndpointItems selectedEndpoint={endpoint} endpoints={availableEndpoints} onSelect={onSelectEndpoint} />
+                <EndpointItems
+                  selectedEndpoint={endpoint}
+                  endpoints={availableEndpoints}
+                  onSelect={onSelectEndpoint}
+                />
               ) : (
                 <DropdownMenuLabel className="dark:text-gray-300">
-                  {navigator.languages[0]==='zh-CN' ? "没有可用接入点":"No endpoint available."}
+                  {navigator.languages[0]==='zh-CN' ? '没有可用接入点':'No endpoint available.'}
                 </DropdownMenuLabel>
               ))}
           </DropdownMenuRadioGroup>
@@ -185,7 +200,7 @@ export default function NewConversationMenu() {
               className="mr-auto cursor-pointer "
               onClick={() => setShowPresets((prev) => !prev)}
             >
-              {navigator.languages[0]==='zh-CN' ? (showPresets ? '隐藏预设' : '显示预设') : (showPresets ? 'Hide Presets' : 'Show Presets')} 
+              {navigator.languages[0]==='zh-CN' ? (showPresets ? '隐藏预设' : '显示预设') : (showPresets ? 'Hide Presets' : 'Show Presets')}
             </span>
             <FileUpload onFileSelected={onFileSelected} />
             <Dialog>
@@ -199,7 +214,7 @@ export default function NewConversationMenu() {
                   className="h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-red-700 hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-gray-800 dark:hover:text-red-400"
                 > */}
                   <Trash2 className="mr-1 flex w-[22px] items-center stroke-1" />
-                  {navigator.languages[0]==='zh-CN' ? "全部清理":"Clear All"}
+                  {navigator.languages[0]==='zh-CN' ? '全部清理':'Clear All'}
                   {/* </Button> */}
                 </label>
               </DialogTrigger>
@@ -209,7 +224,7 @@ export default function NewConversationMenu() {
                 selection={{
                   selectHandler: clearAllPresets,
                   selectClasses: 'bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
-                  selectText: navigator.languages[0]==='zh-CN' ? "清理" : 'Clear'
+                  selectText: navigator.languages[0]==='zh-CN' ? '清理' : 'Clear'
                 }}
               />
             </Dialog>
@@ -217,7 +232,10 @@ export default function NewConversationMenu() {
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
             onValueChange={onSelectPreset}
-            className={cn('overflow-y-auto overflow-x-hidden', showEndpoints ? 'max-h-[210px]' : 'max-h-[315px]')}
+            className={cn(
+              'overflow-y-auto overflow-x-hidden',
+              showEndpoints ? 'max-h-[210px]' : 'max-h-[315px]'
+            )}
           >
             {showPresets &&
               (presets.length ? (
@@ -228,7 +246,7 @@ export default function NewConversationMenu() {
                   onDeletePreset={onDeletePreset}
                 />
               ) : (
-                <DropdownMenuLabel className="dark:text-gray-300">{navigator.languages[0]==='zh-CN'? "还没有预设。":"No preset yet."}</DropdownMenuLabel>
+                <DropdownMenuLabel className="dark:text-gray-300">{navigator.languages[0]==='zh-CN'? '还没有预设。':'No preset yet.'}</DropdownMenuLabel>
               ))}
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>

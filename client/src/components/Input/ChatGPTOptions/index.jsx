@@ -29,7 +29,7 @@ function ChatGPTOptions() {
     'transition-colors shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 hover:border-black/10 focus:border-black/10 dark:border-black/10 dark:hover:border-black/10 dark:focus:border-black/10 border dark:bg-gray-700 text-black dark:text-white';
 
   return (
-    <div className="openAIOptions-simple-container show flex w-full flex-wrap items-center justify-center gap-2">
+    <div className="openAIOptions-simple-container show flex w-full flex-wrap items-center justify-end gap-2">
       <SelectDropDown
         value={model}
         setValue={setOption('model')}

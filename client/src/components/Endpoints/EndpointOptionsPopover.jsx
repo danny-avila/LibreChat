@@ -10,6 +10,7 @@ function EndpointOptionsPopover({
   visible,
   saveAsPreset,
   switchToSimpleMode,
+  widget = false,
   additionalButton = null
 }) {
   const cardStyle =
@@ -31,18 +32,18 @@ function EndpointOptionsPopover({
         >
           <div className="flex w-full items-center bg-slate-100 px-2 py-2 dark:bg-gray-800/60">
             {/* <span className="text-xs font-medium font-normal">Advanced settings for OpenAI endpoint</span> */}
-            <Button
+            {!widget && (<Button
               type="button"
               className="h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
               onClick={saveAsPreset}
             >
               <Save className="mr-1 w-[14px]" />
               Save as preset
-            </Button>
+            </Button>)}
             {additionalButton && (
               <Button
                 type="button"
-                className={cn(additionalButton.buttonClass, "ml-1 h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0")}
+                className={cn(additionalButton.buttonClass, 'ml-1 h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0')}
                 onClick={additionalButton.handler}
               >
                 {additionalButton.icon}

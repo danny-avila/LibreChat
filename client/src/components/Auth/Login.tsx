@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import LoginForm from './LoginForm';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { useGetStartupConfig } from '~/data-provider';
+import { useGetStartupConfig } from '@librechat/data-provider';
 
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();
@@ -18,29 +18,29 @@ function Login() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
       <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl font-semibold">{navigator.languages[0]==='zh-CN'?"欢迎回来":"Welcome back"}</h1>
+        <h1 className="mb-4 text-center text-3xl font-semibold">{navigator.languages[0]==='zh-CN'?'欢迎回来':'Welcome back'}</h1>
         {error && (
           <div
             className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
             role="alert"
           >
-            {navigator.languages[0]==='zh-CN'?"无法使用提供的信息登录。请检查您的凭据，然后重试。":"Unable to login with the information provided. Please check your credentials and try again."}
+            {navigator.languages[0]==='zh-CN'?'无法使用提供的信息登录。请检查您的凭据，然后重试。':'Unable to login with the information provided. Please check your credentials and try again.'}
           </div>
         )}
         <LoginForm onSubmit={login} />
         {startupConfig?.registrationEnabled && (
           <p className="my-4 text-center text-sm font-light text-gray-700">
             {' '}
-            {navigator.languages[0]==='zh-CN'?"没有账号？点击":"Don&apos;t have an account?"}{' '}
+            {navigator.languages[0]==='zh-CN'?'没有账号？点击':'Don&apos;t have an account?'}{' '}
             <a href="/register" className="p-1 text-green-500 hover:underline">
-              {navigator.languages[0]==='zh-CN'?"注册":"Sign up"}
+              {navigator.languages[0]==='zh-CN'?'注册':'Sign up'}
             </a>
           </p>
         )}
         {startupConfig?.googleLoginEnabled && (
           <>
             <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
-              <div className="absolute bg-white px-3 text-xs">{navigator.languages[0]==='zh-CN'?"或":"Or"}</div>
+              <div className="absolute bg-white px-3 text-xs">{navigator.languages[0]==='zh-CN'?'或':'Or'}</div>
             </div>
             <div className="mt-4 flex gap-x-2">
               <a
@@ -71,7 +71,7 @@ function Login() {
                     d="m419.404 58.936-82.933 67.896C313.136 112.246 285.552 103.82 256 103.82c-66.729 0-123.429 42.957-143.965 102.724l-83.397-68.276h-.014C71.23 56.123 157.06 0 256 0c62.115 0 119.068 22.126 163.404 58.936z"
                   ></path>
                 </svg>
-                <p>{navigator.languages[0]==='zh-CN'?"使用Google登录":"Login with Google"}</p>
+                <p>{navigator.languages[0]==='zh-CN'?'使用Google登录':'Login with Google'}</p>
               </a>
             </div>
           </>
@@ -101,6 +101,34 @@ function Login() {
             </div>
           </>
         )}
+        {startupConfig?.githubLoginEnabled && (
+          <>
+            <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
+              <div className="absolute bg-white px-3 text-xs">Or</div>
+            </div>
+            <div className="mt-4 flex gap-x-2">
+              <a
+                aria-label="Login with GitHub"
+                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
+                href={`${startupConfig.serverDomain}/oauth/github`}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  id="github"
+                  className="h-5 w-5"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M12 0a12 12 0 0 0-3.84 23.399c.608.112.832-.256.832-.576v-2.015c-3.395.736-4.115-1.632-4.115-1.632a3.241 3.241 0 0 0-1.359-1.792c-1.104-.736.064-.736.064-.736a2.566 2.566 0 0 1 1.824 1.216a2.638 2.638 0 0 0 3.616 1.024a2.607 2.607 0 0 1 .768-1.6c-2.688-.32-5.504-1.344-5.504-5.984a4.677 4.677 0 0 1 1.216-3.168a4.383 4.383 0 0 1 .128-3.136s1.024-.32 3.36 1.216a11.66 11.66 0 0 1 6.112 0c2.336-1.536 3.36-1.216 3.36-1.216a4.354 4.354 0 0 1 .128 3.136a4.628 4.628 0 0 1 1.216 3.168c0 4.672-2.848 5.664-5.536 5.952a2.881 2.881 0 0 1 .832 2.24v3.36c0 .32.224.672.832.576A12 12 0 0 0 12 0z"
+                  />
+                </svg>
+                <p>Login with GitHub</p>
+              </a>
+            </div>
+          </>
+        )}
+
       </div>
     </div>
   );

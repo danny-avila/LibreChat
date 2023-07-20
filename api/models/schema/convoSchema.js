@@ -48,6 +48,10 @@ const convoSchema = mongoose.Schema(
       type: Number,
       default: 1
     },
+    likesConvo: {
+      type: Number,
+      default: 0
+    },
     isPrivate: {
       type: Boolean,
       default: true
@@ -68,3 +72,4 @@ if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
 const Conversation = mongoose.models.Conversation || mongoose.model('Conversation', convoSchema);
 
 module.exports = Conversation;
+

@@ -1,22 +1,26 @@
 {
   "name": "LibreChat",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "",
   "workspaces": [
     "api",
-    "client"
+    "client",
+    "packages/data-provider"
   ],
   "scripts": {
     "install": "node config/install.js",
     "upgrade": "node config/upgrade.js",
     "create-user": "node config/create-user.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
-    "backend-dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
-    "frontend": "cd client && npm run build",
-    "frontend-dev": "cd client && npm run dev",
+    "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
+    "build:data-provider": "cd packages/data-provider && npm run build && npm link && cd ../../client && npm link @librechat/data-provider",
+    "frontend": "npm run build:data-provider && cd client && npm run build",
+    "frontend:ci": "npm run build:data-provider && cd client && npm run build:ci",
+    "frontend:dev": "cd client && npm run dev",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
     "e2e:ci": "playwright test --config=e2e/playwright.config.ts",
     "e2e:debug": "cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
+    "e2e:codegen": "npx playwright codegen --load-storage=e2e/storageState.json http://localhost:3080/chat/new",
     "test:client": "cd client && npm run test",
     "test:api": "cd api && npm run test",
     "e2e:update": "playwright test --config=e2e/playwright.config.js --update-snapshots",
@@ -35,7 +39,11 @@
   },
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "dependencies": {
-    "langchain": "^0.0.91"
+    "langchain": "^0.0.91",
+    "mongodb": "5.2",
+    "axios": "^1.4.0",
+    "passport": "^0.6.0",
+    "passport-github2": "^0.1.12"
   },
   "devDependencies": {
     "@playwright/test": "^1.32.1",
@@ -62,7 +70,9 @@
     "ignore": [
       "api/data/",
       "data",
-      "client/"
+      "client/",
+      "admin/",
+      "packages/"
     ]
   }
 }

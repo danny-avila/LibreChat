@@ -4,7 +4,11 @@ import { useRecoilState } from 'recoil';
 import { X } from 'lucide-react';
 import store from '~/store';
 import { PluginStoreItem, PluginPagination, PluginAuthForm } from '.';
-import { useAvailablePluginsQuery, useUpdateUserPluginsMutation, TPlugin } from '~/data-provider';
+import {
+  useAvailablePluginsQuery,
+  useUpdateUserPluginsMutation,
+  TPlugin
+} from '@librechat/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 type TPluginStoreDialogProps = {
@@ -95,8 +99,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     if (width < 501) {
       setItemsPerPage(8);
       return;
-    } else
-    if (width < 640) {
+    } else if (width < 640) {
       columns = 2;
     } else if (width < 1024) {
       columns = 3;
@@ -140,7 +143,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
       <div className="fixed inset-0 bg-gray-500/90 transition-opacity dark:bg-gray-800/90" />
       {/* Full-screen container to center the panel */}
       <div className="fixed inset-0 flex items-center justify-center p-4">
-        <Dialog.Panel className="relative w-full max-sm:h-full overflow-y-auto transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-900 sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl">
+        <Dialog.Panel className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-900 max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl">
           <div className="flex items-center justify-between border-b-[1px] border-black/10 px-4 pb-4 pt-5 dark:border-white/10 sm:p-6">
             <div className="flex items-center">
               <div className="text-center sm:text-left">

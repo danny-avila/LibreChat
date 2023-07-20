@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getConvo, saveConvo } = require('../../models');
+const { getConvo, saveConvo, likeConvo } = require('../../models');
 const { getConvosByPage, deleteConvos, getRecentConvos } = require('../../models/Conversation');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 const { duplicateMessages } = require('../../models/Message');
@@ -55,7 +55,7 @@ router.post('/clear', requireJwtAuth, async (req, res) => {
 
 router.post('/update', requireJwtAuth, async (req, res) => {
   const update = req.body.arg;
-
+  console.log('in update', update);
   try {
     const dbResponse = await saveConvo(req.user.id, update);
     res.status(201).send(dbResponse);
@@ -81,6 +81,21 @@ router.post('/duplicate', requireJwtAuth, async (req, res) => {
 
     const newConvo = new Conversation(convoObj);
     const dbResponse = await newConvo.save();
+    res.status(201).send(dbResponse);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send(error);
+  }
+});
+
+
+router.post('/like', async (req, res) => {
+  const { conversationId, isLiked } = req.body; 
+  console.log('hit like router')
+  try {
+    const dbResponse = await likeConvo(conversationId, isLiked);
+    console.log('saved in like router')
+
     res.status(201).send(dbResponse);
   } catch (error) {
     console.error(error);

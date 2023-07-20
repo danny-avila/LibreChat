@@ -1,12 +1,12 @@
-import { useGetLeaderboardQuery } from "~/data-provider";
-import React, { useState, useRef, useEffect, useMemo, useCallback} from 'react';
+import { useGetLeaderboardQuery } from '@librechat/data-provider';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { AgGridReact } from 'ag-grid-react'; // the AG Grid React Component
 
 import 'ag-grid-community/styles/ag-grid.css'; // Core grid CSS, always needed
 import 'ag-grid-community/styles/ag-theme-alpine.css'; // Optional theme CSS
-import GoldMedal from "../svg/GoldMedal";
-import SilverMedal from "../svg/SilverMedal";
-import BronzeMedal from "../svg/BronzeMedal";
+import GoldMedal from '../svg/GoldMedal';
+import SilverMedal from '../svg/SilverMedal';
+import BronzeMedal from '../svg/BronzeMedal';
 
 function placeCellRenderer(place) {
   switch (place) {
@@ -22,7 +22,7 @@ function placeCellRenderer(place) {
 
 function userCellRenderer(user) {
   const { name, username } = user;
-  const icon = 
+  const icon =
       <img
         className="rounded-sm"
         style={{ width: 30, height: 30 }}
@@ -37,7 +37,7 @@ function userCellRenderer(user) {
 
 export default function Leaderboard() {
   const getLeaderboardQuery = useGetLeaderboardQuery();
-  
+
   const gridRef = useRef(); // Optional - for accessing Grid's API
   const [rowData, setRowData] = useState(); // Set rowData to Array of Objects, one Object per Row
 
@@ -53,7 +53,7 @@ export default function Leaderboard() {
       field: '用户',
       cellRenderer: params => userCellRenderer(params.value)
     },
-    {field: '邀请人数'}
+    { field: '邀请人数' }
   ]);
 
   // DefaultColDef sets props common to all Columns
@@ -96,7 +96,7 @@ export default function Leaderboard() {
       <button onClick={buttonListener}>Push Me</button>
 
       {/* On div wrapping Grid a) specify theme CSS Class Class and b) sets Grid size */}
-      <div className="ag-theme-alpine" style={{width: 800, height: 500}}>
+      <div className="ag-theme-alpine" style={{ width: 800, height: 500 }}>
 
         <AgGridReact
           ref={gridRef} // Ref for accessing Grid's API

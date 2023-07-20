@@ -21,7 +21,7 @@ Then you can get the API key, click the "Get a key" button on this page: https:/
 
 Click to sign in(make a Google acct if you do not have one):
 
-![image](https://user-images.githubusercontent.com/23362597/233266042-98098ed5-72b2-41b3-9495-1a9f4d7e1101.png)
+![google_search-1](https://github.com/danny-avila/LibreChat/assets/32828263/51db1a90-c2dc-493c-b32c-821257c27b4e)
 
 
 ## 3\. Register yourself a new account/Login to the Control Panel
@@ -29,7 +29,7 @@ Click to sign in(make a Google acct if you do not have one):
 
 After logging in, you will be redirected to the Control Panel to create a new search engine:
 
-![image](https://user-images.githubusercontent.com/23362597/233266323-53232468-2590-4820-b55f-08c78529d752.png)
+![google_search-2](https://github.com/danny-avila/LibreChat/assets/32828263/152cfe7c-4796-49c6-9160-92cddf38f1c8)
 
 
 ## 4\. Create a new search engine
@@ -37,13 +37,12 @@ After logging in, you will be redirected to the Control Panel to create a new se
 
 Fill in a name, select to "Search the entire web" and hit "Create":
 
-![image](https://user-images.githubusercontent.com/23362597/233266738-b70f004d-4324-482e-a945-9b0193b60158.png)
+![google_search-3](https://github.com/danny-avila/LibreChat/assets/32828263/c63441fc-bdb2-4086-bb7a-fcbe3d67aef9)
 
 
 ## 5\. Copy your Search engine ID to your .env file
 
-
-![image](https://user-images.githubusercontent.com/23362597/233267123-ea25a3bb-6cdb-4d46-a893-846ea4933632.png)
+![google_search-4](https://github.com/danny-avila/LibreChat/assets/32828263/e03b5c79-87e5-4a68-b83e-61faf4f2f718)
 
 
 ## 6\. Go to [custom-search docs](https://developers.google.com/custom-search/v1/introduction) to get a Google search API key
@@ -51,16 +50,14 @@ Fill in a name, select to "Search the entire web" and hit "Create":
 
 ## 7\. Click "Get a Key":
 
-![image](https://user-images.githubusercontent.com/23362597/233267659-f82621f4-1f0b-46bf-8994-be443dd79932.png)
+![google_search-5](https://github.com/danny-avila/LibreChat/assets/32828263/2b93a2f9-5ed2-4794-96a8-a114e346a602)
 
 
 ## 8\. Name your project and agree to the Terms of Service
 
-
-![image](https://user-images.githubusercontent.com/23362597/233267793-ca3c273d-ebc6-44a5-a49d-0d4c3223c992.png)
+![google_search-6](https://github.com/danny-avila/LibreChat/assets/32828263/82c9c3ef-7363-40cd-a89e-fc45088e4c86)
 
 
 ## 9\. Copy your Google search API key to your .env file
 
-
-![image](https://user-images.githubusercontent.com/23362597/233268067-5a6cfaf1-bec0-48b3-8add-70b218fb4264.png)
+![google_search-7](https://github.com/danny-avila/LibreChat/assets/32828263/8170206a-4ba6-40e3-b20e-bdbac21d6695)
