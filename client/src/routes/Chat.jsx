@@ -4,7 +4,7 @@ import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 
 import Messages from '../components/Messages';
 import TextChat from '../components/Input';
-import Landing from '~/components/ui/Landing';
+import Recommendations from '~/components/ui/Recommendations';
 
 import store from '~/store';
 import {
@@ -119,7 +119,7 @@ export default function Chat() {
 
   return (
     <>
-      {conversationId === 'new' && !messagesTree?.length ? <Landing /> : <Messages />}
+      {conversationId === 'new' && !messagesTree?.length ? <Recommendations /> : <Messages />}
       <TextChat />
     </>
   );
