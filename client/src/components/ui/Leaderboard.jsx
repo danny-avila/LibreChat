@@ -97,7 +97,7 @@ export default function Leaderboard({ isOpen, setIsOpen }) {
       <div className="fixed inset-0 bg-gray-500/90 transition-opacity dark:bg-gray-800/90" />
       {/* Full-screen container to center the panel */}
       <div className="fixed inset-0 flex items-center justify-center p-4">
-        <Dialog.Panel className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-900 max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl">
+        <Dialog.Panel className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-900 max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-1xl lg:max-w-2xl xl:max-w-3xl">
           <div className="flex items-center justify-between border-b-[1px] border-black/10 px-4 pb-4 pt-5 dark:border-white/10 sm:p-6">
             <div className="flex items-center">
               <div className="text-center sm:text-left">
@@ -118,11 +118,11 @@ export default function Leaderboard({ isOpen, setIsOpen }) {
               </div>
             </div>
           </div>
-          <div className="p-4 sm:p-6 sm:pt-4">
+          <div className="p-4 sm:p-6 sm:pt-4 grid grid-col justify-center">
             {/* Example using Grid's API */}
             <button onClick={buttonListener}>Push Me</button>
             {/* On div wrapping Grid a) specify theme CSS Class Class and b) sets Grid size */}
-            <div className="ag-theme-alpine" style={{ width: 800, height: 500 }}>
+            <div className="ag-theme-alpine" style={{ width: 600, height: 500 }}>
               <AgGridReact
                 ref={gridRef} // Ref for accessing Grid's API
 
