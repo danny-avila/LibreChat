@@ -16,6 +16,7 @@ import NavLink from './NavLink';
 import CheckMark from '../svg/CheckMark';
 import Clipboard from '../svg/Clipboard';
 import useDebounce from '~/hooks/useDebounce';
+import LeaderboardIcon from '../svg/LeaderboardIcon';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
 // const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -238,6 +239,12 @@ export default function Nav({ navVisible, setNavVisible }) {
                   />
                 </div>
               </div>
+              <NavLink
+                className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                svg={() => <LeaderboardIcon />}
+                text={navigator.languages[0] === 'zh-CN' ? '邀请排行榜' : 'Referrals Leaderboard'}
+                clickHandler={ null }
+              />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => copied ? <CheckMark /> : <Clipboard />}
