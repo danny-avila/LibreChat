@@ -23,6 +23,7 @@ class RundPodImgEndpointAPI extends Tool {
     super();
     console.log('fields', fields);
     this.name = 'runpod-endpoint';
+    this.runPodEnabled = this.getRudPodEnabled();
     this.url = fields.RUNPOD_ENDPOINT_URL || this.getServerURL();
     this.apiKey = fields.RUNPOD_API_KEY || this.getApiKey();
     this.useSync = fields.RUNPOD_USE_SYNC || this.getRunPodUseSync();
@@ -160,6 +161,14 @@ Guidelines:
     return false;
   }
 
+  getRudPodEnabled() {
+    const flag = process.env.RUNPOD_ENABLED;
+    if (flag && flag === 'true') {
+      return true;
+    }
+    return false;
+  }
+
   getApiKey() {
     const key = process.env.RUNPOD_API_KEY || '';
     if (!key) {
@@ -271,6 +280,9 @@ Guidelines:
   }
 
   async _call(input) {
+    if (!this.runPodEnabled) {
+      return 'Txt2Img is not enabled.';
+    }
     const url = this.url;
     const model =
       input && input.model && Object.values(RUNPOD_IMG_MODELS).includes(input.model)
