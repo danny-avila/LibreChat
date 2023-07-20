@@ -91,6 +91,29 @@
     ]
   },
   {
+    "name": "Txt2Img",
+    "pluginKey": "runpod-img-endpoint",
+    "description": "Generate images given any text input.",
+    "icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ3L_LHTYGNHVr3bJJvxpaZBk6ptQIQipU6im4zHK3gsiozh0KG2r7Snaz-WUIbHyFccLU&usqp=CAU",
+    "authConfig": [
+      {
+        "authField": "RUNPOD_ENDPOINT_URL",
+        "label": "Your Runpod Image Generation ENDPOINT URL",
+        "description": "You need to provide the URL of your Runpod Image generation API. For instructions on how to obtain this, see <a href='https://docs.runpod.io/reference/'>Runpod Docs</a>."
+      },
+      {
+        "authField": "RUNPOD_API_KEY",
+        "label": "Your Runpod API Key",
+        "description": "You need to provide the API Key of your Runpod Image generation API. For instructions on how to obtain this, see <a href='https://docs.runpod.io/reference/'>Runpod Docs</a>."
+      },
+      {
+        "authField": "RUNPOD_USE_SYNC",
+        "label": "Your Runpod use sync method over async",
+        "description": "You need to tell whether you prefer to use sync method over async."
+      }
+    ]
+  },
+  {
     "name": "Zapier",
     "pluginKey": "zapier",
     "description": "Interact with over 5,000+ apps like Google Sheets, Gmail, HubSpot, Salesforce, and thousands more.",
