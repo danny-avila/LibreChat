@@ -2567,7 +2567,7 @@
     mongodb "^4.5.0"
     pify "^5.0.0"
 
-"@librechat/backend@file:/Users/john/git/AitokChat/api":
+"@librechat/backend@file:/Users/peidonghe/Documents/GitHub/LibreChat/api":
   version "0.5.3"
   resolved "file:api"
   dependencies:
@@ -2608,14 +2608,14 @@
     sanitize "^2.1.2"
     sharp "^0.32.1"
 
-"@librechat/data-provider@*", "@librechat/data-provider@file:/Users/john/git/AitokChat/packages/data-provider":
+"@librechat/data-provider@*", "@librechat/data-provider@file:/Users/peidonghe/Documents/GitHub/LibreChat/packages/data-provider":
   version "0.1.0"
   resolved "file:packages/data-provider"
   dependencies:
     "@tanstack/react-query" "^4.28.0"
     axios "^1.3.4"
 
-"@librechat/frontend@file:/Users/john/git/AitokChat/client":
+"@librechat/frontend@file:/Users/peidonghe/Documents/GitHub/LibreChat/client":
   version "0.5.3"
   resolved "file:client"
   dependencies:
@@ -2625,7 +2625,7 @@
     "@fortawesome/free-solid-svg-icons" "^6.4.0"
     "@fortawesome/react-fontawesome" "^0.2.0"
     "@headlessui/react" "^1.7.13"
-    "@librechat/data-provider" "^0.1.0"
+    "@librechat/data-provider" "*"
     "@radix-ui/react-alert-dialog" "^1.0.2"
     "@radix-ui/react-checkbox" "^1.0.3"
     "@radix-ui/react-dialog" "^1.0.2"
