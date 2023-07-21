@@ -1,58 +1,115 @@
-import React, { useState } from 'react';
-import { Tabs, TabsList, TabsTrigger } from './Tabs';
-import { cn } from '~/utils';
-import Recommendations from './Recommendations';
-import Leaderboard from './Leaderboard';
+import React from 'react';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
+import useDocumentTitle from '~/hooks/useDocumentTitle';
+import SunIcon from '../svg/SunIcon';
+import LightningIcon from '../svg/LightningIcon';
+import CautionIcon from '../svg/CautionIcon';
+import store from '~/store';
+import { localize } from '~/localization/Translation';
+import { useGetStartupConfig } from '@librechat/data-provider';
 
 export default function Landing() {
-  const [tabsValue, setTabsValue] = useState<string>("leaderboard");
+  const { data: config } = useGetStartupConfig();
+  const setText = useSetRecoilState(store.text);
+  const conversation = useRecoilValue(store.conversation);
+  const lang = useRecoilValue(store.lang);
+  // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
+  const { title = localize(lang, 'com_ui_new_chat') } = conversation || {};
 
-  const cardStyle =
-    'transition-colors shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 hover:border-black/10 focus:border-black/10 dark:border-black/10 dark:hover:border-black/10 dark:focus:border-black/10 border dark:bg-gray-700 text-black dark:text-white';
-  const defaultClasses =
-    'p-2 rounded-md min-w-[75px] font-normal bg-white/[.60] dark:bg-gray-700 text-black text-xs';
-  const defaultSelected = cn(
-    defaultClasses,
-    'font-medium data-[state=active]:text-white text-xs text-white'
-  );
-  const selectedTab = (val: string) => val + '-tab ' + defaultSelected;
+  useDocumentTitle(title);
+
+  const clickHandler = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    const { innerText } = e.target as HTMLButtonElement;
+    const quote = innerText.split('"')[1].trim();
+    setText(quote);
+  };
 
   return (
-    <>
-      <div
-        className={
-          'flex w-full flex-wrap items-center justify-center gap-2'
-        }
-      >
-        <Tabs 
-          value={tabsValue}
-          className={
-            cardStyle +
-            ' z-50 flex h-[40px] flex-none items-center justify-center px-0 hover:bg-slate-50 dark:hover:bg-gray-600'
-          }
-          onValueChange={(value: string) => setTabsValue(value)}
+    <div className="flex h-full flex-col items-center overflow-y-auto pt-0 text-sm dark:bg-gray-800">
+      <div className="w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
+        <h1
+          id="landing-title"
+          className="mb-10 ml-auto mr-auto mt-6 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-16 md:mt-[10vh]"
         >
-          <TabsList className="bg-white/[.60] dark:bg-gray-700">
-            <TabsTrigger
-              value='leaderboard'
-              className={`${tabsValue === 'leaderboard' ? selectedTab('creative') : defaultClasses}`}
-            >
-              {'排行榜'}
-            </TabsTrigger>
-            <TabsTrigger
-              value='recommendations'
-              className={`${tabsValue === 'recommendations' ? selectedTab('fast') : defaultClasses}`}
-            >
-              {'对话推荐'}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
-      <div className="flex h-full flex-col items-center overflow-y-auto pt-0 text-sm dark:bg-gray-800">
-        <div className="w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
-          { tabsValue === 'leaderboard' ? <Leaderboard /> : <Recommendations /> }
+          {config?.appTitle || 'LibreChat'}
+        </h1>
+        <div className="items-start gap-3.5 text-center md:flex">
+          <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
+            <h2 className="m-auto flex items-center gap-3 text-lg font-normal md:flex-col md:gap-2">
+              <SunIcon />
+              {localize(lang, 'com_ui_examples')}
+            </h2>
+            <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
+              <button
+                onClick={clickHandler}
+                className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
+              >
+                &quot;{localize(lang, 'com_ui_example_quantum_computing')}&quot; →
+              </button>
+              <button
+                onClick={clickHandler}
+                className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
+              >
+                &quot;{localize(lang, 'com_ui_example_10_year_old_b_day')}&quot; →
+              </button>
+              <button
+                onClick={clickHandler}
+                className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
+              >
+                &quot;{localize(lang, 'com_ui_example_http_in_js')}&quot; →
+              </button>
+            </ul>
+          </div>
+          <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
+            <h2 className="m-auto flex items-center gap-3 text-lg font-normal md:flex-col md:gap-2">
+              <LightningIcon />
+              {localize(lang, 'com_ui_capabilities')}
+            </h2>
+            <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
+              <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
+                {localize(lang, 'com_ui_capability_remember')}
+              </li>
+              <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
+                {localize(lang, 'com_ui_capability_correction')}
+              </li>
+              <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
+                {localize(lang, 'com_ui_capability_decline_requests')}
+              </li>
+            </ul>
+          </div>
+          <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
+            <h2 className="m-auto flex items-center gap-3 text-lg font-normal md:flex-col md:gap-2">
+              <CautionIcon />
+              {localize(lang, 'com_ui_limitations')}
+            </h2>
+            <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
+              <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
+                {localize(lang, 'com_ui_limitation_incorrect_info')}
+              </li>
+              <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
+                {localize(lang, 'com_ui_limitation_harmful_biased')}
+              </li>
+              <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
+                {localize(lang, 'com_ui_limitation_limited_2021')}
+              </li>
+            </ul>
+          </div>
         </div>
+        {/* {!showingTemplates && (
+          <div className="mt-8 mb-4 flex flex-col items-center gap-3.5 md:mt-16">
+            <button
+              onClick={showTemplates}
+              className="btn btn-neutral justify-center gap-2 border-0 md:border"
+            >
+              <ChatIcon />
+              Show Prompt Templates
+            </button>
+          </div>
+        )}
+        {!!showingTemplates && <Templates showTemplates={showTemplates}/>} */}
+        {/* <div className="group h-32 w-full flex-shrink-0 dark:border-gray-900/50 dark:bg-gray-800 md:h-48" /> */}
       </div>
-    </>
+    </div>
   );
 }
