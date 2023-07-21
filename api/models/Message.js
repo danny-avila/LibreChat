@@ -51,19 +51,19 @@ module.exports = {
     }
   },
 
-  async likeMessage (messageId, isLiked) {
+  async likeMessage(messageId, isLiked) {
     try {
       const existingMsg = await Message.findOne({ messageId }).exec();
   
       if (existingMsg) {
         const update = {};
-        
+  
         if (isLiked) {
-          // Increment by 1
-          update.likesMsg = existingMsg.likesMsg + 1;
+          // If isLiked is true, set likesMsg to true
+          update.likesMsg = true;
         } else {
-          // Ensure likesCount doesn't go below 0
-          update.likesMsg = existingMsg.likesMsg > 0 ? existingMsg.likesMsg - 1 : 0;
+          // If isLiked is false, set likesMsg to false
+          update.likesMsg = false;
         }
   
         return await Message.findOneAndUpdate(
@@ -79,6 +79,7 @@ module.exports = {
       return { message: 'Error liking Message' };
     }
   },
+  
 
   async deleteMessagesSince({ messageId, conversationId }) {
     try {

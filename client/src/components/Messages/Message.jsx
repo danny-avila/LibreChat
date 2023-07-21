@@ -14,6 +14,7 @@ import { useGetConversationByIdQuery } from '~/data-provider';
 import { cn } from '~/utils/';
 import store from '~/store';
 import getError from '~/utils/getError';
+import { useAuthContext } from '../../hooks/AuthContext';
 
 export default function Message({
   conversation,
@@ -30,6 +31,7 @@ export default function Message({
   const setLatestMessage = useSetRecoilState(store.latestMessage);
   const [abortScroll, setAbort] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
+  const [loading, setLoading] = useState(true);
   const textEditor = useRef(null);
   const last = !message?.children?.length;
   const edit = message.messageId == currentEditId;
@@ -115,6 +117,45 @@ export default function Message({
   };
 
      
+  const { token } = useAuthContext();
+ 
+
+  // initial fetch to find out if it is being liked
+  const fetchLikeStatus = async () => {
+    setLoading(true)
+    try {
+      const response = await fetch(`/api/messages/${message.conversationId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }}
+      )
+
+      const data = await response.json();
+      // Assuming 'data' is an array of message objects
+      data.forEach(item => {
+      // Assuming each message object has a 'messageId' and 'likesMsg' property
+        const messageId = item.messageId;
+        const isLiked = item.likesMsg;
+        if (messageId === message.messageId) {
+          setIsLiked(isLiked);
+        }
+      });
+      setLoading(false)
+      // setIsLiked(data.isLiked);
+      // console.log('dataaaaaaa', data.likesConvo);
+      // Update the isLiked state based on the data received from the API
+      // setIsLiked();
+    } catch (error) {
+      console.log('Error fetching like status:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchLikeStatus();
+  }, []);
+  
   const handleLikeClick = async () => {
     try {
       const response = await fetch('/api/messages/like', {
@@ -145,6 +186,8 @@ export default function Message({
       switchToConversation(response.data);
     });
   };
+
+  !loading && console.log(`islike: ${isLiked}`)
 
   return (
     <>
@@ -242,6 +285,7 @@ export default function Message({
                 </>
               )}
             </div>
+            
             <HoverButtons
               isEditting={edit}
               isSubmitting={isSubmitting}
@@ -253,6 +297,7 @@ export default function Message({
               handleLikeClick={handleLikeClick}
               isLiked={isLiked}
             />
+            
             <SubRow subclasses="switch-container">
               <SiblingSwitch
                 siblingIdx={siblingIdx}

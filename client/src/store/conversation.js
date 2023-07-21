@@ -12,6 +12,7 @@ import buildTree from '~/utils/buildTree';
 import getDefaultConversation from '~/utils/getDefaultConversation';
 import submission from './submission.js';
 
+
 // current conversation, can be null (need to be fetched from server)
 // sample structure
 // {
@@ -144,5 +145,5 @@ export default {
   messagesTree,
   latestMessage,
   messagesSiblingIdxFamily,
-  useConversation
+  useConversation,
 };
