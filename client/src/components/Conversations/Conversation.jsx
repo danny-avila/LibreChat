@@ -43,10 +43,8 @@ export default function Conversation({ conversation, retainView }) {
       const data = await response.json();
       console.log('conversationnnnnnnn', data);
       // Update the isLiked state based on the data received from the API
-      const likesCount = data.likesConvo;
-      if (likesCount !== 0) {
-        setIsLiked(true);
-      }
+      setIsLiked(data.isLiked);
+
     } catch (error) {
       console.log('Error fetching like status:', error);
     }
@@ -74,7 +72,7 @@ export default function Conversation({ conversation, retainView }) {
         return;
       }
       // Update the isLiked state based on the API response
-      setIsLiked((prev) => !prev);
+      setIsLiked(data.isLiked);
 
     } catch (error) {
       console.log('Error liking conversation:', error);
