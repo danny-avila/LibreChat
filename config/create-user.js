@@ -1,13 +1,8 @@
 const connectDb = require('@librechat/backend/lib/db/connectDb');
 const migrateDb = require('@librechat/backend/lib/db/migrateDb');
 const { registerUser } = require('@librechat/backend/server/services/auth.service');
-const { askQuestion } = require('./helpers');
+const { askQuestion, silentExit } = require('./helpers');
 const User = require('@librechat/backend/models/User');
-
-const silentExit = (code = 0) => {
-  console.log = () => {};
-  process.exit(code);
-};
 
 (async () => {
   /**

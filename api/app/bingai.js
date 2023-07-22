@@ -47,6 +47,16 @@ const askBing = async ({
       parentMessageId,
       toneStyle,
       onProgress,
+      clientOptions: {
+        features: {
+          genImage: {
+            server: {
+              enable: true,
+              type: 'markdown_list',
+            },
+          },
+        },
+      },
     };
   } else {
     options = {
@@ -56,6 +66,16 @@ const askBing = async ({
       parentMessageId,
       toneStyle,
       onProgress,
+      clientOptions: {
+        features: {
+          genImage: {
+            server: {
+              enable: true,
+              type: 'markdown_list',
+            },
+          },
+        },
+      },
     };
 
     // don't give those parameters for new conversation
