@@ -17,10 +17,11 @@ services:
       - 9000:3080
     depends_on:
       - mongodb
-    image: librechat_deploy
-    build:
-      context: ../../
-      target: node
+    image: ghcr.io/danny-avila/librechat:latest
+    # image: librechat_deploy
+    # build:
+    #   context: ../../
+    #   target: node
     restart: always
     extra_hosts:
     - "host.docker.internal:host-gateway"
