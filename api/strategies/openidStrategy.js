@@ -67,6 +67,8 @@ async function setupOpenId() {
             fullName = userinfo.given_name;
           } else if (userinfo.family_name) {
             fullName = userinfo.family_name;
+          } else {
+            fullName = userinfo.username || userinfo.email;
           }
 
           if (!user) {
