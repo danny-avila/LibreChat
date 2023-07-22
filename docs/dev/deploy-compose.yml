@@ -1,0 +1,63 @@
+version: "3.4"
+
+services:
+  client:
+    image: nginx:latest
+    restart: always
+    ports:
+      - 3080:80
+    volumes:
+      - ../../client/nginx.conf:/etc/nginx/nginx.conf
+      - /app/client/node_modules
+    depends_on:
+      - api
+  api:
+    container_name: LibreChat
+    ports:
+      - 9000:3080
+    depends_on:
+      - mongodb
+    image: librechat
+    build:
+      context: .
+      target: node
+    restart: always
+    extra_hosts:
+    - "host.docker.internal:host-gateway"
+    env_file:
+      - ../../.env
+    environment:
+      - HOST=0.0.0.0
+      - MONGO_URI=mongodb://mongodb:27017/LibreChat
+      - MEILI_HOST=http://meilisearch:7700
+      - MEILI_HTTP_ADDR=meilisearch:7700
+    volumes:
+      - /app/client/node_modules
+      - ../../api:/app/api
+      - ../../.env:/app/.env
+      - ../../.env.development:/app/.env.development
+      - ../../.env.production:/app/.env.production
+      - /app/api/node_modules
+      - ../../images:/app/client/public/images
+  mongodb:
+    container_name: chat-mongodb
+    ports:
+      - 27018:27017
+    image: mongo
+    restart: always
+    volumes:
+      - ./data-node:/data/db
+    command: mongod --noauth
+  meilisearch:
+    container_name: chat-meilisearch
+    image: getmeili/meilisearch:v1.0
+    ports:
+      - 7700:7700
+    env_file:
+      - .env
+    environment:
+      - MEILI_HOST=http://meilisearch:7700
+      - MEILI_HTTP_ADDR=meilisearch:7700
+      - MEILI_NO_ANALYTICS=true
+    volumes:
+      - ./meili_data:/meili_data
