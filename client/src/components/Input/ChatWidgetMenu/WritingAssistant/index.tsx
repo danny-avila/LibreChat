@@ -89,7 +89,6 @@ function WritingAssistant({ setOption }) {
               写作水平 <small className="opacity-40">(默认值: 学士)</small>
             </Label>
             <SelectDropDown
-              id='level'
               title={''}
               value={level}
               setValue={(value: string) => setLevel(value)}
@@ -111,6 +110,7 @@ function WritingAssistant({ setOption }) {
               id='wordCount'
               type="number"
               min={'0'}
+              max={'500'}
               value={wordCount || 0}
               onChange={(e) => setWordCount(e.target.value || '0')}
               className={cn(
