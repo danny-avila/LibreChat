@@ -17,9 +17,9 @@ services:
       - 9000:3080
     depends_on:
       - mongodb
-    image: librechat
+    image: librechat_deploy
     build:
-      context: .
+      context: ../../
       target: node
     restart: always
     extra_hosts:
