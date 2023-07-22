@@ -25,13 +25,11 @@ jobs:
       - name: Build Docker image and push to ACR
         run: |
           az acr build --registry libreregistry --image librechat:latest .
-      
+
       # Log in to Azure Container Registry
       - name: Login to ACR
         run: |
           az acr login --name libreregistry
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       # Deploy to Azure Container Instances
       - name: Deploy to Azure Container Instances
