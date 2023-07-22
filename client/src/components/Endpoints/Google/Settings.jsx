@@ -9,6 +9,8 @@ import { InputNumber } from '~/components/ui/InputNumber.tsx';
 import OptionHover from './OptionHover';
 import { HoverCard, HoverCardTrigger } from '~/components/ui/HoverCard.tsx';
 import { cn } from '~/utils/';
+import { localize } from '~/localization/Translation';
+
 const defaultTextProps =
   'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
 
@@ -30,6 +32,7 @@ function Settings(props) {
     setOption,
   } = props;
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
+  const lang = useRecoilValue(store.lang);
 
   const setModel = setOption('model');
   const setModelLabel = setOption('modelLabel');
@@ -64,14 +67,14 @@ function Settings(props) {
             <>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="modelLabel" className="text-left text-sm font-medium">
-                  Custom Name <small className="opacity-40">(default: blank)</small>
+                  {localize(lang, 'com_endpoint_custom_name')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_blank')})</small>
                 </Label>
                 <Input
                   id="modelLabel"
                   disabled={readonly}
                   value={modelLabel || ''}
                   onChange={(e) => setModelLabel(e.target.value || null)}
-                  placeholder="Set a custom name for PaLM2"
+                  placeholder={localize(lang, 'com_endpoint_google_custom_name_placeholder')}
                   className={cn(
                     defaultTextProps,
                     'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
@@ -80,14 +83,14 @@ function Settings(props) {
               </div>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
-                  Prompt Prefix <small className="opacity-40">(default: blank)</small>
+                  {localize(lang, 'com_endpoint_prompt_prefix')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_blank')})</small>
                 </Label>
                 <TextareaAutosize
                   id="promptPrefix"
                   disabled={readonly}
                   value={promptPrefix || ''}
                   onChange={(e) => setPromptPrefix(e.target.value || null)}
-                  placeholder="Set custom instructions or context. Ignored if empty."
+                  placeholder={localize(lang, 'com_endpoint_google_prompt_prefix_placeholder')}
                   className={cn(
                     defaultTextProps,
                     'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 ',
@@ -102,7 +105,7 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="temp-int" className="text-left text-sm font-medium">
-                  Temperature <small className="opacity-40">(default: 0.2)</small>
+                  {localize(lang, 'com_endpoint_temperature')} <small className="opacity-40">({localize(lang, 'com_endpoint_default')}: 0.2)</small>
                 </Label>
                 <InputNumber
                   id="temp-int"
@@ -141,7 +144,7 @@ function Settings(props) {
                 <HoverCardTrigger className="grid w-full items-center gap-2">
                   <div className="flex justify-between">
                     <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
-                      Top P <small className="opacity-40">(default: 0.95)</small>
+                      {localize(lang, 'com_endpoint_top_p')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_with_num', 0.95)})</small>
                     </Label>
                     <InputNumber
                       id="top-p-int"
@@ -179,7 +182,7 @@ function Settings(props) {
                 <HoverCardTrigger className="grid w-full items-center gap-2">
                   <div className="flex justify-between">
                     <Label htmlFor="top-k-int" className="text-left text-sm font-medium">
-                      Top K <small className="opacity-40">(default: 40)</small>
+                      {localize(lang, 'com_endpoint_top_k')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_with_num', 40)})</small>
                     </Label>
                     <InputNumber
                       id="top-k-int"
@@ -218,7 +221,7 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="max-tokens-int" className="text-left text-sm font-medium">
-                  Max Output Tokens <small className="opacity-40">(default: 1024)</small>
+                  {localize(lang, 'com_endpoint_max_output_tokens')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_with_num', 1024)})</small>
                 </Label>
                 <InputNumber
                   id="max-tokens-int"
