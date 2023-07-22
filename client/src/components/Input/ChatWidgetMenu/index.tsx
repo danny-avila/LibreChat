@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilState } from 'recoil';
 import SelectDropDown from '../../ui/SelectDropDown';
 import { Button } from '../../ui/Button';
 import { cn } from '~/utils/';

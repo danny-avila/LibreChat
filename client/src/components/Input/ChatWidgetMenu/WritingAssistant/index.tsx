@@ -46,6 +46,7 @@ function getParagraphFields({ paragraphCount, paraTopic, setParaTopic }) {
 function WritingAssistant({ setOption }) {
   // Essay basic bundle
   const [level, setLevel] = useState<string>('学士');
+  const [type, setType] = useState<string>('作文');
   const [wordCount, setWordCount] = useState<string>('500');
   const [topic, setTopic] = useState<string>('');
   const [paragraphCount, setParagraphCount] = useState<string>('3');
@@ -59,15 +60,18 @@ function WritingAssistant({ setOption }) {
 
   useEffect(() => {
     if (easyMode) {
-      const finalTopic = `以${level}的水平写一篇${wordCount}字的作文。作文要分成${paragraphCount}个段落，主题是：${topic}`;
+      const finalTopic = `以${level}的水平写一篇${wordCount}字的${type}。作文要分成${paragraphCount}个段落，主题是：${topic}`;
 
       setOption({
         submissionText: finalTopic
       });
     } else {
+      // Maximum token output from ChatGPT is 2048 tokens, which is about 500 - 650 words.
+      // We can consider changing this feature to submit one prompt per paragraph instead of
+      // submitting everything in one prompt
       const topics: string[] = [];
 
-      topics.push(`以${level}的水平写一篇${wordCount}字的作文。作文要分成${paragraphCount}个段落，第1段的主题是：${paraTopic[0]}。`);
+      topics.push(`以${level}的水平写一篇${wordCount}字的${type}。作文要分成${paragraphCount}个段落，第1段的主题是：${paraTopic[0]}。`);
 
       for (let i = 1; i < paraTopic.length; i++) {
         topics.push(`第${i + 1}段的主题是${paraTopic[i]}。`);
@@ -78,7 +82,7 @@ function WritingAssistant({ setOption }) {
       });
     }
 
-  }, [level, wordCount, topic, easyMode, paraTopic, paragraphCount]);
+  }, [level, wordCount, topic, easyMode, paraTopic, paragraphCount, type]);
 
   return (
 	  <div className="h-[490px] overflow-y-auto md:h-[400px]">
@@ -93,6 +97,24 @@ function WritingAssistant({ setOption }) {
               value={level}
               setValue={(value: string) => setLevel(value)}
               availableValues={['小学三年级', '小学六年级', '初中生', '高中生', '本科生', '学士', '硕士', '博士']}
+              disabled={false}
+              className={cn(
+                defaultTextProps,
+                'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+              )}
+              containerClassName="flex w-full resize-none"
+              subContainerClassName=''
+            />
+          </div>
+          <div className="grid w-full items-center gap-y-2">
+            <Label htmlFor="toneStyle-dropdown" className="text-left text-sm font-medium">
+              写作类型 <small className="opacity-40">(默认值: 作文)</small>
+            </Label>
+            <SelectDropDown
+              title={''}
+              value={type}
+              setValue={(value: string) => setType(value)}
+              availableValues={['作文', '作文段落']}
               disabled={false}
               className={cn(
                 defaultTextProps,
