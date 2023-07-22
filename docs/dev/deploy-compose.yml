@@ -54,7 +54,7 @@ services:
     ports:
       - 7700:7700
     env_file:
-      - .env
+      - ../../.env
     environment:
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_HTTP_ADDR=meilisearch:7700
