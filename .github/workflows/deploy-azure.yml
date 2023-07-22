@@ -1,0 +1,28 @@
+name: Deploy to Azure
+
+# The workflow is triggered when a PR is made to the main branch
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Check out the repository
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      # Log in to Azure
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Deploy to Azure Container Instances
+      - name: Deploy to Azure Container Instances
+        run: |
+          az container create --resource-group azure-sub-1 --name LibreChat --image ghcr.io/${{ github.repository_owner }}/librechat:latest --dns-name-label librechat-cd --ports 80
+
