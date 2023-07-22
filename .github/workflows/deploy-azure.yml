@@ -1,51 +1,51 @@
-name: Build and Deploy to Azure
+name: Linux_Container_Workflow
 
-# The workflow is triggered when a PR is made to the main branch
 on:
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch:
+
+env:
+  RUNNER_VERSION: 2.293.0
 
 jobs:
-  build_and_deploy:
+  build-and-push:
     runs-on: ubuntu-latest
-
     steps:
-      # Check out the repository
-      - name: Checkout
-        uses: actions/checkout@v2
+      # checkout the repo
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@main
 
-      # Log in to Azure
-      - name: Login to Azure
+      - name: 'Login via Azure CLI'
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Build Docker image and push to Azure Container Registry
-      - name: Build Docker image and push to ACR
-        run: |
-          az acr build --registry libreregistry --image librechat:latest .
+      - name: 'Build GitHub Runner container image'
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+      - run: |
+          docker build --build-arg RUNNER_VERSION=${{ env.RUNNER_VERSION }} -t ${{ secrets.REGISTRY_LOGIN_SERVER }}/pwd9000-github-runner-lin:${{ env.RUNNER_VERSION }} .
 
-      # Log in to Azure Container Registry
-      - name: Login to ACR
-        run: |
-          az acr login --name libreregistry
+      - name: 'Vulnerability scan container image with Trivy'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ secrets.REGISTRY_LOGIN_SERVER }}/pwd9000-github-runner-lin:${{ env.RUNNER_VERSION }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
 
-      # Deploy to Azure Container Instances
-      - name: Deploy to Azure Container Instances
-        env:
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          CREDS_IV: ${{ secrets.CREDS_IV }}
-          CREDS_KEY: ${{ secrets.CREDS_KEY }}
-          MONGO_URI: ${{ secrets.MONGO_URI }}
-          MEILI_MASTER_KEY: ${{ secrets.MEILI_MASTER_KEY }}
-          MEILI_NO_ANALYTICS: true
-          SEARCH: true
-          HOST: 0.0.0.0
-          OPENAI_API_KEY: user_provided
-          BINGAI_TOKEN: user_provided
-          CHATGPT_TOKEN: user_provided
-          ANTHROPIC_API_KEY: user_provided
-          PALM_KEY: user_provided
-        run: |
-          az container create --resource-group azure-sub-1 --name LibreChat --image libreregistry.azurecr.io/librechat:latest --dns-name-label librechat-cd --ports 80 --secure-environment-variables JWT_SECRET=$JWT_SECRET CREDS_IV=$CREDS_IV CREDS_KEY=$CREDS_KEY MONGO_URI=$MONGO_URI MEILI_MASTER_KEY=$MEILI_MASTER_KEY MEILI_NO_ANALYTICS=$MEILI_NO_ANALYTICS SEARCH=$SEARCH HOST=$HOST OPENAI_API_KEY=$OPENAI_API_KEY BINGAI_TOKEN=$BINGAI_TOKEN CHATGPT_TOKEN=$CHATGPT_TOKEN ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY PALM_KEY=$PALM_KEY
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: 'Push container image to ACR'
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+      - run: |
+          docker push ${{ secrets.REGISTRY_LOGIN_SERVER }}/pwd9000-github-runner-lin:${{ env.RUNNER_VERSION }}
