@@ -2,10 +2,10 @@ version: "3.4"
 
 services:
   api:
-    container_name: LibreChat-App
+    container_name: LibreChat_Single
     ports:
       - 3080:3080               # Change it to 9000:3080 to use nginx
-    image: librechat                # Comment this & uncomment below to build from docker hub image
+    image: librechat_single                # Comment this & uncomment below to build from docker hub image
     build:                                   # ^------
       context: ../../                         # ^------
       target: node                             # ^------v

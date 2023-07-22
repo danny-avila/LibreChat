@@ -12,6 +12,7 @@
     "update": "node config/update.js",
     "update:local": "node config/update.js -l",
     "update:docker": "node config/update.js -d",
+    "update:single": "node config/update.js -s",
     "upgrade": "node config/upgrade.js",
     "create-user": "node config/create-user.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
