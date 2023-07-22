@@ -5,11 +5,14 @@ on:
       - main
       - dev
       - release/*
-  pull_request:
+  pull_request_target:
     branches:
       - main
       - dev
       - release/*
+permissions:
+  contents: write
+  checks: write
 jobs:
   tests_Backend:
     name: Run Backend unit tests
