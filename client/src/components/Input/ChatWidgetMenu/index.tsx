@@ -6,9 +6,9 @@ import { cn } from '~/utils/';
 import WritingAssistant from './WritingAssistant';
 import { Settings2 } from 'lucide-react';
 import EndpointOptionsPopover from '~/components/Endpoints/EndpointOptionsPopover';
-import { useMessageHandler } from '~/utils/handleSubmit';
 
 import store from '~/store';
+import CheckMark from '~/components/svg/CheckMark';
 
 function getWidget(widget: string, setParams: React.Dispatch<React.SetStateAction<object>>) {
   const setOption = (value: object) => setParams(value);
@@ -16,6 +16,7 @@ function getWidget(widget: string, setParams: React.Dispatch<React.SetStateActio
 }
 
 function ChatWidgetMenu() {
+  const [text, setText] = useRecoilState(store.text);
   const [conversation, setConversation] = useRecoilState(store.conversation) || {};
   const { conversationId } = conversation;
 
@@ -25,16 +26,14 @@ function ChatWidgetMenu() {
   const widgets = ['无', '写作助手'];
   const widget = getWidget(chosenWidget, setParams);
 
-  const { ask } = useMessageHandler();
-
   const cardStyle =
     'transition-colors shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 hover:border-black/10 focus:border-black/10 dark:border-black/10 dark:hover:border-black/10 dark:focus:border-black/10 border dark:bg-gray-700 text-black dark:text-white';
 
   const triggerAdvancedMode = () => setAdvancedMode((prev: boolean) => !prev);
   const switchToSimpleMode = () => {setAdvancedMode(false)};
-  const triggerSubmission = () => {
+  const triggerSetText = () => {
     const text = params.submissionText;
-    ask({ text });
+    setText(text);
     setAdvancedMode(false);
   };
 
@@ -78,25 +77,11 @@ function ChatWidgetMenu() {
         saveAsPreset={null}
         switchToSimpleMode={switchToSimpleMode}
         additionalButton={{
-          label: '发送',
+          label: '确认',
           buttonClass: '',
-          handler: triggerSubmission,
+          handler: triggerSetText,
           icon: <div className="mr-1 w-[14px]">
-            <svg
-              stroke="currentColor"
-              fill="none"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="mr-1 h-4 w-4 "
-              height="1em"
-              width="1em"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
+            <CheckMark />
           </div>
         }}
       />
