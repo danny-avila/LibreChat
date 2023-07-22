@@ -3,6 +3,21 @@ import Chinese from './languages/Zh';
 import Italy from './languages/It';
 // === import additional language files here === //
 
+// New method on String allow using "{\d}" placeholder for
+// loading value dynamically.
+interface String {
+  format(...replacements: string[]): string;
+}
+
+if (!String.prototype.format) {
+  String.prototype.format = function () {
+    var args = arguments;
+    return this.replace(/{(\d+)}/g, function (match, number) {
+      return typeof args[number] != 'undefined' ? args[number] : match;
+    });
+  };
+}
+
 // input: language code in string
 // returns an object of translated strings in the language
 export const getTranslations = (langCode: string) => {
@@ -21,7 +36,12 @@ export const getTranslations = (langCode: string) => {
 
 // input: language code in string & phrase key in string
 // returns an corresponding phrase value in string
-export const localize = (langCode: string, phraseKey: string) => {
+export const localize = (langCode: string, phraseKey: string, ...values: string[]) => {
   const lang = getTranslations(langCode);
-  return lang[phraseKey];
+  if (phraseKey in lang) {
+    return lang[phraseKey].format(...values);
+  }
+
+  // Fall back logic to cover untranslated phrases
+  return English[phraseKey].format(...values);
 };
