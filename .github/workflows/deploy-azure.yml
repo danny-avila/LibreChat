@@ -1,4 +1,4 @@
-name: Deploy to Azure
+name: Build and Deploy to Azure
 
 # The workflow is triggered when a PR is made to the main branch
 on:
@@ -7,13 +7,23 @@ on:
       - main
 
 jobs:
-  deploy:
+  build_and_deploy:
     runs-on: ubuntu-latest
 
     steps:
       # Check out the repository
       - name: Checkout
         uses: actions/checkout@v2
+
+      # Set up Docker
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v1
+
+      # Build Docker image
+      - name: Build Docker image
+        run: |
+          cp .env.example .env
+          docker-compose build
 
       # Log in to Azure
       - name: Login to Azure
@@ -23,6 +33,20 @@ jobs:
 
       # Deploy to Azure Container Instances
       - name: Deploy to Azure Container Instances
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          CREDS_IV: ${{ secrets.CREDS_IV }}
+          CREDS_KEY: ${{ secrets.CREDS_KEY }}
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          MEILI_MASTER_KEY: ${{ secrets.MEILI_MASTER_KEY }}
+          MEILI_NO_ANALYTICS: true
+          SEARCH: true
+          HOST: 0.0.0.0
+          OPENAI_API_KEY: user_provided
+          BINGAI_TOKEN: user_provided
+          CHATGPT_TOKEN: user_provided
+          ANTHROPIC_API_KEY: user_provided
+          PALM_KEY: user_provided
         run: |
-          az container create --resource-group azure-sub-1 --name LibreChat --image ghcr.io/${{ github.repository_owner }}/librechat:latest --dns-name-label librechat-cd --ports 80
-
+          az acr build --registry libreregistry --image librechat:latest .
+          az container create --resource-group azure-sub-1 --name LibreChat --image libreregistry.azurecr.io/librechat:latest --dns-name-label librechat-cd --ports 80 --secure-environment-variables JWT_SECRET=$JWT_SECRET CREDS_IV=$CREDS_IV CREDS_KEY=$CREDS_KEY MONGO_URI=$MONGO_URI MEILI_MASTER_KEY=$MEILI_MASTER_KEY MEILI_NO_ANALYTICS=$MEILI_NO_ANALYTICS SEARCH=$SEARCH HOST=$HOST OPENAI_API_KEY=$OPENAI_API_KEY BINGAI_TOKEN=$BINGAI_TOKEN CHATGPT_TOKEN=$CHATGPT_TOKEN ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY PALM_KEY=$PALM_KEY
