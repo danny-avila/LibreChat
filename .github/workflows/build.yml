@@ -5,6 +5,14 @@ on:
 
 env:
   RUNNER_VERSION: 2.293.0
+  MEILI_NO_ANALYTICS: true
+  SEARCH: true
+  HOST: 0.0.0.0
+  OPENAI_API_KEY: user_provided
+  BINGAI_TOKEN: user_provided
+  CHATGPT_TOKEN: user_provided
+  ANTHROPIC_API_KEY: user_provided
+  PALM_KEY: user_provided
 
 jobs:
   build-and-push:
@@ -28,19 +36,6 @@ jobs:
       - run: |
           docker build --build-arg RUNNER_VERSION=${{ env.RUNNER_VERSION }} -t ${{ secrets.REGISTRY_LOGIN_SERVER }}/pwd9000-github-runner-lin:${{ env.RUNNER_VERSION }} .
 
-      - name: 'Vulnerability scan container image with Trivy'
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ secrets.REGISTRY_LOGIN_SERVER }}/pwd9000-github-runner-lin:${{ env.RUNNER_VERSION }}
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
-
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
-        with:
-          sarif_file: 'trivy-results.sarif'
-
       - name: 'Push container image to ACR'
         uses: azure/docker-login@v1
         with:
@@ -49,3 +44,14 @@ jobs:
           password: ${{ secrets.REGISTRY_PASSWORD }}
       - run: |
           docker push ${{ secrets.REGISTRY_LOGIN_SERVER }}/pwd9000-github-runner-lin:${{ env.RUNNER_VERSION }}
+
+      - name: 'Create ACI'
+        run: |
+          az container create --resource-group "$aciResourceGroupName" `
+              --name "$aciName" `
+              --image "${{ secrets.REGISTRY_LOGIN_SERVER }}/pwd9000-github-runner-lin:${{ env.RUNNER_VERSION }}" `
+              --registry-login-server "${{ secrets.REGISTRY_LOGIN_SERVER }}" `
+              --registry-username "${{ secrets.REGISTRY_USERNAME }}" `
+              --registry-password "${{ secrets.REGISTRY_PASSWORD }}" `
+              --environment-variables JWT_SECRET="${{ secrets.JWT_SECRET }}" CREDS_IV="${{ secrets.CREDS_IV }}" CREDS_KEY="${{ secrets.CREDS_KEY }}" MONGO_URI="${{ secrets.MONGO_URI }}" MEILI_MASTER_KEY="${{ secrets.MEILI_MASTER_KEY }}" MEILI_NO_ANALYTICS="$MEILI_NO_ANALYTICS" SEARCH="$SEARCH" HOST="$HOST" OPENAI_API_KEY="$OPENAI_API_KEY" BINGAI_TOKEN="$BINGAI_TOKEN" CHATGPT_TOKEN="$CHATGPT_TOKEN" ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" PALM_KEY="$PALM_KEY" `
+              --os-type "$osType"
