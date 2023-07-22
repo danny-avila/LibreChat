@@ -36,8 +36,9 @@ const downloadImage = async (url, imagePath, accessToken) => {
   }
 };
 
-Issuer.discover(process.env.OPENID_ISSUER)
-  .then((issuer) => {
+async function setupOpenId() {
+  try {
+    const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
     const client = new issuer.Client({
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
@@ -128,7 +129,9 @@ Issuer.discover(process.env.OPENID_ISSUER)
     );
 
     passport.use('openid', openidLogin);
-  })
-  .catch((err) => {
+  } catch (err) {
     console.error(err);
-  });
+  }
+}
+
+module.exports = setupOpenId;
