@@ -47,11 +47,6 @@ jobs:
 
       - name: 'Create ACI'
         run: |
-          az container create --resource-group "$aciResourceGroupName" `
-              --name "$aciName" `
-              --image "${{ secrets.REGISTRY_LOGIN_SERVER }}/pwd9000-github-runner-lin:${{ env.RUNNER_VERSION }}" `
-              --registry-login-server "${{ secrets.REGISTRY_LOGIN_SERVER }}" `
-              --registry-username "${{ secrets.REGISTRY_USERNAME }}" `
-              --registry-password "${{ secrets.REGISTRY_PASSWORD }}" `
+          az container create --resource-group azure-sub-1 --name LibreChat --image libreregistry.azurecr.io/librechat:latest --dns-name-label librechat-cd --ports 80 `
               --environment-variables JWT_SECRET="${{ secrets.JWT_SECRET }}" CREDS_IV="${{ secrets.CREDS_IV }}" CREDS_KEY="${{ secrets.CREDS_KEY }}" MONGO_URI="${{ secrets.MONGO_URI }}" MEILI_MASTER_KEY="${{ secrets.MEILI_MASTER_KEY }}" MEILI_NO_ANALYTICS="$MEILI_NO_ANALYTICS" SEARCH="$SEARCH" HOST="$HOST" OPENAI_API_KEY="$OPENAI_API_KEY" BINGAI_TOKEN="$BINGAI_TOKEN" CHATGPT_TOKEN="$CHATGPT_TOKEN" ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" PALM_KEY="$PALM_KEY" `
               --os-type "$osType"
