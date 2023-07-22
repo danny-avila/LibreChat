@@ -212,8 +212,9 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
                   >
                     <MessagesSquared className="mr-1 w-[14px]" />
                     {(showExamples
-                        ? localize(lang, 'com_endpoint_hide')
-                        : localize(lang, 'com_endpoint_show')) + localize(lang, 'com_endpoint_examples')}
+                      ? localize(lang, 'com_endpoint_hide')
+                      : localize(lang, 'com_endpoint_show')) +
+                      localize(lang, 'com_endpoint_examples')}
                   </Button>
                 )}
                 {preset?.endpoint === 'gptPlugins' && (
@@ -224,10 +225,13 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
                   >
                     <GPTIcon className="mr-1 mt-[2px] w-[14px]" size={14} />
                     {`Show ${showAgentSettings ? 'Completion' : 'Agent'} Settings`}
-                    {localize(lang, 'com_endpoint_show_what_settings',
+                    {localize(
+                      lang,
+                      'com_endpoint_show_what_settings',
                       showAgentSettings
                         ? localize(lang, 'com_endpoint_completion')
-                        : localize(lang, 'com_endpoint_agent'))}
+                        : localize(lang, 'com_endpoint_agent'),
+                    )}
                   </Button>
                 )}
               </div>

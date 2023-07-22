@@ -8,7 +8,7 @@ const types = {
   temp: 'com_endpoint_google_temp',
   topp: 'com_endpoint_google_topp',
   topk: 'com_endpoint_google_topk',
-  maxoutputtokens: 'com_endpoint_google_maxoutputtokens'
+  maxoutputtokens: 'com_endpoint_google_maxoutputtokens',
 };
 
 function OptionHover({ type, side }) {

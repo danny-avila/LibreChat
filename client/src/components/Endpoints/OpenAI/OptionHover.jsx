@@ -9,7 +9,7 @@ const types = {
   max: 'com_endpoint_openai_max',
   topp: 'com_endpoint_openai_topp',
   freq: 'com_endpoint_openai_freq',
-  pres: "com_endpoint_openai_pres"
+  pres: 'com_endpoint_openai_pres',
 };
 
 function OptionHover({ type, side }) {
