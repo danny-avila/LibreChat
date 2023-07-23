@@ -2,7 +2,7 @@ import SelectDropDown from '../../../ui/SelectDropDown';
 import { Label } from '~/components/ui/Label';
 import TextareaAutosize from 'react-textarea-autosize';
 import * as Switch from '@radix-ui/react-switch';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { cn } from '~/utils/';
 
 function getParagraphFields({ paragraphCount, paraTopic, setParaTopic }) {
@@ -133,12 +133,12 @@ export default function EssayTemplate() {
           <div className='flex flex-row gap-2 items-center'>
             <Switch.Root
               className="w-[30px] h-[16px] bg-blue-500 rounded-full relative data-[state=checked]:bg-violet-700 outline-none cursor-default"
-              id="easy-mode"
+              id="easy-mode-switch"
               onCheckedChange={(prev) => setEasyMode(!prev)}
             >
               <Switch.Thumb className="block w-[14px] h-[14px] bg-white rounded-full transition-transform duration-100 translate-x-0.5 will-change-transform data-[state=checked]:translate-x-[13px]" />
             </Switch.Root>
-            <Label htmlFor="context" className="text-left text-sm font-medium">
+            <Label id="easy-mode-text" htmlFor="context" className="text-left text-sm font-medium">
               {easyMode ? '简约' : '微调'}
             </Label>
           </div>
@@ -174,6 +174,22 @@ export default function EssayTemplate() {
       </>
     );
   }
+
+  const easyModeSwitch = document.getElementById('easy-mode-switch');
+  const easyModeText = document.getElementById('easy-mode-text');
+
+  useEffect(() =>{
+    if (subType === '文章段落') {
+      if (!easyMode) {
+        easyModeSwitch?.click();
+      }
+      easyModeSwitch?.setAttribute('hidden', '');
+      easyModeText?.setAttribute('hidden', '');
+    } else {
+      easyModeSwitch?.removeAttribute('hidden');
+      easyModeText?.removeAttribute('hidden');
+    }
+  }, [subType])
 
   return({ SubType, LayoutLeft, LayoutRight })
 }
