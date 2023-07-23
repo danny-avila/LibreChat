@@ -1,3 +1,4 @@
+const Session = require('../../models/Session');
 const User = require('../../models/User');
 const Token = require('../../models/schema/tokenSchema');
 const crypto = require('crypto');
@@ -6,6 +7,7 @@ const { registerSchema } = require('../../strategies/validators');
 const { sendEmail } = require('../../utils');
 const config = require('../../../config/loader');
 const domains = config.domains;
+const isProduction = config.isProduction;
 
 /**
  * Logout user
@@ -178,9 +180,45 @@ const resetPassword = async (userId, token, password) => {
   return { message: 'Password reset was successful' };
 };
 
+/**
+ * Set Auth Tokens
+ *
+ * @param {String} userId
+ * @param {Object} res
+ * @returns
+ */
+const setAuthTokens = async (userId, res) => {
+  const user = await User.findOne({ _id: userId });
+  const token = await user.generateToken();
+
+  let session = new Session({ user: userId });
+  let refreshToken = await session.generateRefreshToken();
+
+  const tokenExpires = eval(process.env.SESSION_EXPIRY);
+  const refreshTokenExpires = eval(process.env.REFRESH_TOKEN_EXPIRY);
+
+  res.cookie('token', token, {
+      expires: new Date(Date.now() + tokenExpires),
+      httpOnly: false,
+      secure: isProduction,
+    }
+  );
+
+  res.cookie('refreshToken', refreshToken, {
+      expires: new Date(Date.now() + refreshTokenExpires),
+      httpOnly: true, // This cookie must be httpOnly
+      secure: isProduction,
+      sameSite: 'strict',
+      signed: true,
+    }
+  );
+  return token;
+};
+
 module.exports = {
   registerUser,
   logoutUser,
   requestPasswordReset,
   resetPassword,
+  setAuthTokens,
 };
