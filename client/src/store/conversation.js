@@ -115,5 +115,5 @@ export default {
   messagesTree,
   latestMessage,
   messagesSiblingIdxFamily,
-  useConversation
+  useConversation,
 };

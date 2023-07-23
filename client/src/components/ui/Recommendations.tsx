@@ -25,7 +25,7 @@ export default function Recommendations() {
   const RecentConversations = useGetRecentConversations();
 
   const convoData = RecentConversations.data;
-  const messages = useGetMessagesByConvoId(convoData?.length ? convoData[convoIdx].conversationId : ''); // sometimes returns a string
+  const messages = useGetMessagesByConvoId(convoData?.length ? convoData[convoIdx].conversationId : '00000000-0000-0000-0000-000000000000'); // sometimes returns a string
   const msgData = messages?.data;
 
   const { screenshotTargetRef } = useScreenshot();

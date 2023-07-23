@@ -18,6 +18,7 @@ const {
   OpenAICreateImage,
   StableDiffusionAPI,
   StructuredSD,
+  RunPodImgEndpointAPI,
 } = require('../');
 
 const validateTools = async (user, tools = []) => {
@@ -79,7 +80,9 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
     google: GoogleSearchAPI,
     wolfram: functions ? StructuredWolfram : WolframAlphaAPI,
     'dall-e': OpenAICreateImage,
-    'stable-diffusion': functions ? StructuredSD : StableDiffusionAPI
+    'stable-diffusion': functions ? StructuredSD : StableDiffusionAPI,
+    'runpod-img-endpoint': RunPodImgEndpointAPI,
+
   };
 
   const customConstructors = {

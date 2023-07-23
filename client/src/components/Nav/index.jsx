@@ -16,6 +16,8 @@ import NavLink from './NavLink';
 import CheckMark from '../svg/CheckMark';
 import Clipboard from '../svg/Clipboard';
 import useDebounce from '~/hooks/useDebounce';
+import LeaderboardIcon from '../svg/LeaderboardIcon';
+import Leaderboard from '../ui/Leaderboard';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
 // const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -69,6 +71,7 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const [refLink, setRefLink] = useState('');
   const [copied, setCopied] = useState(false);
+  const [leaderboardIsOpen, setLeaderboardIsOpen] = useState(false);
   const { user } = useAuthContext();
   const mode = process.env.NODE_ENV;
 
@@ -181,8 +184,10 @@ export default function Nav({ navVisible, setNavVisible }) {
     setCopied(true);
   }
 
+  const openLeaderboardHandler = () => setLeaderboardIsOpen(!leaderboardIsOpen);
+
   useEffect(() => {
-    if (user) setRefLink(mode === 'dev' ? `http://localhost:3090/register/${user.id}` : `aitok.us/register/${user.id}`);
+    if (user) setRefLink(mode === 'dev' ? `http://localhost:3090/register/${user.id}` : `chat.aitok.us/register/${user.id}`);
   }, [user]);
 
   useEffect(() => {
@@ -240,6 +245,12 @@ export default function Nav({ navVisible, setNavVisible }) {
               </div>
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                svg={() => <LeaderboardIcon />}
+                text={navigator.languages[0] === 'zh-CN' ? '邀请排行榜' : 'Referrals Leaderboard'}
+                clickHandler={ openLeaderboardHandler }
+              />
+              <NavLink
+                className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => copied ? <CheckMark /> : <Clipboard />}
                 text={navigator.languages[0] === 'zh-CN' ? '复制邀请链接' : 'Copy invitation link'}
                 clickHandler={ copyLinkHandler }
@@ -263,6 +274,7 @@ export default function Nav({ navVisible, setNavVisible }) {
       )}
 
       <div className={'nav-mask' + (navVisible ? ' active' : '')} onClick={toggleNavVisible}></div>
+      <Leaderboard isOpen={ leaderboardIsOpen } setIsOpen={ setLeaderboardIsOpen }/>
     </>
   );
 }

@@ -4,7 +4,7 @@ import { useUpdateConversationMutation } from '@librechat/data-provider';
 import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
 import ConvoIcon from '../svg/ConvoIcon';
-
+import { useAuthContext } from '../../hooks/AuthContext';
 import store from '~/store';
 import PrivateButton from './PrivateButton';
 import LikeIcon from '../svg/LikeIcon';
@@ -27,6 +27,32 @@ export default function Conversation({ conversation, retainView }) {
 
   const [privateState, setPrivateState] = useState(isPrivate);
   const [isLiked, setIsLiked] = useState(false);
+  const { token } = useAuthContext();
+
+  // initial fetch to find out if it is being liked
+  const fetchLikeStatus = async () => {
+    try {
+      const response = await fetch(`/api/convos/${conversationId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        } }
+      )
+
+      const data = await response.json();
+      console.log('conversationnnnnnnn', data);
+      // Update the isLiked state based on the data received from the API
+      setIsLiked(data.isLiked);
+
+    } catch (error) {
+      console.log('Error fetching like status:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchLikeStatus();
+  }, []);
 
   const handleLikeClick = async () => {
     try {
@@ -46,7 +72,7 @@ export default function Conversation({ conversation, retainView }) {
         return;
       }
       // Update the isLiked state based on the API response
-      setIsLiked((prev) => !prev);
+      setIsLiked(data.isLiked);
 
     } catch (error) {
       console.log('Error liking conversation:', error);
