@@ -8,7 +8,7 @@ export default {
   com_ui_example_http_in_js: '如何在Python中实现HTTP请求？',
   com_ui_capabilities: '特点',
   com_ui_capability_remember: '历史对话记录',
-  com_ui_capability_correction: '实时提供修改反馈',
+  com_ui_capability_correction: '实时提供反馈',
   com_ui_capability_decline_requests: '阻止非法请求',
   com_ui_limitations: '限制',
   com_ui_limitation_incorrect_info: '可能会不时出现错误信息',
