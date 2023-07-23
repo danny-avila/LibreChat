@@ -59,6 +59,9 @@ export default function EssayTemplate() {
   const [paragraphCount, setParagraphCount] = useState<string>('3');
   const [easyMode, setEasyMode] = useState<boolean>(true);
   const [paraTopic, setParaTopic] = useState<string[]>(new Array(Number(paragraphCount)).fill(''));
+  const [refType, setRefType] = useState<string>('');
+  const [refAuthor, setRefAuthor] = useState<string>('');
+  const [refTitle, setRefTitle] = useState<string>('');
 
   const paragraphFields = getParagraphFields({ paragraphCount, paraTopic, setParaTopic });
 
@@ -158,6 +161,37 @@ export default function EssayTemplate() {
       </div>
     </div>
 
+  const ReferenceText =
+    <div className="grid w-full items-center gap-2">
+      <Label htmlFor="context" className="text-left text-sm font-medium">
+        文本引用 <small className="opacity-40">(默认值: 无)</small>
+      </Label>
+      <input
+        id='refTitleInput'
+        title='类型'
+        placeholder='类型'
+        value={refType || ''}
+        onChange={(e) => setRefType(e.target.value || '')}
+        className={inputStyle}
+      />
+      <input
+        id='refTitleInput'
+        title='名字'
+        placeholder='名字'
+        value={refTitle || ''}
+        onChange={(e) => setRefTitle(e.target.value || '')}
+        className={inputStyle}
+      />
+      <input
+        id='refAuthorInput'
+        title='作者'
+        placeholder='作者'
+        value={refAuthor || ''}
+        onChange={(e) => setRefAuthor(e.target.value || '')}
+        className={inputStyle}
+      />
+    </div>
+
   const LayoutLeft = () => {
     return(
       <>
@@ -171,6 +205,7 @@ export default function EssayTemplate() {
     return(
       <>
         {ParagraphInputs}
+        {ReferenceText}
       </>
     );
   }
