@@ -78,4 +78,76 @@ export default {
   com_auth_to_try_again: 'per riprovare.',
   com_auth_submit_registration: 'Invia registrazione',
   com_auth_welcome_back: 'Bentornato',
+  com_endpoint_bing_enable_sydney: 'Abilita Sydney',
+  com_endpoint_bing_to_enable_sydney: 'Per abilitare Sydney',
+  com_endpoint_bing_jailbreak: 'Jailbreak',
+  com_endpoint_bing_context_placeholder:
+    'Bing può utilizzare fino a 7.000 token per il \'contesto\', a cui può fare riferimento durante la conversazione. Il limite specifico non è noto, ma potrebbe generare errori superando i 7.000 token',
+  com_endpoint_bing_system_message_placeholder:
+    'ATTENZIONE: Un uso improprio di questa funzionalità può causarti il divieto di utilizzare Bing! Clicca su \'Messaggio di Sistema\' per le istruzioni complete e il messaggio predefinito, che è il preset \'Sydney\' considerato sicuro.',
+  com_endpoint_system_message: 'Messaggio di Sistema',
+  com_endpoint_default_blank: 'predefinito: vuoto',
+  com_endpoint_default_false: 'predefinito: falso',
+  com_endpoint_default_creative: 'predefinito: creativo',
+  com_endpoint_default_empty: 'predefinito: vuoto',
+  com_endpoint_default_with_num: 'predefinito: {0}',
+  com_endpoint_context: 'Contesto',
+  com_endpoint_tone_style: 'Stile del tono',
+  com_endpoint_token_count: 'Conteggio Token',
+  com_endpoint_output: 'Output',
+  com_endpoint_google_temp:
+    'Valori più alti = più casualità, mentre valori più bassi = più focalizzati e deterministici. Consigliamo di modificare questo o Top P, ma non entrambi.',
+  com_endpoint_google_topp:
+    'Top-p modifica il modo in cui il modello seleziona i token per l\'output. I token sono selezionati dai più probabili ai meno (vedi parametro topK) finché la somma delle loro probabilità raggiunge il valore top-p.',
+  com_endpoint_google_topk:
+    'Top-k modifica il modo in cui il modello seleziona i token per l\'output. Un top-k di 1 significa che il token selezionato è il più probabile tra tutti i token nel vocabolario del modello (chiamato anche decoding greedy), mentre un top-k di 3 significa che il prossimo token è selezionato tra i 3 token più probabili (utilizzando la temperatura).',
+  com_endpoint_google_maxoutputtokens:
+    'Numero massimo di token che possono essere generati nella risposta. Specifica un valore più basso per risposte più brevi e un valore più alto per risposte più lunghe.',
+  com_endpoint_google_custom_name_placeholder: 'Imposta un nome personalizzato per PaLM2',
+  com_endpoint_google_prompt_prefix_placeholder:
+    'Imposta istruzioni personalizzate o contesto. Ignorato se vuoto.',
+  com_endpoint_custom_name: 'Nome Personalizzato',
+  com_endpoint_prompt_prefix: 'Prefisso Promp',
+  com_endpoint_temperature: 'Temperatura',
+  com_endpoint_default: 'predefinito',
+  com_endpoint_top_p: 'Top P',
+  com_endpoint_top_k: 'Top K',
+  com_endpoint_max_output_tokens: 'Token massimi di output',
+  com_endpoint_openai_temp:
+    'Valori più alti = più casualità, mentre valori più bassi = più focalizzati e deterministici. Consigliamo di modificare questo o Top P, ma non entrambi.',
+  com_endpoint_openai_max:
+    'Il numero massimo di token da generare. La lunghezza totale dei token di input e dei token generati è limitata dalla lunghezza del contesto del modello.',
+  com_endpoint_openai_topp:
+    'Un\'alternativa al campionamento con temperatura, chiamato campionamento di nucleo, in cui il modello considera i risultati dei token con massa di probabilità top_p. Quindi, 0.1 significa che vengono considerati solo i token che costituiscono la top 10% della massa di probabilità. Consigliamo di modificare questo o la temperatura, ma non entrambi.',
+  com_endpoint_openai_freq:
+    'Numero compreso tra -2.0 e 2.0. I valori positivi penalizzano i nuovi token in base alla loro frequenza esistente nel testo finora, diminuendo la probabilità del modello di ripetere la stessa frase letteralmente.',
+  com_endpoint_openai_pres:
+    'Numero compreso tra -2.0 e 2.0. I valori positivi penalizzano i nuovi token in base al fatto che appaiono nel testo finora, aumentando la probabilità del modello di parlare di nuovi argomenti.',
+  com_endpoint_openai_custom_name_placeholder: 'Imposta un nome personalizzato per ChatGPT',
+  com_endpoint_openai_prompt_prefix_placeholder:
+    'Imposta istruzioni personalizzate da includere nel Messaggio di Sistema. Predefinito: nessuno',
+  com_endpoint_frequency_penalty: 'Penalità di Frequenza',
+  com_endpoint_presence_penalty: 'Penalità di Presenza',
+  com_endpoint_plug_use_functions: 'Usa Funzioni',
+  com_endpoint_plug_skip_completion: 'Salta Completamento',
+  com_endpoint_disabled_with_tools: 'disabilitato con strumenti',
+  com_endpoint_disabled_with_tools_placeholder: 'Disabilitato con Strumenti Selezionati',
+  com_endpoint_plug_set_custom_name_for_gpt_placeholder:
+    'Imposta un nome personalizzato per ChatGPT.',
+  com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
+    'Imposta istruzioni personalizzate da includere nel Messaggio di Sistema. Predefinito: nessuno',
+  com_endpoint_set_custom_name:
+    'Imposta un nome personalizzato, nel caso tu possa trovare questo preset',
+  com_endpoint_preset_name: 'Nome Preset',
+  com_endpoint: 'Endpoint',
+  com_endpoint_hide: 'Nascondi',
+  com_endpoint_show: 'Mostra',
+  com_endpoint_examples: 'Esempi',
+  com_endpoint_completion: 'Completamento',
+  com_endpoint_agent: 'Agente',
+  com_endpoint_show_what_settings: 'Mostra impostazioni {0}',
+  com_endpoint_save: 'Salva',
+  com_endpoint_export: 'Esporta',
+  com_endpoint_save_as_preset: 'Salva come Preset',
+  com_endpoint_not_implemented: 'Non implementato',
 };

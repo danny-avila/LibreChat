@@ -68,6 +68,36 @@ OPENID_CALLBACK_URL=/oauth/openid/callback
 ```
 11. Save the .env file and you're done! You have successfully set up OpenID authentication with Azure AD for your app.
 
+## How to Set Up OpenID Authentication with AWS Cognito
+
+1. Create a new User Pool in Cognito:
+   1. Ensure your Cognito user pool sign-in options include `User Name` and `Email`.
+   2. Ensure that `given_name` and `family_name` are required attributes.
+   3. Add an initial app client:
+      1. Set the app type to `Confidential client`
+      2. Select `Use Cognitio Hosted UI` and chose a domain name
+      3. Make sure `Generate a client secret` is set.
+      4. Set the `Allowed callback URLs` to `https://YOUR_DOMAIN/oauth/openid/callback`
+      5. Under advanced settings make sure `Profile` is included in the `OpenID Connect scopes`
+2. Open your User Pool
+3. Go to the `App Integrations` tab
+4. Open the app client we created above.
+5. Use the `User Pool ID`and your AWS region to construct the OPENID_ISSUER (see below)
+6. Toggle `Show Client Secret`
+6. Use the `Client ID` for `OPENID_CLIENT_ID`
+7. Use the `Client secret` for `OPENID_CLIENT_SECRET`
+8. Open the .env file in your project folder and add the following variables with the values you copied:
+
+```
+OPENID_CLIENT_ID=Your client ID
+OPENID_CLIENT_SECRET=Your client secret
+OPENID_ISSUER=https://cognito-idp.[AWS REGION].amazonaws.com/[USER POOL ID]/.well-known/openid-configuration
+OPENID_SESSION_SECRET=Any random string
+OPENID_SCOPE=openid profile email
+OPENID_CALLBACK_URL=/oauth/openid/callback
+```
+9. Save the .env file and you're done! You have successfully set up OpenID authentication with Cognito for your app.
+
 ---
 
 ## How to Set Up Github Authentication
