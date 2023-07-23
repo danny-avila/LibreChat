@@ -1,19 +1,18 @@
 const User = require('../../models/User');
 const Token = require('../../models/schema/tokenSchema');
-const sendEmail = require('../../utils/sendEmail');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { registerSchema } = require('../../strategies/validators');
-const migrateDataToFirstUser = require('../../utils/migrateDataToFirstUser');
+const { sendEmail } = require('../../utils');
 const config = require('../../../config/loader');
 const domains = config.domains;
 
 /**
  * Logout user
  *
- * @param {Object} user 
- * @param {*} refreshToken 
- * @returns 
+ * @param {Object} user
+ * @param {*} refreshToken
+ * @returns
  */
 const logoutUser = async (user, refreshToken) => {
   try {
@@ -38,7 +37,7 @@ const logoutUser = async (user, refreshToken) => {
  * Register a new user
  *
  * @param {Object} user <email, password, name, username>
- * @returns 
+ * @returns
  */
 const registerUser = async (user) => {
   const { error } = registerSchema.validate(user);
@@ -52,7 +51,7 @@ const registerUser = async (user) => {
     return { status: 422, message: error.details[0].message };
   }
 
-  const { email, password, name, username } = user;
+  const { email, password, name, username, refBy } = user;
 
   try {
     const existingUser = await User.findOne({ email });
@@ -63,16 +62,13 @@ const registerUser = async (user) => {
         { name: 'Request params:', value: user },
         { name: 'Existing user:', value: existingUser }
       );
-      
+
       // Sleep for 1 second
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
       // TODO: We should change the process to always email and be generic is signup works or fails (user enum)
       return { status: 500, message: 'Something went wrong' };
     }
-
-    //determine if this is the first registered user (not counting anonymous_user)
-    const isFirstRegisteredUser = (await User.countDocuments({})) === 0;
 
     const newUser = await new User({
       provider: 'local',
@@ -81,7 +77,7 @@ const registerUser = async (user) => {
       username,
       name,
       avatar: null,
-      role: isFirstRegisteredUser ? 'ADMIN' : 'USER'
+      refBy: refBy
     });
 
     // todo: implement refresh token
@@ -90,22 +86,23 @@ const registerUser = async (user) => {
     const salt = bcrypt.genSaltSync(10);
     const hash = bcrypt.hashSync(newUser.password, salt);
     newUser.password = hash;
-    newUser.save();
+    const registrationResult = await newUser.save();
 
-    if (isFirstRegisteredUser) {
-      migrateDataToFirstUser(newUser);
+    if (refBy !== '') {
+      await User.updateOne({ _id: refBy }, { $push: { referrals: registrationResult.id },
+        $inc: { numOfReferrals: 1 } })
     }
     return { status: 200, user: newUser };
   } catch (err) {
     return { status: 500, message: err?.message || 'Something went wrong' };
   }
 };
- 
+
 /**
  * Request password reset
  *
- * @param {String} email 
- * @returns 
+ * @param {String} email
+ * @returns
  */
 const requestPasswordReset = async (email) => {
   const user = await User.findOne({ email });
@@ -142,10 +139,10 @@ const requestPasswordReset = async (email) => {
 /**
  * Reset Password
  *
- * @param {*} userId 
- * @param {String} token 
- * @param {String} password 
- * @returns 
+ * @param {*} userId
+ * @param {String} token
+ * @param {String} password
+ * @returns
  */
 const resetPassword = async (userId, token, password) => {
   let passwordResetToken = await Token.findOne({ userId });

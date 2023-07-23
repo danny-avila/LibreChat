@@ -125,14 +125,25 @@ module.exports = {
     deleteCount.messages = await deleteMessages({ conversationId: { $in: ids } });
     return deleteCount;
   },
-  
+  getRecentConvos: async (userId) => {
+    try {
+      return await Conversation.find({
+        user: { $ne: userId },
+        isPrivate: { $eq: false }
+      }).sort( { updatedAt: -1 } ).limit(3).exec();
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error fetching recent conversations' };
+    }
+  },
+
   likeConvo: async (conversationId, isLiked) => {
     try {
       const existingConversation = await Conversation.findOne({ conversationId }).exec();
-  
+
       if (existingConversation) {
         const update = {};
-        
+        update.isLiked = isLiked;
         if (isLiked) {
           // Increment the likesCount by 1
           update.likesConvo = existingConversation.likesConvo + 1;
@@ -140,7 +151,7 @@ module.exports = {
           // Ensure likesCount doesn't go below 0
           update.likesConvo = existingConversation.likesConvo > 0 ? existingConversation.likesConvo - 1 : 0;
         }
-  
+
         return await Conversation.findOneAndUpdate(
           { conversationId },
           update,
@@ -155,5 +166,5 @@ module.exports = {
       return { message: 'Error liking conversation' };
     }
   },
-  
+
 };

@@ -5,14 +5,16 @@ import SunIcon from '../svg/SunIcon';
 import LightningIcon from '../svg/LightningIcon';
 import CautionIcon from '../svg/CautionIcon';
 import store from '~/store';
-import { useGetStartupConfig } from '~/data-provider';
+import { localize } from '~/localization/Translation';
+import { useGetStartupConfig } from '@librechat/data-provider';
 
 export default function Landing() {
   const { data: config } = useGetStartupConfig();
   const setText = useSetRecoilState(store.text);
   const conversation = useRecoilValue(store.conversation);
+  const lang = useRecoilValue(store.lang);
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
-  const { title = 'New Chat' } = conversation || {};
+  const { title = localize(lang, 'com_ui_new_chat') } = conversation || {};
 
   useDocumentTitle(title);
 
@@ -30,66 +32,66 @@ export default function Landing() {
           id="landing-title"
           className="mb-10 ml-auto mr-auto mt-6 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-16 md:mt-[10vh]"
         >
-          {config?.appTitle || 'AITok Chat'}
+          {config?.appTitle || 'LibreChat'}
         </h1>
         <div className="items-start gap-3.5 text-center md:flex">
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
             <h2 className="m-auto flex items-center gap-3 text-lg font-normal md:flex-col md:gap-2">
               <SunIcon />
-              {navigator.languages[0]==='zh-CN'? "样例":"Examples" }
+              {localize(lang, 'com_ui_examples')}
             </h2>
             <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
               <button
                 onClick={clickHandler}
                 className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
               >
-                &quot;{navigator.languages[0]==='zh-CN'? "用简单的术语解释量子计算":"Explain quantum computing in simple terms"}&quot; →
+                &quot;{localize(lang, 'com_ui_example_quantum_computing')}&quot; →
               </button>
               <button
                 onClick={clickHandler}
                 className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
               >
-                &quot;{navigator.languages[0]==='zh-CN'? "对10岁的生日有什么创意吗？":"Got any creative ideas for a 10 year old&apos;s birthday?"}&quot; →
+                &quot;{localize(lang, 'com_ui_example_10_year_old_b_day')}&quot; →
               </button>
               <button
                 onClick={clickHandler}
                 className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
               >
-                &quot;{navigator.languages[0]==='zh-CN'? "如何在Javascript中发出HTTP请求？":"How do I make an HTTP request in Javascript?"}&quot; →
+                &quot;{localize(lang, 'com_ui_example_http_in_js')}&quot; →
               </button>
             </ul>
           </div>
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
             <h2 className="m-auto flex items-center gap-3 text-lg font-normal md:flex-col md:gap-2">
               <LightningIcon />
-              {navigator.languages[0]==='zh-CN'? "能力":"Capabilities"}
+              {localize(lang, 'com_ui_capabilities')}
             </h2>
             <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {navigator.languages[0]==='zh-CN'? "记住用户在对话中之前所说的话":"Remembers what user said earlier in the conversation"}
+                {localize(lang, 'com_ui_capability_remember')}
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {navigator.languages[0]==='zh-CN'? "允许用户提供后续更正":"Allows user to provide follow-up corrections"}
+                {localize(lang, 'com_ui_capability_correction')}
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {navigator.languages[0]==='zh-CN'? "受过拒绝不当请求的培训":"Trained to decline inappropriate requests"}
+                {localize(lang, 'com_ui_capability_decline_requests')}
               </li>
             </ul>
           </div>
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
             <h2 className="m-auto flex items-center gap-3 text-lg font-normal md:flex-col md:gap-2">
               <CautionIcon />
-              {navigator.languages[0]==='zh-CN'? "限制":"Limitations"}
+              {localize(lang, 'com_ui_limitations')}
             </h2>
             <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {navigator.languages[0]==='zh-CN'? "可能偶尔会产生不正确的信息":"May occasionally generate incorrect information"}
+                {localize(lang, 'com_ui_limitation_incorrect_info')}
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {navigator.languages[0]==='zh-CN'? "可能偶尔会产生有害指令或有偏见的内容":"May occasionally produce harmful instructions or biased content"}
+                {localize(lang, 'com_ui_limitation_harmful_biased')}
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {navigator.languages[0]==='zh-CN'? "对2021年后的世界和事件了解有限":"Limited knowledge of world and events after 2021"}
+                {localize(lang, 'com_ui_limitation_limited_2021')}
               </li>
             </ul>
           </div>

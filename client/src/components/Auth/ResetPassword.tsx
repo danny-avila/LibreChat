@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useResetPasswordMutation, TResetPassword } from '~/data-provider';
+import { useResetPasswordMutation, TResetPassword } from '@librechat/data-provider';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 function ResetPassword() {
@@ -73,12 +73,14 @@ function ResetPassword() {
                 <input
                   type="hidden"
                   id="token"
+                  // @ts-ignore - Type 'string | null' is not assignable to type 'string | number | readonly string[] | undefined'
                   value={params.get('token')}
                   {...register('token', { required: 'Unable to process: No valid reset token' })}
                 />
                 <input
                   type="hidden"
                   id="userId"
+                  // @ts-ignore - Type 'string | null' is not assignable to type 'string | number | readonly string[] | undefined'
                   value={params.get('userId')}
                   {...register('userId', { required: 'Unable to process: No valid user id' })}
                 />
@@ -94,8 +96,8 @@ function ResetPassword() {
                       message: 'Password must be at least 8 characters'
                     },
                     maxLength: {
-                      value: 40,
-                      message: 'Password must be less than 40 characters'
+                      value: 128,
+                      message: 'Password must be 128 characters or less'
                     }
                   })}
                   aria-invalid={!!errors.password}

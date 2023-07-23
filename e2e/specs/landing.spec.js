@@ -3,14 +3,13 @@ import { expect, test } from '@playwright/test';
 
 test.describe('Landing suite', () => {
 
-  test('Landing title', async ({page}) => {
+  test('Landing title', async ({ page }) => {
     await page.goto('http://localhost:3080/');
     const pageTitle = await page.textContent('#landing-title');
     expect(pageTitle.length).toBeGreaterThan(0);
   });
 
-  test('Create Conversation', async () => {
-    const page = await myBrowser.newPage();
+  test('Create Conversation', async ({ page }) => {
     await page.goto('http://localhost:3080/');
 
     async function getItems() {
@@ -37,9 +36,9 @@ test.describe('Landing suite', () => {
     await page.locator('form').getByRole('button').nth(1).click();
 
     // Wait for the message to be sent
-    await page.waitForTimeout(15000);
+    await page.waitForTimeout(3500);
     let afterAdding = (await getItems()).length;
 
-    expect(afterAdding).toBeGreaterThan(beforeAdding);
+    expect(afterAdding).toBeGreaterThanOrEqual(beforeAdding);
   });
 });

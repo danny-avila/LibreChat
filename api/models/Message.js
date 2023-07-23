@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const Message = require('./schema/messageSchema');
 
 module.exports = {
@@ -14,6 +15,7 @@ module.exports = {
     error,
     unfinished,
     cancelled,
+    tokenCount = null,
     plugin = null,
     model = null,
     senderId = null,
@@ -32,6 +34,7 @@ module.exports = {
           error,
           unfinished,
           cancelled,
+          tokenCount,
           plugin,
           model,
           senderId,
@@ -45,29 +48,56 @@ module.exports = {
         parentMessageId,
         sender,
         text,
-        isCreatedByUser
+        isCreatedByUser,
+        tokenCount,
       };
     } catch (err) {
       console.error(`Error saving message: ${err}`);
       throw new Error('Failed to save message.');
     }
   },
+  async updateMessage(message) {
+    try {
+      const { messageId, ...update } = message;
+      const updatedMessage = await Message.findOneAndUpdate(
+        { messageId },
+        update,
+        { new: true }
+      );
 
-  async likeMessage (messageId, isLiked) {
+      if (!updatedMessage) {
+        throw new Error('Message not found.');
+      }
+
+      return {
+        messageId: updatedMessage.messageId,
+        conversationId: updatedMessage.conversationId,
+        parentMessageId: updatedMessage.parentMessageId,
+        sender: updatedMessage.sender,
+        text: updatedMessage.text,
+        isCreatedByUser: updatedMessage.isCreatedByUser,
+        tokenCount: updatedMessage.tokenCount,
+      };
+    } catch (err) {
+      console.error(`Error updating message: ${err}`);
+      throw new Error('Failed to update message.');
+    }
+  },
+
+  async likeMessage(messageId, isLiked) {
     try {
       const existingMsg = await Message.findOne({ messageId }).exec();
-  
+
       if (existingMsg) {
         const update = {};
-        
         if (isLiked) {
-          // Increment by 1
-          update.likesMsg = existingMsg.likesMsg + 1;
+          // If isLiked is true, set likesMsg to true
+          update.likesMsg = true;
         } else {
-          // Ensure likesCount doesn't go below 0
-          update.likesMsg = existingMsg.likesMsg > 0 ? existingMsg.likesMsg - 1 : 0;
+          // If isLiked is false, set likesMsg to false
+          update.likesMsg = false;
         }
-  
+
         return await Message.findOneAndUpdate(
           { messageId },
           update,
@@ -113,6 +143,45 @@ module.exports = {
       console.error(`Error deleting messages: ${err}`);
       throw new Error('Failed to delete messages.');
     }
+  },
+
+  async getRecentMessages() {
+    try {
+      return await Message.find().sort( { createdAt: -1 } ).select('conversationId').limit(30).exec();
+    } catch (err) {
+      console.error(`Error fetching recents messages: ${err}`);
+      throw new Error('Failed to fetch recent messages.');
+    }
+  },
+
+  async duplicateMessages({ newConversationId, msgData }) {
+    try {
+      let newParentMessageId = '00000000-0000-0000-0000-000000000000';
+      let newMessageId = crypto.randomUUID();
+      const msgObjIds = [];
+
+      for (let i = 0; i < msgData.length; i++) {
+        let msgObj = structuredClone(msgData[i]);
+
+        delete msgObj._id;
+        msgObj.messageId = newMessageId;
+        msgObj.parentMessageId = newParentMessageId;
+        msgObj.conversationId = newConversationId;
+
+        newParentMessageId = newMessageId;
+        newMessageId = crypto.randomUUID();
+
+        const newMsg = new Message(msgObj);
+        const result = await newMsg.save();
+        msgObjIds.push(result.id);
+      }
+
+      return msgObjIds;
+    } catch (err) {
+      console.error(`Error duplicating messages: ${err}`);
+      throw new Error('Failed to duplicate messages.');
+    }
+
   },
 
   async getMessagesCount(filter) {

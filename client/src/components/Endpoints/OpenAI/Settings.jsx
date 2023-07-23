@@ -29,6 +29,7 @@ function Settings(props) {
     setOption
   } = props;
   const endpoint = props.endpoint || 'openAI';
+  const isOpenAI = endpoint === 'openAI' || endpoint === 'azureOpenAI';
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
@@ -59,7 +60,7 @@ function Settings(props) {
               containerClassName="flex w-full resize-none"
             />
           </div>
-          {endpoint === 'openAI' && (
+          {isOpenAI && (
             <>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
@@ -99,7 +100,7 @@ function Settings(props) {
                   placeholder={
                     navigator.languages[0] === 'zh-CN'
                       ? '设置自定义指令。默认为：“你ChatGPT，一个由OpenAI训练的大型语言模型。”'
-                      : "Set custom instructions. Defaults to: 'You are ChatGPT, a large language model trained by OpenAI.'"
+                      : 'Set custom instructions. Defaults to: \'You are ChatGPT, a large language model trained by OpenAI.\''
                   }
                   className={cn(
                     defaultTextProps,

@@ -1,9 +1,9 @@
 import { render, waitFor } from 'layout-test-utils';
 import userEvent from '@testing-library/user-event';
 import Registration from '../Registration';
-import * as mockDataProvider from '~/data-provider';
+import * as mockDataProvider from '@librechat/data-provider';
 
-jest.mock('~/data-provider');
+jest.mock('@librechat/data-provider');
 
 const setup = ({
   useGetUserQueryReturnValue = {
@@ -26,6 +26,7 @@ const setup = ({
       openidLoginEnabled: true,
       openidLabel: 'Test OpenID',
       openidImageUrl: 'http://test-server.com',
+      githubLoginEnabled: true,
       registrationEnabled: true,
       serverDomain: 'mock-server'
     }

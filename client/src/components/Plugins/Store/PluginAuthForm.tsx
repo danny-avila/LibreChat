@@ -1,4 +1,4 @@
-import { TPlugin, TPluginAuthConfig } from '~/data-provider';
+import { TPlugin, TPluginAuthConfig } from '@librechat/data-provider';
 import { Save } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { TPluginAction } from './PluginStoreDialog';

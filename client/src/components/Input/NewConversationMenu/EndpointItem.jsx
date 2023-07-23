@@ -1,21 +1,12 @@
 import { useState } from 'react';
-import { DropdownMenuRadioItem } from '../../ui/DropdownMenu.tsx';
+import { DropdownMenuRadioItem } from '~/components';
 import { Settings } from 'lucide-react';
 import getIcon from '~/utils/getIcon';
 import { useRecoilValue } from 'recoil';
-import SetTokenDialog from '../SetTokenDialog';
+import { SetTokenDialog } from '../SetTokenDialog';
 
-import store from '../../../store';
-import { cn } from '~/utils/index.jsx';
-
-const alternateName = {
-  openAI: 'OpenAI',
-  azureOpenAI: 'Azure OpenAI',
-  bingAI: 'Bing',
-  chatGPTBrowser: 'ChatGPT',
-  gptPlugins: 'Plugins',
-  google: 'PaLM'
-};
+import store from '~/store';
+import { cn, alternateName } from '~/utils';
 
 export default function ModelItem({ endpoint, value, isSelected }) {
   const [setTokenDialogOpen, setSetTokenDialogOpen] = useState(false);
@@ -44,7 +35,6 @@ export default function ModelItem({ endpoint, value, isSelected }) {
       >
         {icon}
         {alternateName[endpoint] || endpoint}
-        {!!['azureOpenAI', 'openAI'].find((e) => e === endpoint) && <sup>$</sup>}
         {endpoint === 'gptPlugins' && (
           <span className="py-0.25 ml-1 rounded bg-blue-200 px-1 text-[10px] font-semibold text-[#4559A4]">
             Beta

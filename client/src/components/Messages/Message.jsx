@@ -10,10 +10,11 @@ import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
 import getIcon from '~/utils/getIcon';
 import { useMessageHandler } from '~/utils/handleSubmit';
-import { useGetConversationByIdQuery } from '~/data-provider';
+import { useGetConversationByIdQuery } from '@librechat/data-provider';
 import { cn } from '~/utils/';
 import store from '~/store';
 import getError from '~/utils/getError';
+import { useAuthContext } from '../../hooks/AuthContext';
 
 export default function Message({
   conversation,
@@ -23,13 +24,15 @@ export default function Message({
   setCurrentEditId,
   siblingIdx,
   siblingCount,
-  setSiblingIdx
+  setSiblingIdx,
+  hideUser = false
 }) {
   const { text, searchResult, isCreatedByUser, error, submitting, unfinished } = message;
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const setLatestMessage = useSetRecoilState(store.latestMessage);
   const [abortScroll, setAbort] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
+  const [loading, setLoading] = useState(true);
   const textEditor = useRef(null);
   const last = !message?.children?.length;
   const edit = message.messageId == currentEditId;
@@ -76,7 +79,8 @@ export default function Message({
   const icon = getIcon({
     ...conversation,
     ...message,
-    model: message?.model || conversation?.model
+    model: message?.model || conversation?.model,
+    hideUser
   });
 
   if (!isCreatedByUser)
@@ -114,7 +118,44 @@ export default function Message({
     }, 3000);
   };
 
-     
+  const { token } = useAuthContext();
+
+  // initial fetch to find out if it is being liked
+  const fetchLikeStatus = async () => {
+    setLoading(true)
+    try {
+      const response = await fetch(`/api/messages/${message.conversationId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        } }
+      )
+
+      const data = await response.json();
+      // Assuming 'data' is an array of message objects
+      data.forEach(item => {
+      // Assuming each message object has a 'messageId' and 'likesMsg' property
+        const messageId = item.messageId;
+        const isLiked = item.likesMsg;
+        if (messageId === message.messageId) {
+          setIsLiked(isLiked);
+        }
+      });
+      setLoading(false)
+      // setIsLiked(data.isLiked);
+      // console.log('dataaaaaaa', data.likesConvo);
+      // Update the isLiked state based on the data received from the API
+      // setIsLiked();
+    } catch (error) {
+      console.log('Error fetching like status:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchLikeStatus();
+  }, []);
+
   const handleLikeClick = async () => {
     try {
       const response = await fetch('/api/messages/like', {
@@ -145,6 +186,8 @@ export default function Message({
       switchToConversation(response.data);
     });
   };
+
+  !loading && console.log(`islike: ${isLiked}`)
 
   return (
     <>
@@ -218,7 +261,7 @@ export default function Message({
                     <div className="markdown prose dark:prose-invert light w-full break-words">
                       {!isCreatedByUser ? (
                         <>
-                          <Content content={text} message={message}/>
+                          <Content content={text} message={message} />
                         </>
                       ) : (
                         <>{text}</>
@@ -235,13 +278,14 @@ export default function Message({
                   {!isSubmitting && unfinished ? (
                     <div className="flex flex min-h-[20px] flex-grow flex-col items-start gap-2 gap-4  text-red-500">
                       <div className="rounded-md border border-blue-400 bg-blue-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-100">
-                        {`This is an unfinished message. The AI may still be generating a response or it was aborted. Refresh or visit later to see more updates.`}
+                        {'This is an unfinished message. The AI may still be generating a response or it was aborted. Refresh or visit later to see more updates.'}
                       </div>
                     </div>
                   ) : null}
                 </>
               )}
             </div>
+
             <HoverButtons
               isEditting={edit}
               isSubmitting={isSubmitting}
@@ -253,6 +297,7 @@ export default function Message({
               handleLikeClick={handleLikeClick}
               isLiked={isLiked}
             />
+
             <SubRow subclasses="switch-container">
               <SiblingSwitch
                 siblingIdx={siblingIdx}
@@ -270,6 +315,7 @@ export default function Message({
         scrollToBottom={scrollToBottom}
         currentEditId={currentEditId}
         setCurrentEditId={setCurrentEditId}
+        hideUser={hideUser}
       />
     </>
   );

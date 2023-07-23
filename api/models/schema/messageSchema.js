@@ -3,8 +3,8 @@ const mongoMeili = require('../plugins/mongoMeili');
 const messageSchema = mongoose.Schema(
   {
     likesMsg: {
-      type: Number,
-      default: 0
+      type: Boolean,
+      default: false
     },
     messageId: {
       type: String,
@@ -35,6 +35,12 @@ const messageSchema = mongoose.Schema(
       type: String
       // required: true
     },
+    tokenCount: {
+      type: Number
+    },
+    refinedTokenCount: {
+      type: Number
+    },
     sender: {
       type: String,
       required: true,
@@ -44,6 +50,9 @@ const messageSchema = mongoose.Schema(
       type: String,
       required: true,
       meiliIndex: true
+    },
+    refinedMessageText: {
+      type: String
     },
     isCreatedByUser: {
       type: Boolean,

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import Spinner from '../svg/Spinner';
+import { Spinner } from '~/components';
 import CodeBlock from './Content/CodeBlock.jsx';
 import { Disclosure } from '@headlessui/react';
 import { ChevronDownIcon } from 'lucide-react';
@@ -35,7 +35,7 @@ export default function Plugin({ plugin }) {
     if (!loading && plugin.latest === 'Self Reflection') {
       return 'Finished';
     } else if (plugin.latest === 'Self Reflection') {
-      return "I'm  thinking...";
+      return 'I\'m  thinking...';
     } else {
       return (
         <>
@@ -62,7 +62,7 @@ export default function Plugin({ plugin }) {
                   <div>{generateStatus()}</div>
                 </div>
               </div>
-              {loading && <Spinner classProp="ml-1" />}
+              {loading && <Spinner className="ml-1" />}
               <Disclosure.Button className="ml-12 flex items-center gap-2">
                 <ChevronDownIcon className={cn(open ? 'rotate-180 transform' : '', 'h-4 w-4')} />
               </Disclosure.Button>

@@ -1,8 +1,9 @@
 {
   "name": "@librechat/frontend",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "",
   "scripts": {
+    "data-provider": "cd .. && npm run build:data-provider",
     "build": "cross-env NODE_ENV=production dotenv -e ../.env -- vite build",
     "build:ci": "cross-env NODE_ENV=dev vite build --mode ci",
     "dev": "cross-env NODE_ENV=dev dotenv -e ../.env -- vite",
@@ -28,6 +29,7 @@
     "@fortawesome/free-solid-svg-icons": "^6.4.0",
     "@fortawesome/react-fontawesome": "^0.2.0",
     "@headlessui/react": "^1.7.13",
+    "@librechat/data-provider": "*",
     "@radix-ui/react-alert-dialog": "^1.0.2",
     "@radix-ui/react-checkbox": "^1.0.3",
     "@radix-ui/react-dialog": "^1.0.2",
@@ -41,6 +43,8 @@
     "@tailwindcss/forms": "^0.5.3",
     "@tanstack/react-query": "^4.28.0",
     "@zattoo/use-double-click": "1.2.0",
+    "ag-grid-community": "^30.0.3",
+    "ag-grid-react": "^30.0.3",
     "axios": "^1.3.4",
     "class-variance-authority": "^0.6.0",
     "clsx": "^1.2.1",

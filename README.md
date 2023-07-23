@@ -1,19 +1,28 @@
 <p align="center">
-  <a href="https://discord.gg/NGaa9RPCft">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://github.com/fuegovic/LibreChat/assets/32828263/fe3b9dbc-976f-4eb3-a900-fa21e0e38be6">
-      <img src="https://github.com/fuegovic/LibreChat/assets/32828263/fe3b9dbc-976f-4eb3-a900-fa21e0e38be6" height="172">
-    </picture>
+  <a href="https://docs.librechat.ai">
+    <img src="docs/assets/LibreChat.svg" height="256">
+  </a>
+  <a href="https://docs.librechat.ai">
     <h1 align="center">LibreChat</h1>
   </a>
 </p>
 
 <p align="center">
   <a href="https://discord.gg/NGaa9RPCft"> 
-    <img src="https://img.shields.io/discord/1086345563026489514?label=&logo=discord&style=for-the-badge&logoWidth=20&labelColor=000000&color=blueviolet">
+    <img
+      src="https://img.shields.io/discord/1086345563026489514?label=&logo=discord&style=for-the-badge&logoWidth=20&logoColor=white&labelColor=000000&color=blueviolet">
+  </a>
+  <a href="https://www.youtube.com/@LibreChat"> 
+    <img
+      src="https://img.shields.io/badge/YOUTUBE-red.svg?style=for-the-badge&logo=youtube&logoColor=white&labelColor=000000&logoWidth=20">
+  </a>
+  <a href="https://docs.librechat.ai"> 
+    <img
+      src="https://img.shields.io/badge/DOCS-blue.svg?style=for-the-badge&logo=read-the-docs&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
   <a aria-label="Sponsors" href="#sponsors">
-    <img alt="" src="https://img.shields.io/badge/SPONSORS-brightgreen.svg?style=for-the-badge&labelColor=000000&logoWidth=20">
+    <img
+      src="https://img.shields.io/badge/SPONSORS-brightgreen.svg?style=for-the-badge&logo=github-sponsors&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
 </p>
 
@@ -22,11 +31,9 @@ LibreChat brings together the future of assistant AIs with the revolutionary tec
 
 With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use free or pay-per-call APIs. We welcome contributions, cloning, and forking to enhance the capabilities of this advanced chatbot platform.
   
-<!--   ![clone3](https://user-images.githubusercontent.com/110412045/230538752-9b99dc6e-cd02-483a-bff0-6c6e780fa7ae.gif) -->
 https://github.com/danny-avila/LibreChat/assets/110412045/c1eb0c0f-41f6-4335-b982-84b278b53d59
 
 # Features
-
 - Response streaming identical to ChatGPT through server-sent events
 - UI from original ChatGPT, including Dark mode
 - AI model selection (through 5 endpoints: OpenAI API, BingAI, ChatGPT Browser, PaLM2, Plugins)
@@ -57,6 +64,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Mac Install](docs/install/mac_install.md)
   * [Windows Install](docs/install/windows_install.md)
   * [APIs and Tokens](docs/install/apis_and_tokens.md)
+  * [User Auth System](docs/install/user_auth_system.md)
 </details>
 
 <details>
@@ -65,8 +73,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Code of Conduct](CODE_OF_CONDUCT.md)
   * [Project Origin](docs/general_info/project_origin.md)
   * [Multilingual Information](docs/general_info/multilingual_information.md)
-  * [Tech Stack](docs/general_info/tech_stack.md)
-  * [Bing Jailbreak Info](docs/general_info/bing_jailbreak_info.md)
+  * [Tech Stack](docs/general_info/tech_stack.md)   
 </details>
 
 <details>
@@ -79,8 +86,8 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
     * [Wolfram](docs/features/plugins/wolfram.md)
     * [Make Your Own Plugin](docs/features/plugins/make_your_own.md)
 
-  * [User Auth System](docs/features/user_auth_system.md)
   * [Proxy](docs/features/proxy.md)
+  * [Bing Jailbreak](docs/features/bing_jailbreak.md)
 </details>
 
 <details>
@@ -90,6 +97,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Heroku](docs/deployment/heroku.md)
   * [Linode](docs/deployment/linode.md)
   * [Cloudflare](docs/deployment/cloudflare.md)
+  * [Ngrok](docs/deployment/ngrok.md)
 </details>
 
 <details>
@@ -114,8 +122,8 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 
 ## Sponsors
 
-  Sponsored by <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a>, <a href="https://github.com/fuegovic"><b>@fuegovic</b></a> & <a href="https://github.com/SphaeroX"><b>@SphaeroX</b></a>
-
+  Sponsored by <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/SphaeroX"><b>@SphaeroX</b></a>, <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/fuegovic"><b>@fuegovic</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a> 
+  
 ---
 
 ## Contributors

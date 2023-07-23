@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRecoilState, useSetRecoilState } from 'recoil';
-import { useUpdateConversationMutation } from '~/data-provider';
+import { useUpdateConversationMutation } from '@librechat/data-provider';
 import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
 import ConvoIcon from '../svg/ConvoIcon';
-
+import { useAuthContext } from '../../hooks/AuthContext';
 import store from '~/store';
+import PrivateButton from './PrivateButton';
 import LikeIcon from '../svg/LikeIcon';
 
 export default function Conversation({ conversation, retainView }) {
@@ -20,10 +21,38 @@ export default function Conversation({ conversation, retainView }) {
   const [renaming, setRenaming] = useState(false);
   const inputRef = useRef(null);
 
-  const { conversationId, title } = conversation;
+  const { conversationId, title, isPrivate } = conversation;
 
   const [titleInput, setTitleInput] = useState(title);
+
+  const [privateState, setPrivateState] = useState(isPrivate);
   const [isLiked, setIsLiked] = useState(false);
+  const { token } = useAuthContext();
+
+  // initial fetch to find out if it is being liked
+  const fetchLikeStatus = async () => {
+    try {
+      const response = await fetch(`/api/convos/${conversationId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        } }
+      )
+
+      const data = await response.json();
+      console.log('conversationnnnnnnn', data);
+      // Update the isLiked state based on the data received from the API
+      setIsLiked(data.isLiked);
+
+    } catch (error) {
+      console.log('Error fetching like status:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchLikeStatus();
+  }, []);
 
   const handleLikeClick = async () => {
     try {
@@ -43,8 +72,7 @@ export default function Conversation({ conversation, retainView }) {
         return;
       }
       // Update the isLiked state based on the API response
-      setIsLiked((prev) => !prev);
-
+      setIsLiked(data.isLiked);
 
     } catch (error) {
       console.log('Error liking conversation:', error);
@@ -70,6 +98,12 @@ export default function Conversation({ conversation, retainView }) {
     }
 
   };
+
+  const setPrivateHandler = (e) => {
+    e.preventDefault();
+    updateConvoMutation.mutate({ conversationId, isPrivate: !privateState });
+    setPrivateState(!privateState);
+  }
 
   const renameHandler = (e) => {
     e.preventDefault();
@@ -123,10 +157,8 @@ export default function Conversation({ conversation, retainView }) {
       'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-gray-800 hover:pr-4';
   }
 
-
-
   return (
-    <a onClick={() => clickHandler()} {...aProps}>
+    <a data-testid="convo-item" onClick={() => clickHandler()} {...aProps}>
       <ConvoIcon />
       <div className="relative max-h-5 flex-1 overflow-hidden text-ellipsis break-all pr-8">
         {renaming === true ? (
@@ -146,10 +178,15 @@ export default function Conversation({ conversation, retainView }) {
 
       {currentConversation?.conversationId === conversationId ? (
         <div className="visible absolute right-1 z-10 flex text-gray-300 ml-3">
-          <LikeIcon 
+          <LikeIcon
             filled={isLiked}
             style={{ marginTop: '0.25rem' }}
             onClick={handleLikeClick}
+          />
+          <PrivateButton
+            conversationId={conversationId}
+            isPrivate={privateState}
+            setPrivateHandler={setPrivateHandler}
           />
           <RenameButton
             conversationId={conversationId}
@@ -163,7 +200,7 @@ export default function Conversation({ conversation, retainView }) {
             cancelHandler={cancelHandler}
             retainView={retainView}
           />
-         
+
         </div>
       ) : (
         <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-gray-900 group-hover:from-gray-700/70" />

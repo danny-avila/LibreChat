@@ -15,10 +15,17 @@
       }
     },
     {
-      "type": "chrome",
+      "type": "msedge",
       "request": "launch",
-      "name": "Debug Client (chrome)",
+      "name": "Debug Client (Edge)",
       "url": "http://localhost:3080",
+      "webRoot": "${workspaceFolder}"
+    },
+    {
+      "type": "msedge",
+      "request": "launch",
+      "name": "Debug Client (Vite)",
+      "url": "http://localhost:3090",
       "webRoot": "${workspaceFolder}"
     }
   ]
