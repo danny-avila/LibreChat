@@ -32,7 +32,7 @@ function getParagraphFields({ paragraphCount, paraTopic, setParaTopic }) {
   }
 
   return (
-    <div className='flex flex-col gap-1 overflow-auto h-[113px]'>
+    <div className='flex flex-col gap-1 overflow-auto h-[100px]'>
       {rows}
     </div>
   );
@@ -113,53 +113,90 @@ export default function EssayTemplate() {
       />
     </div>
 
-  const ParagraphInputs =
+  const FullEssayTopicInputs =
     <div className="grid w-full items-center gap-2">
-      <Label htmlFor="context" className="text-left text-sm font-medium">
-        段落 <small className="opacity-40">(默认值: 3)</small>
-      </Label>
-      <input
-        id='paragraphCount'
-        type="number"
-        min='1'
-        max="5"
-        value={paragraphCount || 0}
-        onChange={(e) => setParagraphCount(e.target.value || '0')}
-        className={inputStyle}
-        disabled={(subType === '文章段落')}
-      />
-      <div className="grid w-full items-center gap-2">
-        <div className='flex flex-row gap-6'>
-          <Label htmlFor="context" className="text-left text-sm font-medium">
-            主题 <small className="opacity-40">(默认值: 空白)</small>
+      <div className='flex flex-row gap-6'>
+        <Label htmlFor="context" className="text-left text-sm font-medium">
+          主题 <small className="opacity-40">(默认值: 空白)</small>
+        </Label>
+        <div className='flex flex-row gap-2 items-center'>
+          <Switch.Root
+            className="w-[30px] h-[16px] bg-blue-500 rounded-full relative data-[state=checked]:bg-violet-700 outline-none cursor-default"
+            id="easy-mode-switch"
+            onCheckedChange={(prev) => setEasyMode(!prev)}
+          >
+            <Switch.Thumb className="block w-[14px] h-[14px] bg-white rounded-full transition-transform duration-100 translate-x-0.5 will-change-transform data-[state=checked]:translate-x-[13px]" />
+          </Switch.Root>
+          <Label id="easy-mode-text" htmlFor="context" className="text-left text-sm font-medium">
+            {easyMode ? '简约' : '微调'}
           </Label>
-          <div className='flex flex-row gap-2 items-center'>
-            <Switch.Root
-              className="w-[30px] h-[16px] bg-blue-500 rounded-full relative data-[state=checked]:bg-violet-700 outline-none cursor-default"
-              id="easy-mode-switch"
-              onCheckedChange={(prev) => setEasyMode(!prev)}
-            >
-              <Switch.Thumb className="block w-[14px] h-[14px] bg-white rounded-full transition-transform duration-100 translate-x-0.5 will-change-transform data-[state=checked]:translate-x-[13px]" />
-            </Switch.Root>
-            <Label id="easy-mode-text" htmlFor="context" className="text-left text-sm font-medium">
-              {easyMode ? '简约' : '微调'}
-            </Label>
-          </div>
         </div>
-        {
-          easyMode ? <TextareaAutosize
-            id="topic"
-            disabled={false}
-            value={topic || ''}
-            onChange={(e) => setTopic(e.target.value || '')}
-            className={cn(
-              defaultTextProps,
-              'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2'
-            )}
-          /> : paragraphFields
-        }
       </div>
+      {
+        easyMode ? <TextareaAutosize
+          id="essay-topic"
+          disabled={false}
+          value={topic || ''}
+          onChange={(e) => setTopic(e.target.value || '')}
+          className={cn(
+            defaultTextProps,
+            'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2'
+          )}
+        /> : paragraphFields
+      }
     </div>
+
+  const EssayParagraphInputs =
+    <div className="grid w-full items-center gap-1">
+      <Label htmlFor="context" className="text-left text-sm font-medium">
+        主题 <small className="opacity-40">(默认值: 空白)</small>
+      </Label>
+      <TextareaAutosize
+        id="essay-topic"
+        disabled={false}
+        value={topic || ''}
+        onChange={(e) => setTopic(e.target.value || '')}
+        className={cn(
+          defaultTextProps,
+          'flex max-h-[300px] min-h-[50px] w-full resize-none px-3 py-2'
+        )}
+      />
+      <TextareaAutosize
+        id="essay-paragraph-topic"
+        disabled={false}
+        value={paraTopic[0] || ''}
+        onChange={
+          (e) => {
+            const newTopics = structuredClone(paraTopic);
+            newTopics[0] = e.target.value || '';
+            setParaTopic(newTopics)
+          }
+        }
+        className={cn(
+          defaultTextProps,
+          'flex max-h-[300px] min-h-[50px] w-full resize-none px-3 py-2'
+        )}
+      />
+    </div>
+
+  const ParagraphCountInput =
+  <div className="grid w-full items-center gap-2">
+    <Label htmlFor="context" className="text-left text-sm font-medium">
+      段落 <small className="opacity-40">(默认值: 3)</small>
+    </Label>
+    <input
+      id='paragraphCount'
+      type="number"
+      min='1'
+      max="5"
+      value={paragraphCount || 0}
+      onChange={(e) => setParagraphCount(e.target.value || '0')}
+      className={inputStyle}
+      disabled={(subType === '文章段落')}
+    />
+    {(subType === '全文') && FullEssayTopicInputs}
+    {(subType === '文章段落') && EssayParagraphInputs}
+  </div>
 
   const ReferenceText =
     <div className="grid w-full items-center gap-2">
@@ -204,7 +241,7 @@ export default function EssayTemplate() {
   const LayoutRight = () => {
     return(
       <>
-        {ParagraphInputs}
+        {ParagraphCountInput}
         {ReferenceText}
       </>
     );
@@ -234,22 +271,6 @@ export default function EssayTemplate() {
       case ('全文'): return getEssayPrompt();
     }
   }
-
-  const easyModeSwitch = document.getElementById('easy-mode-switch');
-  const easyModeText = document.getElementById('easy-mode-text');
-
-  useEffect(() =>{
-    if (subType === '文章段落') {
-      if (!easyMode) {
-        easyModeSwitch?.click();
-      }
-      easyModeSwitch?.setAttribute('hidden', '');
-      easyModeText?.setAttribute('hidden', '');
-    } else {
-      easyModeSwitch?.removeAttribute('hidden');
-      easyModeText?.removeAttribute('hidden');
-    }
-  }, [subType])
 
   return({ SubType, LayoutLeft, LayoutRight, getPromptText })
 }
