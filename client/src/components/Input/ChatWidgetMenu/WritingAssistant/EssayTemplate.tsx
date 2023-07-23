@@ -154,6 +154,8 @@ export default function EssayTemplate() {
       </Label>
       <TextareaAutosize
         id="essay-topic"
+        title='文章主题'
+        placeholder='文章主题'
         disabled={false}
         value={topic || ''}
         onChange={(e) => setTopic(e.target.value || '')}
@@ -164,6 +166,8 @@ export default function EssayTemplate() {
       />
       <TextareaAutosize
         id="essay-paragraph-topic"
+        title='段落主题'
+        placeholder='段落主题'
         disabled={false}
         value={paraTopic[0] || ''}
         onChange={
