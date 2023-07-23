@@ -123,6 +123,7 @@ export default function EssayTemplate() {
           <Switch.Root
             className="w-[30px] h-[16px] bg-blue-500 rounded-full relative data-[state=checked]:bg-violet-700 outline-none cursor-default"
             id="easy-mode-switch"
+            checked={!easyMode}
             onCheckedChange={(prev) => setEasyMode(!prev)}
           >
             <Switch.Thumb className="block w-[14px] h-[14px] bg-white rounded-full transition-transform duration-100 translate-x-0.5 will-change-transform data-[state=checked]:translate-x-[13px]" />
