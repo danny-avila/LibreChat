@@ -210,6 +210,31 @@ export default function EssayTemplate() {
     );
   }
 
+  function getEssayPrompt() {
+    if (easyMode) {
+      return(
+        `以${level}的水平写一篇${wordCount}字的作文。作文要分成${paragraphCount}个段落，主题是：${topic}`
+      );
+    } else {
+      const topics: string[] = [];
+
+      topics.push(`以${level}的水平写一篇${wordCount}字的作文。作文要分成${paragraphCount}个段落，第1段的主题是：${paraTopic[0]}。`);
+
+      for (let i = 1; i < paraTopic.length; i++) {
+        topics.push(`第${i + 1}段的主题是${paraTopic[i]}。`);
+      }
+
+      return topics.join('');
+    }
+  }
+
+  const getPromptText = () => {
+    switch (subType) {
+      default: return getEssayPrompt();
+      case ('全文'): return getEssayPrompt();
+    }
+  }
+
   const easyModeSwitch = document.getElementById('easy-mode-switch');
   const easyModeText = document.getElementById('easy-mode-text');
 
@@ -226,5 +251,5 @@ export default function EssayTemplate() {
     }
   }, [subType])
 
-  return({ SubType, LayoutLeft, LayoutRight })
+  return({ SubType, LayoutLeft, LayoutRight, getPromptText })
 }
