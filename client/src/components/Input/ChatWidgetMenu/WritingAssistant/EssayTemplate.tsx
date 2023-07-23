@@ -118,11 +118,12 @@ export default function EssayTemplate() {
       <input
         id='paragraphCount'
         type="number"
-        min='0'
-        max="3"
+        min='1'
+        max="5"
         value={paragraphCount || 0}
         onChange={(e) => setParagraphCount(e.target.value || '0')}
         className={inputStyle}
+        disabled={(subType === '文章段落')}
       />
       <div className="grid w-full items-center gap-2">
         <div className='flex flex-row gap-6'>
