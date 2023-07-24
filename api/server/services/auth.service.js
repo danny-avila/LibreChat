@@ -188,31 +188,40 @@ const resetPassword = async (userId, token, password) => {
  * @returns
  */
 const setAuthTokens = (userId, res) => {
-  const user = await User.findOne({ _id: userId });
-  const token = await user.generateToken();
+  return User.findOne({ _id: userId })
+    .then((user) => {
+      userObj = user;
+      return user.generateToken();
+    })
+    .then((token) => {
+      let session = new Session({ user: userId });
+      return session.generateRefreshToken()
+        .then((refreshToken) => ({ token, refreshToken }));
+    })
+    .then(({ token, refreshToken }) => {
+      const tokenExpires = eval(process.env.SESSION_EXPIRY);
+      const refreshTokenExpires = eval(process.env.REFRESH_TOKEN_EXPIRY);
 
-  let session = new Session({ user: userId });
-  let refreshToken = await session.generateRefreshToken();
+      res.cookie('token', token, {
+        expires: new Date(Date.now() + tokenExpires),
+        httpOnly: false,
+        secure: isProduction,
+      });
 
-  const tokenExpires = eval(process.env.SESSION_EXPIRY);
-  const refreshTokenExpires = eval(process.env.REFRESH_TOKEN_EXPIRY);
+      res.cookie('refreshToken', refreshToken, {
+        expires: new Date(Date.now() + refreshTokenExpires),
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'strict',
+        signed: true,
+      });
 
-  res.cookie('token', token, {
-      expires: new Date(Date.now() + tokenExpires),
-      httpOnly: false,
-      secure: isProduction,
-    }
-  );
-
-  res.cookie('refreshToken', refreshToken, {
-      expires: new Date(Date.now() + refreshTokenExpires),
-      httpOnly: true, // This cookie must be httpOnly
-      secure: isProduction,
-      sameSite: 'strict',
-      signed: true,
-    }
-  );
-  return token;
+      return token;
+    })
+    .catch((error) => {
+       console.error('Error in setting authentication tokens:', error);
+      throw error;
+    });
 };
 
 module.exports = {
