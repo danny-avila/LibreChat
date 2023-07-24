@@ -1,9 +1,50 @@
+const axios = require('axios');
 const express = require('express');
 const router = express.Router();
 const { availableTools } = require('../../app/clients/tools');
 const { addOpenAPISpecs } = require('../../app/clients/tools/util/addOpenAPISpecs');
 
-const getOpenAIModels = (opts = { azure: false }) => {
+const openAIApiKey = process.env.OPENAI_API_KEY;
+const azureOpenAIApiKey = process.env.AZURE_API_KEY;
+const userProvidedOpenAI = openAIApiKey
+  ? openAIApiKey === 'user_provided'
+  : azureOpenAIApiKey === 'user_provided';
+
+const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _models = []) => {
+  let models = _models.slice() ?? [];
+  if (opts.azure) {
+    /* TODO: Add Azure models from api/models */
+    return models;
+  }
+
+  let basePath = 'https://api.openai.com/v1/';
+  const reverseProxyUrl = process.env.OPENAI_REVERSE_PROXY;
+  if (reverseProxyUrl) {
+    basePath = reverseProxyUrl.match(/.*v1/)[0];
+  }
+
+  if (basePath.includes('v1')) {
+    try {
+      const res = await axios.get(`${basePath}/models`, {
+        headers: {
+          Authorization: `Bearer ${openAIApiKey}`,
+        },
+      });
+
+      models = res.data.data.map((item) => item.id);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  if (!reverseProxyUrl) {
+    const regex = /(text-davinci-003|gpt-)/;
+    models = models.filter((model) => regex.test(model));
+  }
+  return models;
+};
+
+const getOpenAIModels = async (opts = { azure: false, plugins: false }) => {
   let models = [
     'gpt-4',
     'gpt-4-0613',
@@ -11,13 +52,34 @@ const getOpenAIModels = (opts = { azure: false }) => {
     'gpt-3.5-turbo-16k',
     'gpt-3.5-turbo-0613',
     'gpt-3.5-turbo-0301',
-    'text-davinci-003',
   ];
-  const key = opts.azure ? 'AZURE_OPENAI_MODELS' : 'OPENAI_MODELS';
-  if (process.env[key]) {
-    models = String(process.env[key]).split(',');
+
+  if (!opts.plugins) {
+    models.push('text-davinci-003');
   }
 
+  let key;
+  if (opts.azure) {
+    key = 'AZURE_OPENAI_MODELS';
+  } else if (opts.plugins) {
+    key = 'PLUGIN_MODELS';
+  } else {
+    key = 'OPENAI_MODELS';
+  }
+
+  if (process.env[key]) {
+    models = String(process.env[key]).split(',');
+    return models;
+  }
+
+  if (userProvidedOpenAI) {
+    console.warn(
+      `When setting OPENAI_API_KEY to 'user_provided', ${key} must be set manually or default values will be used`,
+    );
+    return models;
+  }
+
+  models = await fetchOpenAIModels(opts, models);
   return models;
 };
 
@@ -39,22 +101,6 @@ const getAnthropicModels = () => {
   ];
   if (process.env.ANTHROPIC_MODELS) {
     models = String(process.env.ANTHROPIC_MODELS).split(',');
-  }
-
-  return models;
-};
-
-const getPluginModels = () => {
-  let models = [
-    'gpt-4',
-    'gpt-4-0613',
-    'gpt-3.5-turbo',
-    'gpt-3.5-turbo-16k',
-    'gpt-3.5-turbo-0613',
-    'gpt-3.5-turbo-0301',
-  ];
-  if (process.env.PLUGIN_MODELS) {
-    models = String(process.env.PLUGIN_MODELS).split(',');
   }
 
   return models;
@@ -93,24 +139,19 @@ router.get('/', async function (req, res) {
     key || palmUser
       ? { userProvide: palmUser, availableModels: ['chat-bison', 'text-bison', 'codechat-bison'] }
       : false;
-  const openAIApiKey = process.env.OPENAI_API_KEY;
-  const azureOpenAIApiKey = process.env.AZURE_API_KEY;
-  const userProvidedOpenAI = openAIApiKey
-    ? openAIApiKey === 'user_provided'
-    : azureOpenAIApiKey === 'user_provided';
   const openAI = openAIApiKey
-    ? { availableModels: getOpenAIModels(), userProvide: openAIApiKey === 'user_provided' }
+    ? { availableModels: await getOpenAIModels(), userProvide: openAIApiKey === 'user_provided' }
     : false;
   const azureOpenAI = azureOpenAIApiKey
     ? {
-      availableModels: getOpenAIModels({ azure: true }),
+      availableModels: await getOpenAIModels({ azure: true }),
       userProvide: azureOpenAIApiKey === 'user_provided',
     }
     : false;
   const gptPlugins =
     openAIApiKey || azureOpenAIApiKey
       ? {
-        availableModels: getPluginModels(),
+        availableModels: await getOpenAIModels({ plugins: true }),
         plugins,
         availableAgents: ['classic', 'functions'],
         userProvide: userProvidedOpenAI,
