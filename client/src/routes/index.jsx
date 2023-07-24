@@ -16,7 +16,7 @@ const AuthLayout = () => (
 export const router = createBrowserRouter([
   {
     path: 'register/:userId?',
-    element: <Registration /> 
+    element: <Registration />
   },
   {
     path: 'forgot-password',
