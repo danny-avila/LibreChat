@@ -8,7 +8,7 @@ import { ApiErrorBoundaryProvider } from './hooks/ApiErrorBoundaryContext';
 
 const container = document.getElementById('root');
 const root = createRoot(container);
-const trackingId = process.env.GOOGLE_ANALYTICS_TRACKING_ID;
+const trackingId = import.meta.env.VITE_REACT_APP_GOOGLE_ANALYTICS_TRACKING_ID;
 
 if (trackingId) {
   ReactGA.initialize(trackingId);
