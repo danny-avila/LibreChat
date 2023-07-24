@@ -4,7 +4,7 @@ const logoutController = async (req, res) => {
   const { signedCookies = {} } = req;
   const { refreshToken } = signedCookies;
   try {
-    const logout = await logoutUser(req.user, refreshToken);
+    const logout = await logoutUser(req.user._id, refreshToken);
     const { status, message } = logout;
     res.clearCookie('token');
     res.clearCookie('refreshToken');
