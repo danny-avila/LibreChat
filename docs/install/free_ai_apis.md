@@ -33,3 +33,10 @@ It's worth noting that not all models listed by their API will work, with or wit
 You can set `OPENAI_API_KEY=user_provided` if you would like the user to add their own Chimera API key, just be sure you specify the models with `OPENAI_MODELS` in this case since they won't be able to be fetched without an admin set API key.
 
 ## That's it! You're all set. 🎉
+
+### Here's me using Llama2 via ChimeraGPT
+
+![Screenshot 2023-07-23 201709](https://github.com/danny-avila/LibreChat/assets/110412045/f3ce0226-152c-4d53-9a6e-6370156b0735)
+
+### Plugins also work with this reverse proxy (OpenAI models). [More info on plugins here](https://docs.librechat.ai/features/plugins/introduction.html)
+![Screenshot 2023-07-23 202426](https://github.com/danny-avila/LibreChat/assets/110412045/45d0f79f-0963-49c0-9d1c-c292d1c25588)
