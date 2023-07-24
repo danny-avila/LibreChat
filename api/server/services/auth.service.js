@@ -187,42 +187,37 @@ const resetPassword = async (userId, token, password) => {
  * @param {Object} res
  * @returns
  */
-const setAuthTokens = (userId, res) => {
-  return User.findOne({ _id: userId })
-    .then((user) => {
-      return user.generateToken();
-    })
-    .then((token) => {
-      let session = new Session({ user: userId });
-      return session.generateRefreshToken()
-        .then((refreshToken) => ({ token, refreshToken }));
-    })
-    .then(({ token, refreshToken }) => {
-      const tokenExpires = eval(process.env.SESSION_EXPIRY);
-      const refreshTokenExpires = eval(process.env.REFRESH_TOKEN_EXPIRY);
+const setAuthTokens = async (userId, res) => {
+  try {
+    const user = await User.findOne({ _id: userId });
+    const token = await user.generateToken();
 
-      res.cookie('token', token, {
-        expires: new Date(Date.now() + tokenExpires),
-        httpOnly: false,
-        secure: isProduction,
-      });
+    const session = new Session({ user: userId });
+    const refreshToken = await session.generateRefreshToken();
 
-      res.cookie('refreshToken', refreshToken, {
-        expires: new Date(Date.now() + refreshTokenExpires),
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: 'strict',
-        signed: true,
-      });
+    const tokenExpires = eval(process.env.SESSION_EXPIRY);
+    const refreshTokenExpires = eval(process.env.REFRESH_TOKEN_EXPIRY);
 
-      return token;
-    })
-    .catch((error) => {
-      console.log('Error in setting authentication tokens:', error);
-      throw error;
+    res.cookie('token', token, {
+      expires: new Date(Date.now() + tokenExpires),
+      httpOnly: false,
+      secure: isProduction,
     });
-};
 
+    res.cookie('refreshToken', refreshToken, {
+      expires: new Date(Date.now() + refreshTokenExpires),
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'strict',
+      signed: true,
+    });
+
+    return token;
+  } catch (error) {
+    console.log('Error in setting authentication tokens:', error);
+    throw error;
+  }
+};
 
 module.exports = {
   registerUser,
