@@ -7,23 +7,23 @@ const rateLimit = async (req, res, next) => {
   const subscriptionStatus = req.user.subscriptionStatus; // Get user's subscription status
   const model = req.body.model;
 
-  if (model === 'gpt-4') {
-    // Check if the user is not subscribed.
-    if (subscriptionStatus !== 'active') {
+  // Set rate limit based on subscription status and model
+  let maxMessagesPerDay;
+  if (subscriptionStatus === 'active') {
+    if (model === 'gpt-4') {
+      maxMessagesPerDay = 25; // Limit for 'gpt-4' model for subscribed users
+    } else {
+      maxMessagesPerDay = 100; // Limit for other models for subscribed users
+    }
+  } else {
+    maxMessagesPerDay = 25; // Limit for non-subscribed users
+    if (model === 'gpt-4') {
       // Use JSON format to return the error.
       return res.status(403).json({
         code: "subscription_required",
         text: "The gpt-4 model is only available to subscribed users."
       });
     }
-  }  
-
-  // Set rate limit based on subscription status
-  let maxMessagesPerDay;
-  if (subscriptionStatus === 'active') {
-    maxMessagesPerDay = 100; // For example
-  } else {
-    maxMessagesPerDay = 25;
   }
 
   // Get today's date
