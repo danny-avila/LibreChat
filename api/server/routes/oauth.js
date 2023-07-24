@@ -26,7 +26,7 @@ router.get(
     scope: ['openid', 'profile', 'email'],
   }),
   (req, res) => {
-    await setAuthTokens(req.user._id, res);
+    setAuthTokens(req.user._id, res);
     res.redirect(domains.client);
   },
 );
@@ -48,7 +48,7 @@ router.get(
     scope: ['public_profile', 'email'],
   }),
   (req, res) => {
-    await setAuthTokens(req.user._id, res);
+    setAuthTokens(req.user._id, res);
     res.redirect(domains.client);
   },
 );
@@ -68,7 +68,7 @@ router.get(
     session: false,
   }),
   (req, res) => {
-    await setAuthTokens(req.user._id, res);
+    setAuthTokens(req.user._id, res);
     res.redirect(domains.client);
   },
 );
@@ -90,7 +90,7 @@ router.get(
     scope: ['user:email', 'read:user'],
   }),
   (req, res) => {
-    await setAuthTokens(req.user._id, res);
+    setAuthTokens(req.user._id, res);
     res.redirect(domains.client);
   },
 );
@@ -112,7 +112,7 @@ router.get(
     scope: ['identify', 'email'],
   }),
   (req, res) => {
-    await setAuthTokens(req.user._id, res);
+    setAuthTokens(req.user._id, res);
     res.redirect(domains.client);
   },
 );
