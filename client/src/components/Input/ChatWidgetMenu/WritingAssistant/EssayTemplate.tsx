@@ -185,23 +185,23 @@ export default function EssayTemplate() {
     </div>
 
   const ParagraphCountInput =
-  <div className="grid w-full items-center gap-2">
-    <Label htmlFor="context" className="text-left text-sm font-medium">
-      段落 <small className="opacity-40">(默认值: 3)</small>
-    </Label>
-    <input
-      id='paragraphCount'
-      type="number"
-      min='1'
-      max="5"
-      value={paragraphCount || 0}
-      onChange={(e) => setParagraphCount(e.target.value || '0')}
-      className={inputStyle}
-      disabled={(subType === '文章段落')}
-    />
-    {(subType === '全文') && FullEssayTopicInputs}
-    {(subType === '文章段落') && EssayParagraphInputs}
-  </div>
+    <div className="grid w-full items-center gap-2">
+      <Label htmlFor="context" className="text-left text-sm font-medium">
+        段落 <small className="opacity-40">(默认值: 3)</small>
+      </Label>
+      <input
+        id='paragraphCount'
+        type="number"
+        min='1'
+        max="5"
+        value={paragraphCount || 0}
+        onChange={(e) => setParagraphCount(e.target.value || '0')}
+        className={inputStyle}
+        disabled={(subType === '文章段落')}
+      />
+      {(subType === '全文') && FullEssayTopicInputs}
+      {(subType === '文章段落') && EssayParagraphInputs}
+    </div>
 
   const ReferenceText =
     <div className="grid w-full items-center gap-2">
@@ -270,10 +270,17 @@ export default function EssayTemplate() {
     }
   }
 
+  function getEssayParagraphPrompt() {
+    return(
+      `以${level}的水平写一篇${wordCount}字的作文段落。作文主题是：${topic}。段落的主题是：${paraTopic[0]}。`
+    );
+  }
+
   const getPromptText = () => {
     switch (subType) {
       default: return getEssayPrompt();
       case ('全文'): return getEssayPrompt();
+      case ('文章段落'): return getEssayParagraphPrompt();
     }
   }
 
