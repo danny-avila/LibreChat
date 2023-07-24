@@ -101,14 +101,15 @@ const intercept401 = async (req, res, next) => {
         refreshAttempted = true;
         await refreshController(req, res, next);
       } catch (error) {
-        res.status(401).json({ error: 'Unauthorized', message: 'Authentication failed.' });
+        res.status(401).send('Token Refresh Failed');
       }
     } else {
        refreshAttempted = false;
-       res.status(401).json({ error: 'Unauthorized', message: 'Authentication failed.' });
+       res.status(401).send('Refresh Already Attempted');
        next();
     }
   } else {
+    res.status(401).send('Refresh token not provided');
     next();
   }
   
