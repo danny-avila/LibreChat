@@ -28,14 +28,14 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
   };
 
   useEffect(() => {
-    setTitle(preset?.title || 'My Preset');
+    setTitle(preset?.title || localize(lang, 'com_endpoint_my_preset'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title="Save As Preset"
+        title={localize(lang, 'com_endpoint_save_as_preset')}
         main={
           <div className="grid w-full items-center gap-2">
             <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">

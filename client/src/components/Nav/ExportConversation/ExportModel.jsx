@@ -17,6 +17,7 @@ import { useScreenshot } from '~/utils/screenshotContext';
 
 import store from '~/store';
 import cleanupPreset from '~/utils/cleanupPreset.js';
+import { localize } from '~/localization/Translation';
 
 export default function ExportModel({ open, onOpenChange }) {
   const { captureScreenshot } = useScreenshot();
@@ -31,6 +32,8 @@ export default function ExportModel({ open, onOpenChange }) {
   const conversation = useRecoilValue(store.conversation) || {};
   const messagesTree = useRecoilValue(store.messagesTree) || [];
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
+
+  const lang = useRecoilValue(store.lang);
 
   const getSiblingIdx = useRecoilCallback(
     ({ snapshot }) =>
@@ -349,13 +352,13 @@ export default function ExportModel({ open, onOpenChange }) {
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="filename" className="text-left text-sm font-medium">
-                  Filename
+                  {localize(lang, 'com_nav_export_filename')}
                 </Label>
                 <Input
                   id="filename"
                   value={filename}
                   onChange={(e) => setFileName(filenamify(e.target.value || ''))}
-                  placeholder="Set the filename"
+                  placeholder={localize(lang, 'com_nav_export_filename_placeholder')}
                   className={cn(
                     defaultTextProps,
                     'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
@@ -364,7 +367,7 @@ export default function ExportModel({ open, onOpenChange }) {
               </div>
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="type" className="text-left text-sm font-medium">
-                  Type
+                  {localize(lang, 'com_nav_export_type')}
                 </Label>
                 <Dropdown
                   id="type"
@@ -383,7 +386,7 @@ export default function ExportModel({ open, onOpenChange }) {
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <div className="grid w-full items-center gap-2">
                   <Label htmlFor="includeOptions" className="text-left text-sm font-medium">
-                    Include endpoint options
+                    {localize(lang, 'com_nav_export_include_endpoint_options')}
                   </Label>
                   <div className="flex h-[40px] w-full items-center space-x-3">
                     <Checkbox
@@ -397,14 +400,16 @@ export default function ExportModel({ open, onOpenChange }) {
                       htmlFor="includeOptions"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                     >
-                      {exportOptionsSupport ? 'Enabled' : 'Not Supported'}
+                      {exportOptionsSupport
+                        ? localize(lang, 'com_nav_enabled')
+                        : localize(lang, 'com_nav_not_supported')}
                     </label>
                   </div>
                 </div>
               </div>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="exportBranches" className="text-left text-sm font-medium">
-                  Export all message branches
+                  {localize(lang, 'com_nav_export_all_message_branches')}
                 </Label>
                 <div className="flex h-[40px] w-full items-center space-x-3">
                   <Checkbox
@@ -418,14 +423,16 @@ export default function ExportModel({ open, onOpenChange }) {
                     htmlFor="exportBranches"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                   >
-                    {exportBranchesSupport ? 'Enabled' : 'Not Supported'}
+                    {exportBranchesSupport
+                      ? localize(lang, 'com_nav_enabled')
+                      : localize(lang, 'com_nav_not_supported')}
                   </label>
                 </div>
               </div>
               {type === 'json' ? (
                 <div className="grid w-full items-center gap-2">
                   <Label htmlFor="recursive" className="text-left text-sm font-medium">
-                    Recursive or sequential?
+                    {localize(lang, 'com_nav_export_recursive_or_sequential')}
                   </Label>
                   <div className="flex h-[40px] w-full items-center space-x-3">
                     <Checkbox
@@ -438,7 +445,7 @@ export default function ExportModel({ open, onOpenChange }) {
                       htmlFor="recursive"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                     >
-                      Recursive
+                      {localize(lang, 'com_nav_export_recursive')}
                     </label>
                   </div>
                 </div>
@@ -452,7 +459,7 @@ export default function ExportModel({ open, onOpenChange }) {
               onClick={exportConversation}
               className="dark:hover:gray-400 border-gray-700 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
             >
-              Export
+              {localize(lang, 'com_endpoint_export')}
             </DialogButton>
           </>
         }

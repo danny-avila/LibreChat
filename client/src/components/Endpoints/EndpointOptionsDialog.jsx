@@ -48,7 +48,7 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogTemplate
-          title={`${title || 'View Options'} - ${endpointName}`}
+          title={`${title || localize(lang, 'com_endpoint_view_options')} - ${endpointName}`}
           className="max-w-full sm:max-w-4xl"
           main={
             <div className="flex w-full flex-col items-center gap-2">

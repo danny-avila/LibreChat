@@ -42,6 +42,11 @@ export const localize = (langCode: string, phraseKey: string, ...values: string[
     return lang[phraseKey].format(...values);
   }
 
-  // Fall back logic to cover untranslated phrases
-  return English[phraseKey].format(...values);
+  if (phraseKey in English) {
+    // Fall back logic to cover untranslated phrases
+    return English[phraseKey].format(...values);
+  }
+
+  // In case the key is not defined, return empty instead of throw errors.
+  return '';
 };
