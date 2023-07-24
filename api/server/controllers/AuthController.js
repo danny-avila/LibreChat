@@ -88,6 +88,7 @@ const refreshController = async (req, res, next) => {
     }
   } else {
     res.status(401).send('Refresh token not provided');
+    next();
   }
 };    
 
