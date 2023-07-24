@@ -92,17 +92,24 @@ const refreshController = async (req, res, next) => {
 };    
 
 const intercept401 = async (req, res, next) => {
-  if (!refreshAttempted) {
-    try {
-      refreshAttempted = true;
-      await refreshController(req, res, next);
-    } catch (error) {
-      res.status(401).json({ error: 'Unauthorized', message: 'Authentication failed.' });
+  const { signedCookies = {} } = req;
+  const { refreshToken } = signedCookies;
+
+  if (!refreshToken) {
+    if (!refreshAttempted) {
+      try {
+        refreshAttempted = true;
+        await refreshController(req, res, next);
+      } catch (error) {
+        res.status(401).json({ error: 'Unauthorized', message: 'Authentication failed.' });
+      }
+    } else {
+       refreshAttempted = false;
+       res.status(401).json({ error: 'Unauthorized', message: 'Authentication failed.' });
+       next();
     }
   } else {
-     refreshAttempted = false;
-     res.status(401).json({ error: 'Unauthorized', message: 'Authentication failed.' });
-     next();
+    next();
   }
   
 };
