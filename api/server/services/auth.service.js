@@ -218,7 +218,7 @@ const setAuthTokens = (userId, res) => {
       return token;
     })
     .catch((error) => {
-      // Handle any errors that occurred during the Promise chain
+      console.log('Error in setting authentication tokens:', error);
       throw error;
     });
 };
