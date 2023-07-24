@@ -105,7 +105,7 @@ export default function EssayTemplate() {
       <input
         id='wordCount'
         type="number"
-        min={'0'}
+        min={'1'}
         max={'500'}
         value={wordCount || 0}
         onChange={(e) => setWordCount(e.target.value || '0')}
@@ -206,7 +206,7 @@ export default function EssayTemplate() {
   const ReferenceText =
     <div className="grid w-full items-center gap-2">
       <Label htmlFor="context" className="text-left text-sm font-medium">
-        文本引用 <small className="opacity-40">(默认值: 无)</small>
+        文本引用 <small className="opacity-40">(如若引用文本，须填写文本类型以及其名字与作者)</small>
       </Label>
       <input
         id='refTitleInput'
@@ -253,7 +253,8 @@ export default function EssayTemplate() {
   }
 
   function getRefText() {
-    return(`引用${refAuthor}的${refType}${refTitle}。`);
+    if (refAuthor && refType && refTitle) return(`引用${refAuthor}的${refType}《${refTitle}》。`);
+    else return('');
   }
 
   function getEssayPrompt() {
