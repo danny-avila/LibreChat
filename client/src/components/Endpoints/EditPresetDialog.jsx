@@ -169,7 +169,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title={`${title || 'Edit Preset'} - ${preset?.title}`}
+        title={`${title || localize(lang, 'com_endpoint_edit_preset')} - ${preset?.title}`}
         className="h-[675px] max-w-full sm:max-w-4xl "
         main={
           <div className="flex w-full flex-col items-center gap-2 md:h-[475px]">
