@@ -102,7 +102,9 @@ const intercept401 = async (req, res, next) => {
   } else {
      refreshAttempted = false;
      res.status(401).json({ error: 'Unauthorized', message: 'Authentication failed.' });
+     next();
   }
+  
 };
 
 module.exports = {
