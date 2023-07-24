@@ -1,6 +1,8 @@
 import English from './languages/Eng';
 import Chinese from './languages/Zh';
 import Italy from './languages/It';
+import Portuguese from './languages/Br';
+import Spanish from './languages/Es';
 // === import additional language files here === //
 
 // New method on String allow using "{\d}" placeholder for
@@ -29,6 +31,12 @@ export const getTranslations = (langCode: string) => {
   }
   if (langCode === 'it') {
     return Italy;
+  }
+  if (langCode === 'Br') {
+    return Portuguese;
+  }
+  if (langCode === 'Es') {
+    return Spanish;
   }
   // === add conditionals here for additional languages here === //
   return English; // default to English
