@@ -1,4 +1,5 @@
 const User = require('../../../models/User');
+const { setAuthTokens } = require('../../services/auth.service');
 
 const loginController = async (req, res) => {
   try {
@@ -10,15 +11,7 @@ const loginController = async (req, res) => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    const token = req.user.generateToken();
-    const expires = eval(process.env.SESSION_EXPIRY);
-
-    // Add token to cookie
-    res.cookie('token', token, {
-      expires: new Date(Date.now() + expires),
-      httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
-    });
+    const token = await setAuthTokens(user._id, res);
 
     return res.status(200).send({ token, user });
   } catch (err) {
