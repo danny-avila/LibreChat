@@ -1,12 +1,14 @@
 import { forwardRef, useState, useEffect } from 'react';
 import { Search, X } from 'lucide-react';
-import { useRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import store from '~/store';
+import { localize } from '~/localization/Translation';
 
 const SearchBar = forwardRef((props, ref) => {
   const { clearSearch } = props;
   const [searchQuery, setSearchQuery] = useRecoilState(store.searchQuery);
   const [showClearIcon, setShowClearIcon] = useState(false);
+  const lang = useRecoilValue(store.lang);
 
   const handleKeyUp = (e) => {
     const { value } = e.target;
@@ -44,7 +46,7 @@ const SearchBar = forwardRef((props, ref) => {
         onKeyDown={(e) => {
           e.code === 'Space' ? e.stopPropagation() : null;
         }}
-        placeholder="Search messages"
+        placeholder={localize(lang, 'com_nav_search_placeholder')}
         onKeyUp={handleKeyUp}
       />
       <X
