@@ -7,6 +7,7 @@ const path = require('path');
 const cors = require('cors');
 const routes = require('./routes');
 const errorController = require('./controllers/ErrorController');
+const { intercept401 } = require('./controllers/AuthController');
 const passport = require('passport');
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
@@ -23,6 +24,7 @@ const {
   setupOpenId,
 } = require('../strategies');
 
+
 // Init the config and validate it
 const config = require('../../config/loader');
 config.validate(); // Validate the config
@@ -34,6 +36,7 @@ config.validate(); // Validate the config
   await indexSync();
 
   const app = express();
+  app.use(intercept401);
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
