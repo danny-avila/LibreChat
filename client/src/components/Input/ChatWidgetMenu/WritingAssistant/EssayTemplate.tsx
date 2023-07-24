@@ -5,6 +5,19 @@ import * as Switch from '@radix-ui/react-switch';
 import { useState } from 'react';
 import { cn } from '~/utils/';
 
+type Cache = {
+  subType: string,
+  level: string,
+  wordCount: string,
+  paragraphCount: string,
+  easyMode: boolean,
+  topic: string,
+  paraTopic: string[],
+  refAuthor: string,
+  refTitle: string,
+  refType: string
+}
+
 function getParagraphFields({ paragraphCount, paraTopic, setParaTopic }) {
   const numOfParagraph = Number(paragraphCount);
   const defaultTextProps =
@@ -50,18 +63,32 @@ export default function EssayTemplate() {
     'flex max-h-[300px] min-h-[25px] w-full resize-none px-3 py-2'
   );
   const defaultSubType: string = '全文';
-  const defaultAuthor: string = '学士';
+  const defaultAuthor: string = '高中生';
+  const defaultWordCount: string = '500';
+  const defaultParagraphCount: string = '3'
 
   const [level, setLevel] = useState<string>(defaultAuthor);
   const [subType, setSubType] = useState<string>(defaultSubType);
-  const [wordCount, setWordCount] = useState<string>('500');
+  const [wordCount, setWordCount] = useState<string>(defaultWordCount);
   const [topic, setTopic] = useState<string>('');
-  const [paragraphCount, setParagraphCount] = useState<string>('3');
+  const [paragraphCount, setParagraphCount] = useState<string>(defaultParagraphCount);
   const [easyMode, setEasyMode] = useState<boolean>(true);
   const [paraTopic, setParaTopic] = useState<string[]>(new Array(Number(paragraphCount)).fill(''));
   const [refType, setRefType] = useState<string>('');
   const [refAuthor, setRefAuthor] = useState<string>('');
   const [refTitle, setRefTitle] = useState<string>('');
+  const [cache, setCache] = useState<Cache>({
+    subType: defaultSubType,
+    level: defaultAuthor,
+    wordCount: defaultWordCount,
+    paragraphCount: defaultParagraphCount,
+    easyMode: true,
+    topic: '',
+    paraTopic: [],
+    refAuthor: '',
+    refTitle: '',
+    refType: ''
+  });
 
   const paragraphFields = getParagraphFields({ paragraphCount, paraTopic, setParaTopic });
 
@@ -83,7 +110,7 @@ export default function EssayTemplate() {
   const Author =
     <div className="grid w-full items-center gap-y-2">
       <Label htmlFor="toneStyle-dropdown" className="text-left text-sm font-medium">
-        写作水平 <small className="opacity-40">(默认值: 学士)</small>
+        写作水平 <small className="opacity-40">(默认值: 高中生)</small>
       </Label>
       <SelectDropDown
         title={''}
@@ -291,5 +318,42 @@ export default function EssayTemplate() {
     }
   }
 
-  return({ SubType, LayoutLeft, LayoutRight, getPromptText })
+  const setExample = () => {
+    setCache({
+      subType: subType,
+      level: level,
+      wordCount: wordCount,
+      paragraphCount: paragraphCount,
+      easyMode: easyMode,
+      topic: topic,
+      paraTopic: paraTopic,
+      refAuthor: refAuthor,
+      refTitle: refTitle,
+      refType: refType
+    });
+    setSubType('全文');
+    setLevel('高中生');
+    setWordCount('500');
+    setParagraphCount('3');
+    setEasyMode(true);
+    setTopic('AI如何造福或祸害了人类');
+    setRefAuthor('壹知识露哥');
+    setRefTitle('AI技术欺骗人类，霍金：不要滥用，否则对人类产生灾难性影响');
+    setRefType('百度帖子');
+  }
+
+  const restoreFields = () => {
+    setSubType(cache.subType);
+    setLevel(cache.level);
+    setWordCount(cache.wordCount);
+    setParagraphCount(cache.paragraphCount);
+    setEasyMode(cache.easyMode);
+    setTopic(cache.topic);
+    setParaTopic(cache.paraTopic);
+    setRefAuthor(cache.refAuthor);
+    setRefTitle(cache.refTitle);
+    setRefType(cache.refType);
+  }
+
+  return({ SubType, LayoutLeft, LayoutRight, getPromptText, setExample, restoreFields })
 }

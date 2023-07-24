@@ -9,6 +9,7 @@ import EndpointOptionsPopover from '~/components/Endpoints/EndpointOptionsPopove
 
 import store from '~/store';
 import CheckMark from '~/components/svg/CheckMark';
+import { MessagesSquared } from '~/components/svg';
 
 function getWidget(widget: string) {
   switch (widget) {
@@ -24,6 +25,7 @@ function ChatWidgetMenu() {
 
   const [chosenWidget, setChosenWidget] = useState<string>('无');
   const [advancedMode, setAdvancedMode] = useState<boolean>(false);
+  const [showExample, setShowExample] = useState<boolean>(false);
   const widgets = ['无', '写作助手'];
   const widget = getWidget(chosenWidget);
 
@@ -37,6 +39,10 @@ function ChatWidgetMenu() {
     setText(text);
     setAdvancedMode(false);
   };
+  const triggerExample = () => {
+    showExample ? widget.restoreFields() : widget.setExample();
+    setShowExample(!showExample);
+  }
 
   return (
     <>
@@ -75,15 +81,13 @@ function ChatWidgetMenu() {
         }
         visible={advancedMode}
         widget={true}
-        saveAsPreset={null}
+        saveAsPreset={triggerSetText}
         switchToSimpleMode={switchToSimpleMode}
         additionalButton={{
-          label: '确认',
+          label: (showExample ? '恢复' : '示例'),
           buttonClass: '',
-          handler: triggerSetText,
-          icon: <div className="mr-1 w-[14px]">
-            <CheckMark />
-          </div>
+          handler: triggerExample,
+          icon: <MessagesSquared className="mr-1 w-[14px]"/>
         }}
       />
     </>
