@@ -12,21 +12,21 @@ const isProduction = config.isProduction;
 /**
  * Logout user
  *
- * @param {Object} user
+ * @param {String} userId
  * @param {*} refreshToken
  * @returns
  */
-const logoutUser = async (user, refreshToken) => {
+const logoutUser = async (userId, refreshToken) => {
   try {
-    const userFound = await User.findById(user._id);
-    const tokenIndex = userFound.refreshToken.findIndex(
-      (item) => item.refreshToken === refreshToken,
-    );
+    const userFound = await User.findById(userId);
+    const hash = crypto.createHash('sha256').update(refreshToken).digest('hex');
 
-    if (tokenIndex !== -1) {
-      userFound.refreshToken.id(userFound.refreshToken[tokenIndex]._id).remove();
+    // Find the session with the matching user and refreshTokenHash
+    const session = await Session.findOne({ user: userId, refreshTokenHash: hash });
+    console.log('Removing Session: ', session);
+    if (session) {
+      await Session.deleteOne({ _id: session._id });
     }
-
     await userFound.save();
 
     return { status: 200, message: 'Logout successful' };
@@ -85,9 +85,6 @@ const registerUser = async (user) => {
       role: isFirstRegisteredUser ? 'ADMIN' : 'USER',
     });
 
-    // todo: implement refresh token
-    // const refreshToken = newUser.generateRefreshToken();
-    // newUser.refreshToken.push({ refreshToken });
     const salt = bcrypt.genSaltSync(10);
     const hash = bcrypt.hashSync(newUser.password, salt);
     newUser.password = hash;
