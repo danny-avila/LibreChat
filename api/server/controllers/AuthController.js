@@ -87,7 +87,7 @@ const refreshController = async (req, res, next) => {
       res.status(401).send('Invalid refresh token');
     }
   } else {
-    res.status(401).send('Refresh token not provided');
+    res.status(401).send('Controller: Refresh token not provided');
     next();
   }
 };    
@@ -110,7 +110,7 @@ const intercept401 = async (req, res, next) => {
        next();
     }
   } else {
-    res.status(401).send('Refresh token not provided');
+    res.status(401).send('Interceptor: Refresh token not provided');
     next();
   }
   
