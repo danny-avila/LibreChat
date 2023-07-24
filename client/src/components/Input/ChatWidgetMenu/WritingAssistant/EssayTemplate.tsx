@@ -262,7 +262,7 @@ export default function EssayTemplate() {
 
       topics.push(`以${level}的水平写一篇${wordCount}字的作文。作文要分成${paragraphCount}个段落，第1段的主题是：${paraTopic[0]}。`);
 
-      for (let i = 1; i < paraTopic.length; i++) {
+      for (let i = 1; i < Number(paragraphCount); i++) {
         topics.push(`第${i + 1}段的主题是${paraTopic[i]}。`);
       }
 

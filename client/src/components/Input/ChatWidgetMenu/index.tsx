@@ -10,9 +10,11 @@ import EndpointOptionsPopover from '~/components/Endpoints/EndpointOptionsPopove
 import store from '~/store';
 import CheckMark from '~/components/svg/CheckMark';
 
-function getWidget(widget: string, setParams: React.Dispatch<React.SetStateAction<object>>) {
-  const setOption = (value: object) => setParams(value);
-  if (widget === '写作助手') return <WritingAssistant setOption={setOption} />;
+function getWidget(widget: string) {
+  switch (widget) {
+    default: return WritingAssistant();
+    case ('写作助手'): return WritingAssistant();
+  }
 }
 
 function ChatWidgetMenu() {
@@ -22,9 +24,8 @@ function ChatWidgetMenu() {
 
   const [chosenWidget, setChosenWidget] = useState<string>('无');
   const [advancedMode, setAdvancedMode] = useState<boolean>(false);
-  const [params, setParams] = useState<object>({});
   const widgets = ['无', '写作助手'];
-  const widget = getWidget(chosenWidget, setParams);
+  const widget = getWidget(chosenWidget);
 
   const cardStyle =
     'transition-colors shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 hover:border-black/10 focus:border-black/10 dark:border-black/10 dark:hover:border-black/10 dark:focus:border-black/10 border dark:bg-gray-700 text-black dark:text-white';
@@ -32,7 +33,7 @@ function ChatWidgetMenu() {
   const triggerAdvancedMode = () => setAdvancedMode((prev: boolean) => !prev);
   const switchToSimpleMode = () => {setAdvancedMode(false)};
   const triggerSetText = () => {
-    const text = params.submissionText;
+    const text = widget.getPromptText();
     setText(text);
     setAdvancedMode(false);
   };
@@ -70,7 +71,7 @@ function ChatWidgetMenu() {
       </div>
       <EndpointOptionsPopover
         content={
-          <div className="z-50 px-4 py-4">{widget}</div>
+          <div className="z-50 px-4 py-4">{widget.WidgetLayout()}</div>
         }
         visible={advancedMode}
         widget={true}
