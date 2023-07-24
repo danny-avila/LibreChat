@@ -2,7 +2,7 @@ import SelectDropDown from '../../../ui/SelectDropDown';
 import { Label } from '~/components/ui/Label';
 import TextareaAutosize from 'react-textarea-autosize';
 import * as Switch from '@radix-ui/react-switch';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { cn } from '~/utils/';
 
 function getParagraphFields({ paragraphCount, paraTopic, setParaTopic }) {
@@ -252,10 +252,15 @@ export default function EssayTemplate() {
     );
   }
 
+  function getRefText() {
+    return(`引用${refAuthor}的${refType}${refTitle}。`);
+  }
+
   function getEssayPrompt() {
     if (easyMode) {
       return(
-        `以${level}的水平写一篇${wordCount}字的作文。作文要分成${paragraphCount}个段落，主题是：${topic}`
+        `以${level}的水平写一篇${wordCount}字的作文。作文要分成${paragraphCount}个段落，主题是：${topic}。` +
+          getRefText()
       );
     } else {
       const topics: string[] = [];
@@ -266,13 +271,14 @@ export default function EssayTemplate() {
         topics.push(`第${i + 1}段的主题是${paraTopic[i]}。`);
       }
 
-      return topics.join('');
+      return (topics.join('') + getRefText());
     }
   }
 
   function getEssayParagraphPrompt() {
     return(
-      `以${level}的水平写一篇${wordCount}字的作文段落。作文主题是：${topic}。段落的主题是：${paraTopic[0]}。`
+      `以${level}的水平写一篇${wordCount}字的作文段落。作文主题是：${topic}。段落的主题是：${paraTopic[0]}。` +
+        getRefText()
     );
   }
 
