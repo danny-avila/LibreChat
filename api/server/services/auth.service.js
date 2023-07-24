@@ -187,7 +187,7 @@ const resetPassword = async (userId, token, password) => {
  * @param {Object} res
  * @returns
  */
-const setAuthTokens = async (userId, res) => {
+const setAuthTokens = (userId, res) => {
   const user = await User.findOne({ _id: userId });
   const token = await user.generateToken();
 
