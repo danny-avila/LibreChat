@@ -2,6 +2,7 @@ const passport = require('passport');
 const express = require('express');
 const router = express.Router();
 const config = require('../../../config/loader');
+const { setAuthTokens } = require('../services/auth.service');
 const domains = config.domains;
 const isProduction = config.isProduction;
 
@@ -25,12 +26,7 @@ router.get(
     scope: ['openid', 'profile', 'email'],
   }),
   (req, res) => {
-    const token = req.user.generateToken();
-    res.cookie('token', token, {
-      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
-      httpOnly: false,
-      secure: isProduction,
-    });
+    await setAuthTokens(req.user._id, res);
     res.redirect(domains.client);
   },
 );
@@ -52,12 +48,7 @@ router.get(
     scope: ['public_profile', 'email'],
   }),
   (req, res) => {
-    const token = req.user.generateToken();
-    res.cookie('token', token, {
-      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
-      httpOnly: false,
-      secure: isProduction,
-    });
+    await setAuthTokens(req.user._id, res);
     res.redirect(domains.client);
   },
 );
@@ -77,12 +68,7 @@ router.get(
     session: false,
   }),
   (req, res) => {
-    const token = req.user.generateToken();
-    res.cookie('token', token, {
-      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
-      httpOnly: false,
-      secure: isProduction,
-    });
+    await setAuthTokens(req.user._id, res);
     res.redirect(domains.client);
   },
 );
@@ -104,12 +90,7 @@ router.get(
     scope: ['user:email', 'read:user'],
   }),
   (req, res) => {
-    const token = req.user.generateToken();
-    res.cookie('token', token, {
-      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
-      httpOnly: false,
-      secure: isProduction,
-    });
+    await setAuthTokens(req.user._id, res);
     res.redirect(domains.client);
   },
 );
@@ -131,12 +112,7 @@ router.get(
     scope: ['identify', 'email'],
   }),
   (req, res) => {
-    const token = req.user.generateToken();
-    res.cookie('token', token, {
-      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
-      httpOnly: false,
-      secure: isProduction,
-    });
+    await setAuthTokens(req.user._id, res);
     res.redirect(domains.client);
   },
 );
