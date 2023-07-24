@@ -190,7 +190,6 @@ const resetPassword = async (userId, token, password) => {
 const setAuthTokens = (userId, res) => {
   return User.findOne({ _id: userId })
     .then((user) => {
-      userObj = user;
       return user.generateToken();
     })
     .then((token) => {
@@ -219,10 +218,11 @@ const setAuthTokens = (userId, res) => {
       return token;
     })
     .catch((error) => {
-       console.error('Error in setting authentication tokens:', error);
+      // Handle any errors that occurred during the Promise chain
       throw error;
     });
 };
+
 
 module.exports = {
   registerUser,
