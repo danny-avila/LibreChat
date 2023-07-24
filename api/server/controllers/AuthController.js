@@ -1,6 +1,6 @@
 const { registerUser, requestPasswordReset, resetPassword, setAuthTokens } = require('../services/auth.service');
-
 const isProduction = process.env.NODE_ENV === 'production';
+let refreshAttempted = false;
 
 const registrationController = async (req, res) => {
   try {
@@ -91,10 +91,25 @@ const refreshController = async (req, res, next) => {
   }
 };    
 
+const intercept401 = async (req, res, next) => {
+  if (!refreshAttempted) {
+    try {
+      refreshAttempted = true;
+      await refreshController(req, res, next);
+    } catch (error) {
+      res.status(401).json({ error: 'Unauthorized', message: 'Authentication failed.' });
+    }
+  } else {
+     refreshAttempted = false;
+     res.status(401).json({ error: 'Unauthorized', message: 'Authentication failed.' });
+  }
+};
+
 module.exports = {
   getUserController,
   refreshController,
   registrationController,
   resetPasswordRequestController,
   resetPasswordController,
+  intercept401,
 };
