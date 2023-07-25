@@ -104,7 +104,7 @@ const User = require('@librechat/backend/models/User');
   }
 
   // Validate the user doesn't already exist
-  const userExists = await User.findOne({ $or: [{ email }, { username }] });
+  const userExists = await User.findOne({ $or: [{ email }, { username }] }).lean();
   if (userExists) {
     console.red('Error: A user with that email or username already exists!');
     silentExit(1);

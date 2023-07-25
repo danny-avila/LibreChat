@@ -4,7 +4,7 @@ const { getMessages } = require('../../models/');
 
 const migrateToStrictFollowParentMessageIdChain = async () => {
   try {
-    const conversations = await Conversation.find({ endpoint: null, model: null }).exec();
+    const conversations = await Conversation.find({ endpoint: null, model: null }).lean();
 
     if (!conversations || conversations.length === 0) {
       return { noNeed: true };
@@ -48,7 +48,7 @@ const migrateToStrictFollowParentMessageIdChain = async () => {
         { conversationId: convo.conversationId },
         { model },
         { new: true },
-      ).exec();
+      );
     }
 
     try {
@@ -64,7 +64,7 @@ const migrateToStrictFollowParentMessageIdChain = async () => {
 
 const migrateToSupportBetterCustomization = async () => {
   try {
-    const conversations = await Conversation.find({ endpoint: null }).exec();
+    const conversations = await Conversation.find({ endpoint: null }).lean();
 
     if (!conversations || conversations.length === 0) {
       return { noNeed: true };

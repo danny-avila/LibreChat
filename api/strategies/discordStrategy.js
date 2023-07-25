@@ -17,7 +17,7 @@ const discordLogin = async () =>
         const email = profile.email;
         const discordId = profile.id;
 
-        const oldUser = await User.findOne({ email });
+        const oldUser = await User.findOne({ email }).lean();
         if (oldUser) {
           return cb(null, oldUser);
         }

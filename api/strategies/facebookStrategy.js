@@ -28,7 +28,7 @@ const facebookLogin = async () =>
     async (accessToken, refreshToken, profile, done) => {
       console.log('facebookLogin => profile', profile);
       try {
-        const oldUser = await User.findOne({ email: profile.emails[0].value });
+        const oldUser = await User.findOne({ email: profile.emails[0].value }).lean();
 
         if (oldUser) {
           console.log('FACEBOOK LOGIN => found user', oldUser);

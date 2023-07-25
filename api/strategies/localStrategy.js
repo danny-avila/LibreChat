@@ -23,7 +23,7 @@ const passportLogin = async () =>
       }
 
       try {
-        const user = await User.findOne({ email: email.trim() });
+        const user = await User.findOne({ email: email.trim() }).lean();
         if (!user) {
           log({
             title: 'Passport Local Strategy - User Not Found',

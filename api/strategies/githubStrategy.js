@@ -21,7 +21,7 @@ const githubLogin = async () =>
           email = profile.emails[0].value;
         }
 
-        const oldUser = await User.findOne({ email });
+        const oldUser = await User.findOne({ email }).lean();
         if (oldUser) {
           return cb(null, oldUser);
         }

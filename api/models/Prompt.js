@@ -34,7 +34,7 @@ module.exports = {
   },
   getPrompts: async (filter) => {
     try {
-      return await Prompt.find(filter).exec();
+      return await Prompt.find(filter).lean();
     } catch (error) {
       console.error(error);
       return { prompt: 'Error getting prompts' };
@@ -42,7 +42,7 @@ module.exports = {
   },
   deletePrompts: async (filter) => {
     try {
-      return await Prompt.deleteMany(filter).exec();
+      return await Prompt.deleteMany(filter).lean();
     } catch (error) {
       console.error(error);
       return { prompt: 'Error deleting prompts' };

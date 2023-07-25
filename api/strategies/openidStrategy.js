@@ -54,10 +54,10 @@ async function setupOpenId() {
       },
       async (tokenset, userinfo, done) => {
         try {
-          let user = await User.findOne({ openidId: userinfo.sub });
+          let user = await User.findOne({ openidId: userinfo.sub }).lean();
 
           if (!user) {
-            user = await User.findOne({ email: userinfo.email });
+            user = await User.findOne({ email: userinfo.email }).lean();
           }
 
           let fullName = '';

@@ -78,12 +78,12 @@ module.exports = {
   },
   async deleteMessagesSince({ messageId, conversationId }) {
     try {
-      const message = await Message.findOne({ messageId }).exec();
+      const message = await Message.findOne({ messageId }).lean();
 
       if (message) {
-        return await Message.find({ conversationId })
-          .deleteMany({ createdAt: { $gt: message.createdAt } })
-          .exec();
+        return await Message.find({ conversationId }).deleteMany({
+          createdAt: { $gt: message.createdAt },
+        });
       }
     } catch (err) {
       console.error(`Error deleting messages: ${err}`);
@@ -93,7 +93,7 @@ module.exports = {
 
   async getMessages(filter) {
     try {
-      return await Message.find(filter).sort({ createdAt: 1 }).exec();
+      return await Message.find(filter).sort({ createdAt: 1 }).lean();
     } catch (err) {
       console.error(`Error getting messages: ${err}`);
       throw new Error('Failed to get messages.');
@@ -102,7 +102,7 @@ module.exports = {
 
   async deleteMessages(filter) {
     try {
-      return await Message.deleteMany(filter).exec();
+      return await Message.deleteMany(filter).lean();
     } catch (err) {
       console.error(`Error deleting messages: ${err}`);
       throw new Error('Failed to delete messages.');
