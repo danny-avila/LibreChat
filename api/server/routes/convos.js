@@ -14,7 +14,7 @@ router.get('/:conversationId', requireJwtAuth, async (req, res) => {
   const convo = await getConvo(req.user.id, conversationId);
 
   if (convo) {
-    res.status(200).send(convo.toObject());
+    res.status(200).send(convo);
   } else {
     res.status(404).end();
   }

@@ -61,6 +61,8 @@ if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
   });
 }
 
+convoSchema.index({ createdAt: 1 });
+
 const Conversation = mongoose.models.Conversation || mongoose.model('Conversation', convoSchema);
 
 module.exports = Conversation;
