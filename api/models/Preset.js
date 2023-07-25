@@ -14,10 +14,10 @@ module.exports = {
   getPreset,
   getPresets: async (user, filter) => {
     try {
-      return await Preset.find({ ...filter, user });
+      return await Preset.find({ ...filter, user }).lean();
     } catch (error) {
       console.log(error);
-      return { message: 'Error retriving presets' };
+      return { message: 'Error retrieving presets' };
     }
   },
   savePreset: async (user, { presetId, newPresetId, ...preset }) => {
