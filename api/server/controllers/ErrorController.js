@@ -22,15 +22,15 @@ const handleValidationError = (err, res) => {
 };
 
 //handle token refreshes
-const handleUnauthorizedError = async (err, req, res, next) => {
-  console.log('congrats you hit the unauthorized error middleware');
-  const code = 401;
-  const error = 'Unauthorized: You do not have permission to access this resource.';
-  res.status(code).send({ messages: error });
+//const handleUnauthorizedError = async (err, req, res, next) => {
+//  console.log('congrats you hit the unauthorized error middleware');
+//  const code = 401;
+//  const error = 'Unauthorized: You do not have permission to access this resource.';
+//  res.status(code).send({ messages: error });
 
   // Call the refreshController middleware to attempt token refresh
-  await refreshController(req, res, next);
-};
+//  await refreshController(req, res, next);
+//};
 
 // eslint-disable-next-line no-unused-vars
 module.exports = (err, req, res, next) => {
@@ -42,9 +42,9 @@ module.exports = (err, req, res, next) => {
     if (err.code && err.code == 11000) {
       return (err = handleDuplicateKeyError(err, res));
     }
-    if (err.status === 401) {
-      return (err = handleUnauthorizedError(err, req, res, next));
-    }
+  //  if (err.status === 401) {
+  //    return (err = handleUnauthorizedError(err, req, res, next));
+  //  }
   } catch (err) {
     res.status(500).send('An unknown error occurred.');
   }
