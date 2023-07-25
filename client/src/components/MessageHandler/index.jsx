@@ -234,7 +234,7 @@ export default function MessageHandler() {
       abortConversation(message?.conversationId || submission?.conversationId);
 
     events.onerror = function (e) {
-      console.log('error in opening conn.');
+      console.log('error in opening conn.',e);
       events.close();
 
       let data;
