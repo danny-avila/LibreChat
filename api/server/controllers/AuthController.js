@@ -1,4 +1,8 @@
 const { registerUser, requestPasswordReset, resetPassword, setAuthTokens } = require('../services/auth.service');
+const jwt = require('jsonwebtoken');
+const Session = require('../../models/Session');
+const User = require('../../models/User');
+const crypto = require('crypto');
 const isProduction = process.env.NODE_ENV === 'production';
 let refreshAttempted = false;
 
