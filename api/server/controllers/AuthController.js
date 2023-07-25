@@ -117,6 +117,7 @@ const intercept401 = async (err, req, res, next) => {
     refreshAttempted = false;
     res.status(401).send('Refresh Already Attempted');
   } else {
+    refreshAttempted = false;
     next(err);
   }  
 };
