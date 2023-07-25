@@ -218,7 +218,9 @@ const AuthContextProvider = ({
     const handleUnauthorized = async () => {
       try {
         console.log('Unauthorized event received:');
-        await silentRefresh();
+        if (!token || isTokenExpired(token)) {
+          await silentRefresh();
+        }
       } catch (refreshError) {
         console.log('Failed to refresh:', refreshError);
       }
@@ -228,7 +230,10 @@ const AuthContextProvider = ({
     return () => {
       window.removeEventListener('unauthorized', handleUnauthorized);
     };
-  }, [silentRefresh]);
+  }, [
+   token,
+   silentRefresh,
+  ]);
 
   // Make the provider update only when it should
   const memoedValue = useMemo(
