@@ -102,7 +102,7 @@ module.exports = {
 
   async deleteMessages(filter) {
     try {
-      return await Message.deleteMany(filter).lean();
+      return await Message.deleteMany(filter);
     } catch (err) {
       console.error(`Error deleting messages: ${err}`);
       throw new Error('Failed to delete messages.');
