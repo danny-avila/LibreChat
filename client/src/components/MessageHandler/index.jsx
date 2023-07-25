@@ -243,10 +243,10 @@ export default function MessageHandler() {
       } catch (err) {
         console.log('Invalid JSON:', e.data);
         data = JSON.parse({'error': e.data});
-        if (e.data === 'Unauthorized') {
+        //if (e.data === 'Unauthorized') {
           const event = new CustomEvent('unauthorized');
           window.dispatchEvent(event);
-        }
+        //}
       }
 
       errorHandler(data, { ...submission, message });
