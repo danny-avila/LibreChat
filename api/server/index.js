@@ -7,7 +7,7 @@ const path = require('path');
 const cors = require('cors');
 const routes = require('./routes');
 const errorController = require('./controllers/ErrorController');
-const { intercept401 } = require('./controllers/AuthController');
+//const { intercept401 } = require('./controllers/AuthController');
 const passport = require('passport');
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
@@ -36,7 +36,7 @@ config.validate(); // Validate the config
   await indexSync();
 
   const app = express();
-  app.use(intercept401);
+  //app.use(intercept401);
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
