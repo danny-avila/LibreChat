@@ -108,11 +108,9 @@ const intercept401 = async (req, res, next) => {
       } else {
          refreshAttempted = false;
          res.status(401).send('Refresh Already Attempted');
-         next();
       }
     } else {
       res.status(401).send('Interceptor: Refresh token not provided');
-      next();
     }
   } else {
     next();
