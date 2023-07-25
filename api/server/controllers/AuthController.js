@@ -64,7 +64,7 @@ const refreshController = async (req, res, next) => {
   // const { signedCookies = {} } = req;
   // const { refreshToken } = signedCookies;
   const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
-  console.log('refreshToken',refreshToken);
+  console.log('refreshToken',req.headers.cookie);
   if (refreshToken) {
     try {
       const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
