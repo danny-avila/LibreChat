@@ -230,10 +230,7 @@ const AuthContextProvider = ({
     return () => {
       window.removeEventListener('unauthorized', handleUnauthorized);
     };
-  }, [
-   token,
-   silentRefresh,
-  ]);
+  }, [silentRefresh]);
 
   // Make the provider update only when it should
   const memoedValue = useMemo(
