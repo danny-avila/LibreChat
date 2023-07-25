@@ -46,7 +46,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
             {user && user.subscriptionStatus !== 'active' && (
               <Button
                 variant="green" 
-                className="w-full" 
+                className="w-full"
                 onClick={() => setShowSubscribeModal(true)}
               >
                 Go Pro
@@ -55,19 +55,21 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
             )}
             {/* Add the SubscribeForm dialog */}
             {showSubscribeModal && (
-              <DialogOverlay isOpen={showSubscribeModal} onDismiss={() => setShowSubscribeModal(false)} className="z-50">
-                <DialogContent className="w-full max-w-lg p-6 mx-auto my-20 bg-white dark:bg-black-500 rounded-lg">
+              <DialogOverlay isOpen={showSubscribeModal} onDismiss={() => setShowSubscribeModal(false)} className="z-50 fixed inset-0 flex items-center justify-center">
+                <DialogContent className="w-full sm:w-3/4 md:w-2/3 lg:w-1/2 p-6 bg-white dark:bg-black-500 overflow-auto">
                   <button
                     className="float-right text-xl font-bold"
                     onClick={() => setShowSubscribeModal(false)}
                   >
                     &times;
                   </button>
-                  <h2 className="text-2xl font-bold mb-6">Upgrade to Pro</h2>
-                  <SubscribeForm />
+                  <div className="h-full flex flex-col justify-center items-center">
+                    <SubscribeForm />
+                  </div>
                 </DialogContent>
               </DialogOverlay>
             )}
+
             <Menu.Button
               className={cn(
                 'group-ui-open:bg-gray-800 flex w-full items-center gap-2.5 rounded-md px-3 py-3 text-sm transition-colors duration-200 hover:bg-gray-800',

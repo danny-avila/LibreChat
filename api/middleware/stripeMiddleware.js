@@ -17,6 +17,14 @@ async function updateSubscriptionStatus(subscription) {
     await User.findByIdAndUpdate(user._id, {
       subscriptionStatus: subscription.status,
     });
+
+    // Reflect the changes in oneTimePaymentPlan field if it's a one-time payment
+    if(subscription.status === 'active' && subscription.collection_method === 'charge_automatically') {
+      await User.findByIdAndUpdate(user._id, {
+        oneTimePaymentPlan: 'active',
+      });
+    }
+
     console.log(`Updated subscription status for User ${user.id}`);
   } else {
     console.log("User not found with the given subscription ID or customer ID.");
@@ -29,12 +37,11 @@ async function handleSuccessfulPayment(paymentInvoice) {
 
   // Get the user to update
   const user = await User.findOne({ stripeCustomerId: subscription.customer });
-  console.log("User:", user);
 
   // Update the user's subscription status and stripeSubscriptionId
   if (user) {
     await User.findByIdAndUpdate(user._id, {
-      stripeSubscriptionId: subscription.id, // update stripeSubscriptionId
+      stripeSubscriptionId: subscription.id,
       subscriptionStatus: subscription.status,
     });
 
@@ -58,30 +65,69 @@ function handleStripeWebhook() {
 
     switch (event.type) {
       case "customer.subscription.updated":
-        // Existing case for subscription updates
         const subscription = event.data.object;
-        if (subscription.status === 'active') {
-          await updateSubscriptionStatus(subscription);
-        }
+        await updateSubscriptionStatus(subscription);
         break;
+
       case "invoice.payment_succeeded":
-        // Existing case for successful invoice payments
         const paymentInvoice = event.data.object;
         await handleSuccessfulPayment(paymentInvoice);
         break;
+
+      case "checkout.session.completed":
+        const session = event.data.object;
+        if (session.payment_method_types[0] === 'wechat_pay') {
+          const user = await User.findOne({ stripeCustomerId: session.customer });
+          if (user) {
+            const priceId = session.success_url.split('priceId=')[1];
+            let subscriptionStatus;
+            switch (priceId) {
+              case 'price_1NVfOMHKD0byXXCllGN0MBlN':
+                subscriptionStatus = 'pro_year';
+                break;
+              case 'price_1NVfO3HKD0byXXCld3XFHMOj':
+                subscriptionStatus = 'pro_month';
+                break;
+              case 'price_1NVfNRHKD0byXXClLn0jZo3k':
+                subscriptionStatus = 'pro_day';
+                break;
+              case 'price_1NVfNlHKD0byXXClcCS7GGUy':
+                subscriptionStatus = 'pro_week';
+                break;
+              default:
+                subscriptionStatus = 'unsubscribed';
+            }
+            await User.findByIdAndUpdate(user._id, {
+              oneTimePaymentPlan: subscriptionStatus,
+            });
+            console.log(`Payment succeeded for checkout session ID: ${session.id}`);
+          } else {
+            console.log("User not found with the given customer ID.");
+          }
+        }
+        break;
+
       case "payment_intent.succeeded":
-        // New case for successful one-time payments
         const paymentIntent = event.data.object;
-        const user = await User.findOne({ stripeCustomerId: paymentIntent.customer });
-        if (user) {
-          await User.findByIdAndUpdate(user._id, {
+        const paymentUser = await User.findOne({ stripeCustomerId: paymentIntent.customer });
+        if (paymentUser) {
+          await User.findByIdAndUpdate(paymentUser._id, {
             subscriptionStatus: 'active',
           });
-          console.log(`Payment succeeded for Payment Intent ID: ${paymentIntent.id}`);
+          console.log(`Payment Succeeded for payment intent ID: ${paymentIntent.id}`);
         } else {
           console.log("User not found with the given customer ID.");
         }
         break;
+
+      case "payment_intent.created":
+        console.log(`Payment intent created with ID: ${event.data.object.id}`);
+        break;
+      
+      case "payment_intent.requires_action":
+        console.log(`Payment requires action for payment intent ID: ${event.data.object.id}`);
+        break;
+
       default:
         console.log(`Unhandled event type: ${event.type}`);
     }
@@ -90,7 +136,6 @@ function handleStripeWebhook() {
     res.status(200).json({ received: true });
   };
 }
-
 
 
 module.exports = { handleStripeWebhook };

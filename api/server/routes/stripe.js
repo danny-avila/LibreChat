@@ -50,6 +50,16 @@ router.post('/cancel-subscription', async (req, res) => {
   try {
     console.log("Request Body:", req.body); // Log request body
     const canceledSubscription = await cancelSubscription(subscriptionId);
+    
+    // Fetch the user by stripeSubscriptionId
+    const user = await User.findOne({ stripeSubscriptionId: subscriptionId });
+
+    // Update the subscriptionStatus
+    if (user) {
+      user.subscriptionStatus = 'canceled';
+      await user.save();
+    }
+
     res.status(200).send(canceledSubscription);
   } catch (error) {
     console.error("Error:", error); // Log error details

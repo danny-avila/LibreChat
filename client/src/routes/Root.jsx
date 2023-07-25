@@ -17,8 +17,8 @@ import { useSetRecoilState } from 'recoil';
 export default function Root() {
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
-    return savedNavVisible !== null ? JSON.parse(savedNavVisible) : false;
-  });
+    return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
+});
 
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
   const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);

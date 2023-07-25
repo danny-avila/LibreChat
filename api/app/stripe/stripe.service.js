@@ -1,6 +1,6 @@
 require('dotenv').config();
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const YOUR_DOMAIN = 'http://localhost:3090'; // Change this to the domain you want to return to after Checkout
+const YOUR_DOMAIN = 'https://gptchina.io'; // Change this to the domain you want to return to after Checkout
 
 async function createCustomer(name, email) {
   const customer = await stripe.customers.create({
@@ -8,6 +8,11 @@ async function createCustomer(name, email) {
     email: email,
   });
   return customer.id;
+}
+
+async function cancelSubscription(subscriptionId) {
+  const canceledSubscription = await stripe.subscriptions.del(subscriptionId);
+  return canceledSubscription;
 }
 
 async function createCheckoutSession(priceId, customerId, paymentMethod) {
@@ -33,4 +38,5 @@ async function createCheckoutSession(priceId, customerId, paymentMethod) {
 module.exports = {
   createCustomer, 
   createCheckoutSession,
+  cancelSubscription
 };

@@ -102,6 +102,11 @@ const userSchema = mongoose.Schema(
       enum: ['active', 'canceled', 'paused', 'unsubscribed'],
       default: 'unsubscribed'
     },
+    oneTimePaymentPlan: {
+      type: String,
+      enum: ['pro_year', 'pro_month', 'pro_day', 'pro_week', 'unsubscribed'],
+      default: 'unsubscribed'
+    },    
   },
   { timestamps: true },
 );
@@ -127,9 +132,10 @@ userSchema.methods.toJSON = function () {
     plugins: this.plugins,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
-    stripeCustomerId: this.stripeCustomerId, // Add this line
-    stripeSubscriptionId: this.stripeSubscriptionId, // Add this line
-    subscriptionStatus: this.subscriptionStatus // Add this line
+    stripeCustomerId: this.stripeCustomerId,
+    stripeSubscriptionId: this.stripeSubscriptionId,
+    subscriptionStatus: this.subscriptionStatus,
+    oneTimePaymentPlan: this.oneTimePaymentPlan,
   };
 };
 

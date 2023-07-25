@@ -7,6 +7,8 @@ function Billing() {
   const [isLoading, setIsLoading] = useState(false);
 
   const cancelSubscription = useCallback(async () => {
+    console.log('Subscription ID:', user.stripeSubscriptionId); // Add this log
+
     setIsLoading(true); // Set loading state to true when cancellation starts
 
     try {
