@@ -73,27 +73,27 @@ const refreshController = async (req, res, next) => {
         const session = await Session.findOne({ user: userId, refreshTokenHash: hashedToken });
         if (session && session.expiration > new Date()) {
           const token = await setAuthTokens(userId, res); 
-          res.setHeader('Authorization', `Bearer ${token}`);
+          // res.setHeader('Authorization', `Bearer ${token}`);
           console.log('Remove Refresh Session', session);
           await Session.deleteOne({ _id: session._id });
           const userObj = user.toJSON();
           res.status(200).send({ token, user: userObj });
-          next();
+          // next();
         } else {
           res.status(401).send('Refresh token expired or not found for this user');
-          next();
+          // next();
         }
       } else {
         res.status(401).send('User not found');
-        next();
+        // next();
       }
     } catch (err) {
       res.status(401).send('Invalid refresh token');
-      next();
+      // next();
     }
   } else {
     res.status(401).send('Controller: Refresh token not provided');
-    next();
+    // next();
   }
 };    
 
