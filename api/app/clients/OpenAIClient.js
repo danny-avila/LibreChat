@@ -6,7 +6,10 @@ const {
 } = require('@dqbd/tiktoken');
 const { maxTokensMap, genAzureChatCompletion } = require('../../utils');
 
+// Cache to store Tiktoken instances
 const tokenizersCache = {};
+// Counter for keeping track of the number of tokenizer calls
+let tokenizerCallsCount = 0;
 
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -89,7 +92,6 @@ class OpenAIClient extends BaseClient {
     this.chatGptLabel = this.options.chatGptLabel || 'Assistant';
 
     this.setupTokens();
-    this.setupTokenizer();
 
     if (!this.modelOptions.stop) {
       const stopTokens = [this.startToken];
@@ -133,68 +135,87 @@ class OpenAIClient extends BaseClient {
     }
   }
 
-  setupTokenizer() {
+  // Selects an appropriate tokenizer based on the current configuration of the client instance.
+  // It takes into account factors such as whether it's a chat completion, an unofficial chat GPT model, etc.
+  selectTokenizer() {
+    let tokenizer;
     this.encoding = 'text-davinci-003';
     if (this.isChatCompletion) {
       this.encoding = 'cl100k_base';
-      this.gptEncoder = this.constructor.getTokenizer(this.encoding);
+      tokenizer = this.constructor.getTokenizer(this.encoding);
     } else if (this.isUnofficialChatGptModel) {
-      this.gptEncoder = this.constructor.getTokenizer(this.encoding, true, {
+      const extendSpecialTokens = {
         '<|im_start|>': 100264,
         '<|im_end|>': 100265,
-      });
+      };
+      tokenizer = this.constructor.getTokenizer(this.encoding, true, extendSpecialTokens);
     } else {
       try {
         this.encoding = this.modelOptions.model;
-        this.gptEncoder = this.constructor.getTokenizer(this.modelOptions.model, true);
+        tokenizer = this.constructor.getTokenizer(this.modelOptions.model, true);
       } catch {
-        this.gptEncoder = this.constructor.getTokenizer(this.encoding, true);
+        tokenizer = this.constructor.getTokenizer(this.encoding, true);
       }
     }
-  }
 
-  static getTokenizer(encoding, isModelName = false, extendSpecialTokens = {}) {
-    if (tokenizersCache[encoding]) {
-      return tokenizersCache[encoding];
-    }
-    let tokenizer;
-    if (isModelName) {
-      tokenizer = encodingForModel(encoding, extendSpecialTokens);
-    } else {
-      tokenizer = getEncoding(encoding, extendSpecialTokens);
-    }
-    tokenizersCache[encoding] = tokenizer;
     return tokenizer;
   }
 
-  freeAndResetEncoder() {
-    try {
-      if (!this.gptEncoder) {
-        return;
+  // Retrieves a tokenizer either from the cache or creates a new one if one doesn't exist in the cache.
+  // If a tokenizer is being created, it's also added to the cache.
+  static getTokenizer(encoding, isModelName = false, extendSpecialTokens = {}) {
+    let tokenizer;
+    if (tokenizersCache[encoding]) {
+      tokenizer = tokenizersCache[encoding];
+    } else {
+      if (isModelName) {
+        tokenizer = encodingForModel(encoding, extendSpecialTokens);
+      } else {
+        tokenizer = getEncoding(encoding, extendSpecialTokens);
       }
-      this.gptEncoder.free();
-      delete tokenizersCache[this.encoding];
-      delete tokenizersCache.count;
-      this.setupTokenizer();
+      tokenizersCache[encoding] = tokenizer;
+    }
+    return tokenizer;
+  }
+
+  // Frees all encoders in the cache and resets the count.
+  static freeAndResetAllEncoders() {
+    try {
+      Object.keys(tokenizersCache).forEach((key) => {
+        if (tokenizersCache[key]) {
+          tokenizersCache[key].free();
+          delete tokenizersCache[key];
+        }
+      });
+      // Reset count
+      tokenizerCallsCount = 1;
     } catch (error) {
-      console.log('freeAndResetEncoder error');
+      console.log('Free and reset encoders error');
       console.error(error);
     }
   }
 
-  getTokenCount(text) {
-    try {
-      if (tokenizersCache.count >= 25) {
-        if (this.options.debug) {
-          console.debug('freeAndResetEncoder: reached 25 encodings, reseting...');
-        }
-        this.freeAndResetEncoder();
+  // Checks if the cache of tokenizers has reached a certain size. If it has, it frees and resets all tokenizers.
+  resetTokenizersIfNecessary() {
+    if (tokenizerCallsCount >= 25) {
+      if (this.options.debug) {
+        console.debug('freeAndResetAllEncoders: reached 25 encodings, resetting...');
       }
-      tokenizersCache.count = (tokenizersCache.count || 0) + 1;
-      return this.gptEncoder.encode(text, 'all').length;
+      this.constructor.freeAndResetAllEncoders();
+    }
+    tokenizerCallsCount++;
+  }
+
+  // Returns the token count of a given text. It also checks and resets the tokenizers if necessary.
+  getTokenCount(text) {
+    this.resetTokenizersIfNecessary();
+    try {
+      const tokenizer = this.selectTokenizer();
+      return tokenizer.encode(text, 'all').length;
     } catch (error) {
-      this.freeAndResetEncoder();
-      return this.gptEncoder.encode(text, 'all').length;
+      this.constructor.freeAndResetAllEncoders();
+      const tokenizer = this.selectTokenizer();
+      return tokenizer.encode(text, 'all').length;
     }
   }
 

@@ -11,6 +11,15 @@ const passport = require('passport');
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
 const projectPath = path.join(__dirname, '..', '..', 'client');
+const {
+  jwtLogin,
+  passportLogin,
+  googleLogin,
+  githubLogin,
+  discordLogin,
+  facebookLogin,
+  setupOpenId,
+} = require('../strategies');
 
 // Init the config and validate it
 const config = require('../../config/loader');
@@ -43,6 +52,21 @@ config.validate(); // Validate the config
   require('../strategies/jwtStrategy');
   require('../strategies/localStrategy');
 
+  passport.use(await jwtLogin());
+  passport.use(await passportLogin());
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    passport.use(await googleLogin());
+  }
+  if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
+    passport.use(await facebookLogin());
+  }
+  if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
+    passport.use(await githubLogin());
+  }
+  if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
+    passport.use(await discordLogin());
+  }
+
   if (
     process.env.OPENID_CLIENT_ID &&
     process.env.OPENID_CLIENT_SECRET &&
@@ -59,7 +83,7 @@ config.validate(); // Validate the config
     );
   
     app.use(passport.session());
-    require('../strategies/openidStrategy');
+    await setupOpenId();
   }
   app.use('/oauth', routes.oauth);
   // api endpoint

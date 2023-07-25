@@ -80,11 +80,12 @@ nav:
     - Project Origin: 'general_info/project_origin.md'
     - Tech Stack: 'general_info/tech_stack.md'  
     - Multilingual Information: 'general_info/multilingual_information.md'
-  - Installation Guides: 
+  - Installation Guides:
     - Docker Install: 'install/docker_install.md'
     - Linux Install: 'install/linux_install.md'
     - Mac Install: 'install/mac_install.md'
     - Windows Install: 'install/windows_install.md'
+    - Free AI APIs: 'install/free_ai_apis.md'
     - APIs and Tokens: 'install/apis_and_tokens.md'
     - User Auth System: 'install/user_auth_system.md'
     - Online MongoDB Database: 'install/mongodb.md'

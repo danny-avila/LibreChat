@@ -57,6 +57,7 @@ services:
   meilisearch:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.0
+    restart: always
     ports:
       - 7700:7700
     env_file:
