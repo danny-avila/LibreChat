@@ -7,7 +7,7 @@ const path = require('path');
 const cors = require('cors');
 const routes = require('./routes');
 const errorController = require('./controllers/ErrorController');
-const { intercept401 } = require('./controllers/AuthController');
+// const { intercept401 } = require('./controllers/AuthController');
 const passport = require('passport');
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
@@ -55,7 +55,7 @@ config.validate(); // Validate the config
   // OAUTH
   // app.use(cookieParser(cookieSecret));
   // app.use(cookieParser());
-  require('./jobs/removeExpiredSessions.js');
+  // require('./jobs/removeExpiredSessions.js');
   app.use(passport.initialize());
   passport.use(await jwtLogin());
   passport.use(await passportLogin());
