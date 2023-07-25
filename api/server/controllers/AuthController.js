@@ -93,27 +93,30 @@ const refreshController = async (req, res, next) => {
 };    
 
 const intercept401 = async (req, res, next) => {
-  const { signedCookies = {} } = req;
-  const { refreshToken } = signedCookies;
+  if (res.status === 401) {
+    const { signedCookies = {} } = req;
+    const { refreshToken } = signedCookies;
 
-  if (!refreshToken) {
-    if (!refreshAttempted) {
-      try {
-        refreshAttempted = true;
-        await refreshController(req, res, next);
-      } catch (error) {
-        res.status(401).send('Token Refresh Failed');
+    if (!refreshToken) {
+      if (!refreshAttempted) {
+        try {
+          refreshAttempted = true;
+          await refreshController(req, res, next);
+        } catch (error) {
+          res.status(401).send('Token Refresh Failed');
+        }
+      } else {
+         refreshAttempted = false;
+         res.status(401).send('Refresh Already Attempted');
+         next();
       }
     } else {
-       refreshAttempted = false;
-       res.status(401).send('Refresh Already Attempted');
-       next();
+      res.status(401).send('Interceptor: Refresh token not provided');
+      next();
     }
   } else {
-    res.status(401).send('Interceptor: Refresh token not provided');
     next();
-  }
-  
+  }  
 };
 
 module.exports = {
