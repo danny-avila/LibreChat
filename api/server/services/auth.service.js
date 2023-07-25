@@ -109,7 +109,7 @@ const requestPasswordReset = async (email) => {
     return new Error('Email does not exist');
   }
 
-  let token = await Token.findOne({ userId: user._id }).lean();
+  let token = await Token.findOne({ userId: user._id });
   if (token) {
     await token.deleteOne();
   }
@@ -146,7 +146,7 @@ const requestPasswordReset = async (email) => {
  * @returns
  */
 const resetPassword = async (userId, token, password) => {
-  let passwordResetToken = await Token.findOne({ userId }).lean();
+  let passwordResetToken = await Token.findOne({ userId });
 
   if (!passwordResetToken) {
     return new Error('Invalid or expired password reset token');

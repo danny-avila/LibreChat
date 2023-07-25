@@ -15,7 +15,7 @@ const googleLogin = async () =>
     },
     async (accessToken, refreshToken, profile, cb) => {
       try {
-        const oldUser = await User.findOne({ email: profile.emails[0].value }).lean();
+        const oldUser = await User.findOne({ email: profile.emails[0].value });
         if (oldUser) {
           return cb(null, oldUser);
         }
