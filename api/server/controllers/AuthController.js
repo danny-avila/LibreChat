@@ -93,7 +93,7 @@ const refreshController = async (req, res, next) => {
 };    
 
 const intercept401 = async (req, res, next) => {
-  if (res.status === 401) {
+  if (res.statusCode === 401) {
     const { signedCookies = {} } = req;
     const { refreshToken } = signedCookies;
 
