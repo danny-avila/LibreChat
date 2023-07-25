@@ -12,8 +12,8 @@ const passport = require('passport');
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
 const projectPath = path.join(__dirname, '..', '..', 'client');
-// const cookieParser = require('cookie-parser');
-// const cookieSecret = process.env.COOKIE_SECRET;
+const cookieParser = require('cookie-parser');
+const cookieSecret = process.env.COOKIE_SECRET;
 const {
   jwtLogin,
   passportLogin,
@@ -53,9 +53,9 @@ config.validate(); // Validate the config
   }
 
   // OAUTH
-  // app.use(cookieParser(cookieSecret));
+  app.use(cookieParser(cookieSecret));
   // app.use(cookieParser());
-  // require('./jobs/removeExpiredSessions.js');
+  require('./jobs/removeExpiredSessions.js');
   app.use(passport.initialize());
   passport.use(await jwtLogin());
   passport.use(await passportLogin());
