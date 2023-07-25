@@ -38,7 +38,13 @@ const downloadImage = async (url, imagePath, accessToken) => {
 
 async function setupOpenId() {
   try {
-    const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
+    // const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
+    let issuer;
+    try {
+      issuer = await Issuer.discover(process.env.OPENID_ISSUER);
+    } catch (err) {
+      console.error("Error discovering issuer: ", err);
+    }
     const client = new issuer.Client({
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
@@ -53,6 +59,8 @@ async function setupOpenId() {
         },
       },
       async (tokenset, userinfo, done) => {
+        console.log("Tokenset: ", tokenset);
+        console.log("Userinfo: ", userinfo);
         try {
           let user = await User.findOne({ openidId: userinfo.sub });
 
