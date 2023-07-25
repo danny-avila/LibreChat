@@ -4,11 +4,11 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { Spinner } from '~/components';
 
 const priceOptions = [
-  { id: 'pro_day', price: 'price_1NVfNRHKD0byXXClLn0jZo3k', label: '24hr Pro', method: 'wechat_pay', priceValue: '¥25 CNY', duration: 'Day', features: ['GPT-4 Access (25 messages per day)', 'GPT-3.5 (500 messages per day)'] },
-  { id: 'pro_week', price: 'price_1NVfNlHKD0byXXClcCS7GGUy', label: '1 Week Pro', method: 'wechat_pay', priceValue: '¥100 CNY', duration: 'Week', features: ['GPT-4 Access (25 messages per day)', 'GPT-3.5 (500 messages per day)'] },
-  { id: 'pro_month', price: 'price_1NVfO3HKD0byXXCld3XFHMOj', label: '1 Month Pro', method: 'wechat_pay', priceValue: '¥200 CNY', duration: 'Month', features: ['GPT-4 Access (25 messages per day)', 'GPT-3.5 (500 messages per day)'] },
-  { id: 'pro_year', price: 'price_1NVfOMHKD0byXXCllGN0MBlN', label: '1 Year Pro', method: 'wechat_pay', priceValue: '¥1,500 CNY', duration: 'Year', features: ['GPT-4 Access (25 messages per day)', 'GPT-3.5 (500 messages per day)'] },
-  { id: 'pro_month_card', price: 'price_1NHVPpHKD0byXXClYlrta1Qu', label: 'Monthly', method: 'card', priceValue: '$19.99 USD', duration: 'Month', features: ['GPT-4 Access (25 messages per day)', 'GPT-3.5 (500 messages per day)'] },
+  { id: 'pro_day', price: 'price_1NVfNRHKD0byXXClLn0jZo3k', label: '24hr Pro', method: 'wechat_pay', priceValue: '¥25 CNY', duration: 'Day', features: ['GPT-4 Access (25 messages per day)', 'GPT-3.5 (100 messages per day)'] },
+  { id: 'pro_week', price: 'price_1NVfNlHKD0byXXClcCS7GGUy', label: '1 Week Pro', method: 'wechat_pay', priceValue: '¥100 CNY', duration: 'Week', features: ['GPT-4 Access (25 messages per day)', 'GPT-3.5 (100 messages per day)'] },
+  { id: 'pro_month', price: 'price_1NVfO3HKD0byXXCld3XFHMOj', label: '1 Month Pro', method: 'wechat_pay', priceValue: '¥200 CNY', duration: 'Month', features: ['GPT-4 Access (25 messages per day)', 'GPT-3.5 (100 messages per day)'] },
+  { id: 'pro_year', price: 'price_1NVfOMHKD0byXXCllGN0MBlN', label: '1 Year Pro', method: 'wechat_pay', priceValue: '¥1,500 CNY', duration: 'Year', features: ['GPT-4 Access (25 messages per day)', 'GPT-3.5 (100 messages per day)'] },
+  { id: 'pro_month_card', price: 'price_1NHVPpHKD0byXXClYlrta1Qu', label: 'Monthly', method: 'card', priceValue: '$19.99 USD', duration: 'Month', features: ['GPT-4 Access (25 messages per day)', 'GPT-3.5 (100 messages per day)'] },
 ];
 
 const SubscribeForm = () => {
