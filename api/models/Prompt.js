@@ -42,7 +42,7 @@ module.exports = {
   },
   deletePrompts: async (filter) => {
     try {
-      return await Prompt.deleteMany(filter).lean();
+      return await Prompt.deleteMany(filter);
     } catch (error) {
       console.error(error);
       return { prompt: 'Error deleting prompts' };

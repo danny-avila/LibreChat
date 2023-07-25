@@ -75,7 +75,7 @@ module.exports = {
   },
   deleteConfigs: async (filter) => {
     try {
-      return await Config.deleteMany(filter).lean();
+      return await Config.deleteMany(filter);
     } catch (error) {
       console.error(error);
       return { config: 'Error deleting configs' };
