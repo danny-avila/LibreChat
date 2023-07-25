@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const Session = require('../../models/Session');
 const User = require('../../models/User');
 const crypto = require('crypto');
+const cookies = require('cookie');
 const isProduction = process.env.NODE_ENV === 'production';
 let refreshAttempted = false;
 
@@ -62,7 +63,7 @@ const resetPasswordController = async (req, res) => {
 const refreshController = async (req, res, next) => {
   // const { signedCookies = {} } = req;
   // const { refreshToken } = signedCookies;
-  const refreshToken = req.cookies.refreshToken; 
+  const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
   console.log('refreshToken',refreshToken);
   if (refreshToken) {
     try {
