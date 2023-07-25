@@ -113,7 +113,7 @@ const intercept401 = async (err, req, res, next) => {
   if (res.statusCode === 401 && !refreshAttempted) {
     // const { signedCookies = {} } = req;
     // const { refreshToken } = signedCookies;
-    // const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
+    const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
     if (refreshToken) {
       try {
         refreshAttempted = true;
