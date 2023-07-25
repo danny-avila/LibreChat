@@ -243,7 +243,7 @@ export default function MessageHandler() {
       } catch (err) {
         // e.data is not valid JSON
         console.error('Invalid JSON:', e.data);
-        data = {error: e.data}; 
+        data = JSON.parse({error: e.data});
       }
 
       errorHandler(data, { ...submission, message });
