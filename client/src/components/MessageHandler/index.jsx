@@ -237,7 +237,14 @@ export default function MessageHandler() {
       console.log('error in opening conn.');
       events.close();
 
-      const data = JSON.parse(e.data);
+      let data;
+      try {
+        data = JSON.parse(e.data);
+      } catch (err) {
+        // e.data is not valid JSON
+        console.error('Invalid JSON:', e.data);
+        data = {error: e.data}; 
+      }
 
       errorHandler(data, { ...submission, message });
     };
