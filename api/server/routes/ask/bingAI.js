@@ -172,7 +172,8 @@ const ask = async ({
     let unfinished = false;
     if (partialText?.trim()?.length > response.text.length) {
       response.text = partialText;
-      unfinished = true;
+      unfinished = false;
+      //setting "unfinished" to false fix bing image generation error msg and allows to continue a convo after being triggered by censorship (bing does remember the context after a "censored error" so there is no reason to end the convo)
     }
 
     let responseMessage = {

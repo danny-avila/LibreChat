@@ -33,6 +33,8 @@ const Content = React.memo(({ content, message }) => {
   const latestMessage = useRecoilValue(store.latestMessage);
   const isInitializing = content === '<span className="result-streaming">█</span>';
   const isLatestMessage = message?.messageId === latestMessage?.messageId;
+  const currentContent = content?.replace('z-index: 1;', '') ?? '';
+  const isIFrame = currentContent.includes('<iframe');
 
   useEffect(() => {
     let timer1, timer2;
@@ -68,7 +70,7 @@ const Content = React.memo(({ content, message }) => {
     [rehypeRaw],
   ];
 
-  if (!isInitializing || !isLatestMessage) {
+  if ((!isInitializing || !isLatestMessage) && !isIFrame) {
     rehypePlugins.pop();
   }
 
@@ -82,7 +84,9 @@ const Content = React.memo(({ content, message }) => {
         p,
       }}
     >
-      {isLatestMessage && isSubmitting && !isInitializing ? (content ?? '') + cursor : content}
+      {isLatestMessage && isSubmitting && !isInitializing
+        ? currentContent + cursor
+        : currentContent}
     </ReactMarkdown>
   );
 });

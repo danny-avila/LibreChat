@@ -10,12 +10,14 @@ import { Panel, Spinner } from '~/components';
 import { cn } from '~/utils/';
 import { useAuthContext, useDebounce } from '~/hooks';
 import store from '~/store';
+import { localize } from '~/localization/Translation';
 
 export default function Nav({ navVisible, setNavVisible }) {
   const [isHovering, setIsHovering] = useState(false);
   const { isAuthenticated } = useAuthContext();
   const containerRef = useRef(null);
   const scrollPositionRef = useRef(null);
+  const lang = useRecoilValue(store.lang);
 
   const [conversations, setConversations] = useState([]);
   // current page
@@ -151,7 +153,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                     )}
                     onClick={toggleNavVisible}
                   >
-                    <span className="sr-only">Close sidebar</span>
+                    <span className="sr-only">{localize(lang, 'com_nav_close_sidebar')}</span>
                     <Panel open={false} />
                   </button>
                 </div>
@@ -195,7 +197,7 @@ export default function Nav({ navVisible, setNavVisible }) {
             onClick={toggleNavVisible}
           >
             <div className="flex items-center justify-center">
-              <span className="sr-only">Open sidebar</span>
+              <span className="sr-only">{localize(lang, 'com_nav_open_sidebar')}</span>
               <Panel open={true} />
             </div>
           </button>
