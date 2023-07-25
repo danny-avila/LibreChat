@@ -26,8 +26,12 @@ router.get(
     scope: ['openid', 'profile', 'email'],
   }),
   async (req, res) => {
-    await setAuthTokens(req.user._id, res);
-    res.redirect(domains.client);
+    try {
+      await setAuthTokens(req.user._id, res);
+      res.redirect(domains.client);
+    } catch (err) {
+      console.error('Error in setting authentication tokens:', err);
+    }
   },
 );
 
@@ -48,8 +52,12 @@ router.get(
     scope: ['public_profile', 'email'],
   }),
   async (req, res) => {
-    await setAuthTokens(req.user._id, res);
-    res.redirect(domains.client);
+    try {
+      await setAuthTokens(req.user._id, res);
+      res.redirect(domains.client);
+    } catch (err) {
+      console.error('Error in setting authentication tokens:', err);
+    }
   },
 );
 
@@ -68,8 +76,12 @@ router.get(
     session: false,
   }),
   async (req, res) => {
-    await setAuthTokens(req.user._id, res);
-    res.redirect(domains.client);
+    try {
+      await setAuthTokens(req.user._id, res);
+      res.redirect(domains.client);
+    } catch (err) {
+      console.error('Error in setting authentication tokens:', err);
+    }
   },
 );
 
@@ -90,11 +102,14 @@ router.get(
     scope: ['user:email', 'read:user'],
   }),
   async (req, res) => {
-    await setAuthTokens(req.user._id, res);
-    res.redirect(domains.client);
+    try {
+      await setAuthTokens(req.user._id, res);
+      res.redirect(domains.client);
+    } catch (err) {
+      console.error('Error in setting authentication tokens:', err);
+    }
   },
 );
-
 router.get(
   '/discord',
   passport.authenticate('discord', {
@@ -112,8 +127,12 @@ router.get(
     scope: ['identify', 'email'],
   }),
   async (req, res) => {
-    await setAuthTokens(req.user._id, res);
-    res.redirect(domains.client);
+    try {
+      await setAuthTokens(req.user._id, res);
+      res.redirect(domains.client);
+    } catch (err) {
+      console.error('Error in setting authentication tokens:', err);
+    }
   },
 );
 
