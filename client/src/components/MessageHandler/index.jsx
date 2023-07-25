@@ -242,11 +242,11 @@ export default function MessageHandler() {
         data = JSON.parse(e.data);
       } catch (err) {
         console.log('Invalid JSON:', e.data);
-        data = JSON.parse({'error': e.data});
-        //if (e.data === 'Unauthorized') {
+        data = {'error': e.data};
+        if (e.data === 'Unauthorized') {
           const event = new CustomEvent('unauthorized');
           window.dispatchEvent(event);
-        //}
+        }
       }
 
       errorHandler(data, { ...submission, message });
