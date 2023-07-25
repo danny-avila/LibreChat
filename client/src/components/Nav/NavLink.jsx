@@ -16,7 +16,7 @@ const NavLink = forwardRef((props, ref) => {
 
   return (
     <a {...defaultProps} ref={ref}>
-      {svg()}
+      {typeof svg === 'function' ? svg() : null}
       {text}
     </a>
   );
