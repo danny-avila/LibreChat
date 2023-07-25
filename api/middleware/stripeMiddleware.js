@@ -4,27 +4,23 @@ const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 const User = require('../models/User');
 
 async function updateSubscriptionStatus(subscription) {
-  // Find the user with the given subscription ID
   let user = await User.findOne({ stripeSubscriptionId: subscription.id });
-
-  // If the user is not found with the subscription ID, find the user with the customer ID
   if (!user) {
     user = await User.findOne({ stripeCustomerId: subscription.customer });
   }
 
-  // Update the user's subscription status
   if (user) {
-    await User.findByIdAndUpdate(user._id, {
-      subscriptionStatus: subscription.status,
-    });
-
-    // Reflect the changes in oneTimePaymentPlan field if it's a one-time payment
+    let updates = { subscriptionStatus: subscription.status };
+    
     if(subscription.status === 'active' && subscription.collection_method === 'charge_automatically') {
-      await User.findByIdAndUpdate(user._id, {
-        oneTimePaymentPlan: 'active',
-      });
+      updates.oneTimePaymentPlan = 'pro_month';
     }
 
+    if(subscription.status === 'canceled') {
+      updates.oneTimePaymentPlan = 'unsubscribed';
+    }
+
+    await User.findByIdAndUpdate(user._id, updates);
     console.log(`Updated subscription status for User ${user.id}`);
   } else {
     console.log("User not found with the given subscription ID or customer ID.");
@@ -32,13 +28,9 @@ async function updateSubscriptionStatus(subscription) {
 }
 
 async function handleSuccessfulPayment(paymentInvoice) {
-  // Get Subscription details linked with this invoice
   const subscription = await stripe.subscriptions.retrieve(paymentInvoice.subscription);
-
-  // Get the user to update
   const user = await User.findOne({ stripeCustomerId: subscription.customer });
 
-  // Update the user's subscription status and stripeSubscriptionId
   if (user) {
     await User.findByIdAndUpdate(user._id, {
       stripeSubscriptionId: subscription.id,
@@ -65,6 +57,7 @@ function handleStripeWebhook() {
 
     switch (event.type) {
       case "customer.subscription.updated":
+      case "customer.subscription.deleted":
         const subscription = event.data.object;
         await updateSubscriptionStatus(subscription);
         break;
@@ -132,10 +125,8 @@ function handleStripeWebhook() {
         console.log(`Unhandled event type: ${event.type}`);
     }
 
-    // Return a 200 status to acknowledge receipt of the event
     res.status(200).json({ received: true });
   };
 }
-
 
 module.exports = { handleStripeWebhook };

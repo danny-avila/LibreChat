@@ -46,11 +46,11 @@ router.post('/create-subscription', async (req, res) => {
 
 
 router.post('/cancel-subscription', async (req, res) => {
-  const { subscriptionId } = req.body; // Pass necessary data from frontend
+  const { subscriptionId } = req.body;
   try {
-    console.log("Request Body:", req.body); // Log request body
+    console.log("Request Body:", req.body);
     const canceledSubscription = await cancelSubscription(subscriptionId);
-    
+
     // Fetch the user by stripeSubscriptionId
     const user = await User.findOne({ stripeSubscriptionId: subscriptionId });
 
@@ -62,8 +62,9 @@ router.post('/cancel-subscription', async (req, res) => {
 
     res.status(200).send(canceledSubscription);
   } catch (error) {
-    console.error("Error:", error); // Log error details
-    res.status(400).send({ error: error.message });
+    console.error("Error:", error);
+    // Send the entire error in the response
+    res.status(400).send({ error: error });
   }
 });
 
