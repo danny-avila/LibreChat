@@ -61,9 +61,9 @@ const resetPasswordController = async (req, res) => {
 };
 
 const refreshController = async (req, res, next) => {
-  const { signedCookies = {} } = req;
-  const { refreshToken } = signedCookies;
-  // const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
+  // const { signedCookies = {} } = req;
+  // const { refreshToken } = signedCookies;
+  const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
   console.log('refreshToken',req.headers.cookie);
   if (refreshToken) {
     try {
@@ -111,8 +111,8 @@ const intercept401 = async (err, req, res, next) => {
   console.log('Error', err);
   console.log('statusCode', res.statusCode);
   if (res.statusCode === 401 && !refreshAttempted) {
-    const { signedCookies = {} } = req;
-    const { refreshToken } = signedCookies;
+    // const { signedCookies = {} } = req;
+    // const { refreshToken } = signedCookies;
     // const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
     if (refreshToken) {
       try {
