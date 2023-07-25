@@ -2,6 +2,7 @@ const OpenAIClient = require('./OpenAIClient');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { CallbackManager } = require('langchain/callbacks');
 const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents/');
+const { findMessageContent } = require('../../utils');
 const { loadTools } = require('./tools/util');
 const { SelfReflectionTool } = require('./tools/');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
@@ -131,14 +132,13 @@ Only respond with your conversational reply to the following User Message:
   }
 
   getFunctionModelName(input) {
-    const prefixMap = {
-      'gpt-4': 'gpt-4-0613',
-      'gpt-4-32k': 'gpt-4-32k-0613',
-      'gpt-3.5-turbo': 'gpt-3.5-turbo-0613',
-    };
-
-    const prefix = Object.keys(prefixMap).find((key) => input.startsWith(key));
-    return prefix ? prefixMap[prefix] : 'gpt-3.5-turbo-0613';
+    if (input.startsWith('gpt-3.5-turbo')) {
+      return 'gpt-3.5-turbo';
+    } else if (input.startsWith('gpt-4')) {
+      return 'gpt-4';
+    } else {
+      return 'gpt-3.5-turbo';
+    }
   }
 
   getBuildMessagesOptions(opts) {
@@ -183,7 +183,9 @@ Only respond with your conversational reply to the following User Message:
     const model = this.createLLM(modelOptions, configOptions);
 
     if (this.options.debug) {
-      console.debug(`<-----Agent Model: ${model.modelName} | Temp: ${model.temperature}----->`);
+      console.debug(
+        `<-----Agent Model: ${model.modelName} | Temp: ${model.temperature} | Functions: ${this.functionsAgent}----->`,
+      );
     }
 
     this.availableTools = await loadTools({
@@ -193,6 +195,8 @@ Only respond with your conversational reply to the following User Message:
       functions: this.functionsAgent,
       options: {
         openAIApiKey: this.openAIApiKey,
+        debug: this.options?.debug,
+        message,
       },
     });
     // load tools
@@ -266,6 +270,15 @@ Only respond with your conversational reply to the following User Message:
     if (this.options.debug) {
       console.debug('Loaded agent.');
     }
+
+    onAgentAction(
+      {
+        tool: 'self-reflection',
+        toolInput: `Processing the User's message:\n"${message}"`,
+        log: '',
+      },
+      true,
+    );
   }
 
   async executorCall(message, signal) {
@@ -290,6 +303,11 @@ Only respond with your conversational reply to the following User Message:
       } catch (err) {
         console.error(err);
         errorMessage = err.message;
+        const content = findMessageContent(message);
+        if (content) {
+          errorMessage = content;
+          break;
+        }
         if (attempts === maxAttempts) {
           this.result.output = `Encountered an error while attempting to respond. Error: ${err.message}`;
           this.result.intermediateSteps = this.actions;
@@ -311,7 +329,12 @@ Only respond with your conversational reply to the following User Message:
         return;
       }
 
-      if (!responseMessage.text.includes(observation)) {
+      // Extract the image file path from the observation
+      const observedImagePath = observation.match(/\(\/images\/.*\.\w*\)/g)[0];
+
+      // Check if the responseMessage already includes the image file path
+      if (!responseMessage.text.includes(observedImagePath)) {
+        // If the image file path is not found, append the whole observation
         responseMessage.text += '\n' + observation;
         if (this.options.debug) {
           console.debug('added image from intermediateSteps');
@@ -408,7 +431,7 @@ Only respond with your conversational reply to the following User Message:
     if (this.agentOptions.skipCompletion && this.result.output) {
       responseMessage.text = this.result.output;
       this.addImages(this.result.intermediateSteps, responseMessage);
-      await this.generateTextStream(this.result.output, opts.onProgress);
+      await this.generateTextStream(this.result.output, opts.onProgress, { delay: 8 });
       return await this.handleResponseMessage(responseMessage, saveOptions, user);
     }
 

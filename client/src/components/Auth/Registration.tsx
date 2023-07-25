@@ -9,7 +9,7 @@ import {
   TRegisterUser,
   useGetStartupConfig,
 } from '@librechat/data-provider';
-import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components'
+import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
 
 function Registration() {
   const navigate = useNavigate();
@@ -59,13 +59,15 @@ function Registration() {
         Your one stop solution for AI in China.
       </p>
       <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl">Create your account</h1>
+        <h1 className="mb-4 text-center text-3xl font-semibold">
+          {localize(lang, 'com_auth_create_account')}
+        </h1>
         {error && (
           <div
             className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
             role="alert"
           >
-            There was an error attempting to register your account. Please try again. {errorMessage}
+            {localize(lang, 'com_auth_error_create')} {errorMessage}
           </div>
         )}
         <form
@@ -239,7 +241,8 @@ function Registration() {
                 //   return false;
                 // }}
                 {...register('confirm_password', {
-                  validate: (value) => value === password || localize(lang, 'com_auth_password_not_match'),
+                  validate: (value) =>
+                    value === password || localize(lang, 'com_auth_password_not_match'),
                 })}
                 aria-invalid={!!errors.confirm_password}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -298,12 +301,12 @@ function Registration() {
         )}
         {startupConfig?.googleLoginEnabled && startupConfig?.socialLoginEnabled && (
           <>
-
             <div className="mt-2 flex gap-x-2">
               <a
                 aria-label="Login with Google"
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/google`}>
+                href={`${startupConfig.serverDomain}/oauth/google`}
+              >
                 <GoogleIcon />
                 <p>{localize(lang, 'com_auth_google_login')}</p>
               </a>
@@ -330,23 +333,26 @@ function Registration() {
         )}
         {startupConfig?.githubLoginEnabled && startupConfig?.socialLoginEnabled && (
           <>
-
             <div className="mt-2 flex gap-x-2">
               <a
                 aria-label="Login with GitHub"
-
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/github`}>
+                href={`${startupConfig.serverDomain}/oauth/github`}
+              >
                 <GithubIcon />
                 <p>{localize(lang, 'com_auth_github_login')}</p>
               </a>
             </div>
-
+          </>
+        )}
+        {startupConfig?.discordLoginEnabled && startupConfig?.socialLoginEnabled && (
+          <>
             <div className="mt-2 flex gap-x-2">
               <a
                 aria-label="Login with Discord"
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/discord`}>
+                href={`${startupConfig.serverDomain}/oauth/discord`}
+              >
                 <DiscordIcon />
                 <p>{localize(lang, 'com_auth_discord_login')}</p>
               </a>

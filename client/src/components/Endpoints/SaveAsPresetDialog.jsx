@@ -5,11 +5,13 @@ import { cn } from '~/utils/';
 import cleanupPreset from '~/utils/cleanupPreset';
 import { useCreatePresetMutation } from '@librechat/data-provider';
 import store from '~/store';
+import { localize } from '~/localization/Translation';
 
 const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
   const [title, setTitle] = useState(preset?.title || 'My Preset');
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const createPresetMutation = useCreatePresetMutation();
+  const lang = useRecoilValue(store.lang);
 
   const defaultTextProps =
     'rounded-md border border-gray-300 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.10)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-400 dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
@@ -26,18 +28,18 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
   };
 
   useEffect(() => {
-    setTitle(preset?.title || 'My Preset');
+    setTitle(preset?.title || localize(lang, 'com_endpoint_my_preset'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title="Save As Preset"
+        title={localize(lang, 'com_endpoint_save_as_preset')}
         main={
           <div className="grid w-full items-center gap-2">
             <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-              Preset Name
+              {localize(lang, 'com_endpoint_preset_name')}
             </Label>
             <Input
               id="chatGptLabel"

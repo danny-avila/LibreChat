@@ -31,12 +31,15 @@ LibreChat brings together the future of assistant AIs with the revolutionary tec
 
 With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use free or pay-per-call APIs. We welcome contributions, cloning, and forking to enhance the capabilities of this advanced chatbot platform.
   
-https://github.com/danny-avila/LibreChat/assets/110412045/c1eb0c0f-41f6-4335-b982-84b278b53d59
+<!-- https://github.com/danny-avila/LibreChat/assets/110412045/c1eb0c0f-41f6-4335-b982-84b278b53d59 -->
+
+[![Watch the video](https://img.youtube.com/vi/pNIOs1ovsXw/maxresdefault.jpg)](https://youtu.be/pNIOs1ovsXw)
+Click on the thumbnail to open the video☝️
 
 # Features
 - Response streaming identical to ChatGPT through server-sent events
 - UI from original ChatGPT, including Dark mode
-- AI model selection (through 6 endpoints: OpenAI API, BingAI, ChatGPT Browser, PaLM2,  Claude, Plugins)
+- AI model selection: OpenAI API, BingAI, ChatGPT Browser, PaLM2, Anthropic (Claude), Plugins
 - Create, Save, & Share custom presets - [More info on prompt presets here](https://github.com/danny-avila/LibreChat/releases/tag/v0.3.0)
 - Edit and Resubmit messages with conversation branching
 - Search all messages/conversations - [More info here](https://github.com/danny-avila/LibreChat/releases/tag/v0.1.0)
@@ -44,7 +47,9 @@ https://github.com/danny-avila/LibreChat/assets/110412045/c1eb0c0f-41f6-4335-b98
 
 ---
 
-## ⚠️ [Breaking Changes as of v0.5.0](docs/general_info/breaking_changes.md#v050) ⚠️
+## ⚠️ [Breaking Changes](docs/general_info/breaking_changes.md) ⚠️
+**Applies to [v0.5.4](docs/general_info/breaking_changes.md#v054) & [v0.5.5](docs/general_info/breaking_changes.md#v055)**
+
 **Please read this before updating from a previous version**
 
 ---
@@ -65,6 +70,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Windows Install](docs/install/windows_install.md)
   * [APIs and Tokens](docs/install/apis_and_tokens.md)
   * [User Auth System](docs/install/user_auth_system.md)
+  * [Online MongoDB Database](docs/install/mongodb.md)
 </details>
 
 <details>
@@ -85,6 +91,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
     * [Stable Diffusion](docs/features/plugins/stable_diffusion.md)
     * [Wolfram](docs/features/plugins/wolfram.md)
     * [Make Your Own Plugin](docs/features/plugins/make_your_own.md)
+    * [Using official ChatGPT Plugins](docs/features/plugins/chatgpt_plugins_openapi.md)
 
   * [Proxy](docs/features/proxy.md)
   * [Bing Jailbreak](docs/features/bing_jailbreak.md)

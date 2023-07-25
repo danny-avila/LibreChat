@@ -7,7 +7,7 @@ const { askQuestion } = require('./helpers');
 
 // If we are not in a TTY, lets exit
 if (!process.stdin.isTTY) {
-  console.log('Note: we are not in a TTY, skipping install script.')
+  console.log('Note: we are not in a TTY, skipping install script.');
   exit(0);
 }
 
@@ -57,25 +57,19 @@ let env = {};
   console.log(''); // New line
 
   // Ask for the app title
-  const title = await askQuestion(
-    'Enter the app title (default: "LibreChat"): ',
-  );
+  const title = await askQuestion('Enter the app title (default: "LibreChat"): ');
   env['APP_TITLE'] = title || 'LibreChat';
 
   // Ask for OPENAI_API_KEY
-  const key = await askQuestion(
-    'Enter your OPENAI_API_KEY (default: "user_provided"): ',
-  );
+  const key = await askQuestion('Enter your OPENAI_API_KEY (default: "user_provided"): ');
   env['OPENAI_API_KEY'] = key || 'user_provided';
 
   // GPT4???
-  const gpt4 = await askQuestion(
-    'Do you have access to the GPT4 api (y/n)? Default: n',
-  );
+  const gpt4 = await askQuestion('Do you have access to the GPT4 api (y/n)? Default: n');
   if (gpt4 == 'y' || gpt4 == 'yes') {
-    env['OPENAI_MODELS'] = 'gpt-3.5-turbo,gpt-3.5-turbo-0301,text-davinci-003,gpt-4,gpt-4-0314'
+    env['OPENAI_MODELS'] = 'gpt-3.5-turbo,gpt-3.5-turbo-0301,text-davinci-003,gpt-4,gpt-4-0314';
   } else {
-    env['OPENAI_MODELS'] = 'gpt-3.5-turbo,gpt-3.5-turbo-0301,text-davinci-003'
+    env['OPENAI_MODELS'] = 'gpt-3.5-turbo,gpt-3.5-turbo-0301,text-davinci-003';
   }
 
   // Ask about mongodb
@@ -85,17 +79,19 @@ let env = {};
   env['MONGO_URI'] = mongodb || 'mongodb://127.0.0.1:27017/LibreChat';
   // Very basic check to make sure they entered a url
   if (!env['MONGO_URI'].includes('://')) {
-    console.orange('Warning: Your mongodb url looks incorrect, please double check it in the `.env` file.');
+    console.orange(
+      'Warning: Your mongodb url looks incorrect, please double check it in the `.env` file.',
+    );
   }
 
   // Lets ask about open registration
-  const openReg = await askQuestion(
-    'Do you want to allow user registration (y/n)? Default: y',
-  );
+  const openReg = await askQuestion('Do you want to allow user registration (y/n)? Default: y');
   if (openReg === 'n' || openReg === 'no') {
     env['ALLOW_REGISTRATION'] = 'false';
     // Lets tell them about how to create an account:
-    console.red('Note: You can create an account by running: `npm run create-user <email> <name> <username>`');
+    console.red(
+      'Note: You can create an account by running: `npm run create-user <email> <name> <username>`',
+    );
     // sleep for 1 second so they can read this
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
@@ -105,6 +101,3 @@ let env = {};
 
   // We can ask for more here if we want
   console.log(''); // New line
-  console.green('Success! Please read our docs if you need help setting up the rest of the app.');
-  console.log(''); // New line
-})();

@@ -5,6 +5,10 @@ import CrossIcon from '../svg/CrossIcon';
 import { Save } from 'lucide-react';
 import { cn } from '~/utils/';
 
+import store from '~/store';
+import { useRecoilValue } from 'recoil';
+import { localize } from '~/localization/Translation';
+
 function EndpointOptionsPopover({
   content,
   visible,
@@ -12,6 +16,7 @@ function EndpointOptionsPopover({
   switchToSimpleMode,
   additionalButton = null,
 }) {
+  const lang = useRecoilValue(store.lang);
   const cardStyle =
     'shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white';
 
@@ -19,7 +24,7 @@ function EndpointOptionsPopover({
     <>
       <div
         className={
-          ' endpointOptionsPopover-container absolute bottom-[-10px] flex w-full flex-col items-center md:px-4 z-0' +
+          ' endpointOptionsPopover-container absolute bottom-[-10px] z-0 flex w-full flex-col items-center md:px-4' +
           (visible ? ' show' : '')
         }
       >
@@ -37,12 +42,15 @@ function EndpointOptionsPopover({
               onClick={saveAsPreset}
             >
               <Save className="mr-1 w-[14px]" />
-              Save as preset
+              {localize(lang, 'com_endpoint_save_as_preset')}
             </Button>
             {additionalButton && (
               <Button
                 type="button"
-                className={cn(additionalButton.buttonClass, 'ml-1 h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0')}
+                className={cn(
+                  additionalButton.buttonClass,
+                  'ml-1 h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0',
+                )}
                 onClick={additionalButton.handler}
               >
                 {additionalButton.icon}

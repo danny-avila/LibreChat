@@ -6,7 +6,9 @@ const migrateToStrictFollowParentMessageIdChain = async () => {
   try {
     const conversations = await Conversation.find({ endpoint: null, model: null }).exec();
 
-    if (!conversations || conversations.length === 0) return { noNeed: true };
+    if (!conversations || conversations.length === 0) {
+      return { noNeed: true };
+    }
 
     console.log('Migration: To strict follow the parentMessageId chain.');
 
@@ -64,7 +66,9 @@ const migrateToSupportBetterCustomization = async () => {
   try {
     const conversations = await Conversation.find({ endpoint: null }).exec();
 
-    if (!conversations || conversations.length === 0) return { noNeed: true };
+    if (!conversations || conversations.length === 0) {
+      return { noNeed: true };
+    }
 
     console.log('Migration: To support better customization.');
 
@@ -112,7 +116,9 @@ async function migrateDb() {
 
   const isMigrated = !!ret.find((element) => !element?.noNeed);
 
-  if (!isMigrated) console.log('[Migrate] Nothing to migrate');
+  if (!isMigrated) {
+    console.log('[Migrate] Nothing to migrate');
+  }
 }
 
 module.exports = migrateDb;

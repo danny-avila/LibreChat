@@ -15,7 +15,7 @@ class Env {
       development: '.env.development',
       test: '.env.test',
       production: '.env.production',
-    }
+    };
 
     this.init();
 
@@ -69,12 +69,14 @@ class Env {
       'CREDS_IV',
     ];
 
-    const missingKeys = requiredKeys.map(key => {
-      const variable = process.env[key];
-      if (variable === undefined || variable === null) {
-        return key;
-      }
-    }).filter(value => value !== undefined);
+    const missingKeys = requiredKeys
+      .map((key) => {
+        const variable = process.env[key];
+        if (variable === undefined || variable === null) {
+          return key;
+        }
+      })
+      .filter((value) => value !== undefined);
 
     // Throw an error if any required keys are missing
     if (missingKeys.length) {
@@ -121,35 +123,37 @@ class Env {
   writeEnvFile(filePath, env) {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const updatedLines = lines.map(line => {
-      if (line.trim().startsWith('#')) {
-        // Allow comment removal
-        if (env[line] === 'remove') {
-          return null; // Mark the line for removal
+    const updatedLines = lines
+      .map((line) => {
+        if (line.trim().startsWith('#')) {
+          // Allow comment removal
+          if (env[line] === 'remove') {
+            return null; // Mark the line for removal
+          }
+          // Preserve comments
+          return line;
         }
-        // Preserve comments
-        return line;
-      }
 
-      const [key, value] = line.split('=');
-      if (key && value && Object.prototype.hasOwnProperty.call(env, key.trim())) {
-        if (env[key.trim()] === 'remove') {
-          return null; // Mark the line for removal
+        const [key, value] = line.split('=');
+        if (key && value && Object.prototype.hasOwnProperty.call(env, key.trim())) {
+          if (env[key.trim()] === 'remove') {
+            return null; // Mark the line for removal
+          }
+          return `${key.trim()}=${env[key.trim()]}`;
         }
-        return `${key.trim()}=${env[key.trim()]}`;
-      }
-      return line;
-    }).filter(line => line !== null); // Remove lines marked for removal
+        return line;
+      })
+      .filter((line) => line !== null); // Remove lines marked for removal
 
     // Add any new environment variables that are not in the file yet
     Object.entries(env).forEach(([key, value]) => {
-      if (value !== 'remove' && !updatedLines.some(line => line.startsWith(`${key}=`))) {
+      if (value !== 'remove' && !updatedLines.some((line) => line.startsWith(`${key}=`))) {
         updatedLines.push(`${key}=${value}`);
       }
     });
 
     // Loop through updatedLines and wrap values with spaces in double quotes
-    const fixedLines = updatedLines.map(line => {
+    const fixedLines = updatedLines.map((line) => {
       // lets only split the first = sign
       const [key, value] = line.split(/=(.+)/);
       if (typeof value === 'undefined' || line.trim().startsWith('#')) {
@@ -157,7 +161,10 @@ class Env {
       }
       // Skip lines with quotes and numbers already
       // Todo: this could be one regex
-      const wrappedValue = value.includes(' ') && ! value.includes('"') && ! value.includes('\'') && !/\d/.test(value) ? `"${value}"` : value;
+      const wrappedValue =
+        value.includes(' ') && !value.includes('"') && !value.includes('\'') && !/\d/.test(value)
+          ? `"${value}"`
+          : value;
       return `${key}=${wrappedValue}`;
     });
 

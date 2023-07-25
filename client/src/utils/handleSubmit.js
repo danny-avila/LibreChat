@@ -169,7 +169,7 @@ const useMessageHandler = () => {
       parentMessageId: isRegenerate ? messageId : fakeMessageId,
       messageId: (isRegenerate ? messageId : fakeMessageId) + '_',
       conversationId,
-      unfinished: endpoint === 'azureOpenAI' || endpoint === 'openAI' ? false : true,
+      unfinished: false,
       submitting: true,
     };
 
@@ -201,12 +201,13 @@ const useMessageHandler = () => {
   const regenerate = ({ parentMessageId }) => {
     const parentMessage = messages?.find((element) => element.messageId == parentMessageId);
 
-    if (parentMessage && parentMessage.isCreatedByUser)
+    if (parentMessage && parentMessage.isCreatedByUser) {
       ask({ ...parentMessage }, { isRegenerate: true });
-    else
+    } else {
       console.error(
         'Failed to regenerate the message: parentMessage not found or not created by user.',
       );
+    }
   };
 
   const stopGenerating = () => {

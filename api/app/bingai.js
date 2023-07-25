@@ -39,7 +39,7 @@ const askBing = async ({
     jailbreakConversationId = false;
   }
 
-  if (jailbreak)
+  if (jailbreak) {
     options = {
       jailbreakConversationId: jailbreakConversationId || jailbreak,
       context,
@@ -47,8 +47,18 @@ const askBing = async ({
       parentMessageId,
       toneStyle,
       onProgress,
+      clientOptions: {
+        features: {
+          genImage: {
+            server: {
+              enable: true,
+              type: 'markdown_list',
+            },
+          },
+        },
+      },
     };
-  else {
+  } else {
     options = {
       conversationId,
       context,
@@ -56,6 +66,16 @@ const askBing = async ({
       parentMessageId,
       toneStyle,
       onProgress,
+      clientOptions: {
+        features: {
+          genImage: {
+            server: {
+              enable: true,
+              type: 'markdown_list',
+            },
+          },
+        },
+      },
     };
 
     // don't give those parameters for new conversation

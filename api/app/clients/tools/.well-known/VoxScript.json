@@ -1,0 +1,22 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "VoxScript",
+  "name_for_model": "VoxScript",
+  "description_for_human": "Enables searching of YouTube transcripts, financial data sources Google Search results, and more!",
+  "description_for_model": "Plugin for searching through varius data sources.",
+  "auth": {
+    "type": "service_http",
+    "authorization_type": "bearer",
+    "verification_tokens": {
+      "openai": "ffc5226d1af346c08a98dee7deec9f76"
+    }
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://voxscript.awt.icu/swagger/v1/swagger.yaml",
+    "is_user_authenticated": false
+  },
+  "logo_url": "https://voxscript.awt.icu/images/VoxScript_logo_32x32.png",
+  "contact_email": "voxscript@allwiretech.com",
+  "legal_info_url": "https://voxscript.awt.icu/legal/"
+}

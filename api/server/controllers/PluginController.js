@@ -1,6 +1,6 @@
-// const { getAvailableToolsService } = require('../services/PluginService');
-const fs = require('fs');
+const { promises: fs } = require('fs');
 const path = require('path');
+const { addOpenAPISpecs } = require('../../app/clients/tools/util/addOpenAPISpecs');
 
 const filterUniquePlugins = (plugins) => {
   const seen = new Set();
@@ -27,7 +27,7 @@ const isPluginAuthenticated = (plugin) => {
 
 const getAvailablePluginsController = async (req, res) => {
   try {
-    fs.readFile(
+    const manifestFile = await fs.readFile(
       path.join(__dirname, '..', '..', 'app', 'clients', 'tools', 'manifest.json'),
       'utf8',
       (err, data) => {
@@ -47,6 +47,18 @@ const getAvailablePluginsController = async (req, res) => {
         }
       },
     );
+
+    const jsonData = JSON.parse(manifestFile);
+    const uniquePlugins = filterUniquePlugins(jsonData);
+    const authenticatedPlugins = uniquePlugins.map((plugin) => {
+      if (isPluginAuthenticated(plugin)) {
+        return { ...plugin, authenticated: true };
+      } else {
+        return plugin;
+      }
+    });
+    const plugins = await addOpenAPISpecs(authenticatedPlugins);
+    res.status(200).json(plugins);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

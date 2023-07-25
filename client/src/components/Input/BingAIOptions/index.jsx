@@ -18,8 +18,12 @@ function BingAIOptions({ show }) {
   const { endpoint, conversationId } = conversation;
   const { toneStyle, context, systemMessage, jailbreak } = conversation;
 
-  if (endpoint !== 'bingAI') return null;
-  if (conversationId !== 'new' && !show) return null;
+  if (endpoint !== 'bingAI') {
+    return null;
+  }
+  if (conversationId !== 'new' && !show) {
+    return null;
+  }
 
   const triggerAdvancedMode = () => setAdvancedMode((prev) => !prev);
 

@@ -10,7 +10,9 @@ import { General, Billing } from "./SettingsTabs/";
 import { CogIcon } from '~/components/svg';
 import { cn } from '~/utils/';
 import { useClearConversationsMutation } from '@librechat/data-provider';
+import { useRecoilValue } from 'recoil';
 import store from '~/store';
+import { localize } from '~/localization/Translation';
 
 export default function Settings({ open, onOpenChange }) {
   const { newConversation } = store.useConversation();
@@ -18,6 +20,7 @@ export default function Settings({ open, onOpenChange }) {
   const clearConvosMutation = useClearConversationsMutation();
   const [confirmClear, setConfirmClear] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const lang = useRecoilValue(store.lang);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -59,7 +62,7 @@ export default function Settings({ open, onOpenChange }) {
       <DialogContent className={cn("shadow-2xl dark:bg-gray-900 dark:text-white")}>
         <DialogHeader>
           <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
-            Settings
+            {localize(lang, 'com_nav_settings')}
           </DialogTitle>
         </DialogHeader>
         <div className="px-6">
@@ -87,7 +90,7 @@ export default function Settings({ open, onOpenChange }) {
                 value="general"
               >
                 <CogIcon />
-                General
+                {localize(lang, 'com_nav_setting_general')}
               </Tabs.Trigger>
 
               {/* Add the new Billing tab trigger */}

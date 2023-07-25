@@ -1,8 +1,4 @@
-const {
-  registerUser,
-  requestPasswordReset,
-  resetPassword,
-} = require('../services/auth.service');
+const { registerUser, requestPasswordReset, resetPassword } = require('../services/auth.service');
 
 const isProduction = process.env.NODE_ENV === 'production';
 

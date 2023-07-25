@@ -1,0 +1,157 @@
+openapi: 3.0.2
+info:
+  title: FastAPI
+  version: 0.1.0
+servers:
+  - url: https://plugin.askyourpdf.com
+paths:
+  /api/download_pdf:
+    post:
+      summary: Download Pdf
+      description: Download a PDF file from a URL and save it to the vector database.
+      operationId: download_pdf_api_download_pdf_post
+      parameters:
+        - required: true
+          schema:
+            title: Url
+            type: string
+          name: url
+          in: query
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /query:
+    post:
+      summary: Perform Query
+      description: Perform a query on a document.
+      operationId: perform_query_query_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InputData'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseModel'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    DocumentMetadata:
+      title: DocumentMetadata
+      required:
+        - source
+        - page_number
+        - author
+      type: object
+      properties:
+        source:
+          title: Source
+          type: string
+        page_number:
+          title: Page Number
+          type: integer
+        author:
+          title: Author
+          type: string
+    FileResponse:
+      title: FileResponse
+      required:
+        - docId
+      type: object
+      properties:
+        docId:
+          title: Docid
+          type: string
+        error:
+          title: Error
+          type: string
+    HTTPValidationError:
+      title: HTTPValidationError
+      type: object
+      properties:
+        detail:
+          title: Detail
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationError'
+    InputData:
+      title: InputData
+      required:
+        - doc_id
+        - query
+      type: object
+      properties:
+        doc_id:
+          title: Doc Id
+          type: string
+        query:
+          title: Query
+          type: string
+    ResponseModel:
+      title: ResponseModel
+      required:
+        - results
+      type: object
+      properties:
+        results:
+          title: Results
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+    SearchResult:
+      title: SearchResult
+      required:
+        - doc_id
+        - text
+        - metadata
+      type: object
+      properties:
+        doc_id:
+          title: Doc Id
+          type: string
+        text:
+          title: Text
+          type: string
+        metadata:
+          $ref: '#/components/schemas/DocumentMetadata'
+    ValidationError:
+      title: ValidationError
+      required:
+        - loc
+        - msg
+        - type
+      type: object
+      properties:
+        loc:
+          title: Location
+          type: array
+          items:
+            anyOf:
+              - type: string
+              - type: integer
+        msg:
+          title: Message
+          type: string
+        type:
+          title: Error Type
+          type: string

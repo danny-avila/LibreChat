@@ -16,8 +16,12 @@ router.post('/', requireJwtAuth, rateLimit, async (req, res) => {
     parentMessageId,
     conversationId: oldConversationId,
   } = req.body;
-  if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
-  if (endpoint !== 'chatGPTBrowser') return handleError(res, { text: 'Illegal request' });
+  if (text.length === 0) {
+    return handleError(res, { text: 'Prompt empty or too short' });
+  }
+  if (endpoint !== 'chatGPTBrowser') {
+    return handleError(res, { text: 'Illegal request' });
+  }
 
   // build user message
   const conversationId = oldConversationId || crypto.randomUUID();
@@ -168,7 +172,7 @@ const ask = async ({
 
     // First update conversationId if needed
     let conversationUpdate = { conversationId: newConversationId, endpoint: 'chatGPTBrowser' };
-    if (conversationId != newConversationId)
+    if (conversationId != newConversationId) {
       if (isNewConversation) {
         // change the conversationId to new one
         conversationUpdate = {
@@ -183,6 +187,7 @@ const ask = async ({
           ...endpointOption,
         };
       }
+    }
 
     await saveConvo(req.user.id, conversationUpdate);
     conversationId = newConversationId;
@@ -192,12 +197,13 @@ const ask = async ({
     userMessage.messageId = newUserMassageId;
 
     // If response has parentMessageId, the fake userMessage.messageId should be updated to the real one.
-    if (!overrideParentMessageId)
+    if (!overrideParentMessageId) {
       await saveMessage({
         ...userMessage,
         messageId: userMessageId,
         newMessageId: newUserMassageId,
       });
+    }
     userMessageId = newUserMassageId;
 
     sendMessage(res, {

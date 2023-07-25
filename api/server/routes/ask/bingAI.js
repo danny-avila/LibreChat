@@ -16,8 +16,12 @@ router.post('/', requireJwtAuth, rateLimit, async (req, res) => {
     parentMessageId,
     conversationId: oldConversationId,
   } = req.body;
-  if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
-  if (endpoint !== 'bingAI') return handleError(res, { text: 'Illegal request' });
+  if (text.length === 0) {
+    return handleError(res, { text: 'Prompt empty or too short' });
+  }
+  if (endpoint !== 'bingAI') {
+    return handleError(res, { text: 'Illegal request' });
+  }
 
   // build user message
   const conversationId = oldConversationId || crypto.randomUUID();
@@ -35,7 +39,7 @@ router.post('/', requireJwtAuth, rateLimit, async (req, res) => {
 
   // build endpoint option
   let endpointOption = {};
-  if (req.body?.jailbreak)
+  if (req.body?.jailbreak) {
     endpointOption = {
       jailbreak: req.body?.jailbreak ?? false,
       jailbreakConversationId: req.body?.jailbreakConversationId ?? null,
@@ -44,7 +48,7 @@ router.post('/', requireJwtAuth, rateLimit, async (req, res) => {
       toneStyle: req.body?.toneStyle ?? 'creative',
       token: req.body?.token ?? null,
     };
-  else
+  } else {
     endpointOption = {
       jailbreak: req.body?.jailbreak ?? false,
       systemMessage: req.body?.systemMessage ?? null,
@@ -55,6 +59,7 @@ router.post('/', requireJwtAuth, rateLimit, async (req, res) => {
       toneStyle: req.body?.toneStyle ?? 'creative',
       token: req.body?.token ?? null,
     };
+  }
 
   console.log('ask log', {
     userMessage,
@@ -107,7 +112,9 @@ const ask = async ({
     'X-Accel-Buffering': 'no',
   });
 
-  if (preSendRequest) sendMessage(res, { message: userMessage, created: true });
+  if (preSendRequest) {
+    sendMessage(res, { message: userMessage, created: true });
+  }
 
   let lastSavedTimestamp = 0;
   const { onProgress: progressCallback, getPartialText } = createOnProgress({
@@ -166,7 +173,8 @@ const ask = async ({
     let unfinished = false;
     if (partialText?.trim()?.length > response.text.length) {
       response.text = partialText;
-      unfinished = true;
+      unfinished = false;
+      //setting "unfinished" to false fix bing image generation error msg and allows to continue a convo after being triggered by censorship (bing does remember the context after a "censored error" so there is no reason to end the convo)
     }
 
     let responseMessage = {
@@ -208,12 +216,13 @@ const ask = async ({
     userMessage.messageId = newUserMessageId;
 
     // If response has parentMessageId, the fake userMessage.messageId should be updated to the real one.
-    if (!overrideParentMessageId)
+    if (!overrideParentMessageId) {
       await saveMessage({
         ...userMessage,
         messageId: userMessageId,
         newMessageId: newUserMessageId,
       });
+    }
     userMessageId = newUserMessageId;
 
     sendMessage(res, {

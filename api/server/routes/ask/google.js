@@ -10,8 +10,12 @@ const rateLimit = require('../../../middleware/rateLimit');
 
 router.post('/', requireJwtAuth, rateLimit, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId: oldConversationId } = req.body;
-  if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
-  if (endpoint !== 'google') return handleError(res, { text: 'Illegal request' });
+  if (text.length === 0) {
+    return handleError(res, { text: 'Prompt empty or too short' });
+  }
+  if (endpoint !== 'google') {
+    return handleError(res, { text: 'Illegal request' });
+  }
 
   // build endpoint option
   const endpointOption = {

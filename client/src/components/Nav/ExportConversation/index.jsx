@@ -6,9 +6,11 @@ import { cn } from '~/utils/';
 import ExportModel from './ExportModel';
 
 import store from '~/store';
+import { localize } from '~/localization/Translation';
 
 const ExportConversation = forwardRef(() => {
   const [open, setOpen] = useState(false);
+  const lang = useRecoilValue(store.lang);
 
   const conversation = useRecoilValue(store.conversation) || {};
 
@@ -18,7 +20,9 @@ const ExportConversation = forwardRef(() => {
     conversation?.conversationId !== 'search';
 
   const clickHandler = () => {
-    if (exportable) setOpen(true);
+    if (exportable) {
+      setOpen(true);
+    }
   };
 
   return (
@@ -31,7 +35,7 @@ const ExportConversation = forwardRef(() => {
         onClick={clickHandler}
       >
         <Download size={16} />
-        Export conversation
+        {localize(lang, 'com_nav_export_conversation')}
       </button>
 
       <ExportModel open={open} onOpenChange={setOpen} />

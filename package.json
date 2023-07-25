@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "",
   "proxy": "<http://localhost:4242>",
   "workspaces": [
@@ -10,6 +10,10 @@
   ],
   "scripts": {
     "install": "node config/install.js",
+    "update": "node config/update.js",
+    "update:local": "node config/update.js -l",
+    "update:docker": "node config/update.js -d",
+    "update:single": "node config/update.js -s",
     "upgrade": "node config/upgrade.js",
     "create-user": "node config/create-user.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
@@ -43,6 +47,7 @@
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "devDependencies": {
     "@playwright/test": "^1.32.1",
+    "axios": "^1.4.0",
     "@typescript-eslint/eslint-plugin": "^5.59.6",
     "@typescript-eslint/parser": "^5.59.6",
     "babel-eslint": "^10.1.0",
