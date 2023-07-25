@@ -157,23 +157,47 @@ const AuthContextProvider = ({
     setUserContext,
   ]);
 
-  // const silentRefresh = useCallback(() => {
-  //   refreshToken.mutate(undefined, {
-  //     onSuccess: (data: TLoginResponse) => {
-  //       const { user, token } = data;
-  //       setUserContext({ token, isAuthenticated: true, user });
-  //     },
-  //     onError: error => {
-  //       setError(error.message);
-  //     }
-  //   });
-  //
-  // }, [setUserContext]);
+  const silentRefresh = useCallback(() => {
+    if (!refreshToken) {
+      // console.log('refreshToken is not defined');
+      navigate('/login', { replace: true });
+      return;
+    }
 
-  // useEffect(() => {
-  //   if (token)
-  //   silentRefresh();
-  // }, [token, silentRefresh]);
+    refreshToken.mutate(undefined, {
+      onSuccess: (data: TLoginResponse) => {
+        const { user, token } = data;
+        setUserContext({ token, isAuthenticated: true, user });
+      },
+      onError: error => {
+        console.log('Refresh token has expired, please log in again.', error);
+        navigate('/login');
+      }
+    });
+  }, [setUserContext, navigate]);
+
+ useEffect(() => {
+    // Define the event handler function.
+    const handleUnauthorized = async () => {
+      try {
+        console.log('Unauthorized event received:');
+        await silentRefresh();
+      } catch (refreshError) {
+        console.log('Failed to refresh:', refreshError);
+      }
+    };
+
+    // Add the event listener.
+    window.addEventListener('unauthorized', handleUnauthorized);
+    // window.addEventListener('unauthorized', (event) => {
+    //  console.log('Unauthorized event received:', event.detail);
+    //});
+
+    // Remove the event listener when the component is unmounted.
+    return () => {
+      window.removeEventListener('unauthorized', handleUnauthorized);
+    };
+  }, [silentRefresh]);
 
   // Make the provider update only when it should
   const memoedValue = useMemo(
