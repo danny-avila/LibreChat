@@ -15,6 +15,8 @@ const App = () => {
       onError: (error) => {
         if (error?.response?.status === 401) {
           setError(error);
+          const event = new CustomEvent('unauthorized');
+           window.dispatchEvent(event);
         }
       },
     }),
