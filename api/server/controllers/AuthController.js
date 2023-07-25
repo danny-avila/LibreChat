@@ -98,7 +98,7 @@ const refreshController = async (req, res, next) => {
 };    
 
 const intercept401 = async (req, res, next) => {
-  console.log('intercept:',req);
+  console.log('intercept:',res);
   if (res.statusCode === 401) {
     const { signedCookies = {} } = req;
     const { refreshToken } = signedCookies;
