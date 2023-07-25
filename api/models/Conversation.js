@@ -4,7 +4,7 @@ const { getMessages, deleteMessages } = require('./Message');
 
 const getConvo = async (user, conversationId) => {
   try {
-    return await Conversation.findOne({ user, conversationId }).exec();
+    return await Conversation.findOne({ user, conversationId }).lean();
   } catch (error) {
     console.log(error);
     return { message: 'Error getting single conversation' };
@@ -24,7 +24,7 @@ module.exports = {
       return await Conversation.findOneAndUpdate({ conversationId: conversationId, user }, update, {
         new: true,
         upsert: true,
-      }).exec();
+      });
     } catch (error) {
       console.log(error);
       return { message: 'Error saving conversation' };
@@ -35,10 +35,10 @@ module.exports = {
       const totalConvos = (await Conversation.countDocuments({ user })) || 1;
       const totalPages = Math.ceil(totalConvos / pageSize);
       const convos = await Conversation.find({ user })
-        .sort({ createdAt: -1, created: -1 })
+        .sort({ createdAt: -1 })
         .skip((pageNumber - 1) * pageSize)
         .limit(pageSize)
-        .exec();
+        .lean();
       return { conversations: convos, pages: totalPages, pageNumber, pageSize };
     } catch (error) {
       console.log(error);
@@ -62,7 +62,7 @@ module.exports = {
           Conversation.findOne({
             user,
             conversationId: convo.conversationId,
-          }).exec(),
+          }).lean(),
         ),
       );
 
@@ -121,7 +121,7 @@ module.exports = {
   deleteConvos: async (user, filter) => {
     let toRemove = await Conversation.find({ ...filter, user }).select('conversationId');
     const ids = toRemove.map((instance) => instance.conversationId);
-    let deleteCount = await Conversation.deleteMany({ ...filter, user }).exec();
+    let deleteCount = await Conversation.deleteMany({ ...filter, user });
     deleteCount.messages = await deleteMessages({ conversationId: { $in: ids } });
     return deleteCount;
   },
