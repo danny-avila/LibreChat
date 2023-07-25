@@ -234,12 +234,13 @@ export default function MessageHandler() {
       abortConversation(message?.conversationId || submission?.conversationId);
 
     events.onerror = function (e) {
-      console.log('error in opening conn.',e);
+      console.log('error in opening conn.');
       events.close();
 
       let data;
       try {
         data = JSON.parse(e.data);
+        errorHandler(data, { ...submission, message });
       } catch (err) {
         console.log('Invalid JSON:', e.data);
         data = {'error': e.data};
@@ -248,8 +249,6 @@ export default function MessageHandler() {
           window.dispatchEvent(event);
         }
       }
-
-      errorHandler(data, { ...submission, message });
     };
 
     setIsSubmitting(true);
