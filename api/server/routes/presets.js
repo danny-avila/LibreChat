@@ -6,7 +6,7 @@ const requireJwtAuth = require('../../middleware/requireJwtAuth');
 
 router.get('/', requireJwtAuth, async (req, res) => {
   const presets = (await getPresets(req.user.id)).map((preset) => {
-    return preset.toObject();
+    return preset;
   });
   res.status(200).send(presets);
 });
@@ -20,7 +20,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
     await savePreset(req.user.id, update);
 
     const presets = (await getPresets(req.user.id)).map((preset) => {
-      return preset.toObject();
+      return preset;
     });
     res.status(201).send(presets);
   } catch (error) {
@@ -41,12 +41,8 @@ router.post('/delete', requireJwtAuth, async (req, res) => {
 
   try {
     await deletePresets(req.user.id, filter);
-
-    const presets = (await getPresets(req.user.id)).map((preset) => preset.toObject());
-
-    // console.log('delete preset response', presets);
+    const presets = await getPresets(req.user.id);
     res.status(201).send(presets);
-    // res.status(201).send(dbResponse);
   } catch (error) {
     console.error(error);
     res.status(500).send(error);
