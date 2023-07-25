@@ -215,7 +215,6 @@ const AuthContextProvider = ({
   ]);
 
  useEffect(() => {
-    // Define the event handler function.
     const handleUnauthorized = async () => {
       try {
         console.log('Unauthorized event received:');
@@ -225,13 +224,7 @@ const AuthContextProvider = ({
       }
     };
 
-    // Add the event listener.
     window.addEventListener('unauthorized', handleUnauthorized);
-    // window.addEventListener('unauthorized', (event) => {
-    //  console.log('Unauthorized event received:', event.detail);
-    //});
-
-    // Remove the event listener when the component is unmounted.
     return () => {
       window.removeEventListener('unauthorized', handleUnauthorized);
     };
