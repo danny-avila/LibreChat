@@ -56,7 +56,7 @@ ANTHROPIC_MODELS=claude-1,claude-instant-1,claude-2
 
 Changed **AZURE_OPENAI_API_KEY** to **AZURE_API_KEY**:
 
-I had to change the environment variable from AZURE_OPENAI_API_KEY to AZURE_API_KEY, because the former would be read by langchain and cause issues when a user has both Azure and OpenAI keys set. This is a known issue in the langchain library https://github.com/hwchase17/langchainjs/issues/1687
+I had to change the environment variable from AZURE_OPENAI_API_KEY to AZURE_API_KEY, because the former would be read by langchain and cause issues when a user has both Azure and OpenAI keys set. This is a [known issue in the langchain library](https://github.com/hwchase17/langchainjs/issues/1687)
 
 ## v0.5.0
 
