@@ -15,13 +15,14 @@ const App = () => {
     queryCache: new QueryCache({
       onError: (error) => {
          console.log('Error', error);
-         const originalRequest = error.config;
+         //const originalRequest = error.config;
+         // The responses by the refreshController must match exactly to prevent infinite 401 loop
          if (error?.response?.status === 401 && 
            !(error?.response?.data === 'Refresh token expired or not found for this user') &&
            !(error?.response?.data === 'User not found') &&
            !(error?.response?.data === 'Invalid refresh token') &&
            !(error?.response?.data === 'Refresh token not provided')) {
-             originalRequest._retry = true;
+             //originalRequest._retry = true;
              window.dispatchEvent(new CustomEvent('unauthorized'));
          }
       },
