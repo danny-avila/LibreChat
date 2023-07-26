@@ -1,4 +1,4 @@
-# [Docker Install](docs/install/docker_install.md)🐳
-# [Windows Install](docs/install/windows_install.md)💙
-# [Linux Install](docs/install/linux_install.md)🐧
-# [Mac Install](docs/install/mac_install.md)🍎 
+# [Docker Install](docker_install.md)🐳
+# [Windows Install](windows_install.md)💙
+# [Linux Install](linux_install.md)🐧
+# [Mac Install](mac_install.md)🍎 
