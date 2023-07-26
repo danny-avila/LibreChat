@@ -64,10 +64,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 <details open>
   <summary><strong>Getting Started</strong></summary>
 
-  * [Docker Install](docs/install/docker_install.md)
-  * [Linux Install](docs/install/linux_install.md)
-  * [Mac Install](docs/install/mac_install.md)
-  * [Windows Install](docs/install/windows_install.md)
+  * ### [Installation](docs/install/installation.md)
   * [APIs and Tokens](docs/install/apis_and_tokens.md)
   * [User Auth System](docs/install/user_auth_system.md)
   * [Online MongoDB Database](docs/install/mongodb.md)
