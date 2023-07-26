@@ -13,8 +13,14 @@ const App = () => {
   
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
-      // onError: (error) => {
-        // if (error?.response?.status === 401) {
+      onError: (error) => {
+         const originalRequest = error.config;
+         if (error?.response?.status === 401 && !originalRequest._retry) {
+           originalRequest._retry = true;
+           window.dispatchEvent(new CustomEvent('unauthorized'));
+           return ;
+         }
+//        if (error?.response?.status === 401 && !originalRequest._retry) {
           //if (refreshAttempts > 3) {
           //  refreshAttempts += 1;
           //  console.error("Too many refresh attempts. Please log in again.");
@@ -24,7 +30,7 @@ const App = () => {
           //const event = new CustomEvent('unauthorized');
           //window.dispatchEvent(event);
         // }
-      // },
+      },
     }),
   });
 
