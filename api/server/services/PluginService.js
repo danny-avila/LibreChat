@@ -3,7 +3,7 @@ const { encrypt, decrypt } = require('../../utils/');
 
 const getUserPluginAuthValue = async (user, authField) => {
   try {
-    const pluginAuth = await PluginAuth.findOne({ user, authField });
+    const pluginAuth = await PluginAuth.findOne({ user, authField }).lean();
     if (!pluginAuth) {
       return null;
     }
@@ -43,7 +43,7 @@ const getUserPluginAuthValue = async (user, authField) => {
 const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
   try {
     const encryptedValue = encrypt(value);
-    const pluginAuth = await PluginAuth.findOne({ userId, authField });
+    const pluginAuth = await PluginAuth.findOne({ userId, authField }).lean();
     if (pluginAuth) {
       const pluginAuth = await PluginAuth.updateOne(
         { userId, authField },
