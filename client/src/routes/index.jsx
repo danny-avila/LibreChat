@@ -6,6 +6,40 @@ import { Login, Registration, RequestPasswordReset, ResetPassword } from '../com
 import { AuthContextProvider } from '../hooks/AuthContext';
 import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
 
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
+
+export const AuthContext = React.createContext();
+
+export const AuthContextProvider = ({ children }) => {
+  const [token, setToken] = useState(null);
+
+  useEffect(() => {
+    // TODO: implement your logic here to retrieve and set initial access token
+  }, []);
+
+  axios.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+      const originalRequest = error.config;
+      if (error.response.status === 401 && !originalRequest._retry) {
+        originalRequest._retry = true;
+        const token = await refreshAccessToken(); // TODO: implement this function
+        setToken(token);
+        axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+        return axios(originalRequest);
+      }
+      return Promise.reject(error);
+    }
+  );
+
+  return (
+    <AuthContext.Provider value={{ token, setToken }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
 const AuthLayout = () => (
   <AuthContextProvider>
     <Outlet />
