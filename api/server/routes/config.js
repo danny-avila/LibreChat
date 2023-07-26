@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const packageJson = require('../../../package.json');
 
 router.get('/', async function (req, res) {
   try {
@@ -18,6 +19,7 @@ router.get('/', async function (req, res) {
     const serverDomain = process.env.DOMAIN_SERVER || 'http://localhost:3080';
     const registrationEnabled = process.env.ALLOW_REGISTRATION === 'true';
     const socialLoginEnabled = process.env.ALLOW_SOCIAL_LOGIN === 'true';
+    const version = packageJson.version;
 
     return res.status(200).send({
       appTitle,
@@ -30,6 +32,7 @@ router.get('/', async function (req, res) {
       serverDomain,
       registrationEnabled,
       socialLoginEnabled,
+      version,
     });
   } catch (err) {
     console.error(err);
