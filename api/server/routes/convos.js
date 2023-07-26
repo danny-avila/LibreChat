@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getConvo, saveConvo, likeConvo } = require('../../models');
-const { getConvosByPage, deleteConvos, getRecentConvos } = require('../../models/Conversation');
+const { getConvosByPage, deleteConvos, getRecentConvos, getHottestConvo } = require('../../models/Conversation');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 const { duplicateMessages } = require('../../models/Message');
 const crypto = require('crypto');
@@ -10,6 +10,16 @@ const Conversation = require('../../models/schema/convoSchema');
 router.get('/', requireJwtAuth, async (req, res) => {
   const pageNumber = req.query.pageNumber || 1;
   res.status(200).send(await getConvosByPage(req.user.id, pageNumber));
+});
+
+router.get('/hottest', requireJwtAuth, async (req, res) => {
+  try {
+    const allConvos = await getHottestConvo();
+    res.status(200).send({ rs: true, data: allConvos, msg: 'list top 3 convensations successflly' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send(error);
+  }
 });
 
 router.get('/recent', requireJwtAuth, async (req, res) => {

@@ -11420,7 +11420,7 @@ real-require@^0.2.0:
   resolved "https://registry.npmjs.org/real-require/-/real-require-0.2.0.tgz"
   integrity sha512-57frrGM/OCTLqLOAh0mhVA9VBMHd+9U7Zb2THMGdBUoZVOtGbJzjxsYGDJ3A9AYYCP4hn6y1TVbaOfzWtm5GFg==
 
-recoil@^0.7.7:
+recoil@^0.7.2, recoil@^0.7.7:
   version "0.7.7"
   resolved "https://registry.npmjs.org/recoil/-/recoil-0.7.7.tgz"
   integrity sha512-8Og5KPQW9LwC577Vc7Ug2P0vQshkv1y3zG3tSSkWMqkWSwHmE+by06L8JtnGocjW6gcCvfwB3YtrJG6/tWivNQ==
