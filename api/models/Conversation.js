@@ -129,21 +129,21 @@ module.exports = {
     try {
       return await Conversation.find({
         user: { $ne: userId },
-        isPrivate: {$eq: false}
-      }).sort( {updatedAt: -1} ).limit(3).exec();
+        isPrivate: { $eq: false }
+      }).sort( { updatedAt: -1 } ).limit(3).exec();
     } catch (error) {
       console.log(error);
       return { message: 'Error fetching recent conversations' };
     }
   },
-  
+
   likeConvo: async (conversationId, isLiked) => {
     try {
       const existingConversation = await Conversation.findOne({ conversationId }).exec();
-  
+
       if (existingConversation) {
         const update = {};
-        
+
         if (isLiked) {
           // Increment the likesCount by 1
           update.likesConvo = existingConversation.likesConvo + 1;
@@ -151,7 +151,7 @@ module.exports = {
           // Ensure likesCount doesn't go below 0
           update.likesConvo = existingConversation.likesConvo > 0 ? existingConversation.likesConvo - 1 : 0;
         }
-  
+
         return await Conversation.findOneAndUpdate(
           { conversationId },
           update,
@@ -166,5 +166,16 @@ module.exports = {
       return { message: 'Error liking conversation' };
     }
   },
-  
+  getHottestConvo: async () => {
+    try {
+      const convos = await Conversation.find()
+        .sort({ likesConvo: -1 }) // Sort by count in descending order (hottest first)
+        .limit(3) // Limit the result to the top 3 conversations
+        .exec();
+      return { conversations: convos };
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error getting the hottest conversations' };
+    }
+  }
 };

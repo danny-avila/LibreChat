@@ -41,7 +41,6 @@ export default function Conversation({ conversation, retainView }) {
       )
 
       const data = await response.json();
-      console.log('conversationnnnnnnn', data);
       // Update the isLiked state based on the data received from the API
       const likesCount = data.likesConvo;
       if (likesCount !== 0) {
