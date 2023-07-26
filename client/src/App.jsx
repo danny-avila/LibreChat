@@ -18,8 +18,9 @@ const App = () => {
          if (error?.response?.status === 401 && !originalRequest._retry) {
            originalRequest._retry = true;
            window.dispatchEvent(new CustomEvent('unauthorized'));
-           return ;
+           // return;
          }
+         // return;
 //        if (error?.response?.status === 401 && !originalRequest._retry) {
           //if (refreshAttempts > 3) {
           //  refreshAttempts += 1;
