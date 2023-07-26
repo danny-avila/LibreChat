@@ -1,12 +1,16 @@
 const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const rimraf = require('rimraf');
 const { askQuestion, isDockerRunning, silentExit } = require('./helpers');
+
+const isWindows = process.platform === 'win32';
 
 const config = {
   localUpdate: process.argv.includes('-l'),
   dockerUpdate: process.argv.includes('-d'),
   useSingleComposeFile: process.argv.includes('-s'),
+  useSudo: process.argv.includes('--sudo'),
 };
 
 // Set the directories
@@ -51,7 +55,11 @@ function deleteNodeModules(dir) {
   const nodeModulesPath = path.join(dir, 'node_modules');
   if (fs.existsSync(nodeModulesPath)) {
     console.purple(`Deleting node_modules in ${dir}`);
-    execSync(`rd /s /q "${nodeModulesPath}"`, { stdio: 'inherit', shell: 'cmd.exe' });
+    if (isWindows) {
+      execSync(`rd /s /q "${nodeModulesPath}"`, { stdio: 'inherit', shell: 'cmd.exe' });
+    } else {
+      rimraf.sync(nodeModulesPath);
+    }
   }
 }
 
@@ -63,7 +71,7 @@ function deleteNodeModules(dir) {
   }
 
   await validateDockerRunning();
-  const { dockerUpdate, useSingleComposeFile: singleCompose } = config;
+  const { dockerUpdate, useSingleComposeFile: singleCompose, useSudo } = config;
 
   // Fetch latest repo
   console.purple('Fetching the latest repo...');
@@ -79,9 +87,12 @@ function deleteNodeModules(dir) {
 
   if (dockerUpdate) {
     console.purple('Removing previously made Docker container...');
-    const downCommand = `docker-compose ${
+    let downCommand = `docker-compose ${
       singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''
     }down --volumes`;
+    if (useSudo) {
+      downCommand = `sudo ${downCommand}`;
+    }
     console.orange(downCommand);
     execSync(downCommand, { stdio: 'inherit' });
     console.purple('Pruning all LibreChat Docker images...');
@@ -95,9 +106,12 @@ function deleteNodeModules(dir) {
     console.purple('Removing all unused dangling Docker images...');
     execSync('docker image prune -f', { stdio: 'inherit' });
     console.purple('Building new LibreChat image...');
-    const buildCommand = `docker-compose ${
+    let buildCommand = `docker-compose ${
       singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''
     }build`;
+    if (useSudo) {
+      buildCommand = `sudo ${buildCommand}`;
+    }
     console.orange(buildCommand);
     execSync(buildCommand, { stdio: 'inherit' });
   } else {
@@ -120,6 +134,9 @@ function deleteNodeModules(dir) {
   let startCommand = 'npm run backend';
   if (dockerUpdate) {
     startCommand = `docker-compose ${singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''}up`;
+    if (useSudo) {
+      startCommand = `sudo ${startCommand}`;
+    }
   }
   console.green('Your LibreChat app is now up to date! Start the app with the following command:');
   console.purple(startCommand);
