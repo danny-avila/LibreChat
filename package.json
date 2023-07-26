@@ -17,6 +17,7 @@
     "create-user": "node config/create-user.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
     "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
+    "backend:stop": "node config/stop-backend.js",
     "build:data-provider": "cd packages/data-provider && npm run build",
     "frontend": "npm run build:data-provider && cd client && npm run build",
     "frontend:ci": "npm run build:data-provider && cd client && npm run build:ci",
