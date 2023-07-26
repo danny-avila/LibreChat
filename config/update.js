@@ -1,10 +1,6 @@
 const { execSync } = require('child_process');
 const path = require('path');
-const fs = require('fs');
-const rimraf = require('rimraf');
-const { askQuestion, isDockerRunning, silentExit } = require('./helpers');
-
-const isWindows = process.platform === 'win32';
+const { askQuestion, isDockerRunning, deleteNodeModules, silentExit } = require('./helpers');
 
 const config = {
   localUpdate: process.argv.includes('-l'),
@@ -48,18 +44,6 @@ async function validateDockerRunning() {
       'Error: Docker is not running. You will need to start Docker Desktop or if using linux/mac, run `sudo systemctl start docker`',
     );
     silentExit(1);
-  }
-}
-
-function deleteNodeModules(dir) {
-  const nodeModulesPath = path.join(dir, 'node_modules');
-  if (fs.existsSync(nodeModulesPath)) {
-    console.purple(`Deleting node_modules in ${dir}`);
-    if (isWindows) {
-      execSync(`rd /s /q "${nodeModulesPath}"`, { stdio: 'inherit', shell: 'cmd.exe' });
-    } else {
-      rimraf.sync(nodeModulesPath);
-    }
   }
 }
 
