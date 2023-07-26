@@ -80,58 +80,51 @@ const refreshController = async (req, res, next) => {
         const session = await Session.findOne({ user: userId, refreshTokenHash: hashedToken });
         console.log('session',session);
         if (session && session.expiration > new Date()) {
-          
           const token = await setAuthTokens(userId, res); 
           console.log('token',token);
-          // res.setHeader('Authorization', `Bearer ${token}`);
           console.log('Remove Refresh Session', session);
           await Session.deleteOne({ _id: session._id });
           const userObj = user.toJSON();
           res.status(200).send({ token, user: userObj });
-          // next();
         } else {
           res.status(401).send('Refresh token expired or not found for this user');
-          // next();
         }
       } else {
         res.status(401).send('User not found');
-        // next();
       }
     } catch (err) {
       res.status(401).send('Invalid refresh token');
-      // next();
     }
   } else {
-    res.status(401).send('Controller: Refresh token not provided');
-    // next();
+    res.status(401).send('Refresh token not provided');
   }
 };    
 
-const intercept401 = async (err, req, res, next) => {
-  console.log('Error', err);
-  console.log('statusCode', res.statusCode);
-  if (res.statusCode === 401 && !refreshAttempted) {
-    // const { signedCookies = {} } = req;
-    // const { refreshToken } = signedCookies;
-    const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
-    if (refreshToken) {
-      try {
-        refreshAttempted = true;
-        await refreshController(req, res, next);
-      } catch (error) {
-        res.status(401).send('Token Refresh Failed');
-      }
-    } else {
-      res.status(401).send('Interceptor: Refresh token not provided');
-    }
-  } else if (res.statusCode === 401 && refreshAttempted) {
-    refreshAttempted = false;
-    res.status(401).send('Refresh Already Attempted');
-  } else {
-    refreshAttempted = false;
-    next();
-  }  
-};
+//const intercept401 = async (err, req, res, next) => {
+//  console.log('Error', err);
+//  console.log('statusCode', res.statusCode);
+//  if (res.statusCode === 401 && !refreshAttempted) {
+//    // const { signedCookies = {} } = req;
+//    // const { refreshToken } = signedCookies;
+//    const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
+//    if (refreshToken) {
+//      try {
+//        refreshAttempted = true;
+//        await refreshController(req, res, next);
+//      } catch (error) {
+//        res.status(401).send('Token Refresh Failed');
+//      }
+//    } else {
+//      res.status(401).send('Interceptor: Refresh token not provided');
+//    }
+//  } else if (res.statusCode === 401 && refreshAttempted) {
+//    refreshAttempted = false;
+//    res.status(401).send('Refresh Already Attempted');
+//  } else {
+//    refreshAttempted = false;
+//    next();
+//  }  
+//};
 
 module.exports = {
   getUserController,
