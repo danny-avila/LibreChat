@@ -9,11 +9,17 @@ import { router } from './routes';
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
-
+  let refreshAttempts = 0;
+  
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
       onError: (error) => {
         if (error?.response?.status === 401) {
+          if (refreshAttempts > 3) {
+            refreshAttempts += 1;
+            console.error("Too many refresh attempts. Please log in again.");
+            return;
+          }
           setError(error);
           const event = new CustomEvent('unauthorized');
           window.dispatchEvent(event);
