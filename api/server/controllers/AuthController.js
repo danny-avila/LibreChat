@@ -132,5 +132,5 @@ module.exports = {
   registrationController,
   resetPasswordRequestController,
   resetPasswordController,
-  intercept401,
+  // intercept401,
 };
