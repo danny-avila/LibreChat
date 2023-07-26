@@ -11,7 +11,7 @@ import axios from 'axios';
 
 export const AuthContext = React.createContext();
 
-export const AuthContextProvider = ({ children }) => {
+export const AuthTokenProvider = ({ children }) => {
   const [token, setToken] = useState(null);
 
   useEffect(() => {
@@ -34,9 +34,9 @@ export const AuthContextProvider = ({ children }) => {
   );
 
   return (
-    <AuthContext.Provider value={{ token, setToken }}>
+    <AuthContextProvider value={{ token, setToken }}>
       {children}
-    </AuthContext.Provider>
+    </AuthContextProvider>
   );
 };
 
