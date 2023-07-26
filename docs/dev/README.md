@@ -15,3 +15,10 @@ This directory contains files used for developer work
 - This requires you use a MongoDB Atlas connection string for the `MONGO_URI` env var
   - A URI string to a mongodb service accessible to your container is also possible.
   - Remote Meilisearch may also be possible in the same manner, but is not tested.
+### deploy-compose.yml: 
+- Similar to above, but with basic configuration for deployment to a cloud provider where multi-container compose works
+  - Tested and working on a $6 droplet on DigitalOcean, just by visiting the server IP.
+  - Not a scalable solution, but ideal for quickly hosting on a remote linux server.
+- From root dir of the project, run `docker-compose -f ./docs/dev/deploy-compose.yml up --build`
+  - When you don't need to build, run `docker-compose -f ./docs/dev/deploy-compose.yml up`
+- Unlike the single-compose file, this containerizes both MongoDB and Meilisearch, so these are already setup for you.
