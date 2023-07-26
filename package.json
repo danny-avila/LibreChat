@@ -39,9 +39,11 @@
   },
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "dependencies": {
+    "axios": "^1.4.0",
+    "express-session": "^1.17.3",
     "langchain": "^0.0.91",
     "mongodb": "5.2",
-    "axios": "^1.4.0",
+    "react-ga": "^3.3.1",
     "passport": "^0.6.0",
     "passport-github2": "^0.1.12"
   },

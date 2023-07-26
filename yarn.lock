@@ -2121,10 +2121,10 @@
   resolved "https://registry.npmjs.org/@dqbd/tiktoken/-/tiktoken-1.0.7.tgz"
   integrity sha512-bhR5k5W+8GLzysjk8zTMVygQZsgvf7W1F0IlL4ZQ5ugjo5rCyiwGM5d8DYriXspytfu98tv59niang3/T+FoDw==
 
-"@esbuild/darwin-arm64@0.17.19":
+"@esbuild/win32-x64@0.17.19":
   version "0.17.19"
-  resolved "https://registry.npmjs.org/@esbuild/darwin-arm64/-/darwin-arm64-0.17.19.tgz"
-  integrity sha512-80wEoCfF/hFKM6WE1FyBHc9SfUblloAWx6FJkFWTWiCoht9Mc0ARGEM47e67W9rI09YoUxJL68WHfDRYEAvOhg==
+  resolved "https://registry.npmjs.org/@esbuild/win32-x64/-/win32-x64-0.17.19.tgz"
+  integrity sha512-lAhycmKnVOuRYNtRtatQR1LPQf2oYCkRGkSFnseDAKPl8lu5SOsK/e1sXe5a0Pc5kHIHe6P2I/ilntNv2xf3cA==
 
 "@eslint-community/eslint-utils@^4.2.0":
   version "4.4.0"
@@ -2567,7 +2567,7 @@
     mongodb "^4.5.0"
     pify "^5.0.0"
 
-"@librechat/backend@file:/Users/peidonghe/Documents/GitHub/LibreChat/api":
+"@librechat/backend@file:D:\\zerobox\\project_librechat\\aitok\\LibreChat\\api":
   version "0.5.3"
   resolved "file:api"
   dependencies:
@@ -2608,14 +2608,14 @@
     sanitize "^2.1.2"
     sharp "^0.32.1"
 
-"@librechat/data-provider@*", "@librechat/data-provider@file:/Users/peidonghe/Documents/GitHub/LibreChat/packages/data-provider":
+"@librechat/data-provider@*", "@librechat/data-provider@file:D:\\zerobox\\project_librechat\\aitok\\LibreChat\\packages\\data-provider":
   version "0.1.0"
   resolved "file:packages/data-provider"
   dependencies:
     "@tanstack/react-query" "^4.28.0"
     axios "^1.3.4"
 
-"@librechat/frontend@file:/Users/peidonghe/Documents/GitHub/LibreChat/client":
+"@librechat/frontend@file:D:\\zerobox\\project_librechat\\aitok\\LibreChat\\client":
   version "0.5.3"
   resolved "file:client"
   dependencies:
@@ -2625,7 +2625,7 @@
     "@fortawesome/free-solid-svg-icons" "^6.4.0"
     "@fortawesome/react-fontawesome" "^0.2.0"
     "@headlessui/react" "^1.7.13"
-    "@librechat/data-provider" "^0.1.0"
+    "@librechat/data-provider" "*"
     "@radix-ui/react-alert-dialog" "^1.0.2"
     "@radix-ui/react-checkbox" "^1.0.3"
     "@radix-ui/react-dialog" "^1.0.2"
@@ -6959,11 +6959,6 @@ fs.realpath@^1.0.0:
   resolved "https://registry.npmjs.org/fs.realpath/-/fs.realpath-1.0.0.tgz"
   integrity sha512-OO0pH2lK6a0hZnAdau5ItzHPI6pUlvI7jMVnxUQRtw4owF2wk8lOSabtGDCTP4Ggrg2MbGnWO9X8K1t4+fGMDw==
 
-fsevents@^2.3.2, fsevents@~2.3.2, fsevents@2.3.2:
-  version "2.3.2"
-  resolved "https://registry.npmjs.org/fsevents/-/fsevents-2.3.2.tgz"
-  integrity sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==
-
 function-bind@^1.1.1:
   version "1.1.1"
   resolved "https://registry.npmjs.org/function-bind/-/function-bind-1.1.1.tgz"
@@ -11064,7 +11059,7 @@ prompts@^2.0.1:
     kleur "^3.0.3"
     sisteransi "^1.0.5"
 
-prop-types@^15.0.0, prop-types@^15.6.2, prop-types@^15.8.1:
+prop-types@^15.0.0, prop-types@^15.6.0, prop-types@^15.6.2, prop-types@^15.8.1:
   version "15.8.1"
   resolved "https://registry.npmjs.org/prop-types/-/prop-types-15.8.1.tgz"
   integrity sha512-oj87CgZICdulUohogVAR7AjlC0327U4el4L6eAvOqCeudMDVU0NThNaV+b9Df4dXgSP1gXMTnPdhfe/2qDH5cg==
@@ -11239,6 +11234,11 @@ rc@^1.2.7:
     loose-envify "^1.1.0"
     scheduler "^0.23.0"
 
+react-ga@^3.3.1:
+  version "3.3.1"
+  resolved "https://registry.npmjs.org/react-ga/-/react-ga-3.3.1.tgz"
+  integrity sha512-4Vc0W5EvXAXUN/wWyxvsAKDLLgtJ3oLmhYYssx+YzphJpejtOst6cbIHCIyF50Fdxuf5DDKqRYny24yJ2y7GFQ==
+
 react-hook-form@^7.43.9:
   version "7.44.3"
   resolved "https://registry.npmjs.org/react-hook-form/-/react-hook-form-7.44.3.tgz"
@@ -11362,7 +11362,7 @@ react-transition-group@^4.4.5:
     loose-envify "^1.4.0"
     prop-types "^15.6.2"
 
-"react@^16 || ^17 || ^18", "react@^16.3.0 || ^17.0.0 || ^18.0.0", "react@^16.5.1 || ^17.0.0 || ^18.0.0", "react@^16.8 || ^17.0 || ^18.0", "react@^16.8.0 || ^17 || ^18", "react@^16.8.0 || ^17.0.0 || ^18.0.0", "react@^16.x || ^17.x || ^18.x", "react@^17.0.0 || ^18.0.0", react@^18.0.0, react@^18.2.0, react@>=16, react@>=16.13.1, react@>=16.3, react@>=16.6.0, react@>=16.8, react@>=16.8.0, react@>=16.9.0:
+"react@^15.6.2 || ^16.0 || ^17 || ^18", "react@^16 || ^17 || ^18", "react@^16.3.0 || ^17.0.0 || ^18.0.0", "react@^16.5.1 || ^17.0.0 || ^18.0.0", "react@^16.8 || ^17.0 || ^18.0", "react@^16.8.0 || ^17 || ^18", "react@^16.8.0 || ^17.0.0 || ^18.0.0", "react@^16.x || ^17.x || ^18.x", "react@^17.0.0 || ^18.0.0", react@^18.0.0, react@^18.2.0, react@>=16, react@>=16.13.1, react@>=16.3, react@>=16.6.0, react@>=16.8, react@>=16.8.0, react@>=16.9.0:
   version "18.2.0"
   resolved "https://registry.npmjs.org/react/-/react-18.2.0.tgz"
   integrity sha512-/3IjMdb2L9QbBdWiW5e3P2/npwMBaU9mHCSCUzNln0ZCYbcfTsGbTJrU/kGemdH2IWmB2ioZ+zkxtmq6g09fGQ==
