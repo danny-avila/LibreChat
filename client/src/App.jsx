@@ -16,15 +16,19 @@ const App = () => {
       onError: (error) => {
          console.log('Error', error);
          //const originalRequest = error.config;
-         // The responses by the refreshController must match exactly to prevent infinite 401 loop
-         if (error?.response?.status === 401 && 
-           !(error?.response?.data === 'Refresh token expired or not found for this user') &&
-           !(error?.response?.data === 'User not found') &&
-           !(error?.response?.data === 'Invalid refresh token') &&
-           !(error?.response?.data === 'Refresh token not provided')) {
+         // If /api/auth/refresh sends the 401 then do not try to refresh
+         if (error?.response?.status === 401 && !(error?.request?._url === '/api/auth/refresh')) {
              //originalRequest._retry = true;
              window.dispatchEvent(new CustomEvent('unauthorized'));
          }
+//         if (error?.response?.status === 401 && 
+//           !(error?.response?.data === 'Refresh token expired or not found for this user') &&
+//           !(error?.response?.data === 'User not found') &&
+//           !(error?.response?.data === 'Invalid refresh token') &&
+//           !(error?.response?.data === 'Refresh token not provided')) {
+//             //originalRequest._retry = true;
+//             window.dispatchEvent(new CustomEvent('unauthorized'));
+//         }
       },
     }),
   });
