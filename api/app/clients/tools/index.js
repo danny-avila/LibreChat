@@ -4,6 +4,7 @@ const AIPluginTool = require('./AIPluginTool');
 const OpenAICreateImage = require('./DALL-E');
 const StructuredSD = require('./structured/StableDiffusion');
 const StableDiffusionAPI = require('./StableDiffusion');
+const RunPodImgEndpointAPI = require('./RunPodImgEndpoint');
 const WolframAlphaAPI = require('./Wolfram');
 const StructuredWolfram = require('./structured/Wolfram');
 const SelfReflectionTool = require('./SelfReflection');
@@ -17,6 +18,7 @@ module.exports = {
   OpenAICreateImage,
   StableDiffusionAPI,
   StructuredSD,
+  RunPodImgEndpointAPI,
   WolframAlphaAPI,
   StructuredWolfram,
   SelfReflectionTool

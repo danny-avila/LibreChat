@@ -4,7 +4,6 @@ import { useUpdateConversationMutation } from '@librechat/data-provider';
 import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
 import ConvoIcon from '../svg/ConvoIcon';
-
 import store from '~/store';
 import PrivateButton from './PrivateButton';
 import LikeIcon from '../svg/LikeIcon';
@@ -28,6 +27,36 @@ export default function Conversation({ conversation, retainView }) {
   const [privateState, setPrivateState] = useState(isPrivate);
   const [isLiked, setIsLiked] = useState(false);
 
+  // initial fetch to find out if it is being liked
+  // const fetchLikeStatus = async () => {
+  //   try {
+  //     const response = await fetch(`/api/convos/${conversationId}`, {
+  //       method: 'GET',
+  //       headers: {
+  //         'Content-Type': 'application/json',
+  //         Authorization: `Bearer ${token}`
+  //       } }
+  //     )
+
+  //     const data = await response.json();
+  //     // Update the isLiked state based on the data received from the API
+  //     const likesCount = data.likesConvo;
+  //     if (likesCount !== 0) {
+  //       setIsLiked(true);
+  //     }
+  //   } catch (error) {
+  //     console.log('Error fetching like status:', error);
+  //   }
+  // };
+
+  useEffect(() => {
+    // Get the current like status from localStorage
+    const currentLikeStatus = localStorage.getItem(`liked:${conversationId}`) === 'true';
+
+    // Set the initial isLiked state based on the value from localStorage
+    setIsLiked(currentLikeStatus);
+  }, []);
+
   const handleLikeClick = async () => {
     try {
       const response = await fetch('/api/convos/like', {
@@ -45,9 +74,14 @@ export default function Conversation({ conversation, retainView }) {
         console.log(data.conversation);
         return;
       }
-      // Update the isLiked state based on the API response
-      setIsLiked((prev) => !prev);
+      // Get the current like status from localStorage
+      const currentLikeStatus = localStorage.getItem(`liked:${conversationId}`) === 'true';
 
+      // Toggle the like status and update the state
+      setIsLiked(!currentLikeStatus);
+
+      // Update the like status in localStorage
+      localStorage.setItem(`liked:${conversationId}`, !currentLikeStatus);
     } catch (error) {
       console.log('Error liking conversation:', error);
     }
@@ -70,14 +104,13 @@ export default function Conversation({ conversation, retainView }) {
     } else {
       switchToConversation(conversation);
     }
-
   };
 
   const setPrivateHandler = (e) => {
     e.preventDefault();
     updateConvoMutation.mutate({ conversationId, isPrivate: !privateState });
     setPrivateState(!privateState);
-  }
+  };
 
   const renameHandler = (e) => {
     e.preventDefault();
@@ -151,12 +184,8 @@ export default function Conversation({ conversation, retainView }) {
       </div>
 
       {currentConversation?.conversationId === conversationId ? (
-        <div className="visible absolute right-1 z-10 flex text-gray-300 ml-3">
-          <LikeIcon
-            filled={isLiked}
-            style={{ marginTop: '0.25rem' }}
-            onClick={handleLikeClick}
-          />
+        <div className="visible absolute right-1 z-10 ml-3 flex text-gray-300">
+          <LikeIcon filled={isLiked} style={{ marginTop: '0.25rem' }} onClick={handleLikeClick} />
           <PrivateButton
             conversationId={conversationId}
             isPrivate={privateState}
@@ -174,7 +203,6 @@ export default function Conversation({ conversation, retainView }) {
             cancelHandler={cancelHandler}
             retainView={retainView}
           />
-
         </div>
       ) : (
         <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-gray-900 group-hover:from-gray-700/70" />

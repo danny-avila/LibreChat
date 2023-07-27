@@ -4,6 +4,7 @@ import { useRecoilValue } from 'recoil';
 import SearchBar from './SearchBar';
 import TrashIcon from '../svg/TrashIcon';
 import GearIcon from '../svg/GearIcon';
+import UserIcon from '../svg/UserIcon';
 import Settings from './Settings';
 import { Download } from 'lucide-react';
 import NavLink from './NavLink';
@@ -13,13 +14,15 @@ import Logout from './Logout';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { cn } from '~/utils/';
 import DotsIcon from '../svg/DotsIcon';
-
+import Profile from '../Profile/Profile';
 import store from '~/store';
 
 export default function NavLinks({ clearSearch, isSearchEnabled }) {
   const [showExports, setShowExports] = useState(false);
   const [showClearConvos, setShowClearConvos] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  console.log(showProfile)
   const { user } = useAuthContext();
 
   const conversation = useRecoilValue(store.conversation) || {};
@@ -95,15 +98,23 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <TrashIcon />}
-                    text={navigator.languages[0] === 'zh-CN' ? "清理对话" : "Clear conversations"}
+                    text={navigator.languages[0] === 'zh-CN' ? '清理对话' : 'Clear conversations'}
                     clickHandler={() => setShowClearConvos(true)}
                   />
                 </Menu.Item>
                 <Menu.Item as="div">
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                    svg={() => <UserIcon />}
+                    text={navigator.languages[0] === 'zh-CN' ? '个人资料' : 'Profile'}
+                    clickHandler={() => setShowProfile(true)}
+                  />
+                </Menu.Item>
+                <Menu.Item as="div">
+                  <NavLink
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <GearIcon />}
-                    text={navigator.languages[0] === 'zh-CN' ? "设置" : "Settings"}
+                    text={navigator.languages[0] === 'zh-CN' ? '设置' : 'Settings'}
                     clickHandler={() => setShowSettings(true)}
                   />
                 </Menu.Item>
@@ -119,6 +130,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
       {showExports && <ExportModel open={showExports} onOpenChange={setShowExports} />}
       {showClearConvos && <ClearConvos open={showClearConvos} onOpenChange={setShowClearConvos} />}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
+      {showProfile && <Profile isOpen={showProfile} setIsOpen={setShowProfile} user={user} />}
     </>
   );
 }
