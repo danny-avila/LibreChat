@@ -17,7 +17,6 @@ import CheckMark from '../svg/CheckMark';
 import Clipboard from '../svg/Clipboard';
 import useDebounce from '~/hooks/useDebounce';
 import LeaderboardIcon from '../svg/LeaderboardIcon';
-import Leaderboard from '../ui/Leaderboard';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
 // const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -274,7 +273,6 @@ export default function Nav({ navVisible, setNavVisible }) {
       )}
 
       <div className={'nav-mask' + (navVisible ? ' active' : '')} onClick={toggleNavVisible}></div>
-      <Leaderboard isOpen={ leaderboardIsOpen } setIsOpen={ setLeaderboardIsOpen }/>
     </>
   );
 }
