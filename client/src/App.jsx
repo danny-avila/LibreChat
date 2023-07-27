@@ -1,4 +1,4 @@
-import { RouterProvider } from 'react-router-dom';
+import { useNavigate, RouterProvider } from 'react-router-dom';
 import { ScreenshotProvider } from './utils/screenshotContext.jsx';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { RecoilRoot } from 'recoil';
@@ -7,7 +7,6 @@ import { ThemeProvider } from './hooks/ThemeContext';
 import { useApiErrorBoundary } from './hooks/ApiErrorBoundaryContext';
 import { router } from './routes';
 import { useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 const maxRefreshAttempts = 3; 
 
 const App = () => {
