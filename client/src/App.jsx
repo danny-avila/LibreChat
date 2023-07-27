@@ -1,4 +1,4 @@
-import { useNavigate, RouterProvider } from 'react-router-dom';
+import { useHistory, RouterProvider } from 'react-router-dom';
 import { ScreenshotProvider } from './utils/screenshotContext.jsx';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { RecoilRoot } from 'recoil';
@@ -12,7 +12,7 @@ const maxRefreshAttempts = 3;
 const App = () => {
   const { setError } = useApiErrorBoundary();
   const refreshAttempts = useRef(0); 
-  const navigate = useNavigate();
+  const history = useHistory();
   
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
@@ -23,7 +23,7 @@ const App = () => {
              refreshAttempts.current += 1;
              window.dispatchEvent(new CustomEvent('unauthorized'));
            } else {
-             navigate('/login', { replace: true });
+             history.push('/login');
            }
          }
          // const originalRequest = error.config;
