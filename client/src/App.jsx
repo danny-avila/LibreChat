@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-qu
 import { ThemeProvider } from './hooks/ThemeContext';
 import { useApiErrorBoundary } from './hooks/ApiErrorBoundaryContext';
 import { router } from './routes';
-const maxRefreshAttempts = 3; 
+// const maxRefreshAttempts = 3; 
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
@@ -19,11 +19,11 @@ const App = () => {
          // If /api/auth/refresh sends the 401 then do not try to refresh
         // if (error?.response?.status === 401 && !(error?.request?._url === '/api/auth/refresh') && !(originalRequest._retry)) {
         if (error?.response?.status === 401 && !(originalRequest._retry)) {
-          const refreshAttempts = context.refreshAttempts ?? 0;
-          if (refreshAttempts < maxRefreshAttempts) {
+          // const refreshAttempts = context.refreshAttempts ?? 0;
+          // if (refreshAttempts < maxRefreshAttempts) {
              originalRequest._retry = true;
              window.dispatchEvent(new CustomEvent('unauthorized'));
-          }
+          // }
          }
 //         if (error?.response?.status === 401 && 
 //           !(error?.response?.data === 'Refresh token expired or not found for this user') &&
