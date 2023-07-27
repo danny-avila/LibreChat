@@ -159,21 +159,21 @@ const AuthContextProvider = ({
     });
   };
 
-  useEffect(() => {
-    const handleLogout = async () => {
-      try {
-        console.log('Logout event received:');
-        await logout();
-      } catch (logoutError) {
-        console.log('Failed to logout:', logoutError);
-      }
-    };
-
-    window.addEventListener('logoutEvent', handleLogout);
-    return () => {
-      window.removeEventListener('logoutEvent', handleLogout);
-    };
-  }, [logout]);
+//  useEffect(() => {
+//    const handleLogout = async () => {
+//      try {
+//        console.log('Logout event received:');
+//        await logout();
+//      } catch (logoutError) {
+//        console.log('Failed to logout:', logoutError);
+//      }
+//    };
+//
+//    window.addEventListener('logoutEvent', handleLogout);
+//    return () => {
+//      window.removeEventListener('logoutEvent', handleLogout);
+//    };
+//  }, [logout]);
   
   useEffect(() => {
     if (userQuery.data) {
