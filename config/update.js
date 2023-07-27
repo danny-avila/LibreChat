@@ -54,9 +54,13 @@ async function validateDockerRunning() {
     await updateConfigWithWizard();
   }
 
+  console.green(
+    'Starting update script, this may take a minute or two depending on your system and network.',
+  );
+
   await validateDockerRunning();
   const { dockerUpdate, useSingleComposeFile: singleCompose, useSudo } = config;
-
+  const sudo = useSudo ? 'sudo ' : '';
   // Fetch latest repo
   console.purple('Fetching the latest repo...');
   execSync('git fetch origin', { stdio: 'inherit' });
@@ -71,31 +75,25 @@ async function validateDockerRunning() {
 
   if (dockerUpdate) {
     console.purple('Removing previously made Docker container...');
-    let downCommand = `docker-compose ${
+    const downCommand = `${sudo}docker-compose ${
       singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''
     }down --volumes`;
-    if (useSudo) {
-      downCommand = `sudo ${downCommand}`;
-    }
     console.orange(downCommand);
     execSync(downCommand, { stdio: 'inherit' });
     console.purple('Pruning all LibreChat Docker images...');
 
     const imageName = singleCompose ? 'librechat_single' : 'librechat';
     try {
-      execSync(`docker rmi ${imageName}:latest`, { stdio: 'inherit' });
+      execSync(`${sudo}docker rmi ${imageName}:latest`, { stdio: 'inherit' });
     } catch (e) {
       console.purple('Failed to remove Docker image librechat:latest. It might not exist.');
     }
     console.purple('Removing all unused dangling Docker images...');
-    execSync('docker image prune -f', { stdio: 'inherit' });
+    execSync(`${sudo}docker image prune -f`, { stdio: 'inherit' });
     console.purple('Building new LibreChat image...');
-    let buildCommand = `docker-compose ${
+    const buildCommand = `${sudo}docker-compose ${
       singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''
     }build`;
-    if (useSudo) {
-      buildCommand = `sudo ${buildCommand}`;
-    }
     console.orange(buildCommand);
     execSync(buildCommand, { stdio: 'inherit' });
   } else {
@@ -117,10 +115,9 @@ async function validateDockerRunning() {
 
   let startCommand = 'npm run backend';
   if (dockerUpdate) {
-    startCommand = `docker-compose ${singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''}up`;
-    if (useSudo) {
-      startCommand = `sudo ${startCommand}`;
-    }
+    startCommand = `${sudo}docker-compose ${
+      singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''
+    }up`;
   }
   console.green('Your LibreChat app is now up to date! Start the app with the following command:');
   console.purple(startCommand);
