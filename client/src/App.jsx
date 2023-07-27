@@ -6,10 +6,12 @@ import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-qu
 import { ThemeProvider } from './hooks/ThemeContext';
 import { useApiErrorBoundary } from './hooks/ApiErrorBoundaryContext';
 import { router } from './routes';
-// const maxRefreshAttempts = 3; 
+import { useNavigate } from 'react-router-dom';
+const maxRefreshAttempts = 3; 
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
+  const navigate = useNavigate();
   
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
@@ -20,10 +22,12 @@ const App = () => {
         // if (error?.response?.status === 401 && !(error?.request?._url === '/api/auth/refresh') && !(originalRequest._retry)) {
         if (error?.response?.status === 401 && !(originalRequest._retry)) {
           // const refreshAttempts = context.refreshAttempts ?? 0;
-          // if (refreshAttempts < maxRefreshAttempts) {
+           if (refreshAttempts < maxRefreshAttempts) {
              originalRequest._retry = true;
              window.dispatchEvent(new CustomEvent('unauthorized'));
-          // }
+           } else {
+             navigate('/login', { replace: true });
+           }
          }
 //         if (error?.response?.status === 401 && 
 //           !(error?.response?.data === 'Refresh token expired or not found for this user') &&
