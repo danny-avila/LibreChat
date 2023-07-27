@@ -1,5 +1,5 @@
 import Conversation from './Conversation';
-import { TConversation } from '@librechat/data-provider';
+import { TConversation } from 'librechat-data-provider';
 
 export default function Conversations({
   conversations,

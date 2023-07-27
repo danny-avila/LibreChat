@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import TrashIcon from '../svg/TrashIcon';
 import CrossIcon from '../svg/CrossIcon';
 import { useRecoilValue } from 'recoil';
-import { useDeleteConversationMutation } from '@librechat/data-provider';
+import { useDeleteConversationMutation } from 'librechat-data-provider';
 
 import store from '~/store';
 

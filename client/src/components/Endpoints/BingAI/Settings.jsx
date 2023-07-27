@@ -5,7 +5,7 @@ import { Checkbox } from '~/components/ui/Checkbox.tsx';
 import SelectDropDown from '../../ui/SelectDropDown';
 import { cn } from '~/utils/';
 import useDebounce from '~/hooks/useDebounce';
-import { useUpdateTokenCountMutation } from '@librechat/data-provider';
+import { useUpdateTokenCountMutation } from 'librechat-data-provider';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
