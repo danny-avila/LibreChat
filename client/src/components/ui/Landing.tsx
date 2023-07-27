@@ -6,7 +6,7 @@ import LightningIcon from '../svg/LightningIcon';
 import CautionIcon from '../svg/CautionIcon';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
-import { useGetStartupConfig } from '@librechat/data-provider';
+import { useGetStartupConfig } from 'librechat-data-provider';
 
 export default function Landing() {
   const { data: config } = useGetStartupConfig();

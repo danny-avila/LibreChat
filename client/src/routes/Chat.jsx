@@ -12,7 +12,7 @@ import {
   useGetMessagesByConvoId,
   useGetConversationByIdMutation,
   useGetStartupConfig,
-} from '@librechat/data-provider';
+} from 'librechat-data-provider';
 
 export default function Chat() {
   const { isAuthenticated } = useAuthContext();

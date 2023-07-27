@@ -9,7 +9,7 @@ import { Trash2 } from 'lucide-react';
 import FileUpload from './FileUpload';
 import getIcon from '~/utils/getIcon';
 import getDefaultConversation from '~/utils/getDefaultConversation';
-import { useDeletePresetMutation, useCreatePresetMutation } from '@librechat/data-provider';
+import { useDeletePresetMutation, useCreatePresetMutation } from 'librechat-data-provider';
 import {
   Button,
   DropdownMenu,

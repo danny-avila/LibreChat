@@ -8,7 +8,7 @@ import {
   useAvailablePluginsQuery,
   useUpdateUserPluginsMutation,
   TPlugin,
-} from '@librechat/data-provider';
+} from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 type TPluginStoreDialogProps = {
