@@ -1,10 +1,7 @@
 version: "3.8"
 services:
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile.multi
-      target: api-build
+    image: ghcr.io/danny-avila/librechat-dev-api:latest
     container_name: LibreChat-API
     ports:
       - 9000:3080
@@ -17,14 +14,12 @@ services:
       - .env
     environment:
       - HOST=0.0.0.0
+      - NODE_ENV=production
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_HTTP_ADDR=meilisearch:7700
   client:
-    build:
-      context: .
-      dockerfile: Dockerfile.multi
-      target: prod-stage
+    image: ghcr.io/danny-avila/librechat-dev-client:latest
     ports:
       - 80:80
       - 443:443
