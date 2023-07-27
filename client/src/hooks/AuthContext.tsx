@@ -247,6 +247,7 @@ const AuthContextProvider = ({
 
   const LoginRedirect = () => {
     const navigate = useNavigate();
+    console.log('maxRefresh event received:');
 
     useEffect(() => {
       const handleLoginRedirect = () => {
