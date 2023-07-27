@@ -5,28 +5,6 @@ import Search from './Search';
 import { Login, Registration, RequestPasswordReset, ResetPassword } from '../components/Auth';
 import { AuthContextProvider } from '../hooks/AuthContext';
 import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
-//import axios from 'axios';
-
-//export const AuthTokenProvider = ({ children }) => {
-//  axios.interceptors.response.use(
-//    (response) => response,
-//    async (error) => {
-//      const originalRequest = error.config;
-//      if (error.response.status === 401 && !originalRequest._retry) {
-//        originalRequest._retry = true;
-//        window.dispatchEvent(new CustomEvent('unauthorized'));
-//        return axios(originalRequest);
-//      }
-//      return Promise.reject(error);
-//    }
-//  );
-
-//  return (
-//    <AuthContextProvider>
-//      {children}
-//    </AuthContextProvider>
-//  );
-//};
 
 const AuthLayout = () => (
   <AuthContextProvider>
