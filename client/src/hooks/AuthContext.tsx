@@ -250,7 +250,7 @@ const AuthContextProvider = ({
 
     useEffect(() => {
       const handleLoginRedirect = () => {
-        navigate('/login');
+         navigate('/login', { replace: true });
       };
 
       // Listen for 'maxRefreshAttemptsExceeded' event
