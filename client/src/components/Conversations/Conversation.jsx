@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRecoilState, useSetRecoilState } from 'recoil';
-import { useUpdateConversationMutation } from '@librechat/data-provider';
+import { useUpdateConversationMutation } from 'librechat-data-provider';
 import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
 import ConvoIcon from '../svg/ConvoIcon';

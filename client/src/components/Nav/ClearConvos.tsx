@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogTemplate } from '../ui/';
 import { ClearChatsButton } from './SettingsTabs/';
-import { useClearConversationsMutation } from '@librechat/data-provider';
+import { useClearConversationsMutation } from 'librechat-data-provider';
 import store from '~/store';
 import { useRecoilValue } from 'recoil';
 import { localize } from '~/localization/Translation';

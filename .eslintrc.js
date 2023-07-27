@@ -13,14 +13,7 @@ module.exports = {
     'plugin:jest/recommended',
     'prettier',
   ],
-  // ignorePatterns: ['packages/data-provider/types/**/*'],
-  ignorePatterns: [
-    'client/dist/**/*',
-    'client/public/**/*',
-    'e2e/playwright-report/**/*',
-    'packages/data-provider/types/**/*',
-    'packages/data-provider/dist/**/*',
-  ],
+  ignorePatterns: ['client/dist/**/*', 'client/public/**/*', 'e2e/playwright-report/**/*'],
   parser: '@typescript-eslint/parser',
   parserOptions: {
     ecmaVersion: 'latest',
@@ -110,18 +103,6 @@ module.exports = {
       extends: [
         'plugin:@typescript-eslint/eslint-recommended',
         'plugin:@typescript-eslint/recommended',
-      ],
-    },
-    {
-      files: './packages/data-provider/**/*.ts',
-      overrides: [
-        {
-          files: '**/*.ts',
-          parser: '@typescript-eslint/parser',
-          parserOptions: {
-            project: './packages/data-provider/tsconfig.json',
-          },
-        },
       ],
     },
   ],

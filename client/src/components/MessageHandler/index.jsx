@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
-import { SSE, createPayload } from '@librechat/data-provider';
+import { SSE, createPayload } from 'librechat-data-provider';
 import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
 

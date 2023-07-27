@@ -2,7 +2,7 @@ import { NewChat, NavLinks } from './';
 import { Panel, Spinner } from '~/components';
 import { Conversations, Pages } from '../Conversations';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useGetConversationsQuery, useSearchQuery } from '@librechat/data-provider';
+import { useGetConversationsQuery, useSearchQuery } from 'librechat-data-provider';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useAuthContext, useDebounce } from '~/hooks';
 import { localize } from '~/localization/Translation';
