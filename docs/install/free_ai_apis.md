@@ -21,7 +21,7 @@ Once you have the API key, you should adjust your .env file like this:
 
 OPENAI_API_KEY=your-chimera-api-key
 # Reverse proxy settings for OpenAI: 
-OPENAI_REVERSE_PROXY=https://chimeragpt.adventblocks.cc/v1/chat/completions
+OPENAI_REVERSE_PROXY=https://chimeragpt.adventblocks.cc/api/v1/chat/completions
 
 # OPENAI_MODELS=gpt-3.5-turbo,gpt-3.5-turbo-16k,gpt-3.5-turbo-0301,text-davinci-003,gpt-4,gpt-4-0314,gpt-4-0613
 ```
