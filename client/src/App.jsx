@@ -6,19 +6,24 @@ import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-qu
 import { ThemeProvider } from './hooks/ThemeContext';
 import { useApiErrorBoundary } from './hooks/ApiErrorBoundaryContext';
 import { router } from './routes';
-// import { useNavigate } from 'react-router-dom';
-// const maxRefreshAttempts = 3; 
+import { useNavigate } from 'react-router-dom';
+const maxRefreshAttempts = 3; 
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
-  // const navigate = useNavigate();
+  const navigate = useNavigate();
   
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
       onError: (error) => {
          console.log('Error', error);
          if (error?.response?.status === 401){
-           window.dispatchEvent(new CustomEvent('unauthorized'));
+           const refreshAttempts = context.refreshAttempts ?? 0;
+           if (refreshAttempts < maxRefreshAttempts) {
+             window.dispatchEvent(new CustomEvent('unauthorized'));
+           } else {
+             navigate('/login', { replace: true });
+           }
          }
          // const originalRequest = error.config;
          // If /api/auth/refresh sends the 401 then do not try to refresh
