@@ -2,6 +2,8 @@
  * Helper functions
  * This allows us to give the console some colour when running in a terminal
  */
+const fs = require('fs');
+const path = require('path');
 const readline = require('readline');
 const { execSync } = require('child_process');
 
@@ -28,6 +30,14 @@ function isDockerRunning() {
   }
 }
 
+function deleteNodeModules(dir) {
+  const nodeModulesPath = path.join(dir, 'node_modules');
+  if (fs.existsSync(nodeModulesPath)) {
+    console.purple(`Deleting node_modules in ${dir}`);
+    fs.rmdirSync(nodeModulesPath, { recursive: true });
+  }
+}
+
 const silentExit = (code = 0) => {
   console.log = () => {};
   process.exit(code);
@@ -48,4 +58,5 @@ module.exports = {
   askQuestion,
   silentExit,
   isDockerRunning,
+  deleteNodeModules,
 };
