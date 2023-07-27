@@ -17,6 +17,7 @@ import CheckMark from '../svg/CheckMark';
 import Clipboard from '../svg/Clipboard';
 import useDebounce from '~/hooks/useDebounce';
 import LeaderboardIcon from '../svg/LeaderboardIcon';
+import NotebookIcon from '../svg/NotebookIcon';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
 // const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -183,6 +184,7 @@ export default function Nav({ navVisible, setNavVisible }) {
     setCopied(true);
   }
 
+  const openWritingAssistantHandler = () => setTabValue('assistant')
   const openLeaderboardHandler = () => setTabValue('leaderboard');
 
   useEffect(() => {
@@ -242,6 +244,12 @@ export default function Nav({ navVisible, setNavVisible }) {
                   />
                 </div>
               </div>
+              <NavLink
+                className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                svg={() => <NotebookIcon />}
+                text={navigator.languages[0] === 'zh-CN' ? '写作小助手' : 'Writing Assistant'}
+                clickHandler={ openWritingAssistantHandler }
+              />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <LeaderboardIcon />}
