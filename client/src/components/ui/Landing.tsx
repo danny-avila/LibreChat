@@ -7,6 +7,14 @@ import { useRecoilState } from 'recoil';
 
 import store from '~/store';
 
+function getPage(tabValue: string) {
+  switch (tabValue) {
+    default: return <Recommendations />;
+    case ('recent'): return <Recommendations />;
+    case ('leaderboard'): return <Leaderboard />;
+  }
+}
+
 export default function Landing() {
   const [tabValue, setTabValue] = useRecoilState<string>(store.tabValue);
 
@@ -47,7 +55,7 @@ export default function Landing() {
       </div>
       <div className="flex h-full flex-col items-center overflow-y-auto pt-0 text-sm dark:bg-gray-800">
         <div className="w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
-          { tabValue === 'leaderboard' ? <Leaderboard /> : <Recommendations /> }
+          {getPage(tabValue)}
         </div>
       </div>
     </>
