@@ -1,31 +1,19 @@
 # Build API, Client and Data Provider
 FROM node:19-alpine AS base
 
+WORKDIR /app
+COPY config/loader.js ./config/
+RUN npm install dotenv
+
 WORKDIR /app/api
 COPY api/package*.json ./
 COPY api/ ./
 RUN npm install
 
-# Data Provider build
-FROM base AS data-provider-build
-WORKDIR /app/packages/data-provider
-COPY ./packages/data-provider/package*.json ./
-COPY ./packages/data-provider/ ./
-
-RUN npm install
-RUN npm run build
-
 # React client build
 FROM base AS client-build
 WORKDIR /app/client
-COPY --from=data-provider-build /app/packages/data-provider/dist ./node_modules/@librechat/data-provider
-COPY ./client/package*.json ./
 COPY ./client/ ./
-
-# Remove the package from package.json
-RUN apk add --no-cache jq \
-    && jq 'del(.dependencies["@librechat/data-provider"])' package.json > temp.json \
-    && mv temp.json package.json
 
 RUN npm install
 RUN npm run build
@@ -34,7 +22,7 @@ RUN npm run build
 FROM base AS api-build
 EXPOSE 3080
 ENV HOST=0.0.0.0
-CMD ["cross-env", "NODE_ENV=production", "node", "server/index.js"]
+CMD ["node", "server/index.js"]
 
 # Nginx setup
 FROM nginx:1.21.1-alpine AS prod-stage
