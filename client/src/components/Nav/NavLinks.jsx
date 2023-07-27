@@ -98,15 +98,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                 </Menu.Item>
                 <Menu.Item as="div">
                   <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none"
-                    svg={() => <FileText className="h-4 w-4" />}
-                    text="My Files"
-                    clickHandler={() => setShowFiles(true)}
-                  />
-                </Menu.Item>
-                <Menu.Item as="div">
-                  <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700 rounded-none"
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <FileText className="h-4 w-4" />}
                     text="My Files"
                     clickHandler={() => setShowFiles(true)}
