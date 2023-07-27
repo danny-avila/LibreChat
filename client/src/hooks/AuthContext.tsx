@@ -189,11 +189,11 @@ const AuthContextProvider = ({
   ]);
 
   const silentRefresh = useCallback(() => {
-    if (!refreshToken) {
+   // if (!refreshToken) {
       // console.log('refreshToken is not defined');
-      navigate('/login', { replace: true });
-      return;
-    }
+    //  navigate('/login', { replace: true });
+    //  return;
+   // }
 
     refreshToken.mutate(undefined, {
       onSuccess: (data: TLoginResponse) => {
@@ -202,8 +202,9 @@ const AuthContextProvider = ({
       },
       onError: error => {
         console.log('Refresh token has expired, please log in again.', error);
+        doSetError((error as Error).message);
         navigate('/login', { replace: true });
-        return;
+     //   return;
       }
     });
   }, [setUserContext, navigate]);
