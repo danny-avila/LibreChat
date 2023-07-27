@@ -245,6 +245,26 @@ const AuthContextProvider = ({
     };
   }, [silentRefresh]);
 
+  const LoginRedirect = () => {
+    const navigate = useNavigate();
+
+    useEffect(() => {
+      const handleLoginRedirect = () => {
+        navigate('/login');
+      };
+
+      // Listen for 'maxRefreshAttemptsExceeded' event
+      window.addEventListener('maxRefreshAttemptsExceeded', handleLoginRedirect);
+
+      // Clean up the listener when unmounting
+      return () => {
+        window.removeEventListener('maxRefreshAttemptsExceeded', handleLoginRedirect);
+      };
+    }, [navigate]);
+
+    return null;
+  };
+  
   // Make the provider update only when it should
   const memoedValue = useMemo(
     () => ({
