@@ -1,8 +1,11 @@
 version: "3.8"
 services:
   api:
-    image: api
-    container_name: LibreChat
+    build:
+      context: .
+      dockerfile: Dockerfile.multi
+      target: api-build
+    container_name: LibreChat-API
     ports:
       - 9000:3080
     depends_on:
@@ -18,7 +21,10 @@ services:
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_HTTP_ADDR=meilisearch:7700
   client:
-    image: client
+    build:
+      context: .
+      dockerfile: Dockerfile.multi
+      target: prod-stage
     ports:
       - 80:80
       - 443:443
