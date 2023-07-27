@@ -1,0 +1,18 @@
+{
+    "schema_version": "v1",
+    "name_for_human": "Image Prompt Enhancer",
+    "name_for_model": "image_prompt_enhancer",
+    "description_for_human": "Transform your ideas into complex, personalized image generation prompts.",
+    "description_for_model": "Provides instructions for crafting an enhanced image prompt. Use this whenever the user wants to enhance a prompt.",
+    "auth": {
+        "type": "none"
+    },
+    "api": {
+        "type": "openapi",
+        "url": "https://image-prompt-enhancer.gafo.tech/openapi.yaml",
+        "is_user_authenticated": false
+    },
+    "logo_url": "https://image-prompt-enhancer.gafo.tech/logo.png",
+    "contact_email": "gafotech1@gmail.com",
+    "legal_info_url": "https://image-prompt-enhancer.gafo.tech/legal"
+}

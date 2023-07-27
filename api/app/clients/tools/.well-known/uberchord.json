@@ -1,0 +1,18 @@
+{
+    "schema_version": "v1",
+    "name_for_human": "Uberchord",
+    "name_for_model": "uberchord",
+    "description_for_human": "Find guitar chord diagrams by specifying the chord name.",
+    "description_for_model": "Fetch guitar chord diagrams, their positions on the guitar fretboard.",
+    "auth": {
+        "type": "none"
+    },
+    "api": {
+        "type": "openapi",
+        "url": "https://guitarchords.pluginboost.com/.well-known/openapi.yaml",
+        "is_user_authenticated": false
+    },
+    "logo_url": "https://guitarchords.pluginboost.com/logo.png",
+    "contact_email": "info.bluelightweb@gmail.com",
+    "legal_info_url": "https://guitarchords.pluginboost.com/legal"
+}
