@@ -52,7 +52,10 @@ function Settings(props) {
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
             <Label htmlFor="toneStyle-dropdown" className="text-left text-sm font-medium">
-              {localize(lang, 'com_endpoint_tone_style')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_creative')})</small>
+              {localize(lang, 'com_endpoint_tone_style')}{' '}
+              <small className="opacity-40">
+                ({localize(lang, 'com_endpoint_default_creative')})
+              </small>
             </Label>
             <SelectDropDown
               id="toneStyle-dropdown"
@@ -70,7 +73,8 @@ function Settings(props) {
           </div>
           <div className="grid w-full items-center gap-2">
             <Label htmlFor="context" className="text-left text-sm font-medium">
-              {localize(lang, 'com_endpoint_context')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_blank')})</small>
+              {localize(lang, 'com_endpoint_context')}{' '}
+              <small className="opacity-40">({localize(lang, 'com_endpoint_default_blank')})</small>
             </Label>
             <TextareaAutosize
               id="context"
@@ -83,13 +87,17 @@ function Settings(props) {
                 'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2',
               )}
             />
-            <small className="mb-5 text-black dark:text-white">{`${localize(lang, 'com_endpoint_token_count')}: ${tokenCount}`}</small>
+            <small className="mb-5 text-black dark:text-white">{`${localize(
+              lang,
+              'com_endpoint_token_count',
+            )}: ${tokenCount}`}</small>
           </div>
         </div>
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
             <Label htmlFor="jailbreak" className="text-left text-sm font-medium">
-              {localize(lang, 'com_endpoint_bing_enable_sydney')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_false')})</small>
+              {localize(lang, 'com_endpoint_bing_enable_sydney')}{' '}
+              <small className="opacity-40">({localize(lang, 'com_endpoint_default_false')})</small>
             </Label>
             <div className="flex h-[40px] w-full items-center space-x-3">
               <Checkbox
@@ -103,7 +111,8 @@ function Settings(props) {
                 htmlFor="jailbreak"
                 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
               >
-                {localize(lang, 'com_endpoint_bing_jailbreak')}  <small>{localize(lang, 'com_endpoint_bing_to_enable_sydney')}</small>
+                {localize(lang, 'com_endpoint_bing_jailbreak')}{' '}
+                <small>{localize(lang, 'com_endpoint_bing_to_enable_sydney')}</small>
               </label>
             </div>
           </div>
@@ -122,7 +131,9 @@ function Settings(props) {
                 >
                   {localize(lang, 'com_endpoint_system_message')}
                 </a>{' '}
-                <small className="opacity-40 dark:text-gray-50">( {localize(lang, 'com_endpoint_default_blank')})</small>
+                <small className="opacity-40 dark:text-gray-50">
+                  ( {localize(lang, 'com_endpoint_default_blank')})
+                </small>
               </Label>
 
               <TextareaAutosize
