@@ -14,8 +14,8 @@ const App = () => {
     queryCache: new QueryCache({
       onError: (error) => {
         if (error?.response?.status === 401){
-          setError(error);
-          window.dispatchEvent(new CustomEvent('unauthorized'));
+          // setError(error);
+          window.dispatchEvent(new CustomEvent('intercept401'));
         }
       },
     }),
