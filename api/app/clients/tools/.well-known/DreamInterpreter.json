@@ -1,0 +1,18 @@
+{
+    "schema_version": "v1",
+    "name_for_model": "DreamInterpreter",
+    "name_for_human": "Dream Interpreter",
+    "description_for_model": "Interprets your dreams using advanced techniques.",
+    "description_for_human": "Interprets your dreams using advanced techniques.",
+    "auth": {
+        "type": "none"
+    },
+    "api": {
+        "type": "openapi",
+        "url": "https://dreamplugin.bgnetmobile.com/.well-known/openapi.json",
+        "has_user_authentication": false
+    },
+    "logo_url": "https://dreamplugin.bgnetmobile.com/.well-known/logo.png",
+    "contact_email": "ismail.orkler@bgnetmobile.com",
+    "legal_info_url": "https://dreamplugin.bgnetmobile.com/terms.html"
+}
