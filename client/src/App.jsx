@@ -9,11 +9,10 @@ import { router } from './routes';
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
-    
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
       onError: (error) => {
-        console.log('Error', error);
+        setError(error);
         if (error?.response?.status === 401){
           window.dispatchEvent(new CustomEvent('unauthorized'));
         }
