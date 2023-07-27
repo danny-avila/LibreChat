@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGetConversationsQuery, useSearchQuery } from '@librechat/data-provider';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 
 import Conversations from '../Conversations';
 import NavLinks from './NavLinks';
@@ -70,7 +70,7 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const [refLink, setRefLink] = useState('');
   const [copied, setCopied] = useState(false);
-  const [leaderboardIsOpen, setLeaderboardIsOpen] = useState(false);
+  const [tabValue, setTabValue] = useRecoilState(store.tabValue); // eslint-disable-line
   const { user } = useAuthContext();
   const mode = process.env.NODE_ENV;
 
@@ -183,7 +183,7 @@ export default function Nav({ navVisible, setNavVisible }) {
     setCopied(true);
   }
 
-  const openLeaderboardHandler = () => setLeaderboardIsOpen(!leaderboardIsOpen);
+  const openLeaderboardHandler = () => setTabValue('leaderboard');
 
   useEffect(() => {
     if (user) setRefLink(mode === 'dev' ? `http://localhost:3090/register/${user.id}` : `chat.aitok.us/register/${user.id}`);
