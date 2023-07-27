@@ -3,7 +3,7 @@ import Root from './Root';
 import Chat from './Chat';
 import Search from './Search';
 import { Login, Registration, RequestPasswordReset, ResetPassword } from '../components/Auth';
-import { AuthContext, AuthContextProvider } from '../hooks/AuthContext';
+import { AuthContextProvider } from '../hooks/AuthContext';
 import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
 //import axios from 'axios';
 
