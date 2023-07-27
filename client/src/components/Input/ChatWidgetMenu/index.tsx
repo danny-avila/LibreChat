@@ -8,7 +8,6 @@ import { Settings2 } from 'lucide-react';
 import EndpointOptionsPopover from '~/components/Endpoints/EndpointOptionsPopover';
 
 import store from '~/store';
-import CheckMark from '~/components/svg/CheckMark';
 import { MessagesSquared } from '~/components/svg';
 
 function getWidget(widget: string) {
