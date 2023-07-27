@@ -4,8 +4,7 @@
   "description": "",
   "workspaces": [
     "api",
-    "client",
-    "packages/*"
+    "client"
   ],
   "scripts": {
     "install": "node config/install.js",
@@ -76,8 +75,7 @@
       "api/data/",
       "data",
       "client/",
-      "admin/",
-      "packages/"
+      "admin/"
     ]
   }
 }
