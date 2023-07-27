@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import LogOutIcon from '../svg/LogOutIcon';
+import { LogOutIcon } from '../svg';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
