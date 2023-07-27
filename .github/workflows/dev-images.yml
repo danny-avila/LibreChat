@@ -40,7 +40,15 @@ jobs:
         run: |
           docker tag librechat-dev-api:latest ghcr.io/${{ github.repository_owner }}/librechat-dev-api:${{ github.sha }}
           docker push ghcr.io/${{ github.repository_owner }}/librechat-dev-api:${{ github.sha }}
+          docker tag librechat-dev-api:latest ghcr.io/${{ github.repository_owner }}/librechat-dev-api:latest
+          docker push ghcr.io/${{ github.repository_owner }}/librechat-dev-api:latest
+
           docker tag librechat-dev-client:latest ghcr.io/${{ github.repository_owner }}/librechat-dev-client:${{ github.sha }}
           docker push ghcr.io/${{ github.repository_owner }}/librechat-dev-client:${{ github.sha }}
+          docker tag librechat-dev-client:latest ghcr.io/${{ github.repository_owner }}/librechat-dev-client:latest
+          docker push ghcr.io/${{ github.repository_owner }}/librechat-dev-client:latest
+
           docker tag librechat-dev:latest ghcr.io/${{ github.repository_owner }}/librechat-dev:${{ github.sha }}
           docker push ghcr.io/${{ github.repository_owner }}/librechat-dev:${{ github.sha }}
+          docker tag librechat-dev:latest ghcr.io/${{ github.repository_owner }}/librechat-dev:latest
+          docker push ghcr.io/${{ github.repository_owner }}/librechat-dev:latest
