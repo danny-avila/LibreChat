@@ -4,7 +4,7 @@ services:
     image: ghcr.io/danny-avila/librechat-dev-api:latest
     container_name: LibreChat-API
     ports:
-      - 9000:3080
+      - 3080:3080
     depends_on:
       - mongodb
     restart: always
