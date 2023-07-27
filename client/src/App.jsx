@@ -7,14 +7,13 @@ import { ThemeProvider } from './hooks/ThemeContext';
 import { useApiErrorBoundary } from './hooks/ApiErrorBoundaryContext';
 import { router } from './routes';
 import { useRef } from 'react';
-
-// import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 const maxRefreshAttempts = 3; 
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
   const refreshAttempts = useRef(0); 
-  // const navigate = useNavigate();
+  const navigate = useNavigate();
   
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
@@ -25,7 +24,7 @@ const App = () => {
              refreshAttempts.current += 1;
              window.dispatchEvent(new CustomEvent('unauthorized'));
            } else {
-             // navigate('/login', { replace: true });
+             navigate('/login', { replace: true });
            }
          }
          // const originalRequest = error.config;
