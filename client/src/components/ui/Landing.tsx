@@ -6,12 +6,14 @@ import Leaderboard from './Leaderboard';
 import { useRecoilState } from 'recoil';
 
 import store from '~/store';
+import WritingAssistant from '../Input/ChatWidgetMenu/WritingAssistant';
 
 function getPage(tabValue: string) {
   switch (tabValue) {
     default: return <Recommendations />;
     case ('recent'): return <Recommendations />;
     case ('leaderboard'): return <Leaderboard />;
+    case ('assistant'): return <WritingAssistant />;
   }
 }
 
@@ -29,7 +31,7 @@ export default function Landing() {
   const selectedTab = (val: string) => val + '-tab ' + defaultSelected;
 
   return (
-    <>
+    <div className='flex flex-col gap-10'>
       <div
         className={
           'flex w-full flex-wrap items-center justify-center gap-2'
@@ -58,6 +60,6 @@ export default function Landing() {
           {getPage(tabValue)}
         </div>
       </div>
-    </>
+    </div>
   );
 }
