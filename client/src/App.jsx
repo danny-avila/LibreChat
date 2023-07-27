@@ -10,7 +10,7 @@ import { useState } from 'react';
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
-  const [refreshAttempted, setRefreshAttempted] = useState<boolean>(false);
+  const [refreshAttempted, setRefreshAttempted] = useState(false);
   
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
