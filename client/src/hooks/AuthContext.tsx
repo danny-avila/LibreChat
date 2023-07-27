@@ -225,7 +225,7 @@ const AuthContextProvider = ({
      //   return;
       }
     });
-  }, [setUserContext, navigate]);
+  }, [token, setUserContext, navigate]);
   
   useEffect(() => {
     const handleUnauthorized = async () => {
