@@ -17,11 +17,11 @@ const App = () => {
     queryCache: new QueryCache({
       onError: (error) => {
          console.log('Error', error);
-         const originalRequest = error.config;
-         if (error?.response?.status === 401 && !(originalRequest._retry)){
+         // const originalRequest = error.config;
+         if (error?.response?.status === 401){
            // if (refreshAttempts.current < maxRefreshAttempts) {
              // refreshAttempts.current += 1;
-             originalRequest._retry = true;
+             // originalRequest._retry = true;
              window.dispatchEvent(new CustomEvent('unauthorized'));
            } else {
              window.dispatchEvent(new CustomEvent('maxRefreshAttemptsExceeded'));
