@@ -11,6 +11,7 @@ const maxRefreshAttempts = 3;
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
+  const refreshAttempts = useRef(0); 
   // const navigate = useNavigate();
   
   const queryClient = new QueryClient({
@@ -19,7 +20,8 @@ const App = () => {
          console.log('Error', error);
          if (error?.response?.status === 401){
            const refreshAttempts = context.refreshAttempts ?? 0;
-           if (refreshAttempts < maxRefreshAttempts) {
+           if (refreshAttempts.current < maxRefreshAttempts) {
+             refreshAttempts.current += 1;
              window.dispatchEvent(new CustomEvent('unauthorized'));
            } else {
              // navigate('/login', { replace: true });
