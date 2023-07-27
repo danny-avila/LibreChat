@@ -220,9 +220,9 @@ const AuthContextProvider = ({
       }
     };
 
-    window.addEventListener('unauthorized', handleUnauthorized);
+    window.addEventListener('intercept401', handleUnauthorized);
     return () => {
-      window.removeEventListener('unauthorized', handleUnauthorized);
+      window.removeEventListener('intercept401', handleUnauthorized);
     };
   }, [silentRefresh]);
 
