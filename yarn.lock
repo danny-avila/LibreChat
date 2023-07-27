@@ -2567,7 +2567,7 @@
     mongodb "^4.5.0"
     pify "^5.0.0"
 
-"@librechat/backend@file:D:\\zerobox\\project_librechat\\aitok\\LibreChat\\api":
+"@librechat/backend@file:D:\\DockerProject\\LibreChat\\api":
   version "0.5.3"
   resolved "file:api"
   dependencies:
@@ -2608,14 +2608,14 @@
     sanitize "^2.1.2"
     sharp "^0.32.1"
 
-"@librechat/data-provider@*", "@librechat/data-provider@file:D:\\zerobox\\project_librechat\\aitok\\LibreChat\\packages\\data-provider":
+"@librechat/data-provider@*", "@librechat/data-provider@file:D:\\DockerProject\\LibreChat\\packages\\data-provider":
   version "0.1.0"
   resolved "file:packages/data-provider"
   dependencies:
     "@tanstack/react-query" "^4.28.0"
     axios "^1.3.4"
 
-"@librechat/frontend@file:D:\\zerobox\\project_librechat\\aitok\\LibreChat\\client":
+"@librechat/frontend@file:D:\\DockerProject\\LibreChat\\client":
   version "0.5.3"
   resolved "file:client"
   dependencies:
@@ -11420,7 +11420,7 @@ real-require@^0.2.0:
   resolved "https://registry.npmjs.org/real-require/-/real-require-0.2.0.tgz"
   integrity sha512-57frrGM/OCTLqLOAh0mhVA9VBMHd+9U7Zb2THMGdBUoZVOtGbJzjxsYGDJ3A9AYYCP4hn6y1TVbaOfzWtm5GFg==
 
-recoil@^0.7.2, recoil@^0.7.7:
+recoil@^0.7.7:
   version "0.7.7"
   resolved "https://registry.npmjs.org/recoil/-/recoil-0.7.7.tgz"
   integrity sha512-8Og5KPQW9LwC577Vc7Ug2P0vQshkv1y3zG3tSSkWMqkWSwHmE+by06L8JtnGocjW6gcCvfwB3YtrJG6/tWivNQ==
