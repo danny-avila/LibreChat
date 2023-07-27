@@ -252,7 +252,7 @@ export default function Nav({ navVisible, setNavVisible }) {
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => copied ? <CheckMark /> : <Clipboard />}
-                text={navigator.languages[0] === 'zh-CN' ? '复制邀请链接' : 'Copy invitation link'}
+                text={navigator.languages[0] === 'zh-CN' ? '复制邀请链接' : 'Copy Invitation Link'}
                 clickHandler={ copyLinkHandler }
               />
               <NavLinks clearSearch={clearSearch} isSearchEnabled={isSearchEnabled} />
