@@ -5,7 +5,6 @@ const User = require('../../models/User');
 const crypto = require('crypto');
 const cookies = require('cookie');
 const isProduction = process.env.NODE_ENV === 'production';
-let refreshAttempted = false;
 
 const registrationController = async (req, res) => {
   try {
