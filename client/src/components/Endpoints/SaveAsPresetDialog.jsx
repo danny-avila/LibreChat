@@ -3,7 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { Dialog, DialogTemplate, Input, Label } from '../ui/';
 import { cn } from '~/utils/';
 import cleanupPreset from '~/utils/cleanupPreset';
-import { useCreatePresetMutation } from '@librechat/data-provider';
+import { useCreatePresetMutation } from 'librechat-data-provider';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
 

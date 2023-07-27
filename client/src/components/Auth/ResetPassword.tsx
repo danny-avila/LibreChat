@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useResetPasswordMutation, TResetPassword } from '@librechat/data-provider';
+import { useResetPasswordMutation, TResetPassword } from 'librechat-data-provider';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';

@@ -2,7 +2,7 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { CheckIcon } from 'lucide-react';
 import { ThemeContext } from '~/hooks/ThemeContext';
 import React, { useState, useContext, useEffect, useCallback } from 'react';
-import { useClearConversationsMutation } from '@librechat/data-provider';
+import { useClearConversationsMutation } from 'librechat-data-provider';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { localize } from '~/localization/Translation';

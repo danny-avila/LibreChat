@@ -4,8 +4,7 @@
   "description": "",
   "workspaces": [
     "api",
-    "client",
-    "packages/*"
+    "client"
   ],
   "scripts": {
     "install": "node config/install.js",
@@ -19,9 +18,8 @@
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
     "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
     "backend:stop": "node config/stop-backend.js",
-    "build:data-provider": "cd packages/data-provider && npm run build",
-    "frontend": "npm run build:data-provider && cd client && npm run build",
-    "frontend:ci": "npm run build:data-provider && cd client && npm run build:ci",
+    "frontend": "cd client && npm run build",
+    "frontend:ci": "cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
     "e2e:ci": "playwright test --config=e2e/playwright.config.ts",
@@ -76,8 +74,7 @@
       "api/data/",
       "data",
       "client/",
-      "admin/",
-      "packages/"
+      "admin/"
     ]
   }
 }
