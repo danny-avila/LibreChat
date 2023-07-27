@@ -6,28 +6,28 @@ import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-qu
 import { ThemeProvider } from './hooks/ThemeContext';
 import { useApiErrorBoundary } from './hooks/ApiErrorBoundaryContext';
 import { router } from './routes';
-import { useNavigate } from 'react-router-dom';
-const maxRefreshAttempts = 3; 
+// import { useNavigate } from 'react-router-dom';
+// const maxRefreshAttempts = 3; 
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
-  const navigate = useNavigate();
+  // const navigate = useNavigate();
   
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
       onError: (error) => {
          console.log('Error', error);
-         const originalRequest = error.config;
+         // const originalRequest = error.config;
          // If /api/auth/refresh sends the 401 then do not try to refresh
         // if (error?.response?.status === 401 && !(error?.request?._url === '/api/auth/refresh') && !(originalRequest._retry)) {
-        if (error?.response?.status === 401 && !(originalRequest._retry)) {
-           const refreshAttempts = context.refreshAttempts ?? 0;
-           if (refreshAttempts < maxRefreshAttempts) {
+        if (error?.response?.status === 401) { // && !(originalRequest._retry)) {
+           //const refreshAttempts = context.refreshAttempts ?? 0;
+           // if (refreshAttempts < maxRefreshAttempts) {
              originalRequest._retry = true;
              window.dispatchEvent(new CustomEvent('unauthorized'));
-           } else {
-             navigate('/login', { replace: true });
-           }
+           // } else {
+           //  navigate('/login', { replace: true });
+           //}
          }
 //         if (error?.response?.status === 401 && 
 //           !(error?.response?.data === 'Refresh token expired or not found for this user') &&
