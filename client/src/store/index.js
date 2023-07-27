@@ -7,6 +7,7 @@ import submission from './submission';
 import search from './search';
 import preset from './preset';
 import token from './token';
+import tabValue from './tabValue';
 
 export default {
   ...conversation,
@@ -17,5 +18,6 @@ export default {
   ...submission,
   ...search,
   ...preset,
-  ...token
+  ...token,
+  ...tabValue
 };
