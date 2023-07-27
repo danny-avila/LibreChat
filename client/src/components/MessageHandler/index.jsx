@@ -237,21 +237,21 @@ export default function MessageHandler() {
       console.log('error in opening conn.');
       events.close();
 
-      //const data = JSON.parse(e.data);
+      const data = JSON.parse(e.data);
 
-      //errorHandler(data, { ...submission, message });
+      errorHandler(data, { ...submission, message });
       
-      let data;
-      try {
-        data = JSON.parse(e.data);
-        errorHandler(data, { ...submission, message });
-      } catch (err) {
-        console.log('Invalid JSON:', e.data);
-        data = {'error': e.data};
-        if (e.data === 'Unauthorized') {
-           window.dispatchEvent(new CustomEvent('maxRefreshAttemptsExceeded'));
-        }
-      }
+    //  let data;
+    //  try {
+    //    data = JSON.parse(e.data);
+    //    errorHandler(data, { ...submission, message });
+    //  } catch (err) {
+    //    console.log('Invalid JSON:', e.data);
+    //    data = {'error': e.data};
+    //    if (e.data === 'Unauthorized') {
+    //       window.dispatchEvent(new CustomEvent('maxRefreshAttemptsExceeded'));
+    //    }
+    //  }
     };
 
     setIsSubmitting(true);
