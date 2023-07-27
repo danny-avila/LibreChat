@@ -203,7 +203,8 @@ const AuthContextProvider = ({
       onError: error => {
         console.log('Refresh token has expired, please log in again.', error);
         doSetError((error as Error).message);
-        navigate('/login', { replace: true });
+        await logout(); 
+     //   navigate('/login', { replace: true });
      //   return;
       }
     });
