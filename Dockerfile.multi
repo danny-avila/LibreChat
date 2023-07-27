@@ -16,10 +16,12 @@ WORKDIR /app/client
 COPY ./client/ ./
 
 RUN npm install
+ENV NODE_OPTIONS="--max-old-space-size=776"
 RUN npm run build
 
 # Node API setup
 FROM base AS api-build
+COPY --from=client-build /app/client/dist /app/client/dist
 EXPOSE 3080
 ENV HOST=0.0.0.0
 CMD ["node", "server/index.js"]
