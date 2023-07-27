@@ -1,7 +1,6 @@
 const express = require('express');
 const session = require('express-session');
 const connectDb = require('../lib/db/connectDb');
-const migrateDb = require('../lib/db/migrateDb');
 const indexSync = require('../lib/db/indexSync');
 const path = require('path');
 const cors = require('cors');
@@ -32,7 +31,6 @@ config.validate(); // Validate the config
 (async () => {
   await connectDb();
   console.log('Connected to MongoDB');
-  await migrateDb();
   await indexSync();
 
   const app = express();

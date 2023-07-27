@@ -56,7 +56,7 @@ const registerUser = async (user) => {
   const { email, password, name, username } = user;
 
   try {
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email }).lean();
 
     if (existingUser) {
       console.info(
@@ -103,7 +103,7 @@ const registerUser = async (user) => {
  * @returns
  */
 const requestPasswordReset = async (email) => {
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ email }).lean();
   if (!user) {
     return new Error('Email does not exist');
   }
