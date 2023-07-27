@@ -252,7 +252,7 @@ export default function MessageHandler() {
       //    const event = new CustomEvent('logoutEvent');
       //    window.dispatchEvent(event);
       //  }
-      }
+      // }
     };
 
     setIsSubmitting(true);
