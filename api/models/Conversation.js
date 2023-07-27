@@ -143,7 +143,7 @@ module.exports = {
 
       if (existingConversation) {
         const update = {};
-        update.isLiked = isLiked;
+
         if (isLiked) {
           // Increment the likesCount by 1
           update.likesConvo = existingConversation.likesConvo + 1;
@@ -166,5 +166,16 @@ module.exports = {
       return { message: 'Error liking conversation' };
     }
   },
-
+  getHottestConvo: async () => {
+    try {
+      const convos = await Conversation.find()
+        .sort({ likesConvo: -1 }) // Sort by count in descending order (hottest first)
+        .limit(3) // Limit the result to the top 3 conversations
+        .exec();
+      return { conversations: convos };
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error getting the hottest conversations' };
+    }
+  }
 };
