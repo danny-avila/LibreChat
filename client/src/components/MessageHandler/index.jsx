@@ -249,8 +249,8 @@ export default function MessageHandler() {
         console.log('Invalid JSON:', e.data);
         data = {'error': e.data};
         if (e.data === 'Unauthorized') {
-           //window.dispatchEvent(new CustomEvent('maxRefreshAttemptsExceeded'));
-           window.dispatchEvent(new CustomEvent('unauthorized'));
+           window.dispatchEvent(new CustomEvent('maxRefreshAttemptsExceeded'));
+           //window.dispatchEvent(new CustomEvent('unauthorized'));
         }
       }
     };
