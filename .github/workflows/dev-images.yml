@@ -1,10 +1,7 @@
-name: Docker Multi-Stage Build on Push to Main
+name: Docker Dev Images Build
 
-# The workflow is triggered when a push is made to the main branch
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   build:
