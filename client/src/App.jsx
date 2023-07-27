@@ -19,7 +19,6 @@ const App = () => {
       onError: (error) => {
          console.log('Error', error);
          if (error?.response?.status === 401){
-           const refreshAttempts = context.refreshAttempts ?? 0;
            if (refreshAttempts.current < maxRefreshAttempts) {
              refreshAttempts.current += 1;
              window.dispatchEvent(new CustomEvent('unauthorized'));
