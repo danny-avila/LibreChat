@@ -73,35 +73,35 @@ const AuthContextProvider = ({
     }
   };
 
-  function parseJwt(token) {
-    try {
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map(function (c) {
-          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-        })
-        .join('')
-        );
-      return JSON.parse(jsonPayload);
-    } catch (error) {
-      return null;
-    }
-  };
+//  function parseJwt(token) {
+//    try {
+//      const base64Url = token.split('.')[1];
+//      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+//      const jsonPayload = decodeURIComponent(
+//      atob(base64)
+//        .split('')
+//        .map(function (c) {
+//          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+//        })
+//        .join('')
+//        );
+//      return JSON.parse(jsonPayload);
+//    } catch (error) {
+//      return null;
+//    }
+//  };
 
-  function isTokenExpired(token) {
-      const parsedToken = parseJwt(token);
-      if (!parsedToken) {
-          return true;
-      }
-      const expirationDate = new Date(parsedToken.exp * 1000);
-      if (expirationDate < new Date()) {
-          return true;
-      }
-      return false;
-  };
+//  function isTokenExpired(token) {
+//      const parsedToken = parseJwt(token);
+//      if (!parsedToken) {
+//          return true;
+//      }
+//      const expirationDate = new Date(parsedToken.exp * 1000);
+//      if (expirationDate < new Date()) {
+//          return true;
+//      }
+//      return false;
+//  };
 
   const setUserContext = useCallback(
     (userContext: TUserContext) => {
@@ -159,22 +159,6 @@ const AuthContextProvider = ({
     });
   };
 
-//  useEffect(() => {
-//    const handleLogout = async () => {
-//      try {
-//        console.log('Logout event received:');
-//        await logout();
-//      } catch (logoutError) {
-//        console.log('Failed to logout:', logoutError);
-//      }
-//    };
-//
-//    window.addEventListener('logoutEvent', handleLogout);
-//    return () => {
-//      window.removeEventListener('logoutEvent', handleLogout);
-//    };
-//  }, [logout]);
-  
   useEffect(() => {
     if (userQuery.data) {
       setUser(userQuery.data);
@@ -205,12 +189,6 @@ const AuthContextProvider = ({
   ]);
 
   const silentRefresh = useCallback(() => {
-   // if (!refreshToken) {
-      // console.log('refreshToken is not defined');
-    //  navigate('/login', { replace: true });
-    //  return;
-   // }
-
     refreshToken.mutate(undefined, {
       onSuccess: (data: TLoginResponse) => {
         const { user, token } = data;
@@ -218,17 +196,13 @@ const AuthContextProvider = ({
       },
       onError: error => {
         console.log('Refresh token has expired, please log in again.', error);
-        // console.log('navigate', navigate);
         setUserContext({
           token: undefined,
           isAuthenticated: false,
           user: undefined,
           redirect: '/login',
         });
-        // navigate('/login', { replace: true });
         doSetError((error as Error).message);
-        // logout(); 
-     //   return;
       }
     });
   }, [token, setUserContext, navigate]);
@@ -237,7 +211,8 @@ const AuthContextProvider = ({
     const handleUnauthorized = async () => {
       try {
         console.log('Unauthorized event received:');
-        if (!token || isTokenExpired(token)) {
+        // if (!token || isTokenExpired(token)) {
+        if (!token) {
           await silentRefresh();
         }
       } catch (refreshError) {
@@ -251,26 +226,26 @@ const AuthContextProvider = ({
     };
   }, [silentRefresh]);
 
-  const LoginRedirect = () => {
-    const navigate = useNavigate();
-    console.log('maxRefresh event received:');
+//  const LoginRedirect = () => {
+//    const navigate = useNavigate();
+//    console.log('maxRefresh event received:');
+//
+//    useEffect(() => {
+//      const handleLoginRedirect = () => {
+//         navigate('/login', { replace: true });
+//      };
 
-    useEffect(() => {
-      const handleLoginRedirect = () => {
-         navigate('/login', { replace: true });
-      };
+//      // Listen for 'maxRefreshAttemptsExceeded' event
+//      window.addEventListener('maxRefreshAttemptsExceeded', handleLoginRedirect);
+//
+//      // Clean up the listener when unmounting
+//      return () => {
+//        window.removeEventListener('maxRefreshAttemptsExceeded', handleLoginRedirect);
+//      };
+//    }, [navigate]);
 
-      // Listen for 'maxRefreshAttemptsExceeded' event
-      window.addEventListener('maxRefreshAttemptsExceeded', handleLoginRedirect);
-
-      // Clean up the listener when unmounting
-      return () => {
-        window.removeEventListener('maxRefreshAttemptsExceeded', handleLoginRedirect);
-      };
-    }, [navigate]);
-
-    return null;
-  };
+//    return null;
+//  };
   
   // Make the provider update only when it should
   const memoedValue = useMemo(
