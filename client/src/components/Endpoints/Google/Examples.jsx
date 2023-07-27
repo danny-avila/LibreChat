@@ -29,7 +29,10 @@ function Examples({ readonly, examples, setExample, addExample, removeExample, e
               >
                 <div className="grid w-full items-center gap-2">
                   <Label htmlFor={`input-${idx}`} className="text-left text-sm font-medium">
-                    {localize(lang, 'com_ui_input')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_blank')})</small>
+                    {localize(lang, 'com_ui_input')}{' '}
+                    <small className="opacity-40">
+                      ({localize(lang, 'com_endpoint_default_blank')})
+                    </small>
                   </Label>
                   <TextareaAutosize
                     id={`input-${idx}`}
@@ -53,7 +56,10 @@ function Examples({ readonly, examples, setExample, addExample, removeExample, e
               >
                 <div className="grid w-full items-center gap-2">
                   <Label htmlFor={`output-${idx}`} className="text-left text-sm font-medium">
-                    {localize(lang, 'com_endpoint_output')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_blank')})</small>
+                    {localize(lang, 'com_endpoint_output')}{' '}
+                    <small className="opacity-40">
+                      ({localize(lang, 'com_endpoint_default_blank')})
+                    </small>
                   </Label>
                   <TextareaAutosize
                     id={`output-${idx}`}

@@ -67,7 +67,10 @@ function Settings(props) {
             <>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_custom_name')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_blank')})</small>
+                  {localize(lang, 'com_endpoint_custom_name')}{' '}
+                  <small className="opacity-40">
+                    ({localize(lang, 'com_endpoint_default_blank')})
+                  </small>
                 </Label>
                 <Input
                   id="chatGptLabel"
@@ -83,7 +86,10 @@ function Settings(props) {
               </div>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_prompt_prefix')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_blank')})</small>
+                  {localize(lang, 'com_endpoint_prompt_prefix')}{' '}
+                  <small className="opacity-40">
+                    ({localize(lang, 'com_endpoint_default_blank')})
+                  </small>
                 </Label>
                 <TextareaAutosize
                   id="promptPrefix"
@@ -145,7 +151,10 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_top_p')} <small className="opacity-40">({localize(lang, 'com_endpoint_default')}: 1)</small>
+                  {localize(lang, 'com_endpoint_top_p')}{' '}
+                  <small className="opacity-40">
+                    ({localize(lang, 'com_endpoint_default')}: 1)
+                  </small>
                 </Label>
                 <InputNumber
                   id="top-p-int"
@@ -183,7 +192,10 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="freq-penalty-int" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_frequency_penalty')} <small className="opacity-40">({localize(lang, 'com_endpoint_default')}: 0)</small>
+                  {localize(lang, 'com_endpoint_frequency_penalty')}{' '}
+                  <small className="opacity-40">
+                    ({localize(lang, 'com_endpoint_default')}: 0)
+                  </small>
                 </Label>
                 <InputNumber
                   id="freq-penalty-int"
@@ -221,7 +233,10 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="pres-penalty-int" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_presence_penalty')} <small className="opacity-40">({localize(lang, 'com_endpoint_default')}: 0)</small>
+                  {localize(lang, 'com_endpoint_presence_penalty')}{' '}
+                  <small className="opacity-40">
+                    ({localize(lang, 'com_endpoint_default')}: 0)
+                  </small>
                 </Label>
                 <InputNumber
                   id="pres-penalty-int"
