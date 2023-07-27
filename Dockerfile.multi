@@ -16,7 +16,7 @@ WORKDIR /app/client
 COPY ./client/ ./
 
 RUN npm install
-ENV NODE_OPTIONS="--max-old-space-size=776"
+ENV NODE_OPTIONS="--max-old-space-size=2048"
 RUN npm run build
 
 # Node API setup
@@ -24,7 +24,7 @@ FROM base AS api-build
 COPY --from=client-build /app/client/dist /app/client/dist
 EXPOSE 3080
 ENV HOST=0.0.0.0
-CMD ["node", "server/index.js"]
+CMD ["NODE_ENV=production", "node", "server/index.js"]
 
 # Nginx setup
 FROM nginx:1.21.1-alpine AS prod-stage
