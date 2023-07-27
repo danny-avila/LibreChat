@@ -6,18 +6,23 @@ import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-qu
 import { ThemeProvider } from './hooks/ThemeContext';
 import { useApiErrorBoundary } from './hooks/ApiErrorBoundaryContext';
 import { router } from './routes';
+import { useState } from 'react';
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
+  const [refreshAttempted, setRefreshAttempted] = useState<boolean>(false);
   
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
       onError: (error) => {
         console.log('Error', error);
         if (error?.response?.status === 401){
-          window.dispatchEvent(new CustomEvent('unauthorized'));
-        } else {
-          window.dispatchEvent(new CustomEvent('maxRefreshAttemptsExceeded'));
+          if (!refreshAttempted) {
+            setRefreshAttempted(refreshAttempted);
+            window.dispatchEvent(new CustomEvent('unauthorized'));
+          } else {
+            window.dispatchEvent(new CustomEvent('maxRefreshAttemptsExceeded'));
+          }
         }
       },
     }),
