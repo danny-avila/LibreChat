@@ -53,7 +53,7 @@ const AuthContextProvider = ({
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [isLoadingUser, setIsLoadingUser] = useState<boolean>(true);
+  // const [isLoadingUser, setIsLoadingUser] = useState<boolean>(true);
 
   const navigate = useNavigate();
 
