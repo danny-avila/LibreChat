@@ -6,6 +6,8 @@ import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-qu
 import { ThemeProvider } from './hooks/ThemeContext';
 import { useApiErrorBoundary } from './hooks/ApiErrorBoundaryContext';
 import { router } from './routes';
+import { useRef } from 'react';
+
 // import { useNavigate } from 'react-router-dom';
 const maxRefreshAttempts = 3; 
 
