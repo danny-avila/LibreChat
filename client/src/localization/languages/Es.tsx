@@ -15,7 +15,8 @@ export default {
   com_ui_limitation_incorrect_info: 'Puede generar ocasionalmente información incorrecta',
   com_ui_limitation_harmful_biased:
     'Puede producir ocasionalmente instrucciones perjudiciales o contenido sesgado',
-  com_ui_limitation_limited_2021: 'Conocimiento limitado sobre el mundo y eventos posteriores a 2021',
+  com_ui_limitation_limited_2021:
+    'Conocimiento limitado sobre el mundo y eventos posteriores a 2021',
   com_ui_input: 'Entrada',
   com_ui_close: 'Cerrar',
   com_ui_model: 'Modelo',
