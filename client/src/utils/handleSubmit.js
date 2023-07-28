@@ -21,9 +21,13 @@ const useMessageHandler = () => {
     const timeLeft = tokenPayload.exp - currentTime; 
     return timeLeft < 30;
   };
-  if (checkTokenExpiration(token)) {
+  if (checkTokenExpiration(token) && !!isSubmitting ) {
     window.dispatchEvent(new CustomEvent('attemptRefresh'));
   }
+
+  //  if (checkTokenExpiration(token)) {
+//    window.dispatchEvent(new CustomEvent('attemptRefresh'));
+//  }
   
   const { getToken } = store.useToken(currentConversation?.endpoint);
 
