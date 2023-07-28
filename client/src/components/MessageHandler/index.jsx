@@ -14,17 +14,6 @@ export default function MessageHandler() {
 
   const { refreshConversations } = store.useConversations();
 
-  const checkTokenExpiration = (token) => {
-    let tokenParts = token.split('.');
-    let base64Url = tokenParts[1];
-    let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    let tokenPayloadJson = window.atob(base64);
-    let tokenPayload = JSON.parse(tokenPayloadJson);
-    const currentTime = Date.now() / 1000; 
-    const timeLeft = tokenPayload.exp - currentTime; 
-    return timeLeft < 30;
-  };
-  
   const messageHandler = (data, submission) => {
     const { messages, message, plugin, initialResponse, isRegenerate = false } = submission;
 
@@ -202,10 +191,7 @@ export default function MessageHandler() {
     if (Object.keys(submission).length === 0) {
       return;
     }
-    if (checkTokenExpiration(token)) {
-      window.dispatchEvent(new CustomEvent('attemptRefresh'));
-    }
-    
+   
     let { message } = submission;
 
     const { server, payload } = createPayload(submission);
