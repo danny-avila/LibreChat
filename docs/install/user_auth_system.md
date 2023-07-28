@@ -100,7 +100,7 @@ OPENID_CALLBACK_URL=/oauth/openid/callback
 
 ---
 
-## Github Authentication
+## GitHub Authentication
 
 1. Go to your [Github Developer settings](https://github.com/settings/apps)
 2. Create a new Github app
