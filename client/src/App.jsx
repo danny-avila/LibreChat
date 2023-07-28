@@ -14,7 +14,7 @@ const App = () => {
     queryCache: new QueryCache({
       onError: (error) => {
         if (error?.response?.status === 401){
-          //setError(error);
+          setError(error);
           window.dispatchEvent(new CustomEvent('intercept401'));
         }
       },
