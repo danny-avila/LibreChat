@@ -103,7 +103,6 @@ const createMeiliMongooseModel = function ({ index, attributesToIndex }) {
           // Case: Insert
           // If document does not exist in Meili Index, Its an insert case
           if (!indexMap.has(id)) {
-            console.log(`${id} is not indexed`);
             await index.addDocuments([doc]);
             updateOps.push({
               updateOne: { filter: update, update: { $set: { _meiliIndex: true } } },
