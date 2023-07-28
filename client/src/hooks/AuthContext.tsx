@@ -53,8 +53,7 @@ const AuthContextProvider = ({
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [refreshCount, setRefreshCount] = useState(0);
-
+  
   const navigate = useNavigate();
 
   const loginUser = useLoginUserMutation();
@@ -134,7 +133,6 @@ const AuthContextProvider = ({
       onSuccess: (data: TLoginResponse) => {
         const { user, token } = data;
         setUserContext({ token, isAuthenticated: true, user });
-        setRefreshCount((count) => count + 1);
       },
       onError: error => {
         console.log('Refresh token has expired, please log in again.', error);
@@ -176,19 +174,17 @@ const AuthContextProvider = ({
     error,
     navigate,
     setUserContext,
-    refreshCount,
   ]);
 
   useEffect(() => {
     const handleUnauthorized = async () => {
       try {
-        console.log('Unauthorized event received, current token:', token);
+        console.log('Unauthorized event received');
         await silentRefresh();
       } catch (refreshError) {
         console.log('Failed to refresh:', refreshError);
       }
     };
-
     window.addEventListener('intercept401', handleUnauthorized);
     return () => {
       window.removeEventListener('intercept401', handleUnauthorized);
