@@ -181,10 +181,7 @@ const AuthContextProvider = ({
     const handleUnauthorized = async () => {
       try {
         console.log('Unauthorized event received, current token:', token);
-        // if (!token || isTokenExpired(token)) {
-        if (!token) {
-          await silentRefresh();
-        }
+        await silentRefresh();
       } catch (refreshError) {
         console.log('Failed to refresh:', refreshError);
       }
