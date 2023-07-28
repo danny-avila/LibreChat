@@ -2,33 +2,13 @@ import { v4 } from 'uuid';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 
 import store from '~/store';
-import { useAuthContext } from '~/hooks/AuthContext';
 
 const useMessageHandler = () => {
   const currentConversation = useRecoilValue(store.conversation) || {};
   const setSubmission = useSetRecoilState(store.submission);
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
-  const { token } = useAuthContext();
-  
-  const checkTokenExpiration = (token) => {
-    let tokenParts = token.split('.');
-    let base64Url = tokenParts[1];
-    let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    let tokenPayloadJson = window.atob(base64);
-    let tokenPayload = JSON.parse(tokenPayloadJson);
-    const currentTime = Date.now() / 1000; 
-    const timeLeft = tokenPayload.exp - currentTime; 
-    return timeLeft < 30;
-  };
-  if (checkTokenExpiration(token) && isSubmitting ) {
-    window.dispatchEvent(new CustomEvent('attemptRefresh'));
-  }
-
-  //  if (checkTokenExpiration(token)) {
-//    window.dispatchEvent(new CustomEvent('attemptRefresh'));
-//  }
-  
+   
   const { getToken } = store.useToken(currentConversation?.endpoint);
 
   const latestMessage = useRecoilValue(store.latestMessage);
@@ -43,10 +23,6 @@ const useMessageHandler = () => {
       return;
     }
 
-//    if (checkTokenExpiration(token)) {
-//      window.dispatchEvent(new CustomEvent('attemptRefresh'));
-//    }
-    
     // determine the model to be used
     const { endpoint } = currentConversation;
     let endpointOption = {};
