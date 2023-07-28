@@ -39,8 +39,10 @@ export default function Root() {
     return timeLeft < 30;
   };  
 
-  if (checkTokenExpiration(token)) {
-    window.dispatchEvent(new CustomEvent('attemptRefresh'));
+  if (token) {
+    if (checkTokenExpiration(token)) {
+      window.dispatchEvent(new CustomEvent('attemptRefresh'));
+    }
   }
   
   useEffect(() => {
