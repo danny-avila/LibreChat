@@ -47,7 +47,9 @@ export default function TextChat({ isSearchView = false }) {
     const timeLeft = tokenPayload.exp - currentTime; 
     return timeLeft < 30;
   };  
-
+  if (checkTokenExpiration(token)) {
+    window.dispatchEvent(new CustomEvent('attemptRefresh'));
+  }
   // auto focus to input, when enter a conversation.
   useEffect(() => {
     if (!conversationId) {
@@ -73,9 +75,6 @@ export default function TextChat({ isSearchView = false }) {
   }, [isSubmitting]);
 
   const submitMessage = () => {
-    if (checkTokenExpiration(token)) {
-      window.dispatchEvent(new CustomEvent('attemptRefresh'));
-    }
     ask({ text });
     setText('');
   };
