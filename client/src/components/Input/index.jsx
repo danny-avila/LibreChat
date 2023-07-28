@@ -73,7 +73,7 @@ export default function TextChat({ isSearchView = false }) {
   }, [isSubmitting]);
 
   const submitMessage = () => {
-    if (checkTokenExpiration(token) && isSubmitting ) {
+    if (checkTokenExpiration(token)) {
       window.dispatchEvent(new CustomEvent('attemptRefresh'));
     }
     ask({ text });
