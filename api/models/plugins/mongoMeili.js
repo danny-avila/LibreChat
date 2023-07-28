@@ -117,11 +117,13 @@ const createMeiliMongooseModel = function ({ index, attributesToIndex }) {
         if (updateOps.length > 0) {
           await this.collection.bulkWrite(updateOps);
           console.log(
-            `Finished indexing ${primaryKey === 'messageId' ? 'messages' : 'conversations'}`,
+            `[Meilisearch] Finished indexing ${
+              primaryKey === 'messageId' ? 'messages' : 'conversations'
+            }`,
           );
         }
       } catch (error) {
-        console.log('Error adding document to Meili');
+        console.log('[Meilisearch] Error adding document to Meili');
         console.error(error);
       }
     }
