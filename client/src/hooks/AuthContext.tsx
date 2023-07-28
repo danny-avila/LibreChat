@@ -129,6 +129,25 @@ const AuthContextProvider = ({
     });
   };
 
+  const silentRefresh = useCallback(() => {
+    refreshToken.mutate(undefined, {
+      onSuccess: (data: TLoginResponse) => {
+        const { user, token } = data;
+        setUserContext({ token, isAuthenticated: true, user });
+      },
+      onError: error => {
+        console.log('Refresh token has expired, please log in again.', error);
+        setUserContext({
+          token: undefined,
+          isAuthenticated: false,
+          user: undefined,
+          redirect: '/login',
+        });
+        doSetError((error as Error).message);
+      }
+    });
+  }, [token, setUserContext, navigate]);
+  
   useEffect(() => {
     if (userQuery.data) {
       setUser(userQuery.data);
@@ -156,27 +175,9 @@ const AuthContextProvider = ({
     error,
     navigate,
     setUserContext,
+    silentRefresh,
   ]);
 
-  const silentRefresh = useCallback(() => {
-    refreshToken.mutate(undefined, {
-      onSuccess: (data: TLoginResponse) => {
-        const { user, token } = data;
-        setUserContext({ token, isAuthenticated: true, user });
-      },
-      onError: error => {
-        console.log('Refresh token has expired, please log in again.', error);
-        setUserContext({
-          token: undefined,
-          isAuthenticated: false,
-          user: undefined,
-          redirect: '/login',
-        });
-        doSetError((error as Error).message);
-      }
-    });
-  }, [token, setUserContext, navigate]);
-  
   useEffect(() => {
     const handleUnauthorized = async () => {
       try {
