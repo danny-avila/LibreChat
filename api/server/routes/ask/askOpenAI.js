@@ -2,7 +2,6 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const addToCache = require('./addToCache');
-const { isIncludeSensitiveWords } = require('../../controllers/filterController');
 
 // const { getOpenAIModels } = require('../endpoints');
 const { titleConvo, askClient } = require('../../../app/');
@@ -10,12 +9,13 @@ const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../mo
 const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 const { getMessagesCount } = require('../../../models/Message');
+const trieSensitive = require('../../../utils/trieSensitive');
 
 const abortControllers = new Map();
 
 router.post('/abort', requireJwtAuth, async (req, res) => {
   const { abortKey } = req.body;
-  console.log(`req.body`, req.body);
+  console.log('req.body', req.body);
   if (!abortControllers.has(abortKey)) {
     return res.status(404).send('Request not found');
   }
@@ -38,6 +38,10 @@ router.post('/', requireJwtAuth, async (req, res) => {
     parentMessageId,
     conversationId: oldConversationId
   } = req.body;
+
+  const isSensitive = await trieSensitive.checkSensitiveWords(text);
+  if(isSensitive) return handleError(res, { text:'请回避敏感词汇，谢谢！' });
+
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   if (endpoint !== 'openAI') return handleError(res, { text: 'Illegal request' });
 
@@ -114,26 +118,6 @@ const ask = async ({
   let responseMessageId = crypto.randomUUID();
 
   // Filter the user's message for sensitive words
-
-  if (isIncludeSensitiveWords(text)) {
-  
-    // Handle the case when sensitive words are found in the user's message
-    const errorMessage = {
-      messageId: responseMessageId,
-      sender: 'ChatGPT',
-      conversationId,
-      parentMessageId: overrideParentMessageId || userMessageId,
-      unfinished: false,
-      cancelled: false,
-      error: true,
-      text: 'Your message contains sensitive words.'
-    };
-
-    await saveMessage(errorMessage);
-    handleError(res, errorMessage);
-    return;
-  }
-
   res.writeHead(200, {
     Connection: 'keep-alive',
     'Content-Type': 'text/event-stream',
@@ -198,7 +182,7 @@ const ask = async ({
     let someTimeAgo = new Date();
     someTimeAgo.setSeconds(someTimeAgo.getSeconds() - 60 * 60 * 24); // 24 hours
 
-    let quota = JSON.parse(process.env["CHAT_QUOTA_PER_SECOND"]);
+    let quota = JSON.parse(process.env['CHAT_QUOTA_PER_SECOND']);
     if (endpointOption.model in quota) {
       let messagesCount = await getMessagesCount({
         senderId: req.user.id,

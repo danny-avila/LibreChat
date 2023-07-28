@@ -45,7 +45,8 @@
     "mongodb": "5.2",
     "react-ga": "^3.3.1",
     "passport": "^0.6.0",
-    "passport-github2": "^0.1.12"
+    "passport-github2": "^0.1.12",
+    "nodemailer": "^6.9.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.32.1",
