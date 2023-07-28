@@ -69,7 +69,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
     <>
       <h1
         id="landing-title"
-        className="mb-10 ml-auto mr-auto mt-6 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-16 md:mt-[10vh]"
+        className="mb-5 ml-auto mr-auto mt-3 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-8 md:mt-[5vh]"
       >
         {leaderboardType === 'recent' ? '看看其他用户最近都在问些什么' : '看看最近热门的话题'}
       </h1>
