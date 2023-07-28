@@ -153,7 +153,7 @@ const createMeiliMongooseModel = function ({ index, attributesToIndex }) {
             },
             { _id: 1 },
           ),
-        );
+        ).lean();
 
         // Add additional data from mongodb into Meili search hits
         const populatedHits = data.hits.map(function (hit) {
@@ -162,7 +162,7 @@ const createMeiliMongooseModel = function ({ index, attributesToIndex }) {
           const originalHit = _.find(hitsFromMongoose, query);
 
           return {
-            ...(originalHit ? originalHit.toJSON() : {}),
+            ...(originalHit ?? {}),
             ...hit,
           };
         });
