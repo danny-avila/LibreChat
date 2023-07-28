@@ -9,7 +9,6 @@ const {
   createOnProgress,
 } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
-const trieSensitive = require('../../../utils/trieSensitive');
 
 const abortControllers = new Map();
 
@@ -23,8 +22,6 @@ router.post('/', requireJwtAuth, async (req, res) => {
   const isOpenAI = endpoint === 'openAI' || endpoint === 'azureOpenAI';
   if (!isOpenAI) return handleError(res, { text: 'Illegal request' });
 
-  const isSensitive = await trieSensitive.checkSensitiveWords(text);
-  if(isSensitive) return handleError(res, { text:'请回避敏感词汇，谢谢！' });
   // build endpoint option
   const endpointOption = {
     chatGptLabel: req.body?.chatGptLabel ?? null,
