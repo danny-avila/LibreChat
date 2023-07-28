@@ -14,8 +14,7 @@ export default function Footer() {
       >
         {config?.appTitle || 'LibreChat'} v0.5.5
       </a>
-      {' - '}Serves and searches all conversations reliably. All AI convos under one house. Pay per
-      call and not per month (cents compared to dollars).
+      {' - '}. All AI conversations in one place. Pay per call and not per month.
     </div>
   );
 }
