@@ -15,7 +15,7 @@ const App = () => {
       onError: (error) => {
         if (error?.response?.status === 401){
           setError(error);
-          window.dispatchEvent(new CustomEvent('refreshAttempted'));
+          window.dispatchEvent(new CustomEvent('attemptRefresh'));
         }
       },
     }),
