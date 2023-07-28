@@ -12,7 +12,7 @@ export default function Footer() {
         rel="noreferrer"
         className="underline"
       >
-        {config?.appTitle || 'LibreChat'} v0.5.5
+        {config?.appTitle || 'LibreChat'} v0.5.6
       </a>
       {' - '}. All AI conversations in one place. Pay per call and not per month.
     </div>
