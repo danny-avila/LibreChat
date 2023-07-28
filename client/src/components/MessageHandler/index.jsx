@@ -248,7 +248,10 @@ export default function MessageHandler() {
         console.log('Invalid JSON:', e.data);
         // data = {'error': e.data};
         if (e.data === 'Unauthorized') {
-           window.dispatchEvent(new CustomEvent('intercept401'));
+          window.dispatchEvent(new CustomEvent('intercept401'));
+          setTimeout(() => {
+            refreshConversations();
+          }, 2000);
         }
       }
     };
