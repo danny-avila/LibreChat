@@ -2,19 +2,15 @@ import React from 'react';
 import { Tabs, TabsList, TabsTrigger } from './Tabs';
 import { cn } from '~/utils';
 import Recommendations from './Recommendations';
-import Leaderboard from './Leaderboard';
 import { useRecoilState } from 'recoil';
 
 import store from '~/store';
-import WritingAssistant from '../Input/ChatWidgetMenu/WritingAssistant';
 
 function getPage(tabValue: string) {
   switch (tabValue) {
     default: return <Recommendations type='recent'/>;
     case ('recent'): return <Recommendations key='recent' type='recent'/>;
     case ('hottest'): return <Recommendations key='hottest' type='hottest'/>
-    case ('leaderboard'): return <Leaderboard />;
-    case ('assistant'): return <WritingAssistant />;
   }
 }
 
