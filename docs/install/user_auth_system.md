@@ -27,7 +27,7 @@ Important: When you run the app for the first time, you need to create a new acc
 
 ## Before enabling Social Authentication, set ALLOW_SOCIAL_LOGIN=true in the .env file
 
-## How to Set Up Google Authentication
+## Google Authentication
 
 To enable Google login, you must create an application in the [Google Cloud Console](https://cloud.google.com) and provide the client ID and client secret in the `/.env` file.
 
@@ -45,7 +45,7 @@ To enable Google login, you must create an application in the [Google Cloud Cons
 
 ---
 
-## How to Set Up OpenID Authentication with Azure AD
+## OpenID Authentication with Azure AD
 
 1. Go to the [Azure Portal](https://portal.azure.com/) and sign in with your account.
 2. In the search box, type "Azure Active Directory" and click on it.
@@ -68,7 +68,7 @@ OPENID_CALLBACK_URL=/oauth/openid/callback # this should be the same for everyon
 ```
 11. Save the .env file and you're done! You have successfully set up OpenID authentication with Azure AD for your app.
 
-## How to Set Up OpenID Authentication with AWS Cognito
+## OpenID Authentication with AWS Cognito
 
 1. Create a new User Pool in Cognito:
    1. Ensure your Cognito user pool sign-in options include `User Name` and `Email`.
@@ -100,7 +100,7 @@ OPENID_CALLBACK_URL=/oauth/openid/callback
 
 ---
 
-## How to Set Up Github Authentication
+## Github Authentication
 
 1. Go to your [Github Developer settings](https://github.com/settings/apps)
 2. Create a new Github app
@@ -118,7 +118,7 @@ GITHUB_CALLBACK_URL=/oauth/github/callback # this should be the same for everyon
 9. Save the .env file
 ---
 
-## How to Set Up Discord Authentication
+## Discord Authentication
 
 1. Go to [Discord Developer Portal](https://discord.com/developers)
 2. Create a new Application and give it a name
