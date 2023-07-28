@@ -14,7 +14,8 @@ router.get('/', requireJwtAuth, async (req, res) => {
 
 router.get('/hottest', requireJwtAuth, async (req, res) => {
   try {
-    const allConvos = await getHottestConvo();
+    const userId = req.user.id;
+    const allConvos = await getHottestConvo(userId);
     res.status(200).send({ rs: true, data: allConvos, msg: 'list top 3 convensations successflly' });
   } catch (error) {
     console.error(error);
