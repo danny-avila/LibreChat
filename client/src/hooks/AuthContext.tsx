@@ -73,36 +73,6 @@ const AuthContextProvider = ({
     }
   };
 
-//  function parseJwt(token) {
-//    try {
-//      const base64Url = token.split('.')[1];
-//      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-//      const jsonPayload = decodeURIComponent(
-//      atob(base64)
-//        .split('')
-//        .map(function (c) {
-//          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-//        })
-//        .join('')
-//        );
-//      return JSON.parse(jsonPayload);
-//    } catch (error) {
-//      return null;
-//    }
-//  };
-
-//  function isTokenExpired(token) {
-//      const parsedToken = parseJwt(token);
-//      if (!parsedToken) {
-//          return true;
-//      }
-//      const expirationDate = new Date(parsedToken.exp * 1000);
-//      if (expirationDate < new Date()) {
-//          return true;
-//      }
-//      return false;
-//  };
-
   const setUserContext = useCallback(
     (userContext: TUserContext) => {
       const { token, isAuthenticated, user, redirect } = userContext;
@@ -210,11 +180,11 @@ const AuthContextProvider = ({
   useEffect(() => {
     const handleUnauthorized = async () => {
       try {
-        console.log('Unauthorized event received:');
+        console.log('Unauthorized event received, current token:', token);
         // if (!token || isTokenExpired(token)) {
-        //if (!token) {
+        if (!token) {
           await silentRefresh();
-        //}
+        }
       } catch (refreshError) {
         console.log('Failed to refresh:', refreshError);
       }
@@ -226,27 +196,6 @@ const AuthContextProvider = ({
     };
   }, [silentRefresh]);
 
-//  const LoginRedirect = () => {
-//    const navigate = useNavigate();
-//    console.log('maxRefresh event received:');
-//
-//    useEffect(() => {
-//      const handleLoginRedirect = () => {
-//         navigate('/login', { replace: true });
-//      };
-
-//      // Listen for 'maxRefreshAttemptsExceeded' event
-//      window.addEventListener('maxRefreshAttemptsExceeded', handleLoginRedirect);
-//
-//      // Clean up the listener when unmounting
-//      return () => {
-//        window.removeEventListener('maxRefreshAttemptsExceeded', handleLoginRedirect);
-//      };
-//    }, [navigate]);
-
-//    return null;
-//  };
-  
   // Make the provider update only when it should
   const memoedValue = useMemo(
     () => ({
