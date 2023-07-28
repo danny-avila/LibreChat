@@ -98,6 +98,10 @@ export const recentConversations = () => {
   return '/api/convos/recent';
 }
 
+export const hottestConversations = () => {
+  return '/api/convos/hottest';
+}
+
 export const duplicateConversation = () => {
   return '/api/convos/duplicate';
 }
