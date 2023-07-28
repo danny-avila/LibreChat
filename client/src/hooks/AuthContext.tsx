@@ -185,9 +185,9 @@ const AuthContextProvider = ({
         console.log('Failed to refresh:', refreshError);
       }
     };
-    window.addEventListener('intercept401', handleUnauthorized);
+    window.addEventListener('attemptRefresh', handleUnauthorized);
     return () => {
-      window.removeEventListener('intercept401', handleUnauthorized);
+      window.removeEventListener('attemptRefresh', handleUnauthorized);
     };
   }, [silentRefresh]);
 
