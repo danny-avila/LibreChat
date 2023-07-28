@@ -21,7 +21,7 @@ const useMessageHandler = () => {
     const timeLeft = tokenPayload.exp - currentTime; 
     return timeLeft < 30;
   };
-  if (checkTokenExpiration(token) && !!isSubmitting ) {
+  if (checkTokenExpiration(token) && isSubmitting ) {
     window.dispatchEvent(new CustomEvent('attemptRefresh'));
   }
 
