@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGetConversationsQuery, useSearchQuery } from '@librechat/data-provider';
-import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 
 import Conversations from '../Conversations';
 import NavLinks from './NavLinks';
@@ -19,6 +19,7 @@ import useDebounce from '~/hooks/useDebounce';
 import LeaderboardIcon from '../svg/LeaderboardIcon';
 import NotebookIcon from '../svg/NotebookIcon';
 import { useNavigate } from 'react-router-dom';
+import ChatWidget from '../Input/ChatWidgetMenu';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
 // const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -72,7 +73,7 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const [refLink, setRefLink] = useState('');
   const [copied, setCopied] = useState(false);
-  const [tabValue, setTabValue] = useRecoilState(store.tabValue); // eslint-disable-line
+  const [widget, setWidget] = useState('');
   const { user } = useAuthContext();
   const navigate = useNavigate();
   const mode = process.env.NODE_ENV;
@@ -186,7 +187,9 @@ export default function Nav({ navVisible, setNavVisible }) {
     setCopied(true);
   }
 
-  const openWritingAssistantHandler = () => setTabValue('assistant')
+  const openWritingAssistantHandler = () => {
+    setWidget(widget === 'wa' ? '' : 'wa');
+  }
   const openLeaderboardHandler = () => navigate('/leaderboard');
 
   useEffect(() => {
@@ -281,7 +284,7 @@ export default function Nav({ navVisible, setNavVisible }) {
           </div>
         </button>
       )}
-
+      <ChatWidget type={widget} />
       <div className={'nav-mask' + (navVisible ? ' active' : '')} onClick={toggleNavVisible}></div>
     </>
   );
