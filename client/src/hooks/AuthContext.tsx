@@ -53,7 +53,7 @@ const AuthContextProvider = ({
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  // const [isLoadingUser, setIsLoadingUser] = useState<boolean>(true);
+  const [refreshCount, setRefreshCount] = useState(0);
 
   const navigate = useNavigate();
 
@@ -134,6 +134,7 @@ const AuthContextProvider = ({
       onSuccess: (data: TLoginResponse) => {
         const { user, token } = data;
         setUserContext({ token, isAuthenticated: true, user });
+        setRefreshCount((count) => count + 1);
       },
       onError: error => {
         console.log('Refresh token has expired, please log in again.', error);
@@ -146,7 +147,7 @@ const AuthContextProvider = ({
         doSetError((error as Error).message);
       }
     });
-  }, [token, setUserContext, navigate]);
+  });
   
   useEffect(() => {
     if (userQuery.data) {
@@ -175,6 +176,7 @@ const AuthContextProvider = ({
     error,
     navigate,
     setUserContext,
+    refreshCount,
   ]);
 
   useEffect(() => {
