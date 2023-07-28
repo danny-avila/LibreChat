@@ -59,7 +59,7 @@ function WritingAssistant() {
           {showExample ? '恢复' : '示例'}
         </button>
       </div>
-      <div className="grid gap-6 sm:grid-cols-2">
+      <div className="grid gap-6 sm:grid-cols-1">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-y-2">
             <Label htmlFor="toneStyle-dropdown" className="text-left text-sm font-medium">
