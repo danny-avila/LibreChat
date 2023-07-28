@@ -10,8 +10,9 @@ import WritingAssistant from '../Input/ChatWidgetMenu/WritingAssistant';
 
 function getPage(tabValue: string) {
   switch (tabValue) {
-    default: return <Recommendations />;
-    case ('recent'): return <Recommendations />;
+    default: return <Recommendations type='recent'/>;
+    case ('recent'): return <Recommendations key='recent' type='recent'/>;
+    case ('hottest'): return <Recommendations key='hottest' type='hottest'/>
     case ('leaderboard'): return <Leaderboard />;
     case ('assistant'): return <WritingAssistant />;
   }
@@ -50,7 +51,13 @@ export default function Landing() {
               value='recent'
               className={`${tabValue === 'recent' ? selectedTab('creative') : defaultClasses}`}
             >
-              {'对话推荐'}
+              {'最新对话'}
+            </TabsTrigger>
+            <TabsTrigger
+              value='hottest'
+              className={`${tabValue === 'hottest' ? selectedTab('balanced') : defaultClasses}`}
+            >
+              {'热门趋势'}
             </TabsTrigger>
           </TabsList>
         </Tabs>
