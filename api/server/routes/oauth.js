@@ -110,7 +110,6 @@ router.get(
     }
   },
 );
-
 router.get(
   '/discord',
   passport.authenticate('discord', {

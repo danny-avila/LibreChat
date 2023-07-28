@@ -9,12 +9,13 @@ import { router } from './routes';
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
-
+  
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
       onError: (error) => {
-        if (error?.response?.status === 401) {
+        if (error?.response?.status === 401){
           setError(error);
+          window.dispatchEvent(new CustomEvent('attemptRefresh'));
         }
       },
     }),

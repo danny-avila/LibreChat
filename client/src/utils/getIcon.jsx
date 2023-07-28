@@ -64,10 +64,10 @@ const getIcon = (props) => {
     } else if (endpoint === 'bingAI') {
       const { jailbreak } = props;
       if (jailbreak) {
-        icon = <img src="/assets/bingai-jb.png" alt="Bing Icon"/>;
+        icon = <img src="/assets/bingai-jb.png" alt="Bing Icon" />;
         name = 'Sydney';
       } else {
-        icon = <img src="/assets/bingai.png" alt="Sydney Icon"/>;
+        icon = <img src="/assets/bingai.png" alt="Sydney Icon" />;
         name = 'BingAI';
       }
     } else if (endpoint === 'chatGPTBrowser') {

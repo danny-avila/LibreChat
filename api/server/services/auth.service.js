@@ -56,7 +56,7 @@ const registerUser = async (user) => {
   const { email, password, name, username } = user;
 
   try {
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email }).lean();
 
     if (existingUser) {
       console.info(
@@ -103,7 +103,7 @@ const registerUser = async (user) => {
  * @returns
  */
 const requestPasswordReset = async (email) => {
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ email }).lean();
   if (!user) {
     return new Error('Email does not exist');
   }
@@ -185,31 +185,35 @@ const resetPassword = async (userId, token, password) => {
  * @returns
  */
 const setAuthTokens = async (userId, res) => {
-  const user = await User.findOne({ _id: userId });
-  const token = await user.generateToken();
+  try {
+    const user = await User.findOne({ _id: userId });
+    const token = await user.generateToken();
 
-  let session = new Session({ user: userId });
-  let refreshToken = await session.generateRefreshToken();
+    const session = new Session({ user: userId });
+    const refreshToken = await session.generateRefreshToken();
 
-  const tokenExpires = eval(process.env.SESSION_EXPIRY);
-  const refreshTokenExpires = eval(process.env.REFRESH_TOKEN_EXPIRY);
+    const tokenExpires = eval(process.env.SESSION_EXPIRY);
+    const refreshTokenExpires = eval(process.env.REFRESH_TOKEN_EXPIRY);
 
-  res.cookie('token', token, {
+    res.cookie('token', token, {
       expires: new Date(Date.now() + tokenExpires),
       httpOnly: false,
       secure: isProduction,
-    }
-  );
+    });
 
-  res.cookie('refreshToken', refreshToken, {
+    res.cookie('refreshToken', refreshToken, {
       expires: new Date(Date.now() + refreshTokenExpires),
-      httpOnly: true, // This cookie must be httpOnly
+      httpOnly: true,
       secure: isProduction,
       sameSite: 'strict',
-      signed: true,
-    }
-  );
-  return token;
+      // signed: true,
+    });
+
+    return token;
+  } catch (error) {
+    console.log('Error in setting authentication tokens:', error);
+    throw error;
+  }
 };
 
 module.exports = {

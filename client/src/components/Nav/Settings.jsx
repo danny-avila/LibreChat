@@ -1,18 +1,17 @@
 import * as Tabs from '@radix-ui/react-tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/Dialog.tsx';
-import { General } from './SettingsTabs/';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui';
+import { General } from './';
 import { CogIcon } from '~/components/svg';
 import { useEffect, useState } from 'react';
 import { cn } from '~/utils/';
-import { useClearConversationsMutation } from '@librechat/data-provider';
+import { useRecoilValue } from 'recoil';
+import { localize } from '~/localization/Translation';
 import store from '~/store';
 
 export default function Settings({ open, onOpenChange }) {
-  const { newConversation } = store.useConversation();
-  const { refreshConversations } = store.useConversations();
-  const clearConvosMutation = useClearConversationsMutation();
   const [confirmClear, setConfirmClear] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const lang = useRecoilValue(store.lang);
 
   // check if mobile dynamically and update
   useEffect(() => {
@@ -27,13 +26,6 @@ export default function Settings({ open, onOpenChange }) {
     checkMobile();
     window.addEventListener('resize', checkMobile);
   }, []);
-
-  useEffect(() => {
-    if (clearConvosMutation.isSuccess) {
-      refreshConversations();
-      newConversation();
-    }
-  }, [clearConvosMutation.isSuccess, newConversation, refreshConversations]);
 
   useEffect(() => {
     // If the user clicks in the dialog when confirmClear is true, set it to false
@@ -56,7 +48,7 @@ export default function Settings({ open, onOpenChange }) {
       <DialogContent className={cn('shadow-2xl dark:bg-gray-900 dark:text-white')}>
         <DialogHeader>
           <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
-            Settings
+            {localize(lang, 'com_nav_settings')}
           </DialogTitle>
         </DialogHeader>
         <div className="px-6">
@@ -84,7 +76,7 @@ export default function Settings({ open, onOpenChange }) {
                 value="general"
               >
                 <CogIcon />
-                General
+                {localize(lang, 'com_nav_setting_general')}
               </Tabs.Trigger>
             </Tabs.List>
             <General />

@@ -4,11 +4,17 @@ import { Button } from '~/components/ui/Button.tsx';
 import { Label } from '~/components/ui/Label.tsx';
 import { Plus, Minus } from 'lucide-react';
 import { cn } from '~/utils/';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
+import { localize } from '~/localization/Translation';
+
 const defaultTextProps =
   'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
 
 function Examples({ readonly, examples, setExample, addExample, removeExample, edit = false }) {
   const maxHeight = edit ? 'max-h-[233px]' : 'max-h-[350px]';
+  const lang = useRecoilValue(store.lang);
+
   return (
     <>
       <div className={`${maxHeight} overflow-y-auto`}>
@@ -23,7 +29,10 @@ function Examples({ readonly, examples, setExample, addExample, removeExample, e
               >
                 <div className="grid w-full items-center gap-2">
                   <Label htmlFor={`input-${idx}`} className="text-left text-sm font-medium">
-                    Input <small className="opacity-40">(default: blank)</small>
+                    {localize(lang, 'com_ui_input')}{' '}
+                    <small className="opacity-40">
+                      ({localize(lang, 'com_endpoint_default_blank')})
+                    </small>
                   </Label>
                   <TextareaAutosize
                     id={`input-${idx}`}
@@ -47,7 +56,10 @@ function Examples({ readonly, examples, setExample, addExample, removeExample, e
               >
                 <div className="grid w-full items-center gap-2">
                   <Label htmlFor={`output-${idx}`} className="text-left text-sm font-medium">
-                    Output <small className="opacity-40">(default: blank)</small>
+                    {localize(lang, 'com_endpoint_output')}{' '}
+                    <small className="opacity-40">
+                      ({localize(lang, 'com_endpoint_default_blank')})
+                    </small>
                   </Label>
                   <TextareaAutosize
                     id={`output-${idx}`}

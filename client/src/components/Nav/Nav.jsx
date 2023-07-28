@@ -1,14 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useGetConversationsQuery, useSearchQuery } from '@librechat/data-provider';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
-
-import Conversations from '../Conversations';
-import NavLinks from './NavLinks';
-import NewChat from './NewChat';
-import Pages from '../Conversations/Pages';
+import { NewChat, NavLinks } from './';
 import { Panel, Spinner } from '~/components';
-import { cn } from '~/utils/';
+import { Conversations, Pages } from '../Conversations';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useGetConversationsQuery, useSearchQuery } from 'librechat-data-provider';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useAuthContext, useDebounce } from '~/hooks';
+import { localize } from '~/localization/Translation';
+import { cn } from '~/utils/';
 import store from '~/store';
 
 export default function Nav({ navVisible, setNavVisible }) {
@@ -16,6 +14,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const { isAuthenticated } = useAuthContext();
   const containerRef = useRef(null);
   const scrollPositionRef = useRef(null);
+  const lang = useRecoilValue(store.lang);
 
   const [conversations, setConversations] = useState([]);
   // current page
@@ -151,7 +150,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                     )}
                     onClick={toggleNavVisible}
                   >
-                    <span className="sr-only">Close sidebar</span>
+                    <span className="sr-only">{localize(lang, 'com_nav_close_sidebar')}</span>
                     <Panel open={false} />
                   </button>
                 </div>
@@ -195,7 +194,7 @@ export default function Nav({ navVisible, setNavVisible }) {
             onClick={toggleNavVisible}
           >
             <div className="flex items-center justify-center">
-              <span className="sr-only">Open sidebar</span>
+              <span className="sr-only">{localize(lang, 'com_nav_open_sidebar')}</span>
               <Panel open={true} />
             </div>
           </button>

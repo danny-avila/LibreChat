@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const Session = require('../../models/Session');
 const User = require('../../models/User');
 const crypto = require('crypto');
+const cookies = require('cookie');
 const isProduction = process.env.NODE_ENV === 'production';
 
 const registrationController = async (req, res) => {
@@ -59,14 +60,14 @@ const resetPasswordController = async (req, res) => {
 };
 
 const refreshController = async (req, res, next) => {
-  const { signedCookies = {} } = req;
-  const { refreshToken } = signedCookies;
-
+  const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
+  console.log('refreshToken',req.headers.cookie);
   if (refreshToken) {
     try {
       const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
       const userId = payload.id;
       const user = await User.findOne({ _id: userId });
+      console.log('user',user);
       if (user) {
         // Hash the refresh token
         const hash = crypto.createHash('sha256');
@@ -74,11 +75,12 @@ const refreshController = async (req, res, next) => {
 
         // Find the session with the hashed refresh token
         const session = await Session.findOne({ user: userId, refreshTokenHash: hashedToken });
+        console.log('session',session);
         if (session && session.expiration > new Date()) {
-          const token = await setAuthTokens(userId, res);     
+          const token = await setAuthTokens(userId, res); 
+          console.log('token',token);
           console.log('Remove Refresh Session', session);
           await Session.deleteOne({ _id: session._id });
-
           const userObj = user.toJSON();
           res.status(200).send({ token, user: userObj });
         } else {
@@ -93,7 +95,7 @@ const refreshController = async (req, res, next) => {
   } else {
     res.status(401).send('Refresh token not provided');
   }
-};
+};    
 
 module.exports = {
   getUserController,

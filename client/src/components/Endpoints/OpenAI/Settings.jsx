@@ -8,6 +8,8 @@ import { InputNumber } from '~/components/ui/InputNumber.tsx';
 import OptionHover from './OptionHover';
 import { HoverCard, HoverCardTrigger } from '~/components/ui/HoverCard.tsx';
 import { cn } from '~/utils/';
+import { localize } from '~/localization/Translation';
+
 const defaultTextProps =
   'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
 
@@ -32,6 +34,7 @@ function Settings(props) {
   const isOpenAI = endpoint === 'openAI' || endpoint === 'azureOpenAI';
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
+  const lang = useRecoilValue(store.lang);
 
   const setModel = setOption('model');
   const setChatGptLabel = setOption('chatGptLabel');
@@ -64,14 +67,17 @@ function Settings(props) {
             <>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-                  Custom Name <small className="opacity-40">(default: blank)</small>
+                  {localize(lang, 'com_endpoint_custom_name')}{' '}
+                  <small className="opacity-40">
+                    ({localize(lang, 'com_endpoint_default_blank')})
+                  </small>
                 </Label>
                 <Input
                   id="chatGptLabel"
                   disabled={readonly}
                   value={chatGptLabel || ''}
                   onChange={(e) => setChatGptLabel(e.target.value || null)}
-                  placeholder="Set a custom name for ChatGPT"
+                  placeholder={localize(lang, 'com_endpoint_openai_custom_name_placeholder')}
                   className={cn(
                     defaultTextProps,
                     'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
@@ -80,14 +86,17 @@ function Settings(props) {
               </div>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
-                  Prompt Prefix <small className="opacity-40">(default: blank)</small>
+                  {localize(lang, 'com_endpoint_prompt_prefix')}{' '}
+                  <small className="opacity-40">
+                    ({localize(lang, 'com_endpoint_default_blank')})
+                  </small>
                 </Label>
                 <TextareaAutosize
                   id="promptPrefix"
                   disabled={readonly}
                   value={promptPrefix || ''}
                   onChange={(e) => setPromptPrefix(e.target.value || null)}
-                  placeholder="Set custom instructions to include in System Message. Default: none"
+                  placeholder={localize(lang, 'com_endpoint_openai_prompt_prefix_placeholder')}
                   className={cn(
                     defaultTextProps,
                     'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 ',
@@ -102,8 +111,10 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="temp-int" className="text-left text-sm font-medium">
-                  Temperature{' '}
-                  <small className="opacity-40">(default: {isOpenAI ? '1' : '0'})</small>
+                  {localize(lang, 'com_endpoint_temperature')}{' '}
+                  <small className="opacity-40">
+                    ({localize(lang, 'com_endpoint_default_with_num', isOpenAI ? '1' : '0')})
+                  </small>
                 </Label>
                 <InputNumber
                   id="temp-int"
@@ -140,7 +151,10 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
-                  Top P <small className="opacity-40">(default: 1)</small>
+                  {localize(lang, 'com_endpoint_top_p')}{' '}
+                  <small className="opacity-40">
+                    ({localize(lang, 'com_endpoint_default')}: 1)
+                  </small>
                 </Label>
                 <InputNumber
                   id="top-p-int"
@@ -178,7 +192,10 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="freq-penalty-int" className="text-left text-sm font-medium">
-                  Frequency Penalty <small className="opacity-40">(default: 0)</small>
+                  {localize(lang, 'com_endpoint_frequency_penalty')}{' '}
+                  <small className="opacity-40">
+                    ({localize(lang, 'com_endpoint_default')}: 0)
+                  </small>
                 </Label>
                 <InputNumber
                   id="freq-penalty-int"
@@ -216,7 +233,10 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="pres-penalty-int" className="text-left text-sm font-medium">
-                  Presence Penalty <small className="opacity-40">(default: 0)</small>
+                  {localize(lang, 'com_endpoint_presence_penalty')}{' '}
+                  <small className="opacity-40">
+                    ({localize(lang, 'com_endpoint_default')}: 0)
+                  </small>
                 </Label>
                 <InputNumber
                   id="pres-penalty-int"

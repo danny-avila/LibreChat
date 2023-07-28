@@ -100,6 +100,8 @@ if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
   });
 }
 
+messageSchema.index({ createdAt: 1 });
+
 const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
 
 module.exports = Message;

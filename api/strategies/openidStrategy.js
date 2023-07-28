@@ -36,8 +36,9 @@ const downloadImage = async (url, imagePath, accessToken) => {
   }
 };
 
-Issuer.discover(process.env.OPENID_ISSUER)
-  .then((issuer) => {
+async function setupOpenId() {
+  try {
+    const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
     const client = new issuer.Client({
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
@@ -66,13 +67,15 @@ Issuer.discover(process.env.OPENID_ISSUER)
             fullName = userinfo.given_name;
           } else if (userinfo.family_name) {
             fullName = userinfo.family_name;
+          } else {
+            fullName = userinfo.username || userinfo.email;
           }
 
           if (!user) {
             user = new User({
               provider: 'openid',
               openidId: userinfo.sub,
-              username: userinfo.given_name || '',
+              username: userinfo.username || userinfo.given_name || '',
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
               name: fullName,
@@ -128,7 +131,9 @@ Issuer.discover(process.env.OPENID_ISSUER)
     );
 
     passport.use('openid', openidLogin);
-  })
-  .catch((err) => {
+  } catch (err) {
     console.error(err);
-  });
+  }
+}
+
+module.exports = setupOpenId;

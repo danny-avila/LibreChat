@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
-import { useGetStartupConfig } from '@librechat/data-provider';
+import { useGetStartupConfig } from 'librechat-data-provider';
 import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
 
 function Login() {
