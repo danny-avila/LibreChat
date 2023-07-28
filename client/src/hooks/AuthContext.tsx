@@ -203,6 +203,7 @@ const AuthContextProvider = ({
       error,
       login,
       logout,
+      silentRefresh,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [user, error, isAuthenticated, token],
