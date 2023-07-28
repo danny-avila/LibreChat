@@ -3,7 +3,7 @@ import { CheckIcon } from 'lucide-react';
 import { ThemeContext } from '~/hooks/ThemeContext';
 import React, { useState, useContext, useCallback } from 'react';
 import { useClearConversationsMutation } from '@librechat/data-provider';
-import { useRecoilValue } from 'recoil';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
 
@@ -66,10 +66,37 @@ export const ClearChatsButton = ({
   );
 };
 
+export const LangSelector = ({
+  langcode,
+  onChange,
+}: {
+  langcode: string;
+  onChange: (value: string) => void;
+}) => {
+  const lang = useRecoilValue(store.lang);
+
+  return (
+    <div className="flex items-center justify-between">
+      <div>{localize(lang, 'com_nav_language')}</div>
+      <select
+        className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20 dark:bg-gray-900"
+        onChange={(e) => onChange(e.target.value)}
+        value={langcode}
+      >
+        <option value="en">{localize(lang, 'com_nav_lang_english')}</option>
+        <option value="cn">{localize(lang, 'com_nav_lang_chinese')}</option>
+        <option value="it">{localize(lang, 'com_nav_lang_italian')}</option>
+      </select>
+    </div>
+  );
+};
+
 function General() {
   const { theme, setTheme } = useContext(ThemeContext);
   const clearConvosMutation = useClearConversationsMutation();
   const [confirmClear, setConfirmClear] = useState(false);
+  const langcode = useRecoilValue(store.lang);
+  const setLangcode = useSetRecoilState(store.lang);
 
   const clearConvos = useCallback(() => {
     if (confirmClear) {
@@ -88,11 +115,21 @@ function General() {
     [setTheme],
   );
 
+  const changeLang = useCallback(
+    (value: string) => {
+      setLangcode(value);
+    },
+    [setLangcode],
+  );
+
   return (
     <Tabs.Content value="general" role="tabpanel" className="w-full md:min-h-[300px]">
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-300">
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <ThemeSelector theme={theme} onChange={changeTheme} />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <LangSelector langcode={langcode} onChange={changeLang} />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <ClearChatsButton confirmClear={confirmClear} onClick={clearConvos} showText={true} />
