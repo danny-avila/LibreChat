@@ -37,21 +37,21 @@ To enable Google login, you must create an application in the [Google Cloud Cons
 4. Click on "Save and continue" and then "Back to dashboard".
 5. Click on "Create Credentials" and then "OAuth client ID".
 6. Select "Web application" as the application type and give it a name.
-7. Add "http://localhost" "http://localhost:3080" and "http://localhost:3090" to the authorized JavaScript origins.
-8. Add "http://localhost:3080/oauth/google/callback" to the authorized redirect URIs.
+7. Add `http://yourdomain`, `http://localhost:3080` and `http://localhost:3090` to the authorized JavaScript origins.
+8. Add `http://your-domain/oauth/google/callback` to the authorized redirect URIs. (if you use localhost then use this `http://localhost:3080/oauth/google/callback`)
 9. Click on "Create" and copy your client ID and client secret.
-10. Paste them into your /.env file.
-11. Enable the feature in the /.env file
+10. Paste them into your `/.env` file.
+11. Enable the feature in the `/.env` file
 
 ---
 
 ## How to Set Up OpenID Authentication with Azure AD
 
-1. Go to the Azure Portal and sign in with your account.
-2. In the search box, type Azure Active Directory and click on it.
+1. Go to the [Azure Portal](https://portal.azure.com/) and sign in with your account.
+2. In the search box, type "Azure Active Directory" and click on it.
 3. On the left menu, click on App registrations and then on New registration.
 4. Give your app a name and select Web as the platform type.
-5. In the Redirect URI field, enter http://localhost:3080/oauth/openid/callback and click on Register.
+5. In the Redirect URI field, enter `http://localhost:3080/oauth/openid/callback` and click on Register.
 6. You will see an Overview page with some information about your app. Copy the Application (client) ID and the Directory (tenant) ID and save them somewhere.
 7. On the left menu, click on Authentication and check the boxes for Access tokens and ID tokens under Implicit grant and hybrid flows.
 8. On the left menu, click on Certificates & Secrets and then on New client secret. Give your secret a name and an expiration date and click on Add.
@@ -63,8 +63,8 @@ OPENID_CLIENT_ID=Your Application (client) ID
 OPENID_CLIENT_SECRET=Your client secret
 OPENID_ISSUER=https://login.microsoftonline.com/Your Directory (tenant ID)/v2.0/
 OPENID_SESSION_SECRET=Any random string
-OPENID_SCOPE=openid profile email
-OPENID_CALLBACK_URL=/oauth/openid/callback
+OPENID_SCOPE=openid profile email #DO NOT CHANGE THIS
+OPENID_CALLBACK_URL=/oauth/openid/callback # this should be the same for everyone
 ```
 11. Save the .env file and you're done! You have successfully set up OpenID authentication with Azure AD for your app.
 
@@ -104,8 +104,8 @@ OPENID_CALLBACK_URL=/oauth/openid/callback
 
 1. Go to your [Github Developer settings](https://github.com/settings/apps)
 2. Create a new Github app
-3. Give it a GitHub App name and set in the Homepage URL your [DOMAIN_CLIENT](https://github.com/danny-avila/LibreChat/blob/main/.env.example#L219)    (example: http://localhost:3080)
-4. Add a callback URL and set it as "[Your DOMAIN_CLIENT](https://github.com/danny-avila/LibreChat/blob/main/.env.example#L219)/oauth/github/callback" (example: http://localhost:3080/oauth/github/callback)
+3. Give it a GitHub App name and set in the Homepage URL "your-domain")    (example: http://localhost:3080)
+4. Add a callback URL and set it as "your-domain/oauth/github/callback" (example: http://localhost:3080/oauth/github/callback)
 5. Remove the Active checkbox in the Webhook section
 6. Save changes and generate a Client Secret
 7. In the Permissions & events tab select, open the Account Permissions and set Email addresses to Read-only
@@ -122,7 +122,7 @@ GITHUB_CALLBACK_URL=/oauth/github/callback # this should be the same for everyon
 
 1. Go to [Discord Developer Portal](https://discord.com/developers)
 2. Create a new Application and give it a name
-4. In the OAuth2 general settings add a redirect URL and set it as "[Your DOMAIN_CLIENT](https://github.com/danny-avila/LibreChat/blob/main/.env.example#L219)/oauth/discord/callback" (example: http://localhost:3080/oauth/discord/callback)
+4. In the OAuth2 general settings add a redirect URL and set it as "your-domain/oauth/discord/callback" (example: http://localhost:3080/oauth/discord/callback)
 5. in the Default Authorization Link set applications.commands
 6. Save changes and reset the Client Secret
 7. Put the Client ID and Client Secret in the .env file:
