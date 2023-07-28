@@ -249,9 +249,7 @@ export default function MessageHandler() {
         // data = {'error': e.data};
         if (e.data === 'Unauthorized') {
           window.dispatchEvent(new CustomEvent('intercept401'));
-          setTimeout(() => {
-            refreshConversations();
-          }, 2000);
+          refreshConversations();
         }
       }
     };
