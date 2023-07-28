@@ -145,7 +145,13 @@ const AuthContextProvider = ({
         doSetError((error as Error).message);
       }
     });
-  });
+  }, [
+    token,
+    isAuthenticated,
+    error,
+    navigate,
+    setUserContext,
+  ]);
   
   useEffect(() => {
     if (userQuery.data) {
