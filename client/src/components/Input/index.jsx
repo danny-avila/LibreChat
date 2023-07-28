@@ -12,7 +12,6 @@ import AdjustToneButton from './AdjustToneButton';
 import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useMessageHandler } from '~/utils/handleSubmit';
-import { useAuthContext } from '~/hooks/AuthContext';
 
 import store from '~/store';
 
@@ -36,20 +35,6 @@ export default function TextChat({ isSearchView = false }) {
   const isNotAppendable = latestMessage?.unfinished & !isSubmitting || latestMessage?.error;
   const { conversationId, jailbreak } = conversation || {};
 
-  const { token } = useAuthContext();
-  const checkTokenExpiration = (token) => {
-    let tokenParts = token.split('.');
-    let base64Url = tokenParts[1];
-    let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    let tokenPayloadJson = window.atob(base64);
-    let tokenPayload = JSON.parse(tokenPayloadJson);
-    const currentTime = Date.now() / 1000; 
-    const timeLeft = tokenPayload.exp - currentTime; 
-    return timeLeft < 30;
-  };  
-  if (checkTokenExpiration(token)) {
-    window.dispatchEvent(new CustomEvent('attemptRefresh'));
-  }
   // auto focus to input, when enter a conversation.
   useEffect(() => {
     if (!conversationId) {
