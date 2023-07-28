@@ -18,6 +18,7 @@ import Clipboard from '../svg/Clipboard';
 import useDebounce from '~/hooks/useDebounce';
 import LeaderboardIcon from '../svg/LeaderboardIcon';
 import NotebookIcon from '../svg/NotebookIcon';
+import { useNavigate } from 'react-router-dom';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
 // const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -73,6 +74,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const [copied, setCopied] = useState(false);
   const [tabValue, setTabValue] = useRecoilState(store.tabValue); // eslint-disable-line
   const { user } = useAuthContext();
+  const navigate = useNavigate();
   const mode = process.env.NODE_ENV;
 
   const debouncedSearchTerm = useDebounce(searchQuery, 750);
@@ -185,7 +187,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   }
 
   const openWritingAssistantHandler = () => setTabValue('assistant')
-  const openLeaderboardHandler = () => setTabValue('leaderboard');
+  const openLeaderboardHandler = () => navigate('/leaderboard');
 
   useEffect(() => {
     if (user) setRefLink(mode === 'dev' ? `http://localhost:3090/register/${user.id}` : `chat.aitok.us/register/${user.id}`);
