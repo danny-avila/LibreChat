@@ -120,8 +120,8 @@ class TrieSensitive {
 
   static async checkSensitiveWords(text) {
     const path = require('path');
-    const sensitiveWordsTrie = await TrieSensitive.initializeFromBase64File(path.resolve(__dirname, 'sw.txt'));
-    const stopWordsTrie = await TrieSensitive.initializeFromFile(path.resolve(__dirname, 'stw.txt'));
+    const sensitiveWordsTrie = await TrieSensitive.initializeFromBase64File(path.resolve(__dirname, 'sensitive_library/sw.txt'));
+    const stopWordsTrie = await TrieSensitive.initializeFromFile(path.resolve(__dirname, 'sensitive_library/stw.txt'));
 
     const words = TrieSensitive.splitWords(text, stopWordsTrie);
     for (const word of words) {
