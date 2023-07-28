@@ -204,7 +204,9 @@ export default function MessageHandler() {
     const currentTime = Date.now() / 1000; 
     const timeLeft = tokenPayload.exp - currentTime; 
     if (timeLeft < 15) { 
-      window.dispatchEvent(new CustomEvent('attemptRefresh'));
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('attemptRefresh'));
+      }, 2000);
     }
     
     const events = new SSE(server, {
