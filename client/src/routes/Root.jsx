@@ -22,29 +22,12 @@ export default function Root() {
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
   const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
   const setPresets = useSetRecoilState(store.presets);
-  const { user, isAuthenticated, token } = useAuthContext();
+  const { user, isAuthenticated } = useAuthContext();
 
   const searchEnabledQuery = useGetSearchEnabledQuery();
   const endpointsQuery = useGetEndpointsQuery();
   const presetsQuery = useGetPresetsQuery({ enabled: !!user });
 
-  const checkTokenExpiration = (token) => {
-    let tokenParts = token.split('.');
-    let base64Url = tokenParts[1];
-    let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    let tokenPayloadJson = window.atob(base64);
-    let tokenPayload = JSON.parse(tokenPayloadJson);
-    const currentTime = Date.now() / 1000; 
-    const timeLeft = tokenPayload.exp - currentTime; 
-    return timeLeft < 30;
-  };  
-
-  if (token) {
-    if (checkTokenExpiration(token)) {
-      window.dispatchEvent(new CustomEvent('attemptRefresh'));
-    }
-  }
-  
   useEffect(() => {
     localStorage.setItem('navVisible', JSON.stringify(navVisible));
   }, [navVisible]);
@@ -74,9 +57,6 @@ export default function Root() {
   }, [searchEnabledQuery.data, searchEnabledQuery.isError]);
 
   if (!isAuthenticated) {
-    //if (checkTokenExpiration(token)) {
-      window.dispatchEvent(new CustomEvent('attemptRefresh'));
-    //}
     return null;
   }
 
