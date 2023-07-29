@@ -9,7 +9,11 @@ const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 const abortControllers = new Map();
 
 router.post('/abort', requireJwtAuth, async (req, res) => {
-  return await abortMessage(req, res, abortControllers);
+  try {
+    return await abortMessage(req, res, abortControllers);
+  } catch (err) {
+    console.error(err);
+  }
 });
 
 router.post('/', requireJwtAuth, async (req, res) => {

@@ -67,7 +67,10 @@ function Settings(props) {
             <>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="modelLabel" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_custom_name')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_blank')})</small>
+                  {localize(lang, 'com_endpoint_custom_name')}{' '}
+                  <small className="opacity-40">
+                    ({localize(lang, 'com_endpoint_default_blank')})
+                  </small>
                 </Label>
                 <Input
                   id="modelLabel"
@@ -83,7 +86,10 @@ function Settings(props) {
               </div>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_prompt_prefix')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_blank')})</small>
+                  {localize(lang, 'com_endpoint_prompt_prefix')}{' '}
+                  <small className="opacity-40">
+                    ({localize(lang, 'com_endpoint_default_blank')})
+                  </small>
                 </Label>
                 <TextareaAutosize
                   id="promptPrefix"
@@ -105,7 +111,10 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="temp-int" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_temperature')} <small className="opacity-40">({localize(lang, 'com_endpoint_default')}: 0.2)</small>
+                  {localize(lang, 'com_endpoint_temperature')}{' '}
+                  <small className="opacity-40">
+                    ({localize(lang, 'com_endpoint_default')}: 0.2)
+                  </small>
                 </Label>
                 <InputNumber
                   id="temp-int"
@@ -144,7 +153,10 @@ function Settings(props) {
                 <HoverCardTrigger className="grid w-full items-center gap-2">
                   <div className="flex justify-between">
                     <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
-                      {localize(lang, 'com_endpoint_top_p')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_with_num', 0.95)})</small>
+                      {localize(lang, 'com_endpoint_top_p')}{' '}
+                      <small className="opacity-40">
+                        ({localize(lang, 'com_endpoint_default_with_num', 0.95)})
+                      </small>
                     </Label>
                     <InputNumber
                       id="top-p-int"
@@ -182,7 +194,10 @@ function Settings(props) {
                 <HoverCardTrigger className="grid w-full items-center gap-2">
                   <div className="flex justify-between">
                     <Label htmlFor="top-k-int" className="text-left text-sm font-medium">
-                      {localize(lang, 'com_endpoint_top_k')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_with_num', 40)})</small>
+                      {localize(lang, 'com_endpoint_top_k')}{' '}
+                      <small className="opacity-40">
+                        ({localize(lang, 'com_endpoint_default_with_num', 40)})
+                      </small>
                     </Label>
                     <InputNumber
                       id="top-k-int"
@@ -221,7 +236,10 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="max-tokens-int" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_max_output_tokens')} <small className="opacity-40">({localize(lang, 'com_endpoint_default_with_num', 1024)})</small>
+                  {localize(lang, 'com_endpoint_max_output_tokens')}{' '}
+                  <small className="opacity-40">
+                    ({localize(lang, 'com_endpoint_default_with_num', 1024)})
+                  </small>
                 </Label>
                 <InputNumber
                   id="max-tokens-int"

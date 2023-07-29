@@ -2,7 +2,7 @@
 
 export default {
   com_ui_examples: 'Examples',
-  com_ui_new_chat: 'New Chat',
+  com_ui_new_chat: 'New chat',
   com_ui_example_quantum_computing: 'Explain quantum computing in simple terms',
   com_ui_example_10_year_old_b_day: 'Got any creative ideas for a 10 year old\'s birthday?',
   com_ui_example_http_in_js: 'How do I make an HTTP request in Javascript?',
@@ -187,4 +187,6 @@ export default {
   com_nav_lang_english: 'English',
   com_nav_lang_chinese: '中文',
   com_nav_lang_italian: 'Italiano',
+  com_nav_lang_brazilian_portuguese: 'Português Brasileiro',
+  com_nav_lang_spanish: 'Español',
 };

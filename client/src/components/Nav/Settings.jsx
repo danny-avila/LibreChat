@@ -1,18 +1,14 @@
 import * as Tabs from '@radix-ui/react-tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/Dialog.tsx';
-import { General } from './SettingsTabs/';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui';
+import { General } from './';
 import { CogIcon } from '~/components/svg';
 import { useEffect, useState } from 'react';
 import { cn } from '~/utils/';
-import { useClearConversationsMutation } from '@librechat/data-provider';
 import { useRecoilValue } from 'recoil';
-import store from '~/store';
 import { localize } from '~/localization/Translation';
+import store from '~/store';
 
 export default function Settings({ open, onOpenChange }) {
-  const { newConversation } = store.useConversation();
-  const { refreshConversations } = store.useConversations();
-  const clearConvosMutation = useClearConversationsMutation();
   const [confirmClear, setConfirmClear] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const lang = useRecoilValue(store.lang);
@@ -30,13 +26,6 @@ export default function Settings({ open, onOpenChange }) {
     checkMobile();
     window.addEventListener('resize', checkMobile);
   }, []);
-
-  useEffect(() => {
-    if (clearConvosMutation.isSuccess) {
-      refreshConversations();
-      newConversation();
-    }
-  }, [clearConvosMutation.isSuccess, newConversation, refreshConversations]);
 
   useEffect(() => {
     // If the user clicks in the dialog when confirmClear is true, set it to false

@@ -8,7 +8,7 @@ import {
   useRegisterUserMutation,
   TRegisterUser,
   useGetStartupConfig,
-} from '@librechat/data-provider';
+} from 'librechat-data-provider';
 import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
 
 function Registration() {

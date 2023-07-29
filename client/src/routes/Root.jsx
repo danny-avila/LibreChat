@@ -4,15 +4,14 @@ import {
   useGetEndpointsQuery,
   useGetPresetsQuery,
   useGetSearchEnabledQuery,
-} from '@librechat/data-provider';
+} from 'librechat-data-provider';
 
 import MessageHandler from '../components/MessageHandler';
-import MobileNav from '../components/Nav/MobileNav';
-import Nav from '../components/Nav';
+import { Nav, MobileNav } from '../components/Nav';
 import { Outlet } from 'react-router-dom';
-import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useSetRecoilState } from 'recoil';
+import store from '~/store';
 
 export default function Root() {
   const [navVisible, setNavVisible] = useState(() => {

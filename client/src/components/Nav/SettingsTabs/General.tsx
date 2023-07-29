@@ -1,8 +1,8 @@
 import * as Tabs from '@radix-ui/react-tabs';
 import { CheckIcon } from 'lucide-react';
 import { ThemeContext } from '~/hooks/ThemeContext';
-import React, { useState, useContext, useCallback } from 'react';
-import { useClearConversationsMutation } from '@librechat/data-provider';
+import React, { useState, useContext, useEffect, useCallback } from 'react';
+import { useClearConversationsMutation } from 'librechat-data-provider';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
@@ -86,6 +86,8 @@ export const LangSelector = ({
         <option value="en">{localize(lang, 'com_nav_lang_english')}</option>
         <option value="cn">{localize(lang, 'com_nav_lang_chinese')}</option>
         <option value="it">{localize(lang, 'com_nav_lang_italian')}</option>
+        <option value="br">{localize(lang, 'com_nav_lang_brazilian_portuguese')}</option>
+        <option value="es">{localize(lang, 'com_nav_lang_spanish')}</option>
       </select>
     </div>
   );
@@ -97,6 +99,15 @@ function General() {
   const [confirmClear, setConfirmClear] = useState(false);
   const langcode = useRecoilValue(store.lang);
   const setLangcode = useSetRecoilState(store.lang);
+  const { newConversation } = store.useConversation();
+  const { refreshConversations } = store.useConversations();
+
+  useEffect(() => {
+    if (clearConvosMutation.isSuccess) {
+      newConversation();
+      refreshConversations();
+    }
+  }, [clearConvosMutation.isSuccess, newConversation, refreshConversations]);
 
   const clearConvos = useCallback(() => {
     if (confirmClear) {

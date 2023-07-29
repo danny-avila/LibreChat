@@ -10,7 +10,7 @@ import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
 import getIcon from '~/utils/getIcon';
 import { useMessageHandler } from '~/utils/handleSubmit';
-import { useGetConversationByIdQuery } from '@librechat/data-provider';
+import { useGetConversationByIdQuery } from 'librechat-data-provider';
 import { cn } from '~/utils/';
 import store from '~/store';
 import getError from '~/utils/getError';

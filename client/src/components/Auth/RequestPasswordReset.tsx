@@ -7,7 +7,7 @@ import {
   useRequestPasswordResetMutation,
   TRequestPasswordReset,
   TRequestPasswordResetResponse,
-} from '@librechat/data-provider';
+} from 'librechat-data-provider';
 
 function RequestPasswordReset() {
   const lang = useRecoilValue(store.lang);

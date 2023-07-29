@@ -13,14 +13,7 @@ module.exports = {
     'plugin:jest/recommended',
     'prettier',
   ],
-  // ignorePatterns: ['packages/data-provider/types/**/*'],
-  ignorePatterns: [
-    'client/dist/**/*',
-    'client/public/**/*',
-    'e2e/playwright-report/**/*',
-    'packages/data-provider/types/**/*',
-    'packages/data-provider/dist/**/*',
-  ],
+  ignorePatterns: ['client/dist/**/*', 'client/public/**/*', 'e2e/playwright-report/**/*'],
   parser: '@typescript-eslint/parser',
   parserOptions: {
     ecmaVersion: 'latest',
@@ -29,7 +22,7 @@ module.exports = {
       jsx: true,
     },
   },
-  plugins: ['react', 'react-hooks', '@typescript-eslint'],
+  plugins: ['react', 'react-hooks', '@typescript-eslint', 'import'],
   rules: {
     'react/react-in-jsx-scope': 'off',
     '@typescript-eslint/ban-ts-comment': ['error', { 'ts-ignore': 'allow' }],
@@ -43,9 +36,10 @@ module.exports = {
         ignoreComments: true,
       },
     ],
+    'import/no-cycle': 'error',
     'linebreak-style': 0,
-    'curly': ['error', 'all'],
-    'semi': ['error', 'always'],
+    curly: ['error', 'all'],
+    semi: ['error', 'always'],
     'no-trailing-spaces': 'error',
     'object-curly-spacing': ['error', 'always'],
     'no-multiple-empty-lines': ['error', { max: 1 }],
@@ -109,18 +103,6 @@ module.exports = {
       extends: [
         'plugin:@typescript-eslint/eslint-recommended',
         'plugin:@typescript-eslint/recommended',
-      ],
-    },
-    {
-      files: './packages/data-provider/**/*.ts',
-      overrides: [
-        {
-          files: '**/*.ts',
-          parser: '@typescript-eslint/parser',
-          parserOptions: {
-            project: './packages/data-provider/tsconfig.json',
-          },
-        },
       ],
     },
   ],
