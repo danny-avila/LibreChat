@@ -18,7 +18,7 @@ describe('LangSelector', () => {
       </RecoilRoot>,
     );
 
-    expect(getByText('Theme')).toBeInTheDocument();
+    expect(getByText('Language')).toBeInTheDocument();
     expect(getByDisplayValue('English')).toBeInTheDocument();
   });
 
