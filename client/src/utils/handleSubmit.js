@@ -8,7 +8,7 @@ const useMessageHandler = () => {
   const setSubmission = useSetRecoilState(store.submission);
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
-   
+  
   const { getToken } = store.useToken(currentConversation?.endpoint);
 
   const latestMessage = useRecoilValue(store.latestMessage);
@@ -195,7 +195,6 @@ const useMessageHandler = () => {
     } else {
       setMessages([...currentMessages, currentMsg, initialResponse]);
     }
-
     setSubmission(submission);
   };
 
