@@ -191,11 +191,11 @@ export default function MessageHandler() {
     if (Object.keys(submission).length === 0) {
       return;
     }
-  
+
     let { message } = submission;
 
     const { server, payload } = createPayload(submission);
-  
+
     const events = new SSE(server, {
       payload: JSON.stringify(payload),
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
