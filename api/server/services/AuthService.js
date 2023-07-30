@@ -132,7 +132,7 @@ const requestPasswordReset = async (email) => {
     !!process.env.EMAIL_FROM;
 
   if (emailEnabled) {
-    const email = sendEmail(
+    sendEmail(
       user.email,
       'Password Reset Request',
       {
@@ -141,7 +141,6 @@ const requestPasswordReset = async (email) => {
       },
       'requestPasswordReset.handlebars',
     );
-    console.log(email);
     return { link: '' };
   } else {
     return { link };
