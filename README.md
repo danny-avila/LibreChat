@@ -112,12 +112,13 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 
 <details>
   <summary><strong>Contributions</strong></summary>
-
+  
   * [Contributor Guidelines](CONTRIBUTING.md)
   * [Documentation Guidelines](docs/contributions/documentation_guidelines.md)
   * [Code Standards and Conventions](docs/contributions/coding_conventions.md)
   * [Testing](docs/contributions/testing.md)
   * [Security](SECURITY.md)
+  * [Language-contributions](docs/contributions/language-contributions.md)
   * [Trello Board](https://trello.com/b/17z094kq/LibreChate)
 </details>
 
