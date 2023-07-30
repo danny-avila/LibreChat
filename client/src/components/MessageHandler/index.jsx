@@ -245,8 +245,8 @@ export default function MessageHandler() {
         data = JSON.parse(e.data);
         errorHandler(data, { ...submission, message });
       } catch {
-        console.log('Message Handler Error',data);
-        console.log('Message Handler Current Token',token);
+        console.log('Message Handler Error', e.data);
+        console.log('Message Handler Current Token', token);
         if (data.status === 401) {
           return;
         }
