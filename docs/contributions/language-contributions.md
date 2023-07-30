@@ -25,7 +25,7 @@ If you don't know the ISO 3166 code for your language, check it [here](https://e
 
 Replace "**" with the ISO 3166 Alpha-2 code of your language (in lowercase). Here's an example: `if (langCode === 'en') return English;`)
 
-7.Go into the "languages" folder and create a file named as follows: //to-be-added-to-line-19.tsx
+7.Go into the "languages" folder and create a file named as follows: **.tsx
 
 For example: En.tsx
 
