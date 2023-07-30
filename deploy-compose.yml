@@ -22,6 +22,8 @@ services:
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_HTTP_ADDR=meilisearch:7700
+    volumes:
+      - ./images:/app/client/public/images
   client:
     build:
       context: .
