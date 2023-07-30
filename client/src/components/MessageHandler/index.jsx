@@ -238,7 +238,8 @@ export default function MessageHandler() {
       events.close();
 
       const data = JSON.parse(e.data);
-      console.log('Message Handler',data);
+      console.log('Message Handler Error',data);
+      console.log('Message Handler Current Token',token);
       if (data.status === 401) {
         return;
       }
