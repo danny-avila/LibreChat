@@ -126,7 +126,7 @@ const requestPasswordReset = async (email) => {
   const link = `${domains.client}/reset-password?token=${resetToken}&userId=${user._id}`;
 
   const emailEnabled =
-    !!process.env.EMAIL_HOST &&
+    !!process.env.EMAIL_SERVICE &&
     !!process.env.EMAIL_USERNAME &&
     !!process.env.EMAIL_PASSWORD &&
     !!process.env.EMAIL_FROM;
@@ -139,7 +139,7 @@ const requestPasswordReset = async (email) => {
         name: user.name,
         link: link,
       },
-      'requestResetPassword.handlebars',
+      'requestPasswordReset.handlebars',
     );
     console.log(email);
     return { link: '' };
@@ -181,7 +181,7 @@ const resetPassword = async (userId, token, password) => {
     {
       name: user.name,
     },
-    './template/resetPassword.handlebars',
+    'resetPassword.handlebars',
   );
 
   await passwordResetToken.deleteOne();

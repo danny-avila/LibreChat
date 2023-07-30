@@ -5,6 +5,7 @@ import store from '~/store';
 import { localize } from '~/localization/Translation';
 import {
   useRequestPasswordResetMutation,
+  useGetStartupConfig,
   TRequestPasswordReset,
   TRequestPasswordResetResponse,
 } from 'librechat-data-provider';
@@ -17,15 +18,17 @@ function RequestPasswordReset() {
     formState: { errors },
   } = useForm<TRequestPasswordReset>();
   const requestPasswordReset = useRequestPasswordResetMutation();
-  const [success, setSuccess] = useState<boolean>(false);
+  const config = useGetStartupConfig();
   const [requestError, setRequestError] = useState<boolean>(false);
-  const [resetLink, setResetLink] = useState<string>('');
+  const [resetLink, setResetLink] = useState<string | undefined>(undefined);
 
   const onSubmit = (data: TRequestPasswordReset) => {
     requestPasswordReset.mutate(data, {
       onSuccess: (data: TRequestPasswordResetResponse) => {
-        setSuccess(true);
-        setResetLink(data.link);
+        console.log('emailEnabled: ', config.data?.emailEnabled);
+        if (!config.data?.emailEnabled) {
+          setResetLink(data.link);
+        }
       },
       onError: () => {
         setRequestError(true);
@@ -36,13 +39,29 @@ function RequestPasswordReset() {
     });
   };
 
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
-      <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl font-semibold">
-          {localize(lang, 'com_auth_reset_password')}
-        </h1>
-        {success && (
+  if (requestPasswordReset.isSuccess && config.data?.emailEnabled) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
+        <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
+          <h1 className="mb-4 text-center text-3xl font-semibold">
+            {localize(lang, 'com_auth_reset_password_link_sent')}
+          </h1>
+          <div
+            className="relative mb-8 mt-4 rounded border border-green-400 bg-green-100 px-4 py-3 text-center text-green-700"
+            role="alert"
+          >
+            {localize(lang, 'com_auth_reset_password_email_sent')}
+          </div>
+        </div>
+      </div>
+    );
+  } else if (requestPasswordReset.isSuccess && resetLink !== '' && !config.data?.emailEnabled) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
+        <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
+          <h1 className="mb-4 text-center text-2xl font-semibold">
+            {localize(lang, 'com_auth_reset_password')}
+          </h1>
           <div
             className="relative mt-4 rounded border border-green-400 bg-green-100 px-4 py-3 text-green-700"
             role="alert"
@@ -52,9 +71,18 @@ function RequestPasswordReset() {
               {localize(lang, 'com_auth_here')}
             </a>{' '}
             {localize(lang, 'com_auth_to_reset_your_password')}
-            {/* An email has been sent with instructions on how to reset your password. */}
           </div>
-        )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
+      <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
+        <h1 className="mb-4 text-center text-3xl font-semibold">
+          {localize(lang, 'com_auth_reset_password')}
+        </h1>
         {requestError && (
           <div
             className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"

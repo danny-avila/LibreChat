@@ -52,6 +52,9 @@ export default {
   com_auth_password_forgot: 'Password dimenticata?',
   com_auth_password_confirm: 'Conferma password',
   com_auth_password_not_match: 'Le password non corrispondono',
+  com_auth_reset_password_link_sent: 'Link per reimpostare la password inviato',
+  com_auth_reset_password_email_sent:
+    'Ti abbiamo inviato un\'email con un link per reimpostare la password.',
   com_auth_continue: 'Continua',
   com_auth_create_account: 'Crea il tuo account',
   com_auth_error_create:
