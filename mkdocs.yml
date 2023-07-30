@@ -111,7 +111,8 @@ nav:
   - Contributions:
     - Documentation Guidelines: 'contributions/documentation_guidelines.md'
     - Code Standards and Conventions: 'contributions/coding_conventions.md'
-    - Testing: 'contributions/testing.md' 
+    - Testing: 'contributions/testing.md'
+    - Language contributions: 'contributions/language-contributions.md'
 
 extra:
   social:
