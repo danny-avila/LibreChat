@@ -5,6 +5,7 @@ export { default as Panel } from './Panel';
 export { default as Spinner } from './Spinner';
 export { default as Clipboard } from './Clipboard';
 export { default as CheckMark } from './CheckMark';
+export { default as CrossIcon } from './CrossIcon';
 export { default as LogOutIcon } from './LogOutIcon';
 export { default as MessagesSquared } from './MessagesSquared';
 export { default as StopGeneratingIcon } from './StopGeneratingIcon';
