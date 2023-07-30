@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "description": "",
   "scripts": {
     "data-provider": "cd .. && npm run build:data-provider",
@@ -53,7 +53,7 @@
     "export-from-json": "^1.7.2",
     "filenamify": "^6.0.0",
     "html2canvas": "^1.4.1",
-    "librechat-data-provider": "^0.1.0",
+    "librechat-data-provider": "*",
     "lodash": "^4.17.21",
     "lucide-react": "^0.220.0",
     "pino": "^8.12.1",
