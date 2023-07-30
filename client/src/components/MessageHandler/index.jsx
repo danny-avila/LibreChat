@@ -238,6 +238,10 @@ export default function MessageHandler() {
       events.close();
 
       const data = JSON.parse(e.data);
+      console.log('Message Handler',data);
+      if (data.status === 401) {
+        return;
+      }
 
       errorHandler(data, { ...submission, message });
     };
@@ -256,7 +260,7 @@ export default function MessageHandler() {
       setIsSubmitting(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [submission]);
+  }, [submission, token]);
 
   return null;
 }
