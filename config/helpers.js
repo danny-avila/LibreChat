@@ -34,7 +34,7 @@ function deleteNodeModules(dir) {
   const nodeModulesPath = path.join(dir, 'node_modules');
   if (fs.existsSync(nodeModulesPath)) {
     console.purple(`Deleting node_modules in ${dir}`);
-    fs.rmdirSync(nodeModulesPath, { recursive: true });
+    fs.rm(nodeModulesPath, { recursive: true });
   }
 }
 

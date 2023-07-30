@@ -1,5 +1,6 @@
 const { execSync } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 
 const { deleteNodeModules } = require('./helpers');
 
@@ -11,6 +12,13 @@ const directories = [
   path.resolve(rootDir, 'client'),
   path.resolve(rootDir, 'api'),
 ];
+
+// Delete package-lock.json if it exists
+const packageLockPath = path.resolve(rootDir, 'package-lock.json');
+if (fs.existsSync(packageLockPath)) {
+  console.purple('Deleting package-lock.json...');
+  fs.unlinkSync(packageLockPath);
+}
 
 (async () => {
   // Delete all node_modules
