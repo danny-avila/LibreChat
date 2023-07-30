@@ -1,5 +1,5 @@
 import React from 'react';
-import { HoverCardPortal, HoverCardContent } from '~/components/ui/HoverCard.tsx';
+import { HoverCardPortal, HoverCardContent } from '~/components/ui';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { localize } from '~/localization/Translation';

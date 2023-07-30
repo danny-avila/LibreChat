@@ -1,14 +1,18 @@
 import { useRecoilValue } from 'recoil';
 import TextareaAutosize from 'react-textarea-autosize';
-import SelectDropDown from '../../ui/SelectDropDown';
-import { Input } from '~/components/ui/Input.tsx';
-import { Label } from '~/components/ui/Label.tsx';
-import { Slider } from '~/components/ui/Slider.tsx';
-import { InputNumber } from '~/components/ui/InputNumber.tsx';
+import {
+  SelectDropDown,
+  Input,
+  Label,
+  Slider,
+  InputNumber,
+  HoverCard,
+  HoverCardTrigger,
+} from '~/components/ui';
 import OptionHover from './OptionHover';
-import { HoverCard, HoverCardTrigger } from '~/components/ui/HoverCard.tsx';
 import { cn } from '~/utils/';
 import { localize } from '~/localization/Translation';
+import { SettingsProps } from 'librechat-data-provider';
 
 const defaultTextProps =
   'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
@@ -18,19 +22,18 @@ const optionText =
 
 import store from '~/store';
 
-function Settings(props) {
+function Settings({ conversation, setOption }: SettingsProps) {
   const {
     readonly,
     model,
     chatGptLabel,
     promptPrefix,
     temperature,
-    topP,
-    freqP,
-    presP,
-    setOption,
-  } = props;
-  const endpoint = props.endpoint || 'openAI';
+    top_p: topP,
+    frequency_penalty: freqP,
+    presence_penalty: presP,
+  } = conversation;
+  const endpoint = conversation.endpoint || 'openAI';
   const isOpenAI = endpoint === 'openAI' || endpoint === 'azureOpenAI';
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
@@ -41,9 +44,8 @@ function Settings(props) {
   const setPromptPrefix = setOption('promptPrefix');
   const setTemperature = setOption('temperature');
   const setTopP = setOption('top_p');
-  const setFreqP = setOption('presence_penalty');
-  const setPresP = setOption('frequency_penalty');
-
+  const setFreqP = setOption('frequency_penalty');
+  const setPresP = setOption('presence_penalty');
   const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
 
   return (
@@ -52,7 +54,7 @@ function Settings(props) {
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
             <SelectDropDown
-              value={model}
+              value={model ?? ''}
               setValue={setModel}
               availableValues={models}
               disabled={readonly}
@@ -76,7 +78,7 @@ function Settings(props) {
                   id="chatGptLabel"
                   disabled={readonly}
                   value={chatGptLabel || ''}
-                  onChange={(e) => setChatGptLabel(e.target.value || null)}
+                  onChange={(e) => setChatGptLabel(e.target.value ?? null)}
                   placeholder={localize(lang, 'com_endpoint_openai_custom_name_placeholder')}
                   className={cn(
                     defaultTextProps,
@@ -95,7 +97,7 @@ function Settings(props) {
                   id="promptPrefix"
                   disabled={readonly}
                   value={promptPrefix || ''}
-                  onChange={(e) => setPromptPrefix(e.target.value || null)}
+                  onChange={(e) => setPromptPrefix(e.target.value ?? null)}
                   placeholder={localize(lang, 'com_endpoint_openai_prompt_prefix_placeholder')}
                   className={cn(
                     defaultTextProps,
@@ -120,7 +122,7 @@ function Settings(props) {
                   id="temp-int"
                   disabled={readonly}
                   value={temperature}
-                  onChange={(value) => setTemperature(value)}
+                  onChange={(value) => setTemperature(Number(value))}
                   max={2}
                   min={0}
                   step={0.01}
@@ -136,7 +138,7 @@ function Settings(props) {
               </div>
               <Slider
                 disabled={readonly}
-                value={[temperature]}
+                value={[temperature ?? 0]}
                 onValueChange={(value) => setTemperature(value[0])}
                 doubleClickHandler={() => setTemperature(1)}
                 max={2}
@@ -160,7 +162,7 @@ function Settings(props) {
                   id="top-p-int"
                   disabled={readonly}
                   value={topP}
-                  onChange={(value) => setTopP(value)}
+                  onChange={(value) => setTopP(Number(value))}
                   max={1}
                   min={0}
                   step={0.01}
@@ -176,7 +178,7 @@ function Settings(props) {
               </div>
               <Slider
                 disabled={readonly}
-                value={[topP]}
+                value={[topP ?? 1]}
                 onValueChange={(value) => setTopP(value[0])}
                 doubleClickHandler={() => setTopP(1)}
                 max={1}
@@ -201,7 +203,7 @@ function Settings(props) {
                   id="freq-penalty-int"
                   disabled={readonly}
                   value={freqP}
-                  onChange={(value) => setFreqP(value)}
+                  onChange={(value) => setFreqP(Number(value))}
                   max={2}
                   min={-2}
                   step={0.01}
@@ -217,7 +219,7 @@ function Settings(props) {
               </div>
               <Slider
                 disabled={readonly}
-                value={[freqP]}
+                value={[freqP ?? 0]}
                 onValueChange={(value) => setFreqP(value[0])}
                 doubleClickHandler={() => setFreqP(0)}
                 max={2}
@@ -242,7 +244,7 @@ function Settings(props) {
                   id="pres-penalty-int"
                   disabled={readonly}
                   value={presP}
-                  onChange={(value) => setPresP(value)}
+                  onChange={(value) => setPresP(Number(value))}
                   max={2}
                   min={-2}
                   step={0.01}
@@ -258,7 +260,7 @@ function Settings(props) {
               </div>
               <Slider
                 disabled={readonly}
-                value={[presP]}
+                value={[presP ?? 0]}
                 onValueChange={(value) => setPresP(value[0])}
                 doubleClickHandler={() => setPresP(0)}
                 max={2}

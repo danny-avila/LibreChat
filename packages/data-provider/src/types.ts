@@ -94,6 +94,7 @@ export type TConversation = {
   tools?: TPlugin[];
   createdAt: string;
   updatedAt: string;
+  readonly?: boolean;
   // google only
   modelLabel?: string;
   examples?: TExample[];
@@ -108,6 +109,7 @@ export type TConversation = {
   // bing and google
   context?: string;
   top_p?: number;
+  frequency_penalty?: number;
   presence_penalty?: number;
   // for bingAI only
   jailbreak?: boolean;
@@ -274,4 +276,16 @@ export type File = {
   name: string;
   date: number;
   size: number;
+};
+
+export type SetOption = (param: number | string) => (newValue: number | string) => void;
+
+export type SelectProps = {
+  conversation: TConversation | null;
+  setOption: SetOption;
+};
+
+export type SettingsProps = {
+  conversation: TConversation;
+  setOption: SetOption;
 };

@@ -3,6 +3,19 @@ import CheckMark from '../svg/CheckMark.jsx';
 import { Listbox, Transition } from '@headlessui/react';
 import { cn } from '~/utils/';
 
+type SelectDropDownProps = {
+  title?: string;
+  value: string;
+  disabled?: boolean;
+  setValue: (value: string) => void;
+  availableValues: string[];
+  showAbove?: boolean;
+  showLabel?: boolean;
+  containerClassName?: string;
+  subContainerClassName?: string;
+  className?: string;
+};
+
 function SelectDropDown({
   title = 'Model',
   value,
@@ -14,7 +27,7 @@ function SelectDropDown({
   containerClassName,
   subContainerClassName,
   className,
-}) {
+}: SelectDropDownProps) {
   return (
     <div className={cn('flex items-center justify-center gap-2', containerClassName)}>
       <div className={cn('relative w-full', subContainerClassName)}>
@@ -77,7 +90,7 @@ function SelectDropDown({
                 className={showAbove ? 'bottom-full mb-3' : 'top-full mt-3'}
               >
                 <Listbox.Options className="absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%]">
-                  {availableValues.map((option, i) => (
+                  {availableValues.map((option: string, i: number) => (
                     <Listbox.Option
                       key={i}
                       value={option}

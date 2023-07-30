@@ -1,4 +1,4 @@
-import OpenAISettings from './OpenAI/Settings.jsx';
+import OpenAISettings from './OpenAI/Settings';
 import BingAISettings from './BingAI/Settings.jsx';
 import GoogleSettings from './Google/Settings.jsx';
 import PluginsSettings from './Plugins/Settings.jsx';
@@ -10,18 +10,7 @@ const Settings = ({ preset, ...props }) => {
     const { endpoint } = preset || {};
 
     if (endpoint === 'openAI' || endpoint === 'azureOpenAI') {
-      return (
-        <OpenAISettings
-          model={preset?.model}
-          chatGptLabel={preset?.chatGptLabel}
-          promptPrefix={preset?.promptPrefix}
-          temperature={preset?.temperature}
-          topP={preset?.top_p}
-          freqP={preset?.presence_penalty}
-          presP={preset?.frequency_penalty}
-          {...props}
-        />
-      );
+      return <OpenAISettings conversation={preset} setOption={() => () => {}} {...props} />;
     } else if (endpoint === 'bingAI') {
       return (
         <BingAISettings

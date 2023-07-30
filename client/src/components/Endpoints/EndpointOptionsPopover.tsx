@@ -1,7 +1,5 @@
 import React from 'react';
-import { Button } from '../ui/Button.tsx';
-import CrossIcon from '../svg/CrossIcon';
-// import SaveIcon from '../svg/SaveIcon';
+import { CrossIcon, Button } from '~/components';
 import { Save } from 'lucide-react';
 import { cn } from '~/utils/';
 
@@ -9,13 +7,28 @@ import store from '~/store';
 import { useRecoilValue } from 'recoil';
 import { localize } from '~/localization/Translation';
 
+type AdditionalButton = {
+  label: string;
+  icon: React.ReactNode;
+  buttonClass: string;
+  handler: () => void;
+};
+
+type EndpointOptionsPopoverProps = {
+  children: React.ReactNode;
+  visible: Boolean;
+  saveAsPreset: () => void;
+  switchToSimpleMode: () => void;
+  additionalButton?: AdditionalButton | null;
+};
+
 function EndpointOptionsPopover({
-  content,
+  children,
   visible,
   saveAsPreset,
   switchToSimpleMode,
   additionalButton = null,
-}) {
+}: EndpointOptionsPopoverProps) {
   const lang = useRecoilValue(store.lang);
   const cardStyle =
     'shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white';
@@ -66,7 +79,7 @@ function EndpointOptionsPopover({
               {/* Switch to simple mode */}
             </Button>
           </div>
-          <div>{content}</div>
+          <div>{children}</div>
         </div>
       </div>
     </>
