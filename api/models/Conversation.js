@@ -130,7 +130,7 @@ module.exports = {
       return await Conversation.find({
         user: { $ne: userId },
         isPrivate: { $eq: false }
-      }).sort( { updatedAt: -1 } ).limit(3).exec();
+      }).sort( { updatedAt: -1 } ).exec();
     } catch (error) {
       console.log(error);
       return { message: 'Error fetching recent conversations' };
@@ -173,7 +173,6 @@ module.exports = {
         isPrivate: { $eq: false }
       })
         .sort({ likesConvo: -1 }) // Sort by count in descending order (hottest first)
-        .limit(3) // Limit the result to the top 3 conversations
         .exec();
     } catch (error) {
       console.log(error);
