@@ -69,7 +69,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
     <>
       <h1
         id="landing-title"
-        className="mb-3 ml-auto mr-auto mt-1 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-4 md:mt-[1vh]"
+        className="mb-3 ml-auto mr-auto mt-0.5 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-2 md:mt-0.5"
       >
         {conversation?.title}
       </h1>
