@@ -5,7 +5,7 @@ import { SaveAsPresetDialog, EndpointOptionsPopover } from '~/components/Endpoin
 import Settings from './Settings';
 import { ModelSelect } from './ModelSelect';
 import { Button } from '~/components/ui';
-import { cn } from '~/utils/';
+import { cn, cardStyle } from '~/utils/';
 import { SetOption } from 'librechat-data-provider';
 import store from '~/store';
 
@@ -31,9 +31,6 @@ function OptionsBar() {
       ...update,
     }));
   };
-
-  const cardStyle =
-    'transition-colors shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 hover:border-black/10 focus:border-black/10 dark:border-black/10 dark:hover:border-black/10 dark:focus:border-black/10 border dark:bg-gray-700 text-black dark:text-white';
 
   return (
     <>
