@@ -1,15 +1,11 @@
-import { useRecoilValue } from 'recoil';
 import { SelectDropDown } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
-import store from '~/store';
+import { ModelSelectProps } from 'librechat-data-provider';
 
-function Anthropic({ conversation, setOption }: any) {
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
-  const models = endpointsConfig?.['anthropic']?.['availableModels'] || [];
-
+export default function Anthropic({ conversation, setOption, models }: ModelSelectProps) {
   return (
     <SelectDropDown
-      value={conversation.model}
+      value={conversation?.model ?? ''}
       setValue={setOption('model')}
       availableValues={models}
       showAbove={true}
@@ -21,5 +17,3 @@ function Anthropic({ conversation, setOption }: any) {
     />
   );
 }
-
-export default Anthropic;

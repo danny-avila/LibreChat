@@ -2,10 +2,15 @@ import { SelectDropDown } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
 import { ModelSelectProps } from 'librechat-data-provider';
 
-export default function OpenAI({ conversation, setOption, models }: ModelSelectProps) {
+export default function ChatGPT({ conversation, setOption, models }: ModelSelectProps) {
+  const { conversationId, model } = conversation;
+  if (conversationId !== 'new') {
+    return null;
+  }
+
   return (
     <SelectDropDown
-      value={conversation?.model ?? ''}
+      value={model ?? ''}
       setValue={setOption('model')}
       availableValues={models}
       showAbove={true}
