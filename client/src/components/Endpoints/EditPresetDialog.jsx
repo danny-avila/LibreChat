@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { useEffect, useState } from 'react';
 import EndpointSettings from './EndpointSettings';
-import Examples from './Settings/Examples.jsx';
+import Examples from './Settings/Examples';
 import exportFromJSON from 'export-from-json';
 import AgentSettings from './Plugins/AgentSettings.jsx';
 import { useSetRecoilState, useRecoilValue } from 'recoil';

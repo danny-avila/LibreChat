@@ -155,6 +155,11 @@ export type TPreset = {
   toneStyle?: string;
 };
 
+export type TOptionSettings = {
+  showExamples?: boolean;
+  isCodeChat?: boolean;
+};
+
 export type TUser = {
   id: string;
   username: string;
@@ -337,9 +342,18 @@ export type GoogleProps = {
 };
 
 export type GoogleViewProps = SettingsProps & GoogleProps;
-export type OptionComponent = React.FC<SettingsProps | GoogleViewProps>;
+export type OptionComponent = React.FC<SettingsProps>;
+export type MultiViewComponent = React.FC;
 export type SelectProps = OptionsBarProps & {
   conversation: TConversation | null;
   setOption: SetOption;
   extraProps?: GoogleProps;
+};
+
+export type UseSetOptions = {
+  setOption: SetOption;
+  setExample: SetExample;
+  addExample: () => void;
+  removeExample: () => void;
+  getConversation: () => TConversation | null;
 };

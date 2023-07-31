@@ -4,14 +4,17 @@ import {
   BingAISettings,
   AnthropicSettings,
 } from '~/components/Endpoints/Settings/';
-import { GoogleView } from '~/components/Endpoints/Settings/SwitchViews';
-import { SelectProps, OptionComponent } from 'librechat-data-provider';
+import { GoogleSettings } from '~/components/Endpoints/Settings/MultiView';
+import { SelectProps, OptionComponent, MultiViewComponent } from 'librechat-data-provider';
 
 const optionComponents: { [key: string]: OptionComponent } = {
-  // google: GoogleView,
   openAI: OpenAISettings,
   bingAI: BingAISettings,
   anthropic: AnthropicSettings,
+};
+
+const multiViewComponents: { [key: string]: MultiViewComponent } = {
+  google: GoogleSettings,
 };
 
 export default function Settings({ conversation, setOption }: SelectProps) {
@@ -22,9 +25,15 @@ export default function Settings({ conversation, setOption }: SelectProps) {
   const { endpoint } = conversation;
   const OptionComponent = optionComponents[endpoint];
 
-  if (!OptionComponent) {
+  if (OptionComponent) {
+    return <OptionComponent conversation={conversation} setOption={setOption} />;
+  }
+
+  const MultiViewComponent = multiViewComponents[endpoint];
+
+  if (!MultiViewComponent) {
     return null;
   }
 
-  return <OptionComponent conversation={conversation} setOption={setOption} />;
+  return <MultiViewComponent />;
 }
