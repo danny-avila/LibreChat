@@ -4,7 +4,6 @@ import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 
 import Messages from '../components/Messages';
 import TextChat from '../components/Input';
-import Landing from '~/components/ui/Landing';
 
 import store from '~/store';
 import {
@@ -12,6 +11,7 @@ import {
   useGetConversationByIdMutation,
   useGetStartupConfig
 } from '@librechat/data-provider';
+import Homepage from '~/components/ui/Homepage';
 
 export default function Chat() {
   const [shouldNavigate, setShouldNavigate] = useState(true);
@@ -119,7 +119,7 @@ export default function Chat() {
 
   return (
     <>
-      {conversationId === 'new' && !messagesTree?.length ? <Landing /> : <Messages />}
+      {conversationId === 'new' && !messagesTree?.length ? <Homepage /> : <Messages />}
       <TextChat />
     </>
   );
