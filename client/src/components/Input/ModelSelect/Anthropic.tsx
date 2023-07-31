@@ -3,9 +3,9 @@ import { SelectDropDown } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
 import store from '~/store';
 
-function OpenAIOptions({ conversation, setOption }: any) {
+function Anthropic({ conversation, setOption }: any) {
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
-  const models = endpointsConfig?.['openAI']?.['availableModels'] || [];
+  const models = endpointsConfig?.['anthropic']?.['availableModels'] || [];
 
   return (
     <SelectDropDown
@@ -22,4 +22,4 @@ function OpenAIOptions({ conversation, setOption }: any) {
   );
 }
 
-export default OpenAIOptions;
+export default Anthropic;
