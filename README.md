@@ -73,6 +73,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
     * [APIs and Tokens](docs/install/apis_and_tokens.md)
     * [User Auth System](docs/install/user_auth_system.md)
     * [Online MongoDB Database](docs/install/mongodb.md)
+    * [Languages](docs/install/languages.md)
 </details>
 
 <details>
@@ -118,7 +119,6 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Code Standards and Conventions](docs/contributions/coding_conventions.md)
   * [Testing](docs/contributions/testing.md)
   * [Security](SECURITY.md)
-  * [Language contributions](docs/contributions/language-contributions.md)
   * [Trello Board](https://trello.com/b/17z094kq/LibreChate)
 </details>
 
