@@ -88,7 +88,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
           />
           <SwitchPage key={ 'left_switch' } switchHandler={ prevConvo } direction={ 'left' } />
           <SwitchPage key={ 'right_switch' } switchHandler={ nextConvo } direction={ 'right' } />
-          <DuplicateConvoButton duplicateHandler={ duplicateHandler } />
+          {/* <DuplicateConvoButton duplicateHandler={ duplicateHandler } /> */}
         </div>
       </div>
       {/* {!showingTemplates && (
