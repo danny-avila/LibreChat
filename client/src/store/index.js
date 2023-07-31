@@ -8,6 +8,7 @@ import search from './search';
 import preset from './preset';
 import token from './token';
 import tabValue from './tabValue';
+import lang from './language'
 
 export default {
   ...conversation,
@@ -19,5 +20,6 @@ export default {
   ...search,
   ...preset,
   ...token,
-  ...tabValue
+  ...tabValue,
+  ...lang
 };
