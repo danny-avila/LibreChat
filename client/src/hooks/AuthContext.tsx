@@ -157,22 +157,22 @@ const AuthContextProvider = ({
     setUserContext,
   ]);
 
-  const silentRefresh = useCallback(() => {
-    refreshToken.mutate(undefined, {
-      onSuccess: (data: TLoginResponse) => {
-        const { user, token } = data;
-        setUserContext({ token, isAuthenticated: true, user });
-      },
-      onError: error => {
-        setError(error.message);
-      }
-    });
+ // const silentRefresh = useCallback(() => {
+ //   refreshToken.mutate(undefined, {
+ //    onSuccess: (data: TLoginResponse) => {
+ //       const { user, token } = data;
+ //       setUserContext({ token, isAuthenticated: true, user });
+ //     },
+ //     onError: error => {
+ //       setError(error.message);
+ //     }
+ //   });
   
-  }, [setUserContext]);
-  useEffect(() => {
-    if (token)
-    silentRefresh();
-  }, [token, silentRefresh]);
+ // }, [setUserContext]);
+ // useEffect(() => {
+ //   if (token)
+ //   silentRefresh();
+ // }, [token, silentRefresh]);
   
   // Make the provider update only when it should
   const memoedValue = useMemo(
