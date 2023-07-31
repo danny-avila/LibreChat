@@ -188,7 +188,7 @@ const AuthContextProvider = ({
       logout();  // This should clear user context and do necessary cleanup
     };
 
-    console.loh('Auth Event', event); 
+    console.log('Auth Event', event); 
     window.addEventListener('tokenUpdated', handleTokenUpdate);
     window.addEventListener('logout', handleLogout);
   
