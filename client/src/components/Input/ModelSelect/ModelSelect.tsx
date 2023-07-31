@@ -1,6 +1,7 @@
 import React from 'react';
 import OpenAI from './OpenAI';
 import BingAI from './BingAI';
+import Google from './Google';
 import ChatGPT from './ChatGPT';
 import Anthropic from './Anthropic';
 import { useRecoilValue } from 'recoil';
@@ -12,6 +13,7 @@ type OptionComponentType = React.FC<ModelSelectProps>;
 const optionComponents: { [key: string]: OptionComponentType } = {
   openAI: OpenAI,
   bingAI: BingAI,
+  google: Google,
   anthropic: Anthropic,
   chatGPTBrowser: ChatGPT,
 };

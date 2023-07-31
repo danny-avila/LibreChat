@@ -5,7 +5,7 @@ import { SelectDropDown, Button, MessagesSquared } from '~/components';
 import EndpointOptionsPopover from '../../Endpoints/EndpointOptionsPopover';
 import SaveAsPresetDialog from '../../Endpoints/SaveAsPresetDialog';
 import Settings from '../../Endpoints/Google/Settings.jsx';
-import Examples from '../../Endpoints/Google/Examples.jsx';
+import Examples from '../../Endpoints/Settings/Examples.jsx';
 import { cn } from '~/utils/';
 
 import store from '~/store';

@@ -1,14 +1,21 @@
 import React from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { Button } from '~/components/ui/Button.tsx';
-import { Label } from '~/components/ui/Label.tsx';
+import { Button, Label } from '~/components/ui';
 import { Plus, Minus } from 'lucide-react';
 import { cn, defaultTextProps } from '~/utils/';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
+import { ExamplesProps } from 'librechat-data-provider';
 
-function Examples({ readonly, examples, setExample, addExample, removeExample, edit = false }) {
+function Examples({
+  readonly,
+  examples,
+  setExample,
+  addExample,
+  removeExample,
+  edit = false,
+}: ExamplesProps) {
   const maxHeight = edit ? 'max-h-[233px]' : 'max-h-[350px]';
   const lang = useRecoilValue(store.lang);
 
@@ -35,7 +42,7 @@ function Examples({ readonly, examples, setExample, addExample, removeExample, e
                     id={`input-${idx}`}
                     disabled={readonly}
                     value={example?.input?.content || ''}
-                    onChange={(e) => setExample(idx, 'input', e.target.value || null)}
+                    onChange={(e) => setExample(idx, 'input', e.target.value ?? null)}
                     placeholder="Set example input. Example is ignored if empty."
                     className={cn(
                       defaultTextProps,
@@ -62,7 +69,7 @@ function Examples({ readonly, examples, setExample, addExample, removeExample, e
                     id={`output-${idx}`}
                     disabled={readonly}
                     value={example?.output?.content || ''}
-                    onChange={(e) => setExample(idx, 'output', e.target.value || null)}
+                    onChange={(e) => setExample(idx, 'output', e.target.value ?? null)}
                     placeholder={'Set example output. Example is ignored if empty.'}
                     className={cn(
                       defaultTextProps,

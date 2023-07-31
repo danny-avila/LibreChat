@@ -10,9 +10,11 @@ import Settings from './Settings';
 import store from '~/store';
 
 function OptionsBar({ showBingTones }: OptionsBarProps) {
-  const [advancedMode, setAdvancedMode] = useState<Boolean>(false);
-  const [saveAsDialogShow, setSaveAsDialogShow] = useState<Boolean>(false);
+  const [advancedMode, setAdvancedMode] = useState<boolean>(false);
+  // const [showExamples, setShowExamples] = useState<boolean>(false); todo: make atom state
+  const [saveAsDialogShow, setSaveAsDialogShow] = useState<boolean>(false);
   const [conversation, setConversation] = useRecoilState(store.conversation);
+
   const { endpoint, conversationId } = conversation ?? {};
   const noSettings: { [key: string]: boolean } = {
     chatGPTBrowser: true,

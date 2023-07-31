@@ -11,15 +11,9 @@ import {
 import buildTree from '~/utils/buildTree';
 import getDefaultConversation from '~/utils/getDefaultConversation';
 import submission from './submission';
-import {
-  TConversation,
-  TConversationAtom,
-  TMessagesAtom,
-  TSubmission,
-  TPreset,
-} from 'librechat-data-provider';
+import { TConversation, TMessagesAtom, TSubmission, TPreset } from 'librechat-data-provider';
 
-const conversation = atom<TConversationAtom>({
+const conversation = atom<TConversation | null>({
   key: 'conversation',
   default: null,
 });

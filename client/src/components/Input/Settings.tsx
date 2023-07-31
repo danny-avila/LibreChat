@@ -4,11 +4,11 @@ import {
   BingAISettings,
   AnthropicSettings,
 } from '~/components/Endpoints/Settings/';
-import { SelectProps, SettingsProps } from 'librechat-data-provider';
+import { GoogleView } from '~/components/Endpoints/Settings/SwitchViews';
+import { SelectProps, OptionComponent } from 'librechat-data-provider';
 
-type OptionComponentType = React.FC<SettingsProps>;
-
-const optionComponents: { [key: string]: OptionComponentType } = {
+const optionComponents: { [key: string]: OptionComponent } = {
+  // google: GoogleView,
   openAI: OpenAISettings,
   bingAI: BingAISettings,
   anthropic: AnthropicSettings,

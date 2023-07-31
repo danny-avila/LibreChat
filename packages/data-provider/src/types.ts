@@ -16,8 +16,12 @@ export type TMessages = TMessage[];
 export type TMessagesAtom = TMessages | null;
 
 export type TExample = {
-  input: string;
-  output: string;
+  input: {
+    content: string;
+  };
+  output: {
+    content: string;
+  };
 };
 
 export enum EModelEndpoint {
@@ -125,8 +129,6 @@ export type TConversation = {
   toneStyle?: string;
   maxOutputTokens?: number;
 };
-
-export type TConversationAtom = TConversation | null;
 
 export type TPreset = {
   title: string;
@@ -286,6 +288,11 @@ export type File = {
 };
 
 export type SetOption = (param: number | string) => (newValue: number | string | boolean) => void;
+export type SetExample = (
+  i: number,
+  type: string,
+  newValue: number | string | boolean | null,
+) => void;
 
 export type SettingsProps = {
   conversation: TConversation;
@@ -310,12 +317,29 @@ export type OptionsBarProps = {
   showBingTones?: boolean;
 };
 
-export type SelectProps = OptionsBarProps & {
-  conversation: TConversation | null;
-  setOption: SetOption;
-};
-
 export type ModelSelectProps = OptionsBarProps &
   SettingsProps & {
     models: string[];
   };
+
+export type ExamplesProps = {
+  readonly?: boolean;
+  examples: TExample[];
+  setExample: SetExample;
+  addExample: () => void;
+  removeExample: () => void;
+  edit?: boolean;
+};
+
+export type GoogleProps = {
+  showExamples: boolean;
+  isCodeChat: boolean;
+};
+
+export type GoogleViewProps = SettingsProps & GoogleProps;
+export type OptionComponent = React.FC<SettingsProps | GoogleViewProps>;
+export type SelectProps = OptionsBarProps & {
+  conversation: TConversation | null;
+  setOption: SetOption;
+  extraProps?: GoogleProps;
+};
