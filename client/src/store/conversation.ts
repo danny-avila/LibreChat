@@ -10,9 +10,16 @@ import {
 } from 'recoil';
 import buildTree from '~/utils/buildTree';
 import getDefaultConversation from '~/utils/getDefaultConversation';
-import submission from './submission.js';
+import submission from './submission';
+import {
+  TConversation,
+  TConversationAtom,
+  TMessagesAtom,
+  TSubmission,
+  TPreset,
+} from 'librechat-data-provider';
 
-const conversation = atom({
+const conversation = atom<TConversationAtom>({
   key: 'conversation',
   default: null,
 });
@@ -20,7 +27,7 @@ const conversation = atom({
 // current messages of the conversation, must be an array
 // sample structure
 // [{text, sender, messageId, parentMessageId, isCreatedByUser}]
-const messages = atom({
+const messages = atom<TMessagesAtom>({
   key: 'messages',
   default: [],
 });
@@ -44,24 +51,23 @@ const messagesSiblingIdxFamily = atomFamily({
 
 const useConversation = () => {
   const setConversation = useSetRecoilState(conversation);
-  const setMessages = useSetRecoilState(messages);
-  const setSubmission = useSetRecoilState(submission.submission);
+  const setMessages = useSetRecoilState<TMessagesAtom>(messages);
+  const setSubmission = useSetRecoilState<TSubmission | object | null>(submission.submission);
   const resetLatestMessage = useResetRecoilState(latestMessage);
 
   const _switchToConversation = (
-    conversation,
-    messages = null,
-    preset = null,
-    { endpointsConfig = {}, prevConversation = {} },
+    conversation: TConversation,
+    messages: TMessagesAtom = null,
+    preset: object | null = null,
+    { endpointsConfig = {} },
   ) => {
-    let { endpoint = null } = conversation;
+    const { endpoint = null } = conversation;
 
     if (endpoint === null) {
       // get the default model
       conversation = getDefaultConversation({
         conversation,
         endpointsConfig,
-        prevConversation,
         preset,
       });
     }
@@ -74,24 +80,29 @@ const useConversation = () => {
 
   const switchToConversation = useRecoilCallback(
     ({ snapshot }) =>
-      async (_conversation, messages = null, preset = null) => {
-        const prevConversation = await snapshot.getPromise(conversation);
+      async (
+        _conversation: TConversation,
+        messages: TMessagesAtom = null,
+        preset: object | null = null,
+      ) => {
         const endpointsConfig = await snapshot.getPromise(endpoints.endpointsConfig);
         _switchToConversation(_conversation, messages, preset, {
           endpointsConfig,
-          prevConversation,
         });
       },
     [],
   );
 
   const newConversation = useCallback(
-    (template = {}, preset) => {
+    (template = {}, preset: TPreset) => {
       switchToConversation(
         {
           conversationId: 'new',
           title: 'New Chat',
           ...template,
+          endpoint: null,
+          createdAt: '',
+          updatedAt: '',
         },
         [],
         preset,
@@ -105,6 +116,9 @@ const useConversation = () => {
       {
         conversationId: 'search',
         title: 'Search',
+        endpoint: null,
+        createdAt: '',
+        updatedAt: '',
       },
       [],
     );
