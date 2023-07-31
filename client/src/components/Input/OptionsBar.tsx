@@ -1,19 +1,20 @@
 import { useState } from 'react';
 import { Settings2 } from 'lucide-react';
-import { useRecoilState } from 'recoil';
+import { useRecoilValue } from 'recoil';
 import { SaveAsPresetDialog, EndpointOptionsPopover } from '~/components/Endpoints';
 import { Button } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
-import { SetOption, OptionsBarProps } from 'librechat-data-provider';
+import { OptionsBarProps } from 'librechat-data-provider';
+import { useSetOptions } from '~/hooks';
 import { ModelSelect } from './ModelSelect';
 import Settings from './Settings';
 import store from '~/store';
 
 function OptionsBar({ showBingTones }: OptionsBarProps) {
   const [advancedMode, setAdvancedMode] = useState<boolean>(false);
-  // const [showExamples, setShowExamples] = useState<boolean>(false); todo: make atom state
   const [saveAsDialogShow, setSaveAsDialogShow] = useState<boolean>(false);
-  const [conversation, setConversation] = useRecoilState(store.conversation);
+  const conversation = useRecoilValue(store.conversation);
+  const { setOption } = useSetOptions();
 
   const { endpoint, conversationId } = conversation ?? {};
   const noSettings: { [key: string]: boolean } = {
@@ -29,15 +30,6 @@ function OptionsBar({ showBingTones }: OptionsBarProps) {
 
   const saveAsPreset = () => {
     setSaveAsDialogShow(true);
-  };
-
-  const setOption: SetOption = (param) => (newValue) => {
-    let update = {};
-    update[param] = newValue;
-    setConversation((prevState: any = {}) => ({
-      ...prevState,
-      ...update,
-    }));
   };
 
   return (
