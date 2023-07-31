@@ -11,7 +11,7 @@ import {
   useGetConversationByIdMutation,
   useGetStartupConfig
 } from '@librechat/data-provider';
-import Homepage from '~/components/ui/Homepage';
+import Landing from '~/components/ui/Landing';
 
 export default function Chat() {
   const [shouldNavigate, setShouldNavigate] = useState(true);
@@ -119,7 +119,7 @@ export default function Chat() {
 
   return (
     <>
-      {conversationId === 'new' && !messagesTree?.length ? <Homepage /> : <Messages />}
+      {conversationId === 'new' && !messagesTree?.length ? <Landing /> : <Messages />}
       <TextChat />
     </>
   );
