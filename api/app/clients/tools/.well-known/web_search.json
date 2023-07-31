@@ -1,18 +1,18 @@
 {
-    "schema_version": "v1",
-    "name_for_human": "Web Search",
-    "name_for_model": "web_search",
-    "description_for_human": "Search for information from the internet",
-    "description_for_model": "Search for information from the internet",
-    "auth": {
-        "type": "none"
-    },
-    "api": {
-        "type": "openapi",
-        "url": "https://websearch.plugsugar.com/api/openapi_yaml",
-        "is_user_authenticated": false
-    },
-    "logo_url": "https://websearch.plugsugar.com/200x200.png",
-    "contact_email": "support@plugsugar.com",
-    "legal_info_url": "https://websearch.plugsugar.com/contact"
+  "schema_version": "v1",
+  "name_for_human": "Web Search",
+  "name_for_model": "web_search",
+  "description_for_human": "Search for information from the internet",
+  "description_for_model": "Search for information from the internet",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://websearch.plugsugar.com/api/openapi_yaml",
+    "is_user_authenticated": false
+  },
+  "logo_url": "https://websearch.plugsugar.com/200x200.png",
+  "contact_email": "support@plugsugar.com",
+  "legal_info_url": "https://websearch.plugsugar.com/contact"
 }
