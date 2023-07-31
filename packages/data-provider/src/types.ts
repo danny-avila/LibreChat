@@ -11,6 +11,10 @@ export type TMessage = {
   updatedAt: string;
 };
 
+export type TMessages = TMessage[];
+
+export type TMessagesAtom = TMessages | null;
+
 export type TExample = {
   input: string;
   output: string;
@@ -33,7 +37,7 @@ export type TSubmission = {
   conversationId?: string;
   conversationSignature?: string;
   current: boolean;
-  endpoint: EModelEndpoint;
+  endpoint: EModelEndpoint | null;
   invocationId: number;
   isCreatedByUser: boolean;
   jailbreak: boolean;
@@ -57,7 +61,7 @@ export type TSubmission = {
 };
 
 export type TEndpointOption = {
-  endpoint: EModelEndpoint;
+  endpoint: EModelEndpoint | null;
   model?: string;
   promptPrefix?: string;
   temperature?: number;
@@ -85,10 +89,10 @@ export type TUpdateUserPlugins = {
 };
 
 export type TConversation = {
-  conversationId: string;
+  conversationId: string | null;
   title: string;
   user?: string;
-  endpoint: EModelEndpoint;
+  endpoint: EModelEndpoint | null;
   suggestions?: string[];
   messages?: TMessage[];
   tools?: TPlugin[];
@@ -122,9 +126,11 @@ export type TConversation = {
   maxOutputTokens?: number;
 };
 
+export type TConversationAtom = TConversation | null;
+
 export type TPreset = {
   title: string;
-  endpoint: EModelEndpoint;
+  endpoint: EModelEndpoint | null;
   conversationSignature?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -290,6 +296,10 @@ export type SettingsProps = {
   conversation: TConversation;
   setOption: SetOption;
   edit?: boolean;
+};
+
+export type ModelSelectProps = SettingsProps & {
+  models: string[];
 };
 
 export enum Side {
