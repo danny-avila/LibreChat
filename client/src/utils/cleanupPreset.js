@@ -26,7 +26,7 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
       temperature: _preset?.temperature ?? 0.2,
       maxOutputTokens: _preset?.maxOutputTokens ?? 1024,
       topP: _preset?.topP ?? 0.95,
-      topK: _preset?.topK ?? 5,
+      topK: _preset?.topK ?? 40,
       title: _preset?.title ?? 'New Preset',
     };
   } else if (endpoint === 'anthropic') {

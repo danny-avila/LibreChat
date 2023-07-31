@@ -41,7 +41,7 @@ const buildDefaultConversation = ({
       temperature: lastConversationSetup?.temperature ?? 0.2,
       maxOutputTokens: lastConversationSetup?.maxOutputTokens ?? 1024,
       topP: lastConversationSetup?.topP ?? 0.95,
-      topK: lastConversationSetup?.topK ?? 5,
+      topK: lastConversationSetup?.topK ?? 40,
     };
   } else if (endpoint === 'bingAI') {
     const { jailbreak, toneStyle } = lastBingSettings;

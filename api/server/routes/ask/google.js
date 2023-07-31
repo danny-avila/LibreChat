@@ -27,7 +27,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
       temperature: req.body?.temperature ?? 0.2,
       maxOutputTokens: req.body?.maxOutputTokens ?? 1024,
       topP: req.body?.topP ?? 0.95,
-      topK: req.body?.topK ?? 5,
+      topK: req.body?.topK ?? 40,
     },
   };
 

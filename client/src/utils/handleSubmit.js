@@ -58,7 +58,7 @@ const useMessageHandler = () => {
         temperature: currentConversation?.temperature ?? 0.2,
         maxOutputTokens: currentConversation?.maxOutputTokens ?? 1024,
         topP: currentConversation?.topP ?? 0.95,
-        topK: currentConversation?.topK ?? 5,
+        topK: currentConversation?.topK ?? 40,
         token: endpointsConfig[endpoint]?.userProvide ? getToken() : null,
       };
       responseSender = endpointOption.chatGptLabel ?? 'ChatGPT';

@@ -151,7 +151,7 @@ function Settings({ conversation, setOption }: SettingsProps) {
               </div>
               <Slider
                 disabled={readonly}
-                value={[topP ?? 0.95]}
+                value={[topP ?? 0.7]}
                 onValueChange={(value) => setTopP(value[0])}
                 doubleClickHandler={() => setTopP(1)}
                 max={1}
