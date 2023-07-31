@@ -15,10 +15,11 @@ import { localize } from '~/localization/Translation';
 const defaultTextProps =
   'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
 
-export default function Settings({ conversation, setOption }: SettingsProps) {
+export default function Settings({ conversation, setOption, readonly }: SettingsProps) {
   const [tokenCount, setTokenCount] = useState(0);
   const lang = useRecoilValue(store.lang);
-  const { readonly, context, systemMessage, jailbreak, toneStyle } = conversation;
+  const { context, systemMessage, jailbreak, toneStyle } = conversation;
+  console.log('readonly', readonly);
   const debouncedContext = useDebounce(context?.trim() ?? '', 250);
   const updateTokenCountMutation = useUpdateTokenCountMutation();
   const showSystemMessage = jailbreak;

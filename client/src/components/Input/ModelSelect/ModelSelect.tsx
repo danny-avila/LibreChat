@@ -32,7 +32,6 @@ export default function ModelSelect({ conversation, setOption, showBingTones }: 
 
   let extraProps = {};
   if (endpoint === 'bingAI') {
-    console.log('bingAI, showBingTones:', showBingTones);
     extraProps = { showBingTones };
   }
 

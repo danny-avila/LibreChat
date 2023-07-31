@@ -22,9 +22,8 @@ const optionText =
 
 import store from '~/store';
 
-export default function Settings({ conversation, setOption }: SettingsProps) {
+export default function Settings({ conversation, setOption, readonly }: SettingsProps) {
   const {
-    readonly,
     model,
     chatGptLabel,
     promptPrefix,

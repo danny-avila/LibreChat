@@ -9,15 +9,15 @@ import { ModelSelect } from './ModelSelect';
 import Settings from './Settings';
 import store from '~/store';
 
-const noSettings: { [key: string]: boolean } = {
-  chatGPTBrowser: true,
-};
-
 function OptionsBar({ showBingTones }: OptionsBarProps) {
   const [advancedMode, setAdvancedMode] = useState<Boolean>(false);
   const [saveAsDialogShow, setSaveAsDialogShow] = useState<Boolean>(false);
   const [conversation, setConversation] = useRecoilState(store.conversation);
-  const { endpoint } = conversation ?? {};
+  const { endpoint, conversationId } = conversation ?? {};
+  const noSettings: { [key: string]: boolean } = {
+    chatGPTBrowser: true,
+    bingAI: conversationId !== 'new',
+  };
 
   const triggerAdvancedMode = () => setAdvancedMode((prev) => !prev);
 

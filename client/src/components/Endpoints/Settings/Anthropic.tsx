@@ -21,8 +21,8 @@ const optionText =
 
 import store from '~/store';
 
-export default function Settings({ conversation, setOption }: SettingsProps) {
-  const { readonly, model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens } =
+export default function Settings({ conversation, setOption, readonly }: SettingsProps) {
+  const { model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens } =
     conversation;
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);

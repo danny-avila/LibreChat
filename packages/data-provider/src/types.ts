@@ -98,7 +98,6 @@ export type TConversation = {
   tools?: TPlugin[];
   createdAt: string;
   updatedAt: string;
-  readonly?: boolean;
   // google only
   systemMessage?: string;
   modelLabel?: string;
@@ -292,6 +291,7 @@ export type SettingsProps = {
   conversation: TConversation;
   setOption: SetOption;
   edit?: boolean;
+  readonly?: boolean;
 };
 
 export enum Side {

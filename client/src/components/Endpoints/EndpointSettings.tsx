@@ -3,15 +3,14 @@ import GoogleSettings from './Google/Settings.jsx';
 import PluginsSettings from './Plugins/Settings.jsx';
 
 // A preset dialog to show readonly preset values.
-const Settings = ({ preset, ...props }) => {
+const Settings = ({ preset, readonly, setOption }) => {
   const renderSettings = () => {
     const { endpoint } = preset || {};
-    const placeholderFn = () => () => {};
 
     if (endpoint === 'openAI' || endpoint === 'azureOpenAI') {
-      return <OpenAISettings conversation={preset} setOption={placeholderFn} {...props} />;
+      return <OpenAISettings conversation={preset} setOption={setOption} readonly={false} />;
     } else if (endpoint === 'bingAI') {
-      return <BingAISettings conversation={preset} setOption={placeholderFn} {...props} />;
+      return <BingAISettings conversation={preset} setOption={setOption} readonly={readonly} />;
     } else if (endpoint === 'google') {
       return (
         <GoogleSettings
@@ -24,12 +23,17 @@ const Settings = ({ preset, ...props }) => {
           topK={preset?.topK}
           maxOutputTokens={preset?.maxOutputTokens}
           edit={true}
-          {...props}
+          // {...props}
         />
       );
     } else if (endpoint === 'anthropic') {
       return (
-        <AnthropicSettings conversation={preset} setOption={placeholderFn} edit={true} {...props} />
+        <AnthropicSettings
+          conversation={preset}
+          setOption={setOption}
+          edit={true}
+          readonly={readonly}
+        />
       );
     } else if (endpoint === 'gptPlugins') {
       return (
@@ -41,7 +45,7 @@ const Settings = ({ preset, ...props }) => {
           topP={preset?.top_p}
           freqP={preset?.presence_penalty}
           presP={preset?.frequency_penalty}
-          {...props}
+          // {...props}
         />
       );
     } else {
