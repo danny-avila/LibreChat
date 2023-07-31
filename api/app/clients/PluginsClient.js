@@ -270,15 +270,6 @@ Only respond with your conversational reply to the following User Message:
     if (this.options.debug) {
       console.debug('Loaded agent.');
     }
-
-    onAgentAction(
-      {
-        tool: 'self-reflection',
-        toolInput: `Processing the User's message:\n"${message}"`,
-        log: '',
-      },
-      true,
-    );
   }
 
   async executorCall(message, signal) {
