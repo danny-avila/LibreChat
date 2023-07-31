@@ -32,10 +32,10 @@ export const getTranslations = (langCode: string) => {
   if (langCode === 'it') {
     return Italy;
   }
-  if (langCode === 'Br') {
+  if (langCode === 'br') {
     return Portuguese;
   }
-  if (langCode === 'Es') {
+  if (langCode === 'es') {
     return Spanish;
   }
   // === add conditionals here for additional languages here === //
