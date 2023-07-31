@@ -6,6 +6,7 @@ import { Login, Registration, RequestPasswordReset, ResetPassword } from '../com
 import { AuthContextProvider } from '../hooks/AuthContext';
 import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
 import Leaderboard from '~/components/ui/Leaderboard';
+import Homepage from '~/components/ui/Homepage';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -53,6 +54,10 @@ export const router = createBrowserRouter([
           {
             path: 'leaderboard',
             element: <Leaderboard />
+          },
+          {
+            path: 'home',
+            element: <Homepage />
           }
         ]
       }

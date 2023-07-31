@@ -20,6 +20,7 @@ import LeaderboardIcon from '../svg/LeaderboardIcon';
 import NotebookIcon from '../svg/NotebookIcon';
 import { useNavigate } from 'react-router-dom';
 import ChatWidget from '../Input/ChatWidgetMenu';
+import HomeIcon from '../svg/HomeIcon';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
 // const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -191,6 +192,7 @@ export default function Nav({ navVisible, setNavVisible }) {
     setWidget(widget === 'wa' ? '' : 'wa');
   }
   const openLeaderboardHandler = () => navigate('/leaderboard');
+  const openHomepageHandler = () => navigate('/home');
 
   useEffect(() => {
     if (user) setRefLink(mode === 'dev' ? `http://localhost:3090/register/${user.id}` : `chat.aitok.us/register/${user.id}`);
@@ -249,6 +251,12 @@ export default function Nav({ navVisible, setNavVisible }) {
                   />
                 </div>
               </div>
+              <NavLink
+                className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                svg={() => <HomeIcon />}
+                text={navigator.languages[0] === 'zh-CN' ? '主页' : 'Homepage'}
+                clickHandler={ openHomepageHandler }
+              />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <NotebookIcon />}
