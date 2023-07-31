@@ -69,7 +69,7 @@ export default {
   com_auth_click: 'Click',
   com_auth_here: 'HERE',
   com_auth_to_reset_your_password: 'to reset your password.',
-  com_auth_reset_password_link_sent: 'Password Reset Link Sent',
+  com_auth_reset_password_link_sent: 'Email Sent',
   com_auth_reset_password_email_sent:
     'An email has been sent to you with further instructions to reset your password.',
   com_auth_error_reset_password:

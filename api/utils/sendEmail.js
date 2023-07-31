@@ -6,8 +6,6 @@ const path = require('path');
 const sendEmail = async (email, subject, payload, template) => {
   try {
     const transporter = nodemailer.createTransport({
-      // host: process.env.EMAIL_SERVICE,
-      // port: 465,
       service: process.env.EMAIL_SERVICE,
       auth: {
         user: process.env.EMAIL_USERNAME,
