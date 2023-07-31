@@ -3,7 +3,7 @@ import { CheckIcon } from 'lucide-react';
 import { ThemeContext } from '~/hooks/ThemeContext';
 import React, { useState, useContext, useEffect, useCallback } from 'react';
 import { useClearConversationsMutation } from 'librechat-data-provider';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useRecoilValue, useRecoilState } from 'recoil';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
 
@@ -97,8 +97,7 @@ function General() {
   const { theme, setTheme } = useContext(ThemeContext);
   const clearConvosMutation = useClearConversationsMutation();
   const [confirmClear, setConfirmClear] = useState(false);
-  const langcode = useRecoilValue(store.lang);
-  const setLangcode = useSetRecoilState(store.lang);
+  const [langcode, setLangcode] = useRecoilState(store.lang);
   const { newConversation } = store.useConversation();
   const { refreshConversations } = store.useConversations();
 
