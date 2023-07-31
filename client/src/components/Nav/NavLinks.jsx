@@ -4,7 +4,6 @@ import { useRecoilValue } from 'recoil';
 import SearchBar from './SearchBar';
 import TrashIcon from '../svg/TrashIcon';
 import GearIcon from '../svg/GearIcon';
-import UserIcon from '../svg/UserIcon';
 import Settings from './Settings';
 import { Download } from 'lucide-react';
 import NavLink from './NavLink';
@@ -102,14 +101,14 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                     clickHandler={() => setShowClearConvos(true)}
                   />
                 </Menu.Item>
-                <Menu.Item as="div">
+                {/* <Menu.Item as="div">
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <UserIcon />}
                     text={navigator.languages[0] === 'zh-CN' ? '个人资料' : 'Profile'}
                     clickHandler={() => setShowProfile(true)}
                   />
-                </Menu.Item>
+                </Menu.Item> */}
                 <Menu.Item as="div">
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
