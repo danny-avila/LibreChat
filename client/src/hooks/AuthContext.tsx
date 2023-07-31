@@ -187,7 +187,12 @@ const AuthContextProvider = ({
   
     const handleLogout = () => {
       console.log('logout event received');
-      logout();  // This should clear user context and do necessary cleanup
+      setUserContext({
+        token: undefined,
+        isAuthenticated: false,
+        user: undefined,
+        redirect: '/login',
+      });
     };
 
     console.log('Auth Event', event); 
