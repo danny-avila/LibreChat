@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { useEffect, useState } from 'react';
-import Settings from './Settings';
+import EndpointSettings from './EndpointSettings';
 import Examples from './Google/Examples.jsx';
 import exportFromJSON from 'export-from-json';
 import AgentSettings from './Plugins/AgentSettings.jsx';
@@ -238,7 +238,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
             </div>
             <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
             <div className="w-full p-0">
-              {shouldShowSettings && <Settings preset={preset} setOption={setOption} />}
+              {shouldShowSettings && <EndpointSettings preset={preset} setOption={setOption} />}
               {preset?.endpoint === 'google' &&
                 showExamples &&
                 !preset?.model?.startsWith('codechat-') && (

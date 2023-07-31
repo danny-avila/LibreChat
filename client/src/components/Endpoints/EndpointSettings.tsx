@@ -1,8 +1,6 @@
-import OpenAISettings from './OpenAI/Settings';
-import BingAISettings from './BingAI/Settings.jsx';
+import { OpenAISettings, BingAISettings, AnthropicSettings } from './Settings';
 import GoogleSettings from './Google/Settings.jsx';
 import PluginsSettings from './Plugins/Settings.jsx';
-import AnthropicSettings from './Anthropic/Settings';
 
 // A preset dialog to show readonly preset values.
 const Settings = ({ preset, ...props }) => {
@@ -13,15 +11,7 @@ const Settings = ({ preset, ...props }) => {
     if (endpoint === 'openAI' || endpoint === 'azureOpenAI') {
       return <OpenAISettings conversation={preset} setOption={placeholderFn} {...props} />;
     } else if (endpoint === 'bingAI') {
-      return (
-        <BingAISettings
-          toneStyle={preset?.toneStyle}
-          context={preset?.context}
-          systemMessage={preset?.systemMessage}
-          jailbreak={preset?.jailbreak}
-          {...props}
-        />
-      );
+      return <BingAISettings conversation={preset} setOption={placeholderFn} {...props} />;
     } else if (endpoint === 'google') {
       return (
         <GoogleSettings

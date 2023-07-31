@@ -9,7 +9,7 @@ import {
   HoverCard,
   HoverCardTrigger,
 } from '~/components/ui';
-import OptionHover from './OptionHover';
+import OptionHover from './OptionHover/OpenAI';
 import { cn } from '~/utils/';
 import { localize } from '~/localization/Translation';
 import { SettingsProps, Side } from 'librechat-data-provider';
@@ -22,7 +22,7 @@ const optionText =
 
 import store from '~/store';
 
-function Settings({ conversation, setOption }: SettingsProps) {
+export default function Settings({ conversation, setOption }: SettingsProps) {
   const {
     readonly,
     model,
@@ -276,5 +276,3 @@ function Settings({ conversation, setOption }: SettingsProps) {
     </div>
   );
 }
-
-export default Settings;

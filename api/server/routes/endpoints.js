@@ -158,7 +158,10 @@ router.get('/', async function (req, res) {
       }
       : false;
   const bingAI = process.env.BINGAI_TOKEN
-    ? { userProvide: process.env.BINGAI_TOKEN == 'user_provided' }
+    ? {
+      availableModels: ['BingAI', 'Sydney'],
+      userProvide: process.env.BINGAI_TOKEN == 'user_provided',
+    }
     : false;
   const chatGPTBrowser = process.env.CHATGPT_TOKEN
     ? {

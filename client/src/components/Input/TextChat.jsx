@@ -1,12 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import SubmitButton from './SubmitButton';
-// import OpenAIOptions from './Options/OpenAIOptions';
-// import PluginsOptions from './PluginsOptions';
-// import ChatGPTOptions from './ChatGPTOptions';
-// import BingAIOptions from './BingAIOptions';
-// import GoogleOptions from './GoogleOptions';
-// import AnthropicOptions from './AnthropicOptions';
 import OptionsBar from './OptionsBar';
 import NewConversationMenu from './NewConversationMenu';
 import AdjustToneButton from './AdjustToneButton';
@@ -31,7 +25,6 @@ export default function TextChat({ isSearchView = false }) {
   const disabled = false;
 
   const { ask, stopGenerating } = useMessageHandler();
-  // eslint-disable-next-line no-unused-vars
   const [showBingToneSetting, setShowBingToneSetting] = useState(false);
 
   const isNotAppendable = latestMessage?.unfinished & !isSubmitting || latestMessage?.error;
@@ -142,7 +135,7 @@ export default function TextChat({ isSearchView = false }) {
       <div className="fixed bottom-0 left-0 w-full border-transparent bg-gradient-to-b from-transparent via-white to-white pt-6 dark:border-white/20 dark:via-gray-800 dark:to-gray-800 md:absolute">
         <div className="relative py-2 md:mb-[-16px] md:py-4 lg:mb-[-32px]">
           <span className="flex w-full flex-col items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
-            <OptionsBar />
+            <OptionsBar showBingTones={showBingToneSetting} />
           </span>
         </div>
         <div className="input-panel md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient relative w-full border-t bg-white py-2 dark:border-white/20 dark:bg-gray-800 md:border-t-0 md:border-transparent md:bg-transparent md:dark:border-transparent md:dark:bg-transparent">

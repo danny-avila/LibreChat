@@ -1,41 +1,44 @@
 import { useEffect, useState } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { Label } from '~/components/ui/Label.tsx';
-import { Checkbox } from '~/components/ui/Checkbox.tsx';
-import SelectDropDown from '../../ui/SelectDropDown';
-import { cn } from '~/utils/';
+import { Label, Checkbox, SelectDropDown } from '~/components/ui';
+import {
+  useUpdateTokenCountMutation,
+  TUpdateTokenCountResponse,
+  SettingsProps,
+} from 'librechat-data-provider';
 import useDebounce from '~/hooks/useDebounce';
-import { useUpdateTokenCountMutation } from 'librechat-data-provider';
 import { useRecoilValue } from 'recoil';
+import { cn } from '~/utils/';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
 
 const defaultTextProps =
   'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
 
-function Settings(props) {
-  const { readonly, context, systemMessage, jailbreak, toneStyle, setOption } = props;
+export default function Settings({ conversation, setOption }: SettingsProps) {
   const [tokenCount, setTokenCount] = useState(0);
+  const lang = useRecoilValue(store.lang);
+  const { readonly, context, systemMessage, jailbreak, toneStyle } = conversation;
+  const debouncedContext = useDebounce(context?.trim() ?? '', 250);
+  const updateTokenCountMutation = useUpdateTokenCountMutation();
   const showSystemMessage = jailbreak;
+
   const setContext = setOption('context');
   const setSystemMessage = setOption('systemMessage');
   const setJailbreak = setOption('jailbreak');
-  const setToneStyle = (value) => setOption('toneStyle')(value.toLowerCase());
-  const debouncedContext = useDebounce(context, 250);
-  const updateTokenCountMutation = useUpdateTokenCountMutation();
-  const lang = useRecoilValue(store.lang);
+  const setToneStyle = (value: string) => setOption('toneStyle')(value.toLowerCase());
 
   useEffect(() => {
-    if (!debouncedContext || debouncedContext.trim() === '') {
+    if (!debouncedContext || debouncedContext === '') {
       setTokenCount(0);
       return;
     }
 
-    const handleTextChange = (context) => {
+    const handleTextChange = (context: string) => {
       updateTokenCountMutation.mutate(
         { text: context },
         {
-          onSuccess: (data) => {
+          onSuccess: (data: TUpdateTokenCountResponse) => {
             setTokenCount(data.count);
           },
         },
@@ -59,8 +62,8 @@ function Settings(props) {
             </Label>
             <SelectDropDown
               id="toneStyle-dropdown"
-              title={null}
-              value={`${toneStyle.charAt(0).toUpperCase()}${toneStyle.slice(1)}`}
+              title={''}
+              value={`${toneStyle?.charAt(0).toUpperCase()}${toneStyle?.slice(1)}`}
               setValue={setToneStyle}
               availableValues={['Creative', 'Fast', 'Balanced', 'Precise']}
               disabled={readonly}
@@ -80,7 +83,7 @@ function Settings(props) {
               id="context"
               disabled={readonly}
               value={context || ''}
-              onChange={(e) => setContext(e.target.value || null)}
+              onChange={(e) => setContext(e.target.value ?? null)}
               placeholder={localize(lang, 'com_endpoint_bing_context_placeholder')}
               className={cn(
                 defaultTextProps,
@@ -140,7 +143,7 @@ function Settings(props) {
                 id="systemMessage"
                 disabled={readonly}
                 value={systemMessage || ''}
-                onChange={(e) => setSystemMessage(e.target.value || null)}
+                onChange={(e) => setSystemMessage(e.target.value ?? null)}
                 placeholder={localize(lang, 'com_endpoint_bing_system_message_placeholder')}
                 className={cn(
                   defaultTextProps,
@@ -154,5 +157,3 @@ function Settings(props) {
     </div>
   );
 }
-
-export default Settings;

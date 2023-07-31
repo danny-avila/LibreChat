@@ -1,5 +1,6 @@
 import React from 'react';
 import OpenAI from './OpenAI';
+import BingAI from './BingAI';
 import ChatGPT from './ChatGPT';
 import Anthropic from './Anthropic';
 import { useRecoilValue } from 'recoil';
@@ -10,11 +11,12 @@ type OptionComponentType = React.FC<ModelSelectProps>;
 
 const optionComponents: { [key: string]: OptionComponentType } = {
   openAI: OpenAI,
+  bingAI: BingAI,
   anthropic: Anthropic,
   chatGPTBrowser: ChatGPT,
 };
 
-export default function ModelSelect({ conversation, setOption }: SelectProps) {
+export default function ModelSelect({ conversation, setOption, showBingTones }: SelectProps) {
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   if (!conversation?.endpoint) {
     return null;
@@ -28,5 +30,18 @@ export default function ModelSelect({ conversation, setOption }: SelectProps) {
     return null;
   }
 
-  return <OptionComponent conversation={conversation} setOption={setOption} models={models} />;
+  let extraProps = {};
+  if (endpoint === 'bingAI') {
+    console.log('bingAI, showBingTones:', showBingTones);
+    extraProps = { showBingTones };
+  }
+
+  return (
+    <OptionComponent
+      conversation={conversation}
+      setOption={setOption}
+      models={models}
+      {...extraProps}
+    />
+  );
 }

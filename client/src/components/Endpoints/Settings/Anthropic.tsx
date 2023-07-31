@@ -10,7 +10,7 @@ import {
   HoverCardTrigger,
   SelectDropDown,
 } from '~/components/ui';
-import OptionHover from './OptionHover';
+import OptionHover from './OptionHover/Anthropic';
 import { SettingsProps, Side } from 'librechat-data-provider';
 import { cn } from '~/utils/';
 const defaultTextProps =
@@ -21,7 +21,7 @@ const optionText =
 
 import store from '~/store';
 
-function Settings({ conversation, setOption }: SettingsProps) {
+export default function Settings({ conversation, setOption }: SettingsProps) {
   const { readonly, model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens } =
     conversation;
 
@@ -242,5 +242,3 @@ function Settings({ conversation, setOption }: SettingsProps) {
     </div>
   );
 }
-
-export default Settings;

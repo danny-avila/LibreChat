@@ -100,6 +100,7 @@ export type TConversation = {
   updatedAt: string;
   readonly?: boolean;
   // google only
+  systemMessage?: string;
   modelLabel?: string;
   examples?: TExample[];
   // for azureOpenAI, openAI only
@@ -285,21 +286,12 @@ export type File = {
   size: number;
 };
 
-export type SetOption = (param: number | string) => (newValue: number | string) => void;
-
-export type SelectProps = {
-  conversation: TConversation | null;
-  setOption: SetOption;
-};
+export type SetOption = (param: number | string) => (newValue: number | string | boolean) => void;
 
 export type SettingsProps = {
   conversation: TConversation;
   setOption: SetOption;
   edit?: boolean;
-};
-
-export type ModelSelectProps = SettingsProps & {
-  models: string[];
 };
 
 export enum Side {
@@ -313,3 +305,17 @@ export type OptionHoverProps = {
   type: string;
   side: Side;
 };
+
+export type OptionsBarProps = {
+  showBingTones?: boolean;
+};
+
+export type SelectProps = OptionsBarProps & {
+  conversation: TConversation | null;
+  setOption: SetOption;
+};
+
+export type ModelSelectProps = OptionsBarProps &
+  SettingsProps & {
+    models: string[];
+  };

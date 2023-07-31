@@ -3,9 +3,9 @@ import { useEffect, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Dialog, DialogButton, DialogTemplate } from '~/components';
 import SaveAsPresetDialog from './SaveAsPresetDialog';
+import EndpointSettings from './EndpointSettings';
 import cleanupPreset from '~/utils/cleanupPreset';
 import { alternateName } from '~/utils';
-import Settings from './Settings';
 
 import store from '~/store';
 import { localize } from '~/localization/Translation';
@@ -53,7 +53,7 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
           main={
             <div className="flex w-full flex-col items-center gap-2">
               <div className="w-full p-0">
-                <Settings preset={preset} readonly={true} setOption={setOption} />
+                <EndpointSettings preset={preset} readonly={true} setOption={setOption} />
               </div>
             </div>
           }

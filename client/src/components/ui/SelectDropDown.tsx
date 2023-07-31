@@ -4,6 +4,7 @@ import { Listbox, Transition } from '@headlessui/react';
 import { cn } from '~/utils/';
 
 type SelectDropDownProps = {
+  id?: string;
   title?: string;
   value: string;
   disabled?: boolean;
@@ -28,16 +29,20 @@ function SelectDropDown({
   subContainerClassName,
   className,
 }: SelectDropDownProps) {
+  const transitionProps = { className: 'top-full mt-3' };
+  if (showAbove) {
+    transitionProps.className = 'bottom-full mb-3';
+  }
   return (
-    <div className={cn('flex items-center justify-center gap-2', containerClassName)}>
-      <div className={cn('relative w-full', subContainerClassName)}>
+    <div className={cn('flex items-center justify-center gap-2', containerClassName ?? '')}>
+      <div className={cn('relative w-full', subContainerClassName ?? '')}>
         <Listbox value={value} onChange={setValue} disabled={disabled}>
           {({ open }) => (
             <>
               <Listbox.Button
                 className={cn(
                   'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:border-green-600 focus:outline-none focus:ring-1 focus:ring-green-600 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
-                  className,
+                  className ?? '',
                 )}
               >
                 {' '}
@@ -87,7 +92,7 @@ function SelectDropDown({
                 leave="transition ease-in duration-100"
                 leaveFrom="opacity-100"
                 leaveTo="opacity-0"
-                className={showAbove ? 'bottom-full mb-3' : 'top-full mt-3'}
+                {...transitionProps}
               >
                 <Listbox.Options className="absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%]">
                   {availableValues.map((option: string, i: number) => (

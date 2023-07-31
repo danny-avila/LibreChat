@@ -2,18 +2,18 @@ import { useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import { SaveAsPresetDialog, EndpointOptionsPopover } from '~/components/Endpoints';
-import Settings from './Settings';
-import { ModelSelect } from './ModelSelect';
 import { Button } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
-import { SetOption } from 'librechat-data-provider';
+import { SetOption, OptionsBarProps } from 'librechat-data-provider';
+import { ModelSelect } from './ModelSelect';
+import Settings from './Settings';
 import store from '~/store';
 
 const noSettings: { [key: string]: boolean } = {
   chatGPTBrowser: true,
 };
 
-function OptionsBar() {
+function OptionsBar({ showBingTones }: OptionsBarProps) {
   const [advancedMode, setAdvancedMode] = useState<Boolean>(false);
   const [saveAsDialogShow, setSaveAsDialogShow] = useState<Boolean>(false);
   const [conversation, setConversation] = useRecoilState(store.conversation);
@@ -46,7 +46,11 @@ function OptionsBar() {
           (!advancedMode ? ' show' : '')
         }
       >
-        <ModelSelect conversation={conversation} setOption={setOption} />
+        <ModelSelect
+          conversation={conversation}
+          setOption={setOption}
+          showBingTones={showBingTones}
+        />
         {endpoint && !noSettings[endpoint] && (
           <Button
             type="button"

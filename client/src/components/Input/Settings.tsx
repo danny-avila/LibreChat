@@ -1,11 +1,16 @@
 import React from 'react';
-import { OpenAISettings, AnthropicSettings } from '~/components/Endpoints';
+import {
+  OpenAISettings,
+  BingAISettings,
+  AnthropicSettings,
+} from '~/components/Endpoints/Settings/';
 import { SelectProps, SettingsProps } from 'librechat-data-provider';
 
 type OptionComponentType = React.FC<SettingsProps>;
 
 const optionComponents: { [key: string]: OptionComponentType } = {
   openAI: OpenAISettings,
+  bingAI: BingAISettings,
   anthropic: AnthropicSettings,
 };
 
