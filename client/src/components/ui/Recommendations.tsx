@@ -69,9 +69,9 @@ export default function Recommendations({ type: leaderboardType }: {type: string
     <>
       <h1
         id="landing-title"
-        className="mb-5 ml-auto mr-auto mt-3 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-8 md:mt-[5vh]"
+        className="mb-3 ml-auto mr-auto mt-1 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-4 md:mt-[1vh]"
       >
-        {leaderboardType === 'recent' ? '看看其他用户最近都在问些什么' : '看看最近热门的话题'}
+        {conversation?.title}
       </h1>
       <div className="dark:gpt-dark-gray mb-32 h-auto md:mb-48" ref={screenshotTargetRef}>
         <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
