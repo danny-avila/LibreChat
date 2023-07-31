@@ -168,29 +168,18 @@ select {
   text-align: right;
 }
 
-.openAIOptions-simple-container {
+.options-bar {
   pointer-events: none;
   opacity: 0;
   transition: all 0.5s ease-in-out;
 }
 
-.openAIOptions-simple-container.show {
+.options-bar.full-opacity {
   pointer-events: fill;
   opacity: 1;
 }
 
-.pluginOptions {
-  pointer-events: none;
-  opacity: 0;
-  transition: all 0.5s ease-in-out;
-}
-
-.pluginOptions.full-opacity {
-  pointer-events: fill;
-  opacity: 1;
-}
-
-.pluginOptions.show {
+.options-bar.show {
   pointer-events: fill;
   opacity: 0.3;
 }

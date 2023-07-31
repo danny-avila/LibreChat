@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Settings2 } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { SaveAsPresetDialog, EndpointOptionsPopover } from '~/components/Endpoints';
@@ -11,10 +11,22 @@ import Settings from './Settings';
 import store from '~/store';
 
 function OptionsBar({ showBingTones }: OptionsBarProps) {
+  const messagesTree = useRecoilValue(store.messagesTree);
   const [advancedMode, setAdvancedMode] = useState<boolean>(false);
   const [saveAsDialogShow, setSaveAsDialogShow] = useState<boolean>(false);
+  const [opacityClass, setOpacityClass] = useState('full-opacity');
   const conversation = useRecoilValue(store.conversation);
   const { setOption } = useSetOptions();
+
+  useEffect(() => {
+    if (advancedMode) {
+      return;
+    } else if (messagesTree?.length >= 1) {
+      setOpacityClass('show');
+    } else {
+      setOpacityClass('full-opacity');
+    }
+  }, [messagesTree, advancedMode]);
 
   const { endpoint, conversationId } = conversation ?? {};
   const noSettings: { [key: string]: boolean } = {
@@ -40,9 +52,24 @@ function OptionsBar({ showBingTones }: OptionsBarProps) {
     <>
       <div
         className={
-          'openAIOptions-simple-container flex w-full flex-wrap items-center justify-center gap-2' +
-          (!advancedMode ? ' show' : '')
+          'options-bar flex w-full flex-wrap items-center justify-center gap-2' +
+          (!advancedMode ? opacityClass : '')
         }
+        onMouseEnter={() => {
+          if (advancedMode) {
+            return;
+          }
+          setOpacityClass('full-opacity');
+        }}
+        onMouseLeave={() => {
+          if (advancedMode) {
+            return;
+          }
+          if (!messagesTree || messagesTree.length === 0) {
+            return;
+          }
+          setOpacityClass('show');
+        }}
       >
         <ModelSelect
           conversation={conversation}
