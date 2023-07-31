@@ -256,7 +256,7 @@ export default function MessageHandler() {
       setIsSubmitting(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [submission, token]);
+  }, [submission]);
 
   return null;
 }
