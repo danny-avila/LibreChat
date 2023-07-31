@@ -1,4 +1,3 @@
-import { cn } from '~/utils/';
 import { useRecoilValue } from 'recoil';
 import TextareaAutosize from 'react-textarea-autosize';
 import {
@@ -12,11 +11,7 @@ import {
 } from '~/components';
 import OptionHover from './OptionHover';
 import { localize } from '~/localization/Translation';
-import { defaultTextProps } from '~/utils/';
-
-const optionText =
-  'p-0 shadow-none text-right pr-1 h-8 border-transparent focus:ring-[#10a37f] focus:ring-offset-0 focus:ring-opacity-100 hover:bg-gray-800/10 dark:hover:bg-white/10 focus:bg-gray-800/10 dark:focus:bg-white/10 transition-colors';
-
+import { cn, defaultTextProps, optionText } from '~/utils/';
 import store from '~/store';
 
 function Settings(props) {

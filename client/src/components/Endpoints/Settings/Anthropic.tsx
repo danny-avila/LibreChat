@@ -12,11 +12,7 @@ import {
 } from '~/components/ui';
 import OptionHover from './OptionHover/Anthropic';
 import { SettingsProps, Side } from 'librechat-data-provider';
-import { cn, defaultTextProps } from '~/utils/';
-
-const optionText =
-  'p-0 shadow-none text-right pr-1 h-8 border-transparent focus:ring-[#10a37f] focus:ring-offset-0 focus:ring-opacity-100 hover:bg-gray-800/10 dark:hover:bg-white/10 focus:bg-gray-800/10 dark:focus:bg-white/10 transition-colors';
-
+import { cn, defaultTextProps, optionText } from '~/utils/';
 import store from '~/store';
 
 export default function Settings({ conversation, setOption, readonly }: SettingsProps) {

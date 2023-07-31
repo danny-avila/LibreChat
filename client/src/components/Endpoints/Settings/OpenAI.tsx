@@ -10,13 +10,9 @@ import {
   HoverCardTrigger,
 } from '~/components/ui';
 import OptionHover from './OptionHover/OpenAI';
-import { cn, defaultTextProps } from '~/utils/';
+import { cn, defaultTextProps, optionText } from '~/utils/';
 import { localize } from '~/localization/Translation';
 import { SettingsProps, Side } from 'librechat-data-provider';
-
-const optionText =
-  'p-0 shadow-none text-right pr-1 h-8 border-transparent focus:ring-[#10a37f] focus:ring-offset-0 focus:ring-opacity-100 hover:bg-gray-800/10 dark:hover:bg-white/10 focus:bg-gray-800/10 dark:focus:bg-white/10 transition-colors';
-
 import store from '~/store';
 
 export default function Settings({ conversation, setOption, readonly }: SettingsProps) {

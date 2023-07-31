@@ -8,12 +8,8 @@ import { Slider } from '~/components/ui/Slider.tsx';
 import { InputNumber } from '~/components/ui/InputNumber.tsx';
 import OptionHover from './OptionHover';
 import { HoverCard, HoverCardTrigger } from '~/components/ui/HoverCard.tsx';
-import { cn, defaultTextProps } from '~/utils/';
+import { cn, defaultTextProps, optionText } from '~/utils/';
 import { localize } from '~/localization/Translation';
-
-const optionText =
-  'p-0 shadow-none text-right pr-1 h-8 border-transparent focus:ring-[#10a37f] focus:ring-offset-0 focus:ring-opacity-100 hover:bg-gray-800/10 dark:hover:bg-white/10 focus:bg-gray-800/10 dark:focus:bg-white/10 transition-colors';
-
 import store from '~/store';
 
 function Settings(props) {
