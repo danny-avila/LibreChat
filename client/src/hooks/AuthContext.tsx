@@ -173,6 +173,24 @@ const AuthContextProvider = ({
  //   if (token)
  //   silentRefresh();
  // }, [token, silentRefresh]);
+
+  useEffect(() => {
+    const handleTokenUpdate = (event) => {
+      const newToken = event.detail;
+      setUserContext({
+        token: newToken,
+        isAuthenticated: true, // or false depending on your logic
+        user: user, // assuming you have access to the current user
+        // don't specify redirect here, as the user should stay on the same page
+      });
+    };
+  
+    window.addEventListener('tokenUpdated', handleTokenUpdate);
+  
+    return () => {
+      window.removeEventListener('tokenUpdated', handleTokenUpdate);
+    };
+  }, [setUserContext, user]);
   
   // Make the provider update only when it should
   const memoedValue = useMemo(
