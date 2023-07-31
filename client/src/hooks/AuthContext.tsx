@@ -175,8 +175,8 @@ const AuthContextProvider = ({
  // }, [token, silentRefresh]);
 
   useEffect(() => {
-    console.log('Received event:', event.type, 'with detail:', event.detail);
     const handleTokenUpdate = (event) => {
+      console.log('tokenUpdated event received event');
       const newToken = event.detail;
       setUserContext({
         token: newToken,
@@ -186,7 +186,7 @@ const AuthContextProvider = ({
     };
   
     const handleLogout = () => {
-      console.log('Received event:', event.type, 'with detail:', event.detail);
+      console.log('logout event received');
       logout();  // This should clear user context and do necessary cleanup
     };
 
