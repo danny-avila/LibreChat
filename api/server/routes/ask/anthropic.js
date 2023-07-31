@@ -32,10 +32,10 @@ router.post('/', requireJwtAuth, async (req, res) => {
     token: req.body?.token ?? null,
     modelOptions: {
       model: req.body?.model ?? 'claude-1',
-      temperature: req.body?.temperature ?? 0.7,
+      temperature: req.body?.temperature ?? 1,
       maxOutputTokens: req.body?.maxOutputTokens ?? 1024,
       topP: req.body?.topP ?? 0.7,
-      topK: req.body?.topK ?? 40,
+      topK: req.body?.topK ?? 5,
     },
   };
 

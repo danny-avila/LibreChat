@@ -1,8 +1,9 @@
 import React from 'react';
 import { HoverCardPortal, HoverCardContent } from '~/components/ui';
 import { useRecoilValue } from 'recoil';
-import store from '~/store';
 import { localize } from '~/localization/Translation';
+import { OptionHoverProps } from 'librechat-data-provider';
+import store from '~/store';
 
 const types = {
   temp: 'com_endpoint_openai_temp',
@@ -12,7 +13,7 @@ const types = {
   pres: 'com_endpoint_openai_pres',
 };
 
-function OptionHover({ type, side }) {
+function OptionHover({ type, side }: OptionHoverProps) {
   const lang = useRecoilValue(store.lang);
 
   return (

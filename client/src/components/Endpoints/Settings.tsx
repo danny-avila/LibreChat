@@ -2,15 +2,16 @@ import OpenAISettings from './OpenAI/Settings';
 import BingAISettings from './BingAI/Settings.jsx';
 import GoogleSettings from './Google/Settings.jsx';
 import PluginsSettings from './Plugins/Settings.jsx';
-import AnthropicSettings from './Anthropic/Settings.jsx';
+import AnthropicSettings from './Anthropic/Settings';
 
 // A preset dialog to show readonly preset values.
 const Settings = ({ preset, ...props }) => {
   const renderSettings = () => {
     const { endpoint } = preset || {};
+    const placeholderFn = () => () => {};
 
     if (endpoint === 'openAI' || endpoint === 'azureOpenAI') {
-      return <OpenAISettings conversation={preset} setOption={() => () => {}} {...props} />;
+      return <OpenAISettings conversation={preset} setOption={placeholderFn} {...props} />;
     } else if (endpoint === 'bingAI') {
       return (
         <BingAISettings
@@ -38,17 +39,7 @@ const Settings = ({ preset, ...props }) => {
       );
     } else if (endpoint === 'anthropic') {
       return (
-        <AnthropicSettings
-          model={preset?.model}
-          modelLabel={preset?.modelLabel}
-          promptPrefix={preset?.promptPrefix}
-          temperature={preset?.temperature}
-          topP={preset?.topP}
-          topK={preset?.topK}
-          maxOutputTokens={preset?.maxOutputTokens}
-          edit={true}
-          {...props}
-        />
+        <AnthropicSettings conversation={preset} setOption={placeholderFn} edit={true} {...props} />
       );
     } else if (endpoint === 'gptPlugins') {
       return (

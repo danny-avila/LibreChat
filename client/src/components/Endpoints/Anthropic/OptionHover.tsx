@@ -1,5 +1,6 @@
 import React from 'react';
-import { HoverCardPortal, HoverCardContent } from '~/components/ui/HoverCard.tsx';
+import { HoverCardPortal, HoverCardContent } from '~/components/ui';
+import { OptionHoverProps } from 'librechat-data-provider';
 
 const types = {
   temp: 'Ranges from 0 to 1. Use temp closer to 0 for analytical / multiple choice, and closer to 1 for creative and generative tasks. We recommend altering this or Top P but not both.',
@@ -9,7 +10,7 @@ const types = {
     ' 	Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses.',
 };
 
-function OptionHover({ type, side }) {
+function OptionHover({ type, side }: OptionHoverProps) {
   return (
     <HoverCardPortal>
       <HoverCardContent side={side} className="w-80 ">

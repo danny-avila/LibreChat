@@ -26,7 +26,7 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
       temperature: _preset?.temperature ?? 0.2,
       maxOutputTokens: _preset?.maxOutputTokens ?? 1024,
       topP: _preset?.topP ?? 0.95,
-      topK: _preset?.topK ?? 40,
+      topK: _preset?.topK ?? 5,
       title: _preset?.title ?? 'New Preset',
     };
   } else if (endpoint === 'anthropic') {
@@ -36,10 +36,10 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
       model: _preset?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'claude-1',
       modelLabel: _preset?.modelLabel ?? null,
       promptPrefix: _preset?.promptPrefix ?? null,
-      temperature: _preset?.temperature ?? 0.7,
+      temperature: _preset?.temperature ?? 1,
       maxOutputTokens: _preset?.maxOutputTokens ?? 1024,
       topP: _preset?.topP ?? 0.7,
-      topK: _preset?.topK ?? 40,
+      topK: _preset?.topK ?? 5,
       title: _preset?.title ?? 'New Preset',
     };
   } else if (endpoint === 'bingAI') {

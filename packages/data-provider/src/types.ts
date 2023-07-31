@@ -119,6 +119,7 @@ export type TConversation = {
   clientId?: string;
   invocationId?: string;
   toneStyle?: string;
+  maxOutputTokens?: number;
 };
 
 export type TPreset = {
@@ -288,4 +289,17 @@ export type SelectProps = {
 export type SettingsProps = {
   conversation: TConversation;
   setOption: SetOption;
+  edit?: boolean;
+};
+
+export enum Side {
+  Top = 'top',
+  Right = 'right',
+  Bottom = 'bottom',
+  Left = 'left',
+}
+
+export type OptionHoverProps = {
+  type: string;
+  side: Side;
 };

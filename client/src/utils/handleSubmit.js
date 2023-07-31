@@ -58,7 +58,7 @@ const useMessageHandler = () => {
         temperature: currentConversation?.temperature ?? 0.2,
         maxOutputTokens: currentConversation?.maxOutputTokens ?? 1024,
         topP: currentConversation?.topP ?? 0.95,
-        topK: currentConversation?.topK ?? 40,
+        topK: currentConversation?.topK ?? 5,
         token: endpointsConfig[endpoint]?.userProvide ? getToken() : null,
       };
       responseSender = endpointOption.chatGptLabel ?? 'ChatGPT';
@@ -85,10 +85,10 @@ const useMessageHandler = () => {
           'claude-1',
         modelLabel: currentConversation?.modelLabel ?? null,
         promptPrefix: currentConversation?.promptPrefix ?? null,
-        temperature: currentConversation?.temperature ?? 0.7,
+        temperature: currentConversation?.temperature ?? 1,
         maxOutputTokens: currentConversation?.maxOutputTokens ?? 1024,
         topP: currentConversation?.topP ?? 0.7,
-        topK: currentConversation?.topK ?? 40,
+        topK: currentConversation?.topK ?? 5,
         token: endpointsConfig[endpoint]?.userProvide ? getToken() : null,
       };
       responseSender = 'Anthropic';
