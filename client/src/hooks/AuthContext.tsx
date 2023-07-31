@@ -179,18 +179,24 @@ const AuthContextProvider = ({
       const newToken = event.detail;
       setUserContext({
         token: newToken,
-        isAuthenticated: true, // or false depending on your logic
-        user: user, // assuming you have access to the current user
-        // don't specify redirect here, as the user should stay on the same page
+        isAuthenticated: true,
+        user: user,
       });
     };
   
+    const handleLogout = () => {
+      logout();  // This should clear user context and do necessary cleanup
+    };
+  
     window.addEventListener('tokenUpdated', handleTokenUpdate);
+    window.addEventListener('logout', handleLogout);
   
     return () => {
       window.removeEventListener('tokenUpdated', handleTokenUpdate);
+      window.removeEventListener('logout', handleLogout);
     };
-  }, [setUserContext, user]);
+  }, [setUserContext, user, logout]);
+
   
   // Make the provider update only when it should
   const memoedValue = useMemo(
