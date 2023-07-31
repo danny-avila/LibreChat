@@ -16,7 +16,7 @@ function Examples({
   removeExample,
   edit = false,
 }: ExamplesProps) {
-  const maxHeight = edit ? 'max-h-[233px]' : 'max-h-[350px]';
+  const maxHeight = edit ? 'max-h-[233px]' : 'md:h-[306px] h-[395px]';
   const lang = useRecoilValue(store.lang);
 
   return (

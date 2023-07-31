@@ -41,7 +41,7 @@ export default function Settings({ conversation, setOption, readonly }: Settings
   const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
 
   return (
-    <div className="h-[490px] overflow-y-auto md:h-[350px]">
+    <div className="h-[440px] overflow-y-auto md:h-[350px]">
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
