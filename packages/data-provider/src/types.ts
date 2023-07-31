@@ -357,3 +357,18 @@ export type UseSetOptions = {
   removeExample: () => void;
   getConversation: () => TConversation | null;
 };
+
+export type PopoverButton = {
+  label: string;
+  buttonClass: string;
+  handler: () => void;
+  icon: React.ReactNode;
+};
+
+export type EndpointOptionsPopoverProps = {
+  children: React.ReactNode;
+  visible: boolean;
+  endpoint: EModelEndpoint;
+  saveAsPreset: () => void;
+  switchToSimpleMode: () => void;
+};

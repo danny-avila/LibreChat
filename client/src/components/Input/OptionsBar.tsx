@@ -32,6 +32,10 @@ function OptionsBar({ showBingTones }: OptionsBarProps) {
     setSaveAsDialogShow(true);
   };
 
+  if (!endpoint) {
+    return null;
+  }
+
   return (
     <>
       <div
@@ -45,7 +49,7 @@ function OptionsBar({ showBingTones }: OptionsBarProps) {
           setOption={setOption}
           showBingTones={showBingTones}
         />
-        {endpoint && !noSettings[endpoint] && (
+        {!noSettings[endpoint] && (
           <Button
             type="button"
             className={cn(
@@ -59,6 +63,7 @@ function OptionsBar({ showBingTones }: OptionsBarProps) {
         )}
       </div>
       <EndpointOptionsPopover
+        endpoint={endpoint}
         visible={advancedMode}
         saveAsPreset={saveAsPreset}
         switchToSimpleMode={switchToSimpleMode}
