@@ -9,7 +9,7 @@
 
 
 1. Fork the LibreChat repository and download it using git clone https://github.com/danny-avila/LibreChat
-2. Navigate to the client\src\localization folder and open the "Translation.tsx" file
+2. Navigate to the "client\src\localization" folder and open the "Translation.tsx" file
 3. At the beginning of the code, add your language below all the others in this format:
 
 `import Language-name from './languages/** ';`
@@ -52,10 +52,29 @@ export default {
 
 ⚠️DO NOT CHANGE com_... ⚠️
 
-10. Commit your changes using git add *, git commit -m "Language translation: your-language translation" and git push.
-11. Open your repository in a browser and click on "Contribute"
+10. To add your language to the menu, open the file "client\src\components\Nav\SettingsTabs\General.tsx" and add your language to the "LangSelector" variable in the following way:
+
+```
+export const LangSelector = ({
+  //other code
+        <option value="en">{localize(lang, 'com_nav_lang_english')}</option>
+        //other languages...
+        <option value="**">{localize(lang, 'com_nav_lang_your-language-name')}</option>
+      </select>
+    </div>
+  );
+};
+```
+
+where ** is the ISO 3166 Alpha-2 code and "com_nav_lang_your-language-name" stands for the name in your language (for example com_nav_lang_english or com_nav_lang_italian)
+The only line of code to add is:
+
+`<option value="**">{localize(lang, 'com_nav_lang_your-language-name')}</option>`
+
+11. Commit your changes using git add *, git commit -m "Language translation: your-language translation" and git push.
+12. Open your repository in a browser and click on "Contribute"
 
 ![image](https://github.com/Berry-13/LibreChat/assets/81851188/ab91cf4b-1830-4419-9d0c-68fcb2fd5f5e)
 
-13. Answer all the questions, and in the "Type of Change" section, add `- [x] Translation support`
-14. Create a pull request 🎉
+14. Answer all the questions, and in the "Type of Change" section, add `- [x] Translation support`
+15. Create a pull request 🎉
