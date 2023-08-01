@@ -2,6 +2,14 @@ import React from 'react';
 import { HoverCardPortal, HoverCardContent } from '~/components/ui';
 import { OptionHoverProps } from 'librechat-data-provider';
 
+const openAI = {
+  max: 'com_endpoint_openai_max',
+  temp: 'com_endpoint_openai_temp',
+  topp: 'com_endpoint_openai_topp',
+  freq: 'com_endpoint_openai_freq',
+  pres: 'com_endpoint_openai_pres',
+};
+
 const types = {
   anthropic: {
     temp: 'Ranges from 0 to 1. Use temp closer to 0 for analytical / multiple choice, and closer to 1 for creative and generative tasks. We recommend altering this or Top P but not both.',
@@ -16,12 +24,11 @@ const types = {
     topk: 'com_endpoint_google_topk',
     maxoutputtokens: 'com_endpoint_google_maxoutputtokens',
   },
-  openAI: {
-    temp: 'com_endpoint_openai_temp',
-    max: 'com_endpoint_openai_max',
-    topp: 'com_endpoint_openai_topp',
-    freq: 'com_endpoint_openai_freq',
-    pres: 'com_endpoint_openai_pres',
+  openAI,
+  gptPlugins: {
+    func: 'com_endpoint_func_hover',
+    skip: 'com_endpoint_skip_hover',
+    ...openAI,
   },
 };
 
