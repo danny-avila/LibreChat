@@ -9,7 +9,7 @@ import {
   HoverCard,
   HoverCardTrigger,
 } from '~/components/ui';
-import OptionHover from './OptionHover/OpenAI';
+import OptionHover from './OptionHover';
 import { cn, defaultTextProps, optionText } from '~/utils/';
 import { localize } from '~/localization/Translation';
 import { SettingsProps, Side } from 'librechat-data-provider';
@@ -130,7 +130,7 @@ export default function Settings({ conversation, setOption, readonly }: Settings
               </div>
               <Slider
                 disabled={readonly}
-                value={[temperature ?? 0]}
+                value={[temperature ?? 1]}
                 onValueChange={(value) => setTemperature(value[0])}
                 doubleClickHandler={() => setTemperature(1)}
                 max={2}
@@ -139,7 +139,7 @@ export default function Settings({ conversation, setOption, readonly }: Settings
                 className="flex h-4 w-full"
               />
             </HoverCardTrigger>
-            <OptionHover type="temp" side={Side.Left} />
+            <OptionHover endpoint={conversation?.endpoint ?? ''} type="temp" side={Side.Left} />
           </HoverCard>
           <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
@@ -179,7 +179,7 @@ export default function Settings({ conversation, setOption, readonly }: Settings
                 className="flex h-4 w-full"
               />
             </HoverCardTrigger>
-            <OptionHover type="topp" side={Side.Left} />
+            <OptionHover endpoint={conversation?.endpoint ?? ''} type="topp" side={Side.Left} />
           </HoverCard>
 
           <HoverCard openDelay={300}>
@@ -220,7 +220,7 @@ export default function Settings({ conversation, setOption, readonly }: Settings
                 className="flex h-4 w-full"
               />
             </HoverCardTrigger>
-            <OptionHover type="freq" side={Side.Left} />
+            <OptionHover endpoint={conversation?.endpoint ?? ''} type="freq" side={Side.Left} />
           </HoverCard>
 
           <HoverCard openDelay={300}>
@@ -261,7 +261,7 @@ export default function Settings({ conversation, setOption, readonly }: Settings
                 className="flex h-4 w-full"
               />
             </HoverCardTrigger>
-            <OptionHover type="pres" side={Side.Left} />
+            <OptionHover endpoint={conversation?.endpoint ?? ''} type="pres" side={Side.Left} />
           </HoverCard>
         </div>
       </div>

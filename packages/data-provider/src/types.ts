@@ -315,6 +315,7 @@ export enum Side {
 }
 
 export type OptionHoverProps = {
+  endpoint: string;
   type: string;
   side: Side;
 };

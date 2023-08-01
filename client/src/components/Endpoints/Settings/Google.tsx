@@ -10,7 +10,7 @@ import {
   HoverCard,
   HoverCardTrigger,
 } from '~/components/ui';
-import OptionHover from './OptionHover/Google';
+import OptionHover from './OptionHover';
 import { SettingsProps, Side } from 'librechat-data-provider';
 import { cn, defaultTextProps, optionText } from '~/utils/';
 import { localize } from '~/localization/Translation';
@@ -132,7 +132,7 @@ export default function Settings({ conversation, setOption, readonly }: Settings
                 className="flex h-4 w-full"
               />
             </HoverCardTrigger>
-            <OptionHover type="temp" side={Side.Left} />
+            <OptionHover endpoint={conversation?.endpoint ?? ''} type="temp" side={Side.Left} />
           </HoverCard>
           {!codeChat && (
             <>
@@ -174,7 +174,7 @@ export default function Settings({ conversation, setOption, readonly }: Settings
                     className="flex h-4 w-full"
                   />
                 </HoverCardTrigger>
-                <OptionHover type="topp" side={Side.Left} />
+                <OptionHover endpoint={conversation?.endpoint ?? ''} type="topp" side={Side.Left} />
               </HoverCard>
 
               <HoverCard openDelay={300}>
@@ -215,7 +215,7 @@ export default function Settings({ conversation, setOption, readonly }: Settings
                     className="flex h-4 w-full"
                   />
                 </HoverCardTrigger>
-                <OptionHover type="topk" side={Side.Left} />
+                <OptionHover endpoint={conversation?.endpoint ?? ''} type="topk" side={Side.Left} />
               </HoverCard>
             </>
           )}
@@ -257,7 +257,11 @@ export default function Settings({ conversation, setOption, readonly }: Settings
                 className="flex h-4 w-full"
               />
             </HoverCardTrigger>
-            <OptionHover type="maxoutputtokens" side={Side.Left} />
+            <OptionHover
+              endpoint={conversation?.endpoint ?? ''}
+              type="maxoutputtokens"
+              side={Side.Left}
+            />
           </HoverCard>
         </div>
       </div>
