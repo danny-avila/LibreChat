@@ -1,6 +1,6 @@
 import English from './languages/Eng';
 import Chinese from './languages/Zh';
-import Italy from './languages/It';
+import Italian from './languages/It';
 import Portuguese from './languages/Br';
 import Spanish from './languages/Es';
 // === import additional language files here === //
@@ -30,7 +30,7 @@ export const getTranslations = (langCode: string) => {
     return Chinese;
   }
   if (langCode === 'it') {
-    return Italy;
+    return Italian;
   }
   if (langCode === 'br') {
     return Portuguese;
