@@ -7,6 +7,7 @@ const config = {
   dockerUpdate: process.argv.includes('-d'),
   useSingleComposeFile: process.argv.includes('-s'),
   useSudo: process.argv.includes('--sudo'),
+  skipGit: process.argv.includes('-g'),
 };
 
 // Set the directories
@@ -59,19 +60,21 @@ async function validateDockerRunning() {
   );
 
   await validateDockerRunning();
-  const { dockerUpdate, useSingleComposeFile: singleCompose, useSudo } = config;
+  const { dockerUpdate, useSingleComposeFile: singleCompose, useSudo, skipGit } = config;
   const sudo = useSudo ? 'sudo ' : '';
-  // Fetch latest repo
-  console.purple('Fetching the latest repo...');
-  execSync('git fetch origin', { stdio: 'inherit' });
+  if (!skipGit) {
+    // Fetch latest repo
+    console.purple('Fetching the latest repo...');
+    execSync('git fetch origin', { stdio: 'inherit' });
 
-  // Switch to main branch
-  console.purple('Switching to main branch...');
-  execSync('git checkout main', { stdio: 'inherit' });
+    // Switch to main branch
+    console.purple('Switching to main branch...');
+    execSync('git checkout main', { stdio: 'inherit' });
 
-  // Git pull origin main
-  console.purple('Pulling the latest code from main...');
-  execSync('git pull origin main', { stdio: 'inherit' });
+    // Git pull origin main
+    console.purple('Pulling the latest code from main...');
+    execSync('git pull origin main', { stdio: 'inherit' });
+  }
 
   if (dockerUpdate) {
     console.purple('Removing previously made Docker container...');
