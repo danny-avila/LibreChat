@@ -257,6 +257,7 @@ export type TStartupConfig = {
   serverDomain: string;
   registrationEnabled: boolean;
   socialLoginEnabled: boolean;
+  emailEnabled: boolean;
 };
 
 export type TRefreshTokenResponse = {
@@ -265,7 +266,8 @@ export type TRefreshTokenResponse = {
 };
 
 export type TRequestPasswordResetResponse = {
-  link: string;
+  link?: string;
+  message?: string;
 };
 
 export type File = {

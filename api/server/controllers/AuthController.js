@@ -1,4 +1,4 @@
-const { registerUser, requestPasswordReset, resetPassword } = require('../services/auth.service');
+const { registerUser, requestPasswordReset, resetPassword } = require('../services/AuthService');
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -32,10 +32,10 @@ const getUserController = async (req, res) => {
 const resetPasswordRequestController = async (req, res) => {
   try {
     const resetService = await requestPasswordReset(req.body.email);
-    if (resetService.link) {
-      return res.status(200).json(resetService);
-    } else {
+    if (resetService instanceof Error) {
       return res.status(400).json(resetService);
+    } else {
+      return res.status(200).json(resetService);
     }
   } catch (e) {
     console.log(e);
