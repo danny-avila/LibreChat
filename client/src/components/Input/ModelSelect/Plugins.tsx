@@ -43,6 +43,13 @@ export default function Plugins({ conversation, setOption, models }: ModelSelect
       .map((el) => allPlugins.find((plugin) => plugin.pluginKey === el))
       .filter((el): el is TPlugin => el !== undefined);
 
+    /* Filter Last Selected Tools */
+    const lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools') ?? '');
+    const filteredTools = lastSelectedTools.filter((tool: TPlugin) =>
+      tools.some((existingTool) => existingTool.pluginKey === tool.pluginKey),
+    );
+    localStorage.setItem('lastSelectedTools', JSON.stringify(filteredTools));
+
     setAvailableTools([...tools, pluginStore]);
     // setAvailableTools is a recoil state setter, so it's safe to use it in useEffect
     // eslint-disable-next-line react-hooks/exhaustive-deps

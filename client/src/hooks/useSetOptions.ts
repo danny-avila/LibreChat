@@ -94,6 +94,7 @@ export default function useSetOptions(): UseSetOptions {
       setShowPluginStoreDialog(true);
       return;
     }
+
     const update = {};
     const current = conversation?.tools || [];
     const isSelected = checkPluginSelection(newValue);
@@ -104,6 +105,7 @@ export default function useSetOptions(): UseSetOptions {
     } else {
       update['tools'] = [...current, tool];
     }
+
     localStorage.setItem('lastSelectedTools', JSON.stringify(update['tools']));
     setConversation(
       (prevState) =>
