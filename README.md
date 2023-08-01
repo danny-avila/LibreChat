@@ -73,6 +73,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
     * [APIs and Tokens](docs/install/apis_and_tokens.md)
     * [User Auth System](docs/install/user_auth_system.md)
     * [Online MongoDB Database](docs/install/mongodb.md)
+    * [Email Verification](docs/install/email.md)
 </details>
 
 <details>
