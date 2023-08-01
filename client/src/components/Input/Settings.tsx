@@ -10,6 +10,7 @@ import store from '~/store';
 
 const optionComponents: { [key: string]: OptionComponent } = {
   openAI: OpenAISettings,
+  azureOpenAI: OpenAISettings,
   bingAI: BingAISettings,
   anthropic: AnthropicSettings,
 };

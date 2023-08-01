@@ -13,6 +13,7 @@ type OptionComponentType = React.FC<ModelSelectProps>;
 
 const optionComponents: { [key: string]: OptionComponentType } = {
   openAI: OpenAI,
+  azureOpenAI: OpenAI,
   bingAI: BingAI,
   google: Google,
   gptPlugins: Plugins,

@@ -10,6 +10,8 @@
   "scripts": {
     "install": "node config/install.js",
     "update": "node config/update.js",
+    "rebuild:package-lock": "node config/packages",
+    "update:branch": "node config/update.js -l -g",
     "update:local": "node config/update.js -l",
     "update:docker": "node config/update.js -d",
     "update:single": "node config/update.js -s",
