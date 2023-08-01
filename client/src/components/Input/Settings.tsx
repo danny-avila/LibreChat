@@ -4,7 +4,7 @@ import {
   BingAISettings,
   AnthropicSettings,
 } from '~/components/Endpoints/Settings/';
-import { GoogleSettings } from '~/components/Endpoints/Settings/MultiView';
+import { GoogleSettings, PluginsSettings } from '~/components/Endpoints/Settings/MultiView';
 import { SelectProps, OptionComponent, MultiViewComponent } from 'librechat-data-provider';
 
 const optionComponents: { [key: string]: OptionComponent } = {
@@ -15,6 +15,7 @@ const optionComponents: { [key: string]: OptionComponent } = {
 
 const multiViewComponents: { [key: string]: MultiViewComponent } = {
   google: GoogleSettings,
+  gptPlugins: PluginsSettings,
 };
 
 export default function Settings({ conversation, setOption }: SelectProps) {
