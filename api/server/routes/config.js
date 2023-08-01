@@ -18,6 +18,11 @@ router.get('/', async function (req, res) {
     const serverDomain = process.env.DOMAIN_SERVER || 'http://localhost:3080';
     const registrationEnabled = process.env.ALLOW_REGISTRATION === 'true';
     const socialLoginEnabled = process.env.ALLOW_SOCIAL_LOGIN === 'true';
+    const emailEnabled =
+      !!process.env.EMAIL_SERVICE &&
+      !!process.env.EMAIL_USERNAME &&
+      !!process.env.EMAIL_PASSWORD &&
+      !!process.env.EMAIL_FROM;
 
     return res.status(200).send({
       appTitle,
@@ -30,6 +35,7 @@ router.get('/', async function (req, res) {
       serverDomain,
       registrationEnabled,
       socialLoginEnabled,
+      emailEnabled,
     });
   } catch (err) {
     console.error(err);
