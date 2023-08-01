@@ -353,6 +353,7 @@ export type UseSetOptions = {
   removeExample: () => void;
   getConversation: () => TConversation | null;
   checkPluginSelection: (value: string) => boolean;
+  setAgentOption: SetOption;
   setTools: (newValue: string) => void;
 };
 

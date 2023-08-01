@@ -89,6 +89,20 @@ export default function useSetOptions(): UseSetOptions {
     return conversation.tools.find((el) => el.pluginKey === value) ? true : false;
   }
 
+  const setAgentOption: SetOption = (param) => (newValue) => {
+    const editableConvo = JSON.stringify(conversation);
+    const convo = JSON.parse(editableConvo);
+    const { agentOptions } = convo;
+    agentOptions[param] = newValue;
+    setConversation(
+      (prevState) =>
+        ({
+          ...prevState,
+          agentOptions,
+        } as TConversation),
+    );
+  };
+
   const setTools: (newValue: string) => void = (newValue) => {
     if (newValue === 'pluginStore') {
       setShowPluginStoreDialog(true);
@@ -123,6 +137,7 @@ export default function useSetOptions(): UseSetOptions {
     removeExample,
     getConversation,
     checkPluginSelection,
+    setAgentOption,
     setTools,
   };
 }
