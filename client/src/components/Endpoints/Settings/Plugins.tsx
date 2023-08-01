@@ -40,8 +40,8 @@ export default function Settings({ conversation, setOption, readonly, models }: 
 
   return (
     <div className="h-[490px] overflow-y-auto md:h-[350px]">
-      <div className="grid gap-6 sm:grid-cols-2">
-        <div className="col-span-1 flex flex-col items-center justify-start gap-6">
+      <div className="grid gap-6 sm:grid-cols-5">
+        <div className="col-span-3 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
             <SelectDropDown
               title={localize(lang, 'com_endpoint_completion_model')}
@@ -110,7 +110,7 @@ export default function Settings({ conversation, setOption, readonly, models }: 
             </div>
           </>
         </div>
-        <div className="col-span-1 flex flex-col items-center justify-start gap-6">
+        <div className="col-span-2 flex flex-col items-center justify-start gap-6 px-3">
           <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">

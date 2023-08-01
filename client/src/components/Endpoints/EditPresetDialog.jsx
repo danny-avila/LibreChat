@@ -166,7 +166,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={`${title || localize(lang, 'com_endpoint_edit_preset')} - ${preset?.title}`}
-        className="h-[675px] max-w-full sm:max-w-4xl "
+        className="h-[675px] max-w-full"
         main={
           <div className="flex w-full flex-col items-center gap-2 md:h-[475px]">
             <div className="grid w-full gap-6 sm:grid-cols-2">
@@ -265,19 +265,15 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
         }
         buttons={
           <>
+            <DialogButton onClick={exportPreset} className="dark:hover:gray-400 border-gray-700">
+              {localize(lang, 'com_endpoint_export')}
+            </DialogButton>
             <DialogClose
               onClick={submitPreset}
               className="dark:hover:gray-400 border-gray-700 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
             >
               {localize(lang, 'com_endpoint_save')}
             </DialogClose>
-          </>
-        }
-        leftButtons={
-          <>
-            <DialogButton onClick={exportPreset} className="dark:hover:gray-400 border-gray-700">
-              {localize(lang, 'com_endpoint_export')}
-            </DialogButton>
           </>
         }
       />

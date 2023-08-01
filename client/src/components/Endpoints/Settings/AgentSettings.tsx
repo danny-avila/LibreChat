@@ -32,8 +32,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
 
   return (
     <div className="h-[490px] overflow-y-auto md:h-[350px]">
-      <div className="grid gap-6 sm:grid-cols-2">
-        <div className="col-span-1 flex flex-col items-center justify-start gap-6">
+      <div className="grid gap-6 sm:grid-cols-5">
+        <div className="col-span-3 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
             <SelectDropDown
               title={localize(lang, 'com_endpoint_agent_model')}
@@ -48,46 +48,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               containerClassName="flex w-full resize-none"
             />
           </div>
-          <div className="grid w-full grid-cols-2 items-center gap-2">
-            <HoverCard openDelay={500}>
-              <HoverCardTrigger className="w-[100px]">
-                <label
-                  htmlFor="functions-agent"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
-                >
-                  <small>{localize(lang, 'com_endpoint_plug_use_functions')}</small>
-                </label>
-                <Switch
-                  id="functions-agent"
-                  checked={agent === 'functions'}
-                  onCheckedChange={onCheckedChangeAgent}
-                  disabled={readonly}
-                  className="ml-4 mt-2"
-                />
-              </HoverCardTrigger>
-              <OptionHover endpoint={conversation.endpoint ?? ''} type="func" side={Side.Right} />
-            </HoverCard>
-            <HoverCard openDelay={500}>
-              <HoverCardTrigger className="ml-[-60px] w-[100px]">
-                <label
-                  htmlFor="skip-completion"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
-                >
-                  <small>{localize(lang, 'com_endpoint_plug_skip_completion')}</small>
-                </label>
-                <Switch
-                  id="skip-completion"
-                  checked={skipCompletion === true}
-                  onCheckedChange={onCheckedChangeSkip}
-                  disabled={readonly}
-                  className="ml-4 mt-2"
-                />
-              </HoverCardTrigger>
-              <OptionHover endpoint={conversation.endpoint ?? ''} type="skip" side={Side.Right} />
-            </HoverCard>
-          </div>
         </div>
-        <div className="col-span-1 flex flex-col items-center justify-start gap-6">
+        <div className="col-span-2 flex flex-col items-center justify-start gap-6 px-3">
           <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
@@ -128,6 +90,44 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </HoverCardTrigger>
             <OptionHover endpoint={conversation.endpoint ?? ''} type="temp" side={Side.Left} />
           </HoverCard>
+          <div className="grid w-full grid-cols-2 items-center gap-10">
+            <HoverCard openDelay={500}>
+              <HoverCardTrigger className="w-[100px]">
+                <label
+                  htmlFor="functions-agent"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+                >
+                  <small>{localize(lang, 'com_endpoint_plug_use_functions')}</small>
+                </label>
+                <Switch
+                  id="functions-agent"
+                  checked={agent === 'functions'}
+                  onCheckedChange={onCheckedChangeAgent}
+                  disabled={readonly}
+                  className="ml-4 mt-2"
+                />
+              </HoverCardTrigger>
+              <OptionHover endpoint={conversation.endpoint ?? ''} type="func" side={Side.Bottom} />
+            </HoverCard>
+            <HoverCard openDelay={500}>
+              <HoverCardTrigger className="ml-[-60px] w-[100px]">
+                <label
+                  htmlFor="skip-completion"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+                >
+                  <small>{localize(lang, 'com_endpoint_plug_skip_completion')}</small>
+                </label>
+                <Switch
+                  id="skip-completion"
+                  checked={skipCompletion === true}
+                  onCheckedChange={onCheckedChangeSkip}
+                  disabled={readonly}
+                  className="ml-4 mt-2"
+                />
+              </HoverCardTrigger>
+              <OptionHover endpoint={conversation.endpoint ?? ''} type="skip" side={Side.Bottom} />
+            </HoverCard>
+          </div>
           {/* <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">

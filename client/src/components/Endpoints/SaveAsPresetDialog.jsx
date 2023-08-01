@@ -34,21 +34,24 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={localize(lang, 'com_endpoint_save_as_preset')}
+        className="h-[675px] max-w-full"
         main={
-          <div className="grid w-full items-center gap-2">
-            <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-              {localize(lang, 'com_endpoint_preset_name')}
-            </Label>
-            <Input
-              id="chatGptLabel"
-              value={title || ''}
-              onChange={(e) => setTitle(e.target.value || '')}
-              placeholder="Set a custom name for this preset"
-              className={cn(
-                defaultTextPropsLabel,
-                'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
-              )}
-            />
+          <div className="flex w-full flex-col items-center gap-2 md:h-[475px]">
+            <div className="grid w-full items-center gap-2">
+              <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
+                {localize(lang, 'com_endpoint_preset_name')}
+              </Label>
+              <Input
+                id="chatGptLabel"
+                value={title || ''}
+                onChange={(e) => setTitle(e.target.value || '')}
+                placeholder="Set a custom name for this preset"
+                className={cn(
+                  defaultTextPropsLabel,
+                  'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
+                )}
+              />
+            </div>
           </div>
         }
         selection={{

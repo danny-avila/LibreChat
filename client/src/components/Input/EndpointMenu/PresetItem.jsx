@@ -65,10 +65,10 @@ export default function PresetItem({ preset = {}, value, onChangePreset, onDelet
     >
       {icon}
       <small className="text-[11px]">{preset?.title}</small>
-      <small className="ml-2 text-[10px]">({getPresetTitle()})</small>
+      <small className="ml-1 text-[10px]">({getPresetTitle()})</small>
       <div className="flex w-4 flex-1" />
       <button
-        className="invisible m-0 mr-1 rounded-md p-2 text-gray-400 hover:text-gray-700 group-hover:visible dark:text-gray-400 dark:hover:text-gray-200        "
+        className="m-0 mr-1 rounded-md p-2 text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 md:invisible md:group-hover:visible"
         onClick={(e) => {
           e.preventDefault();
           onChangePreset(preset);
@@ -77,7 +77,7 @@ export default function PresetItem({ preset = {}, value, onChangePreset, onDelet
         <EditIcon />
       </button>
       <button
-        className="invisible m-0 rounded-md text-gray-400 hover:text-gray-700 group-hover:visible dark:text-gray-400 dark:hover:text-gray-200        "
+        className="m-0 rounded-md text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 md:invisible md:group-hover:visible"
         onClick={(e) => {
           e.preventDefault();
           onDeletePreset(preset);
