@@ -7,6 +7,7 @@ import CautionIcon from '../svg/CautionIcon';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
 import { useGetStartupConfig } from '@librechat/data-provider';
+import WarningIcon from '../svg/WarningIcon';
 
 export default function Landing() {
   const { data: config } = useGetStartupConfig();
@@ -96,6 +97,16 @@ export default function Landing() {
             </ul>
           </div>
         </div>
+        <div className='flex flex-col justify-start items-center'>
+          <WarningIcon />
+          <h4
+            id='reminder'
+            className='text-center'
+          >
+            {localize(lang, 'com_ui_convo_public_reminder')}
+          </h4>
+        </div>
+
         {/* {!showingTemplates && (
           <div className="mt-8 mb-4 flex flex-col items-center gap-3.5 md:mt-16">
             <button
