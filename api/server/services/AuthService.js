@@ -216,7 +216,6 @@ const setAuthTokens = async (userId, res) => {
       httpOnly: true,
       secure: isProduction,
       sameSite: 'strict',
-      // signed: true,
     });
 
     return token;
