@@ -42,7 +42,6 @@ module.exports = {
         ignoreComments: true,
       },
     ],
-    'import/no-cycle': 'error',
     'linebreak-style': 0,
     curly: ['error', 'all'],
     semi: ['error', 'always'],
@@ -53,6 +52,8 @@ module.exports = {
     // "arrow-parens": [2, "as-needed", { requireForBlockBody: true }],
     // 'no-plusplus': ['error', { allowForLoopAfterthoughts: true }],
     'no-console': 'off',
+    'import/no-cycle': 'error',
+    'import/no-self-import': 'error',
     'import/extensions': 'off',
     'no-promise-executor-return': 'off',
     'no-param-reassign': 'off',
@@ -131,6 +132,17 @@ module.exports = {
       pragma: 'React', // Pragma to use, default to "React"
       fragment: 'Fragment', // Fragment to use (may be a property of <pragma>), default to "Fragment"
       version: 'detect', // React version. "detect" automatically picks the version you have installed.
+    },
+    'import/parsers': {
+      '@typescript-eslint/parser': ['.ts', '.tsx'],
+    },
+    'import/resolver': {
+      typescript: {
+        project: ['tsconfig.base.json'],
+      },
+      node: {
+        project: ['tsconfig.base.json'],
+      },
     },
   },
 };
