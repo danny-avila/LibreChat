@@ -127,25 +127,6 @@ const AuthContextProvider = ({
       },
     });
   };
-
-  const silentRefresh = useCallback(() => {
-    refreshToken.mutate(undefined, {
-      onSuccess: (data: TLoginResponse) => {
-        const { user, token } = data;
-        setUserContext({ token, isAuthenticated: true, user });
-      },
-      onError: error => {
-        console.log('Refresh token has expired, please log in again.', error);
-        setUserContext({
-          token: undefined,
-          isAuthenticated: false,
-          user: undefined,
-          redirect: '/login',
-        });
-        doSetError((error as Error).message);
-      }
-    });
-  });
   
   useEffect(() => {
     if (userQuery.data) {
@@ -175,21 +156,6 @@ const AuthContextProvider = ({
     navigate,
     setUserContext,
   ]);
-
-  useEffect(() => {
-    const handleUnauthorized = async () => {
-      try {
-        console.log('Unauthorized event received');
-        await silentRefresh();
-      } catch (refreshError) {
-        console.log('Failed to refresh:', refreshError);
-      }
-    };
-    window.addEventListener('attemptRefresh', handleUnauthorized);
-    return () => {
-      window.removeEventListener('attemptRefresh', handleUnauthorized);
-    };
-  }, [silentRefresh]);
 
   // Make the provider update only when it should
   const memoedValue = useMemo(
