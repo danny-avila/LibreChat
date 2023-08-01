@@ -23,7 +23,6 @@ const logoutUser = async (userId, refreshToken) => {
 
     // Find the session with the matching user and refreshTokenHash
     const session = await Session.findOne({ user: userId, refreshTokenHash: hash });
-    console.log('Removing Session: ', session);
     if (session) {
       await Session.deleteOne({ _id: session._id });
     }

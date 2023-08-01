@@ -53,7 +53,7 @@ const AuthContextProvider = ({
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  
+
   const navigate = useNavigate();
 
   const loginUser = useLoginUserMutation();
@@ -128,25 +128,6 @@ const AuthContextProvider = ({
     });
   };
 
-  const silentRefresh = useCallback(() => {
-    refreshToken.mutate(undefined, {
-      onSuccess: (data: TLoginResponse) => {
-        const { user, token } = data;
-        setUserContext({ token, isAuthenticated: true, user });
-      },
-      onError: error => {
-        console.log('Refresh token has expired, please log in again.', error);
-        setUserContext({
-          token: undefined,
-          isAuthenticated: false,
-          user: undefined,
-          redirect: '/login',
-        });
-        doSetError((error as Error).message);
-      }
-    });
-  });
-  
   useEffect(() => {
     if (userQuery.data) {
       setUser(userQuery.data);
@@ -177,20 +158,36 @@ const AuthContextProvider = ({
   ]);
 
   useEffect(() => {
-    const handleUnauthorized = async () => {
-      try {
-        console.log('Unauthorized event received');
-        await silentRefresh();
-      } catch (refreshError) {
-        console.log('Failed to refresh:', refreshError);
-      }
+    const handleTokenUpdate = (event) => {
+      console.log('tokenUpdated event received event');
+      const newToken = event.detail;
+      setUserContext({
+        token: newToken,
+        isAuthenticated: true,
+        user: user,
+      });
     };
-    window.addEventListener('attemptRefresh', handleUnauthorized);
-    return () => {
-      window.removeEventListener('attemptRefresh', handleUnauthorized);
+  
+    const handleLogout = () => {
+      console.log('logout event received');
+      setUserContext({
+        token: undefined,
+        isAuthenticated: false,
+        user: undefined,
+        redirect: '/login',
+      });
     };
-  }, [silentRefresh]);
 
+    window.addEventListener('tokenUpdated', handleTokenUpdate);
+    window.addEventListener('logout', handleLogout);
+  
+    return () => {
+      window.removeEventListener('tokenUpdated', handleTokenUpdate);
+      window.removeEventListener('logout', handleLogout);
+    };
+  }, [setUserContext, user, logout]);
+
+  
   // Make the provider update only when it should
   const memoedValue = useMemo(
     () => ({
