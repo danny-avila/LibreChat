@@ -1,15 +1,14 @@
-import { atom, useRecoilState } from 'recoil';
+import { atom, useSetRecoilState } from 'recoil';
 
-const tokenRefreshHints = atom({
+const tokenRefreshHints = atom<number>({
   key: 'tokenRefreshHints',
   default: 1,
 });
 
-const useToken = (endpoint) => {
-  // eslint-disable-next-line no-unused-vars
-  const [hints, setHints] = useRecoilState(tokenRefreshHints);
+const useToken = (endpoint: string) => {
+  const setHints = useSetRecoilState(tokenRefreshHints);
   const getToken = () => localStorage.getItem(`${endpoint}_token`);
-  const saveToken = (value) => {
+  const saveToken = (value: string) => {
     localStorage.setItem(`${endpoint}_token`, value);
     setHints((prev) => prev + 1);
   };

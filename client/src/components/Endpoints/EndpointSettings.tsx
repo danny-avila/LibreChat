@@ -1,5 +1,10 @@
-import { OpenAISettings, BingAISettings, AnthropicSettings, GoogleSettings } from './Settings';
-import PluginsSettings from './Plugins/Settings.jsx';
+import {
+  OpenAISettings,
+  BingAISettings,
+  AnthropicSettings,
+  GoogleSettings,
+  PluginsSettings,
+} from './Settings';
 
 // A preset dialog to show readonly preset values.
 const Settings = ({ preset, readonly, setOption }) => {
@@ -24,13 +29,8 @@ const Settings = ({ preset, readonly, setOption }) => {
     } else if (endpoint === 'gptPlugins') {
       return (
         <PluginsSettings
-          model={preset?.model}
-          chatGptLabel={preset?.chatGptLabel}
-          promptPrefix={preset?.promptPrefix}
-          temperature={preset?.temperature}
-          topP={preset?.top_p}
-          freqP={preset?.presence_penalty}
-          presP={preset?.frequency_penalty}
+          conversation={preset}
+          setOption={setOption}
           // {...props}
         />
       );

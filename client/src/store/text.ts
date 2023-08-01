@@ -1,6 +1,6 @@
 import { atom } from 'recoil';
 
-const text = atom({
+const text = atom<string>({
   key: 'text',
   default: '',
 });

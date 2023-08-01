@@ -1,6 +1,7 @@
 import { atom, selector } from 'recoil';
+import { TEndpoints } from 'librechat-data-provider';
 
-const endpointsConfig = atom({
+const endpointsConfig = atom<TEndpoints>({
   key: 'endpointsConfig',
   default: {
     azureOpenAI: null,
@@ -26,7 +27,7 @@ const endpointsFilter = selector({
   get: ({ get }) => {
     const config = get(endpointsConfig) || {};
 
-    let filter = {};
+    const filter = {};
     for (const key of Object.keys(config)) {
       filter[key] = !!config[key];
     }

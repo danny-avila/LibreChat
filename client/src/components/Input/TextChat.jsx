@@ -1,11 +1,11 @@
 import React, { useEffect, useRef } from 'react';
+import TextareaAutosize from 'react-textarea-autosize';
 import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
 import SubmitButton from './SubmitButton';
 import OptionsBar from './OptionsBar';
 import NewConversationMenu from './NewConversationMenu';
 import AdjustToneButton from './AdjustToneButton';
 import Footer from './Footer';
-import TextareaAutosize from 'react-textarea-autosize';
 import { useMessageHandler } from '~/utils/handleSubmit';
 import store from '~/store';
 

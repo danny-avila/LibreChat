@@ -223,14 +223,29 @@ export type TSearchResults = {
 };
 
 export type TEndpoints = {
-  azureOpenAI: boolean;
-  bingAI: boolean;
-  ChatGptBrowser: {
+  azureOpenAI: {
     availableModels: [];
-  };
-  OpenAI: {
+  } | null;
+  bingAI: {
     availableModels: [];
-  };
+  } | null;
+  chatGPTBrowser: {
+    availableModels: [];
+  } | null;
+  anthropic: {
+    availableModels: [];
+  } | null;
+  google: {
+    availableModels: [];
+  } | null;
+  openAI: {
+    availableModels: [];
+  } | null;
+  gptPlugins: {
+    availableModels: [];
+    availableTools?: [];
+    plugins?: [];
+  } | null;
 };
 
 export type TUpdateTokenCountResponse = {
