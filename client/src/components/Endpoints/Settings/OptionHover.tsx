@@ -25,6 +25,7 @@ const types = {
     maxoutputtokens: 'com_endpoint_google_maxoutputtokens',
   },
   openAI,
+  azureOpenAI: openAI,
   gptPlugins: {
     func: 'com_endpoint_func_hover',
     skip: 'com_endpoint_skip_hover',
@@ -33,7 +34,10 @@ const types = {
 };
 
 function OptionHover({ endpoint, type, side }: OptionHoverProps) {
-  const text = types[endpoint][type];
+  const text = types?.[endpoint]?.[type];
+  if (!text) {
+    return null;
+  }
   return (
     <HoverCardPortal>
       <HoverCardContent side={side} className="w-80 ">
