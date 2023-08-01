@@ -1,5 +1,5 @@
 import React from 'react';
-import FileUpload from '../NewConversationMenu/FileUpload';
+import FileUpload from '../EndpointMenu/FileUpload';
 
 const GoogleConfig = ({ setToken }: { setToken: React.Dispatch<React.SetStateAction<string>> }) => {
   return (

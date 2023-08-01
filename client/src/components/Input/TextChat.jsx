@@ -3,7 +3,7 @@ import TextareaAutosize from 'react-textarea-autosize';
 import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
 import SubmitButton from './SubmitButton';
 import OptionsBar from './OptionsBar';
-import NewConversationMenu from './NewConversationMenu';
+import { EndpointMenu } from './EndpointMenu';
 import AdjustToneButton from './AdjustToneButton';
 import Footer from './Footer';
 import { useMessageHandler } from '~/utils/handleSubmit';
@@ -140,7 +140,7 @@ export default function TextChat({ isSearchView = false }) {
                   disabled ? 'dark:bg-gray-900' : 'dark:bg-gray-700'
                 } dark:text-white dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] md:py-3 md:pl-4`}
               >
-                <NewConversationMenu />
+                <EndpointMenu />
                 <TextareaAutosize
                   // set test id for e2e testing
                   data-testid="text-input"

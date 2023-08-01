@@ -1,6 +1,4 @@
-import { DropdownMenuRadioItem } from '../../ui/DropdownMenu.tsx';
-import EditIcon from '../../svg/EditIcon.jsx';
-import TrashIcon from '../../svg/TrashIcon.jsx';
+import { DropdownMenuRadioItem, EditIcon, TrashIcon } from '~/components';
 import getIcon from '~/utils/getIcon';
 
 export default function PresetItem({ preset = {}, value, onChangePreset, onDeletePreset }) {

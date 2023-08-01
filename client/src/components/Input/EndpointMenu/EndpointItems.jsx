@@ -1,4 +1,4 @@
-import EndpointItem from './EndpointItem.jsx';
+import EndpointItem from './EndpointItem';
 
 export default function EndpointItems({ endpoints, onSelect, selectedEndpoint }) {
   return (
