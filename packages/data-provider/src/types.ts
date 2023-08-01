@@ -87,6 +87,16 @@ export type TPlugin = {
   isButton?: boolean;
 };
 
+export type TPluginAction = {
+  pluginKey: string;
+  action: 'install' | 'uninstall';
+  auth?: unknown;
+};
+
+export type TTemplate = {
+  [key: string]: TPlugin;
+};
+
 export type TUpdateUserPlugins = {
   pluginKey: string;
   action: string;

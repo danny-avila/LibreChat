@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Dialog, DialogTemplate } from '../ui/';
+import { Dialog } from '~/components/ui/';
+import DialogTemplate from '~/components/ui/DialogTemplate';
 import { ClearChatsButton } from './SettingsTabs/';
 import { useClearConversationsMutation } from 'librechat-data-provider';
 import store from '~/store';

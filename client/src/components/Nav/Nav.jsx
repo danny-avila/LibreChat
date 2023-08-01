@@ -1,4 +1,5 @@
-import { NewChat, NavLinks } from './';
+import NewChat from './NewChat';
+import NavLinks from './NavLinks';
 import { Panel, Spinner } from '~/components';
 import { Conversations, Pages } from '../Conversations';
 import { useCallback, useEffect, useRef, useState } from 'react';

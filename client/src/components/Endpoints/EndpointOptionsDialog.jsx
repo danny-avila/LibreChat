@@ -1,7 +1,8 @@
 import exportFromJSON from 'export-from-json';
 import { useEffect, useState } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Dialog, DialogButton, DialogTemplate } from '~/components';
+import { Dialog, DialogButton } from '~/components/ui';
+import DialogTemplate from '~/components/ui/DialogTemplate';
 import SaveAsPresetDialog from './SaveAsPresetDialog';
 import EndpointSettings from './EndpointSettings';
 import cleanupPreset from '~/utils/cleanupPreset';

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Dialog, DialogTemplate, Input, Label } from '../ui/';
+import { Dialog, Input, Label } from '~/components/ui/';
+import DialogTemplate from '~/components/ui/DialogTemplate';
 import { cn, defaultTextPropsLabel } from '~/utils/';
 import cleanupPreset from '~/utils/cleanupPreset';
 import { useCreatePresetMutation } from 'librechat-data-provider';

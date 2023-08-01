@@ -17,5 +17,4 @@ export * from './Templates';
 export * from './Textarea';
 export { default as Dropdown } from './Dropdown';
 export { default as SelectDropDown } from './SelectDropDown';
-export { default as DialogTemplate } from './DialogTemplate';
 export { default as MultiSelectDropDown } from './MultiSelectDropDown';

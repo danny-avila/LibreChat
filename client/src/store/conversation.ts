@@ -88,7 +88,7 @@ const useConversation = () => {
   );
 
   const newConversation = useCallback(
-    (template = {}, preset: TPreset) => {
+    (template = {}, preset?: TPreset) => {
       switchToConversation(
         {
           conversationId: 'new',

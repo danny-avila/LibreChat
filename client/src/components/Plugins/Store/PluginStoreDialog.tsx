@@ -3,23 +3,20 @@ import { Dialog } from '@headlessui/react';
 import { useRecoilState } from 'recoil';
 import { X } from 'lucide-react';
 import store from '~/store';
-import { PluginStoreItem, PluginPagination, PluginAuthForm } from '.';
+import PluginStoreItem from './PluginStoreItem';
+import PluginPagination from './PluginPagination';
+import PluginAuthForm from './PluginAuthForm';
 import {
   useAvailablePluginsQuery,
   useUpdateUserPluginsMutation,
   TPlugin,
+  TPluginAction,
 } from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 type TPluginStoreDialogProps = {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
-};
-
-export type TPluginAction = {
-  pluginKey: string;
-  action: 'install' | 'uninstall';
-  auth?: unknown;
 };
 
 function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {

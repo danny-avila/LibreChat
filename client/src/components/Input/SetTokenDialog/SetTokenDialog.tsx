@@ -3,7 +3,8 @@ import HelpText from './HelpText';
 import GoogleConfig from './GoogleConfig';
 import OpenAIConfig from './OpenAIConfig';
 import OtherConfig from './OtherConfig';
-import { Dialog, DialogTemplate } from '~/components';
+import { Dialog } from '~/components/ui';
+import DialogTemplate from '~/components/ui/DialogTemplate';
 import { alternateName } from '~/utils';
 import store from '~/store';
 
