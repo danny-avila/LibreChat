@@ -254,7 +254,7 @@ export default function Nav({ navVisible, setNavVisible }) {
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <HomeIcon />}
-                text={navigator.languages[0] === 'zh-CN' ? '主页' : 'Homepage'}
+                text={navigator.languages[0] === 'zh-CN' ? '主页' : 'Home'}
                 clickHandler={ openHomepageHandler }
               />
               <NavLink
