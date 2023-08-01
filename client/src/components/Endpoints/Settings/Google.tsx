@@ -11,15 +11,14 @@ import {
   HoverCardTrigger,
 } from '~/components/ui';
 import OptionHover from './OptionHover';
-import { SettingsProps, Side } from 'librechat-data-provider';
+import { ModelSelectProps, Side } from 'librechat-data-provider';
 import { cn, defaultTextProps, optionText } from '~/utils/';
 import { localize } from '~/localization/Translation';
 import store from '~/store';
 
-export default function Settings({ conversation, setOption, readonly }: SettingsProps) {
+export default function Settings({ conversation, setOption, models, readonly }: ModelSelectProps) {
   const { model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens } =
     conversation;
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const lang = useRecoilValue(store.lang);
 
   const setModel = setOption('model');
@@ -30,7 +29,6 @@ export default function Settings({ conversation, setOption, readonly }: Settings
   const setTopK = setOption('topK');
   const setMaxOutputTokens = setOption('maxOutputTokens');
 
-  const models = endpointsConfig?.['google']?.['availableModels'] || [];
   const codeChat = model?.startsWith('codechat-');
 
   return (

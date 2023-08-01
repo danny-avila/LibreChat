@@ -4,7 +4,7 @@ import { useSetOptions } from '~/hooks';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 
-export default function GoogleView() {
+export default function GoogleView({ models }) {
   const optionSettings = useRecoilValue(store.optionSettings);
   const { setOption, setExample, addExample, removeExample, getConversation } = useSetOptions();
 
@@ -23,6 +23,6 @@ export default function GoogleView() {
       removeExample={removeExample}
     />
   ) : (
-    <Settings conversation={conversation} setOption={setOption} />
+    <Settings conversation={conversation} setOption={setOption} models={models} />
   );
 }

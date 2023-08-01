@@ -344,9 +344,11 @@ export type OptionHoverProps = {
   side: Side;
 };
 
-export type ModelSelectProps = SettingsProps & {
+export type TModels = {
   models: string[];
 };
+
+export type ModelSelectProps = SettingsProps & TModels;
 
 export type ExamplesProps = {
   readonly?: boolean;
@@ -363,8 +365,8 @@ export type GoogleProps = {
 };
 
 export type GoogleViewProps = SettingsProps & GoogleProps;
-export type OptionComponent = React.FC<SettingsProps>;
-export type MultiViewComponent = React.FC;
+export type OptionComponent = React.FC<ModelSelectProps>;
+export type MultiViewComponent = React.FC<TModels>;
 export type SelectProps = {
   conversation: TConversation | null;
   setOption: SetOption;

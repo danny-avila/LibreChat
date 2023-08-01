@@ -10,16 +10,14 @@ import {
   HoverCardTrigger,
 } from '~/components';
 import OptionHover from './OptionHover';
-import { SettingsProps, Side } from 'librechat-data-provider';
+import { ModelSelectProps, Side } from 'librechat-data-provider';
 import { localize } from '~/localization/Translation';
 import store from '~/store';
 
-export default function Settings({ conversation, setOption, readonly }: SettingsProps) {
+export default function Settings({ conversation, setOption, models, readonly }: ModelSelectProps) {
   const { agent, skipCompletion, model, temperature } = conversation.agentOptions ?? {};
-  const endpoint = 'gptPlugins';
   const lang = useRecoilValue(store.lang);
 
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const setModel = setOption('model');
   const setTemperature = setOption('temperature');
   const setAgent = setOption('agent');
@@ -31,8 +29,6 @@ export default function Settings({ conversation, setOption, readonly }: Settings
   const onCheckedChangeSkip = (checked: boolean) => {
     setSkipCompletion(checked);
   };
-
-  const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
 
   return (
     <div className="h-[490px] overflow-y-auto md:h-[350px]">

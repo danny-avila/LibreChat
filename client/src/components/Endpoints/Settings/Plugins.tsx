@@ -11,11 +11,11 @@ import {
 } from '~/components';
 import OptionHover from './OptionHover';
 import { localize } from '~/localization/Translation';
-import { SettingsProps, Side } from 'librechat-data-provider';
+import { ModelSelectProps, Side } from 'librechat-data-provider';
 import { cn, defaultTextProps, optionText } from '~/utils/';
 import store from '~/store';
 
-export default function Settings({ conversation, setOption, readonly }: SettingsProps) {
+export default function Settings({ conversation, setOption, readonly, models }: ModelSelectProps) {
   const {
     model,
     chatGptLabel,
@@ -26,10 +26,8 @@ export default function Settings({ conversation, setOption, readonly }: Settings
     presence_penalty: presP,
     tools,
   } = conversation;
-  const endpoint = 'gptPlugins';
   const lang = useRecoilValue(store.lang);
 
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const setModel = setOption('model');
   const setChatGptLabel = setOption('chatGptLabel');
   const setPromptPrefix = setOption('promptPrefix');
@@ -39,7 +37,6 @@ export default function Settings({ conversation, setOption, readonly }: Settings
   const setPresP = setOption('frequency_penalty');
 
   const toolsSelected = tools && tools.length > 0;
-  const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
 
   return (
     <div className="h-[490px] overflow-y-auto md:h-[350px]">

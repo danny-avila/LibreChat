@@ -12,10 +12,10 @@ import {
 import OptionHover from './OptionHover';
 import { cn, defaultTextProps, optionText } from '~/utils/';
 import { localize } from '~/localization/Translation';
-import { SettingsProps, Side } from 'librechat-data-provider';
+import { ModelSelectProps, Side } from 'librechat-data-provider';
 import store from '~/store';
 
-export default function Settings({ conversation, setOption, readonly }: SettingsProps) {
+export default function Settings({ conversation, setOption, models, readonly }: ModelSelectProps) {
   const {
     model,
     chatGptLabel,
@@ -27,8 +27,6 @@ export default function Settings({ conversation, setOption, readonly }: Settings
   } = conversation;
   const endpoint = conversation.endpoint || 'openAI';
   const isOpenAI = endpoint === 'openAI' || endpoint === 'azureOpenAI';
-
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const lang = useRecoilValue(store.lang);
 
   const setModel = setOption('model');
@@ -38,7 +36,6 @@ export default function Settings({ conversation, setOption, readonly }: Settings
   const setTopP = setOption('top_p');
   const setFreqP = setOption('frequency_penalty');
   const setPresP = setOption('presence_penalty');
-  const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
 
   return (
     <div className="h-[440px] overflow-y-auto md:h-[350px]">
