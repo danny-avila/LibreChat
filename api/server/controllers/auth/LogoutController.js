@@ -1,10 +1,10 @@
-const { logoutUser } = require('../../services/auth.service');
-const cookies = require('cookie');
+const { logoutUser } = require('../../services/AuthService');
 
 const logoutController = async (req, res) => {
-  const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
+  const { signedCookies = {} } = req;
+  const { refreshToken } = signedCookies;
   try {
-    const logout = await logoutUser(req.user._id, refreshToken);
+    const logout = await logoutUser(req.user, refreshToken);
     const { status, message } = logout;
     res.clearCookie('token');
     res.clearCookie('refreshToken');

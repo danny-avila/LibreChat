@@ -90,11 +90,6 @@ router.get('/', requireJwtAuth, async function (req, res) {
   }
 });
 
-router.get('/clear', async function (req, res) {
-  await Message.resetIndex();
-  res.send('cleared');
-});
-
 router.get('/test', async function (req, res) {
   const { q } = req.query;
   const messages = (
