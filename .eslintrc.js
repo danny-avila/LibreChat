@@ -11,7 +11,7 @@ module.exports = {
     'plugin:react/recommended',
     'plugin:react-hooks/recommended',
     'plugin:jest/recommended',
-    'prettier',
+    'plugin:prettier/recommended',
   ],
   ignorePatterns: [
     'client/dist/**/*',
