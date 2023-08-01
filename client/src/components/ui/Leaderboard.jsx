@@ -1,5 +1,5 @@
 import { useGetLeaderboardQuery } from '@librechat/data-provider';
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react'; // the AG Grid React Component
 
 import 'ag-grid-community/styles/ag-grid.css'; // Core grid CSS, always needed
@@ -38,7 +38,6 @@ function userCellRenderer(user) {
 export default function Leaderboard() {
   const getLeaderboardQuery = useGetLeaderboardQuery();
 
-  const gridRef = useRef(); // Optional - for accessing Grid's API
   const [rowData, setRowData] = useState(); // Set rowData to Array of Objects, one Object per Row
 
   // Each Column Definition results in one Column.
@@ -61,16 +60,6 @@ export default function Leaderboard() {
     sortable: true
   }));
 
-  // Example of consuming Grid Event
-  const cellClickedListener = useCallback( event => {
-    console.log('cellClicked', event);
-  }, []);
-
-  // Example using Grid's API
-  const buttonListener = useCallback(() => {
-    gridRef.current.api.deselectAll();
-  }, []);
-
   useEffect(() => {
     if (getLeaderboardQuery.isSuccess) {
       let userList = [];
@@ -90,24 +79,27 @@ export default function Leaderboard() {
   }, [getLeaderboardQuery.isSuccess, getLeaderboardQuery.data]);
 
   return (
-    <div className='grid grid-col justify-center'>
-      {/* Example using Grid's API */}
-      <button onClick={buttonListener}>Push Me</button>
-      {/* On div wrapping Grid a) specify theme CSS Class Class and b) sets Grid size */}
-      <div className="ag-theme-alpine" style={{ width: 600, height: 500 }}>
-        <AgGridReact
-          ref={gridRef} // Ref for accessing Grid's API
+    <div className="flex h-full flex-col items-center overflow-y-auto pt-0 text-sm dark:bg-gray-800">
+      <h1
+        id="landing-title"
+        className="mb-5 ml-auto mr-auto mt-3 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-8 md:mt-[5vh]"
+      >
+        邀请排行榜
+      </h1>
+      <div className="w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
+        <div className='grid grid-col justify-center'>
+          {/* On div wrapping Grid a) specify theme CSS Class Class and b) sets Grid size */}
+          <div className="ag-theme-alpine" style={{ width: 600, height: 500 }}>
+            <AgGridReact
+              rowData={rowData} // Row Data for Rows
 
-          rowData={rowData} // Row Data for Rows
+              columnDefs={columnDefs} // Column Defs for Columns
+              defaultColDef={defaultColDef} // Default Column Properties
 
-          columnDefs={columnDefs} // Column Defs for Columns
-          defaultColDef={defaultColDef} // Default Column Properties
-
-          animateRows={true} // Optional - set to 'true' to have rows animate when sorted
-          rowSelection='multiple' // Options - allows click selection of rows
-
-          onCellClicked={cellClickedListener} // Optional - registering for Grid Event
-        />
+              animateRows={true} // Optional - set to 'true' to have rows animate when sorted
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -120,6 +120,10 @@ export const getRecentConversations = () => {
   return request.get(endpoints.recentConversations());
 }
 
+export const getHottestConversations = () => {
+  return request.get(endpoints.hottestConversations());
+}
+
 export const duplicateConversation = (payload: object) => {
   return request.post(endpoints.duplicateConversation(), { arg: payload });
 }

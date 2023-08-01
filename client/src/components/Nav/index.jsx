@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGetConversationsQuery, useSearchQuery } from '@librechat/data-provider';
-import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 
 import Conversations from '../Conversations';
 import NavLinks from './NavLinks';
@@ -18,6 +18,9 @@ import Clipboard from '../svg/Clipboard';
 import useDebounce from '~/hooks/useDebounce';
 import LeaderboardIcon from '../svg/LeaderboardIcon';
 import NotebookIcon from '../svg/NotebookIcon';
+import { useNavigate } from 'react-router-dom';
+import ChatWidget from '../Input/ChatWidgetMenu';
+import HomeIcon from '../svg/HomeIcon';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
 // const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -71,8 +74,9 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const [refLink, setRefLink] = useState('');
   const [copied, setCopied] = useState(false);
-  const [tabValue, setTabValue] = useRecoilState(store.tabValue); // eslint-disable-line
+  const [widget, setWidget] = useState('');
   const { user } = useAuthContext();
+  const navigate = useNavigate();
   const mode = process.env.NODE_ENV;
 
   const debouncedSearchTerm = useDebounce(searchQuery, 750);
@@ -184,8 +188,11 @@ export default function Nav({ navVisible, setNavVisible }) {
     setCopied(true);
   }
 
-  const openWritingAssistantHandler = () => setTabValue('assistant')
-  const openLeaderboardHandler = () => setTabValue('leaderboard');
+  const openWritingAssistantHandler = () => {
+    setWidget(widget === 'wa' ? '' : 'wa');
+  }
+  const openLeaderboardHandler = () => navigate('/leaderboard');
+  const openHomepageHandler = () => navigate('/home');
 
   useEffect(() => {
     if (user) setRefLink(mode === 'dev' ? `http://localhost:3090/register/${user.id}` : `chat.aitok.us/register/${user.id}`);
@@ -194,7 +201,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   useEffect(() => {
     setTimeout(() => {
       if (copied) setCopied(!copied);
-    }, 1000);
+    }, 2000);
   }, [copied])
 
   const containerClasses =
@@ -246,6 +253,12 @@ export default function Nav({ navVisible, setNavVisible }) {
               </div>
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                svg={() => <HomeIcon />}
+                text={navigator.languages[0] === 'zh-CN' ? '主页' : 'Home'}
+                clickHandler={ openHomepageHandler }
+              />
+              <NavLink
+                className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <NotebookIcon />}
                 text={navigator.languages[0] === 'zh-CN' ? '写作小助手' : 'Writing Assistant'}
                 clickHandler={ openWritingAssistantHandler }
@@ -259,7 +272,11 @@ export default function Nav({ navVisible, setNavVisible }) {
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => copied ? <CheckMark /> : <Clipboard />}
-                text={navigator.languages[0] === 'zh-CN' ? '复制邀请链接' : 'Copy Invitation Link'}
+                text={copied ? (
+                  navigator.languages[0] === 'zh-CN' ? '复制成功' : 'Copied'
+                ) : (
+                  navigator.languages[0] === 'zh-CN' ? '复制邀请链接' : 'Copy Invitation Link'
+                )}
                 clickHandler={ copyLinkHandler }
               />
               <NavLinks clearSearch={clearSearch} isSearchEnabled={isSearchEnabled} />
@@ -279,7 +296,7 @@ export default function Nav({ navVisible, setNavVisible }) {
           </div>
         </button>
       )}
-
+      <ChatWidget type={widget} />
       <div className={'nav-mask' + (navVisible ? ' active' : '')} onClick={toggleNavVisible}></div>
     </>
   );

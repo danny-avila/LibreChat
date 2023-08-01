@@ -54,7 +54,7 @@ const convoSchema = mongoose.Schema(
     },
     isPrivate: {
       type: Boolean,
-      default: true
+      default: false
     },
     isLiked: {
       type: Boolean,

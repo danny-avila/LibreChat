@@ -5,8 +5,8 @@ export default function SwitchPage({ switchHandler, direction }) {
     <button
       onClick={switchHandler}
       className={ direction === 'left' ?
-        'left-20 absolute bottom-[124px] z-10 cursor-pointer rounded-full border border-gray-200 bg-gray-50 text-gray-600 dark:border-white/10 dark:bg-white/10 dark:text-gray-200 md:bottom-[360px]'
-        : 'right-20 absolute bottom-[124px] z-10 cursor-pointer rounded-full border border-gray-200 bg-gray-50 text-gray-600 dark:border-white/10 dark:bg-white/10 dark:text-gray-200 md:bottom-[360px]'
+        'left-7 absolute bottom-[124px] z-10 cursor-pointer rounded-full border border-gray-200 bg-gray-50 text-gray-600 dark:border-white/10 dark:bg-white/10 dark:text-gray-200 md:bottom-[360px]'
+        : 'right-7 absolute bottom-[124px] z-10 cursor-pointer rounded-full border border-gray-200 bg-gray-50 text-gray-600 dark:border-white/10 dark:bg-white/10 dark:text-gray-200 md:bottom-[360px]'
       }
     >
       <svg

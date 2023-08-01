@@ -5,6 +5,8 @@ import Search from './Search';
 import { Login, Registration, RequestPasswordReset, ResetPassword } from '../components/Auth';
 import { AuthContextProvider } from '../hooks/AuthContext';
 import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
+import Leaderboard from '~/components/ui/Leaderboard';
+import Homepage from '~/components/ui/Homepage';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -48,6 +50,14 @@ export const router = createBrowserRouter([
           {
             path: 'search/:query?',
             element: <Search />
+          },
+          {
+            path: 'leaderboard',
+            element: <Leaderboard />
+          },
+          {
+            path: 'home',
+            element: <Homepage />
           }
         ]
       }

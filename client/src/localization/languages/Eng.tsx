@@ -1,6 +1,7 @@
 // English phrases
 
 export default {
+  com_ui_convo_public_reminder: 'New conversations are automatically set as public',
   com_ui_examples: 'Examples',
   com_ui_new_chat: 'New Chat',
   com_ui_example_quantum_computing: 'Explain quantum computing in simple terms',

@@ -6,6 +6,7 @@ import { useScreenshot } from '~/utils/screenshotContext.jsx';
 import {
   TConversation,
   useGetRecentConversations,
+  useGetHottestConversations,
   useGetMessagesByConvoId,
   useDuplicateConvoMutation,
 } from '@librechat/data-provider';
@@ -13,7 +14,7 @@ import SwitchPage from './SwitchPage';
 import DuplicateConvoButton from './DuplicateConvoButton';
 import store from '~/store';
 
-export default function Recommendations() {
+export default function Recommendations({ type: leaderboardType }: {type: string}) {
   const [conversation, setConversation] = useState<TConversation>();
   const [conversationId, setConversationId] = useState<string>();
   const [messagesTree, setMessagesTree] = useState<any>();
@@ -22,9 +23,11 @@ export default function Recommendations() {
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
   const title = '首页';
 
-  const RecentConversations = useGetRecentConversations();
+  const recentConversations = useGetRecentConversations();
+  const hottestConversations = useGetHottestConversations();
+  const recommendations = (leaderboardType === 'recent') ? recentConversations : hottestConversations;
 
-  const convoData = RecentConversations.data;
+  const convoData = recommendations.data;
   const messages = useGetMessagesByConvoId(convoData?.length ? convoData[convoIdx].conversationId : '00000000-0000-0000-0000-000000000000'); // sometimes returns a string
   const msgData = messages?.data;
 
@@ -66,9 +69,9 @@ export default function Recommendations() {
     <>
       <h1
         id="landing-title"
-        className="mb-10 ml-auto mr-auto mt-6 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-16 md:mt-[10vh]"
+        className="mb-3 ml-auto mr-auto mt-0.5 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-2 md:mt-0.5"
       >
-        {'看看其他用户最近都在问些什么'}
+        {conversation?.title}
       </h1>
       <div className="dark:gpt-dark-gray mb-32 h-auto md:mb-48" ref={screenshotTargetRef}>
         <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
@@ -85,7 +88,7 @@ export default function Recommendations() {
           />
           <SwitchPage key={ 'left_switch' } switchHandler={ prevConvo } direction={ 'left' } />
           <SwitchPage key={ 'right_switch' } switchHandler={ nextConvo } direction={ 'right' } />
-          <DuplicateConvoButton duplicateHandler={ duplicateHandler } />
+          {/* <DuplicateConvoButton duplicateHandler={ duplicateHandler } /> */}
         </div>
       </div>
       {/* {!showingTemplates && (

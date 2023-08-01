@@ -7,9 +7,11 @@ import ConvoIcon from '../svg/ConvoIcon';
 import store from '~/store';
 import PrivateButton from './PrivateButton';
 import LikeIcon from '../svg/LikeIcon';
+import { useNavigate, useParams } from 'react-router-dom';
 
 export default function Conversation({ conversation, retainView }) {
   const [currentConversation, setCurrentConversation] = useRecoilState(store.conversation);
+  const { conversationId: convoId } = useParams();
   const setSubmission = useSetRecoilState(store.submission);
 
   const { refreshConversations } = store.useConversations();
@@ -26,6 +28,8 @@ export default function Conversation({ conversation, retainView }) {
 
   const [privateState, setPrivateState] = useState(isPrivate);
   const [isLiked, setIsLiked] = useState(false);
+
+  const navigate = useNavigate();
 
   // initial fetch to find out if it is being liked
   // const fetchLikeStatus = async () => {
@@ -87,7 +91,9 @@ export default function Conversation({ conversation, retainView }) {
     }
   };
   const clickHandler = async () => {
-    if (currentConversation?.conversationId === conversationId) {
+    if (currentConversation?.conversationId === conversationId &&
+      currentConversation?.conversationId === convoId &&
+      conversationId === convoId) {
       return;
     }
 
@@ -104,6 +110,8 @@ export default function Conversation({ conversation, retainView }) {
     } else {
       switchToConversation(conversation);
     }
+
+    navigate(`/chat/${conversationId}`);
   };
 
   const setPrivateHandler = (e) => {
@@ -159,7 +167,7 @@ export default function Conversation({ conversation, retainView }) {
       'animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-800 py-3 px-3 pr-14 hover:bg-gray-800'
   };
 
-  if (currentConversation?.conversationId !== conversationId) {
+  if (currentConversation?.conversationId !== conversationId || currentConversation?.conversationId !== convoId) {
     aProps.className =
       'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-gray-800 hover:pr-4';
   }
@@ -183,30 +191,32 @@ export default function Conversation({ conversation, retainView }) {
         )}
       </div>
 
-      {currentConversation?.conversationId === conversationId ? (
-        <div className="visible absolute right-1 z-10 ml-3 flex text-gray-300">
-          <LikeIcon filled={isLiked} style={{ marginTop: '0.25rem' }} onClick={handleLikeClick} />
-          <PrivateButton
-            conversationId={conversationId}
-            isPrivate={privateState}
-            setPrivateHandler={setPrivateHandler}
-          />
-          <RenameButton
-            conversationId={conversationId}
-            renaming={renaming}
-            renameHandler={renameHandler}
-            onRename={onRename}
-          />
-          <DeleteButton
-            conversationId={conversationId}
-            renaming={renaming}
-            cancelHandler={cancelHandler}
-            retainView={retainView}
-          />
-        </div>
-      ) : (
-        <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-gray-900 group-hover:from-gray-700/70" />
-      )}
+      {(currentConversation?.conversationId === conversationId &&
+        currentConversation?.conversationId === convoId &&
+        conversationId === convoId) ? (
+          <div className="visible absolute right-1 z-10 ml-3 flex text-gray-300">
+            <LikeIcon filled={isLiked} style={{ marginTop: '0.25rem' }} onClick={handleLikeClick} />
+            <PrivateButton
+              conversationId={conversationId}
+              isPrivate={privateState}
+              setPrivateHandler={setPrivateHandler}
+            />
+            <RenameButton
+              conversationId={conversationId}
+              renaming={renaming}
+              renameHandler={renameHandler}
+              onRename={onRename}
+            />
+            <DeleteButton
+              conversationId={conversationId}
+              renaming={renaming}
+              cancelHandler={cancelHandler}
+              retainView={retainView}
+            />
+          </div>
+        ) : (
+          <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-gray-900 group-hover:from-gray-700/70" />
+        )}
     </a>
   );
 }

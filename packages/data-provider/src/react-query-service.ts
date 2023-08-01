@@ -23,6 +23,7 @@ export enum QueryKeys {
   availablePlugins = 'availablePlugins',
   startupConfig = 'startupConfig',
   recentConversations = 'recentConversations',
+  hottestConversations = 'hottestConversations',
   numOfReferrals = 'numOfReferrals'
 }
 
@@ -363,6 +364,14 @@ export const useGetRecentConversations = (): QueryObserverResult<t.TConversation
     refetchOnMount: false
   });
 };
+
+export const useGetHottestConversations = (): QueryObserverResult<t.TConversation[]> => {
+  return useQuery([QueryKeys.hottestConversations], () => dataService.getHottestConversations(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false
+  });
+}
 
 export const useDuplicateConvoMutation = (): any => {
   return useMutation((payload: object) => dataService.duplicateConversation(payload))
