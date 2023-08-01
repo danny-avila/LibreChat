@@ -157,6 +157,36 @@ const AuthContextProvider = ({
     setUserContext,
   ]);
 
+  useEffect(() => {
+    const handleTokenUpdate = (event) => {
+      console.log('tokenUpdated event received event');
+      const newToken = event.detail;
+      setUserContext({
+        token: newToken,
+        isAuthenticated: true,
+        user: user,
+      });
+    };
+  
+    const handleLogout = () => {
+      console.log('logout event received');
+      setUserContext({
+        token: undefined,
+        isAuthenticated: false,
+        user: undefined,
+        redirect: '/login',
+      });
+    };
+
+    window.addEventListener('tokenUpdated', handleTokenUpdate);
+    window.addEventListener('logout', handleLogout);
+  
+    return () => {
+      window.removeEventListener('tokenUpdated', handleTokenUpdate);
+      window.removeEventListener('logout', handleLogout);
+    };
+  }, [setUserContext, user, logout]);
+  
   // Make the provider update only when it should
   const memoedValue = useMemo(
     () => ({
