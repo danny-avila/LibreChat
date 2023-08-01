@@ -21,7 +21,6 @@ axios.interceptors.response.use(
   (response) => response,
   (error) => {
     const originalRequest = error.config;
-    console.log('OriginalRequest URL',originalRequest.url);
     if (originalRequest.url.includes('/api/auth/refresh')) {
       window.dispatchEvent(new CustomEvent('logout'));
       return Promise.reject(error);
