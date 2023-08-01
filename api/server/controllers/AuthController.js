@@ -59,7 +59,7 @@ const resetPasswordController = async (req, res) => {
   }
 };
 
-const refreshController = async (req, res, next) => {
+const refreshController = async (req, res) => {
   const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
   if (refreshToken) {
     try {
