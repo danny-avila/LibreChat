@@ -195,18 +195,7 @@ export default function MessageHandler() {
     let { message } = submission;
 
     const { server, payload } = createPayload(submission);
-    
-    let tokenParts = token.split('.');
-    let base64Url = tokenParts[1];
-    let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    let tokenPayloadJson = window.atob(base64);
-    let tokenPayload = JSON.parse(tokenPayloadJson);
-    const currentTime = Date.now() / 1000; 
-    const timeLeft = tokenPayload.exp - currentTime; 
-    if (timeLeft < 15) { 
-      window.dispatchEvent(new CustomEvent('attemptRefresh'));
-    }
-    
+  
     const events = new SSE(server, {
       payload: JSON.stringify(payload),
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -248,21 +237,9 @@ export default function MessageHandler() {
       console.log('error in opening conn.');
       events.close();
 
-      // const data = JSON.parse(e.data);
+      const data = JSON.parse(e.data);
 
-      // errorHandler(data, { ...submission, message });
-      let data;
-      try {
-        data = JSON.parse(e.data);
-        errorHandler(data, { ...submission, message });
-      } catch (err) {
-        console.log('Invalid JSON:', e.data);
-        // data = {'error': e.data};
-        if (e.data === 'Unauthorized') {
-          //window.dispatchEvent(new CustomEvent('intercept401'));
-          refreshConversations();
-        }
-      }
+      errorHandler(data, { ...submission, message });
     };
 
     setIsSubmitting(true);
