@@ -1,15 +1,13 @@
+import { useRecoilValue } from 'recoil';
 import { SelectDropDown, Tabs, TabsList, TabsTrigger } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
 import { ModelSelectProps } from 'librechat-data-provider';
+import store from '~/store';
 
-export default function BingAI({
-  conversation,
-  setOption,
-  models,
-  showBingTones,
-}: ModelSelectProps) {
+export default function BingAI({ conversation, setOption, models }: ModelSelectProps) {
+  const showBingToneSetting = useRecoilValue(store.showBingToneSetting);
   const { conversationId, toneStyle, jailbreak } = conversation;
-  if (conversationId !== 'new' && !showBingTones) {
+  if (conversationId !== 'new' && !showBingToneSetting) {
     return null;
   }
 
@@ -34,7 +32,7 @@ export default function BingAI({
         className={cn(
           cardStyle,
           'min-w-36 z-50 flex h-[40px] w-36 flex-none items-center justify-center px-4 ring-0 hover:cursor-pointer hover:bg-slate-50 focus:ring-0 focus:ring-offset-0 data-[state=open]:bg-slate-50 dark:bg-gray-700 dark:hover:bg-gray-600 dark:data-[state=open]:bg-gray-600',
-          showBingTones ? 'hidden' : '',
+          showBingToneSetting ? 'hidden' : '',
         )}
       />
       <Tabs

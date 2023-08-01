@@ -127,8 +127,8 @@ const useConversation = () => {
 };
 
 export default {
-  conversation,
   messages,
+  conversation,
   messagesTree,
   latestMessage,
   messagesSiblingIdxFamily,

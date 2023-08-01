@@ -84,6 +84,7 @@ export type TPlugin = {
   icon: string;
   authConfig: TPluginAuthConfig[];
   authenticated: boolean;
+  isButton?: boolean;
 };
 
 export type TUpdateUserPlugins = {
@@ -318,14 +319,9 @@ export type OptionHoverProps = {
   side: Side;
 };
 
-export type OptionsBarProps = {
-  showBingTones?: boolean;
+export type ModelSelectProps = SettingsProps & {
+  models: string[];
 };
-
-export type ModelSelectProps = OptionsBarProps &
-  SettingsProps & {
-    models: string[];
-  };
 
 export type ExamplesProps = {
   readonly?: boolean;
@@ -344,7 +340,7 @@ export type GoogleProps = {
 export type GoogleViewProps = SettingsProps & GoogleProps;
 export type OptionComponent = React.FC<SettingsProps>;
 export type MultiViewComponent = React.FC;
-export type SelectProps = OptionsBarProps & {
+export type SelectProps = {
   conversation: TConversation | null;
   setOption: SetOption;
   extraProps?: GoogleProps;
@@ -356,6 +352,8 @@ export type UseSetOptions = {
   addExample: () => void;
   removeExample: () => void;
   getConversation: () => TConversation | null;
+  checkPluginSelection: (value: string) => boolean;
+  setTools: (newValue: string) => void;
 };
 
 export type PopoverButton = {
@@ -371,4 +369,18 @@ export type EndpointOptionsPopoverProps = {
   endpoint: EModelEndpoint;
   saveAsPreset: () => void;
   switchToSimpleMode: () => void;
+};
+
+export type MultiSelectDropDownProps = {
+  title?: string;
+  value: Array<{ icon?: string; name?: string; isButton?: boolean }>;
+  disabled?: boolean;
+  setSelected: (option: string) => void;
+  availableValues: TPlugin[];
+  showAbove?: boolean;
+  showLabel?: boolean;
+  containerClassName?: string;
+  isSelected: (value: string) => boolean;
+  className?: string;
+  optionValueKey?: string;
 };

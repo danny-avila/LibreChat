@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
-import CheckMark from '../svg/CheckMark.jsx';
-import useOnClickOutside from '~/hooks/useOnClickOutside.js';
 import { Listbox, Transition } from '@headlessui/react';
 import { Wrench, ArrowRight } from 'lucide-react';
+import { CheckMark } from '~/components/svg';
+import useOnClickOutside from '~/hooks/useOnClickOutside';
+import { MultiSelectDropDownProps } from 'librechat-data-provider';
 import { cn } from '~/utils/';
 
 function MultiSelectDropDown({
@@ -17,31 +18,37 @@ function MultiSelectDropDown({
   isSelected,
   className,
   optionValueKey = 'value',
-}) {
+}: MultiSelectDropDownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
   const excludeIds = ['select-plugin', 'plugins-label', 'selected-plugins'];
   useOnClickOutside(menuRef, () => setIsOpen(false), excludeIds);
 
-  const handleSelect = (option) => {
+  const handleSelect: (value: string) => void = (option) => {
     setSelected(option);
     setIsOpen(true);
   };
 
+  const transitionProps = { className: 'top-full mt-3' };
+  if (showAbove) {
+    transitionProps.className = 'bottom-full mb-3';
+  }
+  const openProps = { open: isOpen };
+
   return (
-    <div className={cn('flex items-center justify-center gap-2', containerClassName)}>
+    <div className={cn('flex items-center justify-center gap-2', containerClassName ?? '')}>
       <div className="relative w-full">
-        <Listbox value={value} onChange={handleSelect} disabled={disabled}>
+        <Listbox value={value} onChange={handleSelect as any} disabled={disabled}>
           {() => (
             <>
               <Listbox.Button
                 className={cn(
                   'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:border-green-600 focus:outline-none focus:ring-1 focus:ring-green-600 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
-                  className,
+                  className ?? '',
                 )}
                 id={excludeIds[0]}
                 onClick={() => setIsOpen((prev) => !prev)}
-                open={isOpen}
+                {...openProps}
               >
                 {' '}
                 {showLabel && (
@@ -111,13 +118,13 @@ function MultiSelectDropDown({
                 leave="transition ease-in duration-150"
                 leaveFrom="opacity-100"
                 leaveTo="opacity-0"
-                className={showAbove ? 'bottom-full mb-3' : 'top-full mt-3'}
+                {...transitionProps}
               >
                 <Listbox.Options
                   ref={menuRef}
                   className="absolute z-50 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%]"
                 >
-                  {availableValues.map((option, i) => {
+                  {availableValues.map((option, i: number) => {
                     if (!option) {
                       return null;
                     }

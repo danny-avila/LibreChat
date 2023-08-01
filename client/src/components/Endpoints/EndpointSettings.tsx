@@ -1,5 +1,4 @@
-import { OpenAISettings, BingAISettings, AnthropicSettings } from './Settings';
-import GoogleSettings from './Google/Settings.jsx';
+import { OpenAISettings, BingAISettings, AnthropicSettings, GoogleSettings } from './Settings';
 import PluginsSettings from './Plugins/Settings.jsx';
 
 // A preset dialog to show readonly preset values.
@@ -12,20 +11,7 @@ const Settings = ({ preset, readonly, setOption }) => {
     } else if (endpoint === 'bingAI') {
       return <BingAISettings conversation={preset} setOption={setOption} readonly={readonly} />;
     } else if (endpoint === 'google') {
-      return (
-        <GoogleSettings
-          model={preset?.model}
-          modelLabel={preset?.modelLabel}
-          promptPrefix={preset?.promptPrefix}
-          examples={preset?.examples}
-          temperature={preset?.temperature}
-          topP={preset?.topP}
-          topK={preset?.topK}
-          maxOutputTokens={preset?.maxOutputTokens}
-          edit={true}
-          // {...props}
-        />
-      );
+      return <GoogleSettings conversation={preset} setOption={setOption} edit={true} />;
     } else if (endpoint === 'anthropic') {
       return (
         <AnthropicSettings

@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useRecoilValue, useRecoilState } from 'recoil';
+import React, { useEffect, useRef } from 'react';
+import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
 import SubmitButton from './SubmitButton';
 import OptionsBar from './OptionsBar';
 import NewConversationMenu from './NewConversationMenu';
@@ -7,26 +7,24 @@ import AdjustToneButton from './AdjustToneButton';
 import Footer from './Footer';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useMessageHandler } from '~/utils/handleSubmit';
-
 import store from '~/store';
 
 export default function TextChat({ isSearchView = false }) {
   const inputRef = useRef(null);
   const isComposing = useRef(false);
 
+  const [text, setText] = useRecoilState(store.text);
   const conversation = useRecoilValue(store.conversation);
   const latestMessage = useRecoilValue(store.latestMessage);
-  const [text, setText] = useRecoilState(store.text);
 
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const isSubmitting = useRecoilValue(store.isSubmitting);
+  const setShowBingToneSetting = useSetRecoilState(store.showBingToneSetting);
 
   // TODO: do we need this?
   const disabled = false;
 
   const { ask, stopGenerating } = useMessageHandler();
-  const [showBingToneSetting, setShowBingToneSetting] = useState(false);
-
   const isNotAppendable = latestMessage?.unfinished & !isSubmitting || latestMessage?.error;
   const { conversationId, jailbreak } = conversation || {};
 
@@ -44,6 +42,8 @@ export default function TextChat({ isSearchView = false }) {
     if (conversationId !== 'search') {
       inputRef.current?.focus();
     }
+    // setShowBingToneSetting is a recoil setter, so it doesn't need to be in the dependency array
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId, jailbreak]);
 
   useEffect(() => {
@@ -122,10 +122,6 @@ export default function TextChat({ isSearchView = false }) {
     return '';
   };
 
-  const handleBingToneSetting = () => {
-    setShowBingToneSetting((show) => !show);
-  };
-
   if (isSearchView) {
     return <></>;
   }
@@ -133,13 +129,9 @@ export default function TextChat({ isSearchView = false }) {
   return (
     <>
       <div className="fixed bottom-0 left-0 w-full border-transparent bg-gradient-to-b from-transparent via-white to-white pt-6 dark:border-white/20 dark:via-gray-800 dark:to-gray-800 md:absolute">
-        <div className="relative py-2 md:mb-[-16px] md:py-4 lg:mb-[-32px]">
-          <span className="flex w-full flex-col items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
-            <OptionsBar showBingTones={showBingToneSetting} />
-          </span>
-        </div>
+        <OptionsBar />
         <div className="input-panel md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient relative w-full border-t bg-white py-2 dark:border-white/20 dark:bg-gray-800 md:border-t-0 md:border-transparent md:bg-transparent md:dark:border-transparent md:dark:bg-transparent">
-          <form className="stretch mx-2 flex flex-row gap-3 last:mb-2 md:pt-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
+          <form className="stretch z-[60] mx-2 flex flex-row gap-3 last:mb-2 md:pt-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
             <div className="relative flex h-full flex-1 md:flex-col">
               <div
                 className={`relative flex flex-grow flex-row rounded-md border border-black/10 ${
@@ -176,7 +168,7 @@ export default function TextChat({ isSearchView = false }) {
                   endpoint={conversation?.endpoint}
                 />
                 {latestMessage && conversation?.jailbreak && conversation.endpoint === 'bingAI' ? (
-                  <AdjustToneButton onClick={handleBingToneSetting} />
+                  <AdjustToneButton onClick={setShowBingToneSetting((show) => !show)} />
                 ) : null}
               </div>
             </div>
