@@ -178,7 +178,6 @@ const AuthContextProvider = ({
       });
     };
 
-    console.log('Auth Event', event); 
     window.addEventListener('tokenUpdated', handleTokenUpdate);
     window.addEventListener('logout', handleLogout);
   
