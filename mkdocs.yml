@@ -91,6 +91,7 @@ nav:
         - APIs and Tokens: 'install/apis_and_tokens.md'
         - User Auth System: 'install/user_auth_system.md'
         - Online MongoDB Database: 'install/mongodb.md'
+        - Languages: 'install/languages.md'
   - Features:
     - Plugins:
       - Introduction: 'features/plugins/introduction.md'
@@ -111,7 +112,7 @@ nav:
   - Contributions:
     - Documentation Guidelines: 'contributions/documentation_guidelines.md'
     - Code Standards and Conventions: 'contributions/coding_conventions.md'
-    - Testing: 'contributions/testing.md' 
+    - Testing: 'contributions/testing.md'
 
 extra:
   social:
