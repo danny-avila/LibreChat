@@ -18,10 +18,10 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DialogTemplate,
   Dialog,
   DialogTrigger,
-} from '../../ui/';
+} from '~/components/ui/';
+import DialogTemplate from '~/components/ui/DialogTemplate';
 import { cn } from '~/utils/';
 
 import store from '~/store';

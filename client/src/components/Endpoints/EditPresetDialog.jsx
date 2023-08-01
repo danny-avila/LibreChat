@@ -15,8 +15,8 @@ import {
   Dialog,
   DialogClose,
   DialogButton,
-  DialogTemplate,
 } from '~/components/';
+import DialogTemplate from '~/components/ui/DialogTemplate';
 import { cn, defaultTextProps } from '~/utils/';
 import cleanupPreset from '~/utils/cleanupPreset';
 import { localize } from '~/localization/Translation';

@@ -3,15 +3,8 @@ import { useRecoilValue, useRecoilCallback } from 'recoil';
 import filenamify from 'filenamify';
 import exportFromJSON from 'export-from-json';
 import download from 'downloadjs';
-import {
-  Dialog,
-  DialogButton,
-  DialogTemplate,
-  Input,
-  Label,
-  Checkbox,
-  Dropdown,
-} from '~/components/ui/';
+import { Dialog, DialogButton, Input, Label, Checkbox, Dropdown } from '~/components/ui/';
+import DialogTemplate from '~/components/ui/DialogTemplate';
 import { cn, defaultTextProps } from '~/utils/';
 import { useScreenshot } from '~/utils/screenshotContext';
 
