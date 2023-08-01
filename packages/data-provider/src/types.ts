@@ -93,6 +93,13 @@ export type TUpdateUserPlugins = {
   auth?: unknown;
 };
 
+export type TAgentOptions = {
+  agent: string;
+  skipCompletion: boolean;
+  model: string;
+  temperature: number;
+};
+
 export type TConversation = {
   conversationId: string | null;
   title: string;
@@ -129,6 +136,8 @@ export type TConversation = {
   invocationId?: string;
   toneStyle?: string;
   maxOutputTokens?: number;
+  // plugins only
+  agentOptions?: TAgentOptions;
 };
 
 export type TPreset = {
