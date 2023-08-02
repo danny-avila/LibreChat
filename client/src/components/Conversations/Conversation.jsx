@@ -10,6 +10,7 @@ import LikeIcon from '../svg/LikeIcon';
 import { useNavigate, useParams } from 'react-router-dom';
 
 export default function Conversation({ conversation, retainView }) {
+  const [widget, setWidget] = useRecoilState(store.widget); // eslint-disable-line
   const [currentConversation, setCurrentConversation] = useRecoilState(store.conversation);
   const { conversationId: convoId } = useParams();
   const setSubmission = useSetRecoilState(store.submission);
@@ -110,7 +111,7 @@ export default function Conversation({ conversation, retainView }) {
     } else {
       switchToConversation(conversation);
     }
-
+    if (location.pathname.substring(1, 5) !== 'chat') setWidget('');
     navigate(`/chat/${conversationId}`);
   };
 
