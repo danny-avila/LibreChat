@@ -20,18 +20,24 @@ const sessionSchema = mongoose.Schema({
 
 sessionSchema.methods.generateRefreshToken = async function () {
   try {
+    let expiresIn;
+    if (this.expiration) {
+      expiresIn = this.expiration.getTime();
+    } else {
+      expiresIn = Date.now() + eval(process.env.REFRESH_TOKEN_EXPIRY);
+      this.expiration = new Date(expiresIn);
+    }
+
     const refreshToken = jwt.sign(
       {
         id: this.user,
       },
       process.env.JWT_REFRESH_SECRET,
-      { expiresIn: ( eval(process.env.REFRESH_TOKEN_EXPIRY) / 1000) }
+      { expiresIn:  Math.floor((expiresIn - Date.now()) / 1000) }
     );
 
     const hash = crypto.createHash('sha256');
     this.refreshTokenHash = hash.update(refreshToken).digest('hex');
-
-    this.expiration = new Date(Date.now() + eval(process.env.REFRESH_TOKEN_EXPIRY));
 
     await this.save();
 
