@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Dialog, Input, Label } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { cn, defaultTextPropsLabel } from '~/utils/';
+import { cn, defaultTextPropsLabel, removeFocusOutlines } from '~/utils/';
 import cleanupPreset from '~/utils/cleanupPreset';
 import { useCreatePresetMutation } from 'librechat-data-provider';
 import store from '~/store';
@@ -48,7 +48,8 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
                 placeholder="Set a custom name for this preset"
                 className={cn(
                   defaultTextPropsLabel,
-                  'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
+                  'flex h-10 max-h-10 w-full resize-none px-3 py-2',
+                  removeFocusOutlines,
                 )}
               />
             </div>

@@ -17,7 +17,7 @@ import {
   DialogButton,
 } from '~/components/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { cn, defaultTextProps } from '~/utils/';
+import { cn, defaultTextProps, removeFocusOutlines } from '~/utils/';
 import cleanupPreset from '~/utils/cleanupPreset';
 import { localize } from '~/localization/Translation';
 
@@ -181,7 +181,8 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
                   placeholder={localize(lang, 'com_endpoint_set_custom_name')}
                   className={cn(
                     defaultTextProps,
-                    'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
+                    'flex h-10 max-h-10 w-full resize-none px-3 py-2',
+                    removeFocusOutlines,
                   )}
                 />
               </div>
@@ -196,7 +197,8 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
                   options={availableEndpoints}
                   className={cn(
                     defaultTextProps,
-                    'flex h-10 max-h-10 w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
+                    'flex h-10 max-h-10 w-full resize-none',
+                    removeFocusOutlines,
                   )}
                   containerClassName="flex w-full resize-none"
                 />

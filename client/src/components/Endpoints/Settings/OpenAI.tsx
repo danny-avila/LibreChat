@@ -10,12 +10,16 @@ import {
   HoverCardTrigger,
 } from '~/components/ui';
 import OptionHover from './OptionHover';
-import { cn, defaultTextProps, optionText } from '~/utils/';
+import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
 import { localize } from '~/localization/Translation';
 import { ModelSelectProps, Side } from 'librechat-data-provider';
 import store from '~/store';
 
 export default function Settings({ conversation, setOption, models, readonly }: ModelSelectProps) {
+  const lang = useRecoilValue(store.lang);
+  if (!conversation) {
+    return null;
+  }
   const {
     model,
     chatGptLabel,
@@ -27,7 +31,6 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   } = conversation;
   const endpoint = conversation.endpoint || 'openAI';
   const isOpenAI = endpoint === 'openAI' || endpoint === 'azureOpenAI';
-  const lang = useRecoilValue(store.lang);
 
   const setModel = setOption('model');
   const setChatGptLabel = setOption('chatGptLabel');
@@ -47,10 +50,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               setValue={setModel}
               availableValues={models}
               disabled={readonly}
-              className={cn(
-                defaultTextProps,
-                'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
-              )}
+              className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
               containerClassName="flex w-full resize-none"
             />
           </div>
@@ -71,7 +71,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                   placeholder={localize(lang, 'com_endpoint_openai_custom_name_placeholder')}
                   className={cn(
                     defaultTextProps,
-                    'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
+                    'flex h-10 max-h-10 w-full resize-none px-3 py-2',
+                    removeFocusOutlines,
                   )}
                 />
               </div>

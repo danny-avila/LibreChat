@@ -47,7 +47,7 @@ export const alternateName = {
   anthropic: 'Anthropic',
 };
 
-export const removeButtonOutline =
+export const removeFocusOutlines =
   'focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0';
 
 export const cardStyle =

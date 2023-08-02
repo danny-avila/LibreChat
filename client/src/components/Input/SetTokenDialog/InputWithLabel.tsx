@@ -1,6 +1,6 @@
 import React, { ChangeEvent, FC } from 'react';
 import { Input, Label } from '~/components';
-import { cn, defaultTextPropsLabel } from '~/utils/';
+import { cn, defaultTextPropsLabel, removeFocusOutlines } from '~/utils/';
 
 interface InputWithLabelProps {
   value: string;
@@ -24,7 +24,8 @@ const InputWithLabel: FC<InputWithLabelProps> = ({ value, onChange, label, id })
         placeholder={`Enter ${label}`}
         className={cn(
           defaultTextPropsLabel,
-          'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
+          'flex h-10 max-h-10 w-full resize-none px-3 py-2',
+          removeFocusOutlines,
         )}
       />
     </>

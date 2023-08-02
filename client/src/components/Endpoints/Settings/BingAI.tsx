@@ -8,23 +8,15 @@ import {
 } from 'librechat-data-provider';
 import useDebounce from '~/hooks/useDebounce';
 import { useRecoilValue } from 'recoil';
-import { cn, defaultTextProps } from '~/utils/';
+import { cn, defaultTextProps, removeFocusOutlines } from '~/utils/';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
 
 export default function Settings({ conversation, setOption, readonly }: SettingsProps) {
-  const [tokenCount, setTokenCount] = useState(0);
   const lang = useRecoilValue(store.lang);
-  const { context, systemMessage, jailbreak, toneStyle } = conversation;
-  console.log('readonly', readonly);
-  const debouncedContext = useDebounce(context?.trim() ?? '', 250);
+  const [tokenCount, setTokenCount] = useState(0);
+  const debouncedContext = useDebounce(conversation?.context?.trim() ?? '', 250);
   const updateTokenCountMutation = useUpdateTokenCountMutation();
-  const showSystemMessage = jailbreak;
-
-  const setContext = setOption('context');
-  const setSystemMessage = setOption('systemMessage');
-  const setJailbreak = setOption('jailbreak');
-  const setToneStyle = (value: string) => setOption('toneStyle')(value.toLowerCase());
 
   useEffect(() => {
     if (!debouncedContext || debouncedContext === '') {
@@ -47,6 +39,17 @@ export default function Settings({ conversation, setOption, readonly }: Settings
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedContext]);
 
+  if (!conversation) {
+    return null;
+  }
+  const { context, systemMessage, jailbreak, toneStyle } = conversation;
+  const showSystemMessage = jailbreak;
+
+  const setContext = setOption('context');
+  const setSystemMessage = setOption('systemMessage');
+  const setJailbreak = setOption('jailbreak');
+  const setToneStyle = (value: string) => setOption('toneStyle')(value.toLowerCase());
+
   return (
     <div className="h-[440px] overflow-y-auto sm:h-[350px]">
       <div className="grid gap-6 sm:grid-cols-2">
@@ -65,10 +68,7 @@ export default function Settings({ conversation, setOption, readonly }: Settings
               setValue={setToneStyle}
               availableValues={['Creative', 'Fast', 'Balanced', 'Precise']}
               disabled={readonly}
-              className={cn(
-                defaultTextProps,
-                'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
-              )}
+              className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
               containerClassName="flex w-full resize-none"
             />
           </div>

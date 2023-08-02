@@ -1,4 +1,3 @@
-import { cn, optionText, defaultTextProps } from '~/utils/';
 import { useRecoilValue } from 'recoil';
 import {
   Switch,
@@ -11,12 +10,16 @@ import {
 } from '~/components';
 import OptionHover from './OptionHover';
 import { ModelSelectProps, Side } from 'librechat-data-provider';
+import { cn, optionText, defaultTextProps, removeFocusOutlines } from '~/utils/';
 import { localize } from '~/localization/Translation';
 import store from '~/store';
 
 export default function Settings({ conversation, setOption, models, readonly }: ModelSelectProps) {
-  const { agent, skipCompletion, model, temperature } = conversation.agentOptions ?? {};
   const lang = useRecoilValue(store.lang);
+  if (!conversation) {
+    return null;
+  }
+  const { agent, skipCompletion, model, temperature } = conversation.agentOptions ?? {};
 
   const setModel = setOption('model');
   const setTemperature = setOption('temperature');
@@ -41,10 +44,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               setValue={setModel}
               availableValues={models}
               disabled={readonly}
-              className={cn(
-                defaultTextProps,
-                'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
-              )}
+              className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
               containerClassName="flex w-full resize-none"
             />
           </div>

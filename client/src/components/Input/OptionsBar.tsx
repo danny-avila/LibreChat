@@ -4,7 +4,7 @@ import { useRecoilValue, useRecoilState } from 'recoil';
 import { PluginStoreDialog } from '~/components';
 import { SaveAsPresetDialog, EndpointOptionsPopover } from '~/components/Endpoints';
 import { Button } from '~/components/ui';
-import { cn, cardStyle, removeButtonOutline } from '~/utils/';
+import { cn, cardStyle, removeFocusOutlines } from '~/utils/';
 import { useSetOptions } from '~/hooks';
 import { ModelSelect } from './ModelSelect';
 import Settings from './Settings';
@@ -51,7 +51,7 @@ function OptionsBar() {
         <div className="grow"></div>
         <div className="flex items-center md:items-end">
           {/* <div className={cn('option-buttons', advancedMode ? '' : opacityClass)} data-projection-id="173">
-            <button className={cn('custom-btn relative btn-neutral whitespace-nowrap -z-0 border-0 md:border', removeButtonOutline)}>
+            <button className={cn('custom-btn relative btn-neutral whitespace-nowrap -z-0 border-0 md:border', removeFocusOutlines)}>
               <div className="flex w-full gap-2 items-center justify-center">
                 <svg stroke="currentColor" fill="none" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3 flex-shrink-0" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
                   <polyline points="1 4 1 10 7 10"></polyline>

@@ -5,7 +5,7 @@ import exportFromJSON from 'export-from-json';
 import download from 'downloadjs';
 import { Dialog, DialogButton, Input, Label, Checkbox, Dropdown } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { cn, defaultTextProps } from '~/utils/';
+import { cn, defaultTextProps, removeFocusOutlines } from '~/utils/';
 import { useScreenshot } from '~/utils/screenshotContext';
 
 import store from '~/store';
@@ -351,7 +351,8 @@ export default function ExportModel({ open, onOpenChange }) {
                   placeholder={localize(lang, 'com_nav_export_filename_placeholder')}
                   className={cn(
                     defaultTextProps,
-                    'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
+                    'flex h-10 max-h-10 w-full resize-none px-3 py-2',
+                    removeFocusOutlines,
                   )}
                 />
               </div>
@@ -366,7 +367,8 @@ export default function ExportModel({ open, onOpenChange }) {
                   options={typeOptions}
                   className={cn(
                     defaultTextProps,
-                    'flex h-10 max-h-10 w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
+                    'flex h-10 max-h-10 w-full resize-none',
+                    removeFocusOutlines,
                   )}
                   containerClassName="flex w-full resize-none"
                 />

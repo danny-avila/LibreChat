@@ -12,10 +12,14 @@ import {
 import OptionHover from './OptionHover';
 import { localize } from '~/localization/Translation';
 import { ModelSelectProps, Side } from 'librechat-data-provider';
-import { cn, defaultTextProps, optionText } from '~/utils/';
+import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
 import store from '~/store';
 
 export default function Settings({ conversation, setOption, readonly, models }: ModelSelectProps) {
+  const lang = useRecoilValue(store.lang);
+  if (!conversation) {
+    return null;
+  }
   const {
     model,
     chatGptLabel,
@@ -26,7 +30,6 @@ export default function Settings({ conversation, setOption, readonly, models }: 
     presence_penalty: presP,
     tools,
   } = conversation;
-  const lang = useRecoilValue(store.lang);
 
   const setModel = setOption('model');
   const setChatGptLabel = setOption('chatGptLabel');
@@ -49,10 +52,7 @@ export default function Settings({ conversation, setOption, readonly, models }: 
               setValue={setModel}
               availableValues={models}
               disabled={readonly}
-              className={cn(
-                defaultTextProps,
-                'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
-              )}
+              className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
               containerClassName="flex w-full resize-none"
             />
           </div>
@@ -77,7 +77,8 @@ export default function Settings({ conversation, setOption, readonly, models }: 
                 }
                 className={cn(
                   defaultTextProps,
-                  'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
+                  'flex h-10 max-h-10 w-full resize-none px-3 py-2',
+                  removeFocusOutlines,
                 )}
               />
             </div>
