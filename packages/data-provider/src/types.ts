@@ -406,7 +406,7 @@ export type EndpointOptionsPopoverProps = {
   visible: boolean;
   endpoint: EModelEndpoint;
   saveAsPreset: () => void;
-  switchToSimpleMode: () => void;
+  closePopover: () => void;
 };
 
 export type MultiSelectDropDownProps = {

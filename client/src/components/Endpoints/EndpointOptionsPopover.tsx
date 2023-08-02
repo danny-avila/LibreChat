@@ -12,7 +12,7 @@ export default function EndpointOptionsPopover({
   endpoint,
   visible,
   saveAsPreset,
-  switchToSimpleMode,
+  closePopover,
 }: EndpointOptionsPopoverProps) {
   const lang = useRecoilValue(store.lang);
   const cardStyle =
@@ -46,7 +46,7 @@ export default function EndpointOptionsPopover({
             <Button
               type="button"
               className="ml-auto h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white"
-              onClick={switchToSimpleMode}
+              onClick={closePopover}
             >
               <CrossIcon className="mr-1" />
               {/* Switch to simple mode */}

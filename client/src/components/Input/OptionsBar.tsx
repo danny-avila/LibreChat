@@ -20,19 +20,19 @@ export default function OptionsBar() {
     store.showPluginStoreDialog,
   );
   const [saveAsDialogShow, setSaveAsDialogShow] = useState<boolean>(false);
-  const [advancedMode, setAdvancedMode] = useState<boolean>(false);
+  const [showPopover, setShowPopover] = useState<boolean>(false);
   const [opacityClass, setOpacityClass] = useState('full-opacity');
   const { setOption } = useSetOptions();
 
   useEffect(() => {
-    if (advancedMode) {
+    if (showPopover) {
       return;
     } else if (messagesTree?.length >= 1) {
       setOpacityClass('show');
     } else {
       setOpacityClass('full-opacity');
     }
-  }, [messagesTree, advancedMode]);
+  }, [messagesTree, showPopover]);
 
   const { endpoint, conversationId, jailbreak } = conversation ?? {};
 
@@ -57,24 +57,24 @@ export default function OptionsBar() {
 
   const triggerAdvancedMode = altConditions[endpoint]
     ? altSettings[endpoint]
-    : () => setAdvancedMode((prev) => !prev);
+    : () => setShowPopover((prev) => !prev);
   return (
     <div className="relative py-2 last:mb-2 md:mx-4 md:mb-[-16px] md:py-4 md:pt-2 md:last:mb-6 lg:mx-auto lg:mb-[-32px] lg:max-w-2xl lg:pt-6 xl:max-w-3xl">
-      <GenerationButtons advancedMode={advancedMode} opacityClass={opacityClass} />
+      <GenerationButtons showPopover={showPopover} opacityClass={opacityClass} />
       <span className="flex w-full flex-col items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
         <div
           className={cn(
             'options-bar z-[61] flex w-full flex-wrap items-center justify-center gap-2',
-            advancedMode ? '' : opacityClass,
+            showPopover ? '' : opacityClass,
           )}
           onMouseEnter={() => {
-            if (advancedMode) {
+            if (showPopover) {
               return;
             }
             setOpacityClass('full-opacity');
           }}
           onMouseLeave={() => {
-            if (advancedMode) {
+            if (showPopover) {
               return;
             }
             if (!messagesTree || messagesTree.length === 0) {
@@ -99,9 +99,9 @@ export default function OptionsBar() {
         </div>
         <EndpointOptionsPopover
           endpoint={endpoint}
-          visible={advancedMode}
+          visible={showPopover}
           saveAsPreset={saveAsPreset}
-          switchToSimpleMode={() => setAdvancedMode(false)}
+          closePopover={() => setShowPopover(false)}
         >
           <div className="px-4 py-4">
             <Settings conversation={conversation} setOption={setOption} />
