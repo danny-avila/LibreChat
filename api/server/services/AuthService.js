@@ -192,19 +192,26 @@ const resetPassword = async (userId, token, password) => {
  *
  * @param {String} userId
  * @param {Object} res
+ * @param {String} sessionId
  * @returns
  */
-const setAuthTokens = async (userId, res) => {
+const setAuthTokens = async (userId, res, sessionId = null) => {
   try {
     const user = await User.findOne({ _id: userId });
     const token = await user.generateToken();
 
-    const session = new Session({ user: userId });
-    const refreshToken = await session.generateRefreshToken();
-
+    let session;
+    let refreshTokenExpires;
+    if (sessionId) {
+      session = await Session.findById(sessionId);
+      refreshTokenExpires = session.expiration.getTime();
+    } else {
+      session = new Session({ user: userId });
+      refreshTokenExpires = Date.now() + eval(process.env.REFRESH_TOKEN_EXPIRY);
+    }
+    
     const tokenExpires = eval(process.env.SESSION_EXPIRY);
-    const refreshTokenExpires = eval(process.env.REFRESH_TOKEN_EXPIRY);
-
+    
     res.cookie('token', token, {
       expires: new Date(Date.now() + tokenExpires),
       httpOnly: false,
@@ -212,7 +219,7 @@ const setAuthTokens = async (userId, res) => {
     });
 
     res.cookie('refreshToken', refreshToken, {
-      expires: new Date(Date.now() + refreshTokenExpires),
+      expires: new Date(refreshTokenExpires),
       httpOnly: true,
       secure: isProduction,
       sameSite: 'strict',
