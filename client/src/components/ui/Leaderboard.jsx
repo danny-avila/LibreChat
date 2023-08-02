@@ -56,8 +56,10 @@ export default function Leaderboard() {
   ]);
 
   // DefaultColDef sets props common to all Columns
-  const defaultColDef = useMemo( ()=> ({
-    sortable: true
+  const defaultColDef = useMemo(() => ({
+    width: 200,
+    sortable: true,
+    suppressMovable: true
   }));
 
   useEffect(() => {
@@ -86,19 +88,17 @@ export default function Leaderboard() {
       >
         邀请排行榜
       </h1>
-      <div className="w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
-        <div className='grid grid-col justify-center'>
-          {/* On div wrapping Grid a) specify theme CSS Class Class and b) sets Grid size */}
-          <div className="ag-theme-alpine" style={{ width: 600, height: 500 }}>
-            <AgGridReact
-              rowData={rowData} // Row Data for Rows
+      <div className='flex justify-center' style={{ width: '100%', height: '100%' }}>
+        {/* On div wrapping Grid a) specify theme CSS Class Class and b) sets Grid size */}
+        <div className="ag-theme-alpine" style={{ width: 605, height: 500 }}>
+          <AgGridReact
+            rowData={rowData} // Row Data for Rows
 
-              columnDefs={columnDefs} // Column Defs for Columns
-              defaultColDef={defaultColDef} // Default Column Properties
+            columnDefs={columnDefs} // Column Defs for Columns
+            defaultColDef={defaultColDef} // Default Column Properties
 
-              animateRows={true} // Optional - set to 'true' to have rows animate when sorted
-            />
-          </div>
+            animateRows={true} // Optional - set to 'true' to have rows animate when sorted
+          />
         </div>
       </div>
     </div>
