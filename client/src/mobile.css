@@ -9,7 +9,7 @@
 
 .nav {
   position: fixed;
-  z-index: 40;
+  z-index: 64;
   top: 0;
 
   /* max-width: 260px; */
@@ -36,7 +36,7 @@
   }
   .nav-mask {
     position: fixed;
-    z-index: 35;
+    z-index: 63;
     left: 0;
     right: 0;
     top: 0;

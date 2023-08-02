@@ -168,7 +168,7 @@ export default function TextChat({ isSearchView = false }) {
                   endpoint={conversation?.endpoint}
                 />
                 {latestMessage && conversation?.jailbreak && conversation.endpoint === 'bingAI' ? (
-                  <AdjustToneButton onClick={setShowBingToneSetting((show) => !show)} />
+                  <AdjustToneButton onClick={() => setShowBingToneSetting((prev) => !prev)} />
                 ) : null}
               </div>
             </div>
