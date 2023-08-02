@@ -4,11 +4,9 @@ import { useSetOptions } from '~/hooks';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 
-export default function PluginsView({ models }) {
+export default function PluginsView({ conversation, models, isPreset = false }) {
   const showAgentSettings = useRecoilValue(store.showAgentSettings);
-  const { setOption, setAgentOption, getConversation } = useSetOptions();
-
-  const conversation = getConversation();
+  const { setOption, setAgentOption } = useSetOptions(isPreset ? conversation : null);
   if (!conversation) {
     return null;
   }

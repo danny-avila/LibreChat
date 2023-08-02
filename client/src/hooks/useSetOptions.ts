@@ -6,12 +6,19 @@ import {
   TPlugin,
 } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
+import usePresetOptions from './usePresetOptions';
 import store from '~/store';
 
-export default function useSetOptions(): UseSetOptions {
+const useSetOptions: UseSetOptions = (preset = false) => {
   const setShowPluginStoreDialog = useSetRecoilState(store.showPluginStoreDialog);
   const [conversation, setConversation] = useRecoilState(store.conversation);
   const availableTools = useRecoilValue(store.availableTools);
+
+  const result = usePresetOptions(preset);
+
+  if (result && typeof result !== 'boolean') {
+    return result;
+  }
 
   const setOption: SetOption = (param) => (newValue) => {
     const update = {};
@@ -135,9 +142,11 @@ export default function useSetOptions(): UseSetOptions {
     setExample,
     addExample,
     removeExample,
+    setAgentOption,
     getConversation,
     checkPluginSelection,
-    setAgentOption,
     setTools,
   };
-}
+};
+
+export default useSetOptions;

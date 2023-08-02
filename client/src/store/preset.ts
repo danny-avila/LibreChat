@@ -1,4 +1,5 @@
 import { atom } from 'recoil';
+import { TPreset } from 'librechat-data-provider';
 
 // preset structure is as same defination as conversation
 
@@ -10,6 +11,12 @@ const presets = atom({
   default: [],
 });
 
+const preset = atom<TPreset | null>({
+  key: 'preset',
+  default: null,
+});
+
 export default {
+  preset,
   presets,
 };

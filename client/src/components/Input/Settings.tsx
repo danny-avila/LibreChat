@@ -20,7 +20,7 @@ const multiViewComponents: { [key: string]: MultiViewComponent } = {
   gptPlugins: PluginsSettings,
 };
 
-export default function Settings({ conversation, setOption }: SettingsProps) {
+export default function Settings({ conversation, setOption, isPreset = false }: SettingsProps) {
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   if (!conversation?.endpoint) {
     return null;
@@ -31,7 +31,14 @@ export default function Settings({ conversation, setOption }: SettingsProps) {
   const OptionComponent = optionComponents[endpoint];
 
   if (OptionComponent) {
-    return <OptionComponent conversation={conversation} setOption={setOption} models={models} />;
+    return (
+      <OptionComponent
+        conversation={conversation}
+        setOption={setOption}
+        models={models}
+        isPreset={isPreset}
+      />
+    );
   }
 
   const MultiViewComponent = multiViewComponents[endpoint];
@@ -40,5 +47,5 @@ export default function Settings({ conversation, setOption }: SettingsProps) {
     return null;
   }
 
-  return <MultiViewComponent models={models} />;
+  return <MultiViewComponent conversation={conversation} models={models} isPreset={isPreset} />;
 }

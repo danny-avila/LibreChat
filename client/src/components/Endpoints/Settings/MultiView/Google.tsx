@@ -4,11 +4,11 @@ import { useSetOptions } from '~/hooks';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 
-export default function GoogleView({ models }) {
+export default function GoogleView({ conversation, models, isPreset = false }) {
   const optionSettings = useRecoilValue(store.optionSettings);
-  const { setOption, setExample, addExample, removeExample, getConversation } = useSetOptions();
-
-  const conversation = getConversation();
+  const { setOption, setExample, addExample, removeExample } = useSetOptions(
+    isPreset ? conversation : null,
+  );
   if (!conversation) {
     return null;
   }

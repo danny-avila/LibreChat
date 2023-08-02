@@ -173,6 +173,10 @@ export type TPreset = {
   jailbreakPresetId?: string;
   presetSignature?: string;
   toneStyle?: string;
+  // plugins only
+  agentOptions?: TAgentOptions;
+  // google only
+  examples?: TExample[];
 };
 
 export type TOptionSettings = {
@@ -335,10 +339,11 @@ export type SetExample = (
 ) => void;
 
 export type SettingsProps = {
-  conversation: TConversation | null;
+  conversation: TConversation | TPreset | null;
   setOption: SetOption;
   edit?: boolean;
   readonly?: boolean;
+  isPreset?: boolean;
 };
 
 export enum Side {
@@ -359,6 +364,10 @@ export type TModels = {
 };
 
 export type ModelSelectProps = SettingsProps & TModels;
+export type MultiViewProps = TModels & {
+  conversation: TConversation | TPreset | null;
+  isPreset?: boolean;
+};
 
 export type ExamplesProps = {
   readonly?: boolean;
@@ -376,23 +385,26 @@ export type GoogleProps = {
 
 export type GoogleViewProps = SettingsProps & GoogleProps;
 export type OptionComponent = React.FC<ModelSelectProps>;
-export type MultiViewComponent = React.FC<TModels>;
+export type MultiViewComponent = React.FC<MultiViewProps>;
 export type SelectProps = {
   conversation: TConversation | null;
   setOption: SetOption;
   extraProps?: GoogleProps;
 };
 
-export type UseSetOptions = {
+export type SetOptionsPayload = {
   setOption: SetOption;
   setExample: SetExample;
   addExample: () => void;
   removeExample: () => void;
-  getConversation: () => TConversation | null;
-  checkPluginSelection: (value: string) => boolean;
   setAgentOption: SetOption;
+  getConversation: () => TConversation | TPreset | null;
+  checkPluginSelection: (value: string) => boolean;
   setTools: (newValue: string) => void;
 };
+
+export type UseSetOptions = (preset?: TPreset | boolean | null) => SetOptionsPayload;
+export type UsePresetOptions = (preset?: TPreset | boolean | null) => SetOptionsPayload | boolean;
 
 export type PopoverButton = {
   label: string;
