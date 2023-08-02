@@ -211,6 +211,7 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
     }
     
     const tokenExpires = eval(process.env.SESSION_EXPIRY);
+    const refreshToken = await session.generateRefreshToken();
     
     res.cookie('token', token, {
       expires: new Date(Date.now() + tokenExpires),
