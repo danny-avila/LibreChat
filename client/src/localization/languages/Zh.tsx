@@ -1,7 +1,7 @@
 // Chinese phrases
 
 export default {
-  com_ui_convo_public_reminder: '新对话将自动被设置为公开',
+  com_ui_convo_public_reminder: '新对话默认为公开。您可以在左侧栏选择对话，设为非公开（私密）。',
   com_ui_examples: '例子',
   com_ui_new_chat: '新对话',
   com_ui_example_quantum_computing: '简单的解释以下量子计算',

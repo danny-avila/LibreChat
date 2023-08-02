@@ -1,14 +1,18 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useRecoilState } from 'recoil';
 import store from '~/store';
 
 export default function NewChat() {
   const { newConversation } = store.useConversation();
   const navigate = useNavigate();
+  const [widget, setWidget] = useRecoilState(store.widget); // eslint-disable-line
 
   const clickHandler = () => {
     // dispatch(setInputValue(''));
     // dispatch(setQuery(''));
+    if (location.pathname === '/chat/new') return;
+    setWidget('');
     newConversation();
     navigate('/chat/new');
   };

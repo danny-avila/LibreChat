@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGetConversationsQuery, useSearchQuery } from '@librechat/data-provider';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 
 import Conversations from '../Conversations';
 import NavLinks from './NavLinks';
@@ -19,7 +19,6 @@ import useDebounce from '~/hooks/useDebounce';
 import LeaderboardIcon from '../svg/LeaderboardIcon';
 import NotebookIcon from '../svg/NotebookIcon';
 import { useNavigate } from 'react-router-dom';
-import ChatWidget from '../Input/ChatWidgetMenu';
 import HomeIcon from '../svg/HomeIcon';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
@@ -74,7 +73,7 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const [refLink, setRefLink] = useState('');
   const [copied, setCopied] = useState(false);
-  const [widget, setWidget] = useState('');
+  const [widget, setWidget] = useRecoilState(store.widget);
   const { user } = useAuthContext();
   const navigate = useNavigate();
   const mode = process.env.NODE_ENV;
@@ -189,7 +188,13 @@ export default function Nav({ navVisible, setNavVisible }) {
   }
 
   const openWritingAssistantHandler = () => {
-    setWidget(widget === 'wa' ? '' : 'wa');
+    if (location.pathname.substring(1, 5) !== 'chat') {
+      newConversation();
+      navigate('/chat/new');
+      setWidget('wa');
+    } else {
+      setWidget(widget === 'wa' ? '' : 'wa');
+    }
   }
   const openLeaderboardHandler = () => navigate('/leaderboard');
   const openHomepageHandler = () => navigate('/home');
@@ -296,7 +301,6 @@ export default function Nav({ navVisible, setNavVisible }) {
           </div>
         </button>
       )}
-      <ChatWidget type={widget} />
       <div className={'nav-mask' + (navVisible ? ' active' : '')} onClick={toggleNavVisible}></div>
     </>
   );

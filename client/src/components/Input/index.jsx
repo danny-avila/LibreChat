@@ -13,6 +13,7 @@ import { useMessageHandler } from '../../utils/handleSubmit';
 
 import store from '~/store';
 import NewConversationMenu from './NewConversationMenu';
+import ChatWidget from './ChatWidgetMenu';
 
 export default function TextChat({ isSearchView = false }) {
   const inputRef = useRef(null);
@@ -136,6 +137,7 @@ export default function TextChat({ isSearchView = false }) {
             <ChatGPTOptions />
             <GoogleOptions />
             <BingAIOptions show={showBingToneSetting} />
+            <ChatWidget />
           </span>
         </div>
         <div className="input-panel md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient relative w-full border-t bg-white py-2 dark:border-white/20 dark:bg-gray-800 md:border-t-0 md:border-transparent md:bg-transparent md:dark:border-transparent md:dark:bg-transparent">
