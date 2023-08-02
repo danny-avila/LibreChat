@@ -14,7 +14,7 @@ export default function GenerationButtons({ showPopover, opacityClass }: Generat
           className={cn('option-buttons', showPopover ? '' : opacityClass)}
           data-projection-id="173"
         >
-          <button
+          {/* <button
             className={cn(
               'custom-btn btn-neutral relative -z-0 whitespace-nowrap border-0 md:border',
               removeFocusOutlines,
@@ -39,7 +39,7 @@ export default function GenerationButtons({ showPopover, opacityClass }: Generat
               </svg>
               Regenerate
             </div>
-          </button>
+          </button> */}
         </div>
       </div>
     </div>
