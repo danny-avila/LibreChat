@@ -27,7 +27,7 @@ export default function Landing() {
   };
 
   return (
-    <div className="flex h-full flex-col items-center overflow-y-auto pt-0 text-sm dark:bg-gray-800">
+    <div className="pb-32 flex h-full flex-col items-center overflow-y-auto pt-0 text-sm dark:bg-gray-800">
       <div className="w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
         <h1
           id="landing-title"
