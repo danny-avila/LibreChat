@@ -4,7 +4,6 @@ import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
 import SubmitButton from './SubmitButton';
 import OptionsBar from './OptionsBar';
 import { EndpointMenu } from './EndpointMenu';
-import AdjustToneButton from './AdjustToneButton';
 import Footer from './Footer';
 import { useMessageHandler } from '~/utils/handleSubmit';
 import { cn } from '~/utils';
@@ -181,9 +180,6 @@ export default function TextChat({ isSearchView = false }) {
                   endpointsConfig={endpointsConfig}
                   endpoint={conversation?.endpoint}
                 />
-                {latestMessage && conversation?.jailbreak && conversation.endpoint === 'bingAI' ? (
-                  <AdjustToneButton onClick={() => setShowBingToneSetting((prev) => !prev)} />
-                ) : null}
               </div>
             </div>
           </form>
