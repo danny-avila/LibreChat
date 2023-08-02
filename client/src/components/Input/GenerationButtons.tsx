@@ -7,7 +7,7 @@ type GenerationButtonsProps = {
 
 export default function GenerationButtons({ showPopover, opacityClass }: GenerationButtonsProps) {
   return (
-    <div className="absolute right-0 z-[62]">
+    <div className="absolute bottom-4 right-0 z-[62]">
       <div className="grow"></div>
       <div className="flex items-center md:items-end">
         <div

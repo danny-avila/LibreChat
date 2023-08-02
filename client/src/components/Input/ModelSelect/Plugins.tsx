@@ -65,7 +65,7 @@ export default function Plugins({ conversation, setOption, models }: ModelSelect
         type="button"
         className={cn(
           cardStyle,
-          'min-w-4 z-40 flex h-[40px] flex-none items-center justify-center px-4 hover:bg-white focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700',
+          'min-w-4 z-40 flex h-[40px] flex-none items-center justify-center px-3 hover:bg-white focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700',
         )}
         onClick={() => setVisibility((prev) => !prev)}
       >
@@ -81,7 +81,7 @@ export default function Plugins({ conversation, setOption, models }: ModelSelect
         setValue={setOption('model')}
         availableValues={models}
         showAbove={true}
-        className={cn(cardStyle, 'min-w-60 z-40 flex w-60', visibile ? '' : 'hidden')}
+        className={cn(cardStyle, 'min-w-60 z-40 flex w-48', visibile ? '' : 'hidden')}
       />
       <MultiSelectDropDown
         value={conversation.tools || []}
@@ -90,7 +90,7 @@ export default function Plugins({ conversation, setOption, models }: ModelSelect
         availableValues={availableTools}
         optionValueKey="pluginKey"
         showAbove={true}
-        className={cn(cardStyle, 'min-w-60 z-50 w-60', visibile ? '' : 'hidden')}
+        className={cn(cardStyle, 'min-w-60 z-50 w-48', visibile ? '' : 'hidden')}
       />
     </>
   );
