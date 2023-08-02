@@ -421,6 +421,13 @@ export type EndpointOptionsPopoverProps = {
   closePopover: () => void;
 };
 
+export type EditPresetProps = {
+  open: boolean;
+  onOpenChange: React.Dispatch<React.SetStateAction<boolean>>;
+  preset: TPreset;
+  title: string;
+};
+
 export type MultiSelectDropDownProps = {
   title?: string;
   value: Array<{ icon?: string; name?: string; isButton?: boolean }>;

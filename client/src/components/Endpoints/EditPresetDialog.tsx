@@ -2,18 +2,19 @@ import axios from 'axios';
 import { useEffect } from 'react';
 import PopoverButtons from './PopoverButtons';
 import exportFromJSON from 'export-from-json';
-import Settings from '~/components/Input/Settings';
 import { useSetOptions } from '~/hooks';
 import { useSetRecoilState, useRecoilState, useRecoilValue } from 'recoil';
 import filenamify from 'filenamify';
 import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
+import Settings from '~/components/Input/Settings';
+import { EditPresetProps } from 'librechat-data-provider';
 import { cn, defaultTextProps, removeFocusOutlines } from '~/utils/';
 import cleanupPreset from '~/utils/cleanupPreset';
 import { localize } from '~/localization/Translation';
 import store from '~/store';
 
-const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
+const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPresetProps) => {
   const lang = useRecoilValue(store.lang);
   const [preset, setPreset] = useRecoilState(store.preset);
   const setPresets = useSetRecoilState(store.presets);
@@ -46,6 +47,11 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  const { endpoint } = preset || {};
+  if (!endpoint) {
+    return null;
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
@@ -76,7 +82,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
                 </Label>
                 <Dropdown
                   id="endpoint"
-                  value={preset?.endpoint || ''}
+                  value={endpoint || ''}
                   onChange={setOption('endpoint')}
                   options={availableEndpoints}
                   className={cn(
@@ -86,7 +92,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
                   )}
                   containerClassName="flex w-full resize-none"
                 />
-                <PopoverButtons endpoint={preset?.endpoint} />
+                <PopoverButtons endpoint={endpoint} />
               </div>
             </div>
             <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
