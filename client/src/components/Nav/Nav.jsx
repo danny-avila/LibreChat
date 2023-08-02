@@ -132,13 +132,13 @@ export default function Nav({ navVisible, setNavVisible }) {
   return (
     <>
       <div
-        className="nav active dark flex-shrink-0 overflow-x-hidden bg-gray-900 transition-all duration-200 ease-in-out"
+        className="nav active dark max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-900 transition-all duration-200 ease-in-out sm:max-w-[260px]"
         style={{
-          width: navVisible ? '260px' : '0px',
+          width: navVisible ? '100%' : '0%',
           visibility: navVisible ? 'visible' : 'hidden',
         }}
       >
-        <div className="h-full w-[260px]">
+        <div className="h-full w-[320px] sm:w-[260px]">
           <div className="flex h-full min-h-0 flex-col ">
             <div className="scrollbar-trigger relative flex h-full w-full flex-1 items-start border-white/20">
               <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
