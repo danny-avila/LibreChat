@@ -4,7 +4,7 @@ import { useRecoilValue, useRecoilState } from 'recoil';
 import { PluginStoreDialog } from '~/components';
 import { SaveAsPresetDialog, EndpointOptionsPopover } from '~/components/Endpoints';
 import { Button } from '~/components/ui';
-import { cn, cardStyle } from '~/utils/';
+import { cn, cardStyle, removeButtonOutline } from '~/utils/';
 import { useSetOptions } from '~/hooks';
 import { ModelSelect } from './ModelSelect';
 import Settings from './Settings';
@@ -46,7 +46,24 @@ function OptionsBar() {
   }
 
   return (
-    <div className="relative py-2 md:mb-[-16px] md:py-4 lg:mb-[-32px]">
+    <div className="relative py-2 last:mb-2 md:mx-4 md:mb-[-16px] md:py-4 md:pt-2 md:last:mb-6 lg:mx-auto lg:mb-[-32px] lg:max-w-2xl lg:pt-6 xl:max-w-3xl">
+      <div className="absolute right-0 z-[62]">
+        <div className="grow"></div>
+        <div className="flex items-center md:items-end">
+          {/* <div className={cn('option-buttons', advancedMode ? '' : opacityClass)} data-projection-id="173">
+            <button className={cn('custom-btn relative btn-neutral whitespace-nowrap -z-0 border-0 md:border', removeButtonOutline)}>
+              <div className="flex w-full gap-2 items-center justify-center">
+                <svg stroke="currentColor" fill="none" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3 flex-shrink-0" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
+                  <polyline points="1 4 1 10 7 10"></polyline>
+                  <polyline points="23 20 23 14 17 14"></polyline>
+                  <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
+                </svg>
+             Regenerate
+              </div>
+            </button>
+          </div> */}
+        </div>
+      </div>
       <span className="flex w-full flex-col items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
         <div
           className={cn(

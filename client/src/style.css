@@ -168,6 +168,22 @@ select {
   text-align: right;
 }
 
+.option-buttons {
+  pointer-events: none;
+  opacity: 0;
+  transition: all 0.25s ease-in-out;
+}
+
+.option-buttons.full-opacity {
+  pointer-events: fill;
+  opacity: 1;
+}
+
+.option-buttons.show {
+  pointer-events: fill;
+  opacity: 1;
+}
+
 .options-bar {
   pointer-events: none;
   opacity: 0;
@@ -887,6 +903,16 @@ button {
   padding: 0.5rem 0.75rem;
   pointer-events: auto;
 }
+.custom-btn {
+  align-items: center;
+  border-color: transparent;
+  border-radius: 0.25rem;
+  border-width: 1px;
+  display: inline-flex;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  padding: 0.5rem 0.75rem;
+}
 .btn:focus {
   outline: 2px solid transparent;
   outline-offset: 2px;
@@ -1210,13 +1236,6 @@ html {
 .text-ellipsis,
 .truncate {
   text-overflow: ellipsis;
-}
-
-.shadow-\[0_0_10px_rgba\(0\2c 0\2c 0\2c 0\.10\)\],
-.shadow-lg {
-  box-shadow: 0 0 transparent, 0 0 transparent, var(--tw-shadow);
-  box-shadow: var(--tw-ring-offset-shadow, 0 0 transparent),
-    var(--tw-ring-shadow, 0 0 transparent), var(--tw-shadow);
 }
 
 .group:hover .group-hover\:visible {

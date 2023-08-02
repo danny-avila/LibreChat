@@ -7,6 +7,7 @@ import { EndpointMenu } from './EndpointMenu';
 import AdjustToneButton from './AdjustToneButton';
 import Footer from './Footer';
 import { useMessageHandler } from '~/utils/handleSubmit';
+import { cn } from '~/utils';
 import store from '~/store';
 
 export default function TextChat({ isSearchView = false }) {
@@ -131,15 +132,28 @@ export default function TextChat({ isSearchView = false }) {
       <div className="fixed bottom-0 left-0 w-full border-transparent bg-gradient-to-b from-transparent via-white to-white pt-6 dark:border-white/20 dark:via-gray-800 dark:to-gray-800 md:absolute">
         <OptionsBar />
         <div className="input-panel md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient relative w-full border-t bg-white py-2 dark:border-white/20 dark:bg-gray-800 md:border-t-0 md:border-transparent md:bg-transparent md:dark:border-transparent md:dark:bg-transparent">
-          <form className="stretch z-[60] mx-2 flex flex-row gap-3 last:mb-2 md:pt-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
+          {/* <form className="stretch z-[60] mx-2 flex flex-row gap-3 last:mb-2 md:pt-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6"> */}
+          <form className="stretch z-[60] mx-2 flex flex-row gap-3 last:mb-2 md:mx-4 md:pt-2 md:last:mb-6 lg:mx-auto lg:max-w-2xl lg:pt-6 xl:max-w-3xl">
             <div className="relative flex h-full flex-1 md:flex-col">
               <div
+                className={cn(
+                  'relative flex flex-grow flex-row rounded-xl border border-black/10 py-[10px] md:py-4 md:pl-4',
+                  'shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:shadow-[0_0_15px_rgba(0,0,0,0.10)]',
+                  'dark:border-gray-900/50 dark:text-white',
+                  disabled ? 'bg-gray-100 dark:bg-gray-900' : 'bg-white dark:bg-gray-700',
+                )}
+              >
+                {/* <div
                 className={`relative flex flex-grow flex-row rounded-md border border-black/10 ${
                   disabled ? 'bg-gray-100' : 'bg-white'
                 } py-2 shadow-[0_0_10px_rgba(0,0,0,0.10)] dark:border-gray-900/50 ${
                   disabled ? 'dark:bg-gray-900' : 'dark:bg-gray-700'
                 } dark:text-white dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] md:py-3 md:pl-4`}
               >
+                */}
+                {/* <div className="flex flex-col w-full py-[10px] flex-grow md:py-4 md:pl-4
+              relative border border-black/10 bg-white dark:border-gray-900/50 dark:text-white
+              dark:bg-gray-700 rounded-xl shadow-xs dark:shadow-xs"> */}
                 <EndpointMenu />
                 <TextareaAutosize
                   // set test id for e2e testing

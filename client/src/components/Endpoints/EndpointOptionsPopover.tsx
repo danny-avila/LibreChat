@@ -16,7 +16,7 @@ export default function EndpointOptionsPopover({
 }: EndpointOptionsPopoverProps) {
   const lang = useRecoilValue(store.lang);
   const cardStyle =
-    'shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white';
+    'shadow-xl rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white';
 
   return (
     <>
