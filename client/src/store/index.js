@@ -9,6 +9,7 @@ import preset from './preset';
 import token from './token';
 import tabValue from './tabValue';
 import lang from './language'
+import widget from './widget';
 
 export default {
   ...conversation,
@@ -21,5 +22,6 @@ export default {
   ...preset,
   ...token,
   ...tabValue,
-  ...lang
+  ...lang,
+  ...widget
 };
