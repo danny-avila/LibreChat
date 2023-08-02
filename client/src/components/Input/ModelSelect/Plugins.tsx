@@ -55,6 +55,10 @@ export default function Plugins({ conversation, setOption, models }: ModelSelect
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allPlugins, user]);
 
+  if (!conversation) {
+    return null;
+  }
+
   return (
     <>
       <Button

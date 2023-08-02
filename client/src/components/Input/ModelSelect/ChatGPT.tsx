@@ -3,6 +3,9 @@ import { cn, cardStyle } from '~/utils/';
 import { ModelSelectProps } from 'librechat-data-provider';
 
 export default function ChatGPT({ conversation, setOption, models }: ModelSelectProps) {
+  if (!conversation) {
+    return null;
+  }
   const { conversationId, model } = conversation;
   if (conversationId !== 'new') {
     return null;

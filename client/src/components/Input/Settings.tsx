@@ -5,7 +5,7 @@ import {
   AnthropicSettings,
 } from '~/components/Endpoints/Settings/';
 import { GoogleSettings, PluginsSettings } from '~/components/Endpoints/Settings/MultiView';
-import { ModelSelectProps, OptionComponent, MultiViewComponent } from 'librechat-data-provider';
+import { SettingsProps, OptionComponent, MultiViewComponent } from 'librechat-data-provider';
 import store from '~/store';
 
 const optionComponents: { [key: string]: OptionComponent } = {
@@ -20,7 +20,7 @@ const multiViewComponents: { [key: string]: MultiViewComponent } = {
   gptPlugins: PluginsSettings,
 };
 
-export default function Settings({ conversation, setOption }: ModelSelectProps) {
+export default function Settings({ conversation, setOption }: SettingsProps) {
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   if (!conversation?.endpoint) {
     return null;

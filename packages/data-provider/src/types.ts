@@ -335,7 +335,7 @@ export type SetExample = (
 ) => void;
 
 export type SettingsProps = {
-  conversation: TConversation;
+  conversation: TConversation | null;
   setOption: SetOption;
   edit?: boolean;
   readonly?: boolean;
