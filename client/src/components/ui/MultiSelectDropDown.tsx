@@ -34,11 +34,11 @@ function MultiSelectDropDown({
     transitionProps.className = 'bottom-full mb-3';
   }
   const openProps = { open: isOpen };
-
   return (
     <div className={cn('flex items-center justify-center gap-2', containerClassName ?? '')}>
       <div className="relative w-full">
-        <Listbox value={value} onChange={handleSelect as any} disabled={disabled}>
+        {/* the function typing is correct but there's still an issue here */}
+        <Listbox value={value} onChange={handleSelect} disabled={disabled}>
           {() => (
             <>
               <Listbox.Button

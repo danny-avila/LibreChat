@@ -7,7 +7,7 @@ type FileUploadProps = {
   className?: string;
   successText?: string;
   invalidText?: string;
-  validator?: ((data: any) => boolean) | null;
+  validator?: ((data: Record<string, unknown>) => boolean) | null;
   text?: string;
   id?: string;
 };

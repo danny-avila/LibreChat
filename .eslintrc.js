@@ -101,7 +101,7 @@ module.exports = {
       },
     },
     {
-      files: '**/*.+(ts)',
+      files: ['**/*.ts', '**/*.tsx'],
       parser: '@typescript-eslint/parser',
       parserOptions: {
         project: './client/tsconfig.json',
@@ -111,6 +111,9 @@ module.exports = {
         'plugin:@typescript-eslint/eslint-recommended',
         'plugin:@typescript-eslint/recommended',
       ],
+      rules: {
+        '@typescript-eslint/no-explicit-any': 'error',
+      },
     },
     {
       files: './packages/data-provider/**/*.ts',
@@ -138,10 +141,10 @@ module.exports = {
     },
     'import/resolver': {
       typescript: {
-        project: ['tsconfig.base.json'],
+        project: ['./client/tsconfig.json'],
       },
       node: {
-        project: ['tsconfig.base.json'],
+        project: ['./client/tsconfig.json'],
       },
     },
   },

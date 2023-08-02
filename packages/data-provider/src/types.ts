@@ -422,3 +422,16 @@ export type MultiSelectDropDownProps = {
   className?: string;
   optionValueKey?: string;
 };
+
+export type TError = {
+  message: string;
+  code?: number;
+  response?: {
+    data?: {
+      message?: string;
+    };
+  };
+};
+
+// export type onChangeHandler = (value:
+//   { icon?: string | undefined; name?: string | undefined; isButton?: boolean | undefined; }[]) => void

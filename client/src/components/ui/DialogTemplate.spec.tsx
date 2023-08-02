@@ -13,7 +13,12 @@ describe('DialogTemplate', () => {
 
   it('renders correctly with all props', () => {
     const { getByText } = render(
-      <Dialog open onOpenChange={() => {}}>
+      <Dialog
+        open
+        onOpenChange={() => {
+          return;
+        }}
+      >
         <DialogTemplate
           title="Test Dialog"
           description="Test Description"
@@ -36,7 +41,12 @@ describe('DialogTemplate', () => {
 
   it('renders correctly without optional props', () => {
     const { getByText, queryByText } = render(
-      <Dialog open onOpenChange={() => {}}>
+      <Dialog
+        open
+        onOpenChange={() => {
+          return;
+        }}
+      >
         <DialogTemplate title="Test Dialog" />
       </Dialog>,
     );
@@ -52,7 +62,12 @@ describe('DialogTemplate', () => {
 
   it('calls selectHandler when the select button is clicked', () => {
     const { getByText } = render(
-      <Dialog open onOpenChange={() => {}}>
+      <Dialog
+        open
+        onOpenChange={() => {
+          return;
+        }}
+      >
         <DialogTemplate
           title="Test Dialog"
           selection={{ selectHandler: mockSelectHandler, selectText: 'Select' }}

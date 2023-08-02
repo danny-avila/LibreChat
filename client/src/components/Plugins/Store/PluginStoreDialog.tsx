@@ -11,6 +11,8 @@ import {
   useUpdateUserPluginsMutation,
   TPlugin,
   TPluginAction,
+  TConversation,
+  TError,
 } from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 
@@ -33,7 +35,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const [error, setError] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-  const handleInstallError = (error: any) => {
+  const handleInstallError = (error: TError) => {
     setError(true);
     if (error.response?.data?.message) {
       setErrorMessage(error.response?.data?.message);
@@ -46,8 +48,8 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
 
   const handleInstall = (pluginAction: TPluginAction) => {
     updateUserPlugins.mutate(pluginAction, {
-      onError: (error) => {
-        handleInstallError(error);
+      onError: (error: unknown) => {
+        handleInstallError(error as TError);
       },
     });
     setShowPluginAuthForm(false);
@@ -57,8 +59,8 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     updateUserPlugins.mutate(
       { pluginKey: plugin, action: 'uninstall', auth: null },
       {
-        onError: (error: any) => {
-          handleInstallError(error);
+        onError: (error: unknown) => {
+          handleInstallError(error as TError);
         },
         onSuccess: () => {
           //@ts-ignore - can't set a default convo or it will break routing
@@ -67,10 +69,13 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
             return t.pluginKey !== plugin;
           });
           localStorage.setItem('lastSelectedTools', JSON.stringify(tools));
-          setConversation((prevState: any) => ({
-            ...prevState,
-            tools,
-          }));
+          setConversation(
+            (prevState) =>
+              ({
+                ...prevState,
+                tools,
+              } as TConversation),
+          );
         },
       },
     );
