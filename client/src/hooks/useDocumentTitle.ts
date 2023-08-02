@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 
 // function useDocumentTitle(title, prevailOnUnmount = false) {
 // const defaultTitle = useRef(document.title);
-function useDocumentTitle(title) {
+function useDocumentTitle(title: string) {
   useEffect(() => {
     document.title = title;
   }, [title]);
