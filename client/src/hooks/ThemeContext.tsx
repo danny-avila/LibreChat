@@ -19,12 +19,16 @@ const getInitialTheme = () => {
   return 'light'; // light theme as the default;
 };
 
-export const ThemeContext = createContext();
+type ProviderValue = {
+  theme: string;
+  setTheme: React.Dispatch<React.SetStateAction<string>>;
+};
+export const ThemeContext = createContext<ProviderValue | undefined>(undefined);
 
 export const ThemeProvider = ({ initialTheme, children }) => {
   const [theme, setTheme] = useState(getInitialTheme);
 
-  const rawSetTheme = (rawTheme) => {
+  const rawSetTheme = (rawTheme: string) => {
     const root = window.document.documentElement;
     let isDark = rawTheme === 'dark';
 
