@@ -73,8 +73,7 @@ const refreshController = async (req, res) => {
         // Find the session with the hashed refresh token
         const session = await Session.findOne({ user: userId, refreshTokenHash: hashedToken });
         if (session && session.expiration > new Date()) {
-          const token = await setAuthTokens(userId, res); 
-          await Session.deleteOne({ _id: session._id });
+          const token = await setAuthTokens(userId, res, session._id);
           const userObj = user.toJSON();
           res.status(200).send({ token, user: userObj });
         } else {
