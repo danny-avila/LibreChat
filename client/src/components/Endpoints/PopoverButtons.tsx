@@ -5,7 +5,13 @@ import { Button } from '~/components';
 import { cn } from '~/utils/';
 import store from '~/store';
 
-export default function PopoverButtons({ endpoint }: { endpoint: EModelEndpoint }) {
+export default function PopoverButtons({
+  endpoint,
+  buttonClass,
+}: {
+  endpoint: EModelEndpoint;
+  buttonClass?: string;
+}) {
   const [optionSettings, setOptionSettings] = useRecoilState(store.optionSettings);
   const [showAgentSettings, setShowAgentSettings] = useRecoilState(store.showAgentSettings);
   const { showExamples, isCodeChat } = optionSettings;
@@ -45,6 +51,7 @@ export default function PopoverButtons({ endpoint }: { endpoint: EModelEndpoint 
           className={cn(
             button.buttonClass,
             'ml-1 h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0',
+            buttonClass ?? '',
           )}
           onClick={button.handler}
         >

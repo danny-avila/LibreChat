@@ -56,7 +56,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPr
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={`${title || localize(lang, 'com_endpoint_edit_preset')} - ${preset?.title}`}
-        className="h-full max-w-full overflow-y-auto sm:w-[680px] md:h-[675px] md:w-[750px] lg:w-[950px]"
+        className="h-full max-w-full overflow-y-auto pb-0 sm:w-[680px] md:h-[675px] md:w-[750px] lg:w-[950px]"
         main={
           <div className="flex w-full flex-col items-center gap-2 md:h-[475px]">
             <div className="grid w-full gap-6 sm:grid-cols-2">
@@ -81,7 +81,6 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPr
                   {localize(lang, 'com_endpoint')}
                 </Label>
                 <Dropdown
-                  id="endpoint"
                   value={endpoint || ''}
                   onChange={setOption('endpoint')}
                   options={availableEndpoints}
@@ -92,7 +91,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPr
                   )}
                   containerClassName="flex w-full resize-none"
                 />
-                <PopoverButtons endpoint={endpoint} />
+                <PopoverButtons endpoint={endpoint} buttonClass="ml-0 " />
               </div>
             </div>
             <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />

@@ -32,7 +32,7 @@
 @media (max-width: 767px) {
   .nav {
     width: calc(100% - 10px)  ;
-    transition: all 0.2s;
+    transition: all 0.15s;
   }
   .nav-mask {
     position: fixed;
