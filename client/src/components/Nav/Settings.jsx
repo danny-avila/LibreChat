@@ -45,7 +45,7 @@ export default function Settings({ open, onOpenChange }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn('shadow-2xl dark:bg-gray-900 dark:text-white')}>
+      <DialogContent className={cn('shadow-2xl dark:bg-gray-900 dark:text-white md:w-[680px] ')}>
         <DialogHeader>
           <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
             {localize(lang, 'com_nav_settings')}
@@ -69,9 +69,9 @@ export default function Settings({ open, onOpenChange }) {
             >
               <Tabs.Trigger
                 className={cn(
-                  'radix-state-active:bg-gray-800 radix-state-active:text-white flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm',
+                  'flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm radix-state-active:bg-gray-800 radix-state-active:text-white',
                   isMobile &&
-                    'dark:radix-state-active:text-white group flex-1 items-center justify-center text-sm dark:text-gray-500',
+                    'group flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white',
                 )}
                 value="general"
               >

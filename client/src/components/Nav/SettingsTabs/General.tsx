@@ -1,5 +1,6 @@
 import * as Tabs from '@radix-ui/react-tabs';
 import { CheckIcon } from 'lucide-react';
+import { DialogButton } from '~/components/ui';
 import { ThemeContext } from '~/hooks/ThemeContext';
 import React, { useState, useContext, useEffect, useCallback } from 'react';
 import { useClearConversationsMutation } from 'librechat-data-provider';
@@ -46,12 +47,17 @@ export const ClearChatsButton = ({
   return (
     <div className="flex items-center justify-between">
       {showText && <div>{localize(lang, 'com_nav_clear_all_chats')}</div>}
-      <button
-        className="btn relative bg-red-600  text-white hover:bg-red-800"
+      <DialogButton
+        id="clearConvosBtn"
+        onClick={onClick}
+        className=" btn btn-danger relative bg-red-700 text-white hover:bg-red-800 dark:hover:bg-red-800"
+      >
+        {/* <button
+        className="btn mt-2 inline-flex h-10 items-center justify-center rounded-md relative bg-red-600 text-white hover:bg-red-800"
         type="button"
         id="clearConvosBtn"
         onClick={onClick}
-      >
+      > */}
         {confirmClear ? (
           <div className="flex w-full items-center justify-center gap-2" id="clearConvosTxt">
             <CheckIcon className="h-5 w-5" /> {localize(lang, 'com_nav_confirm_clear')}
@@ -61,7 +67,9 @@ export const ClearChatsButton = ({
             {localize(lang, 'com_nav_clear')}
           </div>
         )}
-      </button>
+
+        {/* </button> */}
+      </DialogButton>
     </div>
   );
 };

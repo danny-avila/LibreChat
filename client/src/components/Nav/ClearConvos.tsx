@@ -35,8 +35,9 @@ const ClearConvos = ({ open, onOpenChange }) => {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={localize(lang, 'com_nav_clear_conversation')}
+        className="w-full max-w-[650px] sm:w-3/4 md:w-3/4 lg:w-3/4"
         description={localize(lang, 'com_nav_clear_conversation_confirm_message')}
-        leftButtons={
+        buttons={
           <ClearChatsButton showText={false} confirmClear={confirmClear} onClick={clearConvos} />
         }
       />

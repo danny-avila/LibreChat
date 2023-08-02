@@ -33,7 +33,7 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
     'bg-gray-900 text-white transition-colors hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900';
   return (
     <DialogContent ref={ref} className={cn('shadow-2xl dark:bg-gray-900', className || '')}>
-      <DialogHeader>
+      <DialogHeader className="sm:pb-2">
         <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
           {title}
         </DialogTitle>

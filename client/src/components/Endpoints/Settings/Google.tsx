@@ -32,7 +32,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   const codeChat = model?.startsWith('codechat-');
 
   return (
-    <div className={'h-[440px] overflow-y-auto md:h-[350px]'}>
+    <div className="h-[440px] overflow-y-auto sm:h-[350px]">
       <div className="grid gap-6 sm:grid-cols-5">
         <div className="col-span-3 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">

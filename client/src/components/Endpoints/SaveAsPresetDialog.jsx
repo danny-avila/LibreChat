@@ -34,9 +34,9 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={localize(lang, 'com_endpoint_save_as_preset')}
-        className="h-[675px] max-w-full"
+        className="w-full sm:w-1/4"
         main={
-          <div className="flex w-full flex-col items-center gap-2 md:h-[475px]">
+          <div className="flex w-full flex-col items-center gap-2">
             <div className="grid w-full items-center gap-2">
               <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
                 {localize(lang, 'com_endpoint_preset_name')}
