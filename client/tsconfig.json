@@ -18,9 +18,10 @@
     "declaration": true,
     "declarationDir": "./types",
     "jsx": "preserve",
-    "baseUrl": ".",
+    "baseUrl": "..",
     "paths": {
-      "~/*": ["./src/*"]
+      "~/*": ["./client/src/*"],
+      "*": ["./client/*", "../node_modules/*"]
     }
   },
   "types": ["node", "jest", "@testing-library/jest-dom"],
