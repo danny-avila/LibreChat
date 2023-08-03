@@ -1,5 +1,5 @@
 import React from 'react';
-import CheckMark from '../svg/CheckMark.jsx';
+import CheckMark from '../svg/CheckMark';
 import { Listbox, Transition } from '@headlessui/react';
 import { cn } from '~/utils/';
 
