@@ -64,7 +64,7 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }: E
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogTemplate
           title={`${title || localize('com_endpoint_save_convo_as_preset')}`}
-          className="h-full max-w-full overflow-y-auto pb-0 sm:w-[680px] md:h-[675px] md:w-[750px] lg:w-[950px]"
+          className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[675px] md:w-[750px] lg:w-[950px]"
           // headerClassName="sm:p-2 h-16"
           main={
             <div className="flex w-full flex-col items-center gap-2 md:h-[475px]">
