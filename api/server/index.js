@@ -19,6 +19,7 @@ const {
   facebookLogin,
   setupOpenId,
 } = require('../strategies');
+const refreshTokenValidator = require('../middleware/refreshTokenValidator');
 
 // Init the config and validate it
 const config = require('../../config/loader');
@@ -30,6 +31,7 @@ config.validate(); // Validate the config
   await indexSync();
 
   const app = express();
+  app.use(refreshTokenValidator);
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
