@@ -1,5 +1,5 @@
 import { Settings2 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
 import { TPreset } from 'librechat-data-provider';
 import { PluginStoreDialog } from '~/components';
@@ -25,6 +25,24 @@ export default function OptionsBar() {
   const [opacityClass, setOpacityClass] = useState('full-opacity');
   const { setOption } = useSetOptions();
 
+  const { endpoint, conversationId, jailbreak } = conversation ?? {};
+
+  const altConditions: { [key: string]: boolean } = {
+    bingAI: !!(latestMessage && conversation?.jailbreak && endpoint === 'bingAI'),
+  };
+
+  const altSettings: { [key: string]: () => void } = {
+    bingAI: () => setShowBingToneSetting((prev) => !prev),
+  };
+
+  const noSettings = useMemo<{ [key: string]: boolean }>(
+    () => ({
+      chatGPTBrowser: true,
+      bingAI: jailbreak ? false : conversationId !== 'new',
+    }),
+    [jailbreak, conversationId],
+  );
+
   useEffect(() => {
     if (showPopover) {
       return;
@@ -35,18 +53,11 @@ export default function OptionsBar() {
     }
   }, [messagesTree, showPopover]);
 
-  const { endpoint, conversationId, jailbreak } = conversation ?? {};
-
-  const altConditions: { [key: string]: boolean } = {
-    bingAI: !!(latestMessage && conversation?.jailbreak && endpoint === 'bingAI'),
-  };
-  const altSettings: { [key: string]: () => void } = {
-    bingAI: () => setShowBingToneSetting((prev) => !prev),
-  };
-  const noSettings: { [key: string]: boolean } = {
-    chatGPTBrowser: true,
-    bingAI: jailbreak ? false : conversationId !== 'new',
-  };
+  useEffect(() => {
+    if (endpoint && noSettings[endpoint]) {
+      setShowPopover(false);
+    }
+  }, [endpoint, noSettings]);
 
   const saveAsPreset = () => {
     setSaveAsDialogShow(true);
