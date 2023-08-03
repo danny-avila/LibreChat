@@ -4,6 +4,7 @@ import { EndpointOptionsPopoverProps } from 'librechat-data-provider';
 import { Button } from '~/components/ui';
 import { CrossIcon } from '~/components/svg';
 import PopoverButtons from './PopoverButtons';
+import { cn, removeFocusOutlines } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 export default function EndpointOptionsPopover({
@@ -43,10 +44,13 @@ export default function EndpointOptionsPopover({
             <PopoverButtons endpoint={endpoint} />
             <Button
               type="button"
-              className="ml-auto h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white"
+              className={cn(
+                'ml-auto h-auto bg-transparent px-3 py-2 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white',
+                removeFocusOutlines,
+              )}
               onClick={closePopover}
             >
-              <CrossIcon className="mr-1" />
+              <CrossIcon />
             </Button>
           </div>
           <div>{children}</div>
