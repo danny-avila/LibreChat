@@ -127,7 +127,7 @@ const AuthContextProvider = ({
       },
     });
   };
-  
+
   useEffect(() => {
     if (userQuery.data) {
       setUser(userQuery.data);
