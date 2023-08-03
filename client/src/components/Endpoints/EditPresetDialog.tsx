@@ -60,9 +60,9 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPr
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={`${title || localize('com_endpoint_edit_preset')} - ${preset?.title}`}
-        className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[675px] md:w-[750px] lg:w-[950px]"
+        className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[680px] md:w-[750px] lg:w-[950px]"
         main={
-          <div className="flex w-full flex-col items-center gap-2 md:h-[500px]">
+          <div className="flex w-full flex-col items-center gap-2 md:h-[530px]">
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="preset-name" className="text-left text-sm font-medium">
@@ -107,13 +107,13 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPr
                 conversation={preset}
                 setOption={setOption}
                 isPreset={true}
-                className="md:mb-4 md:h-full"
+                className="h-full md:mb-4 md:h-full"
               />
             </div>
           </div>
         }
         buttons={
-          <div className="mb-2">
+          <div className="mb-0 md:mb-2">
             <DialogButton onClick={exportPreset} className="dark:hover:gray-400 border-gray-700">
               {localize('com_endpoint_export')}
             </DialogButton>
