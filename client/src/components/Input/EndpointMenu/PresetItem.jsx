@@ -61,30 +61,35 @@ export default function PresetItem({ preset = {}, value, onChangePreset, onDelet
   return (
     <DropdownMenuRadioItem
       value={value}
-      className="group dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800"
+      className="group flex h-10 max-h-[44px] flex-row justify-between dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800 sm:h-auto"
     >
-      {icon}
-      <small className="text-[11px]">{preset?.title}</small>
-      <small className="ml-1 text-[10px]">({getPresetTitle()})</small>
-      <div className="flex w-4 flex-1" />
-      <button
-        className="m-0 mr-1 rounded-md p-2 text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 md:invisible md:group-hover:visible"
-        onClick={(e) => {
-          e.preventDefault();
-          onChangePreset(preset);
-        }}
-      >
-        <EditIcon />
-      </button>
-      <button
-        className="m-0 rounded-md text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 md:invisible md:group-hover:visible"
-        onClick={(e) => {
-          e.preventDefault();
-          onDeletePreset(preset);
-        }}
-      >
-        <TrashIcon />
-      </button>
+      <div className="flex items-center justify-start">
+        {icon}
+        <small className="text-[11px]">{preset?.title}</small>
+        <small className="invisible ml-1 flex w-0 flex-shrink text-[10px] sm:visible sm:w-auto">
+          ({getPresetTitle()})
+        </small>
+      </div>
+      <div className="flex h-full items-center justify-end">
+        <button
+          className="m-0 mr-1 h-full rounded-md px-4 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:p-2 sm:group-hover:visible"
+          onClick={(e) => {
+            e.preventDefault();
+            onChangePreset(preset);
+          }}
+        >
+          <EditIcon />
+        </button>
+        <button
+          className="m-0 h-full rounded-md px-4 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:p-2 sm:group-hover:visible"
+          onClick={(e) => {
+            e.preventDefault();
+            onDeletePreset(preset);
+          }}
+        >
+          <TrashIcon />
+        </button>
+      </div>
     </DropdownMenuRadioItem>
   );
 }
