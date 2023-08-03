@@ -24,7 +24,7 @@ export default function OptionsBar() {
     store.showPluginStoreDialog,
   );
   const [saveAsDialogShow, setSaveAsDialogShow] = useState<boolean>(false);
-  const [showPopover, setShowPopover] = useState<boolean>(false);
+  const [showPopover, setShowPopover] = useRecoilState(store.showPopover);
   const [opacityClass, setOpacityClass] = useState('full-opacity');
   const { setOption } = useSetOptions();
 
@@ -60,6 +60,7 @@ export default function OptionsBar() {
     if (endpoint && noSettings[endpoint]) {
       setShowPopover(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [endpoint, noSettings]);
 
   const saveAsPreset = () => {

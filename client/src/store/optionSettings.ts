@@ -21,4 +21,15 @@ const showBingToneSetting = atom<boolean>({
   default: false,
 });
 
-export default { optionSettings, showPluginStoreDialog, showAgentSettings, showBingToneSetting };
+const showPopover = atom<boolean>({
+  key: 'showPopover',
+  default: false,
+});
+
+export default {
+  optionSettings,
+  showPluginStoreDialog,
+  showAgentSettings,
+  showBingToneSetting,
+  showPopover,
+};
