@@ -23,7 +23,14 @@ type ProviderValue = {
   theme: string;
   setTheme: React.Dispatch<React.SetStateAction<string>>;
 };
-export const ThemeContext = createContext<ProviderValue | undefined>(undefined);
+
+const defaultContextValue: ProviderValue = {
+  theme: getInitialTheme(),
+  setTheme: () => {
+    return;
+  },
+};
+export const ThemeContext = createContext<ProviderValue>(defaultContextValue);
 
 export const ThemeProvider = ({ initialTheme, children }) => {
   const [theme, setTheme] = useState(getInitialTheme);
