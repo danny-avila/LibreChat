@@ -60,7 +60,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPr
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={`${title || localize('com_endpoint_edit_preset')} - ${preset?.title}`}
-        className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[720px] md:w-[750px] lg:w-[950px]"
+        className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[720px] md:w-[750px] lg:w-[950px] xl:h-[775px]"
         main={
           <div className="flex w-full flex-col items-center gap-2 md:h-[530px]">
             <div className="grid w-full gap-6 sm:grid-cols-2">
