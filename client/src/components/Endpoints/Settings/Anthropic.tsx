@@ -1,5 +1,6 @@
 import React from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
+import { ModelSelectProps, Side } from 'librechat-data-provider';
 import {
   Input,
   Label,
@@ -10,7 +11,6 @@ import {
   SelectDropDown,
 } from '~/components/ui';
 import OptionHover from './OptionHover';
-import { ModelSelectProps, Side } from 'librechat-data-provider';
 import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
 
 export default function Settings({ conversation, setOption, models, readonly }: ModelSelectProps) {

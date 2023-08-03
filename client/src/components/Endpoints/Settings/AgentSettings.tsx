@@ -1,4 +1,4 @@
-import { useRecoilValue } from 'recoil';
+import { ModelSelectProps, Side } from 'librechat-data-provider';
 import {
   Switch,
   SelectDropDown,
@@ -9,13 +9,11 @@ import {
   HoverCardTrigger,
 } from '~/components';
 import OptionHover from './OptionHover';
-import { ModelSelectProps, Side } from 'librechat-data-provider';
 import { cn, optionText, defaultTextProps, removeFocusOutlines } from '~/utils/';
-import { localize } from '~/localization/Translation';
-import store from '~/store';
+import { useLocalize } from '~/hooks';
 
 export default function Settings({ conversation, setOption, models, readonly }: ModelSelectProps) {
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
   if (!conversation) {
     return null;
   }
@@ -39,7 +37,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         <div className="col-span-3 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
             <SelectDropDown
-              title={localize(lang, 'com_endpoint_agent_model')}
+              title={localize('com_endpoint_agent_model')}
               value={model ?? ''}
               setValue={setModel}
               availableValues={models}
@@ -54,10 +52,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="temp-int" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_temperature')}{' '}
-                  <small className="opacity-40">
-                    ({localize(lang, 'com_endpoint_default')}: 0)
-                  </small>
+                  {localize('com_endpoint_temperature')}{' '}
+                  <small className="opacity-40">({localize('com_endpoint_default')}: 0)</small>
                 </Label>
                 <InputNumber
                   id="temp-int"
@@ -97,7 +93,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                   htmlFor="functions-agent"
                   className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                 >
-                  <small>{localize(lang, 'com_endpoint_plug_use_functions')}</small>
+                  <small>{localize('com_endpoint_plug_use_functions')}</small>
                 </label>
                 <Switch
                   id="functions-agent"
@@ -115,7 +111,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                   htmlFor="skip-completion"
                   className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                 >
-                  <small>{localize(lang, 'com_endpoint_plug_skip_completion')}</small>
+                  <small>{localize('com_endpoint_plug_skip_completion')}</small>
                 </label>
                 <Switch
                   id="skip-completion"

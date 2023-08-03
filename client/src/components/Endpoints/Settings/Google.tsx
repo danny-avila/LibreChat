@@ -1,6 +1,6 @@
 import React from 'react';
-import { useRecoilValue } from 'recoil';
 import TextareaAutosize from 'react-textarea-autosize';
+import { ModelSelectProps, Side } from 'librechat-data-provider';
 import {
   SelectDropDown,
   Input,
@@ -11,13 +11,11 @@ import {
   HoverCardTrigger,
 } from '~/components/ui';
 import OptionHover from './OptionHover';
-import { ModelSelectProps, Side } from 'librechat-data-provider';
 import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
-import { localize } from '~/localization/Translation';
-import store from '~/store';
+import { useLocalize } from '~/hooks';
 
 export default function Settings({ conversation, setOption, models, readonly }: ModelSelectProps) {
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
   if (!conversation) {
     return null;
   }
@@ -52,17 +50,15 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="modelLabel" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_custom_name')}{' '}
-                  <small className="opacity-40">
-                    ({localize(lang, 'com_endpoint_default_blank')})
-                  </small>
+                  {localize('com_endpoint_custom_name')}{' '}
+                  <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
                 </Label>
                 <Input
                   id="modelLabel"
                   disabled={readonly}
                   value={modelLabel || ''}
                   onChange={(e) => setModelLabel(e.target.value ?? null)}
-                  placeholder={localize(lang, 'com_endpoint_google_custom_name_placeholder')}
+                  placeholder={localize('com_endpoint_google_custom_name_placeholder')}
                   className={cn(
                     defaultTextProps,
                     'flex h-10 max-h-10 w-full resize-none px-3 py-2',
@@ -72,17 +68,15 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               </div>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_prompt_prefix')}{' '}
-                  <small className="opacity-40">
-                    ({localize(lang, 'com_endpoint_default_blank')})
-                  </small>
+                  {localize('com_endpoint_prompt_prefix')}{' '}
+                  <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
                 </Label>
                 <TextareaAutosize
                   id="promptPrefix"
                   disabled={readonly}
                   value={promptPrefix || ''}
                   onChange={(e) => setPromptPrefix(e.target.value ?? null)}
-                  placeholder={localize(lang, 'com_endpoint_google_prompt_prefix_placeholder')}
+                  placeholder={localize('com_endpoint_google_prompt_prefix_placeholder')}
                   className={cn(
                     defaultTextProps,
                     'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 ',
@@ -97,10 +91,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="temp-int" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_temperature')}{' '}
-                  <small className="opacity-40">
-                    ({localize(lang, 'com_endpoint_default')}: 0.2)
-                  </small>
+                  {localize('com_endpoint_temperature')}{' '}
+                  <small className="opacity-40">({localize('com_endpoint_default')}: 0.2)</small>
                 </Label>
                 <InputNumber
                   id="temp-int"
@@ -139,9 +131,9 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 <HoverCardTrigger className="grid w-full items-center gap-2">
                   <div className="flex justify-between">
                     <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
-                      {localize(lang, 'com_endpoint_top_p')}{' '}
+                      {localize('com_endpoint_top_p')}{' '}
                       <small className="opacity-40">
-                        ({localize(lang, 'com_endpoint_default_with_num', '0.95')})
+                        ({localize('com_endpoint_default_with_num', '0.95')})
                       </small>
                     </Label>
                     <InputNumber
@@ -180,9 +172,9 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 <HoverCardTrigger className="grid w-full items-center gap-2">
                   <div className="flex justify-between">
                     <Label htmlFor="top-k-int" className="text-left text-sm font-medium">
-                      {localize(lang, 'com_endpoint_top_k')}{' '}
+                      {localize('com_endpoint_top_k')}{' '}
                       <small className="opacity-40">
-                        ({localize(lang, 'com_endpoint_default_with_num', '40')})
+                        ({localize('com_endpoint_default_with_num', '40')})
                       </small>
                     </Label>
                     <InputNumber
@@ -222,9 +214,9 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="max-tokens-int" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_max_output_tokens')}{' '}
+                  {localize('com_endpoint_max_output_tokens')}{' '}
                   <small className="opacity-40">
-                    ({localize(lang, 'com_endpoint_default_with_num', '1024')})
+                    ({localize('com_endpoint_default_with_num', '1024')})
                   </small>
                 </Label>
                 <InputNumber

@@ -1,12 +1,10 @@
 import React from 'react';
-import TextareaAutosize from 'react-textarea-autosize';
-import { Button, Label } from '~/components/ui';
 import { Plus, Minus } from 'lucide-react';
-import { cn, defaultTextProps } from '~/utils/';
-import { useRecoilValue } from 'recoil';
-import store from '~/store';
-import { localize } from '~/localization/Translation';
+import TextareaAutosize from 'react-textarea-autosize';
 import { ExamplesProps } from 'librechat-data-provider';
+import { Button, Label } from '~/components/ui';
+import { cn, defaultTextProps } from '~/utils/';
+import { useLocalize } from '~/hooks';
 
 function Examples({
   readonly,
@@ -17,7 +15,7 @@ function Examples({
   edit = false,
 }: ExamplesProps) {
   const maxHeight = edit ? 'max-h-[233px]' : 'md:h-[306px] h-[395px]';
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
 
   return (
     <>
@@ -33,10 +31,8 @@ function Examples({
               >
                 <div className="grid w-full items-center gap-2">
                   <Label htmlFor={`input-${idx}`} className="text-left text-sm font-medium">
-                    {localize(lang, 'com_ui_input')}{' '}
-                    <small className="opacity-40">
-                      ({localize(lang, 'com_endpoint_default_blank')})
-                    </small>
+                    {localize('com_ui_input')}{' '}
+                    <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
                   </Label>
                   <TextareaAutosize
                     id={`input-${idx}`}
@@ -60,10 +56,8 @@ function Examples({
               >
                 <div className="grid w-full items-center gap-2">
                   <Label htmlFor={`output-${idx}`} className="text-left text-sm font-medium">
-                    {localize(lang, 'com_endpoint_output')}{' '}
-                    <small className="opacity-40">
-                      ({localize(lang, 'com_endpoint_default_blank')})
-                    </small>
+                    {localize('com_endpoint_output')}{' '}
+                    <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
                   </Label>
                   <TextareaAutosize
                     id={`output-${idx}`}

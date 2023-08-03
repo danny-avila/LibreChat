@@ -1,19 +1,16 @@
 import { useEffect, useState } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { Label, Checkbox, SelectDropDown } from '~/components/ui';
 import {
   useUpdateTokenCountMutation,
   TUpdateTokenCountResponse,
   SettingsProps,
 } from 'librechat-data-provider';
-import useDebounce from '~/hooks/useDebounce';
-import { useRecoilValue } from 'recoil';
+import { Label, Checkbox, SelectDropDown } from '~/components/ui';
 import { cn, defaultTextProps, removeFocusOutlines } from '~/utils/';
-import store from '~/store';
-import { localize } from '~/localization/Translation';
+import { useLocalize, useDebounce } from '~/hooks';
 
 export default function Settings({ conversation, setOption, readonly }: SettingsProps) {
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
   const [tokenCount, setTokenCount] = useState(0);
   const debouncedContext = useDebounce(conversation?.context?.trim() ?? '', 250);
   const updateTokenCountMutation = useUpdateTokenCountMutation();
@@ -56,10 +53,8 @@ export default function Settings({ conversation, setOption, readonly }: Settings
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
             <Label htmlFor="toneStyle-dropdown" className="text-left text-sm font-medium">
-              {localize(lang, 'com_endpoint_tone_style')}{' '}
-              <small className="opacity-40">
-                ({localize(lang, 'com_endpoint_default_creative')})
-              </small>
+              {localize('com_endpoint_tone_style')}{' '}
+              <small className="opacity-40">({localize('com_endpoint_default_creative')})</small>
             </Label>
             <SelectDropDown
               id="toneStyle-dropdown"
@@ -74,22 +69,21 @@ export default function Settings({ conversation, setOption, readonly }: Settings
           </div>
           <div className="grid w-full items-center gap-2">
             <Label htmlFor="context" className="text-left text-sm font-medium">
-              {localize(lang, 'com_endpoint_context')}{' '}
-              <small className="opacity-40">({localize(lang, 'com_endpoint_default_blank')})</small>
+              {localize('com_endpoint_context')}{' '}
+              <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
             </Label>
             <TextareaAutosize
               id="context"
               disabled={readonly}
               value={context || ''}
               onChange={(e) => setContext(e.target.value ?? null)}
-              placeholder={localize(lang, 'com_endpoint_bing_context_placeholder')}
+              placeholder={localize('com_endpoint_bing_context_placeholder')}
               className={cn(
                 defaultTextProps,
                 'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2',
               )}
             />
             <small className="mb-5 text-black dark:text-white">{`${localize(
-              lang,
               'com_endpoint_token_count',
             )}: ${tokenCount}`}</small>
           </div>
@@ -97,8 +91,8 @@ export default function Settings({ conversation, setOption, readonly }: Settings
         <div className="col-span-1 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
             <Label htmlFor="jailbreak" className="text-left text-sm font-medium">
-              {localize(lang, 'com_endpoint_bing_enable_sydney')}{' '}
-              <small className="opacity-40">({localize(lang, 'com_endpoint_default_false')})</small>
+              {localize('com_endpoint_bing_enable_sydney')}{' '}
+              <small className="opacity-40">({localize('com_endpoint_default_false')})</small>
             </Label>
             <div className="flex h-[40px] w-full items-center space-x-3">
               <Checkbox
@@ -112,8 +106,8 @@ export default function Settings({ conversation, setOption, readonly }: Settings
                 htmlFor="jailbreak"
                 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
               >
-                {localize(lang, 'com_endpoint_bing_jailbreak')}{' '}
-                <small>{localize(lang, 'com_endpoint_bing_to_enable_sydney')}</small>
+                {localize('com_endpoint_bing_jailbreak')}{' '}
+                <small>{localize('com_endpoint_bing_to_enable_sydney')}</small>
               </label>
             </div>
           </div>
@@ -130,10 +124,10 @@ export default function Settings({ conversation, setOption, readonly }: Settings
                   className="text-blue-500 transition-colors duration-200 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-500"
                   rel="noreferrer"
                 >
-                  {localize(lang, 'com_endpoint_system_message')}
+                  {localize('com_endpoint_system_message')}
                 </a>{' '}
                 <small className="opacity-40 dark:text-gray-50">
-                  ( {localize(lang, 'com_endpoint_default_blank')})
+                  ( {localize('com_endpoint_default_blank')})
                 </small>
               </Label>
 
@@ -142,7 +136,7 @@ export default function Settings({ conversation, setOption, readonly }: Settings
                 disabled={readonly}
                 value={systemMessage || ''}
                 onChange={(e) => setSystemMessage(e.target.value ?? null)}
-                placeholder={localize(lang, 'com_endpoint_bing_system_message_placeholder')}
+                placeholder={localize('com_endpoint_bing_system_message_placeholder')}
                 className={cn(
                   defaultTextProps,
                   'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 placeholder:text-red-400',

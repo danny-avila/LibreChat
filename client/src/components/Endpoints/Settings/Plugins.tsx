@@ -1,4 +1,3 @@
-import { useRecoilValue } from 'recoil';
 import TextareaAutosize from 'react-textarea-autosize';
 import {
   SelectDropDown,
@@ -10,13 +9,12 @@ import {
   HoverCardTrigger,
 } from '~/components';
 import OptionHover from './OptionHover';
-import { localize } from '~/localization/Translation';
 import { ModelSelectProps, Side } from 'librechat-data-provider';
 import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
-import store from '~/store';
+import { useLocalize } from '~/hooks';
 
 export default function Settings({ conversation, setOption, readonly, models }: ModelSelectProps) {
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
   if (!conversation) {
     return null;
   }
@@ -47,7 +45,7 @@ export default function Settings({ conversation, setOption, readonly, models }: 
         <div className="col-span-3 flex flex-col items-center justify-start gap-6">
           <div className="grid w-full items-center gap-2">
             <SelectDropDown
-              title={localize(lang, 'com_endpoint_completion_model')}
+              title={localize('com_endpoint_completion_model')}
               value={model ?? ''}
               setValue={setModel}
               availableValues={models}
@@ -59,10 +57,10 @@ export default function Settings({ conversation, setOption, readonly, models }: 
           <>
             <div className="grid w-full items-center gap-2">
               <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-                {localize(lang, 'com_endpoint_custom_name')}{' '}
+                {localize('com_endpoint_custom_name')}{' '}
                 <small className="opacity-40">
-                  ({localize(lang, 'com_endpoint_default_empty')} |{' '}
-                  {localize(lang, 'com_endpoint_disabled_with_tools')})
+                  ({localize('com_endpoint_default_empty')} |{' '}
+                  {localize('com_endpoint_disabled_with_tools')})
                 </small>
               </Label>
               <Input
@@ -72,8 +70,8 @@ export default function Settings({ conversation, setOption, readonly, models }: 
                 onChange={(e) => setChatGptLabel(e.target.value ?? null)}
                 placeholder={
                   toolsSelected
-                    ? localize(lang, 'com_endpoint_disabled_with_tools_placeholder')
-                    : localize(lang, 'com_endpoint_openai_custom_name_placeholder')
+                    ? localize('com_endpoint_disabled_with_tools_placeholder')
+                    : localize('com_endpoint_openai_custom_name_placeholder')
                 }
                 className={cn(
                   defaultTextProps,
@@ -84,10 +82,10 @@ export default function Settings({ conversation, setOption, readonly, models }: 
             </div>
             <div className="grid w-full items-center gap-2">
               <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
-                {localize(lang, 'com_endpoint_prompt_prefix')}{' '}
+                {localize('com_endpoint_prompt_prefix')}{' '}
                 <small className="opacity-40">
-                  ({localize(lang, 'com_endpoint_default_empty')} |{' '}
-                  {localize(lang, 'com_endpoint_disabled_with_tools')})
+                  ({localize('com_endpoint_default_empty')} |{' '}
+                  {localize('com_endpoint_disabled_with_tools')})
                 </small>
               </Label>
               <TextareaAutosize
@@ -97,11 +95,8 @@ export default function Settings({ conversation, setOption, readonly, models }: 
                 onChange={(e) => setPromptPrefix(e.target.value ?? null)}
                 placeholder={
                   toolsSelected
-                    ? localize(lang, 'com_endpoint_disabled_with_tools_placeholder')
-                    : localize(
-                      lang,
-                      'com_endpoint_plug_set_custom_instructions_for_gpt_placeholder',
-                    )
+                    ? localize('com_endpoint_disabled_with_tools_placeholder')
+                    : localize('com_endpoint_plug_set_custom_instructions_for_gpt_placeholder')
                 }
                 className={cn(
                   defaultTextProps,
@@ -116,9 +111,9 @@ export default function Settings({ conversation, setOption, readonly, models }: 
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="temp-int" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_temperature')}{' '}
+                  {localize('com_endpoint_temperature')}{' '}
                   <small className="opacity-40">
-                    ({localize(lang, 'com_endpoint_default_with_num', '0.8')})
+                    ({localize('com_endpoint_default_with_num', '0.8')})
                   </small>
                 </Label>
                 <InputNumber
@@ -156,9 +151,9 @@ export default function Settings({ conversation, setOption, readonly, models }: 
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_top_p')}{' '}
+                  {localize('com_endpoint_top_p')}{' '}
                   <small className="opacity-40">
-                    ({localize(lang, 'com_endpoint_default_with_num', '1')})
+                    ({localize('com_endpoint_default_with_num', '1')})
                   </small>
                 </Label>
                 <InputNumber
@@ -197,9 +192,9 @@ export default function Settings({ conversation, setOption, readonly, models }: 
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="freq-penalty-int" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_frequency_penalty')}{' '}
+                  {localize('com_endpoint_frequency_penalty')}{' '}
                   <small className="opacity-40">
-                    ({localize(lang, 'com_endpoint_default_with_num', '0')})
+                    ({localize('com_endpoint_default_with_num', '0')})
                   </small>
                 </Label>
                 <InputNumber
@@ -238,9 +233,9 @@ export default function Settings({ conversation, setOption, readonly, models }: 
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="pres-penalty-int" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_presence_penalty')}{' '}
+                  {localize('com_endpoint_presence_penalty')}{' '}
                   <small className="opacity-40">
-                    ({localize(lang, 'com_endpoint_default_with_num', '0')})
+                    ({localize('com_endpoint_default_with_num', '0')})
                   </small>
                 </Label>
                 <InputNumber
