@@ -4,6 +4,8 @@ import SelectDropDown from '../../../ui/SelectDropDown';
 import EssayTemplate from './EssayTemplate';
 import { cn } from '~/utils';
 import { useRecoilState } from 'recoil';
+import { MessagesSquared } from '~/components/svg';
+import EndpointOptionsPopover from '~/components/Endpoints/EndpointOptionsPopover';
 
 import store from '~/store';
 
@@ -12,19 +14,17 @@ import store from '~/store';
 https://www.griproom.com/fun/how-to-use-chat-gpt-to-write-an-essay
 https://www.griproom.com/fun/how-to-write-better-prompts-for-chat-gpt
 */
-function getTemplate(type: string) {
-  switch (type) {
-    default: return EssayTemplate();
-
-    case ('作文'): return EssayTemplate();
-  }
-}
-
 function WritingAssistant() {
   const [type, setType] = useState<string>('作文');
   const [showExample, setShowExample] = useState<boolean>(false);
   const [text, setText] = useRecoilState(store.text);
-  const template = getTemplate(type);
+  const [widget, setWidget] = useRecoilState(store.widget);
+  const allTemplates = {
+    '作文': EssayTemplate({ type })
+  }
+  const template = allTemplates[type];
+
+  if (widget !== 'wa') return null;
 
   const defaultTextProps =
     'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
@@ -73,7 +73,26 @@ function WritingAssistant() {
     );
   }
 
-  return { content, showExample, setTextHandler, showExampleHandler }
+  return(
+    <EndpointOptionsPopover
+      content={
+        <div className="px-4 py-4">
+          { content() }
+        </div>
+      }
+      widget={true}
+      visible={type !== ''}
+      saveAsPreset={ setTextHandler }
+      switchToSimpleMode={() => {
+        setWidget('');
+      }}
+      additionalButton={{
+        label: (showExample ? '恢复' : '示例'),
+        handler: showExampleHandler,
+        icon: <MessagesSquared className="mr-1 w-[14px]" />
+      }}
+    />
+  );
 }
 
 export default WritingAssistant;
