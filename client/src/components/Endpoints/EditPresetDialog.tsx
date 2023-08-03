@@ -1,26 +1,25 @@
 import axios from 'axios';
 import { useEffect } from 'react';
-import PopoverButtons from './PopoverButtons';
-import exportFromJSON from 'export-from-json';
-import { useSetOptions } from '~/hooks';
-import { useSetRecoilState, useRecoilState, useRecoilValue } from 'recoil';
 import filenamify from 'filenamify';
+import exportFromJSON from 'export-from-json';
+import { useSetRecoilState, useRecoilState, useRecoilValue } from 'recoil';
+import { EditPresetProps } from 'librechat-data-provider';
+import { useSetOptions, useLocalize } from '~/hooks';
 import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
+import PopoverButtons from './PopoverButtons';
 import Settings from '~/components/Input/Settings';
-import { EditPresetProps } from 'librechat-data-provider';
 import { cn, defaultTextProps, removeFocusOutlines } from '~/utils/';
 import cleanupPreset from '~/utils/cleanupPreset';
-import { localize } from '~/localization/Translation';
 import store from '~/store';
 
 const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPresetProps) => {
-  const lang = useRecoilValue(store.lang);
   const [preset, setPreset] = useRecoilState(store.preset);
   const setPresets = useSetRecoilState(store.presets);
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const { setOption } = useSetOptions(_preset);
+  const localize = useLocalize();
 
   const submitPreset = () => {
     axios({
@@ -55,20 +54,20 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPr
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title={`${title || localize(lang, 'com_endpoint_edit_preset')} - ${preset?.title}`}
+        title={`${title || localize('com_endpoint_edit_preset')} - ${preset?.title}`}
         className="h-full max-w-full overflow-y-auto pb-0 sm:w-[680px] md:h-[675px] md:w-[750px] lg:w-[950px]"
         main={
           <div className="flex w-full flex-col items-center gap-2 md:h-[475px]">
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="preset-name" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint_preset_name')}
+                  {localize('com_endpoint_preset_name')}
                 </Label>
                 <Input
                   id="preset-name"
                   value={preset?.title || ''}
                   onChange={(e) => setOption('title')(e.target.value || '')}
-                  placeholder={localize(lang, 'com_endpoint_set_custom_name')}
+                  placeholder={localize('com_endpoint_set_custom_name')}
                   className={cn(
                     defaultTextProps,
                     'flex h-10 max-h-10 w-full resize-none px-3 py-2',
@@ -78,7 +77,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPr
               </div>
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="endpoint" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_endpoint')}
+                  {localize('com_endpoint')}
                 </Label>
                 <Dropdown
                   value={endpoint || ''}
@@ -103,13 +102,13 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPr
         buttons={
           <>
             <DialogButton onClick={exportPreset} className="dark:hover:gray-400 border-gray-700">
-              {localize(lang, 'com_endpoint_export')}
+              {localize('com_endpoint_export')}
             </DialogButton>
             <DialogClose
               onClick={submitPreset}
               className="dark:hover:gray-400 border-gray-700 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
             >
-              {localize(lang, 'com_endpoint_save')}
+              {localize('com_endpoint_save')}
             </DialogClose>
           </>
         }
