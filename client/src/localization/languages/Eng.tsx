@@ -160,6 +160,7 @@ export default {
   com_endpoint_not_implemented: 'Not implemented',
   com_endpoint_edit_preset: 'Edit Preset',
   com_endpoint_view_options: 'View Options',
+  com_endpoint_save_convo_as_preset: 'Save Conversation as Preset',
   com_endpoint_my_preset: 'My Preset',
   com_endpoint_agent_model: 'Agent Model (Recommended: GPT-3.5)',
   com_endpoint_completion_model: 'Completion Model (Recommended: GPT-4)',

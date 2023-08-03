@@ -372,7 +372,7 @@ export type TModels = {
 };
 
 export type ModelSelectProps = TModels & {
-  conversation: TConversation | null;
+  conversation: TConversation | TPreset | null;
   setOption: SetOption;
   edit?: boolean;
   readonly?: boolean;

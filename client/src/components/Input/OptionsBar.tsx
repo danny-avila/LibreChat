@@ -3,13 +3,16 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
 import { TPreset } from 'librechat-data-provider';
 import { PluginStoreDialog } from '~/components';
-import { SaveAsPresetDialog, EndpointOptionsPopover } from '~/components/Endpoints';
+import {
+  EndpointSettings,
+  SaveAsPresetDialog,
+  EndpointOptionsPopover,
+} from '~/components/Endpoints';
 import { Button } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
 import { useSetOptions } from '~/hooks';
 import { ModelSelect } from './ModelSelect';
 import GenerationButtons from './GenerationButtons';
-import Settings from './Settings';
 import store from '~/store';
 
 export default function OptionsBar() {
@@ -116,7 +119,7 @@ export default function OptionsBar() {
           closePopover={() => setShowPopover(false)}
         >
           <div className="px-4 py-4">
-            <Settings conversation={conversation} setOption={setOption} />
+            <EndpointSettings conversation={conversation} setOption={setOption} />
           </div>
         </EndpointOptionsPopover>
         <SaveAsPresetDialog

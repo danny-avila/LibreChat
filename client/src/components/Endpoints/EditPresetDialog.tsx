@@ -8,7 +8,7 @@ import { useSetOptions, useLocalize } from '~/hooks';
 import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import PopoverButtons from './PopoverButtons';
-import Settings from '~/components/Input/Settings';
+import EndpointSettings from './EndpointSettings';
 import { cn, defaultTextProps, removeFocusOutlines, cleanupPreset } from '~/utils/';
 import store from '~/store';
 
@@ -95,12 +95,15 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPr
                   )}
                   containerClassName="flex w-full resize-none z-[51]"
                 />
-                <PopoverButtons endpoint={endpoint} buttonClass="ml-0 " />
+                <PopoverButtons
+                  endpoint={endpoint}
+                  buttonClass="ml-0 col-span-2 dark:bg-gray-700 dark:hover:bg-gray-800 p-2"
+                />
               </div>
             </div>
             <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
             <div className="w-full p-0">
-              <Settings conversation={preset} setOption={setOption} isPreset={true} />
+              <EndpointSettings conversation={preset} setOption={setOption} isPreset={true} />
             </div>
           </div>
         }

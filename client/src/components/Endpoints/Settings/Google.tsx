@@ -124,7 +124,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 disabled={readonly}
                 value={[temperature ?? 0.2]}
                 onValueChange={(value) => setTemperature(value[0])}
-                doubleClickHandler={() => setTemperature(1)}
+                doubleClickHandler={() => setTemperature(0.2)}
                 max={1}
                 min={0}
                 step={0.01}
@@ -166,7 +166,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                     disabled={readonly}
                     value={[topP ?? 0.95]}
                     onValueChange={(value) => setTopP(value[0])}
-                    doubleClickHandler={() => setTopP(1)}
+                    doubleClickHandler={() => setTopP(0.95)}
                     max={1}
                     min={0}
                     step={0.01}
@@ -207,7 +207,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                     disabled={readonly}
                     value={[topK ?? 40]}
                     onValueChange={(value) => setTopK(value[0])}
-                    doubleClickHandler={() => setTopK(0)}
+                    doubleClickHandler={() => setTopK(40)}
                     max={40}
                     min={1}
                     step={0.01}
@@ -249,7 +249,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 disabled={readonly}
                 value={[maxOutputTokens ?? 1024]}
                 onValueChange={(value) => setMaxOutputTokens(value[0])}
-                doubleClickHandler={() => setMaxOutputTokens(0)}
+                doubleClickHandler={() => setMaxOutputTokens(1024)}
                 max={1024}
                 min={1}
                 step={1}

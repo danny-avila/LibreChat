@@ -1,12 +1,10 @@
 import React from 'react';
-import { useRecoilValue } from 'recoil';
+import { Save } from 'lucide-react';
+import { EndpointOptionsPopoverProps } from 'librechat-data-provider';
 import { Button } from '~/components/ui';
 import { CrossIcon } from '~/components/svg';
-import { localize } from '~/localization/Translation';
 import PopoverButtons from './PopoverButtons';
-import { EndpointOptionsPopoverProps } from 'librechat-data-provider';
-import { Save } from 'lucide-react';
-import store from '~/store';
+import { useLocalize } from '~/hooks';
 
 export default function EndpointOptionsPopover({
   children,
@@ -15,7 +13,7 @@ export default function EndpointOptionsPopover({
   saveAsPreset,
   closePopover,
 }: EndpointOptionsPopoverProps) {
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
   const cardStyle =
     'shadow-xl rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white';
 
@@ -34,14 +32,13 @@ export default function EndpointOptionsPopover({
           }
         >
           <div className="flex w-full items-center bg-slate-100 px-2 py-2 dark:bg-gray-800/60">
-            {/* <span className="text-xs font-medium font-normal">Advanced settings for OpenAI endpoint</span> */}
             <Button
               type="button"
               className="h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
               onClick={saveAsPreset}
             >
               <Save className="mr-1 w-[14px]" />
-              {localize(lang, 'com_endpoint_save_as_preset')}
+              {localize('com_endpoint_save_as_preset')}
             </Button>
             <PopoverButtons endpoint={endpoint} />
             <Button
@@ -50,7 +47,6 @@ export default function EndpointOptionsPopover({
               onClick={closePopover}
             >
               <CrossIcon className="mr-1" />
-              {/* Switch to simple mode */}
             </Button>
           </div>
           <div>{children}</div>

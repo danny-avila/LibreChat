@@ -1,56 +1,47 @@
-import {
-  OpenAISettings,
-  BingAISettings,
-  AnthropicSettings,
-  GoogleSettings,
-  PluginsSettings,
-} from './Settings';
 import { useRecoilValue } from 'recoil';
+import { OpenAISettings, BingAISettings, AnthropicSettings } from './Settings';
+import { GoogleSettings, PluginsSettings } from './Settings/MultiView';
+import { SettingsProps, OptionComponent, MultiViewComponent } from 'librechat-data-provider';
 import store from '~/store';
 
-// A preset dialog to show readonly preset values.
-const Settings = ({ preset, readonly, setOption }) => {
-  const { endpoint } = preset || {};
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
-  const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
-
-  if (endpoint === 'openAI' || endpoint === 'azureOpenAI') {
-    return (
-      <OpenAISettings
-        conversation={preset}
-        setOption={setOption}
-        models={models}
-        readonly={false}
-      />
-    );
-  } else if (endpoint === 'bingAI') {
-    return <BingAISettings conversation={preset} setOption={setOption} readonly={readonly} />;
-  } else if (endpoint === 'google') {
-    return (
-      <GoogleSettings conversation={preset} setOption={setOption} models={models} edit={true} />
-    );
-  } else if (endpoint === 'anthropic') {
-    return (
-      <AnthropicSettings
-        conversation={preset}
-        setOption={setOption}
-        models={models}
-        edit={true}
-        readonly={readonly}
-      />
-    );
-  } else if (endpoint === 'gptPlugins') {
-    return (
-      <PluginsSettings
-        conversation={preset}
-        setOption={setOption}
-        models={models}
-        // {...props}
-      />
-    );
-  } else {
-    return <div className="text-black dark:text-white">Not implemented</div>;
-  }
+const optionComponents: { [key: string]: OptionComponent } = {
+  openAI: OpenAISettings,
+  azureOpenAI: OpenAISettings,
+  bingAI: BingAISettings,
+  anthropic: AnthropicSettings,
 };
 
-export default Settings;
+const multiViewComponents: { [key: string]: MultiViewComponent } = {
+  google: GoogleSettings,
+  gptPlugins: PluginsSettings,
+};
+
+export default function Settings({ conversation, setOption, isPreset = false }: SettingsProps) {
+  const endpointsConfig = useRecoilValue(store.endpointsConfig);
+  if (!conversation?.endpoint) {
+    return null;
+  }
+
+  const { endpoint } = conversation;
+  const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
+  const OptionComponent = optionComponents[endpoint];
+
+  if (OptionComponent) {
+    return (
+      <OptionComponent
+        conversation={conversation}
+        setOption={setOption}
+        models={models}
+        isPreset={isPreset}
+      />
+    );
+  }
+
+  const MultiViewComponent = multiViewComponents[endpoint];
+
+  if (!MultiViewComponent) {
+    return null;
+  }
+
+  return <MultiViewComponent conversation={conversation} models={models} isPreset={isPreset} />;
+}
