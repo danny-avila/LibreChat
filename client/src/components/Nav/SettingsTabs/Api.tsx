@@ -35,6 +35,7 @@ function Api() {
   const handleReverseProxyActivityChange = useCallback(
     (value: boolean) => {
       setReverseProxyIsActive(value);
+      // TODO: Aggiungi il tuo codice per abilitare o disabilitare Chimera GPT
     },
     [setReverseProxyIsActive],
   );
