@@ -62,7 +62,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPr
         title={`${title || localize('com_endpoint_edit_preset')} - ${preset?.title}`}
         className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[675px] md:w-[750px] lg:w-[950px]"
         main={
-          <div className="flex w-full flex-col items-center gap-2 md:h-[475px]">
+          <div className="flex w-full flex-col items-center gap-2 md:h-[500px]">
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="preset-name" className="text-left text-sm font-medium">
@@ -103,22 +103,27 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPr
             </div>
             <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
             <div className="w-full p-0">
-              <EndpointSettings conversation={preset} setOption={setOption} isPreset={true} />
+              <EndpointSettings
+                conversation={preset}
+                setOption={setOption}
+                isPreset={true}
+                className="md:mb-4 md:h-full"
+              />
             </div>
           </div>
         }
         buttons={
-          <>
+          <div className="mb-2">
             <DialogButton onClick={exportPreset} className="dark:hover:gray-400 border-gray-700">
               {localize('com_endpoint_export')}
             </DialogButton>
             <DialogClose
               onClick={submitPreset}
-              className="dark:hover:gray-400 border-gray-700 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
+              className="dark:hover:gray-400 ml-2 border-gray-700 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
             >
               {localize('com_endpoint_save')}
             </DialogClose>
-          </>
+          </div>
         }
       />
     </Dialog>
