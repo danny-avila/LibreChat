@@ -198,6 +198,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   }
 
   const openWritingAssistantHandler = openWidgetHandler('wa');
+  const openCodingAssistantHandler = openWidgetHandler('ca');
   const openLeaderboardHandler = () => navigate('/leaderboard');
   const openHomepageHandler = () => navigate('/home');
 
@@ -269,6 +270,12 @@ export default function Nav({ navVisible, setNavVisible }) {
                 svg={() => <NotebookIcon />}
                 text={navigator.languages[0] === 'zh-CN' ? '写作小助手' : 'Writing Assistant'}
                 clickHandler={ openWritingAssistantHandler }
+              />
+              <NavLink
+                className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                svg={() => <NotebookIcon />}
+                text={navigator.languages[0] === 'zh-CN' ? '编程小助手' : 'Coding Assistant'}
+                clickHandler={ openCodingAssistantHandler }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
