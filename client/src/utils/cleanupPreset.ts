@@ -1,12 +1,18 @@
-const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
+import { CleanupPreset } from 'librechat-data-provider';
+
+const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }: CleanupPreset) => {
   const { endpoint } = _preset;
 
   let preset = {};
+  let models = [];
+  if (endpoint) {
+    models = endpointsConfig[endpoint]?.availableModels || [];
+  }
   if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
     preset = {
       endpoint,
       presetId: _preset?.presetId ?? null,
-      model: _preset?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'gpt-3.5-turbo',
+      model: _preset?.model ?? models[0] ?? 'gpt-3.5-turbo',
       chatGptLabel: _preset?.chatGptLabel ?? null,
       promptPrefix: _preset?.promptPrefix ?? null,
       temperature: _preset?.temperature ?? 1,
@@ -19,7 +25,7 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
     preset = {
       endpoint,
       presetId: _preset?.presetId ?? null,
-      model: _preset?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'chat-bison',
+      model: _preset?.model ?? models[0] ?? 'chat-bison',
       modelLabel: _preset?.modelLabel ?? null,
       examples: _preset?.examples ?? [{ input: { content: '' }, output: { content: '' } }],
       promptPrefix: _preset?.promptPrefix ?? null,
@@ -33,7 +39,7 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
     preset = {
       endpoint,
       presetId: _preset?.presetId ?? null,
-      model: _preset?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'claude-1',
+      model: _preset?.model ?? models[0] ?? 'claude-1',
       modelLabel: _preset?.modelLabel ?? null,
       promptPrefix: _preset?.promptPrefix ?? null,
       temperature: _preset?.temperature ?? 1,
@@ -56,10 +62,7 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
     preset = {
       endpoint,
       presetId: _preset?.presetId ?? null,
-      model:
-        _preset?.model ??
-        endpointsConfig[endpoint]?.availableModels?.[0] ??
-        'text-davinci-002-render-sha',
+      model: _preset?.model ?? models[0] ?? 'text-davinci-002-render-sha',
       title: _preset?.title ?? 'New Preset',
     };
   } else if (endpoint === 'gptPlugins') {
@@ -76,7 +79,7 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }) => {
       endpoint,
       presetId: _preset?.presetId ?? null,
       tools: _preset?.tools ?? [],
-      model: _preset?.model ?? endpointsConfig[endpoint]?.availableModels?.[0] ?? 'gpt-3.5-turbo',
+      model: _preset?.model ?? models[0] ?? 'gpt-3.5-turbo',
       chatGptLabel: _preset?.chatGptLabel ?? null,
       promptPrefix: _preset?.promptPrefix ?? null,
       temperature: _preset?.temperature ?? 0.8,

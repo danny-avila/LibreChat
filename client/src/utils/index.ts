@@ -2,6 +2,7 @@ import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 export * from './languages';
+export { default as cleanupPreset } from './cleanupPreset';
 
 export function cn(...inputs: string[]) {
   return twMerge(clsx(inputs));

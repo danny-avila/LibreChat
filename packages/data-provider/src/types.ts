@@ -157,12 +157,20 @@ export type TPreset = {
   createdAt?: string;
   updatedAt?: string;
   presetId?: string;
+  tools?: TPlugin[];
   user?: string;
+  modelLabel?: string;
+  maxOutputTokens?: number;
+  topP?: number;
+  topK?: number;
+  context?: string;
+  systemMessage?: string;
   // for azureOpenAI, openAI only
   chatGptLabel?: string;
   frequence_penalty?: number;
   model?: string;
   presence_penalty?: number;
+  frequency_penalty?: number;
   promptPrefix?: string;
   temperature?: number;
   top_p?: number;
@@ -236,7 +244,7 @@ export type TSearchResults = {
   filter: object;
 };
 
-export type TEndpoints = {
+export type TEndpointsConfig = {
   azureOpenAI: {
     availableModels: [];
   } | null;
@@ -452,5 +460,7 @@ export type TError = {
   };
 };
 
-// export type onChangeHandler = (value:
-//   { icon?: string | undefined; name?: string | undefined; isButton?: boolean | undefined; }[]) => void
+export type CleanupPreset = {
+  preset: TPreset;
+  endpointsConfig?: TEndpointsConfig | Record<string, unknown>;
+};

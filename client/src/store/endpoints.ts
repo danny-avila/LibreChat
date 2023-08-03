@@ -1,7 +1,7 @@
 import { atom, selector } from 'recoil';
-import { TEndpoints } from 'librechat-data-provider';
+import { TEndpointsConfig } from 'librechat-data-provider';
 
-const endpointsConfig = atom<TEndpoints>({
+const endpointsConfig = atom<TEndpointsConfig>({
   key: 'endpointsConfig',
   default: {
     azureOpenAI: null,
