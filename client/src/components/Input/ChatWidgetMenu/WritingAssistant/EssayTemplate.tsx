@@ -51,7 +51,7 @@ function getParagraphFields({ paragraphCount, paraTopic, setParaTopic }) {
   );
 }
 
-export default function EssayTemplate() {
+export default function EssayTemplate({ type }: { type: string }) {
   const defaultTextProps =
     'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
   const selectDropDownStyle = cn(
@@ -65,7 +65,7 @@ export default function EssayTemplate() {
   const defaultSubType: string = '全文';
   const defaultAuthor: string = '高中生';
   const defaultWordCount: string = '500';
-  const defaultParagraphCount: string = '3'
+  const defaultParagraphCount: string = '3';
 
   const [level, setLevel] = useState<string>(defaultAuthor);
   const [subType, setSubType] = useState<string>(defaultSubType);
@@ -92,6 +92,8 @@ export default function EssayTemplate() {
 
   const paragraphFields = getParagraphFields({ paragraphCount, paraTopic, setParaTopic });
 
+  if (type !== '作文') return null;
+
   const SubType = () => {
     return(
       <SelectDropDown
@@ -110,7 +112,7 @@ export default function EssayTemplate() {
   const Author =
     <div className="grid w-full items-center gap-y-2">
       <Label htmlFor="toneStyle-dropdown" className="text-left text-sm font-medium">
-        写作水平 <small className="opacity-40">(默认值: 高中生)</small>
+        写作水平
       </Label>
       <SelectDropDown
         title={''}
@@ -127,13 +129,13 @@ export default function EssayTemplate() {
   const WordCountInput =
     <div className="grid w-full items-center gap-2">
       <Label htmlFor="context" className="text-left text-sm font-medium">
-        字数 <small className="opacity-40">(默认值: 500)</small>
+        字数 <small className="opacity-40">(不能小于100，不能大于800)</small>
       </Label>
       <input
         id='wordCount'
         type="number"
-        min={'1'}
-        max={'500'}
+        min={'100'}
+        max={'800'}
         value={wordCount || 0}
         onChange={(e) => setWordCount(e.target.value || '0')}
         className={inputStyle}
@@ -144,7 +146,7 @@ export default function EssayTemplate() {
     <div className="grid w-full items-center gap-2">
       <div className='flex flex-row gap-6'>
         <Label htmlFor="context" className="text-left text-sm font-medium">
-          主题 <small className="opacity-40">(默认值: 空白)</small>
+          主题
         </Label>
         <div className='flex flex-row gap-2 items-center'>
           <Switch.Root
@@ -177,7 +179,7 @@ export default function EssayTemplate() {
   const EssayParagraphInputs =
     <div className="grid w-full items-center gap-1">
       <Label htmlFor="context" className="text-left text-sm font-medium">
-        主题 <small className="opacity-40">(默认值: 空白)</small>
+        主题
       </Label>
       <TextareaAutosize
         id="essay-topic"
@@ -214,7 +216,7 @@ export default function EssayTemplate() {
   const ParagraphCountInput =
     <div className="grid w-full items-center gap-2">
       <Label htmlFor="context" className="text-left text-sm font-medium">
-        段落 <small className="opacity-40">(默认值: 3)</small>
+        段落 <small className="opacity-40">(不能小于1，不能大于5)</small>
       </Label>
       <input
         id='paragraphCount'
