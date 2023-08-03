@@ -371,7 +371,14 @@ export type TModels = {
   models: string[];
 };
 
-export type ModelSelectProps = SettingsProps & TModels;
+export type ModelSelectProps = TModels & {
+  conversation: TConversation | null;
+  setOption: SetOption;
+  edit?: boolean;
+  readonly?: boolean;
+  isPreset?: boolean;
+};
+
 export type MultiViewProps = TModels & {
   conversation: TConversation | TPreset | null;
   isPreset?: boolean;
