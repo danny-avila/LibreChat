@@ -4,6 +4,7 @@ import { cn } from '~/utils';
 import { MessagesSquared } from '~/components/svg';
 import EndpointOptionsPopover from '~/components/Endpoints/EndpointOptionsPopover';
 import { useRecoilState } from 'recoil';
+import TextareaAutosize from 'react-textarea-autosize';
 import store from '~/store';
 
 function CodingAssistant() {
@@ -42,8 +43,43 @@ function CodingAssistant() {
                 subContainerClassName=''
               />
             </div>
+            <div className="grid w-full items-center gap-y-2">
+              <Label htmlFor="toneStyle-dropdown" className="text-left text-sm font-medium">
+                类型
+              </Label>
+              <SelectDropDown
+                title={''}
+                value={type}
+                setValue={(value: string) => setType(value)}
+                availableValues={['代码生成', '代码优化', '错误信息']}
+                disabled={false}
+                className={cn(
+                  defaultTextProps,
+                  'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                )}
+                containerClassName="flex w-full resize-none"
+                subContainerClassName=''
+              />
+            </div>
           </div>
           <div className="col-span-1 flex flex-col items-center justify-start gap-6">
+            <div className="grid w-full items-center gap-1">
+              <Label htmlFor="context" className="text-left text-sm font-medium">
+                主题
+              </Label>
+              <TextareaAutosize
+                id="essay-topic"
+                title='文章主题'
+                placeholder='文章主题'
+                disabled={false}
+                value={topic || ''}
+                onChange={(e) => setTopic(e.target.value || '')}
+                className={cn(
+                  defaultTextProps,
+                  'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2'
+                )}
+              />
+            </div>
           </div>
         </div>
       </div>
