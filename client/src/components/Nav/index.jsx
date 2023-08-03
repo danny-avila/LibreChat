@@ -187,15 +187,17 @@ export default function Nav({ navVisible, setNavVisible }) {
     setCopied(true);
   }
 
-  const openWritingAssistantHandler = () => {
+  const openWidgetHandler = (type) => () => {
     if (location.pathname.substring(1, 5) !== 'chat') {
       newConversation();
       navigate('/chat/new');
-      setWidget('wa');
+      setWidget(`${type}`);
     } else {
-      setWidget(widget === 'wa' ? '' : 'wa');
+      setWidget(widget === `${type}` ? '' : `${type}`);
     }
   }
+
+  const openWritingAssistantHandler = openWidgetHandler('wa');
   const openLeaderboardHandler = () => navigate('/leaderboard');
   const openHomepageHandler = () => navigate('/home');
 
