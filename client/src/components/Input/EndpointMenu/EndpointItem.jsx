@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { DropdownMenuRadioItem } from '~/components';
-import { Settings } from 'lucide-react';
-import getIcon from '~/utils/getIcon';
 import { useRecoilValue } from 'recoil';
+import { Settings } from 'lucide-react';
+import { DropdownMenuRadioItem } from '~/components';
+import { getIcon } from '~/components/Endpoints';
 import { SetTokenDialog } from '../SetTokenDialog';
 
 import store from '~/store';

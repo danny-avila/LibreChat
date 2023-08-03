@@ -2,8 +2,10 @@ import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 export * from './languages';
+export { default as getError } from './getError';
+export { default as buildTree } from './buildTree';
 export { default as cleanupPreset } from './cleanupPreset';
-export { default as getIcon } from './getIcon';
+export { default as getDefaultConversation } from './getDefaultConversation';
 
 export function cn(...inputs: string[]) {
   return twMerge(clsx(inputs));

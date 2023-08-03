@@ -1,6 +1,7 @@
 import React from 'react';
 import { useRecoilValue } from 'recoil';
-import { CrossIcon, Button } from '~/components';
+import { Button } from '~/components/ui';
+import { CrossIcon } from '~/components/svg';
 import { localize } from '~/localization/Translation';
 import PopoverButtons from './PopoverButtons';
 import { EndpointOptionsPopoverProps } from 'librechat-data-provider';

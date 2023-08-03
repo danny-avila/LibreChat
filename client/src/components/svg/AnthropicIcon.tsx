@@ -4,10 +4,8 @@ export default function AnthropicIcon({ size = 25 }) {
       <g
         style={{
           transform: 'translateX(13px) rotateZ(0deg)',
-          transformorigin: '4.775px 7.73501px',
+          transformOrigin: '4.775px 7.73501px',
         }}
-        // eslint-disable-next-line react/no-unknown-property
-        transformorigin="4.7750020027160645px 7.735011100769043px"
       >
         <path
           shapeRendering="geometricPrecision"
@@ -19,11 +17,9 @@ export default function AnthropicIcon({ size = 25 }) {
       <g
         style={{
           transform: 'none',
-          transformorigin: '7.935px 7.73501px',
+          transformOrigin: '7.935px 7.73501px',
         }}
         opacity="1"
-        // eslint-disable-next-line react/no-unknown-property
-        transformorigin="7.93500280380249px 7.735011100769043px"
       >
         <path
           shapeRendering="geometricPrecision"

@@ -1,5 +1,5 @@
 import { atom, selector } from 'recoil';
-import buildTree from '~/utils/buildTree';
+import { buildTree } from '~/utils';
 
 const isSearchEnabled = atom({
   key: 'isSearchEnabled',

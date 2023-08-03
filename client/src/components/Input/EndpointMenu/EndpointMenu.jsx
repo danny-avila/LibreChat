@@ -1,13 +1,12 @@
 /* eslint-disable react-hooks/exhaustive-deps */
+import { Trash2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
-import EditPresetDialog from '../../Endpoints/EditPresetDialog';
+import { useDeletePresetMutation, useCreatePresetMutation } from 'librechat-data-provider';
+import { getIcon, EditPresetDialog } from '~/components/Endpoints';
 import EndpointItems from './EndpointItems';
 import PresetItems from './PresetItems';
-import { Trash2 } from 'lucide-react';
 import FileUpload from './FileUpload';
-import getDefaultConversation from '~/utils/getDefaultConversation';
-import { useDeletePresetMutation, useCreatePresetMutation } from 'librechat-data-provider';
 import {
   Button,
   DropdownMenu,
@@ -20,7 +19,7 @@ import {
   DialogTrigger,
 } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { cn, cleanupPreset, getIcon } from '~/utils/';
+import { cn, cleanupPreset, getDefaultConversation } from '~/utils';
 
 import store from '~/store';
 

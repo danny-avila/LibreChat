@@ -1,5 +1,5 @@
 import { DropdownMenuRadioItem, EditIcon, TrashIcon } from '~/components';
-import getIcon from '~/utils/getIcon';
+import { getIcon } from '~/components/Endpoints';
 
 export default function PresetItem({ preset = {}, value, onChangePreset, onDeletePreset }) {
   const { endpoint } = preset;

@@ -1,5 +1,5 @@
 import { Plugin, GPTIcon, AnthropicIcon } from '~/components/svg';
-import { useAuthContext } from '~/hooks/AuthContext';
+import { useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
 
 const getIcon = (props) => {

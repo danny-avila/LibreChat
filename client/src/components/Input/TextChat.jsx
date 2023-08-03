@@ -5,7 +5,7 @@ import SubmitButton from './SubmitButton';
 import OptionsBar from './OptionsBar';
 import { EndpointMenu } from './EndpointMenu';
 import Footer from './Footer';
-import { useMessageHandler } from '~/utils/handleSubmit';
+import { useMessageHandler } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 

@@ -1,4 +1,3 @@
-import endpoints from './endpoints';
 import { useCallback } from 'react';
 import {
   atom,
@@ -8,10 +7,10 @@ import {
   useResetRecoilState,
   useRecoilCallback,
 } from 'recoil';
-import buildTree from '~/utils/buildTree';
-import getDefaultConversation from '~/utils/getDefaultConversation';
-import submission from './submission';
 import { TConversation, TMessagesAtom, TSubmission, TPreset } from 'librechat-data-provider';
+import { buildTree, getDefaultConversation } from '~/utils';
+import submission from './submission';
+import endpoints from './endpoints';
 
 const conversation = atom<TConversation | null>({
   key: 'conversation',

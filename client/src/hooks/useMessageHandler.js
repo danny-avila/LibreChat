@@ -1,6 +1,5 @@
 import { v4 } from 'uuid';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
-
 import store from '~/store';
 
 const useMessageHandler = () => {
@@ -217,4 +216,4 @@ const useMessageHandler = () => {
   return { ask, regenerate, stopGenerating };
 };
 
-export { useMessageHandler };
+export default useMessageHandler;
