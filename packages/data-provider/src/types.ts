@@ -346,14 +346,6 @@ export type SetExample = (
   newValue: number | string | boolean | null,
 ) => void;
 
-export type SettingsProps = {
-  conversation: TConversation | TPreset | null;
-  setOption: SetOption;
-  edit?: boolean;
-  readonly?: boolean;
-  isPreset?: boolean;
-};
-
 export enum Side {
   Top = 'top',
   Right = 'right',
@@ -367,30 +359,30 @@ export type OptionHoverProps = {
   side: Side;
 };
 
+export type BaseProps = {
+  conversation: TConversation | TPreset | null;
+  className?: string;
+  isPreset?: boolean;
+  readonly?: boolean;
+};
+
+export type SettingsProps = BaseProps & {
+  setOption: SetOption;
+};
+
 export type TModels = {
   models: string[];
 };
 
-export type ModelSelectProps = TModels & {
-  conversation: TConversation | TPreset | null;
-  setOption: SetOption;
-  edit?: boolean;
-  readonly?: boolean;
-  isPreset?: boolean;
-};
-
-export type MultiViewProps = TModels & {
-  conversation: TConversation | TPreset | null;
-  isPreset?: boolean;
-};
+export type ModelSelectProps = SettingsProps & TModels;
 
 export type ExamplesProps = {
   readonly?: boolean;
+  className?: string;
   examples: TExample[];
   setExample: SetExample;
   addExample: () => void;
   removeExample: () => void;
-  edit?: boolean;
 };
 
 export type GoogleProps = {
@@ -400,7 +392,8 @@ export type GoogleProps = {
 
 export type GoogleViewProps = SettingsProps & GoogleProps;
 export type OptionComponent = React.FC<ModelSelectProps>;
-export type MultiViewComponent = React.FC<MultiViewProps>;
+export type MultiViewComponent = React.FC<BaseProps & TModels>;
+
 export type SelectProps = {
   conversation: TConversation | null;
   setOption: SetOption;

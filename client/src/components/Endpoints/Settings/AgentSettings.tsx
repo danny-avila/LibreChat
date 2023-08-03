@@ -32,99 +32,98 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   };
 
   return (
-    <div className="h-[480px] overflow-y-auto sm:h-[350px] md:h-[350px]">
-      <div className="grid gap-6 sm:grid-cols-5">
-        <div className="col-span-3 flex flex-col items-center justify-start gap-6">
-          <div className="grid w-full items-center gap-2">
-            <SelectDropDown
-              title={localize('com_endpoint_agent_model')}
-              value={model ?? ''}
-              setValue={setModel}
-              availableValues={models}
-              disabled={readonly}
-              className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
-              containerClassName="flex w-full resize-none"
-            />
-          </div>
+    <div className="grid gap-6 sm:grid-cols-5">
+      <div className="col-span-3 flex flex-col items-center justify-start gap-6">
+        <div className="grid w-full items-center gap-2">
+          <SelectDropDown
+            title={localize('com_endpoint_agent_model')}
+            value={model ?? ''}
+            setValue={setModel}
+            availableValues={models}
+            disabled={readonly}
+            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
+            containerClassName="flex w-full resize-none"
+          />
         </div>
-        <div className="col-span-2 flex flex-col items-center justify-start gap-6 px-3">
-          <HoverCard openDelay={300}>
-            <HoverCardTrigger className="grid w-full items-center gap-2">
-              <div className="flex justify-between">
-                <Label htmlFor="temp-int" className="text-left text-sm font-medium">
-                  {localize('com_endpoint_temperature')}{' '}
-                  <small className="opacity-40">({localize('com_endpoint_default')}: 0)</small>
-                </Label>
-                <InputNumber
-                  id="temp-int"
-                  disabled={readonly}
-                  value={temperature}
-                  onChange={(value) => setTemperature(Number(value))}
-                  max={2}
-                  min={0}
-                  step={0.01}
-                  controls={false}
-                  className={cn(
-                    defaultTextProps,
-                    cn(
-                      optionText,
-                      'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
-                    ),
-                  )}
-                />
-              </div>
-              <Slider
+      </div>
+      <div className="col-span-2 flex flex-col items-center justify-start gap-6 px-3">
+        <HoverCard openDelay={300}>
+          <HoverCardTrigger className="grid w-full items-center gap-2">
+            <div className="flex justify-between">
+              <Label htmlFor="temp-int" className="text-left text-sm font-medium">
+                {localize('com_endpoint_temperature')}{' '}
+                <small className="opacity-40">({localize('com_endpoint_default')}: 0)</small>
+              </Label>
+              <InputNumber
+                id="temp-int"
                 disabled={readonly}
-                value={[temperature ?? 0]}
-                onValueChange={(value) => setTemperature(value[0])}
-                doubleClickHandler={() => setTemperature(1)}
+                value={temperature}
+                onChange={(value) => setTemperature(Number(value))}
                 max={2}
                 min={0}
                 step={0.01}
-                className="flex h-4 w-full"
+                controls={false}
+                className={cn(
+                  defaultTextProps,
+                  cn(
+                    optionText,
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                  ),
+                )}
+              />
+            </div>
+            <Slider
+              disabled={readonly}
+              value={[temperature ?? 0]}
+              onValueChange={(value) => setTemperature(value[0])}
+              doubleClickHandler={() => setTemperature(1)}
+              max={2}
+              min={0}
+              step={0.01}
+              className="flex h-4 w-full"
+            />
+          </HoverCardTrigger>
+          <OptionHover endpoint={conversation.endpoint ?? ''} type="temp" side={Side.Left} />
+        </HoverCard>
+        <div className="grid w-full grid-cols-2 items-center gap-10">
+          <HoverCard openDelay={500}>
+            <HoverCardTrigger className="w-[100px]">
+              <label
+                htmlFor="functions-agent"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+              >
+                <small>{localize('com_endpoint_plug_use_functions')}</small>
+              </label>
+              <Switch
+                id="functions-agent"
+                checked={agent === 'functions'}
+                onCheckedChange={onCheckedChangeAgent}
+                disabled={readonly}
+                className="ml-4 mt-2"
               />
             </HoverCardTrigger>
-            <OptionHover endpoint={conversation.endpoint ?? ''} type="temp" side={Side.Left} />
+            <OptionHover endpoint={conversation.endpoint ?? ''} type="func" side={Side.Bottom} />
           </HoverCard>
-          <div className="grid w-full grid-cols-2 items-center gap-10">
-            <HoverCard openDelay={500}>
-              <HoverCardTrigger className="w-[100px]">
-                <label
-                  htmlFor="functions-agent"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
-                >
-                  <small>{localize('com_endpoint_plug_use_functions')}</small>
-                </label>
-                <Switch
-                  id="functions-agent"
-                  checked={agent === 'functions'}
-                  onCheckedChange={onCheckedChangeAgent}
-                  disabled={readonly}
-                  className="ml-4 mt-2"
-                />
-              </HoverCardTrigger>
-              <OptionHover endpoint={conversation.endpoint ?? ''} type="func" side={Side.Bottom} />
-            </HoverCard>
-            <HoverCard openDelay={500}>
-              <HoverCardTrigger className="ml-[-60px] w-[100px]">
-                <label
-                  htmlFor="skip-completion"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
-                >
-                  <small>{localize('com_endpoint_plug_skip_completion')}</small>
-                </label>
-                <Switch
-                  id="skip-completion"
-                  checked={skipCompletion === true}
-                  onCheckedChange={onCheckedChangeSkip}
-                  disabled={readonly}
-                  className="ml-4 mt-2"
-                />
-              </HoverCardTrigger>
-              <OptionHover endpoint={conversation.endpoint ?? ''} type="skip" side={Side.Bottom} />
-            </HoverCard>
-          </div>
-          {/* <HoverCard openDelay={300}>
+          <HoverCard openDelay={500}>
+            <HoverCardTrigger className="ml-[-60px] w-[100px]">
+              <label
+                htmlFor="skip-completion"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+              >
+                <small>{localize('com_endpoint_plug_skip_completion')}</small>
+              </label>
+              <Switch
+                id="skip-completion"
+                checked={skipCompletion === true}
+                onCheckedChange={onCheckedChangeSkip}
+                disabled={readonly}
+                className="ml-4 mt-2"
+              />
+            </HoverCardTrigger>
+            <OptionHover endpoint={conversation.endpoint ?? ''} type="skip" side={Side.Bottom} />
+          </HoverCard>
+        </div>
+        {/* <HoverCard openDelay={300}>
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
@@ -237,7 +236,6 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </HoverCardTrigger>
             <OptionHover type="pres" side="left" />
           </HoverCard> */}
-        </div>
       </div>
     </div>
   );

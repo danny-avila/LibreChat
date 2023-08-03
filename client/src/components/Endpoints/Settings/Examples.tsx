@@ -6,75 +6,64 @@ import { Button, Label } from '~/components/ui';
 import { cn, defaultTextProps } from '~/utils/';
 import { useLocalize } from '~/hooks';
 
-function Examples({
-  readonly,
-  examples,
-  setExample,
-  addExample,
-  removeExample,
-  edit = false,
-}: ExamplesProps) {
-  const maxHeight = edit ? 'max-h-[233px]' : 'md:h-[306px] h-[395px]';
+function Examples({ readonly, examples, setExample, addExample, removeExample }: ExamplesProps) {
   const localize = useLocalize();
-
   return (
     <>
-      <div className={`${maxHeight} overflow-y-auto`}>
-        <div id="examples-grid" className="grid gap-6 sm:grid-cols-2">
-          {examples.map((example, idx) => (
-            <React.Fragment key={idx}>
-              {/* Input */}
-              <div
-                className={`col-span-${
-                  examples.length === 1 ? '1' : 'full'
-                } flex flex-col items-center justify-start gap-6 sm:col-span-1`}
-              >
-                <div className="grid w-full items-center gap-2">
-                  <Label htmlFor={`input-${idx}`} className="text-left text-sm font-medium">
-                    {localize('com_ui_input')}{' '}
-                    <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
-                  </Label>
-                  <TextareaAutosize
-                    id={`input-${idx}`}
-                    disabled={readonly}
-                    value={example?.input?.content || ''}
-                    onChange={(e) => setExample(idx, 'input', e.target.value ?? null)}
-                    placeholder="Set example input. Example is ignored if empty."
-                    className={cn(
-                      defaultTextProps,
-                      'flex max-h-[300px] min-h-[75px] w-full resize-none px-3 py-2 ',
-                    )}
-                  />
-                </div>
+      <div id="examples-grid" className="grid gap-6 sm:grid-cols-2">
+        {examples.map((example, idx) => (
+          <React.Fragment key={idx}>
+            {/* Input */}
+            <div
+              className={`col-span-${
+                examples.length === 1 ? '1' : 'full'
+              } flex flex-col items-center justify-start gap-6 sm:col-span-1`}
+            >
+              <div className="grid w-full items-center gap-2">
+                <Label htmlFor={`input-${idx}`} className="text-left text-sm font-medium">
+                  {localize('com_ui_input')}{' '}
+                  <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
+                </Label>
+                <TextareaAutosize
+                  id={`input-${idx}`}
+                  disabled={readonly}
+                  value={example?.input?.content || ''}
+                  onChange={(e) => setExample(idx, 'input', e.target.value ?? null)}
+                  placeholder="Set example input. Example is ignored if empty."
+                  className={cn(
+                    defaultTextProps,
+                    'flex max-h-[300px] min-h-[75px] w-full resize-none px-3 py-2 ',
+                  )}
+                />
               </div>
+            </div>
 
-              {/* Output */}
-              <div
-                className={`col-span-${
-                  examples.length === 1 ? '1' : 'full'
-                } flex flex-col items-center justify-start gap-6 sm:col-span-1`}
-              >
-                <div className="grid w-full items-center gap-2">
-                  <Label htmlFor={`output-${idx}`} className="text-left text-sm font-medium">
-                    {localize('com_endpoint_output')}{' '}
-                    <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
-                  </Label>
-                  <TextareaAutosize
-                    id={`output-${idx}`}
-                    disabled={readonly}
-                    value={example?.output?.content || ''}
-                    onChange={(e) => setExample(idx, 'output', e.target.value ?? null)}
-                    placeholder={'Set example output. Example is ignored if empty.'}
-                    className={cn(
-                      defaultTextProps,
-                      'flex max-h-[300px] min-h-[75px] w-full resize-none px-3 py-2 ',
-                    )}
-                  />
-                </div>
+            {/* Output */}
+            <div
+              className={`col-span-${
+                examples.length === 1 ? '1' : 'full'
+              } flex flex-col items-center justify-start gap-6 sm:col-span-1`}
+            >
+              <div className="grid w-full items-center gap-2">
+                <Label htmlFor={`output-${idx}`} className="text-left text-sm font-medium">
+                  {localize('com_endpoint_output')}{' '}
+                  <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
+                </Label>
+                <TextareaAutosize
+                  id={`output-${idx}`}
+                  disabled={readonly}
+                  value={example?.output?.content || ''}
+                  onChange={(e) => setExample(idx, 'output', e.target.value ?? null)}
+                  placeholder={'Set example output. Example is ignored if empty.'}
+                  className={cn(
+                    defaultTextProps,
+                    'flex max-h-[300px] min-h-[75px] w-full resize-none px-3 py-2 ',
+                  )}
+                />
               </div>
-            </React.Fragment>
-          ))}
-        </div>
+            </div>
+          </React.Fragment>
+        ))}
       </div>
       <div className="flex justify-center">
         <Button

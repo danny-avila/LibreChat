@@ -2,6 +2,7 @@ import { useRecoilValue } from 'recoil';
 import { OpenAISettings, BingAISettings, AnthropicSettings } from './Settings';
 import { GoogleSettings, PluginsSettings } from './Settings/MultiView';
 import { SettingsProps, OptionComponent, MultiViewComponent } from 'librechat-data-provider';
+import { cn } from '~/utils';
 import store from '~/store';
 
 const optionComponents: { [key: string]: OptionComponent } = {
@@ -16,7 +17,12 @@ const multiViewComponents: { [key: string]: MultiViewComponent } = {
   gptPlugins: PluginsSettings,
 };
 
-export default function Settings({ conversation, setOption, isPreset = false }: SettingsProps) {
+export default function Settings({
+  conversation,
+  setOption,
+  isPreset = false,
+  className = '',
+}: SettingsProps) {
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   if (!conversation?.endpoint) {
     return null;
@@ -28,12 +34,14 @@ export default function Settings({ conversation, setOption, isPreset = false }: 
 
   if (OptionComponent) {
     return (
-      <OptionComponent
-        conversation={conversation}
-        setOption={setOption}
-        models={models}
-        isPreset={isPreset}
-      />
+      <div className={cn('h-[480px] overflow-y-auto md:h-[350px]', className)}>
+        <OptionComponent
+          conversation={conversation}
+          setOption={setOption}
+          models={models}
+          isPreset={isPreset}
+        />
+      </div>
     );
   }
 
@@ -43,5 +51,9 @@ export default function Settings({ conversation, setOption, isPreset = false }: 
     return null;
   }
 
-  return <MultiViewComponent conversation={conversation} models={models} isPreset={isPreset} />;
+  return (
+    <div className={cn('h-[480px] overflow-y-auto md:h-[350px]', className)}>
+      <MultiViewComponent conversation={conversation} models={models} isPreset={isPreset} />
+    </div>
+  );
 }
