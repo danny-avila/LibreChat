@@ -6,7 +6,7 @@ import { CSSTransition } from 'react-transition-group';
 import ScrollToBottom from './ScrollToBottom';
 import MultiMessage from './MultiMessage';
 import MessageHeader from './MessageHeader';
-import { useScreenshot } from '~/utils/screenshotContext.jsx';
+import { useScreenshot } from '~/hooks';
 
 import store from '~/store';
 
