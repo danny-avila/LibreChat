@@ -85,10 +85,10 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPr
                   options={availableEndpoints}
                   className={cn(
                     defaultTextProps,
-                    'flex h-10 max-h-10 w-full resize-none',
+                    'flex h-10 max-h-10 w-full resize-none ',
                     removeFocusOutlines,
                   )}
-                  containerClassName="flex w-full resize-none"
+                  containerClassName="flex w-full resize-none z-[51]"
                 />
                 <PopoverButtons endpoint={endpoint} buttonClass="ml-0 " />
               </div>
