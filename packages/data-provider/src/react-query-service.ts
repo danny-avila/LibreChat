@@ -165,7 +165,7 @@ export const useGetSearchEnabledQuery = (
   });
 };
 
-export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpoints> => {
+export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpointsConfig> => {
   return useQuery([QueryKeys.endpoints], () => dataService.getAIEndpoints(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
