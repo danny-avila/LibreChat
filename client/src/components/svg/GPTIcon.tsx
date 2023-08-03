@@ -1,9 +1,9 @@
 import { cn } from '~/utils/';
 
 export default function GPTIcon({ size = 25, className = '' }) {
-  let unit = '41';
-  let height = size;
-  let width = size;
+  const unit = '41';
+  const height = size;
+  const width = size;
 
   return (
     <svg
