@@ -2,7 +2,7 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui';
 import { General } from './SettingsTabs/General';
 import { CogIcon } from '~/components/svg';
-import { Api } from './SettingsTabs/Api';
+import { Api } from './';
 import { ApiIcon } from '~/components/svg';
 import { useEffect, useState } from 'react';
 import { cn } from '~/utils/';
@@ -56,7 +56,11 @@ export default function Settings({ open, onOpenChange }) {
           </DialogTitle>
         </DialogHeader>
         <div className="px-6">
-          <Tabs.Root defaultValue="general" className="flex flex-col gap-6 md:flex-row" orientation="vertical">
+          <Tabs.Root
+            defaultValue="general"
+            className="flex flex-col gap-6 md:flex-row"
+            orientation="vertical"
+          >
             <Tabs.List
               aria-label="Settings"
               role="tablist"
@@ -70,7 +74,8 @@ export default function Settings({ open, onOpenChange }) {
               <Tabs.Trigger
                 className={cn(
                   'radix-state-active:bg-gray-800 radix-state-active:text-white flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm',
-                  isMobile && 'dark:radix-state-active:text-white group flex-1 items-center justify-center text-sm dark:text-gray-500',
+                  isMobile &&
+                    'dark:radix-state-active:text-white group flex-1 items-center justify-center text-sm dark:text-gray-500',
                 )}
                 value="general"
               >
@@ -80,7 +85,8 @@ export default function Settings({ open, onOpenChange }) {
               <Tabs.Trigger
                 className={cn(
                   'radix-state-active:bg-gray-800 radix-state-active:text-white flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm',
-                  isMobile && 'dark:radix-state-active:text-white group flex-1 items-center justify-center text-sm dark:text-gray-500',
+                  isMobile &&
+                    'dark:radix-state-active:text-white group flex-1 items-center justify-center text-sm dark:text-gray-500',
                 )}
                 value="api"
               >

@@ -56,7 +56,7 @@ export default function TextChat({ isSearchView = false }) {
   }, [isSubmitting]);
 
   const submitMessage = () => {
-    ask(text);
+    ask({ text });
     setText('');
   };
 
