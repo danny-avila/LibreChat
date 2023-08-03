@@ -1,18 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { useRecoilValue } from 'recoil';
+import { useCreatePresetMutation, EditPresetProps, TPreset } from 'librechat-data-provider';
 import { Dialog, Input, Label } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { cn, defaultTextPropsLabel, removeFocusOutlines } from '~/utils/';
-import cleanupPreset from '~/utils/cleanupPreset';
-import { useCreatePresetMutation } from 'librechat-data-provider';
+import { cn, defaultTextPropsLabel, removeFocusOutlines, cleanupPreset } from '~/utils/';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
-import { localize } from '~/localization/Translation';
 
-const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
+const SaveAsPresetDialog = ({ open, onOpenChange, preset }: EditPresetProps) => {
   const [title, setTitle] = useState(preset?.title || 'My Preset');
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const createPresetMutation = useCreatePresetMutation();
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
 
   const submitPreset = () => {
     const _preset = cleanupPreset({
@@ -21,25 +20,25 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
         title,
       },
       endpointsConfig,
-    });
+    }) as TPreset;
     createPresetMutation.mutate(_preset);
   };
 
   useEffect(() => {
-    setTitle(preset?.title || localize(lang, 'com_endpoint_my_preset'));
+    setTitle(preset?.title || localize('com_endpoint_my_preset'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title={localize(lang, 'com_endpoint_save_as_preset')}
+        title={localize('com_endpoint_save_as_preset')}
         className="w-full sm:w-1/4"
         main={
           <div className="flex w-full flex-col items-center gap-2">
             <div className="grid w-full items-center gap-2">
               <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-                {localize(lang, 'com_endpoint_preset_name')}
+                {localize('com_endpoint_preset_name')}
               </Label>
               <Input
                 id="chatGptLabel"

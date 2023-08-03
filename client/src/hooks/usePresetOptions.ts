@@ -1,6 +1,6 @@
 import { UsePresetOptions, TPreset, SetOption, SetExample } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import cleanupPreset from '~/utils/cleanupPreset';
+import { cleanupPreset } from '~/utils';
 import store from '~/store';
 
 const usePresetOptions: UsePresetOptions = (_preset) => {

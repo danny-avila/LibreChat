@@ -9,8 +9,7 @@ import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/com
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import PopoverButtons from './PopoverButtons';
 import Settings from '~/components/Input/Settings';
-import { cn, defaultTextProps, removeFocusOutlines } from '~/utils/';
-import cleanupPreset from '~/utils/cleanupPreset';
+import { cn, defaultTextProps, removeFocusOutlines, cleanupPreset } from '~/utils/';
 import store from '~/store';
 
 const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPresetProps) => {
@@ -22,6 +21,9 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPr
   const localize = useLocalize();
 
   const submitPreset = () => {
+    if (!preset) {
+      return;
+    }
     axios({
       method: 'post',
       url: '/api/presets',
@@ -33,6 +35,9 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPr
   };
 
   const exportPreset = () => {
+    if (!preset) {
+      return;
+    }
     const fileName = filenamify(preset?.title || 'preset');
     exportFromJSON({
       data: cleanupPreset({ preset, endpointsConfig }),

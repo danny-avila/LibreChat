@@ -433,7 +433,7 @@ export type EditPresetProps = {
   open: boolean;
   onOpenChange: React.Dispatch<React.SetStateAction<boolean>>;
   preset: TPreset;
-  title: string;
+  title?: string;
 };
 
 export type MultiSelectDropDownProps = {
@@ -461,6 +461,6 @@ export type TError = {
 };
 
 export type CleanupPreset = {
-  preset: TPreset;
+  preset: Partial<TPreset>;
   endpointsConfig?: TEndpointsConfig | Record<string, unknown>;
 };
