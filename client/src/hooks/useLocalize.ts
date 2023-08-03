@@ -4,5 +4,5 @@ import store from '~/store';
 
 export default function useLocalize() {
   const lang = useRecoilValue(store.lang);
-  return (phraseKey: string, values?: string[]) => localize(lang, phraseKey, ...(values ?? []));
+  return (phraseKey: string, ...values: string[]) => localize(lang, phraseKey, ...(values ?? []));
 }
