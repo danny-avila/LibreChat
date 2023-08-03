@@ -188,4 +188,5 @@ export default {
   com_nav_settings: 'Configurações',
   com_nav_search_placeholder: 'Procurar mensagens',
   com_nav_setting_general: 'Geral',
+  com_nav_setting_api: 'API',
 };

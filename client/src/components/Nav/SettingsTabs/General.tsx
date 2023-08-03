@@ -133,7 +133,7 @@ function General() {
   }, [confirmClear, clearConvosMutation]);
 
   const changeTheme = useCallback(
-    (value: string) => {
+    (value) => {
       setTheme(value);
     },
     [setTheme],
