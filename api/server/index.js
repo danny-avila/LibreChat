@@ -31,13 +31,7 @@ config.validate(); // Validate the config
   await indexSync();
 
   const app = express();
-  app.use((req, res, next) => {
-    if (req.url === '/api/auth/logout' && req.method === 'POST') {
-      next();
-    } else {
-      refreshTokenValidator(req, res, next);
-    }
-  });
+  app.get('/', refreshTokenValidator);
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
