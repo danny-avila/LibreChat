@@ -8,7 +8,6 @@ export * from './Input';
 export * from './InputNumber';
 export * from './Label';
 export * from './Landing';
-export * from './ModelSelect';
 export * from './Prompt';
 export * from './Slider';
 export * from './Switch';
