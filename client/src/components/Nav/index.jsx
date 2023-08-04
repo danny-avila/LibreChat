@@ -182,7 +182,7 @@ export default function Nav({ navVisible, setNavVisible }) {
     if (isMobile()) {
       setNavVisible(false);
     }
-  }, [conversationId, setNavVisible]);
+  }, [conversationId, setNavVisible, widget, location.pathname]);
 
   const copyLinkHandler = () => {
     navigator.clipboard.writeText(refLink);
