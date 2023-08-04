@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+@media (max-width: 640px) {
+  .no-gradient-sm {
+    background: none !important;
+  }
+}
+
 @font-face {
   font-display: swap;
   font-family: Signifier;
