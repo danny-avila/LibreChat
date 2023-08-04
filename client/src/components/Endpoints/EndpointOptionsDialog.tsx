@@ -64,7 +64,7 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }: E
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogTemplate
           title={`${title || localize('com_endpoint_save_convo_as_preset')}`}
-          className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[680px] md:w-[750px] lg:w-[950px]"
+          className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[680px] md:w-[750px] md:overflow-y-hidden lg:w-[950px]"
           // headerClassName="sm:p-2 h-16"
           main={
             <div className="flex w-full flex-col items-center gap-2 md:h-[530px]">
@@ -77,13 +77,13 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }: E
                   conversation={preset}
                   setOption={setOption}
                   isPreset={true}
-                  className="h-full md:h-full"
+                  className="h-full md:mb-0 md:h-[490px]"
                 />
               </div>
             </div>
           }
           buttons={
-            <div className="mb-0 md:mb-2">
+            <div className="mb-6 md:mb-2">
               <DialogButton onClick={exportPreset} className="dark:hover:gray-400 border-gray-700">
                 {localize('com_endpoint_export')}
               </DialogButton>

@@ -60,47 +60,58 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPr
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={`${title || localize('com_endpoint_edit_preset')} - ${preset?.title}`}
-        className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[720px] md:w-[750px] lg:w-[950px] xl:h-[720px]"
+        className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[720px] md:w-[750px] md:overflow-y-hidden lg:w-[950px] xl:h-[720px]"
         main={
           <div className="flex w-full flex-col items-center gap-2 md:h-[530px]">
-            <div className="grid w-full gap-6 sm:grid-cols-4">
-              <div className="col-span-1 flex flex-col items-start justify-start gap-2">
-                <Label htmlFor="preset-name" className="text-left text-sm font-medium">
-                  {localize('com_endpoint_preset_name')}
-                </Label>
-                <Input
-                  id="preset-name"
-                  value={preset?.title || ''}
-                  onChange={(e) => setOption('title')(e.target.value || '')}
-                  placeholder={localize('com_endpoint_set_custom_name')}
-                  className={cn(
-                    defaultTextProps,
-                    'flex h-10 max-h-10 w-full resize-none px-3 py-2',
-                    removeFocusOutlines,
-                  )}
-                />
+            <div className="grid w-full grid-cols-5 gap-6">
+              <div className="col-span-4 flex items-start justify-start gap-4">
+                <div className="flex w-full flex-col">
+                  <Label htmlFor="preset-name" className="mb-1 text-left text-sm font-medium">
+                    {localize('com_endpoint_preset_name')}
+                  </Label>
+                  <Input
+                    id="preset-name"
+                    value={preset?.title || ''}
+                    onChange={(e) => setOption('title')(e.target.value || '')}
+                    placeholder={localize('com_endpoint_set_custom_name')}
+                    className={cn(
+                      defaultTextProps,
+                      'flex h-10 max-h-10 w-full resize-none px-3 py-2',
+                      removeFocusOutlines,
+                    )}
+                  />
+                </div>
+                <div className="flex w-full flex-col">
+                  <Label htmlFor="endpoint" className="mb-1 text-left text-sm font-medium">
+                    {localize('com_endpoint')}
+                  </Label>
+                  <Dropdown
+                    value={endpoint || ''}
+                    onChange={setOption('endpoint')}
+                    options={availableEndpoints}
+                    className={cn(
+                      defaultTextProps,
+                      'flex h-10 max-h-10 w-full resize-none ',
+                      removeFocusOutlines,
+                    )}
+                    containerClassName="flex w-full resize-none z-[51]"
+                  />
+                </div>
               </div>
-              <div className="col-span-1 flex flex-col items-start justify-start gap-2">
-                <Label htmlFor="endpoint" className="text-left text-sm font-medium">
-                  {localize('com_endpoint')}
-                </Label>
-                <Dropdown
-                  value={endpoint || ''}
-                  onChange={setOption('endpoint')}
-                  options={availableEndpoints}
-                  className={cn(
-                    defaultTextProps,
-                    'flex h-10 max-h-10 w-full resize-none ',
-                    removeFocusOutlines,
-                  )}
-                  containerClassName="flex w-full resize-none z-[51]"
-                />
-              </div>
-              <div className="col-span-1 flex flex-col items-start justify-end">
-                <PopoverButtons
-                  endpoint={endpoint}
-                  buttonClass="ml-0 w-full dark:bg-gray-700 dark:hover:bg-gray-800 p-2"
-                />
+              <div className="col-span-2 flex items-start justify-start gap-4 sm:col-span-1">
+                <div className="flex w-full flex-col">
+                  <Label
+                    htmlFor="endpoint"
+                    className="mb-1 hidden text-left text-sm font-medium sm:block"
+                  >
+                    {'ㅤ'}
+                  </Label>
+                  <PopoverButtons
+                    endpoint={endpoint}
+                    buttonClass="ml-0 w-full dark:bg-gray-700 dark:hover:bg-gray-800 p-2 h-[40px] justify-center mt-0"
+                    iconClass="hidden lg:block w-4"
+                  />
+                </div>
               </div>
             </div>
             <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
@@ -109,13 +120,13 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPr
                 conversation={preset}
                 setOption={setOption}
                 isPreset={true}
-                className="h-full md:mb-4 md:h-full"
+                className="h-full md:mb-4 md:h-[440px]"
               />
             </div>
           </div>
         }
         buttons={
-          <div className="mb-0 md:mb-2">
+          <div className="mb-6 md:mb-2">
             <DialogButton onClick={exportPreset} className="dark:hover:gray-400 border-gray-700">
               {localize('com_endpoint_export')}
             </DialogButton>

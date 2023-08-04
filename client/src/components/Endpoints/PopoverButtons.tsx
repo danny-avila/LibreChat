@@ -8,9 +8,11 @@ import store from '~/store';
 export default function PopoverButtons({
   endpoint,
   buttonClass,
+  iconClass = '',
 }: {
   endpoint: EModelEndpoint;
   buttonClass?: string;
+  iconClass?: string;
 }) {
   const [optionSettings, setOptionSettings] = useRecoilState(store.optionSettings);
   const [showAgentSettings, setShowAgentSettings] = useRecoilState(store.showAgentSettings);
@@ -24,7 +26,7 @@ export default function PopoverButtons({
         label: (showExamples ? 'Hide' : 'Show') + ' Examples',
         buttonClass: isCodeChat ? 'disabled' : '',
         handler: triggerExamples,
-        icon: <MessagesSquared className="mr-1 w-[14px]" />,
+        icon: <MessagesSquared className={cn('mr-1 w-[14px]', iconClass)} />,
       },
     ],
     gptPlugins: [
@@ -32,7 +34,7 @@ export default function PopoverButtons({
         label: `Show ${showAgentSettings ? 'Completion' : 'Agent'} Settings`,
         buttonClass: '',
         handler: () => setShowAgentSettings((prev) => !prev),
-        icon: <GPTIcon className="mr-1 mt-[2px] w-[14px]" size={14} />,
+        icon: <GPTIcon className={cn('mr-1 mt-[2px] w-[14px]', iconClass)} size={14} />,
       },
     ],
   };
