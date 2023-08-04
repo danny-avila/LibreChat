@@ -1,6 +1,6 @@
 {
   "name": "librechat-data-provider",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "data services for librechat apps",
   "main": "dist/index.js",
   "module": "dist/index.es.js",

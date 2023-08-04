@@ -3,7 +3,8 @@ import HelpText from './HelpText';
 import GoogleConfig from './GoogleConfig';
 import OpenAIConfig from './OpenAIConfig';
 import OtherConfig from './OtherConfig';
-import { Dialog, DialogTemplate } from '~/components';
+import { Dialog } from '~/components/ui';
+import DialogTemplate from '~/components/ui/DialogTemplate';
 import { alternateName } from '~/utils';
 import store from '~/store';
 
@@ -30,6 +31,7 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={`Set Token for ${alternateName[endpoint] ?? endpoint}`}
+        className="w-full max-w-[650px] sm:w-3/4 md:w-3/4 lg:w-3/4"
         main={
           <div className="grid w-full items-center gap-2">
             <EndpointComponent token={token} setToken={setToken} endpoint={endpoint} />

@@ -1,4 +1,4 @@
-import { render, waitFor } from 'layout-test-utils';
+import { render, waitFor } from 'test/layout-test-utils';
 import userEvent from '@testing-library/user-event';
 import Login from '../Login';
 import * as mockDataProvider from 'librechat-data-provider';
