@@ -35,18 +35,20 @@ function Api() {
   const handleReverseProxyActivityChange = useCallback(
     (value: boolean) => {
       setReverseProxyIsActive(value);
-      // TODO: Aggiungi il tuo codice per abilitare o disabilitare Chimera GPT
     },
     [setReverseProxyIsActive],
   );
 
   return (
-    <Tabs.Content value="API" role="tabpanel" className="w-full md:min-h-[300px]">
-      <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-        <ToggleReverseProxy
-          isActive={ReverseProxyIsActive}
-          onCheckedChange={handleReverseProxyActivityChange}
-        />
+    <Tabs.Content value="api" role="tabpanel" className="w-full md:min-h-[300px]">
+      <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-300">
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <ToggleReverseProxy
+            isActive={ReverseProxyIsActive}
+            onCheckedChange={handleReverseProxyActivityChange}
+          />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700"></div>
       </div>
     </Tabs.Content>
   );
