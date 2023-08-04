@@ -1,12 +1,24 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';
+import { localize } from '~/localization/Translation';
 
 import store from '~/store';
 
 export default function MobileNav({ setNavVisible }) {
   const conversation = useRecoilValue(store.conversation);
   const { newConversation } = store.useConversation();
-  const { title = 'New Chat' } = conversation || {};
+  // const { title = 'New Chat' } = conversation || {};
+  const [title, setTitle] = useState('New Chat');
+  const navigate = useNavigate();
+  const lang = useRecoilValue(store.lang);
+
+  useEffect(() => {
+    if (location.pathname === '/home') setTitle(localize(lang, 'com_ui_recommendation_title'));
+    else if (location.pathname === '/leaderboard') setTitle(localize(lang, 'com_ui_leaderboard_title'));
+    else if (location.pathname === '/chat/new') setTitle(localize(lang, 'com_ui_new_chat_title'));
+    else setTitle(conversation.title);
+  });
 
   return (
     <div className="fixed left-0 right-0 top-0 z-10 flex items-center border-b border-white/20 bg-gray-800 pl-1 pt-1 text-gray-200 sm:pl-3 md:hidden">
@@ -34,7 +46,10 @@ export default function MobileNav({ setNavVisible }) {
         </svg>
       </button>
       <h1 className="flex-1 text-center text-base font-normal">{title || 'New Chat'}</h1>
-      <button type="button" className="px-3" onClick={() => newConversation()}>
+      <button type="button" className="px-3" onClick={() => {
+        newConversation();
+        navigate('/chat/new');
+      }}>
         <svg
           stroke="currentColor"
           fill="none"
