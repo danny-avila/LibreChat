@@ -49,7 +49,7 @@ export default function OptionsBar() {
   useEffect(() => {
     if (showPopover) {
       return;
-    } else if (messagesTree?.length >= 1) {
+    } else if (messagesTree && messagesTree.length >= 1) {
       setOpacityClass('show');
     } else {
       setOpacityClass('full-opacity');
@@ -105,7 +105,7 @@ export default function OptionsBar() {
               type="button"
               className={cn(
                 cardStyle,
-                'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-3 hover:bg-slate-50 hover:shadow-md focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-600',
+                'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-3 transition duration-700 ease-in-out hover:bg-slate-50 hover:shadow-md focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-600',
               )}
               onClick={triggerAdvancedMode}
             >

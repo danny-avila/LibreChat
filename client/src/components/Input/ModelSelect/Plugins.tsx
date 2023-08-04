@@ -71,7 +71,7 @@ export default function Plugins({ conversation, setOption, models }: ModelSelect
         type="button"
         className={cn(
           cardStyle,
-          'min-w-4 z-40 flex h-[40px] flex-none items-center justify-center px-3 hover:bg-white hover:shadow-md focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700',
+          'min-w-4 z-40 flex h-[40px] flex-none items-center justify-center px-3 transition duration-700 ease-in-out hover:bg-white hover:shadow-md focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700',
         )}
         onClick={() => setVisibility((prev) => !prev)}
       >
@@ -89,7 +89,7 @@ export default function Plugins({ conversation, setOption, models }: ModelSelect
         showAbove={true}
         className={cn(
           cardStyle,
-          'min-w-60 z-40 flex w-64 hover:shadow-md sm:w-48',
+          'min-w-60 z-40 flex w-64 transition duration-700 ease-in-out hover:shadow-md sm:w-48',
           visible ? '' : 'hidden',
         )}
       />
@@ -102,7 +102,7 @@ export default function Plugins({ conversation, setOption, models }: ModelSelect
         showAbove={true}
         className={cn(
           cardStyle,
-          'min-w-60 z-50 w-64 hover:shadow-md sm:w-48',
+          'min-w-60 z-50 w-64 transition duration-700 ease-in-out hover:shadow-md sm:w-48',
           visible ? '' : 'hidden',
         )}
       />
