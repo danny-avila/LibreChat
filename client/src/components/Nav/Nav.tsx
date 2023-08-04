@@ -1,30 +1,46 @@
+import {
+  TConversation,
+  useGetConversationsQuery,
+  useSearchQuery,
+  TSearchResults,
+} from 'librechat-data-provider';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import NewChat from './NewChat';
 import NavLinks from './NavLinks';
 import { Panel, Spinner } from '~/components';
 import { Conversations, Pages } from '../Conversations';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useGetConversationsQuery, useSearchQuery } from 'librechat-data-provider';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { useAuthContext, useDebounce } from '~/hooks';
-import { localize } from '~/localization/Translation';
+import { useAuthContext, useDebounce, useMediaQuery, useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
 import store from '~/store';
 
 export default function Nav({ navVisible, setNavVisible }) {
   const [isHovering, setIsHovering] = useState(false);
+  const [navWidth, setNavWidth] = useState('260px');
   const { isAuthenticated } = useAuthContext();
-  const containerRef = useRef(null);
-  const scrollPositionRef = useRef(null);
-  const lang = useRecoilValue(store.lang);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const scrollPositionRef = useRef<number | null>(null);
+  const localize = useLocalize();
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
-  const [conversations, setConversations] = useState([]);
+  useEffect(() => {
+    if (isSmallScreen) {
+      setNavWidth('320px');
+    } else {
+      setNavWidth('260px');
+    }
+  }, [isSmallScreen]);
+
+  const [conversations, setConversations] = useState<TConversation[]>([]);
   // current page
   const [pageNumber, setPageNumber] = useState(1);
   // total pages
   const [pages, setPages] = useState(1);
 
   // data provider
-  const getConversationsQuery = useGetConversationsQuery(pageNumber, { enabled: isAuthenticated });
+  const getConversationsQuery = useGetConversationsQuery(pageNumber + '', {
+    enabled: isAuthenticated,
+  });
 
   // search
   const searchQuery = useRecoilValue(store.searchQuery);
@@ -42,22 +58,28 @@ export default function Nav({ navVisible, setNavVisible }) {
   const [isFetching, setIsFetching] = useState(false);
 
   const debouncedSearchTerm = useDebounce(searchQuery, 750);
-  const searchQueryFn = useSearchQuery(debouncedSearchTerm, pageNumber, {
-    enabled:
-      !!debouncedSearchTerm && debouncedSearchTerm.length > 0 && isSearchEnabled && isSearching,
+  const searchQueryFn = useSearchQuery(debouncedSearchTerm, pageNumber + '', {
+    enabled: !!(
+      !!debouncedSearchTerm &&
+      debouncedSearchTerm.length > 0 &&
+      isSearchEnabled &&
+      isSearching
+    ),
   });
 
-  const onSearchSuccess = (data, expectedPage) => {
+  const onSearchSuccess = useCallback((data: TSearchResults, expectedPage?: number) => {
     const res = data;
     setConversations(res.conversations);
     if (expectedPage) {
       setPageNumber(expectedPage);
     }
-    setPages(res.pages);
+    setPages(Number(res.pages));
     setIsFetching(false);
     searchPlaceholderConversation();
     setSearchResultMessages(res.messages);
-  };
+    /* disabled due recoil methods not recognized as state setters */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty dependency array
 
   useEffect(() => {
     //we use isInitialLoading here instead of isLoading because query is disabled by default
@@ -66,7 +88,7 @@ export default function Nav({ navVisible, setNavVisible }) {
     } else if (searchQueryFn.data) {
       onSearchSuccess(searchQueryFn.data);
     }
-  }, [searchQueryFn.data, searchQueryFn.isInitialLoading]);
+  }, [searchQueryFn.data, searchQueryFn.isInitialLoading, onSearchSuccess]);
 
   const clearSearch = () => {
     setPageNumber(1);
@@ -99,12 +121,13 @@ export default function Nav({ navVisible, setNavVisible }) {
         return;
       }
       let { conversations, pages } = getConversationsQuery.data;
+      pages = Number(pages);
       if (pageNumber > pages) {
         setPageNumber(pages);
       } else {
         if (!isSearching) {
           conversations = conversations.sort(
-            (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
           );
         }
         setConversations(conversations);
@@ -121,7 +144,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   }, [pageNumber, conversationId, refreshConversationsHint]);
 
   const toggleNavVisible = () => {
-    setNavVisible((prev) => !prev);
+    setNavVisible((prev: boolean) => !prev);
   };
 
   const containerClasses =
@@ -132,10 +155,11 @@ export default function Nav({ navVisible, setNavVisible }) {
   return (
     <>
       <div
-        className="nav active dark max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-900 transition-all duration-200 ease-in-out md:max-w-[260px]"
+        className="nav active dark max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-900 md:max-w-[260px]"
         style={{
-          width: navVisible ? '100%' : '0%',
+          width: navVisible ? navWidth : '0px',
           visibility: navVisible ? 'visible' : 'hidden',
+          transition: 'width 0.2s, visibility 0.2s',
         }}
       >
         <div className="h-full w-[320px] md:w-[260px]">
@@ -151,7 +175,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                     )}
                     onClick={toggleNavVisible}
                   >
-                    <span className="sr-only">{localize(lang, 'com_nav_close_sidebar')}</span>
+                    <span className="sr-only">{localize('com_nav_close_sidebar')}</span>
                     <Panel open={false} />
                   </button>
                 </div>
@@ -167,17 +191,14 @@ export default function Nav({ navVisible, setNavVisible }) {
                     {(getConversationsQuery.isLoading && pageNumber === 1) || isFetching ? (
                       <Spinner />
                     ) : (
-                      <Conversations
-                        conversations={conversations}
-                        conversationId={conversationId}
-                        moveToTop={moveToTop}
-                      />
+                      <Conversations conversations={conversations} moveToTop={moveToTop} />
                     )}
                     <Pages
                       pageNumber={pageNumber}
                       pages={pages}
                       nextPage={nextPage}
                       previousPage={previousPage}
+                      setPageNumber={setPageNumber}
                     />
                   </div>
                 </div>
@@ -195,7 +216,7 @@ export default function Nav({ navVisible, setNavVisible }) {
             onClick={toggleNavVisible}
           >
             <div className="flex items-center justify-center">
-              <span className="sr-only">{localize(lang, 'com_nav_open_sidebar')}</span>
+              <span className="sr-only">{localize('com_nav_open_sidebar')}</span>
               <Panel open={true} />
             </div>
           </button>
