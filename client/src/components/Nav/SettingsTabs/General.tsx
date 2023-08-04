@@ -63,7 +63,7 @@ export const ClearChatsButton = ({
         type="button"
         id="clearConvosBtn"
         onClick={onClick}
-      >
+      > */}
         {confirmClear ? (
           <div className="flex w-full items-center justify-center gap-2" id="clearConvosTxt">
             <CheckIcon className="h-5 w-5" /> {localize(lang, 'com_nav_confirm_clear')}

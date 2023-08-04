@@ -15,16 +15,16 @@ export default function Settings({ open, onOpenChange }) {
   // Check if mobile dynamically and update
   useEffect(() => {
     const checkMobile = () => {
+      if (window.innerWidth <= 768) {
+        setIsMobile(true);
+      } else {
+        setIsMobile(false);
+      }
       setIsMobile(window.innerWidth <= 768);
     };
 
     checkMobile();
     window.addEventListener('resize', checkMobile);
-
-    // Clean up the resize event listener
-    return () => {
-      window.removeEventListener('resize', checkMobile);
-    };
   }, []);
 
   useEffect(() => {
@@ -39,14 +39,12 @@ export default function Settings({ open, onOpenChange }) {
     };
 
     window.addEventListener('click', handleClick);
-    return () => {
-      window.removeEventListener('click', handleClick);
-    };
+    return () => window.removeEventListener('click', handleClick);
   }, [confirmClear]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn('shadow-2xl dark:bg-gray-900 dark:text-white')}>
+      <DialogContent className={cn('shadow-2xl dark:bg-gray-900 dark:text-white md:w-[680px] ')}>
         <DialogHeader>
           <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
             {localize(lang, 'com_nav_settings')}
