@@ -1,3 +1,4 @@
+import 'test/matchMedia.mock';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TPlugin } from 'librechat-data-provider';
