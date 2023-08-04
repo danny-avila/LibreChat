@@ -1,3 +1,16 @@
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: jest.fn().mockImplementation((query) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: jest.fn(), // deprecated
+    removeListener: jest.fn(), // deprecated
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    dispatchEvent: jest.fn(),
+  })),
+});
 import React from 'react';
 import { render as rtlRender } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -13,7 +26,13 @@ function renderWithProvidersWrapper(ui, { ...options } = {}) {
       <QueryClientProvider client={client}>
         <RecoilRoot>
           <Router>
-            <AuthContextProvider>{children}</AuthContextProvider>
+            <AuthContextProvider
+              authConfig={{
+                loginRedirect: '',
+              }}
+            >
+              {children}
+            </AuthContextProvider>
           </Router>
         </RecoilRoot>
       </QueryClientProvider>

@@ -28,6 +28,7 @@
   "exclude": ["node_modules"],
   "include": [
     "src/**/*",
+    "test/**/*",
     "../e2e/**/*",
     "setupTests.js",
     "vite.config.ts",
