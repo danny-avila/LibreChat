@@ -203,6 +203,8 @@ export default {
   com_nav_lang_spanish: 'Español',
   com_nav_setting_api: 'API',
   com_nav_reverse_proxy: 'Reverse Proxy',
-  com_nav_reverse_proxy_url: 'Reverse Proxy URL',
-  com_nav_reverse_proxy_request: 'Enter your Reverse Proxy URL',
+  com_nav_reverse_proxy_url: 'URL',
+  com_nav_reverse_proxy_url_request: 'Enter your Reverse Proxy URL',
+  com_nav_reverse_proxy_api: 'API Key',
+  com_nav_reverse_proxy_api_request: 'Enter your Reverse Proxy API',
 };

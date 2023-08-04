@@ -52,7 +52,31 @@ export const SetReverseProxyUrl = ({
         value={url}
         onChange={(e) => onChange(e.target.value)}
         className="rounded border border-gray-300 px-2 py-1 text-gray-600 focus:border-blue-300 focus:outline-none focus:ring dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-        placeholder={localize(lang, 'com_nav_reverse_proxy_request')}
+        placeholder={localize(lang, 'com_nav_reverse_proxy_url_request')}
+        style={{ width: '70%' }}
+      />
+    </div>
+  );
+};
+
+export const SetReverseProxyApi = ({
+  url,
+  onChange,
+}: {
+  url: string;
+  onChange: (url: string) => void;
+}) => {
+  const lang = useRecoilValue(store.lang);
+
+  return (
+    <div className="flex items-center justify-between">
+      <div>{localize(lang, 'com_nav_reverse_proxy_api')}</div>
+      <input
+        type="text"
+        value={url}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded border border-gray-300 px-2 py-1 text-gray-600 focus:border-blue-300 focus:outline-none focus:ring dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+        placeholder={localize(lang, 'com_nav_reverse_proxy_api_request')}
         style={{ width: '70%' }}
       />
     </div>
@@ -62,6 +86,7 @@ export const SetReverseProxyUrl = ({
 function Api() {
   const [ReverseProxyIsActive, setReverseProxyIsActive] = useRecoilState(reverseProxyIsActiveState);
   const [url, setUrl] = useRecoilState(reverseProxyUrlState);
+  const [api, setApi] = useRecoilState(reverseProxyUrlState);
 
   const handleReverseProxyActivityChange = useCallback(
     (value: boolean) => {
@@ -77,6 +102,13 @@ function Api() {
     [setUrl],
   );
 
+  const handleReverseProxyApiChange = useCallback(
+    (newApi: string) => {
+      setApi(newApi);
+    },
+    [setApi],
+  );
+
   return (
     <Tabs.Content value="api" role="tabpanel" className="w-full md:min-h-[300px]">
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-300">
@@ -87,9 +119,14 @@ function Api() {
           />
         </div>
         {ReverseProxyIsActive && (
-          <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-            <SetReverseProxyUrl url={url} onChange={handleReverseProxyUrlChange} />
-          </div>
+          <>
+            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+              <SetReverseProxyUrl url={url} onChange={handleReverseProxyUrlChange} />
+            </div>
+            <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+              <SetReverseProxyApi url={url} onChange={handleReverseProxyApiChange} />
+            </div>
+          </>
         )}
       </div>
     </Tabs.Content>
