@@ -10,6 +10,11 @@ export const reverseProxyIsActiveState = atom({
   default: false,
 });
 
+export const reverseProxyUrlState = atom({
+  key: 'reverseProxyUrlState',
+  default: '', // Default URL is an empty string
+});
+
 export const ToggleReverseProxy = ({
   isActive,
   onCheckedChange,
@@ -29,14 +34,45 @@ export const ToggleReverseProxy = ({
   );
 };
 
+export const SetReverseProxyUrl = ({
+  url,
+  onChange,
+}: {
+  url: string;
+  onChange: (url: string) => void;
+}) => {
+  const lang = useRecoilValue(store.lang);
+
+  return (
+    <div className="flex items-center justify-between">
+      <div>{'ReverseProxy URL'}</div>
+      <input
+        type="text"
+        value={url}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded border border-gray-300 px-2 py-1 focus:border-blue-300 focus:outline-none focus:ring"
+        placeholder="Enter ReverseProxy URL"
+      />
+    </div>
+  );
+};
+
 function Api() {
   const [ReverseProxyIsActive, setReverseProxyIsActive] = useRecoilState(reverseProxyIsActiveState);
+  const [url, setUrl] = useRecoilState(reverseProxyUrlState);
 
   const handleReverseProxyActivityChange = useCallback(
     (value: boolean) => {
       setReverseProxyIsActive(value);
     },
     [setReverseProxyIsActive],
+  );
+
+  const handleReverseProxyUrlChange = useCallback(
+    (newUrl: string) => {
+      setUrl(newUrl);
+    },
+    [setUrl],
   );
 
   return (
@@ -48,7 +84,11 @@ function Api() {
             onCheckedChange={handleReverseProxyActivityChange}
           />
         </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700"></div>
+        {ReverseProxyIsActive && (
+          <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <SetReverseProxyUrl url={url} onChange={handleReverseProxyUrlChange} />
+          </div>
+        )}
       </div>
     </Tabs.Content>
   );
