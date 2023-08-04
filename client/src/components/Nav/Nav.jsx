@@ -5,17 +5,28 @@ import { Conversations, Pages } from '../Conversations';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGetConversationsQuery, useSearchQuery } from 'librechat-data-provider';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { useAuthContext, useDebounce } from '~/hooks';
+import { useAuthContext, useDebounce, useMediaQuery } from '~/hooks';
 import { localize } from '~/localization/Translation';
 import { cn } from '~/utils/';
 import store from '~/store';
 
 export default function Nav({ navVisible, setNavVisible }) {
   const [isHovering, setIsHovering] = useState(false);
+  const [navWidth, setNavWidth] = useState('260px');
   const { isAuthenticated } = useAuthContext();
   const containerRef = useRef(null);
   const scrollPositionRef = useRef(null);
   const lang = useRecoilValue(store.lang);
+
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+
+  useEffect(() => {
+    if (isSmallScreen) {
+      setNavWidth('320px');
+    } else {
+      setNavWidth('260px');
+    }
+  }, [isSmallScreen]);
 
   const [conversations, setConversations] = useState([]);
   // current page
@@ -132,10 +143,11 @@ export default function Nav({ navVisible, setNavVisible }) {
   return (
     <>
       <div
-        className="nav active dark max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-900 transition-all duration-200 ease-in-out md:max-w-[260px]"
+        className="nav active dark max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-900 md:max-w-[260px]"
         style={{
-          width: navVisible ? '100%' : '0%',
+          width: navVisible ? navWidth : '0px',
           visibility: navVisible ? 'visible' : 'hidden',
+          transition: 'width 0.2s, visibility 0.2s',
         }}
       >
         <div className="h-full w-[320px] md:w-[260px]">
