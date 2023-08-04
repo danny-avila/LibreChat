@@ -26,7 +26,7 @@ module.exports = {
     '\\.(css)$': 'identity-obj-proxy',
     '\\.(jpg|jpeg|png|gif|eot|otf|webp|svg|ttf|woff|woff2|mp4|webm|wav|mp3|m4a|aac|oga)$':
       'jest-file-loader',
-    'layout-test-utils': '<rootDir>/test/layout-test-utils',
+    '^test/(.*)$': '<rootDir>/test/$1',
     '^~/(.*)$': '<rootDir>/src/$1',
   },
   restoreMocks: true,
