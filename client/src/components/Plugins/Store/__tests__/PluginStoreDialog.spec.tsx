@@ -1,4 +1,4 @@
-import { render } from 'layout-test-utils';
+import { render } from 'test/layout-test-utils';
 import PluginStoreDialog from '../PluginStoreDialog';
 import userEvent from '@testing-library/user-event';
 import * as mockDataProvider from 'librechat-data-provider';

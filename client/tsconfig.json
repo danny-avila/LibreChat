@@ -18,15 +18,18 @@
     "declaration": true,
     "declarationDir": "./types",
     "jsx": "preserve",
-    "baseUrl": ".",
+    "baseUrl": "..",
     "paths": {
-      "~/*": ["./src/*"]
+      "~/*": ["./client/src/*"],
+      "test/*": ["./client/test/*"],
+      "*": ["./client/*", "../node_modules/*"]
     }
   },
   "types": ["node", "jest", "@testing-library/jest-dom"],
   "exclude": ["node_modules"],
   "include": [
     "src/**/*",
+    "test/**/*",
     "../e2e/**/*",
     "setupTests.js",
     "vite.config.ts",
