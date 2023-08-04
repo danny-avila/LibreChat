@@ -165,7 +165,7 @@ export const useGetSearchEnabledQuery = (
   });
 };
 
-export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpoints> => {
+export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpointsConfig> => {
   return useQuery([QueryKeys.endpoints], () => dataService.getAIEndpoints(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -246,11 +246,11 @@ export const useSearchQuery = (
 export const useUpdateTokenCountMutation = (): UseMutationResult<
   t.TUpdateTokenCountResponse,
   unknown,
-  string,
+  { text: string },
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation((text: string) => dataService.updateTokenCount(text), {
+  return useMutation(({ text }: { text: string }) => dataService.updateTokenCount(text), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.tokenCount]);
     },

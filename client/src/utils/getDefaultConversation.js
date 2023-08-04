@@ -68,10 +68,10 @@ const buildDefaultConversation = ({
         'claude-1',
       modelLabel: lastConversationSetup?.modelLabel ?? null,
       promptPrefix: lastConversationSetup?.promptPrefix ?? null,
-      temperature: lastConversationSetup?.temperature ?? 0.7,
+      temperature: lastConversationSetup?.temperature ?? 1,
       maxOutputTokens: lastConversationSetup?.maxOutputTokens ?? 1024,
       topP: lastConversationSetup?.topP ?? 0.7,
-      topK: lastConversationSetup?.topK ?? 40,
+      topK: lastConversationSetup?.topK ?? 5,
     };
   } else if (endpoint === 'chatGPTBrowser') {
     conversation = {

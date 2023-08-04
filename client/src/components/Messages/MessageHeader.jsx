@@ -10,16 +10,16 @@ const MessageHeader = ({ isSearchView = false }) => {
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
   const conversation = useRecoilValue(store.conversation);
   const searchQuery = useRecoilValue(store.searchQuery);
-  const { endpoint } = conversation;
-  const isNotClickable = endpoint === 'chatGPTBrowser' || endpoint === 'gptPlugins';
-  const { model } = conversation;
+  const { endpoint, model } = conversation;
+  const isNotClickable = endpoint === 'chatGPTBrowser';
+
   const plugins = (
     <>
       <Plugin /> <span className="px-1">•</span>
-      <span className="py-0.25 ml-1 rounded bg-blue-200 px-1 text-[10px] font-semibold uppercase text-[#4559A4]">
+      {/* <span className="py-0.25 ml-1 rounded bg-blue-200 px-1 text-[10px] font-semibold uppercase text-[#4559A4]">
         beta
       </span>
-      <span className="px-1">•</span>
+      <span className="px-1">•</span> */}
       Model: {model}
     </>
   );
@@ -76,12 +76,12 @@ const MessageHeader = ({ isSearchView = false }) => {
     <>
       <div
         className={cn(
-          'dark:text-gray-450 w-full gap-1 border-b border-black/10 bg-gray-50 text-sm text-gray-500 transition-all hover:bg-gray-100 hover:bg-opacity-30 dark:border-gray-900/50 dark:bg-gray-700 dark:text-gray-500 dark:hover:bg-gray-600 dark:hover:bg-opacity-100',
+          'flex min-h-[60px] w-full flex-wrap items-center justify-between gap-3 border-b border-black/10 bg-white text-sm text-gray-500 transition-all hover:bg-gray-50 hover:bg-opacity-30 dark:border-gray-900/50 dark:bg-gray-800 dark:hover:bg-gray-700 dark:hover:bg-opacity-100',
           isNotClickable ? '' : 'cursor-pointer ',
         )}
         onClick={() => (isNotClickable ? null : setSaveAsDialogShow(true))}
       >
-        <div className="d-block flex w-full items-center justify-center p-3">
+        <div className="flex flex-1 flex-grow items-center justify-center gap-1 p-1 text-gray-600 dark:text-gray-200 sm:p-0">
           {getConversationTitle()}
         </div>
       </div>

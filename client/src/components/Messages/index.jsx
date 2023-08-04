@@ -6,7 +6,7 @@ import { CSSTransition } from 'react-transition-group';
 import ScrollToBottom from './ScrollToBottom';
 import MultiMessage from './MultiMessage';
 import MessageHeader from './MessageHeader';
-import { useScreenshot } from '~/utils/screenshotContext.jsx';
+import { useScreenshot } from '~/hooks';
 
 import store from '~/store';
 
@@ -17,6 +17,7 @@ export default function Messages({ isSearchView = false }) {
   const messagesEndRef = useRef(null);
 
   const messagesTree = useRecoilValue(store.messagesTree);
+  const showPopover = useRecoilValue(store.showPopover);
   const searchResultMessagesTree = useRecoilValue(store.searchResultMessagesTree);
 
   const _messagesTree = isSearchView ? searchResultMessagesTree : messagesTree;
@@ -115,7 +116,10 @@ export default function Messages({ isSearchView = false }) {
                 unmountOnExit={false}
                 // appear
               >
-                {() => showScrollButton && <ScrollToBottom scrollHandler={scrollHandler} />}
+                {() =>
+                  showScrollButton &&
+                  !showPopover && <ScrollToBottom scrollHandler={scrollHandler} />
+                }
               </CSSTransition>
             </>
           )}
