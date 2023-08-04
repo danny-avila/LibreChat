@@ -109,6 +109,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Cloudflare](docs/deployment/cloudflare.md)
   * [Ngrok](docs/deployment/ngrok.md)
   * [Render](docs/deployment/render.md)
+  * [Azure](docs/deployment/azure.md)
 </details>
 
 <details>
