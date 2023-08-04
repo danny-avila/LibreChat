@@ -177,4 +177,9 @@ export default {
   com_nav_search_placeholder: '文本搜索',
   com_nav_setting_general: '通用',
   com_nav_setting_api: 'API',
+  com_nav_reverse_proxy: '反向代理',
+  com_nav_reverse_proxy_url: 'URL',
+  com_nav_reverse_proxy_url_request: '请输入您的反向代理URL',
+  com_nav_reverse_proxy_api: 'API密钥',
+  com_nav_reverse_proxy_api_request: '请输入您的反向代理API',
 };

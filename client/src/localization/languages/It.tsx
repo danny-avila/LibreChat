@@ -189,4 +189,9 @@ export default {
   com_nav_search_placeholder: 'Cerca messaggi',
   com_nav_setting_general: 'Generale',
   com_nav_setting_api: 'API',
+  com_nav_reverse_proxy: 'Proxy Inverso',
+  com_nav_reverse_proxy_url: 'URL',
+  com_nav_reverse_proxy_url_request: 'Inserisci l\'URL del tuo Proxy Inverso',
+  com_nav_reverse_proxy_api: 'Chiave API',
+  com_nav_reverse_proxy_api_request: 'Inserisci la tua API del Proxy Inverso',
 };
