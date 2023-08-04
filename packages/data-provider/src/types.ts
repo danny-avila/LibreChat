@@ -152,6 +152,7 @@ export type TConversation = {
 
 export type TPreset = {
   title: string;
+  conversationId?: string;
   endpoint: EModelEndpoint | null;
   conversationSignature?: string;
   createdAt?: string;

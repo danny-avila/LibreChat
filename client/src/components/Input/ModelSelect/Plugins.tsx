@@ -1,11 +1,10 @@
-import { useState, useEffect } from 'react';
 import { useRecoilState } from 'recoil';
+import { useState, useEffect } from 'react';
+import { ChevronDownIcon } from 'lucide-react';
 import { ModelSelectProps, useAvailablePluginsQuery, TPlugin } from 'librechat-data-provider';
 import { SelectDropDown, MultiSelectDropDown, Button } from '~/components/ui';
-import { useAuthContext } from '~/hooks/AuthContext';
-import { ChevronDownIcon } from 'lucide-react';
+import { useSetOptions, useAuthContext, useMediaQuery } from '~/hooks';
 import { cn, cardStyle } from '~/utils/';
-import { useSetOptions } from '~/hooks';
 import store from '~/store';
 
 const pluginStore: TPlugin = {
@@ -20,10 +19,17 @@ const pluginStore: TPlugin = {
 
 export default function Plugins({ conversation, setOption, models }: ModelSelectProps) {
   const { data: allPlugins } = useAvailablePluginsQuery();
-  const [visibile, setVisibility] = useState<boolean>(true);
+  const [visible, setVisibility] = useState<boolean>(true);
   const [availableTools, setAvailableTools] = useRecoilState(store.availableTools);
   const { checkPluginSelection, setTools } = useSetOptions();
   const { user } = useAuthContext();
+  const isSmallScreen = useMediaQuery('(max-width: 640px)');
+
+  useEffect(() => {
+    if (isSmallScreen) {
+      setVisibility(false);
+    }
+  }, [isSmallScreen]);
 
   useEffect(() => {
     if (!user) {
@@ -65,13 +71,13 @@ export default function Plugins({ conversation, setOption, models }: ModelSelect
         type="button"
         className={cn(
           cardStyle,
-          'min-w-4 z-40 flex h-[40px] flex-none items-center justify-center px-3 hover:bg-white focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700',
+          'min-w-4 z-40 flex h-[40px] flex-none items-center justify-center px-3 hover:bg-white hover:shadow-md focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700',
         )}
         onClick={() => setVisibility((prev) => !prev)}
       >
         <ChevronDownIcon
           className={cn(
-            !visibile ? 'rotate-180 transform' : '',
+            !visible ? 'rotate-180 transform' : '',
             'w-4 text-gray-600 dark:text-white',
           )}
         />
@@ -81,7 +87,11 @@ export default function Plugins({ conversation, setOption, models }: ModelSelect
         setValue={setOption('model')}
         availableValues={models}
         showAbove={true}
-        className={cn(cardStyle, 'min-w-60 z-40 flex w-48', visibile ? '' : 'hidden')}
+        className={cn(
+          cardStyle,
+          'min-w-60 z-40 flex w-64 hover:shadow-md sm:w-48',
+          visible ? '' : 'hidden',
+        )}
       />
       <MultiSelectDropDown
         value={conversation.tools || []}
@@ -90,7 +100,11 @@ export default function Plugins({ conversation, setOption, models }: ModelSelect
         availableValues={availableTools}
         optionValueKey="pluginKey"
         showAbove={true}
-        className={cn(cardStyle, 'min-w-60 z-50 w-48', visibile ? '' : 'hidden')}
+        className={cn(
+          cardStyle,
+          'min-w-60 z-50 w-64 hover:shadow-md sm:w-48',
+          visible ? '' : 'hidden',
+        )}
       />
     </>
   );
