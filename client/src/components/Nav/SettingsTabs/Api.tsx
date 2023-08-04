@@ -13,7 +13,12 @@ export const reverseProxyIsActiveState = atom({
 
 export const reverseProxyUrlState = atom({
   key: 'reverseProxyUrlState',
-  default: '', // Default URL is an empty string
+  default: '',
+});
+
+export const reverseProxyApiState = atom({
+  key: 'reverseProxyApiState',
+  default: '',
 });
 
 export const ToggleReverseProxy = ({
@@ -60,11 +65,11 @@ export const SetReverseProxyUrl = ({
 };
 
 export const SetReverseProxyApi = ({
-  url,
+  api,
   onChange,
 }: {
-  url: string;
-  onChange: (url: string) => void;
+  api: string;
+  onChange: (api: string) => void;
 }) => {
   const lang = useRecoilValue(store.lang);
 
@@ -73,7 +78,7 @@ export const SetReverseProxyApi = ({
       <div>{localize(lang, 'com_nav_reverse_proxy_api')}</div>
       <input
         type="text"
-        value={url}
+        value={api}
         onChange={(e) => onChange(e.target.value)}
         className="rounded border border-gray-300 px-2 py-1 text-gray-600 focus:border-blue-300 focus:outline-none focus:ring dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
         placeholder={localize(lang, 'com_nav_reverse_proxy_api_request')}
@@ -86,7 +91,7 @@ export const SetReverseProxyApi = ({
 function Api() {
   const [ReverseProxyIsActive, setReverseProxyIsActive] = useRecoilState(reverseProxyIsActiveState);
   const [url, setUrl] = useRecoilState(reverseProxyUrlState);
-  const [api, setApi] = useRecoilState(reverseProxyUrlState);
+  const [api, setApi] = useRecoilState(reverseProxyApiState);
 
   const handleReverseProxyActivityChange = useCallback(
     (value: boolean) => {
@@ -124,7 +129,7 @@ function Api() {
               <SetReverseProxyUrl url={url} onChange={handleReverseProxyUrlChange} />
             </div>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-              <SetReverseProxyApi url={url} onChange={handleReverseProxyApiChange} />
+              <SetReverseProxyApi api={api} onChange={handleReverseProxyApiChange} />
             </div>
           </>
         )}
