@@ -1,3 +1,5 @@
+import * as React from 'react';
+
 export type TMessage = {
   messageId: string;
   conversationId: string;
