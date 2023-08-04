@@ -109,6 +109,7 @@ nav:
     - Linode: 'deployment/linode.md'
     - Ngrok: 'deployment/ngrok.md'
     - Render: 'deployment/render.md'
+    - Azure (Terraform): 'deployment/azure-terraform.md'
   - Contributions:
     - Documentation Guidelines: 'contributions/documentation_guidelines.md'
     - Code Standards and Conventions: 'contributions/coding_conventions.md'
