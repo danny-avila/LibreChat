@@ -1,3 +1,4 @@
+import { TMessage } from 'librechat-data-provider';
 import { atom, selector } from 'recoil';
 import { buildTree } from '~/utils';
 
@@ -11,7 +12,7 @@ const searchQuery = atom({
   default: '',
 });
 
-const searchResultMessages = atom({
+const searchResultMessages = atom<TMessage[] | null>({
   key: 'searchResultMessages',
   default: null,
 });
