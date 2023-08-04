@@ -1,9 +1,10 @@
 import * as Tabs from '@radix-ui/react-tabs';
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import store from '~/store';
 import { Switch } from '~/components';
 import { atom } from 'recoil';
+import { localize } from '~/localization/Translation';
 
 export const reverseProxyIsActiveState = atom({
   key: 'reverseProxyIsActiveState',
@@ -26,7 +27,7 @@ export const ToggleReverseProxy = ({
 
   return (
     <div className="flex items-center justify-between">
-      <div>{'ReverseProxy'}</div>
+      <div>{localize(lang, 'com_nav_reverse_proxy')}</div>
       <label htmlFor="ReverseProxy" className="ml-4">
         <Switch id="ReverseProxy" checked={isActive} onCheckedChange={onCheckedChange} />
       </label>
@@ -45,13 +46,14 @@ export const SetReverseProxyUrl = ({
 
   return (
     <div className="flex items-center justify-between">
-      <div>{'ReverseProxy URL'}</div>
+      <div>{localize(lang, 'com_nav_reverse_proxy_url')}</div>
       <input
         type="text"
         value={url}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded border border-gray-300 px-2 py-1 focus:border-blue-300 focus:outline-none focus:ring"
-        placeholder="Enter ReverseProxy URL"
+        className="rounded border border-gray-300 px-2 py-1 text-gray-600 focus:border-blue-300 focus:outline-none focus:ring dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+        placeholder={localize(lang, 'com_nav_reverse_proxy_request')}
+        style={{ width: '70%' }}
       />
     </div>
   );
