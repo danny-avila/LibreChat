@@ -20,6 +20,8 @@ import LeaderboardIcon from '../svg/LeaderboardIcon';
 import NotebookIcon from '../svg/NotebookIcon';
 import { useNavigate } from 'react-router-dom';
 import HomeIcon from '../svg/HomeIcon';
+import LightBulbIcon from '../svg/LightBulbIcon';
+import ComputerIcon from '../svg/ComputerIcon';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
 // const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -199,6 +201,7 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const openWritingAssistantHandler = openWidgetHandler('wa');
   const openCodingAssistantHandler = openWidgetHandler('ca');
+  const openAskMeAnythingHandler = openWidgetHandler('ama');
   const openLeaderboardHandler = () => navigate('/leaderboard');
   const openHomepageHandler = () => navigate('/home');
 
@@ -273,9 +276,15 @@ export default function Nav({ navVisible, setNavVisible }) {
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-                svg={() => <NotebookIcon />}
+                svg={() => <ComputerIcon />}
                 text={navigator.languages[0] === 'zh-CN' ? '编程小助手' : 'Coding Assistant'}
                 clickHandler={ openCodingAssistantHandler }
+              />
+              <NavLink
+                className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                svg={() => <LightBulbIcon />}
+                text={navigator.languages[0] === 'zh-CN' ? '万能咨询' : 'Ask Me Anything'}
+                clickHandler={ openAskMeAnythingHandler }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
