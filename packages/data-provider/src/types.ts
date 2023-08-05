@@ -127,10 +127,10 @@ export type TConversation = {
   modelLabel?: string;
   examples?: TExample[];
   // for azureOpenAI, openAI only
-  chatGptLabel?: string;
+  chatGptLabel?: string | null;
   userLabel?: string;
   model?: string;
-  promptPrefix?: string;
+  promptPrefix?: string | null;
   temperature?: number;
   topP?: number;
   topK?: number;
@@ -169,12 +169,12 @@ export type TPreset = {
   context?: string;
   systemMessage?: string;
   // for azureOpenAI, openAI only
-  chatGptLabel?: string;
+  chatGptLabel?: string | null;
+  promptPrefix?: string | null;
   frequence_penalty?: number;
   model?: string;
   presence_penalty?: number;
   frequency_penalty?: number;
-  promptPrefix?: string;
   temperature?: number;
   top_p?: number;
   //for BingAI
