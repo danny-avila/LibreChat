@@ -145,11 +145,11 @@ export type TConversation = {
   conversationSignature?: string;
   parentMessageId?: string;
   clientId?: string;
-  invocationId?: string;
+  invocationId?: number;
   toneStyle?: string;
   maxOutputTokens?: number;
   // plugins only
-  agentOptions?: TAgentOptions;
+  agentOptions?: TAgentOptions | null;
 };
 
 export type TPreset = {
