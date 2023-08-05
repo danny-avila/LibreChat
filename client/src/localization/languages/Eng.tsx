@@ -1,6 +1,8 @@
 // English phrases
 
 export default {
+  com_ui_recommendation: 'Recommendations',
+  com_ui_leaderboard: 'Leaderboard',
   com_ui_convo_public_reminder: 'New conversations defaults to public. You can select a conversation from the left menu, and then set the conversation as private.',
   com_ui_examples: 'Examples',
   com_ui_new_chat: 'New Chat',

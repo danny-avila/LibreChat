@@ -13,6 +13,8 @@ import {
 import SwitchPage from './SwitchPage';
 import DuplicateConvoButton from './DuplicateConvoButton';
 import store from '~/store';
+import { localize } from '~/localization/Translation';
+import { useRecoilValue } from 'recoil';
 
 export default function Recommendations({ type: leaderboardType }: {type: string}) {
   const [conversation, setConversation] = useState<TConversation>();
@@ -21,7 +23,8 @@ export default function Recommendations({ type: leaderboardType }: {type: string
   const [convoIdx, setConvoIdx] = useState<number>(0);
   const [convoDataLength, setConvoDataLength] = useState<number>(1);
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
-  const title = '首页';
+  const lang = useRecoilValue(store.lang);
+  const title = localize(lang, 'com_ui_recommendation');
 
   const recentConversations = useGetRecentConversations();
   const hottestConversations = useGetHottestConversations();

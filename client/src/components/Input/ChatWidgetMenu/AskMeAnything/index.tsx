@@ -1,41 +1,48 @@
-import { useState } from 'react';
-import { Label } from '~/components/ui/Label';
-import SelectDropDown from '../../../ui/SelectDropDown';
-import EssayTemplate from './EssayTemplate';
+import { useEffect, useState } from 'react';
+import { Label, SelectDropDown } from '~/components/ui';
 import { cn } from '~/utils';
-import { useRecoilState } from 'recoil';
 import { MessagesSquared } from '~/components/svg';
 import EndpointOptionsPopover from '~/components/Endpoints/EndpointOptionsPopover';
-
+import { useRecoilState } from 'recoil';
+import TextareaAutosize from 'react-textarea-autosize';
 import store from '~/store';
 
-/*
-作者职位、写作水平、字数、主题、布局、风格、引文、读者
-https://www.griproom.com/fun/how-to-use-chat-gpt-to-write-an-essay
-https://www.griproom.com/fun/how-to-write-better-prompts-for-chat-gpt
-*/
-function WritingAssistant() {
-  const [type, setType] = useState<string>('作文');
+type Cache = {
+  type: string,
+  topic: string,
+}
+
+function AskMeAnything() {
+  const [type, setType] = useState<string>('知识');
+  const [topic, setTopic] = useState<string>('');
   const [showExample, setShowExample] = useState<boolean>(false);
-  const [text, setText] = useRecoilState(store.text);
   const [widget, setWidget] = useRecoilState(store.widget);
-  const allTemplates = {
-    '作文': EssayTemplate({ type })
-  }
-  const template = allTemplates[type];
+  const [text, setText] = useRecoilState(store.text);
+  const [cache, setCache] = useState<Cache>({
+    type: '',
+    topic: ''
+  });
 
   const defaultTextProps =
     'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
 
-  const getPromptText = template.getPromptText;
-  const setExample = template.setExample;
-  const restoreFields = template.restoreFields;
-
-  const setTextHandler = () => setText(getPromptText());
+  const setTextHandler = () => {
+    setText(`咨询一个${type}类的问题：${topic}`);
+  };
   const showExampleHandler = () => {
-    showExample ? restoreFields() : setExample();
+    if (showExample) {
+      setType(cache.type);
+      setTopic(cache.topic);
+    } else {
+      setCache({
+        type: type,
+        topic: topic
+      });
+      setType('建议');
+      setTopic('我跟一个女孩分离8年了。我最近获得了她的联系方式，我该怎么约她出来才不显得唐突？');
+    }
     setShowExample(!showExample);
-  }
+  };
 
   const content = () => {
     return(
@@ -44,13 +51,13 @@ function WritingAssistant() {
           <div className="col-span-1 flex flex-col items-center justify-start gap-6">
             <div className="grid w-full items-center gap-y-2">
               <Label htmlFor="toneStyle-dropdown" className="text-left text-sm font-medium">
-                写作类型
+                类型
               </Label>
               <SelectDropDown
                 title={''}
                 value={type}
                 setValue={(value: string) => setType(value)}
-                availableValues={['作文']}
+                availableValues={['知识', '情感', '建议', '其他']}
                 disabled={false}
                 className={cn(
                   defaultTextProps,
@@ -59,12 +66,25 @@ function WritingAssistant() {
                 containerClassName="flex w-full resize-none"
                 subContainerClassName=''
               />
-              {template.SubType()}
             </div>
-            {template.LayoutLeft()}
           </div>
           <div className="col-span-1 flex flex-col items-center justify-start gap-6">
-            {template.LayoutRight()}
+            <div className="grid w-full items-center gap-1">
+              <Label htmlFor="context" className="text-left text-sm font-medium">
+                问题
+              </Label>
+              <TextareaAutosize
+                id="topic"
+                title={ '问题' }
+                disabled={false}
+                value={topic || ''}
+                onChange={(e) => setTopic(e.target.value || '')}
+                className={cn(
+                  defaultTextProps,
+                  'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2'
+                )}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -79,7 +99,7 @@ function WritingAssistant() {
         </div>
       }
       widget={true}
-      visible={ widget === 'wa' }
+      visible={ widget === 'ama' }
       saveAsPreset={ setTextHandler }
       switchToSimpleMode={() => {
         setWidget('');
@@ -93,4 +113,4 @@ function WritingAssistant() {
   );
 }
 
-export default WritingAssistant;
+export default AskMeAnything;

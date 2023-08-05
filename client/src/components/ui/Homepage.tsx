@@ -53,7 +53,7 @@ export default function Homepage() {
               value='hottest'
               className={`${tabValue === 'hottest' ? selectedTab('balanced') : defaultClasses}`}
             >
-              {'热门趋势'}
+              {'热门对话'}
             </TabsTrigger>
           </TabsList>
         </Tabs>

@@ -88,7 +88,7 @@ const useConversation = () => {
     switchToConversation(
       {
         conversationId: 'new',
-        title: '首页',
+        title: 'New Chat',
         ...template
       },
       [],
