@@ -1,13 +1,11 @@
 import { forwardRef } from 'react';
 import { LogOutIcon } from '../svg';
 import { useAuthContext } from '~/hooks/AuthContext';
-import { useRecoilValue } from 'recoil';
-import store from '~/store';
-import { localize } from '~/localization/Translation';
+import { useLocalize } from '~/hooks';
 
 const Logout = forwardRef(() => {
   const { logout } = useAuthContext();
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
 
   const handleLogout = () => {
     logout();
@@ -20,7 +18,7 @@ const Logout = forwardRef(() => {
       onClick={handleLogout}
     >
       <LogOutIcon />
-      {localize(lang, 'com_nav_log_out')}
+      {localize('com_nav_log_out')}
     </button>
   );
 });
