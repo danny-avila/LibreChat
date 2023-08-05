@@ -141,6 +141,11 @@ export default function TextChat({ isSearchView = false }) {
     if (e.key === 'Enter' && !e.shiftKey && !isComposing?.current) {
       submitMessage();
     }
+
+    if (e.shiftKey && e.altKey && e.key === 'L') {
+      toggleListening(e);
+    }
+
   };
 
   const handleKeyUp = (e) => {
@@ -241,37 +246,12 @@ export default function TextChat({ isSearchView = false }) {
                   disabled={disabled || isNotAppendable}
                   className="m-0 flex h-auto max-h-52 flex-1 resize-none overflow-auto border-0 bg-transparent p-0 pl-2 pr-12 leading-6 placeholder:text-sm placeholder:text-gray-600 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder:text-gray-500 md:pl-2"
                 />
-                {isSpeechSupported && (
-                  <button onClick={toggleListening} class="group absolute bottom-0 right-8 z-[101] flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500">
-                    <div class="m-1 ml-0 mr-0 rounded-md pb-[9px] pl-[9.5px] pr-[7px] pt-[11px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
-                      <svg
-                        stroke="currentColor"
-                        fill="none"
-                        strokeWidth="2"
-                        viewBox="0 0 24 24"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="mr-1 h-4 w-4"
-                        height="1em"
-                        width="1em"
-                        xmlns="http://www.w3.org/2000/svg"
-                      >
-                      <rect x="8" y="4" width="8" height="12" stroke="currentColor" fill="currentColor" />
-                      <circle cx="12" cy="4" r="4" stroke="currentColor" fill="currentColor" />
-                      <rect x="10" y="16" width="4" height="6" stroke="currentColor" fill="currentColor" />
-                      <line x1="4" y1="22" x2="20" y2="22" stroke="currentColor" />
-                      {isListening && (
-                        <circle cx="18" cy="18" r="6" fill="red" />
-                      )}
-                      </svg>
-                    </div>
-                  </button>
-                )}
                 <SubmitButton
                   submitMessage={submitMessage}
                   handleStopGenerating={handleStopGenerating}
                   disabled={disabled || isNotAppendable}
                   isSubmitting={isSubmitting}
+                  isListening={isListening}
                   endpointsConfig={endpointsConfig}
                   endpoint={conversation?.endpoint}
                 />
