@@ -60,10 +60,10 @@ export default function Messages({ isSearchView = false }) {
   const scrollToBottom = useCallback(
     throttle(
       () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
         setShowScrollButton(false);
       },
-      750,
+      450,
       { leading: true },
     ),
     [messagesEndRef],
