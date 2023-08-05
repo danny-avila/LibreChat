@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useCreatePresetMutation, EditPresetProps } from 'librechat-data-provider';
+import { useCreatePresetMutation } from 'librechat-data-provider';
+import type { TEditPresetProps } from '~/common';
 import { Dialog, Input, Label } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { cn, defaultTextPropsLabel, removeFocusOutlines, cleanupPreset } from '~/utils/';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
-const SaveAsPresetDialog = ({ open, onOpenChange, preset }: EditPresetProps) => {
-  const [title, setTitle] = useState(preset?.title || 'My Preset');
+const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) => {
+  const [title, setTitle] = useState<string>(preset?.title || 'My Preset');
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const createPresetMutation = useCreatePresetMutation();
   const localize = useLocalize();

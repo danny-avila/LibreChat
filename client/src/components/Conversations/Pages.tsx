@@ -1,5 +1,12 @@
 import React from 'react';
-import { PagesProps } from 'librechat-data-provider';
+
+type TPagesProps = {
+  pages: number;
+  pageNumber: number;
+  setPageNumber: (pageNumber: number) => void;
+  nextPage: () => Promise<void>;
+  previousPage: () => Promise<void>;
+};
 
 export default function Pages({
   pageNumber,
@@ -7,7 +14,7 @@ export default function Pages({
   nextPage,
   previousPage,
   setPageNumber,
-}: PagesProps) {
+}: TPagesProps) {
   const clickHandler =
     (func: () => Promise<void>) => async (e: React.MouseEvent<HTMLButtonElement>) => {
       e.preventDefault();

@@ -1,5 +1,5 @@
 import { tConversationSchema } from './schemas';
-import type { TSubmission, EModelEndpoint } from './types';
+import { TSubmission, EModelEndpoint } from './types';
 
 export default function createPayload(submission: TSubmission) {
   const { conversation, message, endpointOption } = submission;
