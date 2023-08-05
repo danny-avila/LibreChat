@@ -14,10 +14,11 @@ export default function MobileNav({ setNavVisible }) {
   const lang = useRecoilValue(store.lang);
 
   useEffect(() => {
-    if (location.pathname === '/home') setTitle(localize(lang, 'com_ui_recommendation_title'));
-    else if (location.pathname === '/leaderboard') setTitle(localize(lang, 'com_ui_leaderboard_title'));
-    else if (location.pathname === '/chat/new') setTitle(localize(lang, 'com_ui_new_chat_title'));
-    else setTitle(conversation.title);
+    if (location.pathname === '/home') setTitle(localize(lang, 'com_ui_recommendation'));
+    else if (location.pathname === '/leaderboard') setTitle(localize(lang, 'com_ui_leaderboard'));
+    else if (location.pathname === '/chat/new') setTitle(localize(lang, 'com_ui_new_chat'));
+    else if (conversation) setTitle(conversation.title);
+    else setTitle(localize(lang, 'com_ui_new_chat'));
   });
 
   return (
