@@ -1,4 +1,5 @@
-import { ModelSelectProps, Side } from 'librechat-data-provider';
+import { TModelSelectProps } from '~/common';
+import type { ESide } from '~/common';
 import {
   Switch,
   SelectDropDown,
@@ -12,7 +13,7 @@ import OptionHover from './OptionHover';
 import { cn, optionText, defaultTextProps, removeFocusOutlines } from '~/utils/';
 import { useLocalize } from '~/hooks';
 
-export default function Settings({ conversation, setOption, models, readonly }: ModelSelectProps) {
+export default function Settings({ conversation, setOption, models, readonly }: TModelSelectProps) {
   const localize = useLocalize();
   if (!conversation) {
     return null;
@@ -83,7 +84,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
-          <OptionHover endpoint={conversation.endpoint ?? ''} type="temp" side={Side.Left} />
+          <OptionHover endpoint={conversation.endpoint ?? ''} type="temp" side={ESide.Left} />
         </HoverCard>
         <div className="grid w-full grid-cols-2 items-center gap-10">
           <HoverCard openDelay={500}>
@@ -102,7 +103,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 className="ml-4 mt-2"
               />
             </HoverCardTrigger>
-            <OptionHover endpoint={conversation.endpoint ?? ''} type="func" side={Side.Bottom} />
+            <OptionHover endpoint={conversation.endpoint ?? ''} type="func" side={ESide.Bottom} />
           </HoverCard>
           <HoverCard openDelay={500}>
             <HoverCardTrigger className="ml-[-60px] w-[100px]">
@@ -120,7 +121,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 className="ml-4 mt-2"
               />
             </HoverCardTrigger>
-            <OptionHover endpoint={conversation.endpoint ?? ''} type="skip" side={Side.Bottom} />
+            <OptionHover endpoint={conversation.endpoint ?? ''} type="skip" side={ESide.Bottom} />
           </HoverCard>
         </div>
         {/* <HoverCard openDelay={300}>

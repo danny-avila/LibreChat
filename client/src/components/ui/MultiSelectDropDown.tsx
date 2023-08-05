@@ -3,8 +3,22 @@ import { Listbox, Transition } from '@headlessui/react';
 import { Wrench, ArrowRight } from 'lucide-react';
 import { CheckMark } from '~/components/svg';
 import useOnClickOutside from '~/hooks/useOnClickOutside';
-import { MultiSelectDropDownProps } from 'librechat-data-provider';
 import { cn } from '~/utils/';
+import type { TPlugin } from 'librechat-data-provider';
+
+export type TMultiSelectDropDownProps = {
+  title?: string;
+  value: Array<{ icon?: string; name?: string; isButton?: boolean }>;
+  disabled?: boolean;
+  setSelected: (option: string) => void;
+  availableValues: TPlugin[];
+  showAbove?: boolean;
+  showLabel?: boolean;
+  containerClassName?: string;
+  isSelected: (value: string) => boolean;
+  className?: string;
+  optionValueKey?: string;
+};
 
 function MultiSelectDropDown({
   title = 'Plugins',
@@ -18,7 +32,7 @@ function MultiSelectDropDown({
   isSelected,
   className,
   optionValueKey = 'value',
-}: MultiSelectDropDownProps) {
+}: TMultiSelectDropDownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
   const excludeIds = ['select-plugin', 'plugins-label', 'selected-plugins'];

@@ -1,7 +1,13 @@
 import React from 'react';
 import { HoverCardPortal, HoverCardContent } from '~/components/ui';
-import { OptionHoverProps } from 'librechat-data-provider';
+import type { ESide } from '~/common';
 import { useLocalize } from '~/hooks';
+
+type TOptionHoverProps = {
+  endpoint: string;
+  type: string;
+  side: ESide;
+};
 
 const openAI = {
   max: 'com_endpoint_openai_max',
@@ -33,7 +39,7 @@ const types = {
   },
 };
 
-function OptionHover({ endpoint, type, side }: OptionHoverProps) {
+function OptionHover({ endpoint, type, side }: TOptionHoverProps) {
   const localize = useLocalize();
   const text = types?.[endpoint]?.[type];
   if (!text) {

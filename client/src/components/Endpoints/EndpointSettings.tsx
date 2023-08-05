@@ -1,18 +1,18 @@
 import { useRecoilValue } from 'recoil';
 import { OpenAISettings, BingAISettings, AnthropicSettings } from './Settings';
 import { GoogleSettings, PluginsSettings } from './Settings/MultiView';
-import { SettingsProps, OptionComponent, MultiViewComponent } from 'librechat-data-provider';
+import type { TSettingsProps, TModelSelectProps, TBaseSettingsProps, TModels } from '~/common';
 import { cn } from '~/utils';
 import store from '~/store';
 
-const optionComponents: { [key: string]: OptionComponent } = {
+const optionComponents: { [key: string]: React.FC<TModelSelectProps> } = {
   openAI: OpenAISettings,
   azureOpenAI: OpenAISettings,
   bingAI: BingAISettings,
   anthropic: AnthropicSettings,
 };
 
-const multiViewComponents: { [key: string]: MultiViewComponent } = {
+const multiViewComponents: { [key: string]: React.FC<TBaseSettingsProps & TModels> } = {
   google: GoogleSettings,
   gptPlugins: PluginsSettings,
 };
@@ -22,7 +22,7 @@ export default function Settings({
   setOption,
   isPreset = false,
   className = '',
-}: SettingsProps) {
+}: TSettingsProps) {
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   if (!conversation?.endpoint) {
     return null;

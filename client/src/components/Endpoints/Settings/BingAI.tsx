@@ -1,15 +1,12 @@
 import { useEffect, useState } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import {
-  useUpdateTokenCountMutation,
-  TUpdateTokenCountResponse,
-  SettingsProps,
-} from 'librechat-data-provider';
+import { useUpdateTokenCountMutation, TUpdateTokenCountResponse } from 'librechat-data-provider';
+import type { TSettingsProps } from '~/common';
 import { Label, Checkbox, SelectDropDown } from '~/components/ui';
 import { cn, defaultTextProps, removeFocusOutlines } from '~/utils/';
 import { useLocalize, useDebounce } from '~/hooks';
 
-export default function Settings({ conversation, setOption, readonly }: SettingsProps) {
+export default function Settings({ conversation, setOption, readonly }: TSettingsProps) {
   const localize = useLocalize();
   const [tokenCount, setTokenCount] = useState(0);
   const debouncedContext = useDebounce(conversation?.context?.trim() ?? '', 250);

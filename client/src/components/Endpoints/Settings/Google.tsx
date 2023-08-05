@@ -1,6 +1,6 @@
 import React from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { ModelSelectProps, Side } from 'librechat-data-provider';
+import { ESide, TModelSelectProps } from '~/common';
 import {
   SelectDropDown,
   Input,
@@ -14,7 +14,7 @@ import OptionHover from './OptionHover';
 import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
 import { useLocalize } from '~/hooks';
 
-export default function Settings({ conversation, setOption, models, readonly }: ModelSelectProps) {
+export default function Settings({ conversation, setOption, models, readonly }: TModelSelectProps) {
   const localize = useLocalize();
   if (!conversation) {
     return null;
@@ -122,7 +122,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
-          <OptionHover endpoint={conversation?.endpoint ?? ''} type="temp" side={Side.Left} />
+          <OptionHover endpoint={conversation?.endpoint ?? ''} type="temp" side={ESide.Left} />
         </HoverCard>
         {!codeChat && (
           <>
@@ -164,7 +164,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                   className="flex h-4 w-full"
                 />
               </HoverCardTrigger>
-              <OptionHover endpoint={conversation?.endpoint ?? ''} type="topp" side={Side.Left} />
+              <OptionHover endpoint={conversation?.endpoint ?? ''} type="topp" side={ESide.Left} />
             </HoverCard>
 
             <HoverCard openDelay={300}>
@@ -205,7 +205,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                   className="flex h-4 w-full"
                 />
               </HoverCardTrigger>
-              <OptionHover endpoint={conversation?.endpoint ?? ''} type="topk" side={Side.Left} />
+              <OptionHover endpoint={conversation?.endpoint ?? ''} type="topk" side={ESide.Left} />
             </HoverCard>
           </>
         )}
@@ -250,7 +250,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
           <OptionHover
             endpoint={conversation?.endpoint ?? ''}
             type="maxoutputtokens"
-            side={Side.Left}
+            side={ESide.Left}
           />
         </HoverCard>
       </div>
