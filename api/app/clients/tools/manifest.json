@@ -102,5 +102,13 @@
         "description": "You can use Zapier with your API Key from Zapier."
       }
     ]
+  },
+  {
+    "name": "Site Crawler",
+    "pluginKey": "site-crawler",
+    "description": "Crawl content from a Website",
+    "icon": "https://i.imgur.com/YgDmtS8.png",
+    "isAuthRequired": "false",
+    "authConfig": []
   }
 ]

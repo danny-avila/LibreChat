@@ -49,7 +49,8 @@
   },
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "dependencies": {
-    "axios": "^1.4.0"
+    "axios": "^1.4.0",
+    "puppeteer": "^19.11.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.32.1",
