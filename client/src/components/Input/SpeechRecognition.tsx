@@ -56,8 +56,10 @@ const useSpeechRecognition = (ask) => {
     };
   }, [isListening, ask]);
 
-  const toggleListening = (e) => {
-    e.preventDefault();
+  const toggleListening = (event) => {
+    if (event) {
+      event.preventDefault();
+    }
     setIsListening((prevState) => !prevState);
   };
 
