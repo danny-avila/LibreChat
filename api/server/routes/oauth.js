@@ -2,7 +2,7 @@ const passport = require('passport');
 const express = require('express');
 const router = express.Router();
 const config = require('../../../config/loader');
-const { setAuthTokens } = require('../services/auth.service');
+const { setAuthTokens } = require('../services/AuthService');
 const domains = config.domains;
 const isProduction = config.isProduction;
 

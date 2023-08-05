@@ -1,5 +1,5 @@
 const User = require('../../../models/User');
-const { setAuthTokens } = require('../../services/auth.service');
+const { setAuthTokens } = require('../../services/AuthService');
 
 const loginController = async (req, res) => {
   try {

@@ -90,7 +90,7 @@ const AuthContextProvider = ({
   );
 
   const getCookieValue = (key: string) => {
-    const keyValue = document.cookie.match('(^|;) ?' + key + '=([^;]*)(;|$)');
+    let keyValue = document.cookie.match('(^|;) ?' + key + '=([^;]*)(;|$)');
     return keyValue ? keyValue[2] : null;
   };
 
@@ -186,7 +186,6 @@ const AuthContextProvider = ({
       window.removeEventListener('logout', handleLogout);
     };
   }, [setUserContext, user, logout]);
-
   
   // Make the provider update only when it should
   const memoedValue = useMemo(
