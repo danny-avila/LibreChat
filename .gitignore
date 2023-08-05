@@ -71,6 +71,7 @@ junit.xml
 
 # meilisearch
 meilisearch
+meilisearch.exe
 data.ms/*
 auth.json
 

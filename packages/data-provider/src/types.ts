@@ -1,41 +1,11 @@
 import * as React from 'react';
+import { TExample, TMessage, EModelEndpoint, TPlugin, TConversation, TPreset } from './schemas';
 
-export type TMessage = {
-  messageId: string;
-  conversationId: string;
-  clientId: string;
-  parentMessageId: string;
-  sender: string;
-  text: string;
-  isCreatedByUser: boolean;
-  error: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
+export * from './schemas';
 
 export type TMessages = TMessage[];
 
 export type TMessagesAtom = TMessages | null;
-
-export type TExample = {
-  input: {
-    content: string;
-  };
-  output: {
-    content: string;
-  };
-};
-
-export enum EModelEndpoint {
-  azureOpenAI = 'azureOpenAI',
-  openAI = 'openAI',
-  bingAI = 'bingAI',
-  chatGPT = 'chatGPT',
-  chatGPTBrowser = 'chatGPTBrowser',
-  google = 'google',
-  gptPlugins = 'gptPlugins',
-  anthropic = 'anthropic',
-}
 
 export type TSubmission = {
   clientId?: string;
@@ -73,22 +43,6 @@ export type TEndpointOption = {
   temperature?: number;
 };
 
-export type TPluginAuthConfig = {
-  authField: string;
-  label: string;
-  description: string;
-};
-
-export type TPlugin = {
-  name: string;
-  pluginKey: string;
-  description: string;
-  icon: string;
-  authConfig: TPluginAuthConfig[];
-  authenticated: boolean;
-  isButton?: boolean;
-};
-
 export type TPluginAction = {
   pluginKey: string;
   action: 'install' | 'uninstall';
@@ -103,91 +57,6 @@ export type TUpdateUserPlugins = {
   pluginKey: string;
   action: string;
   auth?: unknown;
-};
-
-export type TAgentOptions = {
-  agent: string;
-  skipCompletion: boolean;
-  model: string;
-  temperature: number;
-};
-
-export type TConversation = {
-  conversationId: string | null;
-  title: string;
-  user?: string;
-  endpoint: EModelEndpoint | null;
-  suggestions?: string[];
-  messages?: TMessage[];
-  tools?: TPlugin[];
-  createdAt: string;
-  updatedAt: string;
-  // google only
-  systemMessage?: string;
-  modelLabel?: string;
-  examples?: TExample[];
-  // for azureOpenAI, openAI only
-  chatGptLabel?: string;
-  userLabel?: string;
-  model?: string;
-  promptPrefix?: string;
-  temperature?: number;
-  topP?: number;
-  topK?: number;
-  // bing and google
-  context?: string;
-  top_p?: number;
-  frequency_penalty?: number;
-  presence_penalty?: number;
-  // for bingAI only
-  jailbreak?: boolean;
-  jailbreakConversationId?: string;
-  conversationSignature?: string;
-  parentMessageId?: string;
-  clientId?: string;
-  invocationId?: string;
-  toneStyle?: string;
-  maxOutputTokens?: number;
-  // plugins only
-  agentOptions?: TAgentOptions;
-};
-
-export type TPreset = {
-  title: string;
-  conversationId?: string;
-  endpoint: EModelEndpoint | null;
-  conversationSignature?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  presetId?: string;
-  tools?: TPlugin[];
-  user?: string;
-  modelLabel?: string;
-  maxOutputTokens?: number;
-  topP?: number;
-  topK?: number;
-  context?: string;
-  systemMessage?: string;
-  // for azureOpenAI, openAI only
-  chatGptLabel?: string;
-  frequence_penalty?: number;
-  model?: string;
-  presence_penalty?: number;
-  frequency_penalty?: number;
-  promptPrefix?: string;
-  temperature?: number;
-  top_p?: number;
-  //for BingAI
-  clientId?: string;
-  invocationId?: number;
-  jailbreak?: boolean;
-  jailbreakPresetId?: string;
-  presetSignature?: string;
-  toneStyle?: string;
-  // plugins only
-  agentOptions?: TAgentOptions;
-  // google only
-  examples?: TExample[];
 };
 
 export type TOptionSettings = {
