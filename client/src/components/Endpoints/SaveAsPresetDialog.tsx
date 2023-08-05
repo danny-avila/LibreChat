@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useCreatePresetMutation, EditPresetProps, TPreset } from 'librechat-data-provider';
+import { useCreatePresetMutation, EditPresetProps } from 'librechat-data-provider';
 import { Dialog, Input, Label } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { cn, defaultTextPropsLabel, removeFocusOutlines, cleanupPreset } from '~/utils/';
@@ -20,7 +20,7 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: EditPresetProps) => 
         title,
       },
       endpointsConfig,
-    }) as TPreset;
+    });
     createPresetMutation.mutate(_preset);
   };
 

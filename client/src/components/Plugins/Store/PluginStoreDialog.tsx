@@ -11,7 +11,7 @@ import {
   useUpdateUserPluginsMutation,
   TPlugin,
   TPluginAction,
-  TConversation,
+  tConversationSchema,
   TError,
 } from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -69,12 +69,11 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
             return t.pluginKey !== plugin;
           });
           localStorage.setItem('lastSelectedTools', JSON.stringify(tools));
-          setConversation(
-            (prevState) =>
-              ({
-                ...prevState,
-                tools,
-              } as TConversation),
+          setConversation((prevState) =>
+            tConversationSchema.parse({
+              ...prevState,
+              tools,
+            }),
           );
         },
       },
