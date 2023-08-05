@@ -169,7 +169,6 @@ export default function Nav({ navVisible, setNavVisible }) {
               <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
                 <div className="mb-2 flex h-11 flex-row">
                   <NewChat />
-                  {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                   <button
                     type="button"
                     className={cn(
@@ -181,6 +180,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                     <Panel open={false} />
                   </button>
                 </div>
+                {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                 <div
                   className={`flex-1 flex-col overflow-y-auto ${
                     isHovering ? '' : 'scrollbar-transparent'
