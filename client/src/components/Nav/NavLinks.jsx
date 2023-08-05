@@ -2,20 +2,19 @@ import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Fragment, useState } from 'react';
 import { Menu, Transition } from '@headlessui/react';
-import SearchBar from './SearchBar';
 import ClearConvos from './ClearConvos';
 import Settings from './Settings';
 import NavLink from './NavLink';
 import Logout from './Logout';
 import { ExportModel } from './ExportConversation';
-import { LinkIcon, DotsIcon, GearIcon, TrashIcon } from '~/components';
+import { LinkIcon, DotsIcon, GearIcon } from '~/components';
 import { localize } from '~/localization/Translation';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { cn } from '~/utils/';
 
 import store from '~/store';
 
-export default function NavLinks({ clearSearch, isSearchEnabled }) {
+export default function NavLinks() {
   const [showExports, setShowExports] = useState(false);
   const [showClearConvos, setShowClearConvos] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -76,11 +75,6 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
               leaveTo="transform opacity-0 scale-95"
             >
               <Menu.Items className="absolute bottom-full left-0 z-20 mb-2 w-full translate-y-0 overflow-hidden rounded-md bg-[#050509] py-1.5 opacity-100 outline-none">
-                {isSearchEnabled && (
-                  <Menu.Item>
-                    <SearchBar clearSearch={clearSearch} />
-                  </Menu.Item>
-                )}
                 <Menu.Item as="div">
                   <NavLink
                     className={cn(
@@ -93,14 +87,6 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                   />
                 </Menu.Item>
                 <div className="my-1.5 h-px bg-white/20" role="none" />
-                <Menu.Item as="div">
-                  <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-                    svg={() => <TrashIcon />}
-                    text={localize(lang, 'com_nav_clear_conversation')}
-                    clickHandler={() => setShowClearConvos(true)}
-                  />
-                </Menu.Item>
                 <Menu.Item as="div">
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"

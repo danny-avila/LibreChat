@@ -6,7 +6,7 @@ import store from '~/store';
 import { localize } from '~/localization/Translation';
 
 const Logout = forwardRef(() => {
-  const { user, logout } = useAuthContext();
+  const { logout } = useAuthContext();
   const lang = useRecoilValue(store.lang);
 
   const handleLogout = () => {
@@ -20,8 +20,7 @@ const Logout = forwardRef(() => {
       onClick={handleLogout}
     >
       <LogOutIcon />
-      {user?.username || localize(lang, 'com_nav_user')}
-      <small>{localize(lang, 'com_nav_log_out')}</small>
+      {localize(lang, 'com_nav_log_out')}
     </button>
   );
 });

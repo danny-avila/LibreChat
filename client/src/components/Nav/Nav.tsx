@@ -7,6 +7,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import NewChat from './NewChat';
+import SearchBar from './SearchBar';
 import NavLinks from './NavLinks';
 import { Panel, Spinner } from '~/components';
 import { Conversations, Pages } from '../Conversations';
@@ -168,6 +169,7 @@ export default function Nav({ navVisible, setNavVisible }) {
               <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
                 <div className="mb-2 flex h-11 flex-row">
                   <NewChat />
+                  {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                   <button
                     type="button"
                     className={cn(
@@ -202,7 +204,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                     />
                   </div>
                 </div>
-                <NavLinks clearSearch={clearSearch} isSearchEnabled={isSearchEnabled} />
+                <NavLinks />
               </nav>
             </div>
           </div>
