@@ -54,7 +54,7 @@ const useSpeechRecognition = (ask) => {
     return () => {
       recognition.stop();
     };
-  }, [isListening, ask);
+  }, [isListening, ask]);
 
   const toggleListening = (event) => {
     if (event) {
