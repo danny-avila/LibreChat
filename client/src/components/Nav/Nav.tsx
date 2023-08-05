@@ -7,6 +7,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import NewChat from './NewChat';
+import SearchBar from './SearchBar';
 import NavLinks from './NavLinks';
 import { Panel, Spinner } from '~/components';
 import { Conversations, Pages } from '../Conversations';
@@ -166,7 +167,7 @@ export default function Nav({ navVisible, setNavVisible }) {
           <div className="flex h-full min-h-0 flex-col ">
             <div className="scrollbar-trigger relative flex h-full w-full flex-1 items-start border-white/20">
               <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
-                <div className="mb-2 flex h-11 flex-row">
+                <div className="mb-1 flex h-11 flex-row">
                   <NewChat />
                   <button
                     type="button"
@@ -179,6 +180,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                     <Panel open={false} />
                   </button>
                 </div>
+                {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                 <div
                   className={`flex-1 flex-col overflow-y-auto ${
                     isHovering ? '' : 'scrollbar-transparent'
@@ -202,7 +204,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                     />
                   </div>
                 </div>
-                <NavLinks clearSearch={clearSearch} isSearchEnabled={isSearchEnabled} />
+                <NavLinks />
               </nav>
             </div>
           </div>
