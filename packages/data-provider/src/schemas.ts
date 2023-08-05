@@ -1,5 +1,17 @@
 import { z } from 'zod';
-import { EModelEndpoint } from './types';
+
+export enum EModelEndpoint {
+  azureOpenAI = 'azureOpenAI',
+  openAI = 'openAI',
+  bingAI = 'bingAI',
+  chatGPT = 'chatGPT',
+  chatGPTBrowser = 'chatGPTBrowser',
+  google = 'google',
+  gptPlugins = 'gptPlugins',
+  anthropic = 'anthropic',
+}
+
+export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
 export const tMessageSchema = z.object({
   messageId: z.string(),
@@ -14,13 +26,15 @@ export const tMessageSchema = z.object({
   updatedAt: z.string(),
 });
 
-export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
+export type TMessage = z.infer<typeof tMessageSchema>;
 
 export const tPluginAuthConfigSchema = z.object({
   authField: z.string(),
   label: z.string(),
   description: z.string(),
 });
+
+export type TPluginAuthConfig = z.infer<typeof tPluginAuthConfigSchema>;
 
 export const tPluginSchema = z.object({
   name: z.string(),
@@ -32,6 +46,8 @@ export const tPluginSchema = z.object({
   isButton: z.boolean().optional(),
 });
 
+export type TPlugin = z.infer<typeof tPluginSchema>;
+
 export const tExampleSchema = z.object({
   input: z.object({
     content: z.string(),
@@ -40,6 +56,8 @@ export const tExampleSchema = z.object({
     content: z.string(),
   }),
 });
+
+export type TExample = z.infer<typeof tExampleSchema>;
 
 export const tAgentOptionsSchema = z.object({
   agent: z.string(),
@@ -83,6 +101,13 @@ export const tConversationSchema = z.object({
   agentOptions: tAgentOptionsSchema.nullable().optional(),
 });
 
-export const tPresetSchema = tConversationSchema
-  .omit({ conversationId: true })
-  .merge(z.object({ conversationId: z.string().optional() }));
+export type TConversation = z.infer<typeof tConversationSchema>;
+
+export const tPresetSchema = tConversationSchema.omit({ conversationId: true }).merge(
+  z.object({
+    conversationId: z.string().optional(),
+    presetId: z.string().optional(),
+  }),
+);
+
+export type TPreset = z.infer<typeof tPresetSchema>;
