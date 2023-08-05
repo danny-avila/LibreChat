@@ -69,7 +69,20 @@ export default function Messages({ isSearchView = false }) {
         messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
         setShowScrollButton(false);
       },
-      450,
+      100,
+      { leading: true },
+    ),
+    [messagesEndRef],
+  );
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const scrollToBottomSmooth = useCallback(
+    throttle(
+      () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        setShowScrollButton(false);
+      },
+      750,
       { leading: true },
     ),
     [messagesEndRef],
@@ -83,7 +96,7 @@ export default function Messages({ isSearchView = false }) {
 
   const scrollHandler = (e) => {
     e.preventDefault();
-    scrollToBottom();
+    scrollToBottomSmooth();
   };
 
   return (
