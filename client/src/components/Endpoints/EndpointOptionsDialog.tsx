@@ -1,7 +1,7 @@
 import exportFromJSON from 'export-from-json';
 import { useEffect, useState } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
-import { EditPresetProps, SetOption, TPreset } from 'librechat-data-provider';
+import { EditPresetProps, SetOption, tPresetSchema } from 'librechat-data-provider';
 import { Dialog, DialogButton } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import SaveAsPresetDialog from './SaveAsPresetDialog';
@@ -21,12 +21,11 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }: E
   const setOption: SetOption = (param) => (newValue) => {
     const update = {};
     update[param] = newValue;
-    setPreset(
-      (prevState) =>
-        ({
-          ...prevState,
-          ...update,
-        } as TPreset),
+    setPreset((prevState) =>
+      tPresetSchema.parse({
+        ...prevState,
+        ...update,
+      }),
     );
   };
 

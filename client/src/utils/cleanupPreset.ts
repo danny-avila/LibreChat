@@ -1,9 +1,9 @@
-import { CleanupPreset } from 'librechat-data-provider';
+import { CleanupPreset, TPreset } from 'librechat-data-provider';
 
-const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }: CleanupPreset) => {
+const cleanupPreset = ({ preset: _preset, endpointsConfig = {} }: CleanupPreset): TPreset => {
   const { endpoint } = _preset;
 
-  let preset = {};
+  let preset = {} as TPreset;
   let models = [];
   if (endpoint) {
     models = endpointsConfig[endpoint]?.availableModels || [];

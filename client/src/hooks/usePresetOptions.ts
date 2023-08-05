@@ -13,15 +13,14 @@ const usePresetOptions: UsePresetOptions = (_preset) => {
   const setOption: SetOption = (param) => (newValue) => {
     const update = {};
     update[param] = newValue;
-    setPreset(
-      (prevState) =>
-        cleanupPreset({
-          preset: {
-            ...prevState,
-            ...update,
-          },
-          endpointsConfig,
-        }) as TPreset,
+    setPreset((prevState) =>
+      cleanupPreset({
+        preset: {
+          ...prevState,
+          ...update,
+        },
+        endpointsConfig,
+      }),
     );
   };
 
@@ -32,15 +31,14 @@ const usePresetOptions: UsePresetOptions = (_preset) => {
     currentExample[type] = { content: newValue };
     current[i] = currentExample;
     update['examples'] = current;
-    setPreset(
-      (prevState) =>
-        cleanupPreset({
-          preset: {
-            ...prevState,
-            ...update,
-          },
-          endpointsConfig,
-        }) as TPreset,
+    setPreset((prevState) =>
+      cleanupPreset({
+        preset: {
+          ...prevState,
+          ...update,
+        },
+        endpointsConfig,
+      }),
     );
   };
 
@@ -49,15 +47,14 @@ const usePresetOptions: UsePresetOptions = (_preset) => {
     const current = preset?.examples?.slice() || [];
     current.push({ input: { content: '' }, output: { content: '' } });
     update['examples'] = current;
-    setPreset(
-      (prevState) =>
-        cleanupPreset({
-          preset: {
-            ...prevState,
-            ...update,
-          },
-          endpointsConfig,
-        }) as TPreset,
+    setPreset((prevState) =>
+      cleanupPreset({
+        preset: {
+          ...prevState,
+          ...update,
+        },
+        endpointsConfig,
+      }),
     );
   };
 
@@ -66,29 +63,27 @@ const usePresetOptions: UsePresetOptions = (_preset) => {
     const current = preset?.examples?.slice() || [];
     if (current.length <= 1) {
       update['examples'] = [{ input: { content: '' }, output: { content: '' } }];
-      setPreset(
-        (prevState) =>
-          cleanupPreset({
-            preset: {
-              ...prevState,
-              ...update,
-            },
-            endpointsConfig,
-          }) as TPreset,
-      );
-      return;
-    }
-    current.pop();
-    update['examples'] = current;
-    setPreset(
-      (prevState) =>
+      setPreset((prevState) =>
         cleanupPreset({
           preset: {
             ...prevState,
             ...update,
           },
           endpointsConfig,
-        }) as TPreset,
+        }),
+      );
+      return;
+    }
+    current.pop();
+    update['examples'] = current;
+    setPreset((prevState) =>
+      cleanupPreset({
+        preset: {
+          ...prevState,
+          ...update,
+        },
+        endpointsConfig,
+      }),
     );
   };
 
@@ -96,15 +91,14 @@ const usePresetOptions: UsePresetOptions = (_preset) => {
     const editablePreset = JSON.parse(JSON.stringify(_preset));
     const { agentOptions } = editablePreset;
     agentOptions[param] = newValue;
-    setPreset(
-      (prevState) =>
-        cleanupPreset({
-          preset: {
-            ...prevState,
-            agentOptions,
-          },
-          endpointsConfig,
-        }) as TPreset,
+    setPreset((prevState) =>
+      cleanupPreset({
+        preset: {
+          ...prevState,
+          agentOptions,
+        },
+        endpointsConfig,
+      }),
     );
   };
 
