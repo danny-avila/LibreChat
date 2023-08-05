@@ -28,6 +28,9 @@ export default function Messages({ isSearchView = false }) {
   const { screenshotTargetRef } = useScreenshot();
 
   const handleScroll = () => {
+    if (!scrollableRef.current) {
+      return;
+    }
     const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
     const diff = Math.abs(scrollHeight - scrollTop);
     const percent = Math.abs(clientHeight - diff) / clientHeight;
@@ -40,6 +43,9 @@ export default function Messages({ isSearchView = false }) {
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
+      if (!scrollableRef.current) {
+        return;
+      }
       const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
       const diff = Math.abs(scrollHeight - scrollTop);
       const percent = Math.abs(clientHeight - diff) / clientHeight;
