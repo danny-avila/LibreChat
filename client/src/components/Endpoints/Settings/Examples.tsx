@@ -1,12 +1,22 @@
 import React from 'react';
 import { Plus, Minus } from 'lucide-react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { ExamplesProps } from 'librechat-data-provider';
+import type { TExample } from 'librechat-data-provider';
+import type { TSetExample } from '~/common';
 import { Button, Label } from '~/components/ui';
 import { cn, defaultTextProps } from '~/utils/';
 import { useLocalize } from '~/hooks';
 
-function Examples({ readonly, examples, setExample, addExample, removeExample }: ExamplesProps) {
+type TExamplesProps = {
+  readonly?: boolean;
+  className?: string;
+  examples: TExample[];
+  setExample: TSetExample;
+  addExample: () => void;
+  removeExample: () => void;
+};
+
+function Examples({ readonly, examples, setExample, addExample, removeExample }: TExamplesProps) {
   const localize = useLocalize();
   return (
     <>

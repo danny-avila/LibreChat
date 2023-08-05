@@ -1,7 +1,8 @@
 import { useRecoilState } from 'recoil';
 import { useState, useEffect } from 'react';
 import { ChevronDownIcon } from 'lucide-react';
-import { ModelSelectProps, useAvailablePluginsQuery, TPlugin } from 'librechat-data-provider';
+import { useAvailablePluginsQuery, TPlugin } from 'librechat-data-provider';
+import type { TModelSelectProps } from '~/common';
 import { SelectDropDown, MultiSelectDropDown, Button } from '~/components/ui';
 import { useSetOptions, useAuthContext, useMediaQuery } from '~/hooks';
 import { cn, cardStyle } from '~/utils/';
@@ -17,7 +18,7 @@ const pluginStore: TPlugin = {
   authenticated: false,
 };
 
-export default function Plugins({ conversation, setOption, models }: ModelSelectProps) {
+export default function Plugins({ conversation, setOption, models }: TModelSelectProps) {
   const { data: allPlugins } = useAvailablePluginsQuery();
   const [visible, setVisibility] = useState<boolean>(true);
   const [availableTools, setAvailableTools] = useRecoilState(store.availableTools);

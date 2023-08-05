@@ -1,7 +1,8 @@
 import exportFromJSON from 'export-from-json';
 import { useEffect, useState } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
-import { EditPresetProps, SetOption, tPresetSchema } from 'librechat-data-provider';
+import { tPresetSchema } from 'librechat-data-provider';
+import type { TSetOption, TEditPresetProps } from '~/common';
 import { Dialog, DialogButton } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import SaveAsPresetDialog from './SaveAsPresetDialog';
@@ -12,13 +13,18 @@ import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 // A preset dialog to show readonly preset values.
-const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }: EditPresetProps) => {
+const EndpointOptionsDialog = ({
+  open,
+  onOpenChange,
+  preset: _preset,
+  title,
+}: TEditPresetProps) => {
   const [preset, setPreset] = useRecoilState(store.preset);
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const localize = useLocalize();
 
-  const setOption: SetOption = (param) => (newValue) => {
+  const setOption: TSetOption = (param) => (newValue) => {
     const update = {};
     update[param] = newValue;
     setPreset((prevState) =>

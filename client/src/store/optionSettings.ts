@@ -1,5 +1,9 @@
 import { atom } from 'recoil';
-import { TOptionSettings } from 'librechat-data-provider';
+
+type TOptionSettings = {
+  showExamples?: boolean;
+  isCodeChat?: boolean;
+};
 
 const optionSettings = atom<TOptionSettings>({
   key: 'optionSettings',

@@ -1,16 +1,20 @@
-import { UsePresetOptions, TPreset, SetOption, SetExample } from 'librechat-data-provider';
+import { TPreset } from 'librechat-data-provider';
+import type { TSetOptionsPayload, TSetExample, TSetOption } from '~/common';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { cleanupPreset } from '~/utils';
 import store from '~/store';
 
-const usePresetOptions: UsePresetOptions = (_preset) => {
+type TUsePresetOptions = (preset?: TPreset | boolean | null) => TSetOptionsPayload | boolean;
+
+const usePresetOptions: TUsePresetOptions = (_preset) => {
   const [preset, setPreset] = useRecoilState(store.preset);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   if (!_preset) {
     return false;
   }
   const getConversation: () => TPreset | null = () => preset;
-  const setOption: SetOption = (param) => (newValue) => {
+
+  const setOption: TSetOption = (param) => (newValue) => {
     const update = {};
     update[param] = newValue;
     setPreset((prevState) =>
@@ -24,7 +28,7 @@ const usePresetOptions: UsePresetOptions = (_preset) => {
     );
   };
 
-  const setExample: SetExample = (i, type, newValue = null) => {
+  const setExample: TSetExample = (i, type, newValue = null) => {
     const update = {};
     const current = preset?.examples?.slice() || [];
     const currentExample = { ...current[i] } || {};
