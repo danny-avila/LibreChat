@@ -1,8 +1,9 @@
-import type { TConversation, TSubmission, EModelEndpoint } from './types';
+import { tConversationSchema } from './schemas';
+import type { TSubmission, EModelEndpoint } from './types';
 
 export default function createPayload(submission: TSubmission) {
   const { conversation, message, endpointOption } = submission;
-  const { conversationId } = conversation as TConversation;
+  const { conversationId } = tConversationSchema.parse(conversation);
   const { endpoint } = endpointOption as { endpoint: EModelEndpoint };
 
   const endpointUrlMap = {

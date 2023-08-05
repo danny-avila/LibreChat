@@ -15,6 +15,10 @@ async function authenticate(config: FullConfig, user: User) {
   const browser = await chromium.launch();
   const page = await browser.newPage();
   console.log('🤖: 🗝  authenticating user:', user.username);
+
+  if (!baseURL) {
+    throw new Error('🤖: baseURL is not defined');
+  }
   await page.goto(baseURL);
   await login(page, user);
   await page.locator('h1:has-text("LibreChat")').waitFor();
