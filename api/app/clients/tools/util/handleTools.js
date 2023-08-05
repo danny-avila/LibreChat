@@ -16,6 +16,7 @@ const {
   OpenAICreateImage,
   StableDiffusionAPI,
   StructuredSD,
+  CodeInterpreterTools,
   AzureCognitiveSearch,
   StructuredACS,
 } = require('../');
@@ -86,6 +87,28 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
   };
 
   const customConstructors = {
+    code_interpreter: async () => {
+      if (!functions) {
+        return null;
+      }
+      const suite = [];
+      let serverUrl = process.env.E2B_SERVER_URL;
+
+      if (!serverUrl) {
+        serverUrl = await getUserPluginAuthValue(user, 'E2B_SERVER_URL');
+      }
+
+      for (const tool of CodeInterpreterTools) {
+        suite.push(
+          new tool({
+            E2B_SERVER_URL: serverUrl,
+            conversationId: options.conversationId,
+          }),
+        );
+      }
+
+      return suite;
+    },
     'web-browser': async () => {
       let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
       openAIApiKey = openAIApiKey === 'user_provided' ? null : openAIApiKey;

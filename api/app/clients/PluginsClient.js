@@ -197,6 +197,7 @@ Only respond with your conversational reply to the following User Message:
       functions: this.functionsAgent,
       options: {
         openAIApiKey: this.openAIApiKey,
+        conversationId: this.conversationId,
         debug: this.options?.debug,
         message,
       },
@@ -205,7 +206,7 @@ Only respond with your conversational reply to the following User Message:
     for (const tool of this.options.tools) {
       const validTool = this.availableTools[tool];
 
-      if (tool === 'plugins') {
+      if (typeof tool.slice === 'function') {
         const plugins = await validTool();
         this.tools = [...this.tools, ...plugins];
       } else if (validTool) {
@@ -296,7 +297,13 @@ Only respond with your conversational reply to the following User Message:
       } catch (err) {
         console.error(err);
         errorMessage = err.message;
-        const content = findMessageContent(message);
+        let content = '';
+        try {
+          content = findMessageContent(message);
+        } catch (error) {
+          console.error('Encountered an error while attempting to respond. Error: ', error);
+          break;
+        }
         if (content) {
           errorMessage = content;
           break;
@@ -362,6 +369,7 @@ Only respond with your conversational reply to the following User Message:
       onChainEnd,
     } = await this.handleStartMethods(message, opts);
 
+    this.conversationId = conversationId;
     this.currentMessages.push(userMessage);
 
     let {

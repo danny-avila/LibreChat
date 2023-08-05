@@ -31,6 +31,19 @@
     ]
   },
   {
+    "name": "E2B Code Interpreter",
+    "pluginKey": "code_interpreter",
+    "description": "Sandboxed cloud environment where you can run any process, use filesystem and access the internet",
+    "icon": "https://raw.githubusercontent.com/e2b-dev/chatgpt-plugin/main/logo.png",
+    "authConfig": [
+      {
+        "authField": "E2B_SERVER_URL",
+        "label": "E2B Server URL",
+        "description": "Hosted endpoint must be provided"
+      }
+    ]
+  },
+  {
     "name": "Browser",
     "pluginKey": "web-browser",
     "description": "Scrape and summarize webpage data",
