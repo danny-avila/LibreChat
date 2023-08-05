@@ -35,7 +35,7 @@ const SearchBar = forwardRef((props, ref) => {
   return (
     <div
       ref={ref}
-      className="relative flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+      className="relative flex w-full cursor-pointer items-center gap-3 rounded-md border border-white/20 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10"
     >
       {<Search className="absolute left-3 h-4 w-4" />}
       <input
