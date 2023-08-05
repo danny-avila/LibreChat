@@ -6,12 +6,22 @@ import Plugins from './Plugins';
 import ChatGPT from './ChatGPT';
 import Anthropic from './Anthropic';
 import { useRecoilValue } from 'recoil';
-import { SelectProps, ModelSelectProps } from 'librechat-data-provider';
+import type { TConversation } from 'librechat-data-provider';
+import type { TSetOption, TModelSelectProps } from '~/common';
 import store from '~/store';
 
-type OptionComponentType = React.FC<ModelSelectProps>;
+type TGoogleProps = {
+  showExamples: boolean;
+  isCodeChat: boolean;
+};
 
-const optionComponents: { [key: string]: OptionComponentType } = {
+type TSelectProps = {
+  conversation: TConversation | null;
+  setOption: TSetOption;
+  extraProps?: TGoogleProps;
+};
+
+const optionComponents: { [key: string]: React.FC<TModelSelectProps> } = {
   openAI: OpenAI,
   azureOpenAI: OpenAI,
   bingAI: BingAI,
@@ -21,7 +31,7 @@ const optionComponents: { [key: string]: OptionComponentType } = {
   chatGPTBrowser: ChatGPT,
 };
 
-export default function ModelSelect({ conversation, setOption }: SelectProps) {
+export default function ModelSelect({ conversation, setOption }: TSelectProps) {
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   if (!conversation?.endpoint) {
     return null;

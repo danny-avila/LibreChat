@@ -1,8 +1,8 @@
 import { SelectDropDown } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
-import { ModelSelectProps } from 'librechat-data-provider';
+import type { TModelSelectProps } from '~/common';
 
-export default function ChatGPT({ conversation, setOption, models }: ModelSelectProps) {
+export default function ChatGPT({ conversation, setOption, models }: TModelSelectProps) {
   if (!conversation) {
     return null;
   }

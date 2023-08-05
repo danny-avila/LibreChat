@@ -1,8 +1,8 @@
 import { SelectDropDown } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
-import { ModelSelectProps } from 'librechat-data-provider';
+import type { TModelSelectProps } from '~/common';
 
-export default function Anthropic({ conversation, setOption, models }: ModelSelectProps) {
+export default function Anthropic({ conversation, setOption, models }: TModelSelectProps) {
   return (
     <SelectDropDown
       value={conversation?.model ?? ''}
