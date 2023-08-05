@@ -9,7 +9,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import CodeBlock from './CodeBlock';
 import store from '~/store';
-import { langSubset } from '~/utils/languages.mjs';
+import { langSubset } from '~/utils';
 
 const code = React.memo((props) => {
   const { inline, className, children } = props;

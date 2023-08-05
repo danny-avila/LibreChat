@@ -26,7 +26,7 @@ const OpenAIConfig = ({ token, setToken, endpoint }: OpenAIConfigProps) => {
   const { getToken } = store.useToken(endpoint);
 
   useEffect(() => {
-    let oldToken = getToken();
+    const oldToken = getToken();
     if (isJson(token)) {
       setShowPanel(true);
     }
@@ -41,14 +41,14 @@ const OpenAIConfig = ({ token, setToken, endpoint }: OpenAIConfigProps) => {
 
   function getAzure(name: string) {
     if (isJson(token)) {
-      let newToken = JSON.parse(token);
+      const newToken = JSON.parse(token);
       return newToken[name];
     } else {
       return '';
     }
   }
 
-  function setAzure(name: string, value: any) {
+  function setAzure(name: string, value: number | string | boolean) {
     let newToken = {};
     if (isJson(token)) {
       newToken = JSON.parse(token);
@@ -64,7 +64,7 @@ const OpenAIConfig = ({ token, setToken, endpoint }: OpenAIConfigProps) => {
           <InputWithLabel
             id={'chatGPTLabel'}
             value={token || ''}
-            onChange={(e: { target: { value: any } }) => setToken(e.target.value || '')}
+            onChange={(e: { target: { value: string } }) => setToken(e.target.value || '')}
             label={'OpenAI API Key'}
           />
         </>
@@ -73,7 +73,7 @@ const OpenAIConfig = ({ token, setToken, endpoint }: OpenAIConfigProps) => {
           <InputWithLabel
             id={'instanceNameLabel'}
             value={getAzure('azureOpenAIApiInstanceName') || ''}
-            onChange={(e: { target: { value: any } }) =>
+            onChange={(e: { target: { value: string } }) =>
               setAzure('azureOpenAIApiInstanceName', e.target.value || '')
             }
             label={'Azure OpenAI Instance Name'}
@@ -82,7 +82,7 @@ const OpenAIConfig = ({ token, setToken, endpoint }: OpenAIConfigProps) => {
           <InputWithLabel
             id={'deploymentNameLabel'}
             value={getAzure('azureOpenAIApiDeploymentName') || ''}
-            onChange={(e: { target: { value: any } }) =>
+            onChange={(e: { target: { value: string } }) =>
               setAzure('azureOpenAIApiDeploymentName', e.target.value || '')
             }
             label={'Azure OpenAI Deployment Name'}
@@ -91,7 +91,7 @@ const OpenAIConfig = ({ token, setToken, endpoint }: OpenAIConfigProps) => {
           <InputWithLabel
             id={'versionLabel'}
             value={getAzure('azureOpenAIApiVersion') || ''}
-            onChange={(e: { target: { value: any } }) =>
+            onChange={(e: { target: { value: string } }) =>
               setAzure('azureOpenAIApiVersion', e.target.value || '')
             }
             label={'Azure OpenAI API Version'}
@@ -100,7 +100,7 @@ const OpenAIConfig = ({ token, setToken, endpoint }: OpenAIConfigProps) => {
           <InputWithLabel
             id={'apiKeyLabel'}
             value={getAzure('azureOpenAIApiKey') || ''}
-            onChange={(e: { target: { value: any } }) =>
+            onChange={(e: { target: { value: string } }) =>
               setAzure('azureOpenAIApiKey', e.target.value || '')
             }
             label={'Azure OpenAI API Key'}

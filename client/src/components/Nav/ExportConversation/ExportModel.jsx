@@ -3,24 +3,15 @@ import { useRecoilValue, useRecoilCallback } from 'recoil';
 import filenamify from 'filenamify';
 import exportFromJSON from 'export-from-json';
 import download from 'downloadjs';
-import {
-  Dialog,
-  DialogButton,
-  DialogTemplate,
-  Input,
-  Label,
-  Checkbox,
-  Dropdown,
-} from '~/components/ui/';
-import { cn } from '~/utils/';
-import { useScreenshot } from '~/utils/screenshotContext';
-
+import { Dialog, DialogButton, Input, Label, Checkbox, Dropdown } from '~/components/ui/';
+import DialogTemplate from '~/components/ui/DialogTemplate';
+import { cn, defaultTextProps, removeFocusOutlines, cleanupPreset } from '~/utils/';
+import { useScreenshot, useLocalize } from '~/hooks';
 import store from '~/store';
-import cleanupPreset from '~/utils/cleanupPreset.js';
-import { localize } from '~/localization/Translation';
 
 export default function ExportModel({ open, onOpenChange }) {
   const { captureScreenshot } = useScreenshot();
+  const localize = useLocalize();
 
   const [filename, setFileName] = useState('');
   const [type, setType] = useState('');
@@ -32,8 +23,6 @@ export default function ExportModel({ open, onOpenChange }) {
   const conversation = useRecoilValue(store.conversation) || {};
   const messagesTree = useRecoilValue(store.messagesTree) || [];
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
-
-  const lang = useRecoilValue(store.lang);
 
   const getSiblingIdx = useRecoilCallback(
     ({ snapshot }) =>
@@ -339,9 +328,6 @@ export default function ExportModel({ open, onOpenChange }) {
     }
   };
 
-  const defaultTextProps =
-    'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
@@ -352,22 +338,23 @@ export default function ExportModel({ open, onOpenChange }) {
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="filename" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_nav_export_filename')}
+                  {localize('com_nav_export_filename')}
                 </Label>
                 <Input
                   id="filename"
                   value={filename}
                   onChange={(e) => setFileName(filenamify(e.target.value || ''))}
-                  placeholder={localize(lang, 'com_nav_export_filename_placeholder')}
+                  placeholder={localize('com_nav_export_filename_placeholder')}
                   className={cn(
                     defaultTextProps,
-                    'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
+                    'flex h-10 max-h-10 w-full resize-none px-3 py-2',
+                    removeFocusOutlines,
                   )}
                 />
               </div>
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="type" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_nav_export_type')}
+                  {localize('com_nav_export_type')}
                 </Label>
                 <Dropdown
                   id="type"
@@ -376,7 +363,8 @@ export default function ExportModel({ open, onOpenChange }) {
                   options={typeOptions}
                   className={cn(
                     defaultTextProps,
-                    'flex h-10 max-h-10 w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
+                    'flex h-10 max-h-10 w-full resize-none',
+                    removeFocusOutlines,
                   )}
                   containerClassName="flex w-full resize-none"
                 />
@@ -386,7 +374,7 @@ export default function ExportModel({ open, onOpenChange }) {
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <div className="grid w-full items-center gap-2">
                   <Label htmlFor="includeOptions" className="text-left text-sm font-medium">
-                    {localize(lang, 'com_nav_export_include_endpoint_options')}
+                    {localize('com_nav_export_include_endpoint_options')}
                   </Label>
                   <div className="flex h-[40px] w-full items-center space-x-3">
                     <Checkbox
@@ -401,15 +389,15 @@ export default function ExportModel({ open, onOpenChange }) {
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                     >
                       {exportOptionsSupport
-                        ? localize(lang, 'com_nav_enabled')
-                        : localize(lang, 'com_nav_not_supported')}
+                        ? localize('com_nav_enabled')
+                        : localize('com_nav_not_supported')}
                     </label>
                   </div>
                 </div>
               </div>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="exportBranches" className="text-left text-sm font-medium">
-                  {localize(lang, 'com_nav_export_all_message_branches')}
+                  {localize('com_nav_export_all_message_branches')}
                 </Label>
                 <div className="flex h-[40px] w-full items-center space-x-3">
                   <Checkbox
@@ -424,15 +412,15 @@ export default function ExportModel({ open, onOpenChange }) {
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                   >
                     {exportBranchesSupport
-                      ? localize(lang, 'com_nav_enabled')
-                      : localize(lang, 'com_nav_not_supported')}
+                      ? localize('com_nav_enabled')
+                      : localize('com_nav_not_supported')}
                   </label>
                 </div>
               </div>
               {type === 'json' ? (
                 <div className="grid w-full items-center gap-2">
                   <Label htmlFor="recursive" className="text-left text-sm font-medium">
-                    {localize(lang, 'com_nav_export_recursive_or_sequential')}
+                    {localize('com_nav_export_recursive_or_sequential')}
                   </Label>
                   <div className="flex h-[40px] w-full items-center space-x-3">
                     <Checkbox
@@ -445,7 +433,7 @@ export default function ExportModel({ open, onOpenChange }) {
                       htmlFor="recursive"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                     >
-                      {localize(lang, 'com_nav_export_recursive')}
+                      {localize('com_nav_export_recursive')}
                     </label>
                   </div>
                 </div>
@@ -459,7 +447,7 @@ export default function ExportModel({ open, onOpenChange }) {
               onClick={exportConversation}
               className="dark:hover:gray-400 border-gray-700 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
             >
-              {localize(lang, 'com_endpoint_export')}
+              {localize('com_endpoint_export')}
             </DialogButton>
           </>
         }

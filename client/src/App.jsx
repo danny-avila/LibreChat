@@ -1,10 +1,8 @@
-import { RouterProvider } from 'react-router-dom';
-import { ScreenshotProvider } from './utils/screenshotContext.jsx';
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { RecoilRoot } from 'recoil';
+import { RouterProvider } from 'react-router-dom';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
-import { ThemeProvider } from './hooks/ThemeContext';
-import { useApiErrorBoundary } from './hooks/ApiErrorBoundaryContext';
+import { ScreenshotProvider, ThemeProvider, useApiErrorBoundary } from './hooks';
 import { router } from './routes';
 
 const App = () => {

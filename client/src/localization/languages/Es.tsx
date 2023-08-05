@@ -46,6 +46,8 @@ export default {
   com_auth_email_max_length: 'El email no debe tener más de 120 caracteres',
   com_auth_email_pattern: 'Debes ingresar una dirección de email válida',
   com_auth_email_address: 'Dirección de email',
+  com_auth_reset_password_link_sent: 'Enlace para restablecer la contraseña enviado',
+  com_auth_reset_password_email_sent: 'Se ha enviado un correo electrónico con instrucciones.',
   com_auth_password: 'Contraseña',
   com_auth_password_required: 'Se requiere la contraseña',
   com_auth_password_min_length: 'La contraseña debe tener al menos 8 caracteres',

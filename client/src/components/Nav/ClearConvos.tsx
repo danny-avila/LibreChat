@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Dialog, DialogTemplate } from '../ui/';
+import { Dialog } from '~/components/ui/';
+import DialogTemplate from '~/components/ui/DialogTemplate';
 import { ClearChatsButton } from './SettingsTabs/';
 import { useClearConversationsMutation } from 'librechat-data-provider';
 import store from '~/store';
@@ -34,9 +35,16 @@ const ClearConvos = ({ open, onOpenChange }) => {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={localize(lang, 'com_nav_clear_conversation')}
+        className="w-full max-w-[650px] sm:w-3/4 md:w-3/4 lg:w-3/4"
+        headerClassName="border-none"
         description={localize(lang, 'com_nav_clear_conversation_confirm_message')}
-        leftButtons={
-          <ClearChatsButton showText={false} confirmClear={confirmClear} onClick={clearConvos} />
+        buttons={
+          <ClearChatsButton
+            showText={false}
+            confirmClear={confirmClear}
+            onClick={clearConvos}
+            className="w-[77px]"
+          />
         }
       />
     </Dialog>

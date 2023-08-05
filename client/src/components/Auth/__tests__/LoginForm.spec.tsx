@@ -1,4 +1,4 @@
-import { render } from 'layout-test-utils';
+import { render } from 'test/layout-test-utils';
 import userEvent from '@testing-library/user-event';
 import Login from '../LoginForm';
 

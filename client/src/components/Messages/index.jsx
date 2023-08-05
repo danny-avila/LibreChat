@@ -6,7 +6,7 @@ import { CSSTransition } from 'react-transition-group';
 import ScrollToBottom from './ScrollToBottom';
 import MultiMessage from './MultiMessage';
 import MessageHeader from './MessageHeader';
-import { useScreenshot } from '~/utils/screenshotContext.jsx';
+import { useScreenshot } from '~/hooks';
 
 import store from '~/store';
 
@@ -17,6 +17,7 @@ export default function Messages({ isSearchView = false }) {
   const messagesEndRef = useRef(null);
 
   const messagesTree = useRecoilValue(store.messagesTree);
+  const showPopover = useRecoilValue(store.showPopover);
   const searchResultMessagesTree = useRecoilValue(store.searchResultMessagesTree);
 
   const _messagesTree = isSearchView ? searchResultMessagesTree : messagesTree;
@@ -27,6 +28,9 @@ export default function Messages({ isSearchView = false }) {
   const { screenshotTargetRef } = useScreenshot();
 
   const handleScroll = () => {
+    if (!scrollableRef.current) {
+      return;
+    }
     const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
     const diff = Math.abs(scrollHeight - scrollTop);
     const percent = Math.abs(clientHeight - diff) / clientHeight;
@@ -39,6 +43,9 @@ export default function Messages({ isSearchView = false }) {
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
+      if (!scrollableRef.current) {
+        return;
+      }
       const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
       const diff = Math.abs(scrollHeight - scrollTop);
       const percent = Math.abs(clientHeight - diff) / clientHeight;
@@ -59,6 +66,19 @@ export default function Messages({ isSearchView = false }) {
   const scrollToBottom = useCallback(
     throttle(
       () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+        setShowScrollButton(false);
+      },
+      450,
+      { leading: true },
+    ),
+    [messagesEndRef],
+  );
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const scrollToBottomSmooth = useCallback(
+    throttle(
+      () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
         setShowScrollButton(false);
       },
@@ -76,7 +96,7 @@ export default function Messages({ isSearchView = false }) {
 
   const scrollHandler = (e) => {
     e.preventDefault();
-    scrollToBottom();
+    scrollToBottomSmooth();
   };
 
   return (
@@ -115,7 +135,10 @@ export default function Messages({ isSearchView = false }) {
                 unmountOnExit={false}
                 // appear
               >
-                {() => showScrollButton && <ScrollToBottom scrollHandler={scrollHandler} />}
+                {() =>
+                  showScrollButton &&
+                  !showPopover && <ScrollToBottom scrollHandler={scrollHandler} />
+                }
               </CSSTransition>
             </>
           )}

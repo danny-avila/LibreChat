@@ -7,6 +7,7 @@ import {
   QueryObserverResult,
 } from '@tanstack/react-query';
 import * as t from './types';
+import * as s from './schemas';
 import * as dataService from './data-service';
 
 export enum QueryKeys {
@@ -47,9 +48,9 @@ export const useGetUserQuery = (
 
 export const useGetMessagesByConvoId = (
   id: string,
-  config?: UseQueryOptions<t.TMessage[]>,
-): QueryObserverResult<t.TMessage[]> => {
-  return useQuery<t.TMessage[]>(
+  config?: UseQueryOptions<s.TMessage[]>,
+): QueryObserverResult<s.TMessage[]> => {
+  return useQuery<s.TMessage[]>(
     [QueryKeys.messages, id],
     () => dataService.getMessagesByConvoId(id),
     {
@@ -63,9 +64,9 @@ export const useGetMessagesByConvoId = (
 
 export const useGetConversationByIdQuery = (
   id: string,
-  config?: UseQueryOptions<t.TConversation>,
-): QueryObserverResult<t.TConversation> => {
-  return useQuery<t.TConversation>(
+  config?: UseQueryOptions<s.TConversation>,
+): QueryObserverResult<s.TConversation> => {
+  return useQuery<s.TConversation>(
     [QueryKeys.conversation, id],
     () => dataService.getConversationById(id),
     {
@@ -79,10 +80,10 @@ export const useGetConversationByIdQuery = (
 
 //This isn't ideal because its just a query and we're using mutation, but it was the only way
 //to make it work with how the Chat component is structured
-export const useGetConversationByIdMutation = (id: string): UseMutationResult<t.TConversation> => {
+export const useGetConversationByIdMutation = (id: string): UseMutationResult<s.TConversation> => {
   const queryClient = useQueryClient();
   return useMutation(() => dataService.getConversationById(id), {
-    // onSuccess: (res: t.TConversation) => {
+    // onSuccess: (res: s.TConversation) => {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.conversation, id]);
     },
@@ -165,7 +166,7 @@ export const useGetSearchEnabledQuery = (
   });
 };
 
-export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpoints> => {
+export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpointsConfig> => {
   return useQuery([QueryKeys.endpoints], () => dataService.getAIEndpoints(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -174,13 +175,13 @@ export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpoints> => {
 };
 
 export const useCreatePresetMutation = (): UseMutationResult<
-  t.TPreset[],
+  s.TPreset[],
   unknown,
-  t.TPreset,
+  s.TPreset,
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation((payload: t.TPreset) => dataService.createPreset(payload), {
+  return useMutation((payload: s.TPreset) => dataService.createPreset(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.presets]);
     },
@@ -188,13 +189,13 @@ export const useCreatePresetMutation = (): UseMutationResult<
 };
 
 export const useUpdatePresetMutation = (): UseMutationResult<
-  t.TPreset[],
+  s.TPreset[],
   unknown,
-  t.TPreset,
+  s.TPreset,
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation((payload: t.TPreset) => dataService.updatePreset(payload), {
+  return useMutation((payload: s.TPreset) => dataService.updatePreset(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.presets]);
     },
@@ -202,9 +203,9 @@ export const useUpdatePresetMutation = (): UseMutationResult<
 };
 
 export const useGetPresetsQuery = (
-  config?: UseQueryOptions<t.TPreset[]>,
-): QueryObserverResult<t.TPreset[], unknown> => {
-  return useQuery<t.TPreset[]>([QueryKeys.presets], () => dataService.getPresets(), {
+  config?: UseQueryOptions<s.TPreset[]>,
+): QueryObserverResult<s.TPreset[], unknown> => {
+  return useQuery<s.TPreset[]>([QueryKeys.presets], () => dataService.getPresets(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -213,13 +214,13 @@ export const useGetPresetsQuery = (
 };
 
 export const useDeletePresetMutation = (): UseMutationResult<
-  t.TPreset[],
+  s.TPreset[],
   unknown,
-  t.TPreset | object,
+  s.TPreset | object,
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation((payload: t.TPreset | object) => dataService.deletePreset(payload), {
+  return useMutation((payload: s.TPreset | object) => dataService.deletePreset(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.presets]);
     },
@@ -246,11 +247,11 @@ export const useSearchQuery = (
 export const useUpdateTokenCountMutation = (): UseMutationResult<
   t.TUpdateTokenCountResponse,
   unknown,
-  string,
+  { text: string },
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation((text: string) => dataService.updateTokenCount(text), {
+  return useMutation(({ text }: { text: string }) => dataService.updateTokenCount(text), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.tokenCount]);
     },
@@ -323,8 +324,8 @@ export const useResetPasswordMutation = (): UseMutationResult<
   return useMutation((payload: t.TResetPassword) => dataService.resetPassword(payload));
 };
 
-export const useAvailablePluginsQuery = (): QueryObserverResult<t.TPlugin[]> => {
-  return useQuery<t.TPlugin[]>(
+export const useAvailablePluginsQuery = (): QueryObserverResult<s.TPlugin[]> => {
+  return useQuery<s.TPlugin[]>(
     [QueryKeys.availablePlugins],
     () => dataService.getAvailablePlugins(),
     {

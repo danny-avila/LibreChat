@@ -52,6 +52,8 @@ export default {
   com_auth_continue: '继续',
   com_auth_create_account: '创建账号',
   com_auth_error_create: '注册账户过程中出现错误，请重试。',
+  com_auth_reset_password_link_sent: '重置密码链接已发送至邮箱',
+  com_auth_reset_password_email_sent: '重置密码邮件已发送至邮箱',
   com_auth_full_name: '姓名',
   com_auth_name_required: '姓名为必填项',
   com_auth_name_min_length: '姓名至少3个字符',

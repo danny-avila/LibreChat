@@ -52,6 +52,9 @@ export default {
   com_auth_password_forgot: 'Esqueceu a senha?',
   com_auth_password_confirm: 'Confirmar senha',
   com_auth_password_not_match: 'As senhas não correspondem',
+  com_auth_reset_password_link_sent: 'Link para redefinir a senha enviado',
+  com_auth_reset_password_email_sent:
+    'Um email foi enviado para com instruções para redefinir sua senha.',
   com_auth_continue: 'Continuar',
   com_auth_create_account: 'Crie sua conta',
   com_auth_error_create:

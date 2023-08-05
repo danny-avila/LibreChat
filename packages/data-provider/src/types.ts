@@ -1,31 +1,10 @@
-export type TMessage = {
-  messageId: string;
-  conversationId: string;
-  clientId: string;
-  parentMessageId: string;
-  sender: string;
-  text: string;
-  isCreatedByUser: boolean;
-  error: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
+import { TMessage, EModelEndpoint, TConversation } from './schemas';
 
-export type TExample = {
-  input: string;
-  output: string;
-};
+export * from './schemas';
 
-export enum EModelEndpoint {
-  azureOpenAI = 'azureOpenAI',
-  openAI = 'openAI',
-  bingAI = 'bingAI',
-  chatGPT = 'chatGPT',
-  chatGPTBrowser = 'chatGPTBrowser',
-  google = 'google',
-  gptPlugins = 'gptPlugins',
-  anthropic = 'anthropic',
-}
+export type TMessages = TMessage[];
+
+export type TMessagesAtom = TMessages | null;
 
 export type TSubmission = {
   clientId?: string;
@@ -33,7 +12,7 @@ export type TSubmission = {
   conversationId?: string;
   conversationSignature?: string;
   current: boolean;
-  endpoint: EModelEndpoint;
+  endpoint: EModelEndpoint | null;
   invocationId: number;
   isCreatedByUser: boolean;
   jailbreak: boolean;
@@ -57,25 +36,16 @@ export type TSubmission = {
 };
 
 export type TEndpointOption = {
-  endpoint: EModelEndpoint;
+  endpoint: EModelEndpoint | null;
   model?: string;
   promptPrefix?: string;
   temperature?: number;
 };
 
-export type TPluginAuthConfig = {
-  authField: string;
-  label: string;
-  description: string;
-};
-
-export type TPlugin = {
-  name: string;
+export type TPluginAction = {
   pluginKey: string;
-  description: string;
-  icon: string;
-  authConfig: TPluginAuthConfig[];
-  authenticated: boolean;
+  action: 'install' | 'uninstall';
+  auth?: unknown;
 };
 
 export type TUpdateUserPlugins = {
@@ -84,64 +54,14 @@ export type TUpdateUserPlugins = {
   auth?: unknown;
 };
 
-export type TConversation = {
-  conversationId: string;
-  title: string;
-  user?: string;
-  endpoint: EModelEndpoint;
-  suggestions?: string[];
-  messages?: TMessage[];
-  tools?: TPlugin[];
-  createdAt: string;
-  updatedAt: string;
-  // google only
-  modelLabel?: string;
-  examples?: TExample[];
-  // for azureOpenAI, openAI only
-  chatGptLabel?: string;
-  userLabel?: string;
-  model?: string;
-  promptPrefix?: string;
-  temperature?: number;
-  topP?: number;
-  topK?: number;
-  // bing and google
-  context?: string;
-  top_p?: number;
-  presence_penalty?: number;
-  // for bingAI only
-  jailbreak?: boolean;
-  jailbreakConversationId?: string;
-  conversationSignature?: string;
-  parentMessageId?: string;
-  clientId?: string;
-  invocationId?: string;
-  toneStyle?: string;
-};
-
-export type TPreset = {
-  title: string;
-  endpoint: EModelEndpoint;
-  conversationSignature?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  presetId?: string;
-  user?: string;
-  // for azureOpenAI, openAI only
-  chatGptLabel?: string;
-  frequence_penalty?: number;
-  model?: string;
-  presence_penalty?: number;
-  promptPrefix?: string;
-  temperature?: number;
-  top_p?: number;
-  //for BingAI
-  clientId?: string;
-  invocationId?: number;
-  jailbreak?: boolean;
-  jailbreakPresetId?: string;
-  presetSignature?: string;
-  toneStyle?: string;
+export type TError = {
+  message: string;
+  code?: number;
+  response?: {
+    data?: {
+      message?: string;
+    };
+  };
 };
 
 export type TUser = {
@@ -196,15 +116,30 @@ export type TSearchResults = {
   filter: object;
 };
 
-export type TEndpoints = {
-  azureOpenAI: boolean;
-  bingAI: boolean;
-  ChatGptBrowser: {
+export type TEndpointsConfig = {
+  azureOpenAI: {
     availableModels: [];
-  };
-  OpenAI: {
+  } | null;
+  bingAI: {
     availableModels: [];
-  };
+  } | null;
+  chatGPTBrowser: {
+    availableModels: [];
+  } | null;
+  anthropic: {
+    availableModels: [];
+  } | null;
+  google: {
+    availableModels: [];
+  } | null;
+  openAI: {
+    availableModels: [];
+  } | null;
+  gptPlugins: {
+    availableModels: [];
+    availableTools?: [];
+    plugins?: [];
+  } | null;
 };
 
 export type TUpdateTokenCountResponse = {
@@ -257,6 +192,7 @@ export type TStartupConfig = {
   serverDomain: string;
   registrationEnabled: boolean;
   socialLoginEnabled: boolean;
+  emailEnabled: boolean;
 };
 
 export type TRefreshTokenResponse = {
@@ -265,11 +201,6 @@ export type TRefreshTokenResponse = {
 };
 
 export type TRequestPasswordResetResponse = {
-  link: string;
-};
-
-export type File = {
-  name: string;
-  date: number;
-  size: number;
+  link?: string;
+  message?: string;
 };

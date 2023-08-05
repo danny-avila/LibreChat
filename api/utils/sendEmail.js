@@ -1,5 +1,3 @@
-/* eslint-disable no-unused-vars */
-/* eslint-disable no-undef */
 const nodemailer = require('nodemailer');
 const handlebars = require('handlebars');
 const fs = require('fs');
@@ -7,21 +5,19 @@ const path = require('path');
 
 const sendEmail = async (email, subject, payload, template) => {
   try {
-    // create reusable transporter object using the default SMTP transport
     const transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST,
-      port: 465,
+      service: process.env.EMAIL_SERVICE,
       auth: {
         user: process.env.EMAIL_USERNAME,
         pass: process.env.EMAIL_PASSWORD,
       },
     });
 
-    const source = fs.readFileSync(path.join(__dirname, template), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, 'emails', template), 'utf8');
     const compiledTemplate = handlebars.compile(source);
     const options = () => {
       return {
-        from: process.env.FROM_EMAIL,
+        from: process.env.EMAIL_FROM,
         to: email,
         subject: subject,
         html: compiledTemplate(payload),
@@ -31,26 +27,17 @@ const sendEmail = async (email, subject, payload, template) => {
     // Send email
     transporter.sendMail(options(), (error, info) => {
       if (error) {
+        console.log(error);
         return error;
       } else {
-        return res.status(200).json({
-          success: true,
-        });
+        console.log(info);
+        return info;
       }
     });
   } catch (error) {
+    console.log(error);
     return error;
   }
 };
-
-/*
-Example:
-sendEmail(
-  "youremail@gmail.com,
-  "Email subject",
-  { name: "Eze" },
-  "./templates/layouts/main.handlebars"
-);
-*/
 
 module.exports = sendEmail;
