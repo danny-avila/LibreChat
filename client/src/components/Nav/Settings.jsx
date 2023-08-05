@@ -6,21 +6,22 @@ import { cn } from '~/utils/';
 import { useRecoilValue } from 'recoil';
 import { localize } from '~/localization/Translation';
 import store from '~/store';
+import { useMediaQuery } from '~/hooks';
 
 export default function Settings({ open, onOpenChange }) {
   const [confirmClear, setConfirmClear] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const isMobile = useMediaQuery('(max-width: 768px)');
   const lang = useRecoilValue(store.lang);
 
   // Check if mobile dynamically and update
-  useEffect(() => {
+  useMediaQuery(() => {
     const checkMobile = () => {
       if (window.innerWidth <= 768) {
-        setIsMobile(true);
+        isMobile(true);
       } else {
-        setIsMobile(false);
+        isMobile(false);
       }
-      setIsMobile(window.innerWidth <= 768);
+      isMobile(window.innerWidth <= 768);
     };
 
     checkMobile();
