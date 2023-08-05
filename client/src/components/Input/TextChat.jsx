@@ -5,6 +5,7 @@ import SubmitButton from './SubmitButton';
 import OptionsBar from './OptionsBar';
 import { EndpointMenu } from './EndpointMenu';
 import Footer from './Footer';
+import useSpeechRecognition from './SpeechRecognition';
 import { useMessageHandler, ThemeContext } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -29,69 +30,6 @@ export default function TextChat({ isSearchView = false }) {
   const isNotAppendable = latestMessage?.unfinished & !isSubmitting || latestMessage?.error;
   const { conversationId, jailbreak } = conversation || {};
 
-  const [isSpeechSupported, setIsSpeechSupported] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-
-  useEffect(() => {
-    if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
-      setIsSpeechSupported(true);
-    } else {
-      console.log("Browser does not support SpeechRecognition");
-      setIsSpeechSupported(false);
-      return;
-    }
-
-    if (!('SpeechRecognition' in window) && !('webkitSpeechRecognition' in window)) {
-      console.log("Browser does not support SpeechRecognition");
-      return;
-    }
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-
-    recognition.onstart = () => {
-      console.log("Speech recognition started");
-    };
-
-    recognition.interimResults = true;
-
-    recognition.onresult = (event) => {
-      let transcript = '';
-
-      for (let i = 0; i < event.results.length; i++) {
-        const result = event.results[i];
-        transcript += result[0].transcript;
-
-        if (result.isFinal) {
-          setText(transcript);
-          ask({ text: transcript });
-        }
-      }
-
-      // Set the text with both interim and final results
-      setText(transcript);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-      setText('');
-   };
-
-    if (isListening) {
-      recognition.start();
-    } else {
-      recognition.stop();
-    }
-
-    return () => {
-      recognition.stop();
-    };
-  }, [isListening]);
-
-  const toggleListening = (e) => {
-    e.preventDefault();
-    setIsListening((prevState) => !prevState);
-  };
 
   // auto focus to input, when enter a conversation.
   useEffect(() => {
