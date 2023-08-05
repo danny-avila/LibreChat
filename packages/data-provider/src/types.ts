@@ -1,6 +1,8 @@
 import * as React from 'react';
 import { TExample, TMessage, EModelEndpoint, TPlugin, TConversation, TPreset } from './schemas';
 
+export * from './schemas';
+
 export type TMessages = TMessage[];
 
 export type TMessagesAtom = TMessages | null;

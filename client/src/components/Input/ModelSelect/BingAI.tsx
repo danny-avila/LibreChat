@@ -39,7 +39,7 @@ export default function BingAI({ conversation, setOption, models }: ModelSelectP
         )}
       />
       <Tabs
-        value={toneStyle}
+        value={toneStyle ?? 'creative'}
         className={cn(
           cardStyle,
           'z-50 flex h-[40px] flex-none items-center justify-center px-0 transition duration-700 ease-in-out hover:bg-slate-50 hover:shadow-md dark:hover:bg-gray-600',

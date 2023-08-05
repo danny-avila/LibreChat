@@ -103,11 +103,19 @@ export const tConversationSchema = z.object({
 
 export type TConversation = z.infer<typeof tConversationSchema>;
 
-export const tPresetSchema = tConversationSchema.omit({ conversationId: true }).merge(
-  z.object({
-    conversationId: z.string().optional(),
-    presetId: z.string().optional(),
-  }),
-);
+export const tPresetSchema = tConversationSchema
+  .omit({
+    conversationId: true,
+    createdAt: true,
+    updatedAt: true,
+    title: true,
+  })
+  .merge(
+    z.object({
+      conversationId: z.string().optional(),
+      presetId: z.string().nullable().optional(),
+      title: z.string().nullable().optional(),
+    }),
+  );
 
 export type TPreset = z.infer<typeof tPresetSchema>;

@@ -1,7 +1,7 @@
 import { Settings2 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
-import { TPreset } from 'librechat-data-provider';
+import { tPresetSchema } from 'librechat-data-provider';
 import { PluginStoreDialog } from '~/components';
 import {
   EndpointSettings,
@@ -126,7 +126,7 @@ export default function OptionsBar() {
         <SaveAsPresetDialog
           open={saveAsDialogShow}
           onOpenChange={setSaveAsDialogShow}
-          preset={{ ...conversation } as TPreset}
+          preset={tPresetSchema.parse({ ...conversation })}
         />
         <PluginStoreDialog isOpen={showPluginStoreDialog} setIsOpen={setShowPluginStoreDialog} />
       </span>
