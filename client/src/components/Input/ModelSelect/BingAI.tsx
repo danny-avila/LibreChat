@@ -1,10 +1,10 @@
 import { useRecoilValue } from 'recoil';
 import { SelectDropDown, Tabs, TabsList, TabsTrigger } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
-import { ModelSelectProps } from 'librechat-data-provider';
+import type { TModelSelectProps } from '~/common';
 import store from '~/store';
 
-export default function BingAI({ conversation, setOption, models }: ModelSelectProps) {
+export default function BingAI({ conversation, setOption, models }: TModelSelectProps) {
   const showBingToneSetting = useRecoilValue(store.showBingToneSetting);
   if (!conversation) {
     return null;

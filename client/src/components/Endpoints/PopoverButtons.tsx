@@ -1,9 +1,16 @@
-import { EModelEndpoint, PopoverButton } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { MessagesSquared, GPTIcon } from '~/components/svg';
 import { useRecoilState } from 'recoil';
 import { Button } from '~/components';
 import { cn } from '~/utils/';
 import store from '~/store';
+
+type TPopoverButton = {
+  label: string;
+  buttonClass: string;
+  handler: () => void;
+  icon: React.ReactNode;
+};
 
 export default function PopoverButtons({
   endpoint,
@@ -20,7 +27,7 @@ export default function PopoverButtons({
   const triggerExamples = () =>
     setOptionSettings((prev) => ({ ...prev, showExamples: !prev.showExamples }));
 
-  const buttons: { [key: string]: PopoverButton[] } = {
+  const buttons: { [key: string]: TPopoverButton[] } = {
     google: [
       {
         label: (showExamples ? 'Hide' : 'Show') + ' Examples',
