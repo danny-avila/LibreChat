@@ -29,7 +29,7 @@ export default function TextChat({ isSearchView = false }) {
   const { ask, stopGenerating } = useMessageHandler();
   const isNotAppendable = latestMessage?.unfinished & !isSubmitting || latestMessage?.error;
   const { conversationId, jailbreak } = conversation || {};
-
+  const { isSpeechSupported, isListening, text: speechText, toggleListening } = useSpeechRecognition();
 
   // auto focus to input, when enter a conversation.
   useEffect(() => {
@@ -60,6 +60,9 @@ export default function TextChat({ isSearchView = false }) {
   const submitMessage = () => {
     ask({ text });
     setText('');
+    if (isListening) {
+      toggleListening();
+    }
   };
 
   const handleStopGenerating = (e) => {
@@ -81,7 +84,7 @@ export default function TextChat({ isSearchView = false }) {
     }
 
     if (e.shiftKey && e.altKey && e.key === 'L') {
-      toggleListening(e);
+      toggleListening();
     }
 
   };
@@ -111,7 +114,7 @@ export default function TextChat({ isSearchView = false }) {
   const changeHandler = (e) => {
     const { value } = e.target;
 
-    setText(value);
+    setText(value || speechText);
   };
 
   const getPlaceholderText = () => {
