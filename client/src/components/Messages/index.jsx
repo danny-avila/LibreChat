@@ -69,7 +69,7 @@ export default function Messages({ isSearchView = false }) {
         messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
         setShowScrollButton(false);
       },
-      100,
+      450,
       { leading: true },
     ),
     [messagesEndRef],

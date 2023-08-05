@@ -98,6 +98,21 @@ export default function OptionsBar() {
             }
             setOpacityClass('show');
           }}
+          onFocus={() => {
+            if (showPopover) {
+              return;
+            }
+            setOpacityClass('full-opacity');
+          }}
+          onBlur={() => {
+            if (showPopover) {
+              return;
+            }
+            if (!messagesTree || messagesTree.length === 0) {
+              return;
+            }
+            setOpacityClass('show');
+          }}
         >
           <ModelSelect conversation={conversation} setOption={setOption} />
           {!noSettings[endpoint] && (
