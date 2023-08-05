@@ -1,10 +1,22 @@
 import React from 'react';
+import { PagesProps } from 'librechat-data-provider';
 
-export default function Pages({ pageNumber, pages, nextPage, previousPage }) {
-  const clickHandler = (func) => async (e) => {
-    e.preventDefault();
-    await func();
-  };
+export default function Pages({
+  pageNumber,
+  pages,
+  nextPage,
+  previousPage,
+  setPageNumber,
+}: PagesProps) {
+  const clickHandler =
+    (func: () => Promise<void>) => async (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      await func();
+    };
+
+  if (pageNumber > pages) {
+    setPageNumber(pages);
+  }
 
   return pageNumber == 1 && pages == 1 ? null : (
     <div className="m-auto mb-2 mt-4 flex items-center justify-center gap-2">

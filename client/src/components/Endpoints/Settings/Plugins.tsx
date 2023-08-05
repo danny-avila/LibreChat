@@ -34,8 +34,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   const setPromptPrefix = setOption('promptPrefix');
   const setTemperature = setOption('temperature');
   const setTopP = setOption('top_p');
-  const setFreqP = setOption('presence_penalty');
-  const setPresP = setOption('frequency_penalty');
+  const setFreqP = setOption('frequency_penalty');
+  const setPresP = setOption('presence_penalty');
 
   const toolsSelected = tools && tools.length > 0;
 

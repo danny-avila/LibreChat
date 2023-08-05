@@ -467,3 +467,11 @@ export type CleanupPreset = {
   preset: Partial<TPreset>;
   endpointsConfig?: TEndpointsConfig | Record<string, unknown>;
 };
+
+export type PagesProps = {
+  pages: number;
+  pageNumber: number;
+  setPageNumber: (pageNumber: number) => void;
+  nextPage: () => Promise<void>;
+  previousPage: () => Promise<void>;
+};
