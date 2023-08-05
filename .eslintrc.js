@@ -47,6 +47,8 @@ module.exports = {
     semi: ['error', 'always'],
     'object-curly-spacing': ['error', 'always'],
     'no-multiple-empty-lines': ['error', { max: 1 }],
+    'no-trailing-spaces': 'error',
+    'comma-dangle': ['error', 'always-multiline'],
     // "arrow-parens": [2, "as-needed", { requireForBlockBody: true }],
     // 'no-plusplus': ['error', { allowForLoopAfterthoughts: true }],
     'no-console': 'off',
