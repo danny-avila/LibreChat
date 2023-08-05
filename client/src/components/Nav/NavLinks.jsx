@@ -21,7 +21,6 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
   const [showClearConvos, setShowClearConvos] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  console.log(showProfile)
   const { user } = useAuthContext();
 
   const conversation = useRecoilValue(store.conversation) || {};

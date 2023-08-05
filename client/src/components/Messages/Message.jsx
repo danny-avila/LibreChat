@@ -32,7 +32,7 @@ export default function Message({
   const setLatestMessage = useSetRecoilState(store.latestMessage);
   const [abortScroll, setAbort] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // eslint-disable-line
   const textEditor = useRef(null);
   const last = !message?.children?.length;
   const edit = message.messageId == currentEditId;
@@ -186,8 +186,6 @@ export default function Message({
       switchToConversation(response.data);
     });
   };
-
-  !loading && console.log(`islike: ${isLiked}`)
 
   return (
     <>
