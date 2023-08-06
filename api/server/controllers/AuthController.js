@@ -9,11 +9,14 @@ const isProduction = process.env.NODE_ENV === 'production';
 const registrationController = async (req, res) => {
   try {
     const response = await registerUser(req.body);
-    console.log('reg response', response);
     if (response.status === 200) {
       const { status, user } = response;
+      let newUser = await User.findOne({ _id: user._id });
+      if (!newUser) {
+        newUser = new User(user);
+        await newUser.save();
+      }
       const token = await setAuthTokens( user._id, res );
-      console.log('reg token', token);
       res.setHeader('Authorization', `Bearer ${token}`);
       res.status(status).send({ user });
     } else {
