@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ListeningIcon, StopGeneratingIcon } from '~/components';
 import { Settings } from 'lucide-react';
 import { SetTokenDialog } from './SetTokenDialog';
@@ -17,6 +17,7 @@ export default function SubmitButton({
   const { getToken } = store.useToken(endpoint);
 
   const isTokenProvided = endpointsConfig?.[endpoint]?.userProvide ? !!getToken() : true;
+  const [countdown, setCountdown] = useState(0);
   const endpointsToHideSetTokens = new Set(['openAI', 'azureOpenAI', 'bingAI']);
 
   const clickHandler = (e) => {
@@ -27,6 +28,21 @@ export default function SubmitButton({
   const setToken = () => {
     setSetTokenDialogOpen(true);
   };
+
+  useEffect(() => {
+    let timer;
+    if (isListening) {
+      setCountdown(3);
+      timer = setInterval(() => {
+        setCountdown(prev => (prev > 1 ? prev - 1 : 0));
+      }, 1000);
+    } else {
+      setCountdown(0);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [isListening]);
 
   if (isSubmitting) {
     return (
@@ -66,7 +82,11 @@ export default function SubmitButton({
     return (
       <button className="group absolute bottom-0 right-0 z-[101] flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500">
         <div className="m-1 mr-0 rounded-md pb-[9px] pl-[9.5px] pr-[7px] pt-[11px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
-          <ListeningIcon />
+          {countdown > 0 ? (
+            <div className="text-xl  text-red-600">{countdown}</div>
+          ) : (
+            <ListeningIcon />
+          )}
         </div>
       </button>
     );
