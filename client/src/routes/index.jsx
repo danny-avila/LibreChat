@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
 import Root from './Root';
 import Chat from './Chat';
 import Search from './Search';
+import Profile from '../components/profile/Profile';
 import { Login, Registration, RequestPasswordReset, ResetPassword } from '../components/Auth';
 import { AuthContextProvider } from '../hooks/AuthContext';
 import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
@@ -62,5 +63,9 @@ export const router = createBrowserRouter([
         ]
       }
     ]
+  },
+  {
+    path: 'profile',
+    element: <Profile />
   }
 ]);
