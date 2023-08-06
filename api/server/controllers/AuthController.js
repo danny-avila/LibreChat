@@ -12,6 +12,7 @@ const registrationController = async (req, res) => {
     if (response.status === 200) {
       const { status, user } = response;
       const token = await setAuthTokens( user._id, res );
+      res.setHeader('Authorization', `Bearer ${token}`);
       res.status(status).send({ user });
     } else {
       const { status, message } = response;
