@@ -1,6 +1,6 @@
 import React from 'react';
 import { HoverCardPortal, HoverCardContent } from '~/components/ui';
-import type { ESide } from '~/common';
+import { ESide } from '~/common';
 import { useLocalize } from '~/hooks';
 
 type TOptionHoverProps = {
