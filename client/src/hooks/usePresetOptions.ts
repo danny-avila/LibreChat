@@ -91,7 +91,7 @@ const usePresetOptions: TUsePresetOptions = (_preset) => {
     );
   };
 
-  const setAgentOption: SetOption = (param) => (newValue) => {
+  const setAgentOption: TSetOption = (param) => (newValue) => {
     const editablePreset = JSON.parse(JSON.stringify(_preset));
     const { agentOptions } = editablePreset;
     agentOptions[param] = newValue;

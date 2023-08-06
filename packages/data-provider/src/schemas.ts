@@ -81,7 +81,7 @@ export const tConversationSchema = z.object({
   examples: z.array(tExampleSchema).optional(),
   chatGptLabel: z.string().nullable().optional(),
   userLabel: z.string().optional(),
-  model: z.string().optional(),
+  model: z.string().nullable().optional(),
   promptPrefix: z.string().nullable().optional(),
   temperature: z.number().optional(),
   topP: z.number().optional(),
