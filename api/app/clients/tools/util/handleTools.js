@@ -22,6 +22,12 @@ const {
 } = require('../');
 const { loadSpecs } = require('./loadSpecs');
 
+const getOpenAIKey = async (options, user) => {
+  let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
+  openAIApiKey = openAIApiKey === 'user_provided' ? null : openAIApiKey;
+  return openAIApiKey || (await getUserPluginAuthValue(user, 'OPENAI_API_KEY'));
+};
+
 const validateTools = async (user, tools = []) => {
   try {
     const validToolsSet = new Set(tools);
@@ -86,6 +92,8 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
     'azure-cognitive-search': functions ? StructuredACS : AzureCognitiveSearch,
   };
 
+  const openAIApiKey = await getOpenAIKey(options, user);
+
   const customConstructors = {
     code_interpreter: async () => {
       if (!functions) {
@@ -103,6 +111,8 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
           new tool({
             E2B_SERVER_URL: serverUrl,
             conversationId: options.conversationId,
+            model,
+            openAIApiKey,
           }),
         );
       }
@@ -110,9 +120,9 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
       return suite;
     },
     'web-browser': async () => {
-      let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
-      openAIApiKey = openAIApiKey === 'user_provided' ? null : openAIApiKey;
-      openAIApiKey = openAIApiKey || (await getUserPluginAuthValue(user, 'OPENAI_API_KEY'));
+      // let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
+      // openAIApiKey = openAIApiKey === 'user_provided' ? null : openAIApiKey;
+      // openAIApiKey = openAIApiKey || (await getUserPluginAuthValue(user, 'OPENAI_API_KEY'));
       return new WebBrowser({ model, embeddings: new OpenAIEmbeddings({ openAIApiKey }) });
     },
     serpapi: async () => {
