@@ -6,7 +6,6 @@ const logoutController = async (req, res) => {
   try {
     const logout = await logoutUser(req.user._id, refreshToken);
     const { status, message } = logout;
-    res.clearCookie('token');
     res.clearCookie('refreshToken');
     return res.status(status).send({ message });
   } catch (err) {
