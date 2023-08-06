@@ -51,7 +51,11 @@ export default function Plugins({ conversation, setOption, models }: TModelSelec
       .filter((el): el is TPlugin => el !== undefined);
 
     /* Filter Last Selected Tools */
-    const lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools') ?? '');
+    const localStorageItem = localStorage.getItem('lastSelectedTools');
+    if (!localStorageItem) {
+      return setAvailableTools([...tools, pluginStore]);
+    }
+    const lastSelectedTools = JSON.parse(localStorageItem);
     const filteredTools = lastSelectedTools.filter((tool: TPlugin) =>
       tools.some((existingTool) => existingTool.pluginKey === tool.pluginKey),
     );
