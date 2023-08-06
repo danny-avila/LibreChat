@@ -1,5 +1,4 @@
-import { TModelSelectProps } from '~/common';
-import type { ESide } from '~/common';
+import { TModelSelectProps, ESide } from '~/common';
 import {
   Switch,
   SelectDropDown,
