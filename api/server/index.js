@@ -19,7 +19,6 @@ const {
   facebookLogin,
   setupOpenId,
 } = require('../strategies');
-const refreshTokenValidator = require('../middleware/refreshTokenValidator');
 
 // Init the config and validate it
 const config = require('../../config/loader');
