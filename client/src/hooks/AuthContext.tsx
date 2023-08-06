@@ -128,6 +128,19 @@ const AuthContextProvider = ({
     });
   };
 
+ const silentRefresh = useCallback(() => {
+    refreshToken.mutate(undefined, {
+      onSuccess: (data: TLoginResponse) => {
+        const { user, token } = data;
+        setUserContext({ token, isAuthenticated: true, user });
+      },
+      onError: error => {
+        console.log('refreshToken mutation error:', error);
+        navigate('/login'); 
+      }
+    });
+  }, [setUserContext, navigate]);
+
   useEffect(() => {
     if (userQuery.data) {
       setUser(userQuery.data);
@@ -139,12 +152,7 @@ const AuthContextProvider = ({
       doSetError(undefined);
     }
     if (!token || !isAuthenticated) {
-      const tokenFromCookie = getCookieValue('token');
-      if (tokenFromCookie) {
-        setUserContext({ token: tokenFromCookie, isAuthenticated: true, user: userQuery.data });
-      } else {
-        navigate('/login', { replace: true });
-      }
+      silentRefresh();
     }
   }, [
     token,
