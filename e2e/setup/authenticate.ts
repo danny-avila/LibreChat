@@ -21,7 +21,7 @@ async function authenticate(config: FullConfig, user: User) {
   }
   await page.goto(baseURL);
   await login(page, user);
-  await page.locator('h1:has-text("LibreChat")').waitFor();
+  await page.getByTestId('landing-title').waitFor();
   console.log('🤖: ✔️  user successfully authenticated');
   // Set localStorage before navigating to the page
   await page.context().addInitScript(() => {
