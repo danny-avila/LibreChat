@@ -46,7 +46,7 @@ function AskMeAnything() {
 
   const content = () => {
     return(
-      <div className="h-[490px] overflow-y-auto md:h-[450px]">
+      <div className="pb-12 max-h-[450px] h-[60vh] overflow-y-auto md:h-[450px]">
         <div className="grid gap-6 sm:grid-cols-2">
           <div className="col-span-1 flex flex-col items-center justify-start gap-6">
             <div className="grid w-full items-center gap-y-2">
