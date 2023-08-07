@@ -85,4 +85,12 @@ jobs:
         with:
           name: login-screenshot
           path: login-screenshot.png
+
+      - name: Upload storageState
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: storageState
+          path: e2e/storageState.json
+          retention-days: 2
   
