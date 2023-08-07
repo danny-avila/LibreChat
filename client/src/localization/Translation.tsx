@@ -25,9 +25,6 @@ if (!String.prototype.format) {
 // input: language code in string
 // returns an object of translated strings in the language
 export const getTranslations = (langCode: string) => {
-  if (langCode === 'de') {
-    return German;
-  }
   if (langCode === 'en') {
     return English;
   }
@@ -42,6 +39,9 @@ export const getTranslations = (langCode: string) => {
   }
   if (langCode === 'es') {
     return Spanish;
+  }
+  if (langCode === 'de') {
+    return German;
   }
   // === add conditionals here for additional languages here === //
   return English; // default to English
