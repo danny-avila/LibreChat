@@ -2,8 +2,6 @@ import React from 'react';
 import { useGetUserQuery } from '@librechat/data-provider';
 import { Tabs, TabsList, TabsTrigger } from './Tabs';
 import { cn } from '~/utils';
-import { useRecoilState } from 'recoil';
-import store from '~/store';
 
 const Profile = ({ onClose }) => {
   const { data: user, isLoading, error } = useGetUserQuery();
@@ -11,14 +9,14 @@ const Profile = ({ onClose }) => {
   if (isLoading) return <div>Loading...</div>;
   if (error) return <div>An error occurred: {error.message}</div>;
 
-  const defaultClasses = 'p-2 rounded-md min-w-[75px] font-normal bg-white/[.60] dark:bg-gray-700 text-black text-xs';
+  const defaultClasses = 'p-2 rounded-md min-w-[75px] font-normal text-xs';
   const defaultSelected = cn(defaultClasses, 'font-medium data-[state=active]:text-white text-xs text-white');
 
   return (
     <div className='flex flex-col items-center min-h-screen gap-10'>
       <Tabs value='profile' className={defaultSelected}>
-        <TabsList className="bg-white/[.60] dark:bg-gray-700">
-          <TabsTrigger value='profile'>
+        <TabsList className="bg-blue-600 dark:bg-blue-700 text-white">
+          <TabsTrigger value='profile' className="text-white dark:text-gray-200">
             {'Profile'}
           </TabsTrigger>
         </TabsList>
