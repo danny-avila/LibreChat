@@ -1,11 +1,13 @@
 import { Page, FullConfig, chromium } from '@playwright/test';
+import dotenv from 'dotenv';
+dotenv.config();
 
 type User = { username: string; password: string };
 
 async function login(page: Page, user: User) {
   await page.locator('input[name="email"]').fill(user.username);
   await page.locator('input[name="password"]').fill(user.password);
-  await page.locator('button[type="submit"]').click();
+  await page.getByTestId('login-button').click();
 }
 
 async function authenticate(config: FullConfig, user: User) {
@@ -21,8 +23,11 @@ async function authenticate(config: FullConfig, user: User) {
   }
   await page.goto(baseURL);
   await login(page, user);
-  await page.screenshot({ path: 'screenshot.png' });
-  await page.getByTestId('landing-title').waitFor({ timeout: 60000 }); // due to GH Actions load time
+  const loginPromise = page.getByTestId('landing-title').waitFor({ timeout: 25000 }); // due to GH Actions load time
+  if (process.env.NODE_ENV === 'ci') {
+    await page.screenshot({ path: 'login-screenshot.png' });
+  }
+  await loginPromise;
   console.log('🤖: ✔️  user successfully authenticated');
   // Set localStorage before navigating to the page
   await page.context().addInitScript(() => {

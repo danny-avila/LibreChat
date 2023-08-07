@@ -80,6 +80,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v3
         with:
-          name: screenshot
-          path: screenshot.png
+          name: login-screenshot
+          path: login-screenshot.png
   
