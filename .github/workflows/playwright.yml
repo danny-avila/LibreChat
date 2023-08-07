@@ -65,7 +65,7 @@ jobs:
             ${{ runner.os }}-pw-
 
       - name: Install Playwright Browsers
-        run: npx playwright install --with-deps && npm install -D @playwright/test
+        run: npx playwright install --with-deps chromium && npm install -D @playwright/test@latest
 
       - name: Run Playwright tests
         run: npm run e2e:ci
