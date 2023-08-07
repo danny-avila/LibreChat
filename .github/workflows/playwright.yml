@@ -22,8 +22,10 @@ jobs:
       CHATGPT_TOKEN: user_provided
       MONGO_URI: ${{ secrets.MONGO_URI }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
-      E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
+      E2E_USER_EMAIL: test@gmail.com
+      E2E_USER_PASSWORD: test1234
+      # E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
+      # E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
       CREDS_KEY: ${{ secrets.CREDS_KEY }}
       CREDS_IV: ${{ secrets.CREDS_IV }}

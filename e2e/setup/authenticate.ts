@@ -14,6 +14,7 @@ async function authenticate(config: FullConfig, user: User) {
   console.log('🤖: global setup has been started');
   const { baseURL, storageState } = config.projects[0].use;
   console.log('🤖: using baseURL', baseURL);
+  console.dir(user, { depth: null });
   const browser = await chromium.launch();
   const page = await browser.newPage();
   console.log('🤖: 🗝  authenticating user:', user.username);
