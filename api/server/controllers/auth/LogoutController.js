@@ -7,7 +7,6 @@ const logoutController = async (req, res) => {
     const logout = await logoutUser(req.user._id, refreshToken);
     const { status, message } = logout;
     res.clearCookie('refreshToken');
-    res.setHeader('Authorization', '');
     return res.status(status).send({ message });
   } catch (err) {
     console.log(err);
