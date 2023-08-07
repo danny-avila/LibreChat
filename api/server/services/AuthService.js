@@ -18,16 +18,19 @@ const isProduction = config.isProduction;
  */
 const logoutUser = async (userId, refreshToken) => {
   try {
-    const userFound = await User.findById(userId);
     const hash = crypto.createHash('sha256').update(refreshToken).digest('hex');
 
     // Find the session with the matching user and refreshTokenHash
     const session = await Session.findOne({ user: userId, refreshTokenHash: hash });
     if (session) {
-      await Session.deleteOne({ _id: session._id });
+       try {
+        await Session.deleteOne({ _id: session._id });
+       } catch (deleteErr) {
+         console.error(deleteErr);
+         return { status: 500, message: 'Failed to delete session.' };
+      }
     }
-    await userFound.save();
-
+    
     return { status: 200, message: 'Logout successful' };
   } catch (err) {
     return { status: 500, message: err.message };
