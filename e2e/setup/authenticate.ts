@@ -7,7 +7,7 @@ type User = { username: string; password: string };
 async function login(page: Page, user: User) {
   await page.locator('input[name="email"]').fill(user.username);
   await page.locator('input[name="password"]').fill(user.password);
-  await page.getByTestId('login-button').click();
+  await page.locator('input[name="password"]').press('Enter');
 }
 
 async function authenticate(config: FullConfig, user: User) {
