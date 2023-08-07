@@ -13,7 +13,7 @@ import Logout from './Logout';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { cn } from '~/utils/';
 import DotsIcon from '../svg/DotsIcon';
-import Profile from '../Profile/Profile';
+import Profile from '../ui/Profile';
 import store from '~/store';
 
 export default function NavLinks({ clearSearch, isSearchEnabled }) {
