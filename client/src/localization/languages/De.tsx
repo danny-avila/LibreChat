@@ -196,10 +196,6 @@ export default {
     com_nav_search_placeholder: 'Durchsuche Nachrichten',
     com_nav_setting_general: 'Generell',
     com_nav_language: 'Sprache',
-    com_nav_lang_english: 'Englisch',
-    com_nav_lang_chinese: '中文 [Chinesisch]',
-    com_nav_lang_italian: 'Italienisch',
-    com_nav_lang_brazilian_portuguese: 'Portugiesisch/Brasilianisch',
-    com_nav_lang_spanish: 'Spanisch',
+    com_nav_lang_german: 'Deutsch',
   };
   
