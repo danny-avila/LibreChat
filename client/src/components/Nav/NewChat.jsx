@@ -11,7 +11,6 @@ export default function NewChat() {
   const clickHandler = () => {
     // dispatch(setInputValue(''));
     // dispatch(setQuery(''));
-    if (location.pathname === '/chat/new') return;
     setWidget('');
     newConversation();
     navigate('/chat/new');
