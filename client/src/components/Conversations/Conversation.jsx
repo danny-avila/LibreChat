@@ -111,7 +111,7 @@ export default function Conversation({ conversation, retainView }) {
     } else {
       switchToConversation(conversation);
     }
-    if (location.pathname.substring(1, 5) !== 'chat') setWidget('');
+    setWidget('');
     navigate(`/chat/${conversationId}`);
   };
 
