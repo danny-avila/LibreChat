@@ -30,7 +30,7 @@ test.describe('Navigation suite', () => {
     const modalClearConvos = await page.getByRole('button', { name: 'Clear' }).isVisible();
     expect(modalClearConvos).toBeTruthy();
 
-    const modalTheme = await page.getByRole('combobox').first();
+    const modalTheme = page.getByRole('combobox').first();
     expect(modalTheme.isVisible()).toBeTruthy();
 
     async function changeMode(theme: string) {

@@ -69,7 +69,7 @@ test.describe('Settings suite', () => {
     const { jailbreak, toneStyle } = lastBingSettings;
     expect(jailbreak).toBeTruthy();
     expect(toneStyle).toEqual('balanced');
-    const button = await page.getByRole('button', { name: 'Mode: Sydney' });
+    const button = page.getByRole('button', { name: 'Mode: Sydney' });
     expect(button.count()).toBeTruthy();
   });
 });
