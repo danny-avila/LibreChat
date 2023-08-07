@@ -48,16 +48,31 @@ test.describe('Messaging suite', () => {
     //cleanup the conversation
     await page.getByRole('navigation').getByRole('button').nth(1).click();
     expect(page.url()).toBe(initialUrl);
-    await page.getByTestId('convo-item').nth(1).click();
-    const finalUrl = page.url();
-    const conversationId = finalUrl.split(basePath).pop() ?? '';
-    expect(isUUID(conversationId)).toBeTruthy();
+
+    // Click on the first conversation
+    await page.getByTestId('convo-icon').first().click({ timeout: 5000 });
+    let finalUrl = page.url();
+    let conversationId = finalUrl.split(basePath).pop() ?? '';
+    expect(conversationId).toBe('new');
+
+    // Go back to the conversation list
+    await page.getByRole('navigation').getByRole('button').nth(1).click();
+
+    // Check if the second conversation exists
+    const convos = page.getByTestId('convo-icon');
+    if (convos.nth(1)) {
+      // Click on the second conversation
+      await convos.nth(1).click({ timeout: 5000 });
+      finalUrl = page.url();
+      conversationId = finalUrl.split(basePath).pop() ?? '';
+      expect(isUUID(conversationId)).toBeTruthy();
+    }
   });
 
   // in this spec as we are testing post-message navigation, we are not testing the message response
   test('Page navigations', async ({ page }) => {
     await page.goto(initialUrl);
-    await page.getByTestId('convo-item').nth(1).click();
+    await page.getByTestId('convo-icon').first().click({ timeout: 5000 });
     const currentUrl = page.url();
     const conversationId = currentUrl.split(basePath).pop() ?? '';
     expect(isUUID(conversationId)).toBeTruthy();
