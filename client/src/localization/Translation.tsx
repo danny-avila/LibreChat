@@ -3,6 +3,7 @@ import Chinese from './languages/Zh';
 import Italian from './languages/It';
 import Portuguese from './languages/Br';
 import Spanish from './languages/Es';
+import German from './languages/De';
 // === import additional language files here === //
 
 // New method on String allow using "{\d}" placeholder for
@@ -24,6 +25,9 @@ if (!String.prototype.format) {
 // input: language code in string
 // returns an object of translated strings in the language
 export const getTranslations = (langCode: string) => {
+  if (langCode === 'de') {
+    return German;
+  }
   if (langCode === 'en') {
     return English;
   }

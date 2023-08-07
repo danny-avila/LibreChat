@@ -106,6 +106,7 @@ export const LangSelector = ({
         value={langcode}
       >
         <option value="en">{localize(lang, 'com_nav_lang_english')}</option>
+        <option value="de">{localize(lang, 'com_nav_lang_german')}</option>
         <option value="cn">{localize(lang, 'com_nav_lang_chinese')}</option>
         <option value="it">{localize(lang, 'com_nav_lang_italian')}</option>
         <option value="br">{localize(lang, 'com_nav_lang_brazilian_portuguese')}</option>
