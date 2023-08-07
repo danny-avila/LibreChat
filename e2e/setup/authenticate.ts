@@ -21,7 +21,8 @@ async function authenticate(config: FullConfig, user: User) {
   }
   await page.goto(baseURL);
   await login(page, user);
-  await page.getByTestId('landing-title').waitFor();
+  await page.screenshot({ path: 'screenshot.png' });
+  await page.getByTestId('landing-title').waitFor({ timeout: 60000 }); // due to GH Actions load time
   console.log('🤖: ✔️  user successfully authenticated');
   // Set localStorage before navigating to the page
   await page.context().addInitScript(() => {
