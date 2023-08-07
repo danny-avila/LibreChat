@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NODE_ENV: ci
+      CI: true
       BINGAI_TOKEN: user_provided
       CHATGPT_TOKEN: user_provided
       MONGO_URI: ${{ secrets.MONGO_URI }}
