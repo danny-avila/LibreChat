@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 import path from 'path';
+const absolutePath = path.resolve(process.cwd(), 'api/server/index.js');
+import dotenv from 'dotenv';
+dotenv.config();
 
 export default defineConfig({
   globalSetup: require.resolve('./setup/global-setup'),
@@ -49,10 +52,14 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'node ../api/server/index.js',
+    command: `node ${absolutePath}`,
     port: 3080,
     // url: 'http://localhost:3080',
     timeout: 30_000,
     reuseExistingServer: true,
+    env: {
+      ...process.env,
+      NODE_ENV: 'production',
+    },
   },
 });
