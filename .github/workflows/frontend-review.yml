@@ -1,16 +1,19 @@
 #github action to run unit tests for frontend with jest
 name: Frontend Unit Tests
 on:
-  push:
-    branches: 
-      - main
-      - dev
-      - release/*
+  # push:
+  #   branches: 
+  #     - main
+  #     - dev
+  #     - release/*
   pull_request:
     branches: 
       - main
       - dev
       - release/*
+    paths:
+      - 'client/**'
+      - 'packages/**'
 jobs:
   tests_frontend:
     name: Run frontend unit tests
