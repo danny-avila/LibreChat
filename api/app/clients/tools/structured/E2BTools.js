@@ -58,7 +58,7 @@ class RunCommand extends StructuredTool {
     this.name = 'RunCommand';
     this.url = fields.E2B_SERVER_URL || getServerURL();
     this.description =
-      'Runs given terminal command in requested environment. To be used in tandem with WriteFile and ReadFile for Code interpretation and execution.';
+      'This plugin allows interactive code execution by allowing terminal commands to be ran in the requested environment. To be used in tandem with WriteFile and ReadFile for Code interpretation and execution.';
     this.headers = headers;
     this.headers['openai-conversation-id'] = fields.conversationId;
     this.schema = z.object({
@@ -86,7 +86,7 @@ class ReadFile extends StructuredTool {
     this.name = 'ReadFile';
     this.url = fields.E2B_SERVER_URL || getServerURL();
     this.description =
-      'Reads a file from requested environment. To be used in tandem with WriteFile and RunCommand for Code interpretation and execution.';
+      'This plugin allows reading a file from requested environment. To be used in tandem with WriteFile and RunCommand for Code interpretation and execution.';
     this.headers = headers;
     this.headers['openai-conversation-id'] = fields.conversationId;
     this.schema = z.object({
@@ -109,7 +109,7 @@ class WriteFile extends StructuredTool {
     this.url = fields.E2B_SERVER_URL || getServerURL();
     this.model = fields.model;
     this.description =
-      'Writes to a file in requested environment. To be used in tandem with ReadFile and RunCommand for Code interpretation and execution.';
+      'This plugin allows interactive code execution by first writing to a file in the requested environment. To be used in tandem with ReadFile and RunCommand for Code interpretation and execution.';
     this.headers = headers;
     this.headers['openai-conversation-id'] = fields.conversationId;
     this.schema = z.object({
