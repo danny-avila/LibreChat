@@ -20,8 +20,10 @@ const {
   AzureCognitiveSearch,
   StructuredACS,
   E2BTools,
+  CodeSherpaTools,
 } = require('../');
 const { loadSpecs } = require('./loadSpecs');
+const { loadToolSuite } = require('./loadToolSuite');
 
 const getOpenAIKey = async (options, user) => {
   let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
@@ -100,25 +102,29 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
       if (!functions) {
         return null;
       }
-      const suite = [];
-      let serverUrl = process.env.E2B_SERVER_URL;
 
-      if (!serverUrl) {
-        serverUrl = await getUserPluginAuthValue(user, 'E2B_SERVER_URL');
+      return await loadToolSuite({
+        pluginKey: 'e2b_code_interpreter',
+        tools: E2BTools,
+        user,
+        model,
+        openAIApiKey,
+        options,
+      });
+    },
+    codesherpa: async () => {
+      if (!functions) {
+        return null;
       }
 
-      for (const tool of E2BTools) {
-        suite.push(
-          new tool({
-            E2B_SERVER_URL: serverUrl,
-            conversationId: options.conversationId,
-            model,
-            openAIApiKey,
-          }),
-        );
-      }
-
-      return suite;
+      return await loadToolSuite({
+        pluginKey: 'codesherpa',
+        tools: CodeSherpaTools,
+        user,
+        model,
+        openAIApiKey,
+        options,
+      });
     },
     'web-browser': async () => {
       // let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;

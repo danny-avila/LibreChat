@@ -2,7 +2,7 @@ const OpenAIClient = require('./OpenAIClient');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { CallbackManager } = require('langchain/callbacks');
 const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents/');
-const { findMessageContent } = require('../../utils');
+// const { findMessageContent } = require('../../utils');
 const { loadTools } = require('./tools/util');
 const { SelfReflectionTool } = require('./tools/');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
@@ -298,12 +298,12 @@ Only respond with your conversational reply to the following User Message:
         console.error(err);
         errorMessage = err.message;
         let content = '';
-        try {
-          content = findMessageContent(message);
-        } catch (error) {
-          console.error('Encountered an error while attempting to respond. Error: ', error);
-          break;
-        }
+        // try {
+        //   content = findMessageContent(message);
+        // } catch (error) {
+        //   console.error('Encountered an error while attempting to respond. Error: ', error);
+        //   break;
+        // }
         if (content) {
           errorMessage = content;
           break;
