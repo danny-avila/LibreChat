@@ -108,11 +108,6 @@ const AuthContextProvider = ({
   };
 
   const logout = () => {
-    document.cookie.split(';').forEach((c) => {
-      document.cookie = c
-        .replace(/^ +/, '')
-        .replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
-    });
     logoutUser.mutate(undefined, {
       onSuccess: () => {
         setUserContext({
@@ -178,12 +173,7 @@ const AuthContextProvider = ({
   
     const handleLogout = () => {
       console.log('logout event received');
-      setUserContext({
-        token: undefined,
-        isAuthenticated: false,
-        user: undefined,
-        redirect: '/login',
-      });
+      logout();
     };
 
     window.addEventListener('tokenUpdated', handleTokenUpdate);
