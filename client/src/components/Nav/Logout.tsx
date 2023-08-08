@@ -8,13 +8,7 @@ const Logout = forwardRef(() => {
   const localize = useLocalize();
 
   const handleLogout = () => {
-    logout()
-      .then(() => {
-        window.location.reload();
-      })
-      .catch((error) => {
-        console.error('Logout failed:', error);
-      });
+    logout();
   };
 
   return (
