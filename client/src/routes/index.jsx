@@ -61,7 +61,7 @@ export const router = createBrowserRouter([
             element: <Homepage />
           },
           {
-            path: 'profile',
+            path: 'profile/:userId?',
             element: <Profile />
           }
         ]

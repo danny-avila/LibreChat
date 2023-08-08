@@ -205,7 +205,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const openAskMeAnythingHandler = openWidgetHandler('ama');
   const openLeaderboardHandler = () => navigate('/leaderboard');
   const openHomepageHandler = () => navigate('/home');
-  const openProfileHandler = () => navigate('/profile');
+  const openProfileHandler = () => navigate(`/profile/${user.id}`);
 
   useEffect(() => {
     if (user) setRefLink(mode === 'dev' ? `http://localhost:3090/register/${user.id}` : `chat.aitok.us/register/${user.id}`);
