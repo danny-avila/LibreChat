@@ -173,7 +173,12 @@ const AuthContextProvider = ({
   
     const handleLogout = () => {
       console.log('logout event received');
-      logout();
+      setUserContext({
+        token: undefined,
+        isAuthenticated: false,
+        user: undefined,
+        redirect: '/login',
+      });
     };
 
     window.addEventListener('tokenUpdated', handleTokenUpdate);
