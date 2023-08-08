@@ -32,7 +32,7 @@
   },
   {
     "name": "E2B Code Interpreter",
-    "pluginKey": "code_interpreter",
+    "pluginKey": "e2b_code_interpreter",
     "description": "Sandboxed cloud environment where you can run any process, use filesystem and access the internet",
     "icon": "https://raw.githubusercontent.com/e2b-dev/chatgpt-plugin/main/logo.png",
     "authConfig": [
