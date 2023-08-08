@@ -5,7 +5,7 @@ test.describe('Landing suite', () => {
   test('Landing title', async ({ page }) => {
     await page.goto('http://localhost:3080/');
     const pageTitle = await page.textContent('#landing-title');
-    expect(pageTitle.length).toBeGreaterThan(0);
+    expect(pageTitle?.length).toBeGreaterThan(0);
   });
 
   test('Create Conversation', async ({ page }) => {
@@ -25,7 +25,7 @@ test.describe('Landing suite', () => {
     await page.waitForSelector('nav > div');
     await page.waitForSelector('nav > div > div > svg', { state: 'detached' });
 
-    let beforeAdding = (await getItems()).length;
+    const beforeAdding = (await getItems()).length;
 
     const input = await page.locator('form').getByRole('textbox');
     await input.click();
@@ -36,7 +36,7 @@ test.describe('Landing suite', () => {
 
     // Wait for the message to be sent
     await page.waitForTimeout(3500);
-    let afterAdding = (await getItems()).length;
+    const afterAdding = (await getItems()).length;
 
     expect(afterAdding).toBeGreaterThanOrEqual(beforeAdding);
   });

@@ -18,7 +18,7 @@ test.describe('Navigation suite', () => {
     expect(modal).toBeTruthy();
 
     const modalTitle = await page.getByRole('heading', { name: 'Settings' }).textContent();
-    expect(modalTitle.length).toBeGreaterThan(0);
+    expect(modalTitle?.length).toBeGreaterThan(0);
     expect(modalTitle).toEqual('Settings');
 
     const modalTabList = await page.getByRole('tablist', { name: 'Settings' }).isVisible();
@@ -30,10 +30,10 @@ test.describe('Navigation suite', () => {
     const modalClearConvos = await page.getByRole('button', { name: 'Clear' }).isVisible();
     expect(modalClearConvos).toBeTruthy();
 
-    const modalTheme = await page.getByRole('combobox');
+    const modalTheme = page.getByRole('combobox').first();
     expect(modalTheme.isVisible()).toBeTruthy();
 
-    async function changeMode(theme) {
+    async function changeMode(theme: string) {
       // change the value to 'dark' and 'light' and see if the theme changes
       await modalTheme.selectOption({ label: theme });
       await page.waitForTimeout(1000);
