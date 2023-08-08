@@ -35,10 +35,10 @@ function Profile() {
             {user?.username}
           </div>
           <div className='flex flex-row gap-y-6 gap-x-12'>
-            <button>
+            <button onClick={() => setTabValue('following')}>
               Following
             </button>
-            <button>
+            <button onClick={() => setTabValue('followers')}>
               Followers
             </button>
           </div>
@@ -51,11 +51,14 @@ function Profile() {
             <TabsTrigger value='likes' className="text-gray-500 dark:text-gray-200">
               {'Likes'}
             </TabsTrigger>
-            <TabsTrigger value='Tab-1' className="text-gray-500 dark:text-gray-200">
-              {'Tab-1'}
+            <TabsTrigger value='conversations' className="text-gray-500 dark:text-gray-200">
+              {'My Conversations'}
             </TabsTrigger>
-            <TabsTrigger value='Tab-2' className="text-gray-500 dark:text-gray-200">
-              {'Tab-2'}
+            <TabsTrigger value='following' className="text-gray-500 dark:text-gray-200">
+              {'Following'}
+            </TabsTrigger>
+            <TabsTrigger value='followers' className="text-gray-500 dark:text-gray-200">
+              {'Followers'}
             </TabsTrigger>
           </TabsList>
         </Tabs>
