@@ -9,6 +9,33 @@ function isUUID(uuid: string) {
   return regex.test(uuid);
 }
 
+test.beforeAll(async ({ browser }) => {
+  console.log('🤖: clearing conversations before messages tests.');
+  let page = await browser.newPage();
+  await page.goto(initialUrl);
+  await page.getByRole('button', { name: 'test' }).click();
+  await page.getByText('Settings').click();
+  await page.getByTestId('clear-convos-initial').click();
+  await page.getByTestId('clear-convos-confirm').click();
+  await page.waitForSelector('[data-testid="convo-icon"]', { state: 'detached' });
+  await page.getByRole('button', { name: 'Close' }).click();
+  await page.close();
+  page = await browser.newPage();
+});
+
+test.afterAll(async ({ browser }) => {
+  console.log('🤖: clearing conversations after messages tests.');
+  const page = await browser.newPage();
+  await page.goto(initialUrl);
+  await page.getByRole('button', { name: 'test' }).click();
+  await page.getByText('Settings').click();
+  await page.getByTestId('clear-convos-initial').click();
+  await page.getByTestId('clear-convos-confirm').click();
+  await page.waitForSelector('[data-testid="convo-icon"]', { state: 'detached' });
+  await page.getByRole('button', { name: 'Close' }).click();
+  await page.close();
+});
+
 test.describe('Messaging suite', () => {
   test('textbox should be focused after receiving message & test expected navigation', async ({
     page,
@@ -16,8 +43,6 @@ test.describe('Messaging suite', () => {
     test.setTimeout(120000);
     const message = 'hi';
     const endpoint = endpoints[1];
-    const initialUrl = 'http://localhost:3080/chat/new';
-
     await page.goto(initialUrl);
     await page.locator('#new-conversation-menu').click();
     await page.locator(`#${endpoint}`).click();
