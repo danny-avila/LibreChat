@@ -3,16 +3,42 @@ import { expect, test } from '@playwright/test';
 test.describe('Settings suite', () => {
   test('Last Bing settings', async ({ page }) => {
     await page.goto('http://localhost:3080/');
-    const newTopicButton = await page.getByRole('button', { name: 'New Topic' });
+    await page.evaluate(() =>
+      window.localStorage.setItem(
+        'lastConversationSetup',
+        JSON.stringify({
+          conversationId: 'new',
+          title: 'New Chat',
+          endpoint: 'bingAI',
+          createdAt: '',
+          updatedAt: '',
+          jailbreak: false,
+          context: null,
+          systemMessage: null,
+          toneStyle: 'creative',
+          jailbreakConversationId: null,
+          conversationSignature: null,
+          clientId: null,
+          invocationId: 1,
+        }),
+      ),
+    );
+    await page.goto('http://localhost:3080/');
+
+    const initialLocalStorage = await page.evaluate(() => window.localStorage);
+    const lastConvoSetup = JSON.parse(initialLocalStorage.lastConversationSetup);
+    expect(lastConvoSetup.endpoint).toEqual('bingAI');
+
+    const newTopicButton = page.getByTestId('new-conversation-menu');
     await newTopicButton.click();
 
     // includes the icon + endpoint names in obj property
-    const endpointItem = await page.getByRole('menuitemradio', { name: 'BingAI Bing' });
+    const endpointItem = page.getByTestId('endpoint-item-bingAI');
     await endpointItem.click();
 
     await page.getByTestId('text-input').click();
-    const button1 = await page.getByRole('button', { name: 'Mode: BingAI' });
-    const button2 = await page.getByRole('button', { name: 'Mode: Sydney' });
+    const button1 = page.getByRole('button', { name: 'Mode: BingAI' });
+    const button2 = page.getByRole('button', { name: 'Mode: Sydney' });
 
     try {
       await button1.click({ timeout: 100 });
@@ -43,7 +69,7 @@ test.describe('Settings suite', () => {
     const { jailbreak, toneStyle } = lastBingSettings;
     expect(jailbreak).toBeTruthy();
     expect(toneStyle).toEqual('balanced');
-    const button = await page.getByRole('button', { name: 'Mode: Sydney' });
+    const button = page.getByRole('button', { name: 'Mode: Sydney' });
     expect(button.count()).toBeTruthy();
   });
 });

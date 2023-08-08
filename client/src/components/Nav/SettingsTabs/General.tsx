@@ -65,11 +65,19 @@ export const ClearChatsButton = ({
         onClick={onClick}
       > */}
         {confirmClear ? (
-          <div className="flex w-full items-center justify-center gap-2" id="clearConvosTxt">
+          <div
+            className="flex w-full items-center justify-center gap-2"
+            id="clearConvosTxt"
+            data-testid="clear-convos-confirm"
+          >
             <CheckIcon className="h-5 w-5" /> {localize(lang, 'com_nav_confirm_clear')}
           </div>
         ) : (
-          <div className="flex w-full items-center justify-center gap-2" id="clearConvosTxt">
+          <div
+            className="flex w-full items-center justify-center gap-2"
+            id="clearConvosTxt"
+            data-testid="clear-convos-initial"
+          >
             {localize(lang, 'com_nav_clear')}
           </div>
         )}

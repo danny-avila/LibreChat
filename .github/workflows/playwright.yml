@@ -1,0 +1,81 @@
+name: Playwright Tests
+on:
+  pull_request:
+    branches: 
+      - main
+      - dev
+      - release/*
+    paths:
+      - 'api/**'
+      - 'client/**'
+      - 'packages/**'
+      - 'e2e/**'
+jobs:
+  tests_e2e:
+    name: Run Playwright tests
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: ci
+      CI: true
+      SEARCH: false
+      BINGAI_TOKEN: user_provided
+      CHATGPT_TOKEN: user_provided
+      MONGO_URI: ${{ secrets.MONGO_URI }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
+      E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      CREDS_KEY: ${{ secrets.CREDS_KEY }}
+      CREDS_IV: ${{ secrets.CREDS_IV }}
+      DOMAIN_CLIENT: ${{ secrets.DOMAIN_CLIENT }}
+      DOMAIN_SERVER: ${{ secrets.DOMAIN_SERVER }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: Cache Node.js modules
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install global dependencies
+        run: npm ci
+
+      - name: Remove sharp dependency
+        run: rm -rf node_modules/sharp
+
+      - name: Install sharp with linux dependencies
+        run: cd api && SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install --arch=x64 --platform=linux --libc=glibc sharp
+
+      - name: Build Client
+        run: npm run frontend
+
+      - name: Cache Playwright installations
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/ms-playwright/
+          key: ${{ runner.os }}-pw-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-pw-
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium && npm install -D @playwright/test@latest
+
+      - name: Run Playwright tests
+        run: npm run e2e:ci
+
+      - name: Upload playwright report
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 30
+  
