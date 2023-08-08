@@ -21,8 +21,12 @@ axios.interceptors.response.use(
   (response) => response,
   (error) => {
     const originalRequest = error.config;
-    if (originalRequest.url.includes('/api/auth/refresh')) {
-      window.dispatchEvent(new CustomEvent('logout'));
+    if (error.response.status === 401 && originalRequest.url.includes('/api/auth/refresh')) {
+      processQueue(error);
+      isRefreshing = false;
+      if (error.response.data.error_code) {
+        window.dispatchEvent(new CustomEvent('logout'));
+      }
       return Promise.reject(error);
     }
     
@@ -51,9 +55,6 @@ axios.interceptors.response.use(
             resolve(axios(originalRequest));
           })
           .catch((err) => {
-            if (error.response.status === 401) {
-              window.dispatchEvent(new CustomEvent('logout'));
-            }
             processQueue(err, null);
             reject(err);
           })
