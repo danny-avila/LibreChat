@@ -24,9 +24,7 @@ axios.interceptors.response.use(
     if (error.response.status === 401 && originalRequest.url.includes('/api/auth/refresh')) {
       processQueue(error);
       isRefreshing = false;
-      if (error.response.data.error_code) {
-        window.dispatchEvent(new CustomEvent('logout'));
-      }
+      window.dispatchEvent(new CustomEvent('logout'));
       return Promise.reject(error);
     }
     
