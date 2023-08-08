@@ -205,12 +205,12 @@ Only respond with your conversational reply to the following User Message:
     // load tools
     for (const tool of this.options.tools) {
       const validTool = this.availableTools[tool];
+      const plugin = await validTool();
 
-      if (typeof tool.slice === 'function') {
-        const plugins = await validTool();
-        this.tools = [...this.tools, ...plugins];
-      } else if (validTool) {
-        this.tools.push(await validTool());
+      if (Array.isArray(plugin)) {
+        this.tools = [...this.tools, ...plugin];
+      } else if (plugin) {
+        this.tools.push(plugin);
       }
     }
 

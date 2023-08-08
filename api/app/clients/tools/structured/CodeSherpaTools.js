@@ -1,5 +1,4 @@
 const { StructuredTool } = require('langchain/tools');
-// const fs = require('fs');
 const axios = require('axios');
 const { z } = require('zod');
 
@@ -20,23 +19,30 @@ class RunCode extends StructuredTool {
     super();
     this.name = 'RunCode';
     this.url = fields.CODESHERPA_SERVER_URL || getServerURL();
-    // this.description = 'Use this plugin to run code with the following parameters\ncode: your code\nlanguage: either Python, Rust, or C++.';
-    // this.description = 'CodeSherpa is a tool that allows you to execute Python code in a REPL session, maintaining the state between requests, and returns the output or error message.';
-    // this.description = `A plugin for interactive code execution, and shell command execution.\n\n`/repl` endpoint\n - Execute Python code interactively for general programming, tasks, data analysis, visualizations, and more.\n - Pre-installed packages: matplotlib, seaborn, pandas, numpy, scipy, openpyxl.If you need to install additional packages, use the `pip install` command.\n - When a user asks for visualization, save the plot to `static/images/` directory, and embed it in the response using `http://localhost:3333/static/images/` URL.\n - Always save alls media files created to `static/images/` directory, and embed them in responses using `http://localhost:3333/static/images/` URL.\n\n `/command` endpoint\n - Run terminal commands and interact with the filesystem, run scripts, and more.\n - Install python packages using `pip install` command.\n - Always embed media files created or uploaded using `http://localhost:3333/static/images/` URL in responses. \n - Access user-uploaded files in`static/uploads/` directory using `http://localhost:3333/static/uploads/` URL.\n\n File management\n - Provide 'Upload file' link for users: http://localhost:3333/upload\n - Access user-uploaded files in `static/uploads/`\n\n`
+    this.description = `This plugin allows interactive code execution.
+
+- Always use this plugin when you are asked to write code so you can test and execute it in a safe environment.
+- Python has pre-installed packages: matplotlib, seaborn, pandas, numpy, scipy, openpyxl. Additional ones can be installed via pip with RunCommand.
+- When a user asks for visualization, save the plot to \`static/images/\` directory, and embed it in the response using \`${this.url}/static/images/\` URL.
+- Always save all media files created to \`static/images/\` directory, and embed them in responses using \`${this.url}/static/images/\` URL.
+`;
     this.headers = headers;
     this.schema = z.object({
-      code: z.string().describe('The code to be executed in the REPL-like environment.'),
-      language: z.string().describe('The programming language of the code to be executed.'),
+      code: z.string().optional().describe('The code to be executed in the REPL-like environment.'),
+      language: z
+        .string()
+        .optional()
+        .describe('The programming language of the code to be executed.'),
     });
   }
 
-  async _call(data) {
-    console.log('<--------------- Running Code --------------->', data);
+  async _call({ code, language = 'python' }) {
+    console.log('<--------------- Running Code --------------->', { code, language });
     const response = await axios({
       url: `${this.url}/repl`,
       method: 'post',
       headers: this.headers,
-      data,
+      data: { code, language },
     });
     console.log('<--------------- Sucessfully ran Code --------------->', response.data);
     return response.data.result;
@@ -48,8 +54,10 @@ class RunCommand extends StructuredTool {
     super();
     this.name = 'RunCommand';
     this.url = fields.CODESHERPA_SERVER_URL || getServerURL();
-    this.description =
-      'Runs the provided terminal command and returns the output or error message.';
+    this.description = `A plugin for interactive shell command execution.
+- Run terminal commands and interact with the filesystem, run scripts, and more.
+- Install python packages using \`pip install\` command.
+- Always embed media files created or uploaded using \`${this.url}/static/images/\` URL in responses.`;
     this.headers = headers;
     this.schema = z.object({
       command: z.string().describe('The terminal command to be executed.'),
@@ -63,7 +71,7 @@ class RunCommand extends StructuredTool {
       headers: this.headers,
       data,
     });
-    return response.data;
+    return response.data.result;
   }
 }
 

@@ -44,8 +44,21 @@
     ]
   },
   {
-    "name": "CodeSherpa",
+    "name": "CodeSherpa v1",
     "pluginKey": "codesherpa",
+    "description": "A REPL for your chat",
+    "icon": "https://github.com/iamgreggarcia/codesherpa/blob/main/localserver/_logo.png",
+    "authConfig": [
+      {
+        "authField": "CODESHERPA_SERVER_URL",
+        "label": "CodeSherpa Server URL",
+        "description": "Hosted endpoint must be provided"
+      }
+    ]
+  },
+  {
+    "name": "CodeSherpa v2",
+    "pluginKey": "codesherpa_tools",
     "description": "A REPL for your chat",
     "icon": "https://github.com/iamgreggarcia/codesherpa/blob/main/localserver/_logo.png",
     "authConfig": [

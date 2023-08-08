@@ -11,6 +11,7 @@ const CodeInterpreterTools = require('./structured/CodeInterpreter');
 const AzureCognitiveSearch = require('./AzureCognitiveSearch');
 const StructuredACS = require('./structured/AzureCognitiveSearch');
 const E2BTools = require('./structured/E2BTools');
+const CodeSherpa = require('./structured/CodeSherpa');
 const CodeSherpaTools = require('./structured/CodeSherpaTools');
 const availableTools = require('./manifest.json');
 const CodeInterpreter = require('./CodeInterpreter');
@@ -30,6 +31,7 @@ module.exports = {
   AzureCognitiveSearch,
   StructuredACS,
   E2BTools,
+  CodeSherpa,
   CodeSherpaTools,
   CodeInterpreter,
 };

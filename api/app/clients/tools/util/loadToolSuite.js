@@ -1,7 +1,7 @@
 const { getUserPluginAuthValue } = require('../../../../server/services/PluginService');
 const { availableTools } = require('../');
 
-const loadToolSuite = async ({ pluginKey, tools, user, model, openAIApiKey, options }) => {
+const loadToolSuite = async ({ pluginKey, tools, user, options }) => {
   const authConfig = availableTools.find((tool) => tool.pluginKey === pluginKey).authConfig;
   const suite = [];
   const authValues = {};
@@ -19,8 +19,6 @@ const loadToolSuite = async ({ pluginKey, tools, user, model, openAIApiKey, opti
       new tool({
         ...authValues,
         ...options,
-        model,
-        openAIApiKey,
       }),
     );
   }
