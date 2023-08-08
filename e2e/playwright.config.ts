@@ -62,6 +62,7 @@ export default defineConfig({
     env: {
       ...process.env,
       NODE_ENV: 'development',
+      SESSION_EXPIRY: '86400000',
     },
   },
 });
