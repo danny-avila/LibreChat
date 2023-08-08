@@ -10,6 +10,7 @@ const SelfReflectionTool = require('./SelfReflection');
 const CodeInterpreterTools = require('./structured/CodeInterpreter');
 const AzureCognitiveSearch = require('./AzureCognitiveSearch');
 const StructuredACS = require('./structured/AzureCognitiveSearch');
+const ChatTool = require('./structured/ChatTool');
 const E2BTools = require('./structured/E2BTools');
 const CodeSherpa = require('./structured/CodeSherpa');
 const CodeSherpaTools = require('./structured/CodeSherpaTools');
@@ -31,6 +32,7 @@ module.exports = {
   AzureCognitiveSearch,
   StructuredACS,
   E2BTools,
+  ChatTool,
   CodeSherpa,
   CodeSherpaTools,
   CodeInterpreter,

@@ -214,17 +214,17 @@ Only respond with your conversational reply to the following User Message:
       }
     }
 
+    if (this.tools.length > 0 && !this.functionsAgent) {
+      this.tools.push(new SelfReflectionTool({ message, isGpt3: false }));
+    } else if (this.tools.length === 0) {
+      return;
+    }
+
     if (this.options.debug) {
       console.debug('Requested Tools');
       console.debug(this.options.tools);
       console.debug('Loaded Tools');
       console.debug(this.tools.map((tool) => tool.name));
-    }
-
-    if (this.tools.length > 0 && !this.functionsAgent) {
-      this.tools.push(new SelfReflectionTool({ message, isGpt3: false }));
-    } else if (this.tools.length === 0) {
-      return;
     }
 
     const handleAction = (action, callback = null) => {
