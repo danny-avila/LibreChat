@@ -83,14 +83,20 @@ sudo apt upgrade
 sudo reboot
 ```
 
-Optional but recommended: you can run the following command so you don't have to prepend `sudo` to docker commands:
+Recommended: you should make sure the created user is added to the docker group for seamless use of commands:
 ```bash
-sudo usermod -aG docker <yourusername>
+sudo usermod -aG docker $USER
+```
+
+You can apply this change immediately by running the following; otherwise, reboot as before.
+```bash
+# either use this or reboot or switch to the created user
+newgrp docker
 ```
 
 After rebooting, if using the browser droplet console, you can click reload to get back into the console.
 
-You should once again switch to the user you setup.
+Any time you reboot with `sudo reboot`, you should switch to the user you setup.
 
 ```bash
 su - <yourusername>
@@ -147,11 +153,20 @@ nano .env
 - [Tokens/Apis/etc](../install/apis_and_tokens.md)
 - [User/Auth System](../install/user_auth_system.md)
 
-### 3. After all of the above, you may now run the installation/update script
+### 3. After all of the above, start docker, then run the installation/update script
+
+```bash
+sudo systemctl start docker
+# check if docker is running
+docker info
+```
+
+```bash
+```
 
 
 
-## Once the app is running, you can access it at http://yourserverip:3080
+## Once the app is running, you can access it at http://yourserverip
 
 It is safe to close the terminal -- the docker app will continue to run.
 

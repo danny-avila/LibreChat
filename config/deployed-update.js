@@ -34,11 +34,11 @@ async function validateDockerRunning() {
   execSync(downCommand, { stdio: 'inherit' });
 
   console.purple('Pulling latest LibreChat images...');
-  const pullCommand = 'sudo docker-compose -f ./deploy-compose.yml pull';
+  const pullCommand = 'sudo docker-compose -f ./deploy-compose.yml pull api';
   console.orange(pullCommand);
   execSync(pullCommand, { stdio: 'inherit' });
 
-  let startCommand = 'sudo docker-compose -f ./deploy-compose.yml up';
+  let startCommand = 'sudo docker-compose -f ./deploy-compose.yml up -d';
   console.green('Your LibreChat app is now up to date! Start the app with the following command:');
   console.purple(startCommand);
   console.orange(
