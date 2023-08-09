@@ -25,7 +25,6 @@ export enum QueryKeys {
   recentConversations = 'recentConversations',
   hottestConversations = 'hottestConversations',
   numOfReferrals = 'numOfReferrals',
-  userId = 'userId'
 }
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
@@ -385,14 +384,3 @@ export const useGetLeaderboardQuery = (): any => {
     refetchOnMount: false
   });
 }
-
-export const useGetUserByIdQuery = (
-  userId: string | undefined
-): QueryObserverResult<t.TUser> => {
-  return useQuery<t.TUser>([QueryKeys.userId], () => dataService.getUserById(userId), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    retry: false
-  });
-};
