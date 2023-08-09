@@ -65,6 +65,22 @@ const useSpeechRecognition = (ask) => {
     }
   };
 
+  const handleKeyDown = (event) => {
+    if (e.shiftKey && e.altKey && e.key === 'L') {
+      if (isSpeechSupported) {
+        toggleListening();
+      }
+    }
+  };
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isListening]);
+  
   return { isSpeechSupported, isListening, text, toggleListening };
 };
 
