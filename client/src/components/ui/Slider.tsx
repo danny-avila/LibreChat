@@ -1,11 +1,8 @@
-'use client';
-
 import * as React from 'react';
 import * as SliderPrimitive from '@radix-ui/react-slider';
 import { useDoubleClick } from '@zattoo/use-double-click';
+import type { clickEvent } from '@zattoo/use-double-click';
 import { cn } from '../../utils';
-
-type clickEvent = (event: React.MouseEvent<HTMLButtonElement>) => void;
 
 interface SliderProps extends React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root> {
   doubleClickHandler?: clickEvent;
@@ -23,7 +20,7 @@ const Slider = React.forwardRef<React.ElementRef<typeof SliderPrimitive.Root>, S
       </SliderPrimitive.Track>
       <SliderPrimitive.Thumb
         onClick={
-          useDoubleClick(doubleClickHandler) ??
+          useDoubleClick(doubleClickHandler as clickEvent) ??
           (() => {
             return;
           })
