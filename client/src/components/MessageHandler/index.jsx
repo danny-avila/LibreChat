@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import { SSE, createPayload } from 'librechat-data-provider';
 import store from '~/store';
+import useSpeechSynthesis from '../Messages/SpeechSynthesis';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 export default function MessageHandler() {
@@ -11,6 +12,7 @@ export default function MessageHandler() {
   const setConversation = useSetRecoilState(store.conversation);
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
   const { token } = useAuthContext();
+  const { synthesizeSpeech } = useSpeechSynthesis();
 
   const { refreshConversations } = store.useConversations();
 
@@ -207,6 +209,9 @@ export default function MessageHandler() {
       if (data.final) {
         finalHandler(data, { ...submission, message });
         console.log('final', data);
+        if (data.responseMessage.text) {
+          synthesizeSpeech(data.responseMessage.text);
+        }
       }
       if (data.created) {
         message = {
