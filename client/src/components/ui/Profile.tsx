@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
-import { useGetUserQuery } from '@librechat/data-provider';
 import { Tabs, TabsList, TabsTrigger } from './Tabs';
 import { cn } from '~/utils';
-import { useAuthContext } from '~/hooks/AuthContext';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
+import { useParams } from 'react-router-dom';
+import { useGetUserByIdQuery } from '@librechat/data-provider';
 
 function Profile() {
   const [tabValue, setTabValue] = useState<string>('likes');
 
-  const { user } = useAuthContext();
+  const { userId } = useParams();
+  const { data: user } = useGetUserByIdQuery(userId);
   useDocumentTitle('Profile');
 
   const defaultClasses = 'p-2 rounded-md min-w-[75px] font-normal text-xs';
@@ -52,7 +53,7 @@ function Profile() {
               {'Likes'}
             </TabsTrigger>
             <TabsTrigger value='conversations' className="text-gray-500 dark:text-gray-200">
-              {'My Conversations'}
+              {'Conversations'}
             </TabsTrigger>
             <TabsTrigger value='following' className="text-gray-500 dark:text-gray-200">
               {'Following'}
@@ -67,22 +68,6 @@ function Profile() {
         Display tab content here...
       </div>
     </div>
-    // <div className='flex flex-col items-center min-h-screen gap-10'>
-    //   <Tabs value='profile' className={defaultSelected}>
-    //     <TabsList className="bg-blue-600 dark:bg-blue-700 text-white">
-    //       <TabsTrigger value='profile' className="text-white dark:text-gray-200">
-    //         {'Profile'}
-    //       </TabsTrigger>
-    //     </TabsList>
-    //   </Tabs>
-    //   <div className="flex h-full flex-col items-center text-sm dark:bg-gray-800">
-    //     <div className="w-full px-6 text-center text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
-    //       <div>{`Username: ${user.username}`}</div>
-    //       <div>{`Email: ${user.email}`}</div>
-    //       <div>{`Fullname: ${user.fullname}`}</div>
-    //     </div>
-    //   </div>
-    // </div>
   );
 }
 
