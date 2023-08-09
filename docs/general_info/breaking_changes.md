@@ -1,5 +1,16 @@
 # ⚠️ **Breaking Changes** ⚠️
 
+## v0.5.7
+Now, we have an easier and safer way to update LibreChat. You can simply run `npm run update` from the project directory for a clean update.
+If you want to skip the prompt you can use
+
+for a docker install:
+- `npm run update:docker`
+
+for a local install:
+- `npm run update:local`
+
+
 ## v0.5.5
 Some users have reported an error after updating their docker containers.
 
