@@ -60,7 +60,9 @@ const useSpeechRecognition = (ask) => {
     if (event) {
       event.preventDefault();
     }
-    setIsListening((prevState) => !prevState);
+    if (isSpeechSupported) {
+      setIsListening((prevState) => !prevState);
+    }
   };
 
   return { isSpeechSupported, isListening, text, toggleListening };
