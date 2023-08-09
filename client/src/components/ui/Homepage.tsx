@@ -28,10 +28,10 @@ export default function Homepage() {
   const selectedTab = (val: string) => val + '-tab ' + defaultSelected;
 
   return (
-    <div className='flex flex-col overflow-y-auto gap-10'>
+    <div className='flex flex-col overflow-y-auto gap-3'>
       <div
         className={
-          'flex w-full flex-wrap items-center justify-center gap-2'
+          'flex w-full z-30 flex-wrap items-center justify-center gap-2'
         }
       >
         <Tabs
