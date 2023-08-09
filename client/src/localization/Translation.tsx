@@ -3,6 +3,7 @@ import Chinese from './languages/Zh';
 import Italian from './languages/It';
 import Portuguese from './languages/Br';
 import Spanish from './languages/Es';
+import German from './languages/De';
 // === import additional language files here === //
 
 // New method on String allow using "{\d}" placeholder for
@@ -38,6 +39,9 @@ export const getTranslations = (langCode: string) => {
   }
   if (langCode === 'es') {
     return Spanish;
+  }
+  if (langCode === 'de') {
+    return German;
   }
   // === add conditionals here for additional languages here === //
   return English; // default to English
