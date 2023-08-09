@@ -29,6 +29,7 @@ const setup = ({
       openidImageUrl: 'http://test-server.com',
       githubLoginEnabled: true,
       discordLoginEnabled: true,
+      twitterLoginEnabled: true,
       registrationEnabled: true,
       socialLoginEnabled: true,
       serverDomain: 'mock-server',

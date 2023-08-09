@@ -189,6 +189,7 @@ export type TStartupConfig = {
   openidLabel: string;
   openidImageUrl: string;
   discordLoginEnabled: boolean;
+  twitterLoginEnabled: boolean;
   serverDomain: string;
   registrationEnabled: boolean;
   socialLoginEnabled: boolean;

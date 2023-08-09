@@ -15,6 +15,8 @@ router.get('/', async function (req, res) {
     const githubLoginEnabled = !!process.env.GITHUB_CLIENT_ID && !!process.env.GITHUB_CLIENT_SECRET;
     const discordLoginEnabled =
       !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET;
+    const twitterLoginEnabled =
+      !!process.env.TWITTER_CLIENT_ID && !!process.env.TWITTER_CLIENT_SECRET;
     const serverDomain = process.env.DOMAIN_SERVER || 'http://localhost:3080';
     const registrationEnabled = process.env.ALLOW_REGISTRATION === 'true';
     const socialLoginEnabled = process.env.ALLOW_SOCIAL_LOGIN === 'true';
@@ -32,6 +34,7 @@ router.get('/', async function (req, res) {
       openidImageUrl,
       githubLoginEnabled,
       discordLoginEnabled,
+      twitterLoginEnabled,
       serverDomain,
       registrationEnabled,
       socialLoginEnabled,

@@ -7,7 +7,7 @@ import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
 import { useGetStartupConfig } from 'librechat-data-provider';
-import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
+import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon, TwitterIcon } from '~/components';
 
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();
@@ -111,6 +111,20 @@ function Login() {
               >
                 <DiscordIcon />
                 <p>{localize(lang, 'com_auth_discord_login')}</p>
+              </a>
+            </div>
+          </>
+        )}
+        {startupConfig?.twitterLoginEnabled && startupConfig?.socialLoginEnabled && (
+          <>
+            <div className="mt-2 flex gap-x-2">
+              <a
+                aria-label="Login with Twitter"
+                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
+                href={`${startupConfig.serverDomain}/oauth/twitter`}
+              >
+                <TwitterIcon />
+                <p>{localize(lang, 'com_auth_twitter_login')}</p>
               </a>
             </div>
           </>

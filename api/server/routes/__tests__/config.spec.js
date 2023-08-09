@@ -18,6 +18,8 @@ afterEach(() => {
   delete process.env.GITHUB_CLIENT_SECRET;
   delete process.env.DISCORD_CLIENT_ID;
   delete process.env.DISCORD_CLIENT_SECRET;
+  delete process.env.TWITTER_CLIENT_ID;
+  delete process.env.TWITTER_CLIENT_SECRET;
   delete process.env.DOMAIN_SERVER;
   delete process.env.ALLOW_REGISTRATION;
   delete process.env.ALLOW_SOCIAL_LOGIN;
@@ -41,6 +43,8 @@ describe.skip('GET /', () => {
     process.env.GITHUB_CLIENT_SECRET = 'Test Github client Secret';
     process.env.DISCORD_CLIENT_ID = 'Test Discord client Id';
     process.env.DISCORD_CLIENT_SECRET = 'Test Discord client Secret';
+    process.env.TWITTER_CLIENT_ID = 'Test Twitter client Id';
+    process.env.TWITTER_CLIENT_SECRET = 'Test Twitter client Secret';
     process.env.DOMAIN_SERVER = 'http://test-server.com';
     process.env.ALLOW_REGISTRATION = 'true';
     process.env.ALLOW_SOCIAL_LOGIN = 'true';
@@ -56,6 +60,7 @@ describe.skip('GET /', () => {
       openidImageUrl: 'http://test-server.com',
       githubLoginEnabled: true,
       discordLoginEnabled: true,
+      twitterLoginEnabled: true,
       serverDomain: 'http://test-server.com',
       registrationEnabled: 'true',
       socialLoginEnabled: 'true',

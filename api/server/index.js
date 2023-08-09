@@ -16,6 +16,7 @@ const {
   googleLogin,
   githubLogin,
   discordLogin,
+  twitterLogin,
   facebookLogin,
   setupOpenId,
 } = require('../strategies');
@@ -60,6 +61,9 @@ config.validate(); // Validate the config
   }
   if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
     passport.use(await discordLogin());
+  }
+  if (process.env.TWITTER_CLIENT_ID && process.env.TWITTER_CLIENT_SECRET) {
+    passport.use(await twitterLogin());
   }
   if (
     process.env.OPENID_CLIENT_ID &&

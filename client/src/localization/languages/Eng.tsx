@@ -38,6 +38,7 @@ export default {
   com_auth_google_login: 'Login with Google',
   com_auth_github_login: 'Login with Github',
   com_auth_discord_login: 'Login with Discord',
+  com_auth_twitter_login: 'Login with Twitter',
   com_auth_email: 'Email',
   com_auth_email_required: 'Email is required',
   com_auth_email_min_length: 'Email must be at least 6 characters',

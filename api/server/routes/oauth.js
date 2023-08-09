@@ -141,4 +141,24 @@ router.get(
   },
 );
 
+router.get('/twitter', passport.authenticate('twitter'));
+
+router.get(
+  '/twitter/callback',
+  passport.authenticate('twitter', {
+    failureRedirect: `${domains.client}/login`,
+    failureMessage: true,
+    session: false,
+  }),
+  (req, res) => {
+    const token = req.user.generateToken();
+    res.cookie('token', token, {
+      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
+      httpOnly: false,
+      secure: isProduction,
+    });
+    res.redirect(domains.client);
+  },
+);
+
 module.exports = router;
