@@ -9,14 +9,15 @@ Click on the thumbnail to open the video☝️
 In this video we're going to install LibreChat on Windows 11 using Docker and Git.
 
 #### Timestamps
-0:00 - Intro
-0:10 - Requirements
-0:31 - Docker Installation
-1:50 - Git Installation
-2:27 - LibreChat Installation
-3:07 - Start LibreChat
-3:59 - Access to LibreChat
-4:23 - Outro
+
+- 0:00 - Intro
+- 0:10 - Requirements
+- 0:31 - Docker Installation
+- 1:50 - Git Installation
+- 2:27 - LibreChat Installation
+- 3:07 - Start LibreChat
+- 3:59 - Access to LibreChat
+- 4:23 - Outro
 
 #### Instructions
 - To install LibreChat, you need Docker desktop and Git. Download them from these links:
@@ -103,11 +104,8 @@ Have fun!
 ---
 
 ## **Update**
-To update LibreChat:
-- run `git pull` from the root dir
-- Run npm ci from root directory `npm ci`
-- Build the client by running `npm run frontend`
 
+- Run `npm run update` from the project directory for a clean installation.
 
 ---
 

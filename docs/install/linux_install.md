@@ -128,7 +128,7 @@ gnome-terminal --tab --title="LibreChat" --working-directory=/home/user/LibreCha
 
 ## Update the app version
 
-If you update the LibreChat project files, manually redo the npm ci and npm run frontend steps.
+- Run `npm run update` from the project directory for a clean installation.
 
 ---
 
