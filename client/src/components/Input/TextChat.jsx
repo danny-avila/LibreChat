@@ -29,7 +29,7 @@ export default function TextChat({ isSearchView = false }) {
   const { ask, stopGenerating } = useMessageHandler();
   const isNotAppendable = latestMessage?.unfinished & !isSubmitting || latestMessage?.error;
   const { conversationId, jailbreak } = conversation || {};
-  const { isSpeechSupported, isListening, text: speechText, toggleListening } = useSpeechRecognition(ask);
+  const { isSpeechSupported, isListening, text: speechText } = useSpeechRecognition(ask);
 
   useEffect(() => {
     if (isListening && speechText) {
@@ -68,9 +68,9 @@ export default function TextChat({ isSearchView = false }) {
   const submitMessage = () => {
     ask({ text });
     setText('');
-    if (isListening) {
-      toggleListening();
-    }
+    //if (isListening) {
+    //  toggleListening();
+    //}
   };
 
   const handleStopGenerating = (e) => {
@@ -91,9 +91,9 @@ export default function TextChat({ isSearchView = false }) {
       submitMessage();
     }
 
-    if (e.shiftKey && e.altKey && e.key === 'L') {
-      toggleListening();
-    }
+    //if (e.shiftKey && e.altKey && e.key === 'L') {
+    //  toggleListening();
+    //}
 
   };
 
