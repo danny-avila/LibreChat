@@ -198,7 +198,9 @@ export default {
   com_nav_language: 'Language',
   com_nav_lang_english: 'English',
   com_nav_lang_chinese: '中文',
+  com_nav_lang_german: 'Deutsch',
+  com_nav_lang_spanish: 'Español',
+  com_nav_lang_french: 'Français ',
   com_nav_lang_italian: 'Italiano',
   com_nav_lang_brazilian_portuguese: 'Português Brasileiro',
-  com_nav_lang_spanish: 'Español',
 };
