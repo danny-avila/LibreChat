@@ -1,6 +1,12 @@
 # ⚠️ **Breaking Changes** ⚠️
 
+## v0.5.8
+**If you have issues after updating, please try to clear your browser cache and cookies!**
+
+Some of the latest changes affect the cookies and can cause weird behaviors if not properly cleared.
+
 ## v0.5.7
+
 Now, we have an easier and safer way to update LibreChat. You can simply run `npm run update` from the project directory for a clean update.
 If you want to skip the prompt you can use
 
