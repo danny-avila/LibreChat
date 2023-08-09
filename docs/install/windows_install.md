@@ -104,8 +104,8 @@ Have fun!
 ---
 
 ## **Update**
-To update LibreChat:
-- run `npm run update` from the root dir
+
+- Run `npm run update` from the project directory for a clean installation.
 
 ---
 
