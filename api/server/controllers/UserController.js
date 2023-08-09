@@ -1,8 +1,22 @@
 const { updateUserPluginsService } = require('../services/UserService');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('../services/PluginService');
+const User = require('../../models/User');
 
 const getUserController = async (req, res) => {
-  res.status(200).send(req.user);
+  try {
+    const { userId } = req.params;
+    if (userId == undefined || userId === req.user.id) res.status(200).send(req.user);
+    else {
+      const user = await User.findById(userId).exec();
+      const id = user._id;
+      const name = user.name;
+      const username = user.username;
+      res.status(200).send({ id, name, username });
+    }
+  } catch (error) {
+    console.log(error);
+    return { message: 'Error getting user' };
+  }
 };
 
 const updateUserPluginsController = async (req, res) => {
