@@ -11,7 +11,8 @@ export default function MultiMessage({
   currentEditId,
   setCurrentEditId,
   isSearchView,
-  hideUser = false
+  name = '',
+  userId = ''
 }) {
   // const [siblingIdx, setSiblingIdx] = useState(0);
 
@@ -53,7 +54,8 @@ export default function MultiMessage({
               siblingIdx={1}
               siblingCount={1}
               setSiblingIdx={null}
-              hideUser={hideUser}
+              name={name}
+              userId={userId}
             />
           ))
           : null}
@@ -70,7 +72,8 @@ export default function MultiMessage({
       siblingIdx={messagesTree.length - siblingIdx - 1}
       siblingCount={messagesTree.length}
       setSiblingIdx={setSiblingIdxRev}
-      hideUser={hideUser}
+      name={name}
+      userId={userId}
     />
   );
 }
