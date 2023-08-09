@@ -1,16 +1,19 @@
 #github action to run unit tests for frontend with jest
 name: Frontend Unit Tests
 on:
-  push:
-    branches: 
-      - main
-      - dev
-      - release/*
+  # push:
+  #   branches: 
+  #     - main
+  #     - dev
+  #     - release/*
   pull_request:
     branches: 
       - main
       - dev
       - release/*
+    paths:
+      - 'client/**'
+      - 'packages/**'
 jobs:
   tests_frontend:
     name: Run frontend unit tests
@@ -18,10 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Use Node.js 19.x
+      - name: Use Node.js 20.x
         uses: actions/setup-node@v3
         with:
-          node-version: 19.x
+          node-version: 20
           cache: 'npm'
 
       - name: Install dependencies

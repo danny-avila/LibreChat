@@ -1,12 +1,22 @@
 import React from 'react';
 import { Plus, Minus } from 'lucide-react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { ExamplesProps } from 'librechat-data-provider';
+import type { TExample } from 'librechat-data-provider';
+import type { TSetExample } from '~/common';
 import { Button, Label } from '~/components/ui';
 import { cn, defaultTextProps } from '~/utils/';
 import { useLocalize } from '~/hooks';
 
-function Examples({ readonly, examples, setExample, addExample, removeExample }: ExamplesProps) {
+type TExamplesProps = {
+  readonly?: boolean;
+  className?: string;
+  examples: TExample[];
+  setExample: TSetExample;
+  addExample: () => void;
+  removeExample: () => void;
+};
+
+function Examples({ readonly, examples, setExample, addExample, removeExample }: TExamplesProps) {
   const localize = useLocalize();
   return (
     <>
@@ -68,14 +78,14 @@ function Examples({ readonly, examples, setExample, addExample, removeExample }:
       <div className="flex justify-center">
         <Button
           type="button"
-          className="mr-2 mt-1 h-auto items-center justify-center bg-transparent px-3 py-2 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
+          className="mr-2 mt-1 h-auto items-center justify-center bg-transparent px-3 py-2 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
           onClick={removeExample}
         >
           <Minus className="w-[16px]" />
         </Button>
         <Button
           type="button"
-          className="mt-1 h-auto items-center justify-center bg-transparent px-3 py-2 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
+          className="mt-1 h-auto items-center justify-center bg-transparent px-3 py-2 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
           onClick={addExample}
         >
           <Plus className="w-[16px]" />

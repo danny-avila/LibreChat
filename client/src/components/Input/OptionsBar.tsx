@@ -1,7 +1,7 @@
 import { Settings2 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
-import { TPreset } from 'librechat-data-provider';
+import { tPresetSchema } from 'librechat-data-provider';
 import { PluginStoreDialog } from '~/components';
 import {
   EndpointSettings,
@@ -98,6 +98,21 @@ export default function OptionsBar() {
             }
             setOpacityClass('show');
           }}
+          onFocus={() => {
+            if (showPopover) {
+              return;
+            }
+            setOpacityClass('full-opacity');
+          }}
+          onBlur={() => {
+            if (showPopover) {
+              return;
+            }
+            if (!messagesTree || messagesTree.length === 0) {
+              return;
+            }
+            setOpacityClass('show');
+          }}
         >
           <ModelSelect conversation={conversation} setOption={setOption} />
           {!noSettings[endpoint] && (
@@ -105,7 +120,7 @@ export default function OptionsBar() {
               type="button"
               className={cn(
                 cardStyle,
-                'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-3 transition duration-700 ease-in-out hover:bg-slate-50 hover:shadow-md focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-600',
+                'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-3 focus:ring-0 focus:ring-offset-0',
               )}
               onClick={triggerAdvancedMode}
             >
@@ -126,7 +141,7 @@ export default function OptionsBar() {
         <SaveAsPresetDialog
           open={saveAsDialogShow}
           onOpenChange={setSaveAsDialogShow}
-          preset={{ ...conversation } as TPreset}
+          preset={tPresetSchema.parse({ ...conversation })}
         />
         <PluginStoreDialog isOpen={showPluginStoreDialog} setIsOpen={setShowPluginStoreDialog} />
       </span>

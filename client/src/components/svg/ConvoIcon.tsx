@@ -3,6 +3,7 @@ import React from 'react';
 export default function ConvoIcon() {
   return (
     <svg
+      data-testid="convo-icon"
       stroke="currentColor"
       fill="none"
       strokeWidth="2"

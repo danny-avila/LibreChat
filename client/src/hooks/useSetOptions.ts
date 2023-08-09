@@ -1,15 +1,12 @@
-import {
-  UseSetOptions,
-  TConversation,
-  SetOption,
-  SetExample,
-  TPlugin,
-} from 'librechat-data-provider';
+import { TConversation, TPreset, TPlugin, tConversationSchema } from 'librechat-data-provider';
+import type { TSetExample, TSetOption, TSetOptionsPayload } from '~/common';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import usePresetOptions from './usePresetOptions';
 import store from '~/store';
 
-const useSetOptions: UseSetOptions = (preset = false) => {
+type TUseSetOptions = (preset?: TPreset | boolean | null) => TSetOptionsPayload;
+
+const useSetOptions: TUseSetOptions = (preset = false) => {
   const setShowPluginStoreDialog = useSetRecoilState(store.showPluginStoreDialog);
   const [conversation, setConversation] = useRecoilState(store.conversation);
   const availableTools = useRecoilValue(store.availableTools);
@@ -20,31 +17,29 @@ const useSetOptions: UseSetOptions = (preset = false) => {
     return result;
   }
 
-  const setOption: SetOption = (param) => (newValue) => {
+  const setOption: TSetOption = (param) => (newValue) => {
     const update = {};
     update[param] = newValue;
-    setConversation(
-      (prevState) =>
-        ({
-          ...prevState,
-          ...update,
-        } as TConversation),
+    setConversation((prevState) =>
+      tConversationSchema.parse({
+        ...prevState,
+        ...update,
+      }),
     );
   };
 
-  const setExample: SetExample = (i, type, newValue = null) => {
+  const setExample: TSetExample = (i, type, newValue = null) => {
     const update = {};
     const current = conversation?.examples?.slice() || [];
     const currentExample = { ...current[i] } || {};
     currentExample[type] = { content: newValue };
     current[i] = currentExample;
     update['examples'] = current;
-    setConversation(
-      (prevState) =>
-        ({
-          ...prevState,
-          ...update,
-        } as TConversation),
+    setConversation((prevState) =>
+      tConversationSchema.parse({
+        ...prevState,
+        ...update,
+      }),
     );
   };
 
@@ -53,12 +48,11 @@ const useSetOptions: UseSetOptions = (preset = false) => {
     const current = conversation?.examples?.slice() || [];
     current.push({ input: { content: '' }, output: { content: '' } });
     update['examples'] = current;
-    setConversation(
-      (prevState) =>
-        ({
-          ...prevState,
-          ...update,
-        } as TConversation),
+    setConversation((prevState) =>
+      tConversationSchema.parse({
+        ...prevState,
+        ...update,
+      }),
     );
   };
 
@@ -67,23 +61,21 @@ const useSetOptions: UseSetOptions = (preset = false) => {
     const current = conversation?.examples?.slice() || [];
     if (current.length <= 1) {
       update['examples'] = [{ input: { content: '' }, output: { content: '' } }];
-      setConversation(
-        (prevState) =>
-          ({
-            ...prevState,
-            ...update,
-          } as TConversation),
+      setConversation((prevState) =>
+        tConversationSchema.parse({
+          ...prevState,
+          ...update,
+        }),
       );
       return;
     }
     current.pop();
     update['examples'] = current;
-    setConversation(
-      (prevState) =>
-        ({
-          ...prevState,
-          ...update,
-        } as TConversation),
+    setConversation((prevState) =>
+      tConversationSchema.parse({
+        ...prevState,
+        ...update,
+      }),
     );
   };
 
@@ -96,17 +88,16 @@ const useSetOptions: UseSetOptions = (preset = false) => {
     return conversation.tools.find((el) => el.pluginKey === value) ? true : false;
   }
 
-  const setAgentOption: SetOption = (param) => (newValue) => {
+  const setAgentOption: TSetOption = (param) => (newValue) => {
     const editableConvo = JSON.stringify(conversation);
     const convo = JSON.parse(editableConvo);
     const { agentOptions } = convo;
     agentOptions[param] = newValue;
-    setConversation(
-      (prevState) =>
-        ({
-          ...prevState,
-          agentOptions,
-        } as TConversation),
+    setConversation((prevState) =>
+      tConversationSchema.parse({
+        ...prevState,
+        agentOptions,
+      }),
     );
   };
 
@@ -128,12 +119,11 @@ const useSetOptions: UseSetOptions = (preset = false) => {
     }
 
     localStorage.setItem('lastSelectedTools', JSON.stringify(update['tools']));
-    setConversation(
-      (prevState) =>
-        ({
-          ...prevState,
-          ...update,
-        } as TConversation),
+    setConversation((prevState) =>
+      tConversationSchema.parse({
+        ...prevState,
+        ...update,
+      }),
     );
   };
 

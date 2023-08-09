@@ -1,11 +1,19 @@
 import React from 'react';
 import { Save } from 'lucide-react';
-import { EndpointOptionsPopoverProps } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { Button } from '~/components/ui';
 import { CrossIcon } from '~/components/svg';
 import PopoverButtons from './PopoverButtons';
 import { cn, removeFocusOutlines } from '~/utils';
 import { useLocalize } from '~/hooks';
+
+type TEndpointOptionsPopoverProps = {
+  children: React.ReactNode;
+  visible: boolean;
+  endpoint: EModelEndpoint;
+  saveAsPreset: () => void;
+  closePopover: () => void;
+};
 
 export default function EndpointOptionsPopover({
   children,
@@ -13,7 +21,7 @@ export default function EndpointOptionsPopover({
   visible,
   saveAsPreset,
   closePopover,
-}: EndpointOptionsPopoverProps) {
+}: TEndpointOptionsPopoverProps) {
   const localize = useLocalize();
   const cardStyle =
     'shadow-xl rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white';

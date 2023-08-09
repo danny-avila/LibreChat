@@ -62,6 +62,7 @@ function Registration() {
           <div
             className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
             role="alert"
+            data-testid="registration-error"
           >
             {localize(lang, 'com_auth_error_create')} {errorMessage}
           </div>

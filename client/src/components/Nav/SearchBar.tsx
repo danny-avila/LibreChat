@@ -1,25 +1,30 @@
-import { forwardRef, useState, useEffect } from 'react';
+import { forwardRef, useState, useEffect, Ref } from 'react';
 import { Search, X } from 'lucide-react';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilState } from 'recoil';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
-import { localize } from '~/localization/Translation';
 
-const SearchBar = forwardRef((props, ref) => {
+type SearchBarProps = {
+  clearSearch: () => void;
+};
+
+const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) => {
   const { clearSearch } = props;
   const [searchQuery, setSearchQuery] = useRecoilState(store.searchQuery);
   const [showClearIcon, setShowClearIcon] = useState(false);
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
 
-  const handleKeyUp = (e) => {
-    const { value } = e.target;
+  const handleKeyUp = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const { value } = e.target as HTMLInputElement;
+    /* TODO: deprecated keyCode */
     if (e.keyCode === 8 && value === '') {
       setSearchQuery('');
       clearSearch();
     }
   };
 
-  const onChange = (e) => {
-    const { value } = e.target;
+  const onChange = (e: React.FormEvent<HTMLInputElement>) => {
+    const { value } = e.target as HTMLInputElement;
     setSearchQuery(value);
     setShowClearIcon(value.length > 0);
   };
@@ -35,7 +40,7 @@ const SearchBar = forwardRef((props, ref) => {
   return (
     <div
       ref={ref}
-      className="relative flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+      className="relative flex w-full cursor-pointer items-center gap-3 rounded-md border border-white/20 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10"
     >
       {<Search className="absolute left-3 h-4 w-4" />}
       <input
@@ -46,7 +51,7 @@ const SearchBar = forwardRef((props, ref) => {
         onKeyDown={(e) => {
           e.code === 'Space' ? e.stopPropagation() : null;
         }}
-        placeholder={localize(lang, 'com_nav_search_placeholder')}
+        placeholder={localize('com_nav_search_placeholder')}
         onKeyUp={handleKeyUp}
       />
       <X

@@ -28,6 +28,9 @@ export default function Messages({ isSearchView = false }) {
   const { screenshotTargetRef } = useScreenshot();
 
   const handleScroll = () => {
+    if (!scrollableRef.current) {
+      return;
+    }
     const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
     const diff = Math.abs(scrollHeight - scrollTop);
     const percent = Math.abs(clientHeight - diff) / clientHeight;
@@ -40,6 +43,9 @@ export default function Messages({ isSearchView = false }) {
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
+      if (!scrollableRef.current) {
+        return;
+      }
       const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
       const diff = Math.abs(scrollHeight - scrollTop);
       const percent = Math.abs(clientHeight - diff) / clientHeight;
@@ -60,6 +66,19 @@ export default function Messages({ isSearchView = false }) {
   const scrollToBottom = useCallback(
     throttle(
       () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+        setShowScrollButton(false);
+      },
+      450,
+      { leading: true },
+    ),
+    [messagesEndRef],
+  );
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const scrollToBottomSmooth = useCallback(
+    throttle(
+      () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
         setShowScrollButton(false);
       },
@@ -77,7 +96,7 @@ export default function Messages({ isSearchView = false }) {
 
   const scrollHandler = (e) => {
     e.preventDefault();
-    scrollToBottom();
+    scrollToBottomSmooth();
   };
 
   return (

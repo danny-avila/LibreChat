@@ -1,15 +1,17 @@
 name: Backend Unit Tests
 on:
-  push:
-    branches:
-      - main
-      - dev
-      - release/*
+  # push:
+  #   branches:
+  #     - main
+  #     - dev
+  #     - release/*
   pull_request:
     branches:
       - main
       - dev
       - release/*
+    paths:
+      - 'api/**'
 jobs:
   tests_Backend:
     name: Run Backend unit tests
@@ -23,10 +25,10 @@ jobs:
       CREDS_IV: ${{ secrets.CREDS_IV }}
     steps:
       - uses: actions/checkout@v2
-      - name: Use Node.js 19.x
+      - name: Use Node.js 20.x
         uses: actions/setup-node@v3
         with:
-          node-version: 19.x
+          node-version: 20
           cache: 'npm'
 
       - name: Install dependencies

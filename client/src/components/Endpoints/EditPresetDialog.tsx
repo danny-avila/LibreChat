@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import filenamify from 'filenamify';
 import exportFromJSON from 'export-from-json';
 import { useSetRecoilState, useRecoilState, useRecoilValue } from 'recoil';
-import { EditPresetProps } from 'librechat-data-provider';
+import { TEditPresetProps } from '~/common';
 import { useSetOptions, useLocalize } from '~/hooks';
 import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
@@ -12,7 +12,7 @@ import EndpointSettings from './EndpointSettings';
 import { cn, defaultTextProps, removeFocusOutlines, cleanupPreset } from '~/utils/';
 import store from '~/store';
 
-const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: EditPresetProps) => {
+const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditPresetProps) => {
   const [preset, setPreset] = useRecoilState(store.preset);
   const setPresets = useSetRecoilState(store.presets);
   const availableEndpoints = useRecoilValue(store.availableEndpoints);

@@ -3,8 +3,22 @@ import { Listbox, Transition } from '@headlessui/react';
 import { Wrench, ArrowRight } from 'lucide-react';
 import { CheckMark } from '~/components/svg';
 import useOnClickOutside from '~/hooks/useOnClickOutside';
-import { MultiSelectDropDownProps } from 'librechat-data-provider';
 import { cn } from '~/utils/';
+import type { TPlugin } from 'librechat-data-provider';
+
+export type TMultiSelectDropDownProps = {
+  title?: string;
+  value: Array<{ icon?: string; name?: string; isButton?: boolean }>;
+  disabled?: boolean;
+  setSelected: (option: string) => void;
+  availableValues: TPlugin[];
+  showAbove?: boolean;
+  showLabel?: boolean;
+  containerClassName?: string;
+  isSelected: (value: string) => boolean;
+  className?: string;
+  optionValueKey?: string;
+};
 
 function MultiSelectDropDown({
   title = 'Plugins',
@@ -18,7 +32,7 @@ function MultiSelectDropDown({
   isSelected,
   className,
   optionValueKey = 'value',
-}: MultiSelectDropDownProps) {
+}: TMultiSelectDropDownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
   const excludeIds = ['select-plugin', 'plugins-label', 'selected-plugins'];
@@ -43,7 +57,7 @@ function MultiSelectDropDown({
             <>
               <Listbox.Button
                 className={cn(
-                  'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:border-green-600 focus:outline-none focus:ring-1 focus:ring-green-600 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
+                  'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
                   className ?? '',
                 )}
                 id={excludeIds[0]}
