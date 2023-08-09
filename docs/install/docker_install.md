@@ -37,10 +37,7 @@ Once you have completed all the setup, you can start the LibreChat application b
 That's it! If you need more detailed information on configuring your compose file, see my notes below.
 
 ## Updating LibreChat
-To update LibreChat. enter these commands one after the other from the root dir:
-- git pull
-- docker-compose build
-- docker-compose up
+- Run `npm run update` from the project directory for a clean installation.
 
 ## Advanced Settings
 

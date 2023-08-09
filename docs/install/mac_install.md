@@ -87,9 +87,8 @@ npm run backend
 
 
 ## **Update**
-- run `git pull` from the root dir
-- Run npm ci from root directory `npm ci`
-- Build the client by running `npm run frontend`
+
+- Run `npm run update` from the project directory for a clean installation.
 
 ---
 
