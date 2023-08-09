@@ -97,7 +97,7 @@
     "@types/node": "^20.3.0",
     "@types/react": "^18.2.11",
     "@types/react-dom": "^18.2.4",
-    "@vitejs/plugin-react": "^4.0.0",
+    "@vitejs/plugin-react": "^4.0.4",
     "autoprefixer": "^10.4.13",
     "babel-jest": "^29.5.0",
     "babel-loader": "^9.1.2",
@@ -125,7 +125,7 @@
     "ts-jest": "^29.1.0",
     "ts-loader": "^9.4.2",
     "typescript": "^5.0.4",
-    "vite": "^4.3.9",
+    "vite": "^4.4.9",
     "vite-plugin-html": "^3.2.0"
   }
 }
