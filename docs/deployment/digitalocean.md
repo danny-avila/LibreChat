@@ -2,13 +2,13 @@
 
 >These instructions are designed for someone starting from scratch for a Docker Installation on a remote Ubuntu server. You can skip to any point that is useful for you.
 
->There are many ways to go about this, but I will present to you the easiest methods I'm aware of. These configurations can vary based on your liking or needs.
+**There are many ways to go about this, but I will present to you the easiest methods I'm aware of. These configurations can vary based on your liking or needs.**
 
-Digital Ocean is a great option for personal use, since you can benefit off a free [$200 credit](https://m.do.co/c/4486923fcf00) as described below, and in any case, one of the cheapest tiers will work for LibreChat in a low-stress (small amount of users) environment. Should your resource needs increase, there are several, plug-and-play options for you to upgrade very easily.
+Digital Ocean is a great option for deployment: you can benefit off a free [$200 credit](https://m.do.co/c/4486923fcf00), and one of the cheapest tiers ($6/mo) will work for LibreChat in a low-stress, minimal-user environment. Should your resource needs increase, you can always upgrade very easily.
 
-Digital Ocean is also my personal preferred choice for testing deployment, as it comes with useful resource monitoring/console access tools right out of the box.
+Digital Ocean is also my preferred choice for testing deployment, as it comes with useful resource monitoring and server access tools right out of the box.
 
-**Using Digital Ocean will directly support the project by helping me cover the test deployment costs with credits! Click on this banner below for a $200 credit (available for 60 days) and to directly support LibreChat!**
+**Using the following Digital Ocean link will directly support the project by helping me cover deployment costs with credits! Click on this banner below to get a $200 credit (available for 60 days) and to directly support LibreChat!**
 
 [![DigitalOcean Referral Badge](https://web-platforms.sfo2.cdn.digitaloceanspaces.com/WWW/Badge%201.svg)](https://www.digitalocean.com/?refcode=4486923fcf00&utm_campaign=Referral_Invite&utm_medium=Referral_Program&utm_source=badge)
 
@@ -113,79 +113,49 @@ node -v
 npm -v
 ```
 
-**Ok, now that you have set up the SERVER, you will need to get all your tokens/apis/etc in order:**
+**Ok, now that you have set up the Droplet, you will now setup the app itself**
 
 ---
 
-## Tokens/Apis/etc:
-- Make sure you have all the needed variables for the following before moving forward
-### [Get Your API keys and Tokens](../install/apis_and_tokens.md) (Required)
-- You must set up at least one of these tokens or APIs to run the app.
-### [User/Auth System](../install/user_auth_system.md) (Optional)
-- How to set up the user/auth system and Google login.
-### [Plugins](../features/plugins/introduction.md)
-- Optional plugins available to enhance the application.
+## Setup LibreChat
 
----
+### 1. Clone down the repo
+From the *droplet* commandline (as your user, not root):
 
-## Using Docker to Install the Service
-
-### 1. **Recommended: [Docker Install](../install/docker_install.md)**
-From the *server* commandline (as your user, not root):
-
-```
+```bash
 # clone down the repository
 git clone https://github.com/danny-avila/LibreChat.git
 
 # enter the project directory
 cd LibreChat/
-```
+``` 
 
-Edit your docker-compose.yml to endure you have the correct environment variables:
-
-```
-nano docker-compose.yml
-```
-
-```
-       VITE_APP_TITLE: LibreChat # default, change to your desired app >
-       VITE_SHOW_GOOGLE_LOGIN_OPTION: 'false'  # default, change to true if you want to show google login
-```       
-
-### 2. Create a global environment file and open it up to begin adding the tokens/keys you prepared in the PreReqs section.
-```
+### 2. Create a global environment file.
+```bash
 cp .env.example .env
+```
+
+The default values are enough to get you started and running the app! API credentials can be provided from the web app.
+
+For thorough configuration, however, you should edit your .env file as needed, and do read the comments in the .env file and the resources below.
+
+```bash
 nano .env
 ```
 
-### 3. In addition to adding all your api tokens and other tokens that you prepared above, change:
+**Resources:**
+- [Tokens/Apis/etc](../install/apis_and_tokens.md)
+- [User/Auth System](../install/user_auth_system.md)
 
-```
-HOST=Localhost 
-```
-to 
-```
-HOST=<yourserverip>
-```
-
-### 4. Since you're using docker, you can also change the following:
-
-```
-SEARCH=true
-MEILI_HOST=meilisearch
-MEILI_HTTP_ADDR=meilisearch
-```
-
-### 5. After everything file has been updated, run  `docker-compose build` then `docker-compose up`
+### 3. After all of the above, you may now run the installation/update script
 
 
-**NOTE: You may need to run these commands with sudo permissions.**
 
 ## Once the app is running, you can access it at http://yourserverip:3080
 
 It is safe to close the terminal -- the docker app will continue to run.
 
-*To disable external signups, after you have created your admin account, make sure you set 
+*To disable external signups, after you have created your admin account, make sure you set*
 ```
 ALLOW_REGISTRATION:False 
 ```
