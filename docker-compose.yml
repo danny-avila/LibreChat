@@ -46,13 +46,13 @@ services:
       - ./images:/app/client/public/images
   mongodb:
     container_name: chat-mongodb
-    ports:
-      - 27018:27017
+    # ports:  # Uncomment this to access mongodb from outside docker, not safe in deployment
+    #   - 27018:27017
     image: mongo
     restart: always
     volumes:
       - ./data-node:/data/db
-    command: mongod --noauth
+    command: mongod --noauth --bind_ip 0.0.0.0
   meilisearch:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.0
