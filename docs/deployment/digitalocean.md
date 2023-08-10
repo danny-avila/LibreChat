@@ -20,11 +20,25 @@ Digital Ocean is also my preferred choice for testing deployment, as it comes wi
 
 ## Table of Contents
 
-- [Part I: Starting from Zero](#part-i-starting-from-zero)
-- [Part II: Installing Docker](#part-ii-installing-docker)
-- [Part III: Setup LibreChat](#part-iii-setup-librechat)
-- [Part IV: Updating LibreChat](#part-iv-updating-librechat)
-- [Part V: Editing the NGINX file (optional)](#part-v-editing-the-nginx-file-for-custom-domains-and-advanced-configs)
+- **[Part I: Starting from Zero](#part-i-starting-from-zero)**
+  - [1. DigitalOcean signup](#1-click-here-or-on-the-banner-above-to-get-started-on-digitalocean)
+  - [2. Access console](#2-access-your-droplet-console)
+  - [3. Console user setup](#3-once-you-have-logged-in-immediately-create-a-new-non-root-user)
+- **[Part II: Installing Docker & Other Dependencies](#part-ii-installing-docker-and-other-dependencies)**
+  - [1. Update and Install Docker dependencies](#1-update-and-install-docker-dependencies)
+  - [2. Add Docker Repository to APT Sources](#2-add-docker-repository-to-apt-sources)
+  - [3. Install Docker](#3-install-docker)
+  - [4. Verify Docker](#4-verify-that-docker-is-running-on-ubuntu)
+  - [5. Install the Latest Version of Docker Compose](#5-install-the-latest-version-of-docker-compose)
+  - [6. Install git & npm](#6-as-part-of-this-guide-i-will-recommend-you-have-git-and-npm-installed)
+- **[Part III: Setup LibreChat](#part-iii-setup-librechat)**
+  - [1. Clone down the repo](#1-clone-down-the-repo)
+  - [2. Create a global environment file](#2-create-a-global-environment-file)
+  - [3. Start docker and run LibreChat](#3-start-docker-and-then-run-the-installationupdate-script)
+  - [4. Access LibreChat](#4-once-the-app-is-running-you-can-access-it-at-httpyourserverip)
+- **[Part IV: Updating LibreChat](#part-iv-updating-librechat)**
+- **[Part V: Editing the NGINX file (optional)](#part-v-editing-the-nginx-file-for-custom-domains-and-advanced-configs)**
+
 
 ## Part I: Starting from Zero:
 
@@ -107,7 +121,7 @@ su - <yourusername>
 
 ---
 
-### Part II: Installing Docker:
+### Part II: Installing Docker and Other Dependencies:
 
 There are many ways to setup Docker on Debian systems. I'll walk you through the best and the recommended way [based on this guide](https://www.smarthomebeginner.com/install-docker-on-ubuntu-22-04/).
 
@@ -161,7 +175,7 @@ sudo apt update
 ```
 If you forget to add the GPG key, then the above step would fail with an error message. Otherwise, let's get on with installing Docker on Ubuntu.
 
-### **3. Install Docker on Ubuntu/Debian Linux**
+### **3. Install Docker**
 >What is the difference between docker.io and docker-ce?
 
 >docker.io is the docker package that is offered by some popular Linux distributions (e.g. Ubuntu/Debian). docker-ce on the other hand, is the docker package from official Docker repository. Typically docker-ce more up-to-date and preferred.
