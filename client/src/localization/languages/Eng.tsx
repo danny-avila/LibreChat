@@ -203,7 +203,6 @@ export default {
   com_nav_lang_french: 'Français ',
   com_nav_lang_italian: 'Italiano',
   com_nav_lang_brazilian_portuguese: 'Português Brasileiro',
-  com_nav_lang_spanish: 'Español',
   com_nav_setting_api: 'API',
   com_nav_reverse_proxy: 'Reverse Proxy',
   com_nav_reverse_proxy_url: 'URL',

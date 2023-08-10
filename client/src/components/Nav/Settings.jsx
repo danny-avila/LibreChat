@@ -13,21 +13,6 @@ export default function Settings({ open, onOpenChange }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const lang = useRecoilValue(store.lang);
 
-  // Check if mobile dynamically and update
-  useMediaQuery(() => {
-    const checkMobile = () => {
-      if (window.innerWidth <= 768) {
-        isMobile(true);
-      } else {
-        isMobile(false);
-      }
-      isMobile(window.innerWidth <= 768);
-    };
-
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-  }, []);
-
   useEffect(() => {
     // If the user clicks in the dialog when confirmClear is true, set it to false
     const handleClick = (e) => {
