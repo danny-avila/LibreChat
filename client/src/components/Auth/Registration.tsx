@@ -9,7 +9,7 @@ import {
   TRegisterUser,
   useGetStartupConfig,
 } from 'librechat-data-provider';
-import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon, TwitterIcon } from '~/components';
+import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon, TwitterXIcon } from '~/components';
 
 function Registration() {
   const navigate = useNavigate();
@@ -364,7 +364,7 @@ function Registration() {
                 className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
                 href={`${startupConfig.serverDomain}/oauth/twitter`}
               >
-                <TwitterIcon />
+                <TwitterXIcon />
                 <p>{localize(lang, 'com_auth_twitter_login')}</p>
               </a>
             </div>
