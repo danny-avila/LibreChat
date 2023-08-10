@@ -4,7 +4,7 @@
 
 **There are many ways to go about this, but I will present to you the best and easiest methods I'm aware of. These configurations can vary based on your liking or needs.**
 
-Digital Ocean is a great option for deployment: you can benefit off a **free [$200 credit](https://m.do.co/c/4486923fcf00)** (for 60 days), and one of the cheapest tiers ($6/mo) will work for LibreChat in a low-stress, minimal-user environment. Should your resource needs increase, you can always upgrade very easily.
+Digital Ocean is a great option for deployment: you can benefit off a **free [200 USD credit](https://m.do.co/c/4486923fcf00)** (for 60 days), and one of the cheapest tiers (6 USD/mo) will work for LibreChat in a low-stress, minimal-user environment. Should your resource needs increase, you can always upgrade very easily.
 
 Digital Ocean is also my preferred choice for testing deployment, as it comes with useful resource monitoring and server access tools right out of the box.
 
