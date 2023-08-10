@@ -7,88 +7,116 @@ import {
   TConversation,
   useGetRecentConversations,
   useGetHottestConversations,
-  useGetMessagesByConvoId,
-  useDuplicateConvoMutation,
+  TMessage,
+  TUser,
 } from '@librechat/data-provider';
 import SwitchPage from './SwitchPage';
-import DuplicateConvoButton from './DuplicateConvoButton';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
 import { useRecoilValue } from 'recoil';
+import { useAuthContext } from '~/hooks/AuthContext';
+import { Spinner } from '../svg';
 
 export default function Recommendations({ type: leaderboardType }: {type: string}) {
-  const [conversation, setConversation] = useState<TConversation>();
-  const [conversationId, setConversationId] = useState<string>();
-  const [messagesTree, setMessagesTree] = useState<any>();
   const [convoIdx, setConvoIdx] = useState<number>(0);
   const [convoDataLength, setConvoDataLength] = useState<number>(1);
+  const [convoData, setConvoData] = useState<TConversation[] | null>(null);
+  const [msgTree, setMsgTree] = useState<TMessage[] | null>(null);
+  const [user, setUser] = useState<TUser | null>(null);
+
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
+  const { token } = useAuthContext();
   const lang = useRecoilValue(store.lang);
   const title = localize(lang, 'com_ui_recommendation');
 
+  async function fetchMessagesByConvoId(id: string) {
+    setMsgTree(null);
+    try {
+      const response = await fetch(`/api/messages/${id}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const responseObject = await response.json();
+      setMsgTree(buildTree(responseObject));
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
+  async function fetchConvoUser(id: string | undefined) {
+    try {
+      const response = await fetch(`/api/user/${id}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const responseObject = await response.json();
+      setUser(responseObject);
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
   const recentConversations = useGetRecentConversations();
   const hottestConversations = useGetHottestConversations();
-  const recommendations = (leaderboardType === 'recent') ? recentConversations : hottestConversations;
-
-  const convoData = recommendations.data;
-  const messages = useGetMessagesByConvoId(convoData?.length ? convoData[convoIdx].conversationId : '00000000-0000-0000-0000-000000000000'); // sometimes returns a string
-  const msgData = messages?.data;
 
   const { screenshotTargetRef } = useScreenshot();
-  const { refreshConversations } = store.useConversations();
-  const { switchToConversation } = store.useConversation();
 
   const nextConvo = () => convoIdx === convoDataLength - 1 ? setConvoIdx(0) : setConvoIdx(convoIdx + 1);
   const prevConvo = () => convoIdx === 0 ? setConvoIdx(convoDataLength - 1) : setConvoIdx(convoIdx - 1);
 
-  const duplicateConversationMutation = useDuplicateConvoMutation();
-
-  const duplicateHandler = () => {
-    if (typeof msgData === 'string') return; // quick fix, but needs refactoring
-    // const messageIds = msgData?.map((msg) => { return msg.messageId });
-    duplicateConversationMutation.mutate({ conversation, msgData });
-  }
-
   // Get recent conversations
   useEffect(() => {
-    if (convoData?.length && msgData) {
-      setConvoDataLength(convoData.length);
-      setConversation(convoData[convoIdx]);
-      setConversationId(convoData[convoIdx].conversationId);
-      setMessagesTree(buildTree(msgData));
+    if (recentConversations.isSuccess && hottestConversations.isSuccess) {
+      const recommendations = ((leaderboardType === 'recent') ? recentConversations : hottestConversations);
+      setConvoData(recommendations.data);
+      setConvoDataLength(recommendations.data.length);
     }
-  }, [convoData, msgData, convoIdx]);
+  }, [recentConversations.isSuccess, hottestConversations.isSuccess]);
 
-  useEffect(() => { // Consider moving this to Conversation.jsx
-    if (duplicateConversationMutation.isSuccess) {
-      refreshConversations();
-      switchToConversation(conversation);
+  useEffect(() => {
+    if (convoData) {
+      fetchMessagesByConvoId(convoData[convoIdx].conversationId);
+      fetchConvoUser(convoData[convoIdx].user);
     }
-  })
+  }, [convoData, convoIdx]);
 
   useDocumentTitle(title);
 
   return (
     <>
-      <h1
-        id="landing-title"
-        className="mb-3 ml-auto mr-auto mt-0.5 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-2 md:mt-0.5"
-      >
-        {conversation?.title}
-      </h1>
-      <div className="dark:gpt-dark-gray mb-32 h-auto md:mb-48" ref={screenshotTargetRef}>
+      <div className='grid grid-row w-full sticky bg-white top-0 z-30 items-center'>
+        <h1
+          id="landing-title"
+          className="mb-3 ml-auto mr-auto mt-0.5 flex gap-2 text-center text-3xl font-semibold sm:mb-2 md:mt-0.5"
+        >
+          {convoData ? convoData[convoIdx].title : ''}
+        </h1>
+      </div>
+      <div className="dark:gpt-dark-gray mb-32 h-auto w-full md:mb-48" ref={screenshotTargetRef}>
         <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
-          <MultiMessage
-            key={conversationId} // avoid internal state mixture
-            messageId={conversationId}
-            conversation={conversation}
-            messagesTree={messagesTree}
-            scrollToBottom={null}
-            currentEditId={-1}
-            setCurrentEditId={null}
-            isSearchView={true}
-            hideUser={true}
-          />
+          {convoData && msgTree && user ? (
+            <MultiMessage
+              key={convoData[convoIdx].conversationId} // avoid internal state mixture
+              messageId={convoData[convoIdx].conversationId}
+              conversation={convoData[convoIdx]}
+              messagesTree={msgTree}
+              scrollToBottom={null}
+              currentEditId={-1}
+              setCurrentEditId={null}
+              isSearchView={true}
+              hideUser={true}
+            />
+          ) : (
+            <div className="flex w-full h-[25vh] flex-row items-end justify-end">
+              <Spinner />
+            </div>
+          )}
           <SwitchPage key={ 'left_switch' } switchHandler={ prevConvo } direction={ 'left' } />
           <SwitchPage key={ 'right_switch' } switchHandler={ nextConvo } direction={ 'right' } />
           {/* <DuplicateConvoButton duplicateHandler={ duplicateHandler } /> */}
