@@ -372,6 +372,10 @@ Updating on an edited branch will work a little differently now
 npm run rebase:deployed
 ```
 
+You should be all set!
+
+> :warning: You will experience merge conflicts if you start significantly editing the branch and this is not recommended unless you know what you're doing
+
 > Note that any changes to the code in this environment won't be reflected because the compose file is pulling the docker images built automatically by GitHub
 
 ---
