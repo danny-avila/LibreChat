@@ -12,21 +12,26 @@ const twitterLogin = async () =>
       proxy: false,
       includeEmail: true,
     },
-    async (token, tokenSecret, user, cb) => {
+    async (token, tokenSecret, profile, cb) => {
       try {
-        const email = user.emails && user.emails.length > 0 ? user.emails[0].value : null;
+        const email = profile.emails && profile.emails.length > 0 ? profile.emails[0].value : null;
 
         const oldUser = await User.findOne({ email });
         if (oldUser) {
           return cb(null, oldUser);
         }
 
+        if (!email) {
+          return cb(new Error('Email not available from Twitter profile'));
+        }
+
         const newUser = await new User({
           provider: 'twitter',
-          twitterId: user.id,
-          username: user.username,
+          twitterId: profile.id,
+          username: profile.username,
           email,
-          name: user.name,
+          name: profile.displayName,
+          avatar: profile.photos && profile.photos.length > 0 ? profile.photos[0].value : null,
         }).save();
 
         cb(null, newUser);
