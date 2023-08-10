@@ -93,7 +93,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
       <div className='grid grid-row w-full sticky bg-white top-0 z-30 items-center'>
         <h1
           id="landing-title"
-          className="mb-3 ml-auto mr-auto mt-0.5 flex gap-2 text-3xl font-semibold sm:mb-2 md:mt-0.5"
+          className="mb-3 ml-auto mr-auto mt-0.5 flex gap-2 text-center text-3xl font-semibold sm:mb-2 md:mt-0.5"
         >
           {convoData ? convoData[convoIdx].title : ''}
         </h1>
