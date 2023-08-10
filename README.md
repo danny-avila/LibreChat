@@ -69,8 +69,8 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
     * [Mac Install🍎](docs/install/mac_install.md)
     * [Windows Install💙](docs/install/windows_install.md)
   * Configuration
-    * [APIs and Tokens](docs/install/apis_and_tokens.md)
-    * [User Auth System](docs/install/user_auth_system.md)
+    * [APIs and Tokens](docs/install/API_&_Auth/apis_and_tokens.md)
+    * [User Auth System](docs/install/API_&_Auth/user_auth_system.md)
     * [Online MongoDB Database](docs/install/mongodb.md)
     * [Languages](docs/install/languages.md)
 </details>
