@@ -2,7 +2,7 @@
 
 >These instructions are designed for someone starting from scratch for a Docker Installation on a remote Ubuntu server. You can skip to any point that is useful for you. There are probably more efficient/scalable ways, but this guide works really great for my personal use case.
 
-**There are many ways to go about this, but I will present to you the best/easiest methods I'm aware of. These configurations can vary based on your liking or needs.**
+**There are many ways to go about this, but I will present to you the best and easiest methods I'm aware of. These configurations can vary based on your liking or needs.**
 
 Digital Ocean is a great option for deployment: you can benefit off a free [$200 credit](https://m.do.co/c/4486923fcf00), and one of the cheapest tiers ($6/mo) will work for LibreChat in a low-stress, minimal-user environment. Should your resource needs increase, you can always upgrade very easily.
 
@@ -317,19 +317,23 @@ npm run start:deployed
 docker ps
 ```
 
-## Part V: Editing the NGINX file (for custom domains and other configs)
+## Part V: Editing the NGINX file (for custom domains and advanced configs)
 
 In case you would like to edit the NGINX file for whatever reason, such as pointing your server to a custom domain, use the following:
 
 ```bash
-# First, stop the active instance
+# First, stop the active instance if running
 npm run stop:deployed
 
 # now you can safely edit
 nano client/nginx.conf
 ```
 
-I won't be walking you through custom domain setup or any other changes to the file, but on the LibreChat side, I only edit the following to get the app working right with a custom domain, since NGINX is being used as a proxy pass:
+I won't be walking you through custom domain setup or any other changes to NGINX, you can look into the [Cloudflare setup guide](./cloudflare.md) to get you started with custom domains.
+
+However, I will show you what to edit on the LibreChat side for a custom domain with this setup.
+
+Since NGINX is being used as a proxy pass by default, I only edit the following:
 
 ```shell
 # before
@@ -338,6 +342,8 @@ server_name localhost;
 # after
 server_name custom.domain.com;
 ```
+
+> Note: this works because the deploy-compose.yml file is using NGINX by default, unlike the main docker-compose.yml file. As always, you can configure the compose files as you need.
 
 Now commit these changes to a separate branch:
 
@@ -348,8 +354,15 @@ git checkout -b <branchname>
 
 # stage all file changes
 git add .
+```
 
-# commit the change
+To commit changes to a git branch, you will need to identify yourself on git. These can be fake values, but if you would like them to sync up with GitHub, should you push this branch to a forked repo of LibreChat, use your GitHub email
+```bash
+# these values will work if you don't care what they are
+git config --global user.email "you@example.com"
+git config --global user.name "Your Name"
+
+# Now you can commit the change
 git commit -m "edited nginx.conf"
 ```
 

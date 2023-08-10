@@ -25,13 +25,12 @@ const shouldRebase = process.argv.includes('--rebase');
   console.purple('Fetching the latest repo...');
   execSync('git fetch origin', { stdio: 'inherit' });
 
-  const currentBranch = getCurrentBranch();
-
   if (!shouldRebase) {
     execSync('git checkout main', { stdio: 'inherit' });
     console.purple('Pulling the latest code from main...');
     execSync('git pull origin main', { stdio: 'inherit' });
   } else if (shouldRebase) {
+    const currentBranch = getCurrentBranch();
     console.purple(`Rebasing ${currentBranch} onto main...`);
     execSync('git rebase origin/main', { stdio: 'inherit' });
   }
