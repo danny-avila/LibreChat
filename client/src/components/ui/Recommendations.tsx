@@ -17,7 +17,6 @@ import { useRecoilValue } from 'recoil';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { Spinner } from '../svg';
 import { useNavigate } from 'react-router-dom';
-import LikeIcon from '../svg/LikeIcon';
 import Regenerate from '../svg/RegenerateIcon';
 
 export default function Recommendations({ type: leaderboardType }: {type: string}) {
@@ -101,8 +100,8 @@ export default function Recommendations({ type: leaderboardType }: {type: string
 
   return (
     <>
-      <div className='grid grid-row grid-cols-4 w-full sticky bg-white top-0 z-30 items-center'>
-        <div className='w-4/5 grid grid-col grid-cols-2 items-center gap-2 col-span-1 justify-self-end hover:underline'>
+      <div className='grid gap-1 w-full sticky bg-white top-0 z-30 items-center md:gap-0 md:grid-col md:grid-cols-4'>
+        <div className='flex flex-row justify-center items-center gap-2 md:col-span-1 md:grid md:grid-col md:grid-cols-2 md:w-4/5 md:justify-self-end hover:underline'>
           {user && (
             <>
               <button
@@ -134,11 +133,11 @@ export default function Recommendations({ type: leaderboardType }: {type: string
         </div>
         <h1
           id="landing-title"
-          className="col-span-2 mb-3 ml-auto mr-auto mt-0.5 flex gap-2 text-center text-3xl font-semibold sm:mb-2 md:mt-0.5"
+          className="md:mb-3 ml-auto mr-auto mt-0.5 flex gap-2 text-center text-3xl font-semibold sm:mb-2 md:mt-0.5 md:col-span-2"
         >
           {convoData ? convoData[convoIdx].title : ''}
         </h1>
-        <div className='flex flex-row gap-2 col-span-1 justify-self-start'>
+        <div className='my-2 flex flex-row justify-self-center gap-2 md:my-0 md:justify-self-start md:col-span-1'>
           <button>
             <Regenerate />
           </button>
