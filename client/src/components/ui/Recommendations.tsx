@@ -90,15 +90,15 @@ export default function Recommendations({ type: leaderboardType }: {type: string
 
   return (
     <>
-      <div className='grid grid-row sticky bg-white top-0 z-30 items-center justify-center'>
+      <div className='grid grid-row w-full sticky bg-white top-0 z-30 items-center'>
         <h1
           id="landing-title"
-          className="mb-3 ml-auto mr-auto mt-0.5 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-2 md:mt-0.5"
+          className="mb-3 ml-auto mr-auto mt-0.5 flex gap-2 text-3xl font-semibold sm:mb-2 md:mt-0.5"
         >
           {convoData ? convoData[convoIdx].title : ''}
         </h1>
       </div>
-      <div className="dark:gpt-dark-gray mb-32 h-auto md:mb-48" ref={screenshotTargetRef}>
+      <div className="dark:gpt-dark-gray mb-32 h-auto w-full md:mb-48" ref={screenshotTargetRef}>
         <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
           {convoData && msgTree && user ? (
             <MultiMessage
