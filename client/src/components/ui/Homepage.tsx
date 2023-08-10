@@ -28,10 +28,10 @@ export default function Homepage() {
   const selectedTab = (val: string) => val + '-tab ' + defaultSelected;
 
   return (
-    <div className='flex flex-col overflow-y-auto gap-10'>
+    <div className='flex flex-col overflow-y-auto gap-3'>
       <div
         className={
-          'flex w-full flex-wrap items-center justify-center gap-2'
+          'flex w-full z-30 flex-wrap items-center justify-center gap-2'
         }
       >
         <Tabs
@@ -59,7 +59,7 @@ export default function Homepage() {
         </Tabs>
       </div>
       <div className="flex h-full flex-col items-center overflow-y-auto pt-0 text-sm dark:bg-gray-800">
-        <div className="w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
+        <div className="flex flex-col items-center w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-5xl">
           {getPage(tabValue)}
         </div>
       </div>
