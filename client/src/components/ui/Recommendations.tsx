@@ -8,7 +8,6 @@ import {
   useGetRecentConversations,
   useGetHottestConversations,
   TMessage,
-  TUser,
 } from '@librechat/data-provider';
 import SwitchPage from './SwitchPage';
 import store from '~/store';
@@ -22,7 +21,6 @@ export default function Recommendations({ type: leaderboardType }: {type: string
   const [convoDataLength, setConvoDataLength] = useState<number>(1);
   const [convoData, setConvoData] = useState<TConversation[] | null>(null);
   const [msgTree, setMsgTree] = useState<TMessage[] | null>(null);
-  const [user, setUser] = useState<TUser | null>(null);
 
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
   const { token } = useAuthContext();
@@ -41,22 +39,6 @@ export default function Recommendations({ type: leaderboardType }: {type: string
       });
       const responseObject = await response.json();
       setMsgTree(buildTree(responseObject));
-    } catch (error) {
-      console.log(error);
-    }
-  }
-
-  async function fetchConvoUser(id: string | undefined) {
-    try {
-      const response = await fetch(`/api/user/${id}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        }
-      });
-      const responseObject = await response.json();
-      setUser(responseObject);
     } catch (error) {
       console.log(error);
     }
@@ -82,7 +64,6 @@ export default function Recommendations({ type: leaderboardType }: {type: string
   useEffect(() => {
     if (convoData) {
       fetchMessagesByConvoId(convoData[convoIdx].conversationId);
-      fetchConvoUser(convoData[convoIdx].user);
     }
   }, [convoData, convoIdx]);
 
@@ -100,7 +81,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
       </div>
       <div className="dark:gpt-dark-gray mb-32 h-auto w-full md:mb-48" ref={screenshotTargetRef}>
         <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
-          {convoData && msgTree && user ? (
+          {convoData && msgTree ? (
             <MultiMessage
               key={convoData[convoIdx].conversationId} // avoid internal state mixture
               messageId={convoData[convoIdx].conversationId}
