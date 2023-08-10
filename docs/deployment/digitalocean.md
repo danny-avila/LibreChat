@@ -368,7 +368,7 @@ npm run update:deployed
 npm run stop:deployed
 ```
 
-> This simply runs `docker-compose -f ./deploy-compose.yml down --volumes`
+> This simply runs `docker-compose -f ./deploy-compose.yml down`
 
 **Starting the docker container**
 
