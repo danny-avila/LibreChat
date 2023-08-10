@@ -138,12 +138,12 @@ DISCORD_CALLBACK_URL=/oauth/discord/callback # this should be the same for every
 
 1. Go to [Twitter Developer Portal](https://developer.twitter.com/)
 2. Sign in and create a free account 
-3. Describe all of your use cases of Twitter’s data and API (if you dont know what to write copy and paste [this](./twitter-text.md))
-4. In the Project & Apps tab select "Default project ...", if you want in settings modify your the project name to something like "LibreChat Login"
-5. Under the Default Porject... open the app (if you want, modify the App Name and upload an App Icon)
-6. In "User authentication settings" "click on Set up"
-7. in the App permissions select "Read" and "Request email from users", in Type of App select "Web App, Automated App or Bot"
-8. In the App Info put this and save
+3. Describe all of your use cases of Twitter’s data and API (if you don't know what to write, copy and paste [this](./twitter-text.md))
+4. In the Project & Apps tab, select "Default project ..." If you want, modify your project name to something like "LibreChat Login" in settings.
+5. Under the Default Project..., open the app. If you want, modify the App Name and upload an App Icon.
+6. In "User authentication settings," click on "Set up."
+7. In the App permissions, select "Read" and "Request email from users." In Type of App, select "Web App, Automated App, or Bot."
+8. In the App Info, put the provided information and save.
 ```
 Callback URI / Redirect URL= your-domain/oauth/twitter/callback
 Website URL= your-domain
