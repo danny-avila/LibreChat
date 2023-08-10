@@ -178,6 +178,7 @@ export const bingAISchema = tConversationSchema
   })
   .transform((obj) => ({
     ...obj,
+    model: '',
     jailbreak: obj.jailbreak ?? false,
     systemMessage: obj.systemMessage ?? null,
     context: obj.context ?? null,
@@ -266,14 +267,39 @@ const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
   gptPlugins: gptPluginsSchema,
 };
 
-export const parseConvo = (endpoint: EModelEndpoint, conversation: Partial<TConversation>) => {
+function getFirstDefinedValue(possibleValues: string[]) {
+  let returnValue;
+  for (const value of possibleValues) {
+    if (value !== undefined && value !== null) {
+      returnValue = value;
+      break;
+    }
+  }
+  return returnValue;
+}
+
+export type TPossibleValues = {
+  model: string[];
+};
+
+export const parseConvo = (
+  endpoint: EModelEndpoint,
+  conversation: Partial<TConversation | TPreset>,
+  possibleValues?: TPossibleValues,
+) => {
   const schema = endpointSchemas[endpoint];
 
   if (!schema) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
   }
 
-  return schema.parse(conversation);
+  const convo = schema.parse(conversation);
+
+  if (possibleValues) {
+    convo.model = getFirstDefinedValue(possibleValues.model) ?? convo.model;
+  }
+
+  return convo;
 };
 
 export type TEndpointOption = {

@@ -114,16 +114,16 @@ export type TConfig = {
   userProvide?: boolean | null;
   availableTools?: [];
   plugins?: [];
-} | null;
+};
 
 export type TEndpointsConfig = {
-  azureOpenAI: TConfig;
-  bingAI: TConfig;
-  chatGPTBrowser: TConfig;
-  anthropic: TConfig;
-  google: TConfig;
-  openAI: TConfig;
-  gptPlugins: TConfig;
+  azureOpenAI: TConfig | null;
+  bingAI: TConfig | null;
+  chatGPTBrowser: TConfig | null;
+  anthropic: TConfig | null;
+  google: TConfig | null;
+  openAI: TConfig | null;
+  gptPlugins: TConfig | null;
 };
 
 export type TUpdateTokenCountResponse = {
