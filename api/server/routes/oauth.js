@@ -141,13 +141,20 @@ router.get(
   },
 );
 
-router.get('/twitter', passport.authenticate('twitter'));
+router.get(
+  '/twitter',
+  passport.authenticate('twitter', {
+    includeEmail: true,
+    session: false,
+  }),
+);
 
 router.get(
   '/twitter/callback',
   passport.authenticate('twitter', {
     failureRedirect: `${domains.client}/login`,
     failureMessage: true,
+    includeEmail: true,
     session: false,
   }),
   (req, res) => {
