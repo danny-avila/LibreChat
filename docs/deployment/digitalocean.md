@@ -4,60 +4,82 @@
 
 **There are many ways to go about this, but I will present to you the best and easiest methods I'm aware of. These configurations can vary based on your liking or needs.**
 
-Digital Ocean is a great option for deployment: you can benefit off a free [$200 credit](https://m.do.co/c/4486923fcf00), and one of the cheapest tiers ($6/mo) will work for LibreChat in a low-stress, minimal-user environment. Should your resource needs increase, you can always upgrade very easily.
+Digital Ocean is a great option for deployment: you can benefit off a **free [$200 credit](https://m.do.co/c/4486923fcf00)** (for 60 days), and one of the cheapest tiers ($6/mo) will work for LibreChat in a low-stress, minimal-user environment. Should your resource needs increase, you can always upgrade very easily.
 
 Digital Ocean is also my preferred choice for testing deployment, as it comes with useful resource monitoring and server access tools right out of the box.
 
-**Using the following Digital Ocean link will directly support the project by helping me cover deployment costs with credits! Click on this banner below to get a $200 credit (available for 60 days) and to directly support LibreChat!**
+**Using the following Digital Ocean link will directly support the project by helping me cover deployment costs with credits!**
+
+## **Click the banner to get a $200 credit and to directly support LibreChat!**
 
 [![DigitalOcean Referral Badge](https://web-platforms.sfo2.cdn.digitaloceanspaces.com/WWW/Badge%201.svg)](https://www.digitalocean.com/?refcode=4486923fcf00&utm_campaign=Referral_Invite&utm_medium=Referral_Program&utm_source=badge)
 
+*Note: you will need a credit card or PayPal to sign up. I'm able to use a prepaid debit card through PayPal for my billing*
+
+*You are free to use this credit as you wish!*
+
 ## Part I: Starting from Zero:
 
-**1. [Click here](https://m.do.co/c/4486923fcf00) or on the banner above to get started on DigitalOcean**
+### **1. [Click here](https://m.do.co/c/4486923fcf00) or on the banner above to get started on DigitalOcean**
 
 Once you're logged in, you will be greeted with a [nice welcome screen](https://cloud.digitalocean.com/welcome).
 
-**a) Click on Explore our control panel or simply navigate to the [Projects page](https://cloud.digitalocean.com/projects)**
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/b7a71eae-770e-4c69-a5d4-d21b939d64ed)
+
+
+### **a) Click on ["Explore our control panel"](https://cloud.digitalocean.com/projects) or simply navigate to the [Projects page](https://cloud.digitalocean.com/projects)**
 
 Server instances are called **"droplets"** in digitalocean, and they are organized under **"Projects."**
 
-**b) Click on "Spin up a Droplet" to start the setup**
+### **b) Click on "Spin up a Droplet" to start the setup**
+
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/6046e8cd-ff59-4795-a29a-5f44ab2f0a6d)
+
 
 Adjust these settings based on your needs, as I'm selecting the bare minimum/cheapest options that will work.
 
 - **Choose Region/Datacenter:** closest to you and your users
 - **Choose an image:** Ubuntu 22.04 (LTS) x64
 - **Choose Size:** Shared CPU, Basic Plan
-       - CPU options: Regular, $6/mo option ($0.009/hour, 1 GB RAM / 1 CPU / 25 GB SSD / 1000 GB transfer)
-       - No additional storage
+    - CPU options: Regular, $6/mo option ($0.009/hour, 1 GB RAM / 1 CPU / 25 GB SSD / 1000 GB transfer)
+    - No additional storage
 - **Choose Authentication Method:** Password option is easiest but up to you
-       - Alternatively, you can setup traditional SSH. The [Hetzner guide](./hetzner_ubuntu.md) has good instructions for this that can apply here
+    - Alternatively, you can setup traditional SSH. The [Hetzner guide](./hetzner_ubuntu.md) has good instructions for this that can apply here
 - **Recommended:** Add improved metrics monitoring and alerting (free)
-       - You might be able to get away with the $4/mo option by not selecting this, but not yet tested
+    - You might be able to get away with the $4/mo option by not selecting this, but not yet tested
 - **Finalize Details:** 
-       - Change the hostname to whatever you like, everything else I leave default (1 droplet, no tags)
-       - Finally, click "Create Droplet"
+    - Change the hostname to whatever you like, everything else I leave default (1 droplet, no tags)
+    - Finally, click "Create Droplet"
 
-The droplet will now spin up with a progress bar.
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/ac90d40e-3ac6-482f-885c-58058c5e3f76)
 
-**2. Access your droplet console**
 
-Once it's spun up, click on the droplet page and click on the Console link on the right-hand side to start up the console.
+After creating the droplet, it will now spin up with a progress bar.
+
+### **2. Access your droplet console**
+
+Once it's spun up, **click on the droplet** and click on the Console link on the right-hand side to start up the console.
+
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/47c14280-fe48-49b9-9997-ff4d9c83212c)
+
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/d5e518fd-4941-4b35-86cc-69f8f65ec8eb)
 
 Launching the Droplet console this way is the easiest method but you can also SSH if you set it up in the previous step.
 
-To keep this guide simple, I will keep it easy and continue with the droplet console. Here is an [official DigitalOcean guide for SSH](https://docs.digitalocean.com/products/droplets/how-to/connect-with-ssh/) if you are interested.
+To keep this guide simple, I will keep it easy and continue with the droplet console. Here is an [official DigitalOcean guide for SSH](https://docs.digitalocean.com/products/droplets/how-to/connect-with-ssh/) if you are interested. As mentioned before, the [Hetzner guide](./hetzner_ubuntu.md) has good instructions for this that can apply here.
 
-**3. Once you have logged in, immediately create a new, non-root user:**
+### **3. Once you have logged in, immediately create a new, non-root user:**
 
 ```bash
 # Note: you should remove the greater/less than signs anytime you see them in this guide
 # example: adduser danny
 adduser <yourusername>
 # you will then be prompted for a password and user details
+```
 
-# once you are done, run the following command to elevate the user
+Once you are done, run the following command to elevate the user
+
+```bash
 # example: usermod -aG sudo danny
 usermod -aG sudo <yourusername>
 ```
@@ -71,7 +93,6 @@ getent group sudo | cut -d: -f4
 **Switch to the new user**
 
 ```bash
-
 # example: su - danny
 su - <yourusername>
 ```
@@ -84,7 +105,7 @@ There are many ways to setup Docker on Debian systems. I'll walk you through the
 
 >Note that the "Best" way for Ubuntu docker installation does not mean the "fastest" or the "easiest". It means, the best way to install it for long-term benefit (i.e. faster updates, security patches, etc.).
 
-**1. Update and Install Docker Dependencies**
+### **1. Update and Install Docker Dependencies**
 First, let's update our packages list and install the required docker dependencies.
 
 ```bash
@@ -96,15 +117,19 @@ Then, use the following command to install the dependencies or pre-requisite pac
 sudo apt install apt-transport-https ca-certificates curl software-properties-common gnupg lsb-release
 ```
 
-**Notes:**
+### **Notes:**
 - Input "Y" for all [Y/n] (yes/no) terminal prompts throughout this entire guide.
-- After the first [Y/n] prompt, you will get the first of a few purple screens asking to restart services.
-       - Each time this happens, you can safely press ENTER for the default, already selected options
+- After the first [Y/n] prompt, you will get the first of a few **purple screens** asking to restart services.
+       - Each time this happens, you can safely press ENTER for the default, already selected options:
+  
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/05cf165b-d3d8-475a-93b3-254f3c63f59b)
+
 - If at any point your droplet console disconnects, do the following and then pick up where you left off:
        - Access the console again as indicated above
        - Switch to the user you created with `su - <yourusername>`
 
-**2. Add Docker Repository to APT Sources**
+
+### **2. Add Docker Repository to APT Sources**
 While installing Docker Engine from Ubuntu repositories is easier, adding official docker repository gives you faster updates. Hence why this is the recommended method.
 
 First, let us get the GPG key which is needed to connect to the Docker repository. To that, use the following command.
@@ -128,7 +153,7 @@ sudo apt update
 ```
 If you forget to add the GPG key, then the above step would fail with an error message. Otherwise, let's get on with installing Docker on Ubuntu.
 
-**3. Install Docker on Ubuntu/Debian Linux**
+### **3. Install Docker on Ubuntu/Debian Linux**
 >What is the difference between docker.io and docker-ce?
 
 >docker.io is the docker package that is offered by some popular Linux distributions (e.g. Ubuntu/Debian). docker-ce on the other hand, is the docker package from official Docker repository. Typically docker-ce more up-to-date and preferred.
@@ -153,20 +178,25 @@ Now let's reboot the system to make sure all is well.
 sudo reboot
 ```
 
-After rebooting, if using the browser droplet console, you can click reload to get back into the console.
+After rebooting, if using the browser droplet console, you can click reload and wait to get back into the console.
 
->Reminder: Any time you reboot with `sudo reboot`, you should switch to the user you setup as before with `su - <yourusername>`.
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/2ad7b739-a3db-4744-813f-39af7dabfce7)
 
-**4. Verify that Docker is Running on Ubuntu**
+**Reminder:** Any time you reboot with `sudo reboot`, you should switch to the user you setup as before with `su - <yourusername>`.
+
+### **4. Verify that Docker is Running on Ubuntu**
 There are many ways to check if Docker is running on Ubuntu. One way is to use the following command:
 ```bash
 sudo systemctl status docker
 ```
-You should see an output that says active for status.
+You should see an output that says **active (running)** for status.
+
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/6baea405-8dfb-4d9d-9327-6e9ecf800471)
+
 
 Exit this log by pressing CTRL (or CMD) + C.
 
-**5. Install the Latest Version of Docker Compose**
+### **5. Install the Latest Version of Docker Compose**
 
 The version of docker-compose packaged with the Linux distribution is probably old and will not work for us.
 
@@ -194,7 +224,7 @@ docker-compose -v
 If you get a permission denied error, like I did, reboot/switch to your created user again, and run `sudo chmod +x /usr/local/bin/docker-compose` again
 
 
-**6. As part of this guide, I will recommend you have git and npm installed:**
+### **6. As part of this guide, I will recommend you have git and npm installed:**
 
 Though not technically required, having git and npm will make installing/updating very simple:
 
@@ -212,7 +242,9 @@ node -v
 npm -v
 ```
 
-> Note: this will install some pretty old versions, npm in particular. For our purposes, this is fine, but this is just a heads up in case you try other things with node in this instance. Do look up a guide for getting the latest versions of the above as necessary.
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/fbba1a38-95cd-4e8e-b813-04001bb82b25)
+
+> Note: this will install some pretty old versions, for npm in particular. For the purposes of this guide, however, this is fine, but this is just a heads up in case you try other things with node in the droplet. Do look up a guide for getting the latest versions of the above as necessary.
 
 **Ok, now that you have set up the Droplet, you will now setup the app itself**
 
@@ -220,7 +252,7 @@ npm -v
 
 ## Part III: Setup LibreChat
 
-**1. Clone down the repo**
+### **1. Clone down the repo**
 From the *droplet* commandline (as your user, not root):
 
 ```bash
@@ -231,7 +263,7 @@ git clone https://github.com/danny-avila/LibreChat.git
 cd LibreChat/
 ``` 
 
-**2. Create a global environment file.**
+### **2. Create a global environment file.**
 The default values are enough to get you started and running the app! API credentials can be provided when accessing the web app.
 
 ```bash
@@ -239,9 +271,9 @@ The default values are enough to get you started and running the app! API creden
 cp .env.example .env
 ```
 
-That's it!
+**That's it!**
 
-For thorough configuration, however, you should edit your .env file as needed, and do read the comments in the .env file and the resources below.
+For thorough configuration, however, you should edit your .env file as needed, and do read the comments in the file and the resources below.
 
 ```bash
 # if editing the .env file
@@ -257,7 +289,7 @@ ALLOW_REGISTRATION=false
 - [Tokens/Apis/etc](../install/apis_and_tokens.md)
 - [User/Auth System](../install/user_auth_system.md)
 
-**3. After all of the above, start docker, and then run the installation/update script**
+### **3. Start docker, and then run the installation/update script**
 
 ```bash
 # should already be running, but just to be safe
@@ -267,9 +299,14 @@ sudo systemctl start docker
 docker info
 ```
 
+Now we can start the app container. For the first time, we'll use the full command and later we can use a shorthand command
+
 ```bash
 sudo docker-compose -f ./deploy-compose.yml up -d
 ```
+
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/5e2f6627-8ca4-4fa3-be73-481539532ee7)
+
 
 It's safe to close the terminal if you wish -- the docker app will continue to run.
 
@@ -277,11 +314,18 @@ It's safe to close the terminal if you wish -- the docker app will continue to r
 
 >If you are setting up a domain to be used with LibreChat, this compose file is using the nginx file located in client/nginx.conf. Instructions on this below in part V.
 
-**4. Once the app is running, you can access it at http://yourserverip**
+### **4. Once the app is running, you can access it at http://yourserverip**
 
-Go back to the DigitalOcean droplet page to get your server ip, copy it, and paste it into your browser!
+### Go back to the DigitalOcean droplet page to get your server ip, copy it, and paste it into your browser!
 
-Sign up, log in, and enjoy your own privately hosted, remote LibreChat :)
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/d8bbad29-6015-46ec-88ce-a72a43d8a313)
+
+
+### Sign up, log in, and enjoy your own privately hosted, remote LibreChat :)
+
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/85070a54-eb57-479f-8011-f63c14116ee3)
+
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/b3fc2152-4b6f-46f9-81e7-4200b76bc468)
 
 ## Part IV: Updating LibreChat
 
@@ -343,6 +387,8 @@ server_name localhost;
 server_name custom.domain.com;
 ```
 
+Exit nano with
+
 > Note: this works because the deploy-compose.yml file is using NGINX by default, unlike the main docker-compose.yml file. As always, you can configure the compose files as you need.
 
 Now commit these changes to a separate branch:
@@ -377,6 +423,19 @@ You should be all set!
 > :warning: You will experience merge conflicts if you start significantly editing the branch and this is not recommended unless you know what you're doing
 
 > Note that any changes to the code in this environment won't be reflected because the compose file is pulling the docker images built automatically by GitHub
+
+<!-- TODO: since the api images are not part of the tag workflow yet
+## Part VI: Latest Stable Release vs. Latest Release (editing the compose file)
+
+By default, this setup will pull the latest updates to the main branch of Librechat. If you would rather have the latest "stable" release, which is defined by the [latest tags](https://github.com/danny-avila/LibreChat/releases), you will need to edit deploy-compose.yml and commit your changes exactly as above in Part V.
+
+Let's edit `deploy-compose.yml`:
+
+```bash
+nano deploy-compose.yml
+```
+-->
+
 
 ---
 
