@@ -155,7 +155,7 @@ Privacy policy= https://example.com
 ```
 TWITTER_CLIENT_ID=your_api_key
 TWITTER_CLIENT_SECRET=your_secret
-DISCORD_CALLBACK_URL=/oauth/discord/callback # this should be the same for everyone so dont change it
+TWITTER_CALLBACK_URL=/oauth/twitter/callback # this should be the same for everyone so dont change it
 ```
 11. Save the .env file
 
