@@ -113,7 +113,7 @@ OPENID_CALLBACK_URL=/oauth/openid/callback
 ```
 GITHUB_CLIENT_ID=your_client_id
 GITHUB_CLIENT_SECRET=your_client_secret
-GITHUB_CALLBACK_URL=/oauth/github/callback # this should be the same for everyone
+GITHUB_CALLBACK_URL=/oauth/github/callback # this should be the same for everyone so dont change it
 ```
 9. Save the .env file
 ---
@@ -129,10 +129,36 @@ GITHUB_CALLBACK_URL=/oauth/github/callback # this should be the same for everyon
 ```
 DISCORD_CLIENT_ID=your_client_id
 DISCORD_CLIENT_SECRET=your_client_secret
-DISCORD_CALLBACK_URL=/oauth/discord/callback # this should be the same for everyone
+DISCORD_CALLBACK_URL=/oauth/discord/callback # this should be the same for everyone so dont change it
 ```
 8. Save the .env file
 ---
+
+## Twitter Authentication
+
+1. Go to [Twitter Developer Portal](https://developer.twitter.com/)
+2. Sign in and create a free account 
+3. Describe all of your use cases of Twitter’s data and API (if you dont know what to write copy and paste [this](./twitter-text.md))
+4. In the Project & Apps tab select "Default project ...", if you want in settings modify your the project name to something like "LibreChat Login"
+5. Under the Default Porject... open the app (if you want, modify the App Name and upload an App Icon)
+6. In "User authentication settings" "click on Set up"
+7. in the App permissions select "Read" and "Request email from users", in Type of App select "Web App, Automated App or Bot"
+8. In the App Info put this and save
+```
+Callback URI / Redirect URL= your-domain/oauth/twitter/callback
+Website URL= your-domain
+Terms of service= https://example.com
+Privacy policy= https://example.com
+```
+9. In the Keys and tokens, click on Regenerate (the API Key and Secret), copy it and save it somewhere
+10. Put the API Key and Secret in the .env file:
+```
+TWITTER_CLIENT_ID=your_api_key
+TWITTER_CLIENT_SECRET=your_secret
+DISCORD_CALLBACK_URL=/oauth/discord/callback # this should be the same for everyone so dont change it
+```
+11. Save the .env file
+
 ## **Email and Password Reset** 
 
 ### General setup
