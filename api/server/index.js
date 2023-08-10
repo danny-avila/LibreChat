@@ -62,7 +62,7 @@ config.validate(); // Validate the config
   if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
     passport.use(await discordLogin());
   }
-  if (process.env.TWITTER_CLIENT_ID && process.env.TWITTER_CLIENT_SECRET) {
+  if (process.env.TWITTER_API_KEY && process.env.TWITTER_API_SECRET) {
     passport.use(await twitterLogin());
   }
   if (

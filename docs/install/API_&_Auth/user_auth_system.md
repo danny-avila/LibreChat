@@ -151,10 +151,10 @@ Terms of service= https://example.com
 Privacy policy= https://example.com
 ```
 9. In the Keys and tokens, click on Regenerate (the API Key and Secret), copy it and save it somewhere
-10. Put the API Key and Secret in the .env file:
+10. Put the API Key and API Secret in the .env file:
 ```
-TWITTER_CLIENT_ID=your_api_key
-TWITTER_CLIENT_SECRET=your_secret
+TWITTER_API_KEY=your_api_key
+TWITTER_API_SECRET=your_api_secret
 TWITTER_CALLBACK_URL=/oauth/twitter/callback # this should be the same for everyone so dont change it
 ```
 11. Save the .env file

@@ -18,8 +18,8 @@ afterEach(() => {
   delete process.env.GITHUB_CLIENT_SECRET;
   delete process.env.DISCORD_CLIENT_ID;
   delete process.env.DISCORD_CLIENT_SECRET;
-  delete process.env.TWITTER_CLIENT_ID;
-  delete process.env.TWITTER_CLIENT_SECRET;
+  delete process.env.TWITTER_API_KEY;
+  delete process.env.TWITTER_API_SECRET;
   delete process.env.DOMAIN_SERVER;
   delete process.env.ALLOW_REGISTRATION;
   delete process.env.ALLOW_SOCIAL_LOGIN;
@@ -43,8 +43,8 @@ describe.skip('GET /', () => {
     process.env.GITHUB_CLIENT_SECRET = 'Test Github client Secret';
     process.env.DISCORD_CLIENT_ID = 'Test Discord client Id';
     process.env.DISCORD_CLIENT_SECRET = 'Test Discord client Secret';
-    process.env.TWITTER_CLIENT_ID = 'Test Twitter client Id';
-    process.env.TWITTER_CLIENT_SECRET = 'Test Twitter client Secret';
+    process.env.TWITTER_API_KEY = 'Test Twitter api key';
+    process.env.TWITTER_API_SECRET = 'Test Twitter api Secret';
     process.env.DOMAIN_SERVER = 'http://test-server.com';
     process.env.ALLOW_REGISTRATION = 'true';
     process.env.ALLOW_SOCIAL_LOGIN = 'true';

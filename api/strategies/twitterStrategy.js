@@ -7,8 +7,8 @@ const User = require('../models/User');
 const twitterLogin = async () =>
   new TwitterStrategy(
     {
-      consumerKey: process.env.TWITTER_CLIENT_ID,
-      consumerSecret: process.env.TWITTER_CLIENT_SECRET,
+      consumerKey: process.env.TWITTER_API_KEY,
+      consumerSecret: process.env.TWITTER_API_SECRET,
       callbackURL: `${domains.server}${process.env.TWITTER_CALLBACK_URL}`,
       proxy: false,
       includeEmail: true, // Richiedi il campo email
