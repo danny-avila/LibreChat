@@ -12,7 +12,7 @@ import { Button } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
 import { useSetOptions } from '~/hooks';
 import { ModelSelect } from './ModelSelect';
-import GenerationButtons from './GenerationButtons';
+import { GenerationButtons } from './Generations';
 import store from '~/store';
 
 export default function OptionsBar() {
