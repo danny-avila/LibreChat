@@ -36,7 +36,7 @@ const shouldRebase = process.argv.includes('--rebase');
   }
 
   console.purple('Removing previously made Docker container...');
-  const downCommand = 'sudo docker-compose -f ./deploy-compose.yml down --volumes';
+  const downCommand = 'sudo docker-compose -f ./deploy-compose.yml down';
   console.orange(downCommand);
   execSync(downCommand, { stdio: 'inherit' });
 
