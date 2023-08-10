@@ -1,6 +1,6 @@
 # Digital Ocean (Ubuntu/Docker) Setup
 
->These instructions are designed for someone starting from scratch for a Docker Installation on a remote Ubuntu server. You can skip to any point that is useful for you.
+>These instructions are designed for someone starting from scratch for a Docker Installation on a remote Ubuntu server. You can skip to any point that is useful for you. There are probably more efficient/scalable ways, but this guide works really great for my personal use case.
 
 **There are many ways to go about this, but I will present to you the best/easiest methods I'm aware of. These configurations can vary based on your liking or needs.**
 
@@ -273,7 +273,9 @@ sudo docker-compose -f ./deploy-compose.yml up -d
 
 It's safe to close the terminal if you wish -- the docker app will continue to run.
 
-> Note: this is using a special compose file optimized for this deployed environment. If you would like more configuration here, you should inspect the deploy-compose.yml and Dockerfile.multi files to see how they are setup. If you are setting up a domain to be used with LibreChat, this compose file is using the nginx file located in client/nginx.conf. I have some more instructions on what you would need to edit below in part V.
+> Note: this is using a special compose file optimized for this deployed environment. If you would like more configuration here, you should inspect the deploy-compose.yml and Dockerfile.multi files to see how they are setup. We are not building the image in this environment since it's not enough RAM to properly do so. Instead, we pull the latest dev-api image of librechat, which is automatically built after each push to main. 
+
+>If you are setting up a domain to be used with LibreChat, this compose file is using the nginx file located in client/nginx.conf. Instructions on this below in part V.
 
 **4. Once the app is running, you can access it at http://yourserverip**
 
@@ -314,6 +316,50 @@ npm run start:deployed
 ```bash
 docker ps
 ```
+
+## Part V: Editing the NGINX file (for custom domains and other configs)
+
+In case you would like to edit the NGINX file for whatever reason, such as pointing your server to a custom domain, use the following:
+
+```bash
+# First, stop the active instance
+npm run stop:deployed
+
+# now you can safely edit
+nano client/nginx.conf
+```
+
+I won't be walking you through custom domain setup or any other changes to the file, but on the LibreChat side, I only edit the following to get the app working right with a custom domain, since NGINX is being used as a proxy pass:
+
+```shell
+# before
+server_name localhost;
+
+# after
+server_name custom.domain.com;
+```
+
+Now commit these changes to a separate branch:
+
+```bash
+# create a new branch
+# example: git checkout -b edit
+git checkout -b <branchname>
+
+# stage all file changes
+git add .
+
+# commit the change
+git commit -m "edited nginx.conf"
+```
+
+Updating on an edited branch will work a little differently now
+
+```bash
+npm run rebase:deployed
+```
+
+> Note that any changes to the code in this environment won't be reflected because the compose file is pulling the docker images built automatically by GitHub
 
 ---
 

@@ -10,23 +10,31 @@ async function validateDockerRunning() {
   }
 }
 
+function getCurrentBranch() {
+  return execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8' }).trim();
+}
+
+const shouldRebase = process.argv.includes('--rebase');
+
 (async () => {
   console.green(
     'Starting deployed update script, this may take a minute or two depending on your system and network.',
   );
 
   await validateDockerRunning();
-  // Fetch latest repo
   console.purple('Fetching the latest repo...');
   execSync('git fetch origin', { stdio: 'inherit' });
 
-  // Switch to main branch
-  console.purple('Switching to main branch...');
-  execSync('git checkout main', { stdio: 'inherit' });
+  const currentBranch = getCurrentBranch();
 
-  // Git pull origin main
-  console.purple('Pulling the latest code from main...');
-  execSync('git pull origin main', { stdio: 'inherit' });
+  if (!shouldRebase) {
+    execSync('git checkout main', { stdio: 'inherit' });
+    console.purple('Pulling the latest code from main...');
+    execSync('git pull origin main', { stdio: 'inherit' });
+  } else if (shouldRebase) {
+    console.purple(`Rebasing ${currentBranch} onto main...`);
+    execSync('git rebase origin/main', { stdio: 'inherit' });
+  }
 
   console.purple('Removing previously made Docker container...');
   const downCommand = 'sudo docker-compose -f ./deploy-compose.yml down --volumes';
