@@ -12,11 +12,19 @@ Digital Ocean is also my preferred choice for testing deployment, as it comes wi
 
 ## **Click the banner to get a $200 credit and to directly support LibreChat!**
 
+*You are free to use this credit as you wish!*
+
 [![DigitalOcean Referral Badge](https://web-platforms.sfo2.cdn.digitaloceanspaces.com/WWW/Badge%201.svg)](https://www.digitalocean.com/?refcode=4486923fcf00&utm_campaign=Referral_Invite&utm_medium=Referral_Program&utm_source=badge)
 
 *Note: you will need a credit card or PayPal to sign up. I'm able to use a prepaid debit card through PayPal for my billing*
 
-*You are free to use this credit as you wish!*
+## Table of Contents
+
+- [Part I: Starting from Zero](#part-i-starting-from-zero)
+- [Part II: Installing Docker](#part-ii-installing-docker)
+- [Part III: Setup LibreChat](#part-iii-setup-librechat)
+- [Part IV: Updating LibreChat](#part-iv-updating-librechat)
+- [Part V: Editing the NGINX file (optional)](#part-v-editing-the-nginx-file-for-custom-domains-and-advanced-configs)
 
 ## Part I: Starting from Zero:
 
@@ -99,7 +107,7 @@ su - <yourusername>
 
 ---
 
-### Part II: Installing Docker, Docker Compose, git & npm:
+### Part II: Installing Docker:
 
 There are many ways to setup Docker on Debian systems. I'll walk you through the best and the recommended way [based on this guide](https://www.smarthomebeginner.com/install-docker-on-ubuntu-22-04/).
 
