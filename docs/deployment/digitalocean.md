@@ -63,7 +63,7 @@ Adjust these settings based on your needs, as I'm selecting the bare minimum/che
 - **Choose Region/Datacenter:** closest to you and your users
 - **Choose an image:** Ubuntu 22.04 (LTS) x64
 - **Choose Size:** Shared CPU, Basic Plan
-    - CPU options: Regular, $6/mo option ($0.009/hour, 1 GB RAM / 1 CPU / 25 GB SSD / 1000 GB transfer)
+    - CPU options: Regular, 6 USD/mo option (0.009 USD/hour, 1 GB RAM / 1 CPU / 25 GB SSD / 1000 GB transfer)
     - No additional storage
 - **Choose Authentication Method:** Password option is easiest but up to you
     - Alternatively, you can setup traditional SSH. The [Hetzner guide](./hetzner_ubuntu.md) has good instructions for this that can apply here
@@ -92,8 +92,9 @@ To keep this guide simple, I will keep it easy and continue with the droplet con
 
 ### **3. Once you have logged in, immediately create a new, non-root user:**
 
+**Note:** you should remove the greater/less than signs anytime you see them in this guide
+
 ```bash
-# Note: you should remove the greater/less than signs anytime you see them in this guide
 # example: adduser danny
 adduser <yourusername>
 # you will then be prompted for a password and user details
