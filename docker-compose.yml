@@ -52,7 +52,7 @@ services:
     restart: always
     volumes:
       - ./data-node:/data/db
-    command: mongod --noauth --bind_ip 0.0.0.0
+    command: mongod --noauth
   meilisearch:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.0
