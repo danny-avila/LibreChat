@@ -6,14 +6,6 @@ import { useRecoilState } from 'recoil';
 
 import store from '~/store';
 
-function getPage(tabValue: string) {
-  switch (tabValue) {
-    default: return <Recommendations type='recent'/>;
-    case ('recent'): return <Recommendations key='recent' type='recent'/>;
-    case ('hottest'): return <Recommendations key='hottest' type='hottest'/>
-  }
-}
-
 export default function Homepage() {
   const [tabValue, setTabValue] = useRecoilState<string>(store.tabValue);
 
@@ -60,7 +52,7 @@ export default function Homepage() {
       </div>
       <div className="flex h-full flex-col items-center overflow-y-auto pt-0 text-sm dark:bg-gray-800">
         <div className="flex flex-col items-center w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-5xl">
-          {getPage(tabValue)}
+          <Recommendations type={tabValue} />
         </div>
       </div>
     </div>

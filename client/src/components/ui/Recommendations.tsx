@@ -5,8 +5,6 @@ import buildTree from '~/utils/buildTree';
 import { useScreenshot } from '~/utils/screenshotContext.jsx';
 import {
   TConversation,
-  useGetRecentConversations,
-  useGetHottestConversations,
   TMessage,
   TUser,
 } from '@librechat/data-provider';
@@ -25,6 +23,8 @@ export default function Recommendations({ type: leaderboardType }: {type: string
   const [convoData, setConvoData] = useState<TConversation[] | null>(null);
   const [msgTree, setMsgTree] = useState<TMessage[] | null>(null);
   const [user, setUser] = useState<TUser | null>(null);
+  const [recentConversations, setRecentConversations] = useState<TConversation[] | null>(null);
+  const [hottestConversations, setHottestConversations] = useState<TConversation[] | null>(null);
 
   const [liked, setLiked] = useState<boolean>(false);
 
@@ -36,6 +36,40 @@ export default function Recommendations({ type: leaderboardType }: {type: string
 
   const navigateToProfile = () => {
     navigate(`/profile/${user?.id}`);
+  }
+
+  async function fetchRecentConversations() {
+    setRecentConversations(null);
+    try {
+      const response = await fetch('/api/convos/recent', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const responseObject = await response.json();
+      setRecentConversations(responseObject);
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
+  async function fetchHottestConversations() {
+    setHottestConversations(null);
+    try {
+      const response = await fetch('/api/convos/hottest', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const responseObject = await response.json();
+      setHottestConversations(responseObject);
+    } catch (error) {
+      console.log(error);
+    }
   }
 
   async function fetchMessagesByConvoId(id: string) {
@@ -72,9 +106,6 @@ export default function Recommendations({ type: leaderboardType }: {type: string
     }
   }
 
-  const recentConversations = useGetRecentConversations();
-  const hottestConversations = useGetHottestConversations();
-
   const { screenshotTargetRef } = useScreenshot();
 
   const nextConvo = () => convoIdx === convoDataLength - 1 ? setConvoIdx(0) : setConvoIdx(convoIdx + 1);
@@ -82,12 +113,26 @@ export default function Recommendations({ type: leaderboardType }: {type: string
 
   // Get recent conversations
   useEffect(() => {
-    if (recentConversations.isSuccess && hottestConversations.isSuccess) {
-      const recommendations = ((leaderboardType === 'recent') ? recentConversations : hottestConversations);
-      setConvoData(recommendations.data);
-      setConvoDataLength(recommendations.data.length);
+    if (token) {
+      fetchRecentConversations();
+      fetchHottestConversations();
     }
-  }, [recentConversations.isSuccess, hottestConversations.isSuccess]);
+  }, [token]);
+
+  useEffect(() => {
+    if (recentConversations && hottestConversations) {
+      setConvoIdx(0);
+      if (leaderboardType === 'recent') {
+        setConvoData(recentConversations);
+        setConvoDataLength(recentConversations.length);
+      } else if (leaderboardType ==='hottest') {
+        setConvoData(hottestConversations);
+        setConvoDataLength(hottestConversations.length);
+      } else {
+        return;
+      }
+    }
+  }, [recentConversations, hottestConversations, leaderboardType])
 
   useEffect(() => {
     if (convoData) {
