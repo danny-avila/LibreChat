@@ -120,13 +120,13 @@ sudo apt install apt-transport-https ca-certificates curl software-properties-co
 ### **Notes:**
 - Input "Y" for all [Y/n] (yes/no) terminal prompts throughout this entire guide.
 - After the first [Y/n] prompt, you will get the first of a few **purple screens** asking to restart services.
-       - Each time this happens, you can safely press ENTER for the default, already selected options:
+    - Each time this happens, you can safely press ENTER for the default, already selected options:
   
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/05cf165b-d3d8-475a-93b3-254f3c63f59b)
 
 - If at any point your droplet console disconnects, do the following and then pick up where you left off:
-       - Access the console again as indicated above
-       - Switch to the user you created with `su - <yourusername>`
+    - Access the console again as indicated above
+    - Switch to the user you created with `su - <yourusername>`
 
 
 ### **2. Add Docker Repository to APT Sources**
