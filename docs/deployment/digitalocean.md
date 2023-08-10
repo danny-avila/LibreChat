@@ -299,10 +299,20 @@ npm run update:deployed
 npm run stop:deployed
 ```
 
+> This simply runs `docker-compose -f ./deploy-compose.yml down --volumes`
+
 **Starting the docker container**
 
 ```bash
 npm run start:deployed
+```
+
+> This simply runs `docker-compose -f ./deploy-compose.yml up -d`
+
+**Check active docker containers**
+
+```bash
+docker ps
 ```
 
 ---
