@@ -12,9 +12,9 @@ const twitterLogin = async () =>
       proxy: false,
       includeEmail: true,
     },
-    async (token, tokenSecret, profile, cb) => {
+    async (token, tokenSecret, user, cb) => {
       try {
-        const email = profile.emails && profile.emails.length > 0 ? profile.emails[0].value : null;
+        const email = user.emails && user.emails.length > 0 ? user.emails[0].value : null;
 
         const oldUser = await User.findOne({ email });
         if (oldUser) {
@@ -23,10 +23,10 @@ const twitterLogin = async () =>
 
         const newUser = await new User({
           provider: 'twitter',
-          twitterId: User.id,
-          username: User.username,
+          twitterId: user.id,
+          username: user.username,
           email,
-          name: User.name,
+          name: user.name,
         }).save();
 
         cb(null, newUser);
