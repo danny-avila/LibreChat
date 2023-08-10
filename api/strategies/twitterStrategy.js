@@ -23,11 +23,10 @@ const twitterLogin = async () =>
 
         const newUser = await new User({
           provider: 'twitter',
-          twitterId: profile.id,
-          username: profile.username,
+          twitterId: User.id,
+          username: User.username,
           email,
-          name: profile.displayName,
-          avatar: profile.photos && profile.photos.length > 0 ? profile.photos[0].value : null,
+          name: User.name,
         }).save();
 
         cb(null, newUser);
