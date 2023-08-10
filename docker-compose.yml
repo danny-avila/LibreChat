@@ -46,8 +46,8 @@ services:
       - ./images:/app/client/public/images
   mongodb:
     container_name: chat-mongodb
-    ports:
-      - 27018:27017
+    # ports:  # Uncomment this to access mongodb from outside docker, not safe in deployment
+    #   - 27018:27017
     image: mongo
     restart: always
     volumes:
