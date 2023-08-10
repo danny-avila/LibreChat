@@ -87,9 +87,9 @@ nav:
         - Mac Install: 'install/mac_install.md'
         - Windows Install: 'install/windows_install.md'
     - Configuration:
-        - Free AI APIs: 'install/free_ai_apis.md'
-        - APIs and Tokens: 'install/apis_and_tokens.md'
-        - User Auth System: 'install/user_auth_system.md'
+        - Free AI APIs: 'install/API_&_Auth/free_ai_apis.md'
+        - APIs and Tokens: 'install/API_&_Auth/apis_and_tokens.md'
+        - User Auth System: 'install/API_&_Auth/user_auth_system.md'
         - Online MongoDB Database: 'install/mongodb.md'
         - Languages: 'install/languages.md'
   - Features:
