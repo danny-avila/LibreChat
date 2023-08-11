@@ -1,4 +1,7 @@
-import { cn } from '~/utils/';
+import { cn } from '~/utils';
+import { useMessageHandler } from '~/hooks';
+import StopGenerating from './StopGenerating';
+import Regenerate from './Regenerate';
 
 type GenerationButtonsProps = {
   showPopover: boolean;
@@ -6,6 +9,16 @@ type GenerationButtonsProps = {
 };
 
 export default function GenerationButtons({ showPopover, opacityClass }: GenerationButtonsProps) {
+  const { isSubmitting, messages } = useMessageHandler();
+
+  let button: React.ReactNode = null;
+
+  if (isSubmitting) {
+    button = <StopGenerating />;
+  } else if (messages && messages.length > 0) {
+    button = <Regenerate />;
+  }
+
   return (
     <div className="absolute bottom-4 right-0 z-[62]">
       <div className="grow"></div>
@@ -13,7 +26,9 @@ export default function GenerationButtons({ showPopover, opacityClass }: Generat
         <div
           className={cn('option-buttons', showPopover ? '' : opacityClass)}
           data-projection-id="173"
-        ></div>
+        >
+          {button}
+        </div>
       </div>
     </div>
   );
