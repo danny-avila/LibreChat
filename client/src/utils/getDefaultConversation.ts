@@ -24,10 +24,9 @@ const buildDefaultConversation = ({
   const { jailbreak, toneStyle } = lastBingSettings;
 
   if (!endpoint) {
-    console.error(`Unknown endpoint ${endpoint}`);
     return {
       ...conversation,
-      endpoint: null,
+      endpoint,
     };
   }
 

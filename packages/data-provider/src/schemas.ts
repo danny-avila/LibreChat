@@ -141,6 +141,15 @@ export const openAISchema = tConversationSchema
     top_p: obj.top_p ?? 1,
     presence_penalty: obj.presence_penalty ?? 0,
     frequency_penalty: obj.frequency_penalty ?? 0,
+  }))
+  .catch(() => ({
+    model: 'gpt-3.5-turbo',
+    chatGptLabel: null,
+    promptPrefix: null,
+    temperature: 1,
+    top_p: 1,
+    presence_penalty: 0,
+    frequency_penalty: 0,
   }));
 
 export const googleSchema = tConversationSchema
@@ -163,6 +172,15 @@ export const googleSchema = tConversationSchema
     maxOutputTokens: obj.maxOutputTokens ?? 1024,
     topP: obj.topP ?? 0.95,
     topK: obj.topK ?? 40,
+  }))
+  .catch(() => ({
+    model: 'chat-bison',
+    modelLabel: null,
+    promptPrefix: null,
+    temperature: 0.2,
+    maxOutputTokens: 1024,
+    topP: 0.95,
+    topK: 40,
   }));
 
 export const bingAISchema = tConversationSchema
@@ -187,6 +205,17 @@ export const bingAISchema = tConversationSchema
     conversationSignature: obj.conversationSignature ?? null,
     clientId: obj.clientId ?? null,
     invocationId: obj.invocationId ?? 1,
+  }))
+  .catch(() => ({
+    model: '',
+    jailbreak: false,
+    systemMessage: null,
+    context: null,
+    toneStyle: 'creative',
+    jailbreakConversationId: null,
+    conversationSignature: null,
+    clientId: null,
+    invocationId: 1,
   }));
 
 export const anthropicSchema = tConversationSchema
@@ -208,6 +237,15 @@ export const anthropicSchema = tConversationSchema
     maxOutputTokens: obj.maxOutputTokens ?? 1024,
     topP: obj.topP ?? 0.7,
     topK: obj.topK ?? 5,
+  }))
+  .catch(() => ({
+    model: 'claude-1',
+    modelLabel: null,
+    promptPrefix: null,
+    temperature: 1,
+    maxOutputTokens: 1024,
+    topP: 0.7,
+    topK: 5,
   }));
 
 export const chatGPTBrowserSchema = tConversationSchema
@@ -217,6 +255,9 @@ export const chatGPTBrowserSchema = tConversationSchema
   .transform((obj) => ({
     ...obj,
     model: obj.model ?? 'text-davinci-002-render-sha',
+  }))
+  .catch(() => ({
+    model: 'text-davinci-002-render-sha',
   }));
 
 export const gptPluginsSchema = tConversationSchema
@@ -247,6 +288,22 @@ export const gptPluginsSchema = tConversationSchema
       model: 'gpt-3.5-turbo',
       temperature: 0,
     },
+  }))
+  .catch(() => ({
+    model: 'gpt-3.5-turbo',
+    chatGptLabel: null,
+    promptPrefix: null,
+    temperature: 0.8,
+    top_p: 1,
+    presence_penalty: 0,
+    frequency_penalty: 0,
+    tools: [],
+    agentOptions: {
+      agent: 'functions',
+      skipCompletion: true,
+      model: 'gpt-3.5-turbo',
+      temperature: 0,
+    },
   }));
 
 type EndpointSchema =
@@ -270,7 +327,7 @@ const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
 function getFirstDefinedValue(possibleValues: string[]) {
   let returnValue;
   for (const value of possibleValues) {
-    if (value !== undefined && value !== null) {
+    if (value) {
       returnValue = value;
       break;
     }
@@ -295,7 +352,7 @@ export const parseConvo = (
 
   const convo = schema.parse(conversation);
 
-  if (possibleValues) {
+  if (possibleValues && convo) {
     convo.model = getFirstDefinedValue(possibleValues.model) ?? convo.model;
   }
 
