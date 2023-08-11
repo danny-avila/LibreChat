@@ -5,7 +5,7 @@ const { titleConvo, AnthropicClient } = require('../../../app');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 const { abortMessage } = require('../../../utils');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress } = require('./handlers');
+const { handleError, sendMessage, createOnProgress } = require('../handlers');
 
 const abortControllers = new Map();
 

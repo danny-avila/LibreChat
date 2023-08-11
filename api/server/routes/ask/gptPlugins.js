@@ -9,7 +9,7 @@ const {
   createOnProgress,
   formatSteps,
   formatAction,
-} = require('./handlers');
+} = require('../handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 
 const abortControllers = new Map();

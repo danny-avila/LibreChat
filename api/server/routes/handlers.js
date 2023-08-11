@@ -1,6 +1,6 @@
 const _ = require('lodash');
 const citationRegex = /\[\^\d+?\^]/g;
-const { getCitations, citeText } = require('../../../app');
+const { getCitations, citeText } = require('../../app');
 const cursor = '<span className="result-streaming">█</span>';
 
 const handleError = (res, message) => {
