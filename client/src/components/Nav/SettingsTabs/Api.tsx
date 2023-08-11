@@ -1,9 +1,8 @@
 import * as Tabs from '@radix-ui/react-tabs';
 import React, { useCallback, useState } from 'react';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilState, useRecoilValue, atom } from 'recoil';
 import store from '~/store';
 import { Switch } from '~/components';
-import { atom } from 'recoil';
 import { localize } from '~/localization/Translation';
 
 export const reverseProxyIsActiveState = atom({

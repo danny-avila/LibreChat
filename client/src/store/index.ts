@@ -9,6 +9,7 @@ import preset from './preset';
 import token from './token';
 import lang from './language';
 import optionSettings from './optionSettings';
+import reverseProxy from './reverse-proxy';
 
 export default {
   ...conversation,
@@ -22,4 +23,5 @@ export default {
   ...token,
   ...lang,
   ...optionSettings,
+  ...reverseProxy,
 };
