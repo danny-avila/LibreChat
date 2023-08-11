@@ -14,7 +14,7 @@ export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
 export const tMessageSchema = z.object({
   messageId: z.string(),
-  clientId: z.string(),
+  clientId: z.string().nullable().optional(),
   conversationId: z.string().nullable(),
   parentMessageId: z.string().nullable(),
   sender: z.string(),

@@ -94,7 +94,6 @@ const useMessageHandler = () => {
       conversationId,
       unfinished: false,
       submitting: true,
-      clientId: '',
       isCreatedByUser: false,
       error: false,
       createdAt: new Date().toISOString(),
