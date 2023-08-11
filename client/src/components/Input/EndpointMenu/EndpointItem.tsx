@@ -4,7 +4,7 @@ import { Settings } from 'lucide-react';
 import { DropdownMenuRadioItem } from '~/components';
 import { getIcon } from '~/components/Endpoints';
 import { SetTokenDialog } from '../SetTokenDialog';
-import { localize } from '~/localization/Translation';
+import { useLocalize } from '~/hooks';
 
 import store from '~/store';
 import { cn, alternateName } from '~/utils';
@@ -30,7 +30,7 @@ export default function ModelItem({
   });
 
   const isUserProvided = endpointsConfig?.[endpoint]?.userProvide;
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
 
   // regular model
   return (
@@ -64,7 +64,7 @@ export default function ModelItem({
             }}
           >
             <Settings className="mr-1 inline-block w-[16px] items-center stroke-1" />
-            {localize(lang, 'com_endpoint_config_token')}
+            {localize('com_endpoint_config_token')}
           </button>
         ) : null}
       </DropdownMenuRadioItem>

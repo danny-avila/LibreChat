@@ -20,7 +20,7 @@ import {
 } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { cn, cleanupPreset, getDefaultConversation } from '~/utils';
-import { localize } from '~/localization/Translation';
+import { useLocalize } from '~/hooks';
 
 import store from '~/store';
 
@@ -146,7 +146,7 @@ export default function NewConversationMenu() {
     button: true,
   });
 
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
 
   return (
     <Dialog className="z-[100]">
@@ -162,7 +162,7 @@ export default function NewConversationMenu() {
           >
             {icon}
             <span className="max-w-0 overflow-hidden whitespace-nowrap px-0 text-slate-600 transition-all group-hover:max-w-[80px] group-hover:px-2 group-data-[state=open]:max-w-[80px] group-data-[state=open]:px-2 dark:text-slate-300">
-              {localize(lang, 'com_endpoint_new_topic')}
+              {localize('com_endpoint_new_topic')}
             </span>
           </Button>
         </DropdownMenuTrigger>
@@ -174,10 +174,8 @@ export default function NewConversationMenu() {
             className="cursor-pointer dark:text-gray-300"
             onClick={() => setShowEndpoints((prev) => !prev)}
           >
-            {showEndpoints
-              ? localize(lang, 'com_endpoint_hide')
-              : localize(lang, 'com_endpoint_show')}{' '}
-            {localize(lang, 'com_endpoint')}
+            {showEndpoints ? localize('com_endpoint_hide') : localize('com_endpoint_show')}{' '}
+            {localize('com_endpoint')}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
@@ -194,7 +192,7 @@ export default function NewConversationMenu() {
                 />
               ) : (
                 <DropdownMenuLabel className="dark:text-gray-300">
-                  {localize(lang, 'com_endpoint_not_available')}
+                  {localize('com_endpoint_not_available')}
                 </DropdownMenuLabel>
               ))}
           </DropdownMenuRadioGroup>
@@ -206,10 +204,8 @@ export default function NewConversationMenu() {
               className="mr-auto cursor-pointer "
               onClick={() => setShowPresets((prev) => !prev)}
             >
-              {showPresets
-                ? localize(lang, 'com_endpoint_hide')
-                : localize(lang, 'com_endpoint_show')}{' '}
-              {localize(lang, 'com_endpoint_examples')}
+              {showPresets ? localize('com_endpoint_hide') : localize('com_endpoint_show')}{' '}
+              {localize('com_endpoint_examples')}
             </span>
             <FileUpload onFileSelected={onFileSelected} />
             <Dialog>
@@ -223,7 +219,7 @@ export default function NewConversationMenu() {
                   className="h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-red-700 hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-gray-800 dark:hover:text-red-400"
                 > */}
                   <Trash2 className="mr-1 flex w-[22px] items-center stroke-1" />
-                  {localize(lang, 'com_endpoint_clear_all')}
+                  {localize('com_endpoint_clear_all')}
                   {/* </Button> */}
                 </label>
               </DialogTrigger>
@@ -256,7 +252,7 @@ export default function NewConversationMenu() {
                 />
               ) : (
                 <DropdownMenuLabel className="dark:text-gray-300">
-                  {localize(lang, 'com_endpoint_no_presets')}
+                  {localize('com_endpoint_no_presets')}
                 </DropdownMenuLabel>
               ))}
           </DropdownMenuRadioGroup>
