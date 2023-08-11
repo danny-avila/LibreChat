@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { titleConvo, OpenAIClient } = require('../../../app');
+const { parseConvo } = require('librechat-data-provider');
 const { getAzureCredentials, abortMessage } = require('../../../utils');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress } = require('./handlers');
@@ -27,15 +28,13 @@ router.post('/', requireJwtAuth, async (req, res) => {
   }
 
   // build endpoint option
+  const parsedBody = parseConvo(endpoint, req.body);
+  const { chatGptLabel, promptPrefix, ...rest } = parsedBody;
   const endpointOption = {
-    chatGptLabel: req.body?.chatGptLabel ?? null,
-    promptPrefix: req.body?.promptPrefix ?? null,
+    chatGptLabel,
+    promptPrefix,
     modelOptions: {
-      model: req.body?.model ?? 'gpt-3.5-turbo',
-      temperature: req.body?.temperature ?? 1,
-      top_p: req.body?.top_p ?? 1,
-      presence_penalty: req.body?.presence_penalty ?? 0,
-      frequency_penalty: req.body?.frequency_penalty ?? 0,
+      ...rest,
     },
   };
 
@@ -70,6 +69,7 @@ const ask = async ({
     'Access-Control-Allow-Origin': '*',
     'X-Accel-Buffering': 'no',
   });
+  let metadata;
   let userMessage;
   let userMessageId;
   let responseMessageId;
@@ -77,6 +77,10 @@ const ask = async ({
   const newConvo = !conversationId;
   const { overrideParentMessageId = null } = req.body;
   const user = req.user.id;
+
+  const addMetadata = (data) => {
+    metadata = data;
+  };
 
   const getIds = (data) => {
     userMessage = data.userMessage;
@@ -166,16 +170,21 @@ const ask = async ({
       overrideParentMessageId,
       getIds,
       onStart,
+      addMetadata,
+      abortController,
       onProgress: progressCallback.call(null, {
         res,
         text,
         parentMessageId: overrideParentMessageId || userMessageId,
       }),
-      abortController,
     });
 
     if (overrideParentMessageId) {
       response.parentMessageId = overrideParentMessageId;
+    }
+
+    if (metadata) {
+      response = { ...response, ...metadata };
     }
 
     console.log(
