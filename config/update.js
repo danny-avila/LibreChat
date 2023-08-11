@@ -80,7 +80,7 @@ async function validateDockerRunning() {
     console.purple('Removing previously made Docker container...');
     const downCommand = `${sudo}docker-compose ${
       singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''
-    }down --volumes`;
+    }down`;
     console.orange(downCommand);
     execSync(downCommand, { stdio: 'inherit' });
     console.purple('Pruning all LibreChat Docker images...');
