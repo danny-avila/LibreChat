@@ -23,8 +23,8 @@ export default function Recommendations({ type: leaderboardType }: {type: string
   const [convoData, setConvoData] = useState<TConversation[] | null>(null);
   const [msgTree, setMsgTree] = useState<TMessage[] | null>(null);
   const [user, setUser] = useState<TUser | null>(null);
-  const [recentConversations, setRecentConversations] = useState<TConversation[] | null>(null);
-  const [hottestConversations, setHottestConversations] = useState<TConversation[] | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [lastLeaderboardType, setLastLeaderboardType] = useState<string | null>(null);
 
   const [liked, setLiked] = useState<boolean>(false);
 
@@ -39,7 +39,6 @@ export default function Recommendations({ type: leaderboardType }: {type: string
   }
 
   async function fetchRecentConversations() {
-    setRecentConversations(null);
     try {
       const response = await fetch('/api/convos/recent', {
         method: 'GET',
@@ -49,14 +48,18 @@ export default function Recommendations({ type: leaderboardType }: {type: string
         }
       });
       const responseObject = await response.json();
-      setRecentConversations(responseObject);
+      window.localStorage.setItem('recentConversations', JSON.stringify(responseObject));
+
+      if (leaderboardType === 'recent') {
+        setConvoData(responseObject);
+        setConvoDataLength(responseObject.length);
+      }
     } catch (error) {
       console.log(error);
     }
   }
 
   async function fetchHottestConversations() {
-    setHottestConversations(null);
     try {
       const response = await fetch('/api/convos/hottest', {
         method: 'GET',
@@ -66,10 +69,70 @@ export default function Recommendations({ type: leaderboardType }: {type: string
         }
       });
       const responseObject = await response.json();
-      setHottestConversations(responseObject);
+      window.localStorage.setItem('hottestConversations', JSON.stringify(responseObject));
+
+      if (leaderboardType === 'hottest') {
+        setConvoData(responseObject);
+        setConvoDataLength(responseObject.length);
+      }
     } catch (error) {
       console.log(error);
     }
+  }
+
+  function setTimer() {
+    const oldTimer = window.localStorage.getItem('timer');
+    if (oldTimer) {
+      clearInterval(oldTimer);
+    }
+
+    const newTimer = setInterval(function() {
+      const storage = Number(window.localStorage.getItem('lastFetchTime'));
+      const remaining = 30000 - (Date.now() - storage);
+      const timeRemaining = Math.ceil(remaining % (1000 * 60) / 1000);
+      setTimeLeft(timeRemaining);
+
+      if (remaining < 0) clearInterval(newTimer);
+    }, 1000);
+
+    window.localStorage.setItem('timer', JSON.stringify(newTimer));
+  }
+
+  async function fetchRecommendations() {
+    const last = Number(window.localStorage.getItem('lastFetchTime'));
+    const currentTime = Date.now();
+
+    if ((currentTime - last) > 30000) {
+      setConvoData(null);
+      setConvoIdx(0);
+
+      fetchRecentConversations();
+      fetchHottestConversations();
+
+      window.localStorage.setItem('lastFetchTime', currentTime.toString());
+    } else {
+      if (leaderboardType === lastLeaderboardType) return;
+
+      setConvoData(null);
+      setConvoIdx(0);
+
+      let conversations: string | null = null;
+
+      if (leaderboardType === 'recent') {
+        conversations = window.localStorage.getItem('recentConversations');
+      } else if (leaderboardType === 'hottest') {
+        conversations = window.localStorage.getItem('hottestConversations');
+      }
+
+      if (conversations) {
+        const convoObject = JSON.parse(conversations);
+        setConvoData(convoObject);
+        setConvoDataLength(convoObject.length);
+      }
+    }
+
+    setLastLeaderboardType(leaderboardType);
+    setTimer();
   }
 
   async function fetchMessagesByConvoId(id: string) {
@@ -114,25 +177,9 @@ export default function Recommendations({ type: leaderboardType }: {type: string
   // Get recent conversations
   useEffect(() => {
     if (token) {
-      fetchRecentConversations();
-      fetchHottestConversations();
+      fetchRecommendations();
     }
-  }, [token]);
-
-  useEffect(() => {
-    if (recentConversations && hottestConversations) {
-      setConvoIdx(0);
-      if (leaderboardType === 'recent') {
-        setConvoData(recentConversations);
-        setConvoDataLength(recentConversations.length);
-      } else if (leaderboardType ==='hottest') {
-        setConvoData(hottestConversations);
-        setConvoDataLength(hottestConversations.length);
-      } else {
-        return;
-      }
-    }
-  }, [recentConversations, hottestConversations, leaderboardType])
+  }, [token, leaderboardType]);
 
   useEffect(() => {
     if (convoData) {
@@ -184,9 +231,6 @@ export default function Recommendations({ type: leaderboardType }: {type: string
         </h1>
         <div className='my-2 flex flex-row justify-self-center gap-2 md:my-0 md:justify-self-start md:col-span-1'>
           <button>
-            <Regenerate />
-          </button>
-          <button>
             <svg
               onClick={() => {setLiked(!liked)}}
               stroke="currentColor"
@@ -210,6 +254,12 @@ export default function Recommendations({ type: leaderboardType }: {type: string
               </g>
             </svg>
           </button>
+          <button onClick={ fetchRecommendations }>
+            <Regenerate />
+          </button>
+          <div>
+            {timeLeft}
+          </div>
         </div>
       </div>
       <div className="dark:gpt-dark-gray mb-32 h-auto w-full md:mb-48" ref={screenshotTargetRef}>
