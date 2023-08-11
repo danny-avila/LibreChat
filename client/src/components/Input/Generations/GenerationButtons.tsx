@@ -1,7 +1,8 @@
 import { cn } from '~/utils';
 import { useMessageHandler } from '~/hooks';
-import StopGenerating from './StopGenerating';
 import Regenerate from './Regenerate';
+import Continue from './Continue';
+import Stop from './Stop';
 
 type GenerationButtonsProps = {
   showPopover: boolean;
@@ -9,14 +10,24 @@ type GenerationButtonsProps = {
 };
 
 export default function GenerationButtons({ showPopover, opacityClass }: GenerationButtonsProps) {
-  const { isSubmitting, messages } = useMessageHandler();
+  const {
+    messages,
+    isSubmitting,
+    latestMessage,
+    handleContinue,
+    handleRegenerate,
+    handleStopGenerating,
+  } = useMessageHandler();
 
   let button: React.ReactNode = null;
+  const { finish_reason } = latestMessage || {};
 
   if (isSubmitting) {
-    button = <StopGenerating />;
+    button = <Stop onClick={handleStopGenerating} />;
+  } else if (finish_reason && finish_reason !== 'stop') {
+    button = <Continue onClick={handleContinue} />;
   } else if (messages && messages.length > 0) {
-    button = <Regenerate />;
+    button = <Regenerate onClick={handleRegenerate} />;
   }
 
   return (

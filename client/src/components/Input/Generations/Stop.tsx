@@ -1,12 +1,10 @@
+import type { TGenButtonProps } from '~/common';
 import { StopGeneratingIcon } from '~/components/svg';
-import { useMessageHandler } from '~/hooks';
 import Button from './Button';
 
-export default function StopGenerating() {
-  const { handleStopGenerating } = useMessageHandler();
-
+export default function Stop({ onClick }: TGenButtonProps) {
   return (
-    <Button onClick={handleStopGenerating}>
+    <Button onClick={onClick}>
       <StopGeneratingIcon className="text-gray-600/90" />
       Stop generating
     </Button>

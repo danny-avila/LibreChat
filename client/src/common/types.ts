@@ -56,3 +56,9 @@ export type TPresetItemProps = {
   onChangePreset: (preset: TPreset) => void;
   onDeletePreset: (preset: TPreset) => void;
 };
+
+export type TOnClick = (e: React.MouseEvent<HTMLButtonElement>) => void;
+
+export type TGenButtonProps = {
+  onClick: TOnClick;
+};

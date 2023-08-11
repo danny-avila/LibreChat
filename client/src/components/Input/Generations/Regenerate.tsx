@@ -1,12 +1,10 @@
+import type { TGenButtonProps } from '~/common';
 import { RegenerateIcon } from '~/components/svg';
-import { useMessageHandler } from '~/hooks';
 import Button from './Button';
 
-export default function StopGenerating() {
-  const { handleRegenerate } = useMessageHandler();
-
+export default function Regenerate({ onClick }: TGenButtonProps) {
   return (
-    <Button onClick={handleRegenerate}>
+    <Button onClick={onClick}>
       <RegenerateIcon className="h-3 w-3 flex-shrink-0 text-gray-600/90" />
       Regenerate
     </Button>
