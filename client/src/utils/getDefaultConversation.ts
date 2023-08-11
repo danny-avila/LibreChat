@@ -6,6 +6,16 @@ import type {
   TConfig,
 } from 'librechat-data-provider';
 
+const defaultEndpoints = [
+  'openAI',
+  'azureOpenAI',
+  'bingAI',
+  'chatGPTBrowser',
+  'gptPlugins',
+  'google',
+  'anthropic',
+];
+
 const buildDefaultConversation = ({
   conversation,
   endpoint,
@@ -71,15 +81,6 @@ const getDefaultConversation = ({ conversation, endpointsConfig, preset }) => {
   };
 
   const getDefaultEndpoint = () => {
-    const defaultEndpoints = [
-      'openAI',
-      'azureOpenAI',
-      'bingAI',
-      'chatGPTBrowser',
-      'gptPlugins',
-      'google',
-      'anthropic',
-    ];
     return defaultEndpoints.find((e) => endpointsConfig?.[e]) || null;
   };
 
