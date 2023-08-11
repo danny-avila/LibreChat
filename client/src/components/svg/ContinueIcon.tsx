@@ -1,20 +1,21 @@
 import { cn } from '~/utils';
 
-export default function StopGeneratingIcon({ className = '' }: { className?: string }) {
+export default function ContinueIcon({ className = '' }: { className?: string }) {
   return (
     <svg
       stroke="currentColor"
       fill="none"
-      strokeWidth="2.5"
+      strokeWidth="1.5"
       viewBox="0 0 24 24"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={cn('h-3 w-3', className)}
+      className={cn('h-3 w-3 -rotate-180', className)}
       height="1em"
       width="1em"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+      <polygon points="11 19 2 12 11 5 11 19"></polygon>
+      <polygon points="22 19 13 12 22 5 22 19"></polygon>
     </svg>
   );
 }
