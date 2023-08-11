@@ -1,4 +1,5 @@
 import { parseConvo } from 'librechat-data-provider';
+import getLocalStorageItems from './getLocalStorageItems';
 import type {
   TConversation,
   TEndpointsConfig,
@@ -27,10 +28,7 @@ const buildDefaultConversation = ({
   endpointsConfig: TEndpointsConfig;
   lastConversationSetup: TConversation;
 }) => {
-  const lastSelectedModel = JSON.parse(localStorage.getItem('lastSelectedModel') ?? '') || {};
-  const lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools') ?? '') || [];
-  const lastBingSettings = JSON.parse(localStorage.getItem('lastBingSettings') ?? '') || [];
-
+  const { lastSelectedModel, lastSelectedTools, lastBingSettings } = getLocalStorageItems();
   const { jailbreak, toneStyle } = lastBingSettings;
 
   if (!endpoint) {
@@ -69,7 +67,8 @@ const getDefaultConversation = ({ conversation, endpointsConfig, preset }) => {
 
   const getEndpointFromLocalStorage = () => {
     try {
-      const lastConversationSetup = JSON.parse(localStorage.getItem('lastConversationSetup') ?? '');
+      const { lastConversationSetup } = getLocalStorageItems();
+
       return (
         lastConversationSetup.endpoint &&
         (endpointsConfig[lastConversationSetup.endpoint] ? lastConversationSetup.endpoint : null)
