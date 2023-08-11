@@ -1,3 +1,4 @@
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { cn, removeFocusOutlines } from '~/utils/';
 
 type GenerationButtonsProps = {
