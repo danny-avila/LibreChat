@@ -1,7 +1,18 @@
+import type { TPreset } from 'librechat-data-provider';
 import { DropdownMenuRadioItem, EditIcon, TrashIcon } from '~/components';
 import { getIcon } from '~/components/Endpoints';
 
-export default function PresetItem({ preset = {}, value, onChangePreset, onDeletePreset }) {
+export default function PresetItem({
+  preset = {} as TPreset,
+  value,
+  onChangePreset,
+  onDeletePreset,
+}: {
+  preset: TPreset;
+  value: TPreset;
+  onChangePreset: (preset: TPreset) => void;
+  onDeletePreset: (preset: TPreset) => void;
+}) {
   const { endpoint } = preset;
 
   const icon = getIcon({
@@ -14,9 +25,9 @@ export default function PresetItem({ preset = {}, value, onChangePreset, onDelet
 
   const getPresetTitle = () => {
     let _title = `${endpoint}`;
+    const { chatGptLabel, modelLabel, model, jailbreak, toneStyle } = preset;
 
     if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
-      const { chatGptLabel, model } = preset;
       if (model) {
         _title += `: ${model}`;
       }
@@ -24,7 +35,6 @@ export default function PresetItem({ preset = {}, value, onChangePreset, onDelet
         _title += ` as ${chatGptLabel}`;
       }
     } else if (endpoint === 'google') {
-      const { modelLabel, model } = preset;
       if (model) {
         _title += `: ${model}`;
       }
@@ -32,7 +42,6 @@ export default function PresetItem({ preset = {}, value, onChangePreset, onDelet
         _title += ` as ${modelLabel}`;
       }
     } else if (endpoint === 'bingAI') {
-      const { jailbreak, toneStyle } = preset;
       if (toneStyle) {
         _title += `: ${toneStyle}`;
       }
@@ -40,12 +49,10 @@ export default function PresetItem({ preset = {}, value, onChangePreset, onDelet
         _title += ' as Sydney';
       }
     } else if (endpoint === 'chatGPTBrowser') {
-      const { model } = preset;
       if (model) {
         _title += `: ${model}`;
       }
     } else if (endpoint === 'gptPlugins') {
-      const { model } = preset;
       if (model) {
         _title += `: ${model}`;
       }

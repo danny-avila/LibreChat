@@ -1,12 +1,12 @@
 import { parseConvo } from 'librechat-data-provider';
-import type { TEndpointsConfig, TConfig, TPreset } from 'librechat-data-provider';
+import type { TEndpointsConfig, TPreset } from 'librechat-data-provider';
 
 type TCleanupPreset = {
   preset: Partial<TPreset>;
   endpointsConfig: TEndpointsConfig;
 };
 
-const cleanupPreset = ({ preset: _preset, endpointsConfig }: TCleanupPreset): TPreset => {
+const cleanupPreset = ({ preset: _preset }: TCleanupPreset): TPreset => {
   const { endpoint } = _preset;
   if (!endpoint) {
     console.error(`Unknown endpoint ${endpoint}`);
@@ -17,8 +17,7 @@ const cleanupPreset = ({ preset: _preset, endpointsConfig }: TCleanupPreset): TP
     };
   }
 
-  const { availableModels } = endpointsConfig[endpoint] as TConfig;
-  const parsedPreset = parseConvo(endpoint, _preset, { model: availableModels });
+  const parsedPreset = parseConvo(endpoint, _preset);
 
   return {
     endpoint,
