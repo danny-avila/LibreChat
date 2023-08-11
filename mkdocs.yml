@@ -103,6 +103,7 @@ nav:
     - Proxy: 'features/proxy.md'
     - Bing Jailbreak: 'features/bing_jailbreak.md' 
   - Cloud Deployment:
+    - DigitalOcean (preferred): 'deployment/digitalocean.md'
     - Cloudflare: 'deployment/cloudflare.md'
     - Hetzner: 'deployment/hetzner_ubuntu.md'
     - Heroku: 'deployment/heroku.md'
