@@ -1,19 +1,42 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Tabs, TabsList, TabsTrigger } from './Tabs';
 import { cn } from '~/utils';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import { useParams } from 'react-router-dom';
-import { useGetUserByIdQuery } from '@librechat/data-provider';
+import { TUser } from '@librechat/data-provider';
+import { useAuthContext } from '~/hooks/AuthContext';
 
 function Profile() {
   const [tabValue, setTabValue] = useState<string>('likes');
+  const [user, setUser] = useState<TUser | null>(null);
 
   const { userId } = useParams();
-  const { data: user } = useGetUserByIdQuery(userId);
+  const { token } = useAuthContext();
   useDocumentTitle('Profile');
 
   const defaultClasses = 'p-2 rounded-md min-w-[75px] font-normal text-xs';
   const defaultSelected = cn(defaultClasses, 'font-medium data-[state=active]:text-white text-xs text-white');
+
+  async function fetchConvoUser(id: string | undefined) {
+    setUser(null);
+    try {
+      const response = await fetch(`/api/user/${id}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const responseObject = await response.json();
+      setUser(responseObject);
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
+  useEffect(() => {
+    if (token) fetchConvoUser(userId);
+  }, [token, userId]);
 
   return (
     <div className='flex flex-col justify-center md:mx-36'>
