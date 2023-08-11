@@ -30,6 +30,7 @@ export type TSubmission = {
   top_p?: number;
   presence_penalty?: number;
   frequence_penalty?: number;
+  isEdited?: boolean;
   conversation: TConversation;
   message: TMessage;
   endpointOption: TEndpointOption;

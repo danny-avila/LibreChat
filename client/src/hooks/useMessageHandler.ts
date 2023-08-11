@@ -6,6 +6,7 @@ import store from '~/store';
 
 type AskProps = {
   text: string;
+  generation?: string;
   parentMessageId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
@@ -22,8 +23,8 @@ const useMessageHandler = () => {
   const { getToken } = store.useToken(endpoint ?? '');
 
   const ask = (
-    { text, parentMessageId = null, conversationId = null, messageId = null }: AskProps,
-    { isRegenerate = false } = {},
+    { text, generation, parentMessageId = null, conversationId = null, messageId = null }: AskProps,
+    { isRegenerate = false, isEdited = false } = {},
   ) => {
     if (!!isSubmitting || text === '') {
       return;
@@ -31,6 +32,17 @@ const useMessageHandler = () => {
 
     if (endpoint === null) {
       console.error('No endpoint available');
+      return;
+    }
+
+    conversationId = conversationId || currentConversation?.conversationId;
+    if (conversationId == 'search') {
+      console.error('cannot send any message under search view!');
+      return;
+    }
+
+    if (isEdited && !messageId) {
+      console.error('cannot edit message without messageId!');
       return;
     }
 
@@ -53,11 +65,7 @@ const useMessageHandler = () => {
     const fakeMessageId = v4();
     parentMessageId =
       parentMessageId || latestMessage?.messageId || '00000000-0000-0000-0000-000000000000';
-    conversationId = conversationId || currentConversation?.conversationId;
-    if (conversationId == 'search') {
-      console.error('cannot send any message under search view!');
-      return;
-    }
+
     if (conversationId == 'new') {
       parentMessageId = '00000000-0000-0000-0000-000000000000';
       currentMessages = [];
@@ -70,7 +78,7 @@ const useMessageHandler = () => {
       isCreatedByUser: true,
       parentMessageId,
       conversationId,
-      messageId: fakeMessageId,
+      messageId: isEdited && messageId ? messageId : fakeMessageId,
       clientId: '',
       error: false,
       createdAt: new Date().toISOString(),
@@ -80,7 +88,7 @@ const useMessageHandler = () => {
     // construct the placeholder response message
     const initialResponse: TMessage = {
       sender: responseSender,
-      text: '<span className="result-streaming">█</span>',
+      text: `${isEdited ? generation : ''}<span className="result-streaming">█</span>`,
       parentMessageId: isRegenerate ? messageId : fakeMessageId,
       messageId: (isRegenerate ? messageId : fakeMessageId) + '_',
       conversationId,
@@ -104,6 +112,7 @@ const useMessageHandler = () => {
         overrideParentMessageId: isRegenerate ? messageId : null,
       },
       messages: currentMessages,
+      isEdited,
       isRegenerate,
       initialResponse,
     };
@@ -130,6 +139,28 @@ const useMessageHandler = () => {
     }
   };
 
+  const continueGeneration = () => {
+    if (!latestMessage) {
+      console.error('Failed to regenerate the message: latestMessage not found.');
+      return;
+    }
+
+    const parentMessage = messages?.find(
+      (element) => element.messageId == latestMessage.parentMessageId,
+    );
+
+    if (parentMessage && parentMessage.isCreatedByUser) {
+      ask(
+        { ...parentMessage, generation: latestMessage.text },
+        { isRegenerate: true, isEdited: true },
+      );
+    } else {
+      console.error(
+        'Failed to regenerate the message: parentMessage not found, or not created by user.',
+      );
+    }
+  };
+
   const stopGenerating = () => {
     setSubmission(null);
   };
@@ -141,12 +172,17 @@ const useMessageHandler = () => {
 
   const handleRegenerate = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    const parentMessageId = messages?.[messages.length - 1]?.parentMessageId;
+    const parentMessageId = latestMessage?.parentMessageId;
     if (!parentMessageId) {
       console.error('Failed to regenerate the message: parentMessageId not found.');
       return;
     }
     regenerate({ parentMessageId });
+  };
+
+  const handleContinue = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    continueGeneration();
   };
 
   return {
@@ -155,6 +191,7 @@ const useMessageHandler = () => {
     stopGenerating,
     handleStopGenerating,
     handleRegenerate,
+    handleContinue,
     endpointsConfig,
     latestMessage,
     isSubmitting,
