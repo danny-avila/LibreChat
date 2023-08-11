@@ -8,6 +8,7 @@ import { AuthContextProvider } from '../hooks/AuthContext';
 import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
 import Leaderboard from '~/components/ui/Leaderboard';
 import Homepage from '~/components/ui/Homepage';
+import SharedConvo from '~/components/ui/SharedConvo';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -47,6 +48,10 @@ export const router = createBrowserRouter([
           {
             path: 'chat/:conversationId?',
             element: <Chat />
+          },
+          {
+            path: 'chat/share/:conversationId?',
+            element: <SharedConvo />
           },
           {
             path: 'search/:query?',
