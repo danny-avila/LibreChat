@@ -1,3 +1,4 @@
+import type { TPresetItemProps } from '~/common';
 import type { TPreset } from 'librechat-data-provider';
 import { DropdownMenuRadioItem, EditIcon, TrashIcon } from '~/components';
 import { getIcon } from '~/components/Endpoints';
@@ -7,12 +8,7 @@ export default function PresetItem({
   value,
   onChangePreset,
   onDeletePreset,
-}: {
-  preset: TPreset;
-  value: TPreset;
-  onChangePreset: (preset: TPreset) => void;
-  onDeletePreset: (preset: TPreset) => void;
-}) {
+}: TPresetItemProps) {
   const { endpoint } = preset;
 
   const icon = getIcon({
@@ -67,6 +63,7 @@ export default function PresetItem({
   // regular model
   return (
     <DropdownMenuRadioItem
+      /* @ts-ignore, value can be an object as well */
       value={value}
       className="group flex h-10 max-h-[44px] flex-row justify-between dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800 sm:h-auto"
     >
