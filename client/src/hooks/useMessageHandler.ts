@@ -134,7 +134,32 @@ const useMessageHandler = () => {
     setSubmission(null);
   };
 
-  return { ask, regenerate, stopGenerating };
+  const handleStopGenerating = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    stopGenerating();
+  };
+
+  const handleRegenerate = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    const parentMessageId = messages?.[messages.length - 1]?.parentMessageId;
+    if (!parentMessageId) {
+      console.error('Failed to regenerate the message: parentMessageId not found.');
+      return;
+    }
+    regenerate({ parentMessageId });
+  };
+
+  return {
+    ask,
+    regenerate,
+    stopGenerating,
+    handleStopGenerating,
+    handleRegenerate,
+    endpointsConfig,
+    latestMessage,
+    isSubmitting,
+    messages,
+  };
 };
 
 export default useMessageHandler;
