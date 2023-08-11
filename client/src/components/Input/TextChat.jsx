@@ -68,9 +68,6 @@ export default function TextChat({ isSearchView = false }) {
   const submitMessage = () => {
     ask({ text });
     setText('');
-    //if (isListening) {
-    //  toggleListening();
-    //}
   };
 
   const handleStopGenerating = (e) => {
@@ -90,10 +87,6 @@ export default function TextChat({ isSearchView = false }) {
     if (e.key === 'Enter' && !e.shiftKey && !isComposing?.current) {
       submitMessage();
     }
-
-    //if (e.shiftKey && e.altKey && e.key === 'L') {
-    //  toggleListening();
-    //}
 
   };
 
