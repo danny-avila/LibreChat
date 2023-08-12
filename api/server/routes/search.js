@@ -5,7 +5,7 @@ const { Message } = require('../../models/Message');
 const { Conversation, getConvosQueried } = require('../../models/Conversation');
 const { reduceHits } = require('../../lib/utils/reduceHits');
 const { cleanUpPrimaryKeyValue } = require('../../lib/utils/misc');
-const requireJwtAuth = require('../../middleware/requireJwtAuth');
+const requireJwtAuth = require('../middleware/requireJwtAuth');
 
 const cache = new Map();
 

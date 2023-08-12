@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getPresets, savePreset, deletePresets } = require('../../models');
 const crypto = require('crypto');
-const requireJwtAuth = require('../../middleware/requireJwtAuth');
+const requireJwtAuth = require('../middleware/requireJwtAuth');
 
 router.get('/', requireJwtAuth, async (req, res) => {
   const presets = (await getPresets(req.user.id)).map((preset) => {

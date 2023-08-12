@@ -5,7 +5,7 @@ const { OpenAIClient } = require('../../../app');
 const { getAzureCredentials, abortMessage } = require('../../../utils');
 const { saveMessage, getConvoTitle, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress } = require('../handlers');
-const requireJwtAuth = require('../../../middleware/requireJwtAuth');
+const requireJwtAuth = require('../../middleware/requireJwtAuth');
 
 const abortControllers = new Map();
 

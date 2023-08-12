@@ -7,9 +7,7 @@ const {
 } = require('../controllers/AuthController');
 const { loginController } = require('../controllers/auth/LoginController');
 const { logoutController } = require('../controllers/auth/LogoutController');
-const requireJwtAuth = require('../../middleware/requireJwtAuth');
-const requireLocalAuth = require('../../middleware/requireLocalAuth');
-const validateRegistration = require('../../middleware/validateRegistration');
+const { requireJwtAuth, requireLocalAuth, validateRegistration } = require('../middleware');
 
 const router = express.Router();
 

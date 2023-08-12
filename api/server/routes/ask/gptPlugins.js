@@ -10,7 +10,7 @@ const {
   formatSteps,
   formatAction,
 } = require('../handlers');
-const requireJwtAuth = require('../../../middleware/requireJwtAuth');
+const requireJwtAuth = require('../../middleware/requireJwtAuth');
 
 const abortControllers = new Map();
 

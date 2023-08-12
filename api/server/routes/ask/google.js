@@ -5,7 +5,7 @@ const { titleConvo, GoogleClient } = require('../../../app');
 // const GoogleClient = require('../../../app/google/GoogleClient');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress } = require('../handlers');
-const requireJwtAuth = require('../../../middleware/requireJwtAuth');
+const requireJwtAuth = require('../../middleware/requireJwtAuth');
 
 router.post('/', requireJwtAuth, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId: oldConversationId } = req.body;
