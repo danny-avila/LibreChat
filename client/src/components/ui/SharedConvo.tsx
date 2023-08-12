@@ -1,5 +1,6 @@
 import { TConversation, TUser, TMessage } from '@librechat/data-provider';
 import React, { useEffect, useState } from 'react';
+import { CSSTransition } from 'react-transition-group';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthContext } from '~/hooks/AuthContext';
 import buildTree from '~/utils/buildTree';
@@ -18,6 +19,7 @@ export default function SharedConvo() {
   const [shareLink, setShareLink] = useState<string>('');
   const [isPrivate, setIsPrivate] = useState<boolean>(false);
   const [pageTitle, setPageTitle] = useState<string>('');
+  const [copied, setCopied] = useState<boolean>(false);
 
   const [liked, setLiked] = useState<boolean>(false);
   const lang = useRecoilValue(store.lang);
@@ -31,7 +33,12 @@ export default function SharedConvo() {
     navigate(`/profile/${user?.id}`);
   }
 
-  const copyShareLinkHandler = () => navigator.clipboard.writeText(shareLink);
+  const copyShareLinkHandler = () => {
+    if (copied) return;
+    navigator.clipboard.writeText(shareLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   async function fetchConversation() {
     try {
@@ -199,6 +206,18 @@ export default function SharedConvo() {
               )}
             </div>
           </div>
+          <CSSTransition
+            in={copied}
+            timeout={2000}
+            classNames="copied-toast"
+            unmountOnExit={false}
+          >
+            <div className='flex flex-col items-center opacity-0 invisible'>
+              <div className='absolute bottom-20 text-black text-md bg-gray-200 py-1 px-3 rounded-full'>
+                {localize(lang, 'com_ui_copied')}
+              </div>
+            </div>
+          </CSSTransition>
         </>
       )}
     </div>
