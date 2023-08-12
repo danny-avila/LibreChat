@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getConvo, saveConvo, likeConvo } = require('../../models');
-const { getConvosByPage, deleteConvos, getRecentConvos, getHottestConvo } = require('../../models/Conversation');
+const { getConvosByPage, deleteConvos, getRecentConvos, getHottestConvo, getSharedConvo } = require('../../models/Conversation');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 const { duplicateMessages } = require('../../models/Message');
 const crypto = require('crypto');
@@ -39,6 +39,15 @@ router.get('/:conversationId', requireJwtAuth, async (req, res) => {
   const convo = await getConvo(req.user.id, conversationId);
 
   if (convo) res.status(200).send(convo.toObject());
+  else res.status(404).end();
+});
+
+router.get('/share/:conversationId', requireJwtAuth, async (req, res) => {
+  const { conversationId } = req.params;
+  const convo = await getSharedConvo(conversationId);
+
+  if (convo.isPrivate) res.status(200).send({ isPrivate: true });
+  else if (!convo.isPrivate) res.status(200).send(convo);
   else res.status(404).end();
 });
 

@@ -2,12 +2,12 @@ import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
 import Root from './Root';
 import Chat from './Chat';
 import Search from './Search';
-import Profile from '../components/ui/Profile';
 import { Login, Registration, RequestPasswordReset, ResetPassword } from '../components/Auth';
 import { AuthContextProvider } from '../hooks/AuthContext';
 import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
 import Leaderboard from '~/components/ui/Leaderboard';
 import Homepage from '~/components/ui/Homepage';
+import SharedConvo from '~/components/ui/SharedConvo';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -49,6 +49,10 @@ export const router = createBrowserRouter([
             element: <Chat />
           },
           {
+            path: 'chat/share/:conversationId?',
+            element: <SharedConvo />
+          },
+          {
             path: 'search/:query?',
             element: <Search />
           },
@@ -59,10 +63,6 @@ export const router = createBrowserRouter([
           {
             path: 'home',
             element: <Homepage />
-          },
-          {
-            path: 'profile',
-            element: <Profile />
           }
         ]
       }

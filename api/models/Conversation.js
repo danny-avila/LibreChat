@@ -13,6 +13,14 @@ const getConvo = async (user, conversationId) => {
 
 module.exports = {
   Conversation,
+  getSharedConvo: async (conversationId) => {
+    try {
+      return await Conversation.findOne({ conversationId }).exec();
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error getting single conversation' };
+    }
+  },
   saveConvo: async (user, { conversationId, newConversationId, ...convo }) => {
     try {
       const messages = await getMessages({ conversationId });

@@ -17,6 +17,7 @@ export default function MobileNav({ setNavVisible }) {
     if (location.pathname === '/home') setTitle(localize(lang, 'com_ui_recommendation'));
     else if (location.pathname === '/leaderboard') setTitle(localize(lang, 'com_ui_leaderboard'));
     else if (location.pathname === '/chat/new') setTitle(localize(lang, 'com_ui_new_chat'));
+    else if (location.pathname.substring(0, 11) === '/chat/share') setTitle(' ');
     else if (conversation) setTitle(conversation.title);
     else setTitle(localize(lang, 'com_ui_new_chat'));
   });

@@ -4,7 +4,7 @@ const { getUserController, updateUserPluginsController } = require('../controlle
 
 const router = express.Router();
 
-router.get('/', requireJwtAuth, getUserController);
+router.get('/:userId?', requireJwtAuth, getUserController);
 router.post('/plugins', requireJwtAuth, updateUserPluginsController);
 
 module.exports = router;

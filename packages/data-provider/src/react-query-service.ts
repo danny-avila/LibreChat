@@ -24,7 +24,7 @@ export enum QueryKeys {
   startupConfig = 'startupConfig',
   recentConversations = 'recentConversations',
   hottestConversations = 'hottestConversations',
-  numOfReferrals = 'numOfReferrals'
+  numOfReferrals = 'numOfReferrals',
 }
 
 export const useAbortRequestWithMessage = (): UseMutationResult<

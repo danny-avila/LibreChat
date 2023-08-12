@@ -1,6 +1,8 @@
 // Chinese phrases
 
 export default {
+  com_ui_copied: '已将对话分享链接复制到剪贴板',
+  com_ui_private_conversation: '抱歉，此对话是一个私密对话',
   com_ui_recommendation: '对话推荐',
   com_ui_leaderboard: '邀请排行榜',
   com_ui_convo_public_reminder: '新对话默认为公开。您可以在左侧栏选择对话，设为非公开（私密）。',

@@ -2,22 +2,24 @@ import { Plugin, GPTIcon, BingIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 const getIcon = (props) => {
-  const { size = 30, isCreatedByUser, button, model, message = true, hideUser = false } = props;
+  const { size = 30, isCreatedByUser, button, model, message = true, name = '' } = props;
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const { user } = useAuthContext();
+  // eslint-disable-next-line react-hooks/rules-of-hooks
 
   if (isCreatedByUser) {
-    const title = hideUser ? 'User' : user?.name || 'User';
-    const username = hideUser ? 'User' : user.name;
+    const title = name === '' ? user?.name || 'User' : name;
+    const username = name === '' ? user.name : name;
 
     return (
-      <div
+      <button
         title={title}
         style={{
           width: size,
           height: size
         }}
         className={'relative flex items-center justify-center' + props?.className}
+        onClick={() => {}}
       >
         <img
           className="rounded-sm"
@@ -27,7 +29,7 @@ const getIcon = (props) => {
           }
           alt="avatar"
         />
-      </div>
+      </button>
     );
   } else if (!isCreatedByUser) {
     const { endpoint, error } = props;
