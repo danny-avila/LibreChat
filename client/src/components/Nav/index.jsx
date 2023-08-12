@@ -22,7 +22,6 @@ import { useNavigate } from 'react-router-dom';
 import HomeIcon from '../svg/HomeIcon';
 import LightBulbIcon from '../svg/LightBulbIcon';
 import ComputerIcon from '../svg/ComputerIcon';
-import ProfileIcon from '../svg/UserIcon';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
 // const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -205,7 +204,6 @@ export default function Nav({ navVisible, setNavVisible }) {
   const openAskMeAnythingHandler = openWidgetHandler('ama');
   const openLeaderboardHandler = () => navigate('/leaderboard');
   const openHomepageHandler = () => navigate('/home');
-  const openProfileHandler = () => navigate(`/profile/${user.id}`);
 
   useEffect(() => {
     if (user) setRefLink(mode === 'dev' ? `http://localhost:3090/register/${user.id}` : `chat.aitok.us/register/${user.id}`);
@@ -303,13 +301,6 @@ export default function Nav({ navVisible, setNavVisible }) {
                   navigator.languages[0] === 'zh-CN' ? '复制邀请链接' : 'Copy Invitation Link'
                 )}
                 clickHandler={ copyLinkHandler }
-              />
-              <NavLink
-                className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-                // Add an SVG or icon for the Profile link here
-                svg={() => <ProfileIcon />}
-                text={navigator.languages[0] === 'zh-CN' ? '个人资料' : 'Profile'}
-                clickHandler={openProfileHandler}
               />
               <NavLinks clearSearch={clearSearch} isSearchEnabled={isSearchEnabled} />
             </nav>

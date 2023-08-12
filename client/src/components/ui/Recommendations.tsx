@@ -14,7 +14,6 @@ import { localize } from '~/localization/Translation';
 import { useRecoilValue } from 'recoil';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { Spinner } from '../svg';
-import { useNavigate } from 'react-router-dom';
 import Regenerate from '../svg/RegenerateIcon';
 
 export default function Recommendations({ type: leaderboardType }: {type: string}) {
@@ -27,17 +26,10 @@ export default function Recommendations({ type: leaderboardType }: {type: string
   const [lastLeaderboardType, setLastLeaderboardType] = useState<string | null>(null);
   const [shareLink, setShareLink] = useState<string>('');
 
-  const [liked, setLiked] = useState<boolean>(false);
-
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
   const { token } = useAuthContext();
   const lang = useRecoilValue(store.lang);
   const title = localize(lang, 'com_ui_recommendation');
-  const navigate = useNavigate();
-
-  const navigateToProfile = () => {
-    navigate(`/profile/${user?.id}`);
-  }
 
   async function fetchRecentConversations() {
     try {
@@ -197,7 +189,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
   return (
     <>
       <div className='grid gap-1 w-full sticky bg-white top-0 z-30 items-center md:gap-0 md:grid-col md:grid-cols-4'>
-        <div className='flex flex-row justify-center items-center gap-2 md:col-span-1 md:grid md:grid-col md:grid-cols-2 md:w-4/5 md:justify-self-end hover:underline'>
+        <div className='flex flex-row justify-center items-center gap-2 md:col-span-1 md:grid md:grid-col md:grid-cols-2 md:w-4/5 md:justify-self-end'>
           {user && (
             <>
               <button
@@ -207,7 +199,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
                   height: 30
                 }}
                 className={'justify-self-end col-span-1 relative flex items-center justify-center'}
-                onClick={ navigateToProfile }
+                onClick={() => {}}
               >
                 <img
                   className="rounded-sm"
@@ -219,7 +211,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
                 />
               </button>
               <button
-                onClick={ navigateToProfile }
+                onClick={() => {}}
                 className='justify-self-start col-span-1'
               >
                 {user?.username}
@@ -234,23 +226,6 @@ export default function Recommendations({ type: leaderboardType }: {type: string
           {convoData ? convoData[convoIdx].title : ''}
         </h1>
         <div className='my-2 flex flex-row justify-self-center gap-2 md:my-0 md:justify-self-start md:col-span-1'>
-          <button>
-            <svg
-              onClick={() => {setLiked(!liked)}}
-              stroke="currentColor"
-              fill={liked ? 'currentColor' : 'none'}
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-4 w-4 hover:text-black ml-1"
-              height="1em"
-              width="1em"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
-            </svg>
-          </button>
           <button onClick={ copyShareLinkHandler }>
             <svg className="h-4 w-4" width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <g id="Communication / Share_iOS_Export">

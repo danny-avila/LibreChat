@@ -1,17 +1,11 @@
-import { useNavigate } from 'react-router-dom';
 import { Plugin, GPTIcon, BingIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 const getIcon = (props) => {
-  const { size = 30, isCreatedByUser, button, model, message = true, name = '', userId = '' } = props;
+  const { size = 30, isCreatedByUser, button, model, message = true, name = '' } = props;
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const { user } = useAuthContext();
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  const navigate = useNavigate();
-  const navigateToProfile = () => {
-    if (userId === '') return;
-    navigate(`/profile/${userId}`);
-  }
 
   if (isCreatedByUser) {
     const title = name === '' ? user?.name || 'User' : name;
@@ -25,7 +19,7 @@ const getIcon = (props) => {
           height: size
         }}
         className={'relative flex items-center justify-center' + props?.className}
-        onClick={navigateToProfile}
+        onClick={() => {}}
       >
         <img
           className="rounded-sm"
