@@ -118,7 +118,7 @@ export const SetReverseProxyApi = ({ api, onChange }) => {
         />
         <div className="absolute right-3 top-1/2 flex -translate-y-1/2 transform gap-2">
           <button onClick={handleShowPasswordClick}>
-            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            {showPassword ? <Eye size={16} /> : <EyeOff size={16} />}
           </button>
           {tempApi !== api && (
             <>
