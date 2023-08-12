@@ -1,9 +1,10 @@
 import * as Tabs from '@radix-ui/react-tabs';
 import React, { useCallback, useState } from 'react';
-import { useRecoilState, useRecoilValue, atom } from 'recoil';
-import store from '~/store';
+import { useRecoilState, atom } from 'recoil';
 import { Switch } from '~/components';
-import { localize } from '~/localization/Translation';
+import { useLocalize } from '~/hooks';
+import { RenameIcon, CrossIcon } from '~/components/svg/';
+import { Eye, EyeOff } from 'lucide-react';
 
 export const reverseProxyIsActiveState = atom({
   key: 'reverseProxyIsActiveState',
@@ -20,18 +21,12 @@ export const reverseProxyApiState = atom({
   default: '',
 });
 
-export const ToggleReverseProxy = ({
-  isActive,
-  onCheckedChange,
-}: {
-  isActive: boolean;
-  onCheckedChange: (value: boolean) => void;
-}) => {
-  const lang = useRecoilValue(store.lang);
+export const ToggleReverseProxy = ({ isActive, onCheckedChange }) => {
+  const localize = useLocalize();
 
   return (
     <div className="flex items-center justify-between">
-      <div>{localize(lang, 'com_nav_reverse_proxy')}</div>
+      <div>{localize('com_nav_reverse_proxy')}</div>
       <label htmlFor="ReverseProxy" className="ml-4">
         <Switch id="ReverseProxy" checked={isActive} onCheckedChange={onCheckedChange} />
       </label>
@@ -39,50 +34,104 @@ export const ToggleReverseProxy = ({
   );
 };
 
-export const SetReverseProxyUrl = ({
-  url,
-  onChange,
-}: {
-  url: string;
-  onChange: (url: string) => void;
-}) => {
-  const lang = useRecoilValue(store.lang);
+export const SetReverseProxyUrl = ({ url, onChange }) => {
+  const localize = useLocalize();
+
+  const [tempUrl, setTempUrl] = useState(url);
+
+  const handleUrlChange = useCallback((e) => {
+    setTempUrl(e.target.value);
+  }, []);
+
+  const handleCrossClick = useCallback(() => {
+    setTempUrl(url);
+  }, [url]);
+
+  const handleCorrectClick = useCallback(() => {
+    onChange(tempUrl);
+  }, [onChange, tempUrl]);
 
   return (
     <div className="flex items-center justify-between">
-      <div>{localize(lang, 'com_nav_reverse_proxy_url')}</div>
-      <input
-        type="text"
-        value={url}
-        onChange={(e) => onChange(e.target.value)}
-        className="rounded border border-gray-300 px-2 py-1 text-gray-600 focus:border-blue-300 focus:outline-none focus:ring dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-        placeholder={localize(lang, 'com_nav_reverse_proxy_url_request')}
-        style={{ width: '70%' }}
-      />
+      <div>{localize('com_nav_reverse_proxy_url')}</div>
+      <div className="relative w-3/4">
+        <input
+          type="text"
+          value={tempUrl}
+          onChange={handleUrlChange}
+          className="w-full rounded border border-gray-300 py-1 pl-2 pr-[36px] text-gray-600 focus:border-blue-300 focus:outline-none focus:ring dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+          placeholder={localize('com_nav_reverse_proxy_url_request')}
+        />
+        {tempUrl !== url && (
+          <>
+            <button
+              onClick={handleCrossClick}
+              className="absolute right-9 top-1/2 -translate-y-1/2 transform text-red-500"
+            >
+              <CrossIcon />
+            </button>
+            <button
+              onClick={handleCorrectClick}
+              className="absolute right-3 top-1/2 -translate-y-1/2 transform text-green-500"
+            >
+              <RenameIcon />
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 };
 
-export const SetReverseProxyApi = ({
-  api,
-  onChange,
-}: {
-  api: string;
-  onChange: (api: string) => void;
-}) => {
-  const lang = useRecoilValue(store.lang);
+export const SetReverseProxyApi = ({ api, onChange }) => {
+  const localize = useLocalize();
+
+  const [tempApi, setTempApi] = useState(api);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const handleApiChange = useCallback((e) => {
+    setTempApi(e.target.value);
+  }, []);
+
+  const handleCrossClick = useCallback(() => {
+    setTempApi(api);
+  }, [api]);
+
+  const handleCorrectClick = useCallback(() => {
+    onChange(tempApi);
+  }, [onChange, tempApi]);
+
+  const handleShowPasswordClick = useCallback(() => {
+    setShowPassword(!showPassword);
+  }, [showPassword]);
 
   return (
     <div className="flex items-center justify-between">
-      <div>{localize(lang, 'com_nav_reverse_proxy_api')}</div>
-      <input
-        type="text"
-        value={api}
-        onChange={(e) => onChange(e.target.value)}
-        className="rounded border border-gray-300 px-2 py-1 text-gray-600 focus:border-blue-300 focus:outline-none focus:ring dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-        placeholder={localize(lang, 'com_nav_reverse_proxy_api_request')}
-        style={{ width: '70%' }}
-      />
+      <div>{localize('com_nav_reverse_proxy_api')}</div>
+      <div className="relative w-3/4">
+        <input
+          type={showPassword ? 'text' : 'password'}
+          value={tempApi}
+          onChange={handleApiChange}
+          className="w-full rounded border border-gray-300 py-1 pl-2 pr-[36px] text-gray-600 focus:border-blue-300 focus:outline-none focus:ring dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+          placeholder={localize('com_nav_reverse_proxy_api_request')}
+        />
+        <div className="absolute right-3 top-1/2 flex -translate-y-1/2 transform gap-2">
+          <button onClick={handleShowPasswordClick}>
+            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+          {tempApi !== api && (
+            <>
+              <button onClick={handleCrossClick} className="text-red-500">
+                <CrossIcon />
+              </button>
+              <button onClick={handleCorrectClick} className="text-green-500">
+                <RenameIcon />
+              </button>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
@@ -91,27 +140,32 @@ function Api() {
   const [ReverseProxyIsActive, setReverseProxyIsActive] = useRecoilState(reverseProxyIsActiveState);
   const [url, setUrl] = useRecoilState(reverseProxyUrlState);
   const [api, setApi] = useRecoilState(reverseProxyApiState);
+  const [showApiKey, setShowApiKey] = useState(false);
 
   const handleReverseProxyActivityChange = useCallback(
-    (value: boolean) => {
+    (value) => {
       setReverseProxyIsActive(value);
     },
     [setReverseProxyIsActive],
   );
 
   const handleReverseProxyUrlChange = useCallback(
-    (newUrl: string) => {
+    (newUrl) => {
       setUrl(newUrl);
     },
     [setUrl],
   );
 
   const handleReverseProxyApiChange = useCallback(
-    (newApi: string) => {
+    (newApi) => {
       setApi(newApi);
     },
     [setApi],
   );
+
+  const handleShowApiKeyChange = useCallback(() => {
+    setShowApiKey(!showApiKey);
+  }, [showApiKey]);
 
   return (
     <Tabs.Content value="api" role="tabpanel" className="w-full md:min-h-[300px]">
@@ -128,7 +182,12 @@ function Api() {
               <SetReverseProxyUrl url={url} onChange={handleReverseProxyUrlChange} />
             </div>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-              <SetReverseProxyApi api={api} onChange={handleReverseProxyApiChange} />
+              <SetReverseProxyApi
+                api={api}
+                onChange={handleReverseProxyApiChange}
+                showApiKey={showApiKey}
+                onShowApiKeyChange={handleShowApiKeyChange}
+              />
             </div>
           </>
         )}
