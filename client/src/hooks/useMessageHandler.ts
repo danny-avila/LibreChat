@@ -4,9 +4,8 @@ import { parseConvo, getResponseSender } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import store from '~/store';
 
-type AskProps = {
+type TAskProps = {
   text: string;
-  generation?: string;
   parentMessageId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
@@ -23,7 +22,7 @@ const useMessageHandler = () => {
   const { getToken } = store.useToken(endpoint ?? '');
 
   const ask = (
-    { text, generation, parentMessageId = null, conversationId = null, messageId = null }: AskProps,
+    { text, parentMessageId = null, conversationId = null, messageId = null }: TAskProps,
     { isRegenerate = false, isEdited = false } = {},
   ) => {
     if (!!isSubmitting || text === '') {
@@ -35,18 +34,18 @@ const useMessageHandler = () => {
       return;
     }
 
-    conversationId = conversationId || currentConversation?.conversationId;
+    conversationId = conversationId ?? currentConversation?.conversationId;
     if (conversationId == 'search') {
       console.error('cannot send any message under search view!');
       return;
     }
 
-    if (isEdited && !messageId) {
-      console.error('cannot edit message without messageId!');
+    if (isEdited && !latestMessage) {
+      console.error('cannot edit AI message without latestMessage!');
       return;
     }
 
-    const { userProvide } = endpointsConfig[endpoint] || {};
+    const { userProvide } = endpointsConfig[endpoint] ?? {};
 
     // set the endpoint option
     const convo = parseConvo(endpoint, currentConversation);
@@ -80,26 +79,24 @@ const useMessageHandler = () => {
       conversationId,
       messageId: isEdited && messageId ? messageId : fakeMessageId,
       error: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     };
 
     // construct the placeholder response message
     const responseText = isEdited
-      ? generation ?? ''
+      ? latestMessage?.text ?? ''
       : '<span className="result-streaming">█</span>';
+
+    const responseMessageId = isEdited ? latestMessage?.messageId : null;
     const initialResponse: TMessage = {
       sender: responseSender,
       text: responseText,
       parentMessageId: isRegenerate ? messageId : fakeMessageId,
-      messageId: (isRegenerate ? messageId : fakeMessageId) + '_',
+      messageId: responseMessageId ?? `${isRegenerate ? messageId : fakeMessageId}_`,
       conversationId,
       unfinished: false,
       submitting: true,
       isCreatedByUser: false,
       error: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     };
 
     const submission = {
@@ -110,6 +107,7 @@ const useMessageHandler = () => {
       endpointOption,
       message: {
         ...currentMsg,
+        responseMessageId,
         overrideParentMessageId: isRegenerate ? messageId : null,
       },
       messages: currentMessages,
@@ -154,10 +152,7 @@ const useMessageHandler = () => {
     );
 
     if (parentMessage && parentMessage.isCreatedByUser) {
-      ask(
-        { ...parentMessage, generation: latestMessage.text },
-        { isRegenerate: true, isEdited: true },
-      );
+      ask({ ...parentMessage }, { isRegenerate: true, isEdited: true });
     } else {
       console.error(
         'Failed to regenerate the message: parentMessage not found, or not created by user.',
