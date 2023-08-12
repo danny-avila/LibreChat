@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { CSSTransition } from 'react-transition-group';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import MultiMessage from '../Messages/MultiMessage';
 import buildTree from '~/utils/buildTree';
@@ -26,6 +27,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [lastLeaderboardType, setLastLeaderboardType] = useState<string | null>(null);
   const [shareLink, setShareLink] = useState<string>('');
+  const [copied, setCopied] = useState<boolean>(false);
 
   const [liked, setLiked] = useState<boolean>(false);
 
@@ -174,7 +176,11 @@ export default function Recommendations({ type: leaderboardType }: {type: string
 
   const nextConvo = () => convoIdx === convoDataLength - 1 ? setConvoIdx(0) : setConvoIdx(convoIdx + 1);
   const prevConvo = () => convoIdx === 0 ? setConvoIdx(convoDataLength - 1) : setConvoIdx(convoIdx - 1);
-  const copyShareLinkHandler = () => navigator.clipboard.writeText(shareLink);
+  const copyShareLinkHandler = () => {
+    navigator.clipboard.writeText(shareLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   // Get recent conversations
   useEffect(() => {
@@ -288,22 +294,18 @@ export default function Recommendations({ type: leaderboardType }: {type: string
           )}
           <SwitchPage key={ 'left_switch' } switchHandler={ prevConvo } direction={ 'left' } />
           <SwitchPage key={ 'right_switch' } switchHandler={ nextConvo } direction={ 'right' } />
-          {/* <DuplicateConvoButton duplicateHandler={ duplicateHandler } /> */}
         </div>
       </div>
-      {/* {!showingTemplates && (
-        <div className="mt-8 mb-4 flex flex-col items-center gap-3.5 md:mt-16">
-          <button
-            onClick={showTemplates}
-            className="btn btn-neutral justify-center gap-2 border-0 md:border"
-          >
-            <ChatIcon />
-            Show Prompt Templates
-          </button>
+      <CSSTransition
+        in={copied}
+        timeout={2000}
+        classNames="copied-toast"
+        unmountOnExit={false}
+      >
+        <div className='opacity-0 invisible absolute bottom-20 text-black text-md bg-gray-200 py-1 px-3 rounded-full'>
+          {localize(lang, 'com_ui_copied')}
         </div>
-      )}
-      {!!showingTemplates && <Templates showTemplates={showTemplates}/>} */}
-      {/* <div className="group h-32 w-full flex-shrink-0 dark:border-gray-900/50 dark:bg-gray-800 md:h-48" /> */}
+      </CSSTransition>
     </>
   );
 }
