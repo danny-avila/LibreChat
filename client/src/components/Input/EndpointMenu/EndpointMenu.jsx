@@ -20,7 +20,7 @@ import {
 } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { cn, cleanupPreset, getDefaultConversation } from '~/utils';
-import PromptLibrary from './PromptLibrary';
+import {PromptLibrary} from './PromptLibrary';
 
 import store from '~/store';
 

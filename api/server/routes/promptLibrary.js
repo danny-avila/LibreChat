@@ -1,10 +1,9 @@
 const express = require('express');
 const router = express.Router();
-// const requireJwtAuth = require('../../middleware/requireJwtAuth');
+const requireJwtAuth = require('../../middleware/requireJwtAuth');
 const glob = require('glob');
 
-// TODO: Add auth middleware
-router.get('/', async (req, res) => {
+router.get('/', requireJwtAuth, async (req, res) => {
   // Glob all .json files from the folder /prompts/
   const globPattern = '../../../prompts/**/*.json';
   const files = glob.sync(globPattern, { cwd: __dirname, realpath: true });
@@ -12,7 +11,8 @@ router.get('/', async (req, res) => {
   let id = 0;
   files.forEach((file) => {
     const preset = require(file);
-    const tags = file.split('/').splice(0, 4);
+    const tags = file.split('/');
+    tags.splice(0, 4)
     const filename = tags.pop();
     // You can group prompts by adding the tagname then a dash. ie "coding-LaravelGPT.json"
     if (filename.includes('-')) {
