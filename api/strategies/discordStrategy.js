@@ -17,11 +17,6 @@ const discordLogin = async () =>
         const email = profile.email;
         const discordId = profile.id;
 
-        const oldUser = await User.findOne({ email });
-        if (oldUser) {
-          return cb(null, oldUser);
-        }
-
         let avatarURL;
         if (profile.avatar) {
           const format = profile.avatar.startsWith('a_') ? 'gif' : 'png';
@@ -29,6 +24,13 @@ const discordLogin = async () =>
         } else {
           const defaultAvatarNum = Number(profile.discriminator) % 5;
           avatarURL = `https://cdn.discordapp.com/embed/avatars/${defaultAvatarNum}.png`;
+        }
+
+        const oldUser = await User.findOne({ email });
+        if (oldUser) {
+          oldUser.avatar = avatarURL;
+          await oldUser.save();
+          return cb(null, oldUser);
         }
 
         const newUser = await User.create({
