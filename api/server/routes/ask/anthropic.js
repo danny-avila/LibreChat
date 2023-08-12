@@ -2,20 +2,11 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const { titleConvo, AnthropicClient } = require('../../../app');
-const requireJwtAuth = require('../../middleware/requireJwtAuth');
-const { abortMessage } = require('../../../utils');
+const { handleAbort, requireJwtAuth } = require('../../middleware');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress } = require('../handlers');
+const { handleError, sendMessage, createOnProgress } = require('../../utils');
 
-const abortControllers = new Map();
-
-router.post('/abort', requireJwtAuth, async (req, res) => {
-  try {
-    return await abortMessage(req, res, abortControllers);
-  } catch (err) {
-    console.error(err);
-  }
-});
+router.post('/abort', requireJwtAuth, handleAbort());
 
 router.post('/', requireJwtAuth, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId: oldConversationId } = req.body;
@@ -124,7 +115,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
 
     const onStart = (userMessage) => {
       sendMessage(res, { message: userMessage, created: true });
-      abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
+      // abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
     };
 
     const client = new AnthropicClient(endpointOption.token);

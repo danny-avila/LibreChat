@@ -4,7 +4,7 @@ const { parseConvo } = require('librechat-data-provider');
 const { OpenAIClient } = require('../../../app');
 const { getAzureCredentials, abortMessage } = require('../../../utils');
 const { saveMessage, getConvoTitle, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress } = require('../handlers');
+const { handleError, sendMessage, createOnProgress } = require('../../utils');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 
 const abortControllers = new Map();

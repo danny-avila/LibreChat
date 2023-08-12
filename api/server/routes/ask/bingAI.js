@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const router = express.Router();
 const { titleConvoBing, askBing } = require('../../../app');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress, handleText } = require('../handlers');
+const { handleError, sendMessage, createOnProgress, handleText } = require('../../utils');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 
 router.post('/', requireJwtAuth, async (req, res) => {

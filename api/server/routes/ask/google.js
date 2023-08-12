@@ -4,8 +4,8 @@ const crypto = require('crypto');
 const { titleConvo, GoogleClient } = require('../../../app');
 // const GoogleClient = require('../../../app/google/GoogleClient');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress } = require('../handlers');
-const requireJwtAuth = require('../../middleware/requireJwtAuth');
+const { handleError, sendMessage, createOnProgress } = require('../../utils');
+const { requireJwtAuth } = require('../../middleware');
 
 router.post('/', requireJwtAuth, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId: oldConversationId } = req.body;

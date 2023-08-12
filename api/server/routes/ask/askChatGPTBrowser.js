@@ -4,7 +4,7 @@ const router = express.Router();
 // const { getChatGPTBrowserModels } = require('../endpoints');
 const { browserClient } = require('../../../app/');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress, handleText } = require('../handlers');
+const { handleError, sendMessage, createOnProgress, handleText } = require('../../utils');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 
 router.post('/', requireJwtAuth, async (req, res) => {
