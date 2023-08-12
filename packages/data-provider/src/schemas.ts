@@ -21,15 +21,21 @@ export const tMessageSchema = z.object({
   text: z.string(),
   isCreatedByUser: z.boolean(),
   error: z.boolean(),
-  createdAt: z.string().default(() => new Date().toISOString()),
-  updatedAt: z.string().default(() => new Date().toISOString()),
+  createdAt: z
+    .string()
+    .optional()
+    .default(() => new Date().toISOString()),
+  updatedAt: z
+    .string()
+    .optional()
+    .default(() => new Date().toISOString()),
   current: z.boolean().optional(),
   unfinished: z.boolean().optional(),
   submitting: z.boolean().optional(),
   finish_reason: z.string().optional(),
 });
 
-export type TMessage = z.infer<typeof tMessageSchema>;
+export type TMessage = z.input<typeof tMessageSchema>;
 
 export const tPluginAuthConfigSchema = z.object({
   authField: z.string(),
