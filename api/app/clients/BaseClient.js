@@ -9,7 +9,7 @@ const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require
 class BaseClient {
   constructor(apiKey, options = {}) {
     this.apiKey = apiKey;
-    this.sender = options.sender || 'AI';
+    this.sender = options.sender ?? 'AI';
     this.contextStrategy = null;
     this.currentDateString = new Date().toLocaleDateString('en-us', {
       year: 'numeric',
@@ -51,13 +51,13 @@ class BaseClient {
     if (opts && typeof opts === 'object') {
       this.setOptions(opts);
     }
-    const user = opts.user || null;
-    const conversationId = opts.conversationId || crypto.randomUUID();
-    const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
-    const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
+    const user = opts.user ?? null;
+    const conversationId = opts.conversationId ?? crypto.randomUUID();
+    const parentMessageId = opts.parentMessageId ?? '00000000-0000-0000-0000-000000000000';
+    const userMessageId = opts.overrideParentMessageId ?? crypto.randomUUID();
     const responseMessageId = crypto.randomUUID();
     const saveOptions = this.getSaveOptions();
-    this.abortController = opts.abortController || new AbortController();
+    this.abortController = opts.abortController ?? new AbortController();
     this.currentMessages = (await this.loadHistory(conversationId, parentMessageId)) ?? [];
 
     return {
@@ -453,7 +453,7 @@ class BaseClient {
       console.debug('Loading history for conversation', conversationId, parentMessageId);
     }
 
-    const messages = (await getMessages({ conversationId })) || [];
+    const messages = (await getMessages({ conversationId })) ?? [];
 
     if (messages.length === 0) {
       return [];
