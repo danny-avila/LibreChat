@@ -82,9 +82,8 @@ const useMessageHandler = () => {
     };
 
     // construct the placeholder response message
-    const responseText = isEdited
-      ? latestMessage?.text ?? ''
-      : '<span className="result-streaming">█</span>';
+    const generation = latestMessage?.text ?? '';
+    const responseText = isEdited ? generation : '<span className="result-streaming">█</span>';
 
     const responseMessageId = isEdited ? latestMessage?.messageId : null;
     const initialResponse: TMessage = {
@@ -107,6 +106,7 @@ const useMessageHandler = () => {
       endpointOption,
       message: {
         ...currentMsg,
+        generation,
         responseMessageId,
         overrideParentMessageId: isRegenerate ? messageId : null,
       },

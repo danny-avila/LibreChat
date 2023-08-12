@@ -15,12 +15,12 @@ const sendMessage = (res, message, event = 'message') => {
   res.write(`event: ${event}\ndata: ${JSON.stringify(message)}\n\n`);
 };
 
-const createOnProgress = ({ onProgress: _onProgress }) => {
+const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
   let i = 0;
   let code = '';
-  let tokens = '';
   let precode = '';
   let codeBlock = false;
+  let tokens = generation;
 
   const progressCallback = async (partial, { res, text, plugin, bing = false, ...rest }) => {
     let chunk = partial === text ? '' : partial;
