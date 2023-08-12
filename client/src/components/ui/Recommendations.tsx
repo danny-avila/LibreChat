@@ -37,10 +37,12 @@ export default function Recommendations({ type: leaderboardType }: {type: string
   const title = localize(lang, 'com_ui_recommendation');
   const navigate = useNavigate();
 
+  // Allows navigation to user's profile page
   const navigateToProfile = () => {
     navigate(`/profile/${user?.id}`);
   }
 
+  // Fetch the most recent conversations and store in localStorage
   async function fetchRecentConversations() {
     try {
       const response = await fetch('/api/convos/recent', {
@@ -62,6 +64,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
     }
   }
 
+  // Fetch the hottest conversations and store in localStorage
   async function fetchHottestConversations() {
     try {
       const response = await fetch('/api/convos/hottest', {
@@ -83,6 +86,8 @@ export default function Recommendations({ type: leaderboardType }: {type: string
     }
   }
 
+  // Timer for fetch cooldown
+  // To prevent user from spamming the refresh button
   function setTimer() {
     const oldTimer = window.localStorage.getItem('timer');
     if (oldTimer) {
@@ -101,10 +106,13 @@ export default function Recommendations({ type: leaderboardType }: {type: string
     window.localStorage.setItem('timer', JSON.stringify(newTimer));
   }
 
+  // Fetch the most recent and the hottest conversations
   async function fetchRecommendations() {
     const last = Number(window.localStorage.getItem('lastFetchTime'));
     const currentTime = Date.now();
 
+    // It has been more than 30 seconds since the last fetch
+    // We fetch new conversations from the server
     if ((currentTime - last) > 30000) {
       setConvoData(null);
       setConvoIdx(0);
@@ -121,6 +129,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
 
       let conversations: string | null = null;
 
+      // We retrieve from localStorage if fetch is still on cooldown
       if (leaderboardType === 'recent') {
         conversations = window.localStorage.getItem('recentConversations');
       } else if (leaderboardType === 'hottest') {
@@ -138,6 +147,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
     setTimer();
   }
 
+  // Fetch messages of the current conversation
   async function fetchMessagesByConvoId(id: string) {
     setMsgTree(null);
     try {
@@ -155,6 +165,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
     }
   }
 
+  // Fetch the user who owns the current conversation
   async function fetchConvoUser(id: string | undefined) {
     setUser(null);
     try {
@@ -183,7 +194,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
     setTimeout(() => setCopied(false), 2000);
   }
 
-  // Get recent conversations
+  // Get recommendations on mount and when switching leaderboard types
   useEffect(() => {
     if (token) {
       fetchRecommendations();

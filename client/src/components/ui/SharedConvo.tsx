@@ -29,6 +29,7 @@ export default function SharedConvo() {
   const { conversationId } = useParams();
   const navigate = useNavigate();
 
+  // Allows navigation to user's profile page
   const navigateToProfile = () => {
     navigate(`/profile/${user?.id}`);
   }
@@ -40,6 +41,7 @@ export default function SharedConvo() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  // Fetch the shared conversation
   async function fetchConversation() {
     try {
       const response = await fetch(`/api/convos/share/${conversationId}`, {
@@ -56,6 +58,7 @@ export default function SharedConvo() {
     }
   }
 
+  // Fetch messages of the current conversation
   async function fetchMessagesByConvoId(id: string) {
     setMsgTree(null);
     try {
@@ -73,6 +76,7 @@ export default function SharedConvo() {
     }
   }
 
+  // Fetch the user who owns the current conversation
   async function fetchConvoUser(id: string | undefined) {
     setUser(null);
     try {
@@ -90,12 +94,14 @@ export default function SharedConvo() {
     }
   }
 
+  // Get recommendations on mount
   useEffect(() => {
     if (token) {
       fetchConversation();
     }
   }, [token]);
 
+  // Check if the conversation has been set as private
   useEffect(() => {
     if (conversation && !conversation.isPrivate) {
       setIsPrivate(false);
