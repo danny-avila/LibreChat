@@ -87,6 +87,7 @@ config.validate(); // Validate the config
   app.use('/api/messages', routes.messages);
   app.use('/api/convos', routes.convos);
   app.use('/api/presets', routes.presets);
+  app.use('/api/promptLibrary', routes.promptLibrary);
   app.use('/api/prompts', routes.prompts);
   app.use('/api/tokenizer', routes.tokenizer);
   app.use('/api/endpoints', routes.endpoints);

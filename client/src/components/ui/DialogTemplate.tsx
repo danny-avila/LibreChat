@@ -16,7 +16,7 @@ type SelectionProps = {
 };
 
 type DialogTemplateProps = {
-  title: string;
+  title: ReactNode;
   description?: string;
   main?: ReactNode;
   buttons?: ReactNode;

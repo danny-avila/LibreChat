@@ -78,3 +78,4 @@ auth.json
 
 /packages/ux-shared/
 /images
+/prompts/custom/*
