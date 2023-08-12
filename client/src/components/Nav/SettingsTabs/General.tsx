@@ -5,9 +5,8 @@ import React, { useState, useContext, useEffect, useCallback } from 'react';
 import { useClearConversationsMutation } from 'librechat-data-provider';
 import { useRecoilState } from 'recoil';
 import store from '~/store';
-import { ThemeContext } from '~/hooks';
+import { ThemeContext, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-import { useLocalize } from '~/hooks';
 
 export const ThemeSelector = ({
   theme,

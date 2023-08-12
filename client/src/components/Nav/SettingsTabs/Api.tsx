@@ -5,6 +5,7 @@ import { Switch } from '~/components';
 import { useLocalize } from '~/hooks';
 import { CheckMark, CrossIcon } from '~/components/svg/';
 import { Eye, EyeOff } from 'lucide-react';
+import store from '~/store';
 
 export const reverseProxyIsActiveState = atom({
   key: 'reverseProxyIsActiveState',
@@ -20,6 +21,31 @@ export const reverseProxyApiState = atom({
   key: 'reverseProxyApiState',
   default: '',
 });
+
+export const EndpointMenu = ({
+  endpoint,
+  onChange,
+}: {
+  endpoint: string;
+  onChange: (value: string) => void;
+}) => {
+  const localize = useLocalize();
+
+  return (
+    <div className="flex items-center justify-between">
+      <div>{localize('com_nav_endpoint_select')}</div>
+      <select
+        className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20 dark:bg-gray-900"
+        onChange={(e) => onChange(e.target.value)}
+        value={endpoint}
+      >
+        <option value="openai">{localize('com_nav_endpoint_openai')}</option>
+        <option value="azure">{localize('com_nav_endpoint_azure')}</option>
+        <option value="plugin">{localize('com_nav_endpoint_plugin')}</option>
+      </select>
+    </div>
+  );
+};
 
 export const ToggleReverseProxy = ({ isActive, onCheckedChange }) => {
   const localize = useLocalize();
@@ -137,53 +163,103 @@ export const SetReverseProxyApi = ({ api, onChange }) => {
 };
 
 function Api() {
-  const [ReverseProxyIsActive, setReverseProxyIsActive] = useRecoilState(reverseProxyIsActiveState);
-  const [url, setUrl] = useRecoilState(reverseProxyUrlState);
-  const [api, setApi] = useRecoilState(reverseProxyApiState);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [endpoint, setEndpoint] = useRecoilState(store.endpoint);
+
+  // Create an object to store settings for each endpoint
+  const [endpointSettings, setEndpointSettings] = useState({
+    openai: {
+      reverseProxyIsActive: false,
+      url: '',
+      api: '',
+    },
+    azure: {
+      reverseProxyIsActive: false,
+      url: '',
+      api: '',
+    },
+    plugin: {
+      reverseProxyIsActive: false,
+      url: '',
+      api: '',
+    },
+  });
+
+  const currentEndpointSettings = endpointSettings[endpoint];
 
   const handleReverseProxyActivityChange = useCallback(
     (value) => {
-      setReverseProxyIsActive(value);
+      setEndpointSettings((prevSettings) => ({
+        ...prevSettings,
+        [endpoint]: {
+          ...prevSettings[endpoint],
+          reverseProxyIsActive: value,
+        },
+      }));
     },
-    [setReverseProxyIsActive],
+    [setEndpointSettings, endpoint],
   );
 
   const handleReverseProxyUrlChange = useCallback(
     (newUrl) => {
-      setUrl(newUrl);
+      setEndpointSettings((prevSettings) => ({
+        ...prevSettings,
+        [endpoint]: {
+          ...prevSettings[endpoint],
+          url: newUrl,
+        },
+      }));
     },
-    [setUrl],
+    [setEndpointSettings, endpoint],
   );
 
   const handleReverseProxyApiChange = useCallback(
     (newApi) => {
-      setApi(newApi);
+      setEndpointSettings((prevSettings) => ({
+        ...prevSettings,
+        [endpoint]: {
+          ...prevSettings[endpoint],
+          api: newApi,
+        },
+      }));
     },
-    [setApi],
+    [setEndpointSettings, endpoint],
   );
 
   const handleShowApiKeyChange = useCallback(() => {
     setShowApiKey(!showApiKey);
   }, [showApiKey]);
 
+  const changeEndpoint = useCallback(
+    (value: string) => {
+      setEndpoint(value);
+    },
+    [setEndpoint],
+  );
+
   return (
     <Tabs.Content value="api" role="tabpanel" className="w-full md:min-h-[300px]">
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-300">
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <EndpointMenu endpoint={endpoint} onChange={changeEndpoint} />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <ToggleReverseProxy
-            isActive={ReverseProxyIsActive}
+            isActive={currentEndpointSettings.reverseProxyIsActive}
             onCheckedChange={handleReverseProxyActivityChange}
           />
         </div>
-        {ReverseProxyIsActive && (
+        {currentEndpointSettings.reverseProxyIsActive && (
           <>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-              <SetReverseProxyUrl url={url} onChange={handleReverseProxyUrlChange} />
+              <SetReverseProxyUrl
+                url={currentEndpointSettings.url}
+                onChange={handleReverseProxyUrlChange}
+              />
             </div>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <SetReverseProxyApi
-                api={api}
+                api={currentEndpointSettings.api}
                 onChange={handleReverseProxyApiChange}
                 showApiKey={showApiKey}
                 onShowApiKeyChange={handleShowApiKeyChange}

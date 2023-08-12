@@ -209,4 +209,8 @@ export default {
   com_nav_reverse_proxy_url_request: 'Enter your Reverse Proxy URL',
   com_nav_reverse_proxy_api: 'API Key',
   com_nav_reverse_proxy_api_request: 'Enter your Reverse Proxy API',
+  com_nav_endpoint_select: 'Select an endpoint',
+  com_nav_endpoint_openai: 'OpenAI',
+  com_nav_endpoint_azure: 'Azure',
+  com_nav_endpoint_plugin: 'Plugin',
 };
