@@ -3,7 +3,7 @@ import React, { useCallback, useState } from 'react';
 import { useRecoilState, atom } from 'recoil';
 import { Switch } from '~/components';
 import { useLocalize } from '~/hooks';
-import { RenameIcon, CrossIcon } from '~/components/svg/';
+import { CheckMark, CrossIcon } from '~/components/svg/';
 import { Eye, EyeOff } from 'lucide-react';
 
 export const reverseProxyIsActiveState = atom({
@@ -74,7 +74,7 @@ export const SetReverseProxyUrl = ({ url, onChange }) => {
               onClick={handleCorrectClick}
               className="absolute right-3 top-1/2 -translate-y-1/2 transform text-green-500"
             >
-              <RenameIcon />
+              <CheckMark />
             </button>
           </>
         )}
@@ -126,7 +126,7 @@ export const SetReverseProxyApi = ({ api, onChange }) => {
                 <CrossIcon />
               </button>
               <button onClick={handleCorrectClick} className="text-green-500">
-                <RenameIcon />
+                <CheckMark />
               </button>
             </>
           )}

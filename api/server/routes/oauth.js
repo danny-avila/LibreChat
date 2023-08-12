@@ -35,6 +35,9 @@ router.get(
   },
 );
 
+/**
+ * Facebook Routes
+ */
 router.get(
   '/facebook',
   passport.authenticate('facebook', {
@@ -62,6 +65,9 @@ router.get(
   },
 );
 
+/**
+ * OpenID Routes
+ */
 router.get(
   '/openid',
   passport.authenticate('openid', {
@@ -87,6 +93,9 @@ router.get(
   },
 );
 
+/**
+ * Github Routes
+ */
 router.get(
   '/github',
   passport.authenticate('github', {
@@ -114,6 +123,9 @@ router.get(
   },
 );
 
+/**
+ * Discord Routes
+ */
 router.get(
   '/discord',
   passport.authenticate('discord', {

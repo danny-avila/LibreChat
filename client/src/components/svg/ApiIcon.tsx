@@ -7,7 +7,7 @@ export default function ApiIcon() {
       height="1em"
       fill="currentColor"
       stroke="currentColor"
-      className="group-radix-state-active:fill-white h-4 h-5 w-4 w-5 fill-white dark:fill-gray-500"
+      className="h-4 h-5 w-4 w-5 fill-white group-radix-state-active:fill-white dark:fill-gray-500"
       strokeWidth="0"
       version="1.1"
       viewBox="0 0 20 20"
