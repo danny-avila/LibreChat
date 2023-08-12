@@ -57,7 +57,7 @@ const useMessageHandler = () => {
     };
     const responseSender = getResponseSender(endpointOption);
 
-    let currentMessages: TMessage[] | null = messages;
+    let currentMessages: TMessage[] | null = messages ?? [];
 
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
@@ -79,16 +79,18 @@ const useMessageHandler = () => {
       parentMessageId,
       conversationId,
       messageId: isEdited && messageId ? messageId : fakeMessageId,
-      clientId: '',
       error: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
     // construct the placeholder response message
+    const responseText = isEdited
+      ? generation ?? ''
+      : '<span className="result-streaming">█</span>';
     const initialResponse: TMessage = {
       sender: responseSender,
-      text: `${isEdited ? generation : ''}<span className="result-streaming">█</span>`,
+      text: responseText,
       parentMessageId: isRegenerate ? messageId : fakeMessageId,
       messageId: (isRegenerate ? messageId : fakeMessageId) + '_',
       conversationId,
@@ -119,9 +121,12 @@ const useMessageHandler = () => {
     console.log('User Input:', text, submission);
 
     if (isRegenerate) {
-      setMessages([...(currentMessages ?? []), initialResponse]);
+      setMessages([
+        ...(isEdited ? currentMessages.slice(0, -1) : currentMessages),
+        initialResponse,
+      ]);
     } else {
-      setMessages([...(currentMessages ?? []), currentMsg, initialResponse]);
+      setMessages([...currentMessages, currentMsg, initialResponse]);
     }
     setSubmission(submission);
   };
