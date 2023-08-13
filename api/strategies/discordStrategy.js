@@ -3,12 +3,13 @@ const User = require('../models/User');
 const config = require('../../config/loader');
 const domains = config.domains;
 
+const DISCORD_CALLBACK_URL = '/oauth/discord/callback';
 const discordLogin = async () =>
   new DiscordStrategy(
     {
       clientID: process.env.DISCORD_CLIENT_ID,
       clientSecret: process.env.DISCORD_CLIENT_SECRET,
-      callbackURL: `${domains.server}${process.env.DISCORD_CALLBACK_URL}`,
+      callbackURL: `${domains.server}${DISCORD_CALLBACK_URL}`,
       scope: ['identify', 'email'], // Request scopes
       authorizationURL: 'https://discord.com/api/oauth2/authorize?prompt=none', // Add the prompt query parameter
     },

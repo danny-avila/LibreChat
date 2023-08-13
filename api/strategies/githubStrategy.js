@@ -4,13 +4,15 @@ const domains = config.domains;
 
 const User = require('../models/User');
 
+const GITHUB_CALLBACK_URL = '/oauth/github/callback';
+
 // GitHub strategy
 const githubLogin = async () =>
   new GitHubStrategy(
     {
       clientID: process.env.GITHUB_CLIENT_ID,
       clientSecret: process.env.GITHUB_CLIENT_SECRET,
-      callbackURL: `${domains.server}${process.env.GITHUB_CALLBACK_URL}`,
+      callbackURL: `${domains.server}${GITHUB_CALLBACK_URL}`,
       proxy: false,
       scope: ['user:email'], // Request email scope
     },

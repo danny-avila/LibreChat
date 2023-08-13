@@ -8,6 +8,8 @@ const domains = config.domains;
 
 const User = require('../models/User');
 
+const OPENID_CALLBACK_URL = '/oauth/openid/callback';
+
 let crypto;
 try {
   crypto = require('node:crypto');
@@ -42,7 +44,7 @@ async function setupOpenId() {
     const client = new issuer.Client({
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
-      redirect_uris: [domains.server + process.env.OPENID_CALLBACK_URL],
+      redirect_uris: [domains.server + OPENID_CALLBACK_URL],
     });
 
     const openidLogin = new OpenIDStrategy(

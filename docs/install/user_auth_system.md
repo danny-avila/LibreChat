@@ -64,7 +64,6 @@ OPENID_CLIENT_SECRET=Your client secret
 OPENID_ISSUER=https://login.microsoftonline.com/Your Directory (tenant ID)/v2.0/
 OPENID_SESSION_SECRET=Any random string
 OPENID_SCOPE=openid profile email #DO NOT CHANGE THIS
-OPENID_CALLBACK_URL=/oauth/openid/callback # this should be the same for everyone
 ```
 11. Save the .env file and you're done! You have successfully set up OpenID authentication with Azure AD for your app.
 
@@ -94,7 +93,6 @@ OPENID_CLIENT_SECRET=Your client secret
 OPENID_ISSUER=https://cognito-idp.[AWS REGION].amazonaws.com/[USER POOL ID]/.well-known/openid-configuration
 OPENID_SESSION_SECRET=Any random string
 OPENID_SCOPE=openid profile email
-OPENID_CALLBACK_URL=/oauth/openid/callback
 ```
 9. Save the .env file and you're done! You have successfully set up OpenID authentication with Cognito for your app.
 
@@ -113,7 +111,6 @@ OPENID_CALLBACK_URL=/oauth/openid/callback
 ```
 GITHUB_CLIENT_ID=your_client_id
 GITHUB_CLIENT_SECRET=your_client_secret
-GITHUB_CALLBACK_URL=/oauth/github/callback # this should be the same for everyone
 ```
 9. Save the .env file
 ---
@@ -129,7 +126,6 @@ GITHUB_CALLBACK_URL=/oauth/github/callback # this should be the same for everyon
 ```
 DISCORD_CLIENT_ID=your_client_id
 DISCORD_CLIENT_SECRET=your_client_secret
-DISCORD_CALLBACK_URL=/oauth/discord/callback # this should be the same for everyone
 ```
 8. Save the .env file
 ---

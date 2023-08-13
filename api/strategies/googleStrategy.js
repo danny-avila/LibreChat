@@ -4,13 +4,15 @@ const domains = config.domains;
 
 const User = require('../models/User');
 
+const GOOGLE_CALLBACK_URL = '/oauth/google/callback';
+
 // google strategy
 const googleLogin = async () =>
   new GoogleStrategy(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: `${domains.server}${process.env.GOOGLE_CALLBACK_URL}`,
+      callbackURL: `${domains.server}${GOOGLE_CALLBACK_URL}`,
       proxy: true,
     },
     async (accessToken, refreshToken, profile, cb) => {
