@@ -31,7 +31,6 @@ const createAbortController = (res, req, endpointOption, getAbortData) => {
       error: false,
     };
 
-    console.log('abortAsk', responseMessage);
     saveMessage(responseMessage);
 
     return {

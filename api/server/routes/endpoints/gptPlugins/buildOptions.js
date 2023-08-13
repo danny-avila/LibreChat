@@ -10,18 +10,31 @@ const buildOptions = (req, res) => {
     return handleError(res, { text: 'Illegal request' });
   }
 
-  const tools = req.body?.tools.map((tool) => tool.pluginKey) ?? [];
   // build endpoint option
   const parsedBody = parseConvo(endpoint, req.body);
-  const { chatGptLabel, promptPrefix, agentOptions, ...rest } = parsedBody;
-  const endpointOption = {
+  const {
+    chatGptLabel,
+    promptPrefix,
+    agentOptions,
     tools,
+    model,
+    temperature,
+    top_p,
+    presence_penalty,
+    frequency_penalty,
+  } = parsedBody;
+  const endpointOption = {
     endpoint,
+    tools: tools.map((tool) => tool.pluginKey) ?? [],
     chatGptLabel,
     promptPrefix,
     agentOptions,
     modelOptions: {
-      ...rest,
+      model,
+      temperature,
+      top_p,
+      presence_penalty,
+      frequency_penalty,
     },
   };
 

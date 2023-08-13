@@ -1,9 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { titleConvo } = require('../../../app');
-const { buildOptions, initializeClient } = require('../endpoints/openAI');
 const { sendMessage, createOnProgress } = require('../../utils');
-const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
+const { addTitle, buildOptions, initializeClient } = require('../endpoints/openAI');
+const { saveMessage, getConvoTitle, getConvo } = require('../../../models');
 const {
   handleAbort,
   createAbortController,
@@ -15,19 +14,7 @@ const {
 router.post('/abort', requireJwtAuth, handleAbort());
 
 router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
-  const { text, endpointOption, conversationId, parentMessageId } = buildOptions(req, res);
-  // eslint-disable-next-line no-use-before-define
-  return await ask({
-    text,
-    endpointOption,
-    conversationId,
-    parentMessageId,
-    req,
-    res,
-  });
-});
-
-const ask = async ({ text, endpointOption, parentMessageId = null, conversationId, req, res }) => {
+  let { text, endpointOption, conversationId, parentMessageId = null } = buildOptions(req, res);
   let metadata;
   let userMessage;
   let userMessageId;
@@ -37,9 +24,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
   const { overrideParentMessageId = null } = req.body;
   const user = req.user.id;
 
-  const addMetadata = (data) => {
-    metadata = data;
-  };
+  const addMetadata = (data) => (metadata = data);
 
   const getIds = (data) => {
     userMessage = data.userMessage;
@@ -130,18 +115,14 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     });
     res.end();
 
-    if (parentMessageId == '00000000-0000-0000-0000-000000000000' && newConvo) {
-      const title = await titleConvo({
-        text,
-        response,
-        openAIApiKey,
-        azure: endpointOption.endpoint === 'azureOpenAI',
-      });
-      await saveConvo(req.user.id, {
-        conversationId,
-        title,
-      });
-    }
+    addTitle(req, {
+      text,
+      newConvo,
+      response,
+      openAIApiKey,
+      parentMessageId,
+      azure: endpointOption.endpoint === 'azureOpenAI',
+    });
   } catch (error) {
     const partialText = getPartialText();
     handleAbortError(res, req, error, {
@@ -152,6 +133,6 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       parentMessageId: userMessageId,
     });
   }
-};
+});
 
 module.exports = router;

@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { titleConvo, validateTools } = require('../../../app');
-const { buildOptions, initializeClient } = require('../gptPlugins');
-const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
+const { validateTools } = require('../../../app');
+const { addTitle } = require('../endpoints/openAI');
+const { buildOptions, initializeClient } = require('../endpoints/gptPlugins');
+const { saveMessage, getConvoTitle, getConvo } = require('../../../models');
 const { sendMessage, createOnProgress, formatSteps, formatAction } = require('../../utils');
 const {
   handleAbort,
@@ -15,19 +16,7 @@ const {
 router.post('/abort', requireJwtAuth, handleAbort());
 
 router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
-  const { text, endpointOption, conversationId, parentMessageId } = buildOptions(req, res);
-  // eslint-disable-next-line no-use-before-define
-  return await ask({
-    text,
-    endpointOption,
-    conversationId,
-    parentMessageId,
-    req,
-    res,
-  });
-});
-
-const ask = async ({ text, endpointOption, parentMessageId = null, conversationId, req, res }) => {
+  let { text, endpointOption, conversationId, parentMessageId = null } = buildOptions(req, res);
   let userMessage;
   let userMessageId;
   let responseMessageId;
@@ -101,33 +90,21 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     // console.log('CHAIN END', plugin.outputs);
   };
 
-  const { abortController, onStart } = createAbortController(res, req, endpointOption);
-  abortController.abortAsk = async function () {
-    this.abort();
-
-    const responseMessage = {
-      messageId: responseMessageId,
-      sender: endpointOption?.chatGptLabel || 'ChatGPT',
-      conversationId,
-      parentMessageId: overrideParentMessageId || userMessageId,
-      text: getPartialText(),
-      plugin: { ...plugin, loading: false },
-      model: endpointOption.modelOptions.model,
-      unfinished: false,
-      cancelled: true,
-      error: false,
-    };
-
-    saveMessage(responseMessage);
-
-    return {
-      title: await getConvoTitle(req.user.id, conversationId),
-      final: true,
-      conversation: await getConvo(req.user.id, conversationId),
-      requestMessage: userMessage,
-      responseMessage: responseMessage,
-    };
-  };
+  const getAbortData = () => ({
+    sender: endpointOption?.chatGptLabel ?? 'ChatGPT',
+    conversationId,
+    messageId: responseMessageId,
+    parentMessageId: overrideParentMessageId ?? userMessageId,
+    text: getPartialText(),
+    plugin: { ...plugin, loading: false },
+    userMessage,
+  });
+  const { abortController, onStart } = createAbortController(
+    res,
+    req,
+    endpointOption,
+    getAbortData,
+  );
 
   try {
     endpointOption.tools = await validateTools(user, endpointOption.tools);
@@ -169,19 +146,14 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       responseMessage: response,
     });
     res.end();
-
-    if (parentMessageId == '00000000-0000-0000-0000-000000000000' && newConvo) {
-      const title = await titleConvo({
-        text,
-        response,
-        openAIApiKey,
-        azure: !!azure,
-      });
-      await saveConvo(req.user.id, {
-        conversationId: conversationId,
-        title,
-      });
-    }
+    addTitle(req, {
+      text,
+      newConvo,
+      response,
+      openAIApiKey,
+      parentMessageId,
+      azure: !!azure,
+    });
   } catch (error) {
     const partialText = getPartialText();
     handleAbortError(res, req, error, {
@@ -192,6 +164,6 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       parentMessageId: userMessageId,
     });
   }
-};
+});
 
 module.exports = router;
