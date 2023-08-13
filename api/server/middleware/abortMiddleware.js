@@ -1,11 +1,27 @@
 const { saveMessage, getConvo, getConvoTitle } = require('../../models');
-const { sendMessage, abortMessage, handleError } = require('../utils');
+const { sendMessage, handleError } = require('../utils');
 const abortControllers = require('./abortControllers');
+
+async function abortMessage(req, res) {
+  const { abortKey } = req.body;
+  console.log('req.body', req.body);
+  if (!abortControllers.has(abortKey)) {
+    return res.status(404).send('Request not found');
+  }
+
+  const { abortController } = abortControllers.get(abortKey);
+
+  abortControllers.delete(abortKey);
+  const ret = await abortController.abortAsk();
+  console.log('Aborted request', abortKey);
+
+  res.send(JSON.stringify(ret));
+}
 
 const handleAbort = () => {
   return async (req, res) => {
     try {
-      return await abortMessage(req, res, abortControllers);
+      return await abortMessage(req, res);
     } catch (err) {
       console.error(err);
     }
@@ -17,6 +33,10 @@ const createAbortController = (res, req, endpointOption, getAbortData) => {
   const onStart = (userMessage) => {
     sendMessage(res, { message: userMessage, created: true });
     abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
+
+    res.on('finish', function () {
+      abortControllers.delete(userMessage.conversationId);
+    });
   };
 
   abortController.abortAsk = async function () {
@@ -51,7 +71,7 @@ const handleAbortError = async (res, req, error, data) => {
 
   const { sender, conversationId, messageId, parentMessageId, partialText } = data;
   if (partialText?.length > 2) {
-    return await abortMessage(req, res, abortControllers);
+    return await abortMessage(req, res);
   } else {
     const errorMessage = {
       sender,
@@ -63,6 +83,9 @@ const handleAbortError = async (res, req, error, data) => {
       error: true,
       text: error.message,
     };
+    if (abortControllers.has(conversationId)) {
+      abortControllers.delete(conversationId);
+    }
     await saveMessage(errorMessage);
     handleError(res, errorMessage);
   }

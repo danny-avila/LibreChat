@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { getResponseSender } = require('librechat-data-provider');
-const { initializeClient } = require('../endpoints/openAI');
+const { validateTools } = require('../../../app');
+const { initializeClient } = require('../endpoints/gptPlugins');
 const { saveMessage, getConvoTitle, getConvo } = require('../../../models');
-const { sendMessage, createOnProgress } = require('../../utils');
+const { sendMessage, createOnProgress, formatSteps, formatAction } = require('../../utils');
 const {
   handleAbort,
   createAbortController,
@@ -40,13 +41,28 @@ router.post(
     const userMessageId = parentMessageId;
     const user = req.user.id;
 
+    const plugin = {
+      loading: true,
+      inputs: [],
+      latest: null,
+      outputs: null,
+    };
+
     const addMetadata = (data) => (metadata = data);
     const getIds = (data) => (userMessage = data.userMessage);
 
-    const { onProgress: progressCallback, getPartialText } = createOnProgress({
+    const {
+      onProgress: progressCallback,
+      sendIntermediateMessage,
+      getPartialText,
+    } = createOnProgress({
       generation,
       onProgress: ({ text: partialText }) => {
         const currentTimestamp = Date.now();
+
+        if (plugin.loading === true) {
+          plugin.loading = false;
+        }
 
         if (currentTimestamp - lastSavedTimestamp > 500) {
           lastSavedTimestamp = currentTimestamp;
@@ -65,15 +81,35 @@ router.post(
       },
     });
 
+    const onAgentAction = (action, start = false) => {
+      const formattedAction = formatAction(action);
+      plugin.inputs.push(formattedAction);
+      plugin.latest = formattedAction.plugin;
+      if (!start) {
+        saveMessage(userMessage);
+      }
+      sendIntermediateMessage(res, { plugin });
+      // console.log('PLUGIN ACTION', formattedAction);
+    };
+
+    const onChainEnd = (data) => {
+      let { intermediateSteps: steps } = data;
+      plugin.outputs = steps && steps[0].action ? formatSteps(steps) : 'An error occurred.';
+      plugin.loading = false;
+      saveMessage(userMessage);
+      sendIntermediateMessage(res, { plugin });
+      // console.log('CHAIN END', plugin.outputs);
+    };
+
     const getAbortData = () => ({
       sender: getResponseSender(endpointOption),
       conversationId,
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId,
       text: getPartialText(),
+      plugin: { ...plugin, loading: false },
       userMessage,
     });
-
     const { abortController, onStart } = createAbortController(
       res,
       req,
@@ -82,6 +118,7 @@ router.post(
     );
 
     try {
+      endpointOption.tools = await validateTools(user, endpointOption.tools);
       const { client } = initializeClient(req, endpointOption);
 
       let response = await client.sendMessage(text, {
@@ -92,25 +129,31 @@ router.post(
         responseMessageId,
         overrideParentMessageId,
         getIds,
+        onAgentAction,
+        onChainEnd,
         onStart,
         addMetadata,
-        abortController,
+        ...endpointOption,
         onProgress: progressCallback.call(null, {
           res,
           text,
+          plugin,
           parentMessageId: overrideParentMessageId || userMessageId,
         }),
+        abortController,
       });
+
+      if (overrideParentMessageId) {
+        response.parentMessageId = overrideParentMessageId;
+      }
 
       if (metadata) {
         response = { ...response, ...metadata };
       }
 
-      console.log(
-        'promptTokens, completionTokens:',
-        response.promptTokens,
-        response.completionTokens,
-      );
+      console.log('CLIENT RESPONSE');
+      console.dir(response, { depth: null });
+      response.plugin = { ...plugin, loading: false };
       await saveMessage(response);
 
       sendMessage(res, {

@@ -34,6 +34,7 @@ router.post(
     } = req.body;
     console.log('ask log');
     console.dir({ text, conversationId, endpointOption }, { depth: null });
+    let metadata;
     let userMessage;
     let userMessageId;
     let responseMessageId;
@@ -48,6 +49,7 @@ router.post(
       outputs: null,
     };
 
+    const addMetadata = (data) => (metadata = data);
     const getIds = (data) => {
       userMessage = data.userMessage;
       userMessageId = userMessage.messageId;
@@ -127,14 +129,15 @@ router.post(
       const { client, azure, openAIApiKey } = initializeClient(req, endpointOption);
 
       let response = await client.sendMessage(text, {
-        getIds,
         user,
-        parentMessageId,
         conversationId,
+        parentMessageId,
         overrideParentMessageId,
+        getIds,
         onAgentAction,
         onChainEnd,
         onStart,
+        addMetadata,
         ...endpointOption,
         onProgress: progressCallback.call(null, {
           res,
@@ -147,6 +150,10 @@ router.post(
 
       if (overrideParentMessageId) {
         response.parentMessageId = overrideParentMessageId;
+      }
+
+      if (metadata) {
+        response = { ...response, ...metadata };
       }
 
       console.log('CLIENT RESPONSE');
