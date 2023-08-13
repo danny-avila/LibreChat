@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { getResponseSender } = require('librechat-data-provider');
 const { validateTools } = require('../../../app');
 const { addTitle } = require('../endpoints/openAI');
 const { initializeClient } = require('../endpoints/gptPlugins');
@@ -72,7 +73,7 @@ router.post(
           lastSavedTimestamp = currentTimestamp;
           saveMessage({
             messageId: responseMessageId,
-            sender: 'ChatGPT',
+            sender: getResponseSender(endpointOption),
             conversationId,
             parentMessageId: overrideParentMessageId || userMessageId,
             text: partialText,
@@ -106,7 +107,7 @@ router.post(
     };
 
     const getAbortData = () => ({
-      sender: endpointOption?.chatGptLabel ?? 'ChatGPT',
+      sender: getResponseSender(endpointOption),
       conversationId,
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId,
@@ -174,7 +175,7 @@ router.post(
       handleAbortError(res, req, error, {
         partialText,
         conversationId,
-        sender: 'ChatGPT',
+        sender: getResponseSender(endpointOption),
         messageId: responseMessageId,
         parentMessageId: userMessageId,
       });
