@@ -36,7 +36,7 @@ export const SettingsDescriptions = {
     meiliHost: 'meiliHost',
     meiliAddress: 'meiliAddress',
     meiliKey: 'meiliKey',
-    disableAnalytics: 'disableMeiliAnalytics',
+    disableMeiliAnalytics: 'disableMeiliAnalytics',
   },
   Email: {
     emailEnabled: 'isEmailEnabled',

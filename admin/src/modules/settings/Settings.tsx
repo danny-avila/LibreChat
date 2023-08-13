@@ -29,7 +29,7 @@ function Settings() {
       //@ts-ignore - app config is defined by this point
       {
         ...config,
-        authConfig: settings,
+        auth: settings,
       },
       {
         onSuccess: (data) => {
@@ -48,7 +48,7 @@ function Settings() {
       //@ts-ignore - app config is defined by this point
       {
         ...config,
-        searchConfig: settings,
+        search: settings,
       },
       {
         onSuccess: (data) => {
@@ -67,7 +67,7 @@ function Settings() {
       //@ts-ignore - app config is defined by this point
       {
         ...config,
-        emailConfig: settings,
+        email: settings,
       },
       {
         onSuccess: (data) => {
@@ -102,18 +102,15 @@ function Settings() {
         </div>
       </Card>
       <hr />
-      <AuthSettings
-        authConfig={config?.authConfig}
-        onUpdateAuthSettings={handleAuthSettingsUpdate}
-      />
+      <AuthSettings authConfig={config?.auth} onUpdateAuthSettings={handleAuthSettingsUpdate} />
       <hr />
       <SearchSettings
-        searchConfig={config?.searchConfig}
+        searchConfig={config?.search}
         onUpdateSearchSettings={handleSearchSettingsUpdate}
       />
       <hr />
       <EmailSettings
-        emailConfig={config?.emailConfig}
+        emailConfig={config?.email}
         onUpdateEmailSettings={handleEmailSettingsUpdate}
       />
     </div>

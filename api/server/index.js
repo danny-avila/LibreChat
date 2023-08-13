@@ -92,6 +92,7 @@ config.validate(); // Validate the config
   app.use('/api/endpoints', routes.endpoints);
   app.use('/api/plugins', routes.plugins);
   app.use('/api/startupConfig', routes.startupConfig);
+  app.use('/api/appConfig', routes.appConfig);
 
   // static files
   app.get('/*', function (req, res) {

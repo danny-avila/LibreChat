@@ -25,7 +25,7 @@ function SearchSettings({ searchConfig, onUpdateSearchSettings }: TSearchSetting
     searchConfig?.meiliKey || 'DrhYf7zENyR6AlUCKmnz0eYASOQdl6zxH7s7MKFSfFCt',
   );
   const [disableMeiliAnalytics, setDisableMeiliAnalytics] = useState<boolean>(
-    searchConfig?.disableAnalytics || true,
+    searchConfig?.disableMeiliAnalytics || true,
   );
 
   const updateSearchSettings = () => {
@@ -34,7 +34,7 @@ function SearchSettings({ searchConfig, onUpdateSearchSettings }: TSearchSetting
       meiliHost,
       meiliAddress,
       meiliKey,
-      disableAnalytics: disableMeiliAnalytics,
+      disableMeiliAnalytics: disableMeiliAnalytics,
     });
   };
 
@@ -109,7 +109,7 @@ function SearchSettings({ searchConfig, onUpdateSearchSettings }: TSearchSetting
                   className="pt-1"
                   checked={disableMeiliAnalytics}
                   id="searchEnabled"
-                  tooltip={desc.Search.disableAnalytics}
+                  tooltip={desc.Search.disableMeiliAnalytics}
                   tooltipOptions={{ position: 'top' }}
                   onChange={(e) => setDisableMeiliAnalytics(e.checked || false)}
                 />

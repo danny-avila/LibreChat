@@ -249,12 +249,12 @@ export type TSearchConfig = {
   meiliHost: string;
   meiliAddress: string;
   meiliKey: string;
-  disableAnalytics: boolean;
+  disableMeiliAnalytics: boolean;
 };
 
 export type TAppConfig = {
   appTitle: string;
-  searchConfig: TSearchConfig;
-  authConfig: TAuthConfig;
-  emailConfig: TEmailConfig;
+  search: TSearchConfig;
+  auth: TAuthConfig;
+  email: TEmailConfig;
 };
