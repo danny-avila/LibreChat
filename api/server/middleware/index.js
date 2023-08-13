@@ -1,11 +1,13 @@
-const setHeaders = require('./setHeaders');
 const abortMiddleware = require('./abortMiddleware');
+const setHeaders = require('./setHeaders');
 const requireJwtAuth = require('./requireJwtAuth');
 const requireLocalAuth = require('./requireLocalAuth');
+const validateEndpoint = require('./validateEndpoint');
 
 module.exports = {
   ...abortMiddleware,
+  setHeaders,
   requireJwtAuth,
   requireLocalAuth,
-  setHeaders,
+  validateEndpoint,
 };

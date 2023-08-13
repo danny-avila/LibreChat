@@ -5,10 +5,10 @@ const buildOptions = (req) => {
 
   // build endpoint option
   const parsedBody = parseConvo(endpoint, req.body);
-  const { chatGptLabel, promptPrefix, ...rest } = parsedBody;
+  const { modelLabel, promptPrefix, ...rest } = parsedBody;
   const endpointOption = {
     endpoint,
-    chatGptLabel,
+    modelLabel,
     promptPrefix,
     modelOptions: {
       ...rest,

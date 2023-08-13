@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { getResponseSender } = require('librechat-data-provider');
 const { buildOptions, initializeClient } = require('../endpoints/openAI');
 const { saveMessage, getConvoTitle, getConvo } = require('../../../models');
 const { sendMessage, createOnProgress } = require('../../utils');
@@ -9,18 +10,25 @@ const {
   handleAbortError,
   setHeaders,
   requireJwtAuth,
+  validateEndpoint,
 } = require('../../middleware');
 
 router.post('/abort', requireJwtAuth, handleAbort());
 
-router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
-  const { responseMessageId, generation } = req.body;
-  let { text, endpointOption, conversationId, parentMessageId = null } = buildOptions(req, res);
+router.post('/', requireJwtAuth, validateEndpoint, setHeaders, async (req, res) => {
+  let {
+    text,
+    generation,
+    conversationId,
+    parentMessageId = null,
+    responseMessageId,
+    overrideParentMessageId = null,
+  } = req.body;
+  const endpointOption = buildOptions(req);
   let metadata;
   let userMessage;
   let lastSavedTimestamp = 0;
   const userMessageId = parentMessageId;
-  const { overrideParentMessageId = null } = req.body;
   const user = req.user.id;
 
   const addMetadata = (data) => (metadata = data);
@@ -38,7 +46,7 @@ router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
         lastSavedTimestamp = currentTimestamp;
         saveMessage({
           messageId: responseMessageId,
-          sender: 'ChatGPT',
+          sender: getResponseSender(endpointOption),
           conversationId,
           parentMessageId: overrideParentMessageId || userMessageId,
           text: partialText,
@@ -52,7 +60,7 @@ router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
   });
 
   const getAbortData = () => ({
-    sender: endpointOption?.chatGptLabel ?? 'ChatGPT',
+    sender: getResponseSender(endpointOption),
     conversationId,
     messageId: responseMessageId,
     parentMessageId: overrideParentMessageId ?? userMessageId,
@@ -112,7 +120,7 @@ router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
     handleAbortError(res, req, error, {
       partialText,
       conversationId,
-      sender: 'ChatGPT',
+      sender: getResponseSender(endpointOption),
       messageId: responseMessageId,
       parentMessageId: userMessageId,
     });

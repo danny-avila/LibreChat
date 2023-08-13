@@ -11,18 +11,21 @@ const {
   handleAbortError,
   setHeaders,
   requireJwtAuth,
+  validateEndpoint,
 } = require('../../middleware');
 
 router.post('/abort', requireJwtAuth, handleAbort());
 
-router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
-  let { text, endpointOption, conversationId, parentMessageId = null } = buildOptions(req, res);
+router.post('/', requireJwtAuth, validateEndpoint, setHeaders, async (req, res) => {
+  let { text, conversationId, parentMessageId = null, overrideParentMessageId = null } = req.body;
+  const endpointOption = buildOptions(req);
+  console.log('ask log');
+  console.dir({ text, conversationId, endpointOption }, { depth: null });
   let userMessage;
   let userMessageId;
   let responseMessageId;
   let lastSavedTimestamp = 0;
   const newConvo = !conversationId;
-  const { overrideParentMessageId = null } = req.body;
   const user = req.user.id;
 
   const plugin = {

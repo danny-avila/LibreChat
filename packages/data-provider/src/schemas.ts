@@ -372,12 +372,13 @@ export type TEndpointOption = {
   promptPrefix?: string;
   temperature?: number;
   chatGptLabel?: string | null;
+  modelLabel?: string | null;
   jailbreak?: boolean;
   token?: string | null;
 };
 
 export const getResponseSender = (endpointOption: TEndpointOption): string => {
-  const { endpoint, chatGptLabel, jailbreak } = endpointOption;
+  const { endpoint, chatGptLabel, modelLabel, jailbreak } = endpointOption;
 
   if (['openAI', 'azureOpenAI', 'gptPlugins', 'chatGPTBrowser'].includes(endpoint)) {
     return chatGptLabel ?? 'ChatGPT';
@@ -388,11 +389,11 @@ export const getResponseSender = (endpointOption: TEndpointOption): string => {
   }
 
   if (endpoint === 'anthropic') {
-    return 'Anthropic';
+    return modelLabel ?? 'Anthropic';
   }
 
   if (endpoint === 'google') {
-    return 'PaLM2';
+    return modelLabel ?? 'PaLM2';
   }
 
   return '';
