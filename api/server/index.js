@@ -91,7 +91,7 @@ config.validate(); // Validate the config
   app.use('/api/tokenizer', routes.tokenizer);
   app.use('/api/endpoints', routes.endpoints);
   app.use('/api/plugins', routes.plugins);
-  app.use('/api/config', routes.config);
+  app.use('/api/startupConfig', routes.startupConfig);
 
   // static files
   app.get('/*', function (req, res) {

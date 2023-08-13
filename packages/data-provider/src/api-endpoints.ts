@@ -8,7 +8,7 @@ export const userPlugins = () => {
 
 export const allUsers = () => {
   return '/api/user/users';
-}
+};
 
 export const messages = (id: string) => {
   return `/api/messages/${id}`;
@@ -94,6 +94,10 @@ export const plugins = () => {
   return '/api/plugins';
 };
 
-export const config = () => {
-  return '/api/config';
+export const startupConfig = () => {
+  return '/api/startupConfig';
+};
+
+export const appConfig = () => {
+  return '/api/appConfig';
 };

@@ -181,20 +181,6 @@ export type TResetPassword = {
   confirm_password?: string;
 };
 
-export type TStartupConfig = {
-  appTitle: boolean;
-  googleLoginEnabled: boolean;
-  openidLoginEnabled: boolean;
-  githubLoginEnabled: boolean;
-  openidLabel: string;
-  openidImageUrl: string;
-  discordLoginEnabled: boolean;
-  serverDomain: string;
-  registrationEnabled: boolean;
-  socialLoginEnabled: boolean;
-  emailEnabled: boolean;
-};
-
 export type TRefreshTokenResponse = {
   token: string;
   user: TUser;
@@ -203,4 +189,72 @@ export type TRefreshTokenResponse = {
 export type TRequestPasswordResetResponse = {
   link?: string;
   message?: string;
+};
+
+export type TOAuthLoginConfig = {
+  clientId: string;
+  clientSecret: string;
+};
+
+export type TOpenIdLoginConfig = {
+  issuer: string;
+  sessionSecret: string;
+  scope: string;
+  buttonLabel: string;
+  buttonIcon: string;
+} & TOAuthLoginConfig;
+
+export type TSocialLoginConfig = {
+  google: TOAuthLoginConfig;
+  github: TOAuthLoginConfig;
+  discord: TOAuthLoginConfig;
+  openid: TOpenIdLoginConfig;
+};
+
+export type TSocialLoginsEnabled = {
+  socialLoginEnabled: boolean;
+  googleLoginEnabled: boolean;
+  openidLoginEnabled: boolean;
+  githubLoginEnabled: boolean;
+  discordLoginEnabled: boolean;
+};
+
+export type TStartupConfig = {
+  appTitle: boolean;
+  openidLabel: string;
+  openidImageUrl: string;
+  discordLoginEnabled: boolean;
+  serverDomain: string;
+  registrationEnabled: boolean;
+  emailEnabled: boolean;
+} & TSocialLoginsEnabled;
+
+export type TAuthConfig = TSocialLoginsEnabled &
+  TSocialLoginConfig & {
+    registrationEnabled: boolean;
+  };
+
+export type TEmailConfig = {
+  emailEnabled: boolean;
+  emailService: string;
+  emailUsername: string;
+  emailPassword: string;
+  emailFromName: string;
+  emailFromAddress: string;
+  emailPort: string;
+};
+
+export type TSearchConfig = {
+  searchEnabled: boolean;
+  meiliHost: string;
+  meiliAddress: string;
+  meiliKey: string;
+  disableAnalytics: boolean;
+};
+
+export type TAppConfig = {
+  appTitle: string;
+  searchConfig: TSearchConfig;
+  authConfig: TAuthConfig;
+  emailConfig: TEmailConfig;
 };

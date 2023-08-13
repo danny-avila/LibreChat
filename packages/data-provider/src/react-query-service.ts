@@ -22,7 +22,8 @@ export enum QueryKeys {
   tokenCount = 'tokenCount',
   availablePlugins = 'availablePlugins',
   startupConfig = 'startupConfig',
-  allUsers = 'allUsers'
+  allUsers = 'allUsers',
+  appConfig = 'appConfig',
 }
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
@@ -352,58 +353,69 @@ export const useUpdateUserPluginsMutation = (): UseMutationResult<
 };
 
 export const useGetStartupConfig = (): QueryObserverResult<t.TStartupConfig> => {
-  return useQuery<t.TStartupConfig>([QueryKeys.startupConfig], () => dataService.getStartupConfig(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-  });
-}
+  return useQuery<t.TStartupConfig>(
+    [QueryKeys.startupConfig],
+    () => dataService.getStartupConfig(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+    },
+  );
+};
 
 export const useGetAllUsers = (): QueryObserverResult<t.TUser[], Error> => {
   return useQuery<t.TUser[], Error>([QueryKeys.allUsers], () => dataService.getAllUsers(), {
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   });
-}
+};
 
-export const useCreateUserMutation = (): UseMutationResult<
-  t.TUser,
-  Error,
-  t.TUser,
-  unknown
-> => {
+export const useCreateUserMutation = (): UseMutationResult<t.TUser, Error, t.TUser, unknown> => {
   const queryClient = useQueryClient();
   return useMutation((payload: t.TUser) => dataService.createUser(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.allUsers]);
     },
   });
-}
+};
 
-export const useUpdateUserMutation = (): UseMutationResult<
-  t.TUser,
-  Error,
-  t.TUser,
-  unknown
-> => {
+export const useUpdateUserMutation = (): UseMutationResult<t.TUser, Error, t.TUser, unknown> => {
   const queryClient = useQueryClient();
   return useMutation((payload: t.TUser) => dataService.updateUser(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.allUsers]);
     },
   });
-}
+};
 
-export const useDeleteUserMutation = (): UseMutationResult<
-  t.TUser,
-  Error,
-  t.TUser,
-  unknown
-> => {
+export const useDeleteUserMutation = (): UseMutationResult<t.TUser, Error, t.TUser, unknown> => {
   const queryClient = useQueryClient();
   return useMutation((payload: t.TUser) => dataService.deleteUser(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.allUsers]);
     },
   });
-}
+};
+
+export const useGetAppConfig = (): QueryObserverResult<t.TAppConfig, t.TError> => {
+  return useQuery<t.TAppConfig, t.TError>([QueryKeys.appConfig], () => dataService.getAppConfig(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  });
+};
+
+export const useUpdateAppConfigMutation = (): UseMutationResult<
+  t.TAppConfig,
+  t.TError,
+  t.TAppConfig,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: t.TAppConfig) => dataService.updateAppConfig(payload), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.appConfig]);
+    },
+  });
+};

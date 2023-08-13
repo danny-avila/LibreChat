@@ -112,7 +112,7 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
 };
 
 export const getStartupConfig = (): Promise<t.TStartupConfig> => {
-  return request.get(endpoints.config());
+  return request.get(endpoints.startupConfig());
 };
 
 export function getUser(): Promise<t.TUser> {
@@ -133,4 +133,12 @@ export function updateUser(payload: t.TUser): Promise<t.TUser> {
 
 export function deleteUser(payload: t.TUser): Promise<t.TUser> {
   return request.delete(endpoints.user(), payload);
+}
+
+export function getAppConfig(): Promise<t.TAppConfig> {
+  return request.get(endpoints.appConfig());
+}
+
+export function updateAppConfig(payload: t.TAppConfig): Promise<t.TAppConfig> {
+  return request.post(endpoints.appConfig(), payload);
 }
