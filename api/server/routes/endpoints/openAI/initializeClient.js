@@ -1,5 +1,5 @@
-const { OpenAIClient } = require('../../../app');
-const { getAzureCredentials } = require('../../../utils');
+const { OpenAIClient } = require('../../../../app');
+const { getAzureCredentials } = require('../../../../utils');
 
 const initializeClient = (req, endpointOption) => {
   const clientOptions = {

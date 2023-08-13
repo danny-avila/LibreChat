@@ -1,5 +1,5 @@
-const { PluginsClient } = require('../../../app');
-const { getAzureCredentials } = require('../../../utils');
+const { PluginsClient } = require('../../../../app');
+const { getAzureCredentials } = require('../../../../utils');
 
 const initializeClient = (req, endpointOption) => {
   const clientOptions = {
