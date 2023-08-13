@@ -21,7 +21,8 @@ import Regenerate from '../svg/RegenerateIcon';
 export default function Recommendations({ type: leaderboardType }: {type: string}) {
   const [convoIdx, setConvoIdx] = useState<number>(0);
   const [convoDataLength, setConvoDataLength] = useState<number>(1);
-  const [convoData, setConvoData] = useState<TConversation[] | null>(null);
+  const [convoData, setConvoData] = useState<{ string: TConversation } | null>(null);
+  const [convoDataKeys, setConvoDataKeys] = useState<string[] | null>(null);
   const [msgTree, setMsgTree] = useState<TMessage[] | null>(null);
   const [convoUser, setConvoUser] = useState<TUser | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
@@ -57,7 +58,10 @@ export default function Recommendations({ type: leaderboardType }: {type: string
 
       if (leaderboardType === 'recent') {
         setConvoData(responseObject);
-        setConvoDataLength(responseObject.length);
+
+        const objKeys = Object.keys(responseObject);
+        setConvoDataLength(objKeys.length);
+        setConvoDataKeys(objKeys);
       }
     } catch (error) {
       console.log(error);
@@ -79,7 +83,10 @@ export default function Recommendations({ type: leaderboardType }: {type: string
 
       if (leaderboardType === 'hottest') {
         setConvoData(responseObject);
-        setConvoDataLength(responseObject.length);
+
+        const objKeys = Object.keys(responseObject);
+        setConvoDataLength(objKeys.length);
+        setConvoDataKeys(objKeys);
       }
     } catch (error) {
       console.log(error);
@@ -141,7 +148,10 @@ export default function Recommendations({ type: leaderboardType }: {type: string
       if (conversations) {
         const convoObject = JSON.parse(conversations);
         setConvoData(convoObject);
-        setConvoDataLength(convoObject.length);
+
+        const objKeys = Object.keys(convoObject);
+        setConvoDataLength(objKeys.length);
+        setConvoDataKeys(objKeys);
       }
     }
 
@@ -187,59 +197,62 @@ export default function Recommendations({ type: leaderboardType }: {type: string
 
   // Likes a conversation
   async function likeConversation() {
-    if (!convoData || !convoUser) return;
+    if (!convoData || !convoDataKeys || !user) return;
+
+    // update component state
+    setLiked(!liked);
+
+    // update state object
+    if (liked) {
+      convoData[convoDataKeys[convoIdx]].likes = convoData[convoDataKeys[convoIdx]].likes - 1;
+      convoData[convoDataKeys[convoIdx]].likedBy[user.id] = false;
+    } else {
+      convoData[convoDataKeys[convoIdx]].likes = convoData[convoDataKeys[convoIdx]].likes + 1;
+      convoData[convoDataKeys[convoIdx]].likedBy[user.id] = true;
+    }
+
+    // update localStorage
+    if (leaderboardType === 'recent') {
+      window.localStorage.setItem('recentConversations', JSON.stringify(convoData));
+
+      const storedHottest = window.localStorage.getItem('hottestConversations');
+
+      if (storedHottest) {
+        const convoObject: { string: TConversation } = JSON.parse(storedHottest);
+
+        if (convoObject[convoDataKeys[convoIdx]]) {
+          convoObject[convoDataKeys[convoIdx]] = convoData[convoDataKeys[convoIdx]];
+          window.localStorage.setItem('hottestConversations', JSON.stringify(convoObject));
+        }
+      }
+    } else if (leaderboardType === 'hottest') {
+      window.localStorage.setItem('hottestConversations', JSON.stringify(convoData));
+
+      const storedRecent = window.localStorage.getItem('recentConversations');
+
+      if (storedRecent) {
+        const convoObject: { string: TConversation } = JSON.parse(storedRecent);
+
+        if (convoObject[convoDataKeys[convoIdx]]) {
+          convoObject[convoDataKeys[convoIdx]] = convoData[convoDataKeys[convoIdx]];
+          window.localStorage.setItem('recentConversations', JSON.stringify(convoObject));
+        }
+      }
+    }
+
+    // update database
     try {
-      const response = await fetch('/api/convos/like', {
+      await fetch('/api/convos/like', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          conversationId: convoData[convoIdx].conversationId,
+          conversationId: convoDataKeys[convoIdx],
           userId: user?.id,
           liked: !liked
         })
       });
-
-      // After updating it in the DB, we need to update the component state...
-      const responseObject = await response.json();
-      convoData[convoIdx] = responseObject;
-      if (user) setLiked(convoData[convoIdx].likedBy[user?.id]);
-
-      // ... and update the localStorage
-      if (leaderboardType === 'recent') {
-        window.localStorage.setItem('recentConversations', JSON.stringify(convoData));
-
-        const storedHottest = window.localStorage.getItem('hottestConversations');
-
-        if (storedHottest) {
-          const convoObject: TConversation[] = JSON.parse(storedHottest);
-
-          for (let i = 0; i < convoObject.length; i++) {
-            if (convoObject[i].conversationId === convoData[convoIdx].conversationId) {
-              convoObject[i] = convoData[convoIdx];
-              window.localStorage.setItem('hottestConversations', JSON.stringify(convoObject));
-              break;
-            }
-          }
-        }
-      } else if (leaderboardType === 'hottest') {
-        window.localStorage.setItem('hottestConversations', JSON.stringify(convoData));
-
-        const storedRecent = window.localStorage.getItem('recentConversations');
-
-        if (storedRecent) {
-          const convoObject: TConversation[] = JSON.parse(storedRecent);
-
-          for (let i = 0; i < convoObject.length; i++) {
-            if (convoObject[i].conversationId === convoData[convoIdx].conversationId) {
-              convoObject[i] = convoData[convoIdx];
-              window.localStorage.setItem('recentConversations', JSON.stringify(convoObject));
-              break;
-            }
-          }
-        }
-      }
     } catch (error) {
       console.log(error);
     }
@@ -264,20 +277,20 @@ export default function Recommendations({ type: leaderboardType }: {type: string
   }, [user, leaderboardType]);
 
   useEffect(() => {
-    if (convoData && user) {
-      fetchMessagesByConvoId(convoData[convoIdx].conversationId);
-      fetchConvoUser(convoData[convoIdx].user);
-      setShareLink(process.env.NODE_ENV === 'dev' ? `localhost:3090/chat/share/${convoData[convoIdx].conversationId}` :
-        `chat.aitok.us/chat/share/${convoData[convoIdx].conversationId}`);
+    if (convoData && convoDataKeys && user) {
+      fetchMessagesByConvoId(convoData[convoDataKeys[convoIdx]].conversationId);
+      fetchConvoUser(convoData[convoDataKeys[convoIdx]].user);
+      setShareLink(process.env.NODE_ENV === 'dev' ? `localhost:3090/chat/share/${convoData[convoDataKeys[convoIdx]].conversationId}` :
+        `chat.aitok.us/chat/share/${convoData[convoDataKeys[convoIdx]].conversationId}`);
 
-      const likedBy = convoData[convoIdx].likedBy;
+      const likedBy = convoData[convoDataKeys[convoIdx]].likedBy;
       if (likedBy) {
         setLiked(likedBy[user.id] ? true : false);
       } else {
         setLiked(false);
       }
     }
-  }, [convoData, convoIdx, user]);
+  }, [convoData, convoDataKeys, convoIdx, user]);
 
   useDocumentTitle(title);
 
@@ -318,7 +331,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
           id="landing-title"
           className="md:mb-3 ml-auto mr-auto mt-0.5 flex gap-2 text-center text-3xl font-semibold sm:mb-2 md:mt-0.5 md:col-span-2"
         >
-          {convoData ? convoData[convoIdx].title : ''}
+          {convoData && convoDataKeys ? convoData[convoDataKeys[convoIdx]].title : ''}
         </h1>
         <div className='my-2 flex flex-row justify-self-center gap-2 md:my-0 md:justify-self-start md:col-span-1'>
           <button>
@@ -355,11 +368,11 @@ export default function Recommendations({ type: leaderboardType }: {type: string
       </div>
       <div className="dark:gpt-dark-gray mb-32 h-auto w-full md:mb-48" ref={screenshotTargetRef}>
         <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
-          {convoData && msgTree && convoUser ? (
+          {convoData && convoDataKeys && msgTree && convoUser ? (
             <MultiMessage
-              key={convoData[convoIdx].conversationId} // avoid internal state mixture
-              messageId={convoData[convoIdx].conversationId}
-              conversation={convoData[convoIdx]}
+              key={convoData[convoDataKeys[convoIdx]].conversationId} // avoid internal state mixture
+              messageId={convoData[convoDataKeys[convoIdx]].conversationId}
+              conversation={convoData[convoDataKeys[convoIdx]]}
               messagesTree={msgTree}
               scrollToBottom={null}
               currentEditId={-1}
