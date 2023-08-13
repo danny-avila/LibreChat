@@ -23,7 +23,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
   const [convoDataLength, setConvoDataLength] = useState<number>(1);
   const [convoData, setConvoData] = useState<TConversation[] | null>(null);
   const [msgTree, setMsgTree] = useState<TMessage[] | null>(null);
-  const [user, setUser] = useState<TUser | null>(null);
+  const [convoUser, setConvoUser] = useState<TUser | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [lastLeaderboardType, setLastLeaderboardType] = useState<string | null>(null);
   const [shareLink, setShareLink] = useState<string>('');
@@ -32,14 +32,14 @@ export default function Recommendations({ type: leaderboardType }: {type: string
   const [liked, setLiked] = useState<boolean>(false);
 
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
-  const { token } = useAuthContext();
+  const { user, token } = useAuthContext();
   const lang = useRecoilValue(store.lang);
   const title = localize(lang, 'com_ui_recommendation');
   const navigate = useNavigate();
 
   // Allows navigation to user's profile page
   const navigateToProfile = () => {
-    navigate(`/profile/${user?.id}`);
+    navigate(`/profile/${convoUser?.id}`);
   }
 
   // Fetch the most recent conversations and store in localStorage
@@ -98,7 +98,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
       const storage = Number(window.localStorage.getItem('lastFetchTime'));
       const remaining = 30000 - (Date.now() - storage);
       const timeRemaining = Math.ceil(remaining % (1000 * 60) / 1000);
-      setTimeLeft(timeRemaining);
+      setTimeLeft(timeRemaining < 0 ? 0 : timeRemaining);
 
       if (remaining < 0) clearInterval(newTimer);
     }, 1000);
@@ -167,7 +167,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
 
   // Fetch the user who owns the current conversation
   async function fetchConvoUser(id: string | undefined) {
-    setUser(null);
+    setConvoUser(null);
     try {
       const response = await fetch(`/api/user/${id}`, {
         method: 'GET',
@@ -177,7 +177,67 @@ export default function Recommendations({ type: leaderboardType }: {type: string
         }
       });
       const responseObject = await response.json();
-      setUser(responseObject);
+      setConvoUser(responseObject);
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
+  // Likes a conversation
+  async function likeConversation() {
+    if (!convoData || !convoUser) return;
+    try {
+      const response = await fetch('/api/convos/like', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          conversationId: convoData[convoIdx].conversationId,
+          userId: user?.id,
+          liked: !liked
+        })
+      });
+
+      // After updating it in the DB, we need to update the component state...
+      const responseObject = await response.json();
+      convoData[convoIdx] = responseObject;
+      if (user) setLiked(convoData[convoIdx].likedBy[user?.id]);
+
+      // ... and update the localStorage
+      if (leaderboardType === 'recent') {
+        window.localStorage.setItem('recentConversations', JSON.stringify(convoData));
+
+        const storedHottest = window.localStorage.getItem('hottestConversations');
+
+        if (storedHottest) {
+          const convoObject: TConversation[] = JSON.parse(storedHottest);
+
+          for (let i = 0; i < convoObject.length; i++) {
+            if (convoObject[i].conversationId === convoData[convoIdx].conversationId) {
+              convoObject[i] = convoData[convoIdx];
+              window.localStorage.setItem('hottestConversations', JSON.stringify(convoObject));
+              break;
+            }
+          }
+        }
+      } else if (leaderboardType === 'hottest') {
+        window.localStorage.setItem('hottestConversations', JSON.stringify(convoData));
+
+        const storedRecent = window.localStorage.getItem('recentConversations');
+
+        if (storedRecent) {
+          const convoObject: TConversation[] = JSON.parse(storedRecent);
+
+          for (let i = 0; i < convoObject.length; i++) {
+            if (convoObject[i].conversationId === convoData[convoIdx].conversationId) {
+              convoObject[i] = convoData[convoIdx];
+              window.localStorage.setItem('recentConversations', JSON.stringify(convoObject));
+              break;
+            }
+          }
+        }
+      }
     } catch (error) {
       console.log(error);
     }
@@ -202,13 +262,20 @@ export default function Recommendations({ type: leaderboardType }: {type: string
   }, [token, leaderboardType]);
 
   useEffect(() => {
-    if (convoData) {
+    if (convoData && user) {
       fetchMessagesByConvoId(convoData[convoIdx].conversationId);
       fetchConvoUser(convoData[convoIdx].user);
       setShareLink(process.env.NODE_ENV === 'dev' ? `localhost:3090/chat/share/${convoData[convoIdx].conversationId}` :
         `chat.aitok.us/chat/share/${convoData[convoIdx].conversationId}`);
+
+      const likedBy = convoData[convoIdx].likedBy;
+      if (likedBy) {
+        setLiked(likedBy[user.id] ? true : false);
+      } else {
+        setLiked(false);
+      }
     }
-  }, [convoData, convoIdx]);
+  }, [convoData, convoIdx, user]);
 
   useDocumentTitle(title);
 
@@ -216,10 +283,10 @@ export default function Recommendations({ type: leaderboardType }: {type: string
     <>
       <div className='grid gap-1 w-full sticky bg-white top-0 z-30 items-center md:gap-0 md:grid-col md:grid-cols-4'>
         <div className='flex flex-row justify-center items-center gap-2 md:col-span-1 md:grid md:grid-col md:grid-cols-2 md:w-4/5 md:justify-self-end hover:underline'>
-          {user && (
+          {convoUser && (
             <>
               <button
-                title={user?.username}
+                title={convoUser?.username}
                 style={{
                   width: 30,
                   height: 30
@@ -230,8 +297,8 @@ export default function Recommendations({ type: leaderboardType }: {type: string
                 <img
                   className="rounded-sm"
                   src={
-                    user?.avatar ||
-                    `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name}&fontFamily=Verdana&fontSize=36`
+                    convoUser?.avatar ||
+                    `https://api.dicebear.com/6.x/initials/svg?seed=${convoUser?.name}&fontFamily=Verdana&fontSize=36`
                   }
                   alt="avatar"
                 />
@@ -240,7 +307,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
                 onClick={ navigateToProfile }
                 className='justify-self-start col-span-1'
               >
-                {user?.username}
+                {convoUser?.username}
               </button>
             </>
           )}
@@ -254,7 +321,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
         <div className='my-2 flex flex-row justify-self-center gap-2 md:my-0 md:justify-self-start md:col-span-1'>
           <button>
             <svg
-              onClick={() => {setLiked(!liked)}}
+              onClick={ likeConversation }
               stroke="currentColor"
               fill={liked ? 'currentColor' : 'none'}
               strokeWidth="2"
@@ -286,7 +353,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
       </div>
       <div className="dark:gpt-dark-gray mb-32 h-auto w-full md:mb-48" ref={screenshotTargetRef}>
         <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
-          {convoData && msgTree && user ? (
+          {convoData && msgTree && convoUser ? (
             <MultiMessage
               key={convoData[convoIdx].conversationId} // avoid internal state mixture
               messageId={convoData[convoIdx].conversationId}
@@ -296,8 +363,8 @@ export default function Recommendations({ type: leaderboardType }: {type: string
               currentEditId={-1}
               setCurrentEditId={null}
               isSearchView={true}
-              name={user?.name}
-              userId={user?.id}
+              name={convoUser?.name}
+              userId={convoUser?.id}
             />
           ) : (
             <div className="flex w-full h-[25vh] flex-row items-end justify-end">
