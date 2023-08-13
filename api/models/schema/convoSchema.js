@@ -48,18 +48,18 @@ const convoSchema = mongoose.Schema(
       type: Number,
       default: 1
     },
-    likesConvo: {
+    likes: {
       type: Number,
       default: 0
+    },
+    likedBy: {
+      type: Object,
+      default: {}
     },
     isPrivate: {
       type: Boolean,
       default: false
     },
-    isLiked: {
-      type: Boolean,
-      default: false
-    }
   },
   { timestamps: true }
 );
