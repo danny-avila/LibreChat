@@ -1,4 +1,4 @@
-const { saveMessage } = require('../../models');
+const { saveMessage, getConvo, getConvoTitle } = require('../../models');
 const { sendMessage, abortMessage, handleError } = require('../utils');
 const abortControllers = require('./abortControllers');
 
@@ -12,11 +12,35 @@ const handleAbort = () => {
   };
 };
 
-const createAbortController = (res, req, endpointOption) => {
+const createAbortController = (res, req, endpointOption, getAbortData) => {
   const abortController = new AbortController();
   const onStart = (userMessage) => {
     sendMessage(res, { message: userMessage, created: true });
     abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
+  };
+
+  abortController.abortAsk = async function () {
+    this.abort();
+    const { conversationId, userMessage, ...responseData } = getAbortData();
+
+    const responseMessage = {
+      ...responseData,
+      model: endpointOption.modelOptions.model,
+      unfinished: false,
+      cancelled: true,
+      error: false,
+    };
+
+    console.log('abortAsk', responseMessage);
+    saveMessage(responseMessage);
+
+    return {
+      title: await getConvoTitle(req.user.id, conversationId),
+      final: true,
+      conversation: await getConvo(req.user.id, conversationId),
+      requestMessage: userMessage,
+      responseMessage: responseMessage,
+    };
   };
 
   return { abortController, onStart };
