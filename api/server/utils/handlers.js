@@ -20,7 +20,7 @@ const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
   let code = '';
   let precode = '';
   let codeBlock = false;
-  let tokens = generation;
+  let tokens = generation.length > 0 && !generation.endsWith(' ') ? `${generation} ` : generation;
 
   const progressCallback = async (partial, { res, text, plugin, bing = false, ...rest }) => {
     let chunk = partial === text ? '' : partial;

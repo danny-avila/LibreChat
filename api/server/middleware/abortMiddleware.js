@@ -25,6 +25,7 @@ const createAbortController = (res, req, endpointOption, getAbortData) => {
 
     const responseMessage = {
       ...responseData,
+      finish_reason: 'incomplete',
       model: endpointOption.modelOptions.model,
       unfinished: false,
       cancelled: true,
