@@ -23,7 +23,7 @@
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "dependencies": {
     "@heroicons/react": "^2.0.18",
-    "@librechat/data-provider": "*",
+    "librechat-data-provider": "*",
     "@tanstack/react-query": "^4.28.0",
     "clsx": "^1.2.1",
     "copy-to-clipboard": "^3.3.3",

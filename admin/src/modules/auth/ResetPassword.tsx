@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useResetPasswordMutation, TResetPassword } from '@librechat/data-provider';
+import { useResetPasswordMutation, TResetPassword } from 'librechat-data-provider';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 function ResetPassword() {
@@ -8,7 +8,7 @@ function ResetPassword() {
     register,
     handleSubmit,
     watch,
-    formState: { errors }
+    formState: { errors },
   } = useForm<TResetPassword>();
   const resetPassword = useResetPasswordMutation();
   const [resetError, setResetError] = useState<boolean>(false);
@@ -20,7 +20,7 @@ function ResetPassword() {
     resetPassword.mutate(data, {
       onError: () => {
         setResetError(true);
-      }
+      },
     });
   };
 
@@ -91,12 +91,12 @@ function ResetPassword() {
                     required: 'Password is required',
                     minLength: {
                       value: 8,
-                      message: 'Password must be at least 8 characters'
+                      message: 'Password must be at least 8 characters',
                     },
                     maxLength: {
                       value: 40,
-                      message: 'Password must be less than 40 characters'
-                    }
+                      message: 'Password must be less than 40 characters',
+                    },
                   })}
                   aria-invalid={!!errors.password}
                   className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -129,7 +129,7 @@ function ResetPassword() {
                     return false;
                   }}
                   {...register('confirm_password', {
-                    validate: (value) => value === password || 'Passwords do not match'
+                    validate: (value) => value === password || 'Passwords do not match',
                   })}
                   aria-invalid={!!errors.confirm_password}
                   className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"

@@ -4,8 +4,8 @@ import { useForm } from 'react-hook-form';
 import {
   useRegisterUserMutation,
   TRegisterUser,
-  useGetStartupConfig
-} from '@librechat/data-provider';
+  useGetStartupConfig,
+} from 'librechat-data-provider';
 
 function Registration() {
   const navigate = useNavigate();
@@ -15,7 +15,7 @@ function Registration() {
     register,
     watch,
     handleSubmit,
-    formState: { errors }
+    formState: { errors },
   } = useForm<TRegisterUser>({ mode: 'onChange' });
 
   const [error, setError] = useState<boolean>(false);
@@ -34,7 +34,7 @@ function Registration() {
         if (error.response?.data?.message) {
           setErrorMessage(error.response?.data?.message);
         }
-      }
+      },
     });
   };
 
@@ -73,12 +73,12 @@ function Registration() {
                   required: 'Name is required',
                   minLength: {
                     value: 3,
-                    message: 'Name must be at least 3 characters'
+                    message: 'Name must be at least 3 characters',
                   },
                   maxLength: {
                     value: 80,
-                    message: 'Name must be less than 80 characters'
-                  }
+                    message: 'Name must be less than 80 characters',
+                  },
                 })}
                 aria-invalid={!!errors.name}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -109,12 +109,12 @@ function Registration() {
                   required: 'Username is required',
                   minLength: {
                     value: 3,
-                    message: 'Username must be at least 3 characters'
+                    message: 'Username must be at least 3 characters',
                   },
                   maxLength: {
                     value: 20,
-                    message: 'Username must be less than 20 characters'
-                  }
+                    message: 'Username must be less than 20 characters',
+                  },
                 })}
                 aria-invalid={!!errors.username}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -147,16 +147,16 @@ function Registration() {
                   required: 'Email is required',
                   minLength: {
                     value: 3,
-                    message: 'Email must be at least 6 characters'
+                    message: 'Email must be at least 6 characters',
                   },
                   maxLength: {
                     value: 120,
-                    message: 'Email should not be longer than 120 characters'
+                    message: 'Email should not be longer than 120 characters',
                   },
                   pattern: {
                     value: /\S+@\S+\.\S+/,
-                    message: 'You must enter a valid email address'
-                  }
+                    message: 'You must enter a valid email address',
+                  },
                 })}
                 aria-invalid={!!errors.email}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -188,12 +188,12 @@ function Registration() {
                   required: 'Password is required',
                   minLength: {
                     value: 8,
-                    message: 'Password must be at least 8 characters'
+                    message: 'Password must be at least 8 characters',
                   },
                   maxLength: {
                     value: 40,
-                    message: 'Password must be less than 40 characters'
-                  }
+                    message: 'Password must be less than 40 characters',
+                  },
                 })}
                 aria-invalid={!!errors.password}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -227,7 +227,7 @@ function Registration() {
                   return false;
                 }}
                 {...register('confirm_password', {
-                  validate: (value) => value === password || 'Passwords do not match'
+                  validate: (value) => value === password || 'Passwords do not match',
                 })}
                 aria-invalid={!!errors.confirm_password}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"

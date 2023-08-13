@@ -1,22 +1,22 @@
 import { render, waitFor } from 'layout-test-utils';
 import userEvent from '@testing-library/user-event';
 import Registration from '../Registration';
-import * as mockDataProvider from '@librechat/data-provider';
+import * as mockDataProvider from 'librechat-data-provider';
 
-jest.mock('@librechat/data-provider');
+jest.mock('librechat-data-provider');
 
 const setup = ({
   useGetUserQueryReturnValue = {
     isLoading: false,
     isError: false,
-    data: {}
+    data: {},
   },
   useRegisterUserMutationReturnValue = {
     isLoading: false,
     isError: false,
     mutate: jest.fn(),
     data: {},
-    isSuccess: false
+    isSuccess: false,
   },
   useGetStartupCongfigReturnValue = {
     isLoading: false,
@@ -27,9 +27,9 @@ const setup = ({
       openidLabel: 'Test OpenID',
       openidImageUrl: 'http://test-server.com',
       registrationEnabled: true,
-      serverDomain: 'mock-server'
-    }
-  }
+      serverDomain: 'mock-server',
+    },
+  },
 } = {}) => {
   const mockUseRegisterUserMutation = jest
     .spyOn(mockDataProvider, 'useRegisterUserMutation')
@@ -50,7 +50,7 @@ const setup = ({
     ...renderResult,
     mockUseRegisterUserMutation,
     mockUseGetUserQuery,
-    mockUseGetStartupConfig
+    mockUseGetStartupConfig,
   };
 };
 
@@ -69,7 +69,7 @@ test('renders registration form', () => {
   expect(getByRole('link', { name: /Login with Google/i })).toBeInTheDocument();
   expect(getByRole('link', { name: /Login with Google/i })).toHaveAttribute(
     'href',
-    'mock-server/oauth/google'
+    'mock-server/oauth/google',
   );
 });
 
@@ -81,8 +81,8 @@ test('calls registerUser.mutate on registration', async () => {
       isLoading: false,
       mutate: mutate,
       isError: false,
-      isSuccess: true
-    }
+      isSuccess: true,
+    },
   });
 
   await userEvent.type(getByRole('textbox', { name: /Full name/i }), 'John Doe');
@@ -123,8 +123,8 @@ test('shows error message when registration fails', async () => {
       mutate: mutate,
       error: new Error('Registration failed'),
       data: {},
-      isSuccess: false
-    }
+      isSuccess: false,
+    },
   });
 
   await userEvent.type(getByRole('textbox', { name: /Full name/i }), 'John Doe');
@@ -137,7 +137,7 @@ test('shows error message when registration fails', async () => {
   waitFor(() => {
     expect(screen.getByRole('alert')).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent(
-      /There was an error attempting to register your account. Please try again. Registration failed/i
+      /There was an error attempting to register your account. Please try again. Registration failed/i,
     );
   });
 });

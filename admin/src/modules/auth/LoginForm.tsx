@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import { TLoginUser } from '@librechat/data-provider';
+import { TLoginUser } from 'librechat-data-provider';
 
 type TLoginFormProps = {
   onSubmit: (data: TLoginUser) => void;
@@ -9,7 +9,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
   const {
     register,
     handleSubmit,
-    formState: { errors }
+    formState: { errors },
   } = useForm<TLoginUser>();
 
   return (
@@ -30,16 +30,16 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
               required: 'Email is required',
               minLength: {
                 value: 3,
-                message: 'Email must be at least 6 characters'
+                message: 'Email must be at least 6 characters',
               },
               maxLength: {
                 value: 120,
-                message: 'Email should not be longer than 120 characters'
+                message: 'Email should not be longer than 120 characters',
               },
               pattern: {
                 value: /\S+@\S+\.\S+/,
-                message: 'You must enter a valid email address'
-              }
+                message: 'You must enter a valid email address',
+              },
             })}
             aria-invalid={!!errors.email}
             className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -70,12 +70,12 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
               required: 'Password is required',
               minLength: {
                 value: 8,
-                message: 'Password must be at least 8 characters'
+                message: 'Password must be at least 8 characters',
               },
               maxLength: {
                 value: 40,
-                message: 'Password must be less than 40 characters'
-              }
+                message: 'Password must be less than 40 characters',
+              },
             })}
             aria-invalid={!!errors.password}
             className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
