@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
-import { useGetAllUsers, TUser } from '@librechat/data-provider';
+import { useGetAllUsers, TUser } from 'librechat-data-provider';
 import styles from './styles.module.css';
 
 function Users() {
@@ -17,7 +17,7 @@ function Users() {
     { field: 'provider', header: 'Provider', sortable: false, className: styles.providerColumn },
     { field: 'createdAt', header: 'Created', sortable: false, className: styles.createdColumn },
     { field: 'updatedAt', header: 'Updated', sortable: false, className: styles.updatedColumn },
-    { field: 'plugins', header: 'Plugins', sortable: false, className: styles.pluginsColumn }
+    { field: 'plugins', header: 'Plugins', sortable: false, className: styles.pluginsColumn },
   ];
 
   useEffect(() => {

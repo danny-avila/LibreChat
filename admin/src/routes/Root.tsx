@@ -29,9 +29,9 @@ const navigation = [
   { name: 'Users', href: '/users', icon: UsersIcon, current: false },
   // { name: 'Groups', href: '#', icon: UserGroupIcon, current: false },
   { name: 'Models', href: '#', icon: CpuChipIcon, current: false },
-  { name: 'Plugins', href: '#', icon: CogIcon, current: false },
-  { name: 'Templates', href: '#', icon: DocumentDuplicateIcon, current: false },
-  { name: 'Reports', href: '#', icon: ChartPieIcon, current: false },
+  // { name: 'Plugins', href: '#', icon: CogIcon, current: false },
+  // { name: 'Templates', href: '#', icon: DocumentDuplicateIcon, current: false },
+  // { name: 'Reports', href: '#', icon: ChartPieIcon, current: false },
 ];
 
 function classNames(...classes) {

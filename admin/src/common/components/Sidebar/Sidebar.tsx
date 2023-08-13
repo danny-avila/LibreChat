@@ -11,7 +11,6 @@ type TSidebarProps = {
 function Sidebar({ navVisible, setNavVisible }: TSidebarProps) {
   const [isHovering, setIsHovering] = useState(false);
   const containerRef = useRef(null);
-  const navigate = useNavigate();
 
   const toggleNavVisible = () => {
     setNavVisible(!navVisible);
@@ -32,32 +31,13 @@ function Sidebar({ navVisible, setNavVisible }: TSidebarProps) {
     }
   }, [setNavVisible]);
 
-  // return (
-  //   <SidebarPrime
-  //     visible={navVisible}
-  //     modal={false}
-  //     dismissable={false}
-  //     baseZIndex={1000}
-  //     position="left"
-  //     style={{ width: '16rem' }}
-  //     onHide={toggleNavVisible}
-  //   >
-  //     <div className="flex flex-col border-gray-500 px-4">
-  //       <div className="flex items-center">
-  //         <img
-  //           src="/assets/LibreChatWideMargin.svg"
-  //           alt="LibreChat Logo"
-  //           className="mr-2 h-12 w-12"
-  //         />
-  //         <h1 className="text-2xl font-bold">LibreChat</h1>
-  //       </div>
-  //       <div className="justify-flex-start flex flex-col py-6">Links</div>
-  //     </div>
-  //   </SidebarPrime>
-  // );
-
   return (
-    <div className={'nav bg-gray-50 dark:bg-gray-900 md:inset-y-0 shadow-md border-r-1 border-gray-500' + (navVisible ? ' active' : '')}>
+    <div
+      className={
+        'nav border-r-1 border-gray-500 bg-gray-50 shadow-md dark:bg-gray-900 md:inset-y-0' +
+        (navVisible ? ' active' : '')
+      }
+    >
       <div className="flex h-full min-h-0 flex-col ">
         <div className="scrollbar-trigger relative flex h-full w-full flex-1 items-start border-white/20">
           <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
