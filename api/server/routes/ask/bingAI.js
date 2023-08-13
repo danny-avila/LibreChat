@@ -4,9 +4,9 @@ const router = express.Router();
 const { titleConvoBing, askBing } = require('../../../app');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('../../utils');
-const requireJwtAuth = require('../../middleware/requireJwtAuth');
+const { requireJwtAuth, setHeaders } = require('../../middleware');
 
-router.post('/', requireJwtAuth, async (req, res) => {
+router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
   const {
     endpoint,
     text,
@@ -102,14 +102,6 @@ const ask = async ({
   let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
 
   let responseMessageId = crypto.randomUUID();
-
-  res.writeHead(200, {
-    Connection: 'keep-alive',
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    'Access-Control-Allow-Origin': '*',
-    'X-Accel-Buffering': 'no',
-  });
 
   if (preSendRequest) {
     sendMessage(res, { message: userMessage, created: true });
