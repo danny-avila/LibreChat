@@ -1,11 +1,13 @@
 const cryptoUtils = require('./crypto');
+const handleText = require('./handleText');
+const citations = require('./citations');
 const sendEmail = require('./sendEmail');
 const abortMessage = require('./abortMessage');
-const handlers = require('./handlers');
 
 module.exports = {
   ...cryptoUtils,
-  ...handlers,
+  ...handleText,
+  ...citations,
   sendEmail,
   abortMessage,
 };
