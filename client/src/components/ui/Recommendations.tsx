@@ -108,12 +108,13 @@ export default function Recommendations({ type: leaderboardType }: {type: string
 
   // Fetch the most recent and the hottest conversations
   async function fetchRecommendations() {
+    const lastFetchedBy = window.localStorage.getItem('lastFetchedBy');
     const last = Number(window.localStorage.getItem('lastFetchTime'));
     const currentTime = Date.now();
 
     // It has been more than 30 seconds since the last fetch
     // We fetch new conversations from the server
-    if ((currentTime - last) > 30000) {
+    if ((currentTime - last) > 30000 || lastFetchedBy !== user?.id) {
       setConvoData(null);
       setConvoIdx(0);
 
@@ -121,6 +122,7 @@ export default function Recommendations({ type: leaderboardType }: {type: string
       fetchHottestConversations();
 
       window.localStorage.setItem('lastFetchTime', currentTime.toString());
+      window.localStorage.setItem('lastFetchedBy', user?.id || '');
     } else {
       if (leaderboardType === lastLeaderboardType) return;
 
@@ -256,10 +258,10 @@ export default function Recommendations({ type: leaderboardType }: {type: string
 
   // Get recommendations on mount and when switching leaderboard types
   useEffect(() => {
-    if (token) {
+    if (user) {
       fetchRecommendations();
     }
-  }, [token, leaderboardType]);
+  }, [user, leaderboardType]);
 
   useEffect(() => {
     if (convoData && user) {
