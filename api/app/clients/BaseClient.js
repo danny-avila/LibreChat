@@ -114,7 +114,6 @@ class BaseClient {
     }
 
     if (typeof opts?.onStart === 'function') {
-      console.log('onStart userMessage', userMessage);
       opts.onStart(userMessage);
     }
 
