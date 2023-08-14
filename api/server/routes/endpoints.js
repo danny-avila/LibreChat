@@ -113,7 +113,6 @@ router.get('/', async function (req, res) {
     key = require('../../data/auth.json');
   } catch (e) {
     if (i === 0) {
-      console.log('No \'auth.json\' file (service account key) found in /api/data/ for PaLM models');
       i++;
     }
   }
@@ -121,7 +120,6 @@ router.get('/', async function (req, res) {
   if (process.env.PALM_KEY === 'user_provided') {
     palmUser = true;
     if (i <= 1) {
-      console.log('User will provide key for PaLM models');
       i++;
     }
   }

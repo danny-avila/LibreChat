@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { useRecoilValue } from 'recoil';
-import store from '~/store';
-import { localize } from '~/localization/Translation';
+import { useLocalize } from '~/hooks';
 import {
   useRequestPasswordResetMutation,
   useGetStartupConfig,
@@ -11,7 +9,7 @@ import {
 } from 'librechat-data-provider';
 
 function RequestPasswordReset() {
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
   const {
     register,
     handleSubmit,
@@ -44,22 +42,22 @@ function RequestPasswordReset() {
   useEffect(() => {
     if (requestPasswordReset.isSuccess) {
       if (config.data?.emailEnabled) {
-        setHeaderText(localize(lang, 'com_auth_reset_password_link_sent'));
-        setBodyText(localize(lang, 'com_auth_reset_password_email_sent'));
+        setHeaderText(localize('com_auth_reset_password_link_sent'));
+        setBodyText(localize('com_auth_reset_password_email_sent'));
       } else {
-        setHeaderText(localize(lang, 'com_auth_reset_password'));
+        setHeaderText(localize('com_auth_reset_password'));
         setBodyText(
           <span>
-            {localize(lang, 'com_auth_click')}{' '}
+            {localize('com_auth_click')}{' '}
             <a className="text-green-600 hover:underline" href={resetLink}>
-              {localize(lang, 'com_auth_here')}
+              {localize('com_auth_here')}
             </a>{' '}
-            {localize(lang, 'com_auth_to_reset_your_password')}
+            {localize('com_auth_to_reset_your_password')}
           </span>,
         );
       }
     } else {
-      setHeaderText(localize(lang, 'com_auth_reset_password'));
+      setHeaderText(localize('com_auth_reset_password'));
       setBodyText(undefined);
     }
   }, [requestPasswordReset.isSuccess, config.data?.emailEnabled, resetLink, lang]);
@@ -73,7 +71,7 @@ function RequestPasswordReset() {
             className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
             role="alert"
           >
-            {localize(lang, 'com_auth_error_reset_password')}
+            {localize('com_auth_error_reset_password')}
           </div>
         )}
         {bodyText ? (
@@ -96,20 +94,20 @@ function RequestPasswordReset() {
                   type="email"
                   id="email"
                   autoComplete="off"
-                  aria-label={localize(lang, 'com_auth_email')}
+                  aria-label={localize('com_auth_email')}
                   {...register('email', {
-                    required: localize(lang, 'com_auth_email_required'),
+                    required: localize('com_auth_email_required'),
                     minLength: {
                       value: 3,
-                      message: localize(lang, 'com_auth_email_min_length'),
+                      message: localize('com_auth_email_min_length'),
                     },
                     maxLength: {
                       value: 120,
-                      message: localize(lang, 'com_auth_email_max_length'),
+                      message: localize('com_auth_email_max_length'),
                     },
                     pattern: {
                       value: /\S+@\S+\.\S+/,
-                      message: localize(lang, 'com_auth_email_pattern'),
+                      message: localize('com_auth_email_pattern'),
                     },
                   })}
                   aria-invalid={!!errors.email}
@@ -120,7 +118,7 @@ function RequestPasswordReset() {
                   htmlFor="email"
                   className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
                 >
-                  {localize(lang, 'com_auth_email_address')}
+                  {localize('com_auth_email_address')}
                 </label>
               </div>
               {errors.email && (
@@ -136,7 +134,7 @@ function RequestPasswordReset() {
                 disabled={!!errors.email}
                 className="w-full rounded-sm border border-transparent bg-green-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-green-600 focus:outline-none active:bg-green-500"
               >
-                {localize(lang, 'com_auth_continue')}
+                {localize('com_auth_continue')}
               </button>
             </div>
           </form>
