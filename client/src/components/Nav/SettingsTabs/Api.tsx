@@ -50,7 +50,6 @@ export const EndpointMenu = ({
     </div>
   );
 };
-
 export const ToggleReverseProxy = ({ isActive, onCheckedChange }) => {
   const localize = useLocalize();
 
