@@ -4,6 +4,7 @@ const requireJwtAuth = require('./requireJwtAuth');
 const requireLocalAuth = require('./requireLocalAuth');
 const validateEndpoint = require('./validateEndpoint');
 const buildEndpointOption = require('./buildEndpointOption');
+const validateRegistration = require('./validateRegistration');
 
 module.exports = {
   ...abortMiddleware,
@@ -12,4 +13,5 @@ module.exports = {
   requireLocalAuth,
   validateEndpoint,
   buildEndpointOption,
+  validateRegistration,
 };
