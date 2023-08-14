@@ -85,7 +85,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     setSelectedPlugin(getAvailablePluginFromKey);
 
     if (
-      getAvailablePluginFromKey!.authConfig.length > 0 &&
+      getAvailablePluginFromKey?.authConfig.length > 0 &&
       !getAvailablePluginFromKey?.authenticated
     ) {
       setShowPluginAuthForm(true);

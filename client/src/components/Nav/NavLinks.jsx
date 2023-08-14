@@ -8,7 +8,7 @@ import NavLink from './NavLink';
 import Logout from './Logout';
 import { ExportModel } from './ExportConversation';
 import { LinkIcon, DotsIcon, GearIcon } from '~/components';
-import { localize } from '~/localization/Translation';
+import { useLocalize } from '~/hooks';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { cn } from '~/utils/';
 
@@ -19,7 +19,7 @@ export default function NavLinks() {
   const [showClearConvos, setShowClearConvos] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const { user } = useAuthContext();
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
 
   const conversation = useRecoilValue(store.conversation) || {};
 
@@ -60,7 +60,7 @@ export default function NavLinks() {
                 </div>
               </div>
               <div className="grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-white">
-                {user?.name || localize(lang, 'com_nav_user')}
+                {user?.name || localize('com_nav_user')}
               </div>
               <DotsIcon />
             </Menu.Button>
@@ -82,7 +82,7 @@ export default function NavLinks() {
                       exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-white/50',
                     )}
                     svg={() => <Download size={16} />}
-                    text={localize(lang, 'com_nav_export_conversation')}
+                    text={localize('com_nav_export_conversation')}
                     clickHandler={clickHandler}
                   />
                 </Menu.Item>
@@ -91,7 +91,7 @@ export default function NavLinks() {
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <LinkIcon />}
-                    text={localize(lang, 'com_nav_help_faq')}
+                    text={localize('com_nav_help_faq')}
                     clickHandler={() => window.open('https://docs.librechat.ai/', '_blank')}
                   />
                 </Menu.Item>
@@ -99,7 +99,7 @@ export default function NavLinks() {
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <GearIcon />}
-                    text={localize(lang, 'com_nav_settings')}
+                    text={localize('com_nav_settings')}
                     clickHandler={() => setShowSettings(true)}
                   />
                 </Menu.Item>
