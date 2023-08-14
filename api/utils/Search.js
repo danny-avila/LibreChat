@@ -1,11 +1,12 @@
-const { MeiliSearch } = require('meilisearch');
+// const { MeiliSearch } = require('meilisearch');
 
 class Search {
   constructor() {
-    this.client = new MeiliSearch({
-      host: process.env.MEILI_HOST,
-      apiKey: process.env.MEILI_MASTER_KEY,
-    });
+    // Disabled for now
+    // this.client = new MeiliSearch({
+    //   host: process.env.MEILI_HOST,
+    //   apiKey: process.env.MEILI_MASTER_KEY,
+    // });
   }
 
   /**
