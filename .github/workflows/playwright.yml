@@ -31,6 +31,8 @@ jobs:
       CREDS_IV: ${{ secrets.CREDS_IV }}
       DOMAIN_CLIENT: ${{ secrets.DOMAIN_CLIENT }}
       DOMAIN_SERVER: ${{ secrets.DOMAIN_SERVER }}
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1 # Skip downloading during yarn install
+      PLAYWRIGHT_BROWSERS_PATH: 0 # Places binaries to node_modules/@playwright/test
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v3
@@ -66,8 +68,11 @@ jobs:
       #     restore-keys: |
       #       ${{ runner.os }}-pw-
 
+      - name: Install Playwright Dependencies
+        run: npx playwright install-deps
+
       - name: Install Playwright Browsers
-        run: npx playwright install --with-deps chromium && npm install -D @playwright/test@latest
+        run: npx playwright install chromium && npm install -D @playwright/test@latest
 
       - name: Run Playwright tests
         run: npm run e2e:ci
