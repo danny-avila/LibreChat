@@ -24,7 +24,7 @@ async function getSearchKey() {
  */
 function getTagsFromFilename(file, existingTags = []) {
   const tags = file.split('/');
-  tags.splice(0, 4);
+  tags.splice(0, 5);
   const filename = tags.pop();
   // You can group prompts by adding the tagname then a dash. ie "coding-LaravelGPT.json"
   if (filename.includes('-')) {
