@@ -2,18 +2,14 @@ import React, { useEffect } from 'react';
 import LoginForm from './LoginForm';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useNavigate } from 'react-router-dom';
-
-import { useRecoilValue } from 'recoil';
-import store from '~/store';
-import { localize } from '~/localization/Translation';
+import { useLocalize } from '~/hooks';
 import { useGetStartupConfig } from 'librechat-data-provider';
 import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
 
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
-
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
 
   const navigate = useNavigate();
 
@@ -27,23 +23,23 @@ function Login() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
       <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
         <h1 className="mb-4 text-center text-3xl font-semibold">
-          {localize(lang, 'com_auth_welcome_back')}
+          {localize('com_auth_welcome_back')}
         </h1>
         {error && (
           <div
             className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
             role="alert"
           >
-            {localize(lang, 'com_auth_error_login')}
+            {localize('com_auth_error_login')}
           </div>
         )}
         <LoginForm onSubmit={login} />
         {startupConfig?.registrationEnabled && (
           <p className="my-4 text-center text-sm font-light text-gray-700">
             {' '}
-            {localize(lang, 'com_auth_no_account')}{' '}
+            {localize('com_auth_no_account')}{' '}
             <a href="/register" className="p-1 text-green-500 hover:underline">
-              {localize(lang, 'com_auth_sign_up')}
+              {localize('com_auth_sign_up')}
             </a>
           </p>
         )}
@@ -64,7 +60,7 @@ function Login() {
                 href={`${startupConfig.serverDomain}/oauth/google`}
               >
                 <GoogleIcon />
-                <p>{localize(lang, 'com_auth_google_login')}</p>
+                <p>{localize('com_auth_google_login')}</p>
               </a>
             </div>
           </>
@@ -96,7 +92,7 @@ function Login() {
                 href={`${startupConfig.serverDomain}/oauth/github`}
               >
                 <GithubIcon />
-                <p>{localize(lang, 'com_auth_github_login')}</p>
+                <p>{localize('com_auth_github_login')}</p>
               </a>
             </div>
           </>
@@ -110,7 +106,7 @@ function Login() {
                 href={`${startupConfig.serverDomain}/oauth/discord`}
               >
                 <DiscordIcon />
-                <p>{localize(lang, 'com_auth_discord_login')}</p>
+                <p>{localize('com_auth_discord_login')}</p>
               </a>
             </div>
           </>
