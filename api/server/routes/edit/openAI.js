@@ -38,7 +38,6 @@ router.post(
     let userMessage;
     let lastSavedTimestamp = 0;
     const userMessageId = parentMessageId;
-    const user = req.user.id;
 
     const addMetadata = (data) => (metadata = data);
     const getIds = (data) => (userMessage = data.userMessage);
@@ -85,7 +84,7 @@ router.post(
       const { client } = initializeClient(req, endpointOption);
 
       let response = await client.sendMessage(text, {
-        user,
+        user: req.user.id,
         isEdited: true,
         conversationId,
         parentMessageId,

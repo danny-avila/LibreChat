@@ -61,7 +61,7 @@ router.post(
             messageId: responseMessageId,
             sender: getResponseSender(endpointOption),
             conversationId,
-            parentMessageId: overrideParentMessageId || userMessageId,
+            parentMessageId: overrideParentMessageId ?? userMessageId,
             text: partialText,
             model: endpointOption.modelOptions.model,
             unfinished: true,

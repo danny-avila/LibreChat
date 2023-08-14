@@ -11,7 +11,7 @@ const {
   validateEndpoint,
   buildEndpointOption,
 } = require('../../middleware');
-const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
+const { saveMessage, getConvoTitle, getConvo } = require('../../../models');
 const { sendMessage, createOnProgress } = require('../../utils');
 
 router.post('/abort', requireJwtAuth, handleAbort());
@@ -25,28 +25,25 @@ router.post(
   async (req, res) => {
     let {
       text,
+      generation,
       endpointOption,
       conversationId,
+      responseMessageId,
       parentMessageId = null,
       overrideParentMessageId = null,
     } = req.body;
-    console.log('ask log');
+    console.log('edit log');
     console.dir({ text, conversationId, endpointOption }, { depth: null });
+    let metadata;
     let userMessage;
-    let userMessageId;
-    let responseMessageId;
     let lastSavedTimestamp = 0;
+    const userMessageId = parentMessageId;
 
-    const getIds = (data) => {
-      userMessage = data.userMessage;
-      userMessageId = data.userMessage.messageId;
-      responseMessageId = data.responseMessageId;
-      if (!conversationId) {
-        conversationId = data.conversationId;
-      }
-    };
+    const addMetadata = (data) => (metadata = data);
+    const getIds = (data) => (userMessage = data.userMessage);
 
     const { onProgress: progressCallback, getPartialText } = createOnProgress({
+      generation,
       onProgress: ({ text: partialText }) => {
         const currentTimestamp = Date.now();
         if (currentTimestamp - lastSavedTimestamp > 500) {
@@ -84,11 +81,11 @@ router.post(
       const { client } = initializeClient(req, endpointOption);
 
       let response = await client.sendMessage(text, {
-        getIds,
-        debug: false,
         user: req.user.id,
+        isEdited: true,
         conversationId,
         parentMessageId,
+        responseMessageId,
         overrideParentMessageId,
         ...endpointOption,
         onProgress: progressCallback.call(null, {
@@ -96,20 +93,19 @@ router.post(
           text,
           parentMessageId: overrideParentMessageId ?? userMessageId,
         }),
+        getIds,
         onStart,
+        addMetadata,
         abortController,
       });
+
+      if (metadata) {
+        response = { ...response, ...metadata };
+      }
 
       if (overrideParentMessageId) {
         response.parentMessageId = overrideParentMessageId;
       }
-
-      await saveConvo(req.user.id, {
-        ...endpointOption,
-        ...endpointOption.modelOptions,
-        conversationId,
-        endpoint: 'anthropic',
-      });
 
       await saveMessage(response);
       sendMessage(res, {
