@@ -52,7 +52,7 @@
     "esbuild": "0.17.19",
     "export-from-json": "^1.7.2",
     "filenamify": "^6.0.0",
-    "html2canvas": "^1.4.1",
+    "html-to-image": "^1.11.11",
     "librechat-data-provider": "*",
     "lodash": "^4.17.21",
     "lucide-react": "^0.220.0",
