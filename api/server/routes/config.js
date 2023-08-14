@@ -16,8 +16,8 @@ router.get('/', async function (req, res) {
     const discordLoginEnabled =
       !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET;
     const serverDomain = process.env.DOMAIN_SERVER || 'http://localhost:3080';
-    const registrationEnabled = process.env.ALLOW_REGISTRATION === 'true';
-    const socialLoginEnabled = process.env.ALLOW_SOCIAL_LOGIN === 'true';
+    const registrationEnabled = process.env.ALLOW_REGISTRATION?.toLowerCase() === 'true';
+    const socialLoginEnabled = process.env.ALLOW_SOCIAL_LOGIN?.toLowerCase() === 'true';
     const emailEnabled =
       !!process.env.EMAIL_SERVICE &&
       !!process.env.EMAIL_USERNAME &&
