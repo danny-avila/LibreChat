@@ -6,7 +6,7 @@ import EditIcon from '../svg/EditIcon';
 import RegenerateIcon from '../svg/RegenerateIcon';
 
 export default function HoverButtons({
-  isEditting,
+  isEditing,
   enterEdit,
   copyToClipboard,
   conversation,
@@ -34,7 +34,7 @@ export default function HoverButtons({
     !message?.error &&
     message?.isCreatedByUser &&
     !message?.searchResult &&
-    !isEditting &&
+    !isEditing &&
     branchingSupported;
 
   // for now, once branching is supported, regerate will be enabled
@@ -42,7 +42,7 @@ export default function HoverButtons({
     // !message?.error &&
     !message?.isCreatedByUser &&
     !message?.searchResult &&
-    !isEditting &&
+    !isEditing &&
     !isSubmitting &&
     branchingSupported;
 

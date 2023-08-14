@@ -223,7 +223,7 @@ export default function Message({
               )}
             </div>
             <HoverButtons
-              isEditting={edit}
+              isEditing={edit}
               isSubmitting={isSubmitting}
               message={message}
               conversation={conversation}
