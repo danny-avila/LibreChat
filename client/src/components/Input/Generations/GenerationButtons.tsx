@@ -1,15 +1,21 @@
+import type { TMessage } from 'librechat-data-provider';
+import { useMessageHandler, useMediaQuery, useGenerations } from '~/hooks';
 import { cn } from '~/utils';
-import { useMessageHandler, useMediaQuery } from '~/hooks';
 import Regenerate from './Regenerate';
 import Continue from './Continue';
 import Stop from './Stop';
 
 type GenerationButtonsProps = {
+  endpoint: string;
   showPopover: boolean;
   opacityClass: string;
 };
 
-export default function GenerationButtons({ showPopover, opacityClass }: GenerationButtonsProps) {
+export default function GenerationButtons({
+  endpoint,
+  showPopover,
+  opacityClass,
+}: GenerationButtonsProps) {
   const {
     messages,
     isSubmitting,
@@ -19,18 +25,24 @@ export default function GenerationButtons({ showPopover, opacityClass }: Generat
     handleStopGenerating,
   } = useMessageHandler();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const { continueSupported, regenerateEnabled } = useGenerations({
+    endpoint,
+    message: latestMessage as TMessage,
+    isSubmitting,
+  });
+
   if (isSmallScreen) {
     return null;
   }
 
   let button: React.ReactNode = null;
-  const { finish_reason } = latestMessage || {};
+  const { finish_reason } = latestMessage ?? {};
 
   if (isSubmitting) {
     button = <Stop onClick={handleStopGenerating} />;
-  } else if (finish_reason && finish_reason !== 'stop') {
+  } else if (finish_reason && finish_reason !== 'stop' && continueSupported) {
     button = <Continue onClick={handleContinue} />;
-  } else if (messages && messages.length > 0) {
+  } else if (messages && messages.length > 0 && regenerateEnabled) {
     button = <Regenerate onClick={handleRegenerate} />;
   }
 

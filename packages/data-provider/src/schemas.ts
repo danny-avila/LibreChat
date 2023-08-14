@@ -32,6 +32,7 @@ export const tMessageSchema = z.object({
   current: z.boolean().optional(),
   unfinished: z.boolean().optional(),
   submitting: z.boolean().optional(),
+  searchResult: z.boolean().optional(),
   finish_reason: z.string().optional(),
 });
 
