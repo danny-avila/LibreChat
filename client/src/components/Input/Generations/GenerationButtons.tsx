@@ -1,5 +1,5 @@
 import { cn } from '~/utils';
-import { useMessageHandler } from '~/hooks';
+import { useMessageHandler, useMediaQuery } from '~/hooks';
 import Regenerate from './Regenerate';
 import Continue from './Continue';
 import Stop from './Stop';
@@ -18,6 +18,10 @@ export default function GenerationButtons({ showPopover, opacityClass }: Generat
     handleRegenerate,
     handleStopGenerating,
   } = useMessageHandler();
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  if (isSmallScreen) {
+    return null;
+  }
 
   let button: React.ReactNode = null;
   const { finish_reason } = latestMessage || {};
