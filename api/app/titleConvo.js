@@ -1,9 +1,9 @@
 const _ = require('lodash');
-const { genAzureChatCompletion, getAzureCredentials } = require('../utils/');
+const { getAzureCredentials } = require('../utils/');
+const { OpenAIClient } = require('./clients');
 
 const titleConvo = async ({ text, response, openAIApiKey, azure = false }) => {
   let title = 'New Chat';
-  const ChatGPTClient = (await import('@waylaidwanderer/chatgpt-api')).default;
 
   try {
     const instructionsPayload = {
@@ -36,11 +36,11 @@ const titleConvo = async ({ text, response, openAIApiKey, azure = false }) => {
     let apiKey = openAIApiKey ?? process.env.OPENAI_API_KEY;
 
     if (azure) {
-      apiKey = process.env.AZURE_API_KEY;
-      titleGenClientOptions.reverseProxyUrl = genAzureChatCompletion(getAzureCredentials());
+      titleGenClientOptions.azure = getAzureCredentials();
+      apiKey = titleGenClientOptions.azure.azureOpenAIApiKey;
     }
 
-    const titleGenClient = new ChatGPTClient(apiKey, titleGenClientOptions);
+    const titleGenClient = new OpenAIClient(apiKey, titleGenClientOptions);
     const result = await titleGenClient.getCompletion([instructionsPayload], null);
     title = result.choices[0].message.content.replace(/\s+/g, ' ').replaceAll('"', '').trim();
   } catch (e) {

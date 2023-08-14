@@ -113,8 +113,11 @@ class OpenAIClient extends BaseClient {
 
     if (this.azureEndpoint) {
       // Temporary fix for Azure, Reload the correct url
-      this.azure.azureOpenAIApiDeploymentName = this.options.modelOptions.model;
-      this.azureEndpoint = genAzureChatCompletion(this.azure);
+      const azureOptions = this.options.modelOptions || this.options.agentOptions;
+      if (azureOptions) {
+        this.azure.azureOpenAIApiDeploymentName = azureOptions.model.replace('3.5', '35');
+        this.azureEndpoint = genAzureChatCompletion(this.azure);
+      }
       this.completionsUrl = this.azureEndpoint;
     }
 
