@@ -1,4 +1,5 @@
 import React, { useRef, useState, RefObject } from 'react';
+import copy from 'copy-to-clipboard';
 import { Clipboard, CheckMark } from '~/components';
 import { InfoIcon } from 'lucide-react';
 import { cn } from '~/utils/';
@@ -22,10 +23,12 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(({ lang, codeRef, plugin = nu
           onClick={async () => {
             const codeString = codeRef.current?.textContent;
             if (codeString) {
-              navigator.clipboard.writeText(codeString).then(() => {
-                setIsCopied(true);
-                setTimeout(() => setIsCopied(false), 3000);
-              });
+              setIsCopied(true);
+              copy(codeString);
+
+              setTimeout(() => {
+                setIsCopied(false);
+              }, 3000);
             }
           }}
         >

@@ -6,11 +6,11 @@ import { cn } from '~/utils/';
 import ExportModel from './ExportModel';
 
 import store from '~/store';
-import { localize } from '~/localization/Translation';
+import { useLocalize } from '~/hooks';
 
 const ExportConversation = forwardRef(() => {
   const [open, setOpen] = useState(false);
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
 
   const conversation = useRecoilValue(store.conversation) || {};
 
@@ -35,7 +35,7 @@ const ExportConversation = forwardRef(() => {
         onClick={clickHandler}
       >
         <Download size={16} />
-        {localize(lang, 'com_nav_export_conversation')}
+        {localize('com_nav_export_conversation')}
       </button>
 
       <ExportModel open={open} onOpenChange={setOpen} />
