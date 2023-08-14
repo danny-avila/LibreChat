@@ -1,4 +1,4 @@
-import Search from '../../utils/Search';
+const Search = require('../../utils/Search');
 const glob = require('glob');
 
 // Set the name of the index in MeiliSearch
@@ -10,7 +10,7 @@ const indexName = 'prompt-library';
  *
  * @returns {Promise<string>}
  */
-export async function getSearchKey() {
+async function getSearchKey() {
   await Search.findOrCreateIndex(indexName, createSearchIndex);
   return Search.getSearchKey(indexName);
 }
@@ -37,7 +37,7 @@ function getTagsFromFilename(file, existingTags = []) {
  * Collate the prompt library from the /prompts/ folder
  * @returns {*[]}
  */
-export function collatePromptLibrary() {
+function collatePromptLibrary() {
   // Glob all .json files from the folder /prompts/
   const globPattern = '../../../prompts/**/*.json'; // Relative to this file
   const files = glob.sync(globPattern, { cwd: __dirname, realpath: true });
@@ -67,7 +67,7 @@ export function collatePromptLibrary() {
  *
  * @param index
  */
-export function createSearchIndex(index) {
+function createSearchIndex(index) {
   // Collate the prompt library
   index.addDocuments(collatePromptLibrary());
   // Configure the index to search the tags field and the title field
@@ -76,3 +76,8 @@ export function createSearchIndex(index) {
     displayedAttributes: ['title', 'promptPrefix', 'tags', 'prompt'],
   });
 }
+
+module.exports = {
+  getSearchKey,
+  collatePromptLibrary,
+};
