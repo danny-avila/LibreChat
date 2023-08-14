@@ -6,7 +6,7 @@ export default function Stop({ onClick }: TGenButtonProps) {
   return (
     <Button onClick={onClick}>
       <StopGeneratingIcon className="text-gray-600/90" />
-      Stop generating
+      Stop
     </Button>
   );
 }

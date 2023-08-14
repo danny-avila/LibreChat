@@ -6,7 +6,7 @@ export default function Continue({ onClick }: TGenButtonProps) {
   return (
     <Button onClick={onClick}>
       <ContinueIcon className="text-gray-600/90" />
-      Continue generating
+      Continue
     </Button>
   );
 }
