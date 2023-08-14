@@ -40,14 +40,6 @@ jobs:
           node-version: 18
           cache: 'npm'
 
-      # - name: Cache Node.js modules
-      #   uses: actions/cache@v3
-      #   with:
-      #     path: ~/.npm
-      #     key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-node-
-
       - name: Install global dependencies
         run: npm ci
 
@@ -60,19 +52,11 @@ jobs:
       - name: Build Client
         run: npm run frontend
 
-      # - name: Cache Playwright installations
-      #   uses: actions/cache@v3
-      #   with:
-      #     path: ~/.cache/ms-playwright/
-      #     key: ${{ runner.os }}-pw-${{ hashFiles('**/package-lock.json') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-pw-
-
-      - name: Install Playwright Dependencies
-        run: npx playwright install-deps
-
-      - name: Install Playwright Browsers
-        run: npm install -D @playwright/test@latest && npx playwright install chromium
+      - name: Install Playwright
+        run: |
+          npx playwright install-deps
+          npm install -D @playwright/test@latest
+          npx playwright install chromium
 
       - name: Run Playwright tests
         run: npm run e2e:ci
