@@ -90,7 +90,7 @@ const AuthContextProvider = ({
   );
 
   const getCookieValue = (key: string) => {
-    let keyValue = document.cookie.match('(^|;) ?' + key + '=([^;]*)(;|$)');
+    const keyValue = document.cookie.match('(^|;) ?' + key + '=([^;]*)(;|$)');
     return keyValue ? keyValue[2] : null;
   };
 
@@ -107,7 +107,7 @@ const AuthContextProvider = ({
     });
   };
 
-  const logout = () => {
+  const logout = useCallback(() => {
     logoutUser.mutate(undefined, {
       onSuccess: () => {
         setUserContext({
@@ -121,20 +121,20 @@ const AuthContextProvider = ({
         doSetError((error as Error).message);
       },
     });
-  };
+  }, [setUserContext, logoutUser]);
 
- const silentRefresh = useCallback(() => {
+  const silentRefresh = useCallback(() => {
     refreshToken.mutate(undefined, {
       onSuccess: (data: TLoginResponse) => {
         const { user, token } = data;
         setUserContext({ token, isAuthenticated: true, user });
       },
-      onError: error => {
+      onError: (error) => {
         console.log('refreshToken mutation error:', error);
-        navigate('/login'); 
-      }
+        navigate('/login');
+      },
     });
-  }, [setUserContext, navigate]);
+  }, [setUserContext, navigate, refreshToken]);
 
   useEffect(() => {
     if (userQuery.data) {
@@ -158,6 +158,7 @@ const AuthContextProvider = ({
     error,
     navigate,
     setUserContext,
+    silentRefresh,
   ]);
 
   useEffect(() => {
@@ -170,7 +171,7 @@ const AuthContextProvider = ({
         user: user,
       });
     };
-  
+
     const handleLogout = () => {
       console.log('logout event received');
       setUserContext({
@@ -183,13 +184,13 @@ const AuthContextProvider = ({
 
     window.addEventListener('tokenUpdated', handleTokenUpdate);
     window.addEventListener('logout', handleLogout);
-  
+
     return () => {
       window.removeEventListener('tokenUpdated', handleTokenUpdate);
       window.removeEventListener('logout', handleLogout);
     };
   }, [setUserContext, user, logout]);
-  
+
   // Make the provider update only when it should
   const memoedValue = useMemo(
     () => ({
