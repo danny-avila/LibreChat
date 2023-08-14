@@ -1,9 +1,18 @@
-import React from 'react';
-import { cn } from '~/utils/';
-import Clipboard from '../svg/Clipboard';
-import CheckMark from '../svg/CheckMark';
-import EditIcon from '../svg/EditIcon';
-import RegenerateIcon from '../svg/RegenerateIcon';
+import { useState } from 'react';
+import type { TConversation, TMessage } from 'librechat-data-provider';
+import { Clipboard, CheckMark, EditIcon, RegenerateIcon } from '~/components/svg';
+import { useGenerations } from '~/hooks';
+import { cn } from '~/utils';
+
+type THoverButtons = {
+  isEditing: boolean;
+  enterEdit: () => void;
+  copyToClipboard: (setIsCopied: (isCopied: boolean) => void) => void;
+  conversation: TConversation;
+  isSubmitting: boolean;
+  message: TMessage;
+  regenerate: () => void;
+};
 
 export default function HoverButtons({
   isEditing,
@@ -13,38 +22,15 @@ export default function HoverButtons({
   isSubmitting,
   message,
   regenerate,
-}) {
+}: THoverButtons) {
   const { endpoint } = conversation;
-  const [isCopied, setIsCopied] = React.useState(false);
-
-  const branchingSupported =
-    // azureOpenAI, openAI, chatGPTBrowser support branching, so edit enabled // 5/21/23: Bing is allowing editing and Message regenerating
-    !![
-      'azureOpenAI',
-      'openAI',
-      'chatGPTBrowser',
-      'google',
-      'bingAI',
-      'gptPlugins',
-      'anthropic',
-    ].find((e) => e === endpoint);
-  // Sydney in bingAI supports branching, so edit enabled
-
-  const editEnabled =
-    !message?.error &&
-    message?.isCreatedByUser &&
-    !message?.searchResult &&
-    !isEditing &&
-    branchingSupported;
-
-  // for now, once branching is supported, regerate will be enabled
-  let regenerateEnabled =
-    // !message?.error &&
-    !message?.isCreatedByUser &&
-    !message?.searchResult &&
-    !isEditing &&
-    !isSubmitting &&
-    branchingSupported;
+  const [isCopied, setIsCopied] = useState(false);
+  const { editEnabled, regenerateEnabled } = useGenerations({
+    isEditing,
+    isSubmitting,
+    message,
+    endpoint: endpoint ?? '',
+  });
 
   return (
     <div className="visible mt-2 flex justify-center gap-3 self-end text-gray-400 md:gap-4 lg:absolute lg:right-0 lg:top-0 lg:mt-0 lg:translate-x-full lg:gap-1 lg:self-center lg:pl-2">
