@@ -39,11 +39,13 @@ Click on the thumbnail to open the video☝️
 # Features
 - Response streaming identical to ChatGPT through server-sent events
 - UI from original ChatGPT, including Dark mode
-- AI model selection: OpenAI API, BingAI, ChatGPT Browser, PaLM2, Anthropic (Claude), Plugins
-- Create, Save, & Share custom presets - [More info on prompt presets here](https://github.com/danny-avila/LibreChat/releases/tag/v0.3.0)
 - Edit and Resubmit messages with conversation branching
-- Search all messages/conversations - [More info here](https://github.com/danny-avila/LibreChat/releases/tag/v0.1.0)
-- Plugins now available (including web access, image generation and more)
+- [**AI model selection**:](docs/install/apis_and_tokens.md) Integrate with OpenAI, BingAI, ChatGPT Browser, PaLM2, Anthropic (Claude)
+- [**Free AI Options**:](docs/install/free_ai_apis.md) Select from various free AI providers
+- [**Search Conversations**:](https://github.com/danny-avila/LibreChat/releases/tag/v0.1.0) Find an old conversation easily
+- [**Prompt Presets**:](https://github.com/danny-avila/LibreChat/releases/tag/v0.3.0) Create, edit and save prompts for your own re-use 
+- [**Prompt Library**:](docs/features/prompt_library.md) Use our library of prompts or create your own to share with all users
+- [**Plugins**:](docs/features/plugins/introduction.md) Enable web access, image generation and more
 
 ---
 
