@@ -31,12 +31,16 @@ export const EndpointMenu = ({
 }) => {
   const localize = useLocalize();
 
+  const handleEndpointChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    onChange(e.target.value);
+  };
+
   return (
     <div className="flex items-center justify-between">
       <div>{localize('com_nav_endpoint_select')}</div>
       <select
         className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20 dark:bg-gray-900"
-        onChange={(e) => onChange(e.target.value)}
+        onChange={handleEndpointChange}
         value={endpoint}
       >
         <option value="openai">{localize('com_nav_endpoint_openai')}</option>
