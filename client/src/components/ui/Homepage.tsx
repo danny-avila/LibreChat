@@ -25,24 +25,28 @@ export default function Homepage() {
 
   const [convoIdx, setConvoIdx] = useState<number>(0);
   const [convoDataLength, setConvoDataLength] = useState<number>(1);
-  const [convoData, setConvoData] = useState<TConversation[] | null>(null);
+  const [convoData, setConvoData] = useState<{ string: TConversation } | null>(null);
+  const [convoDataKeys, setConvoDataKeys] = useState<string[] | null>(null);
   const [msgTree, setMsgTree] = useState<TMessage[] | null>(null);
-  const [user, setUser] = useState<TUser | null>(null);
+  const [convoUser, setConvoUser] = useState<TUser | null>(null);
   const [lastLeaderboardType, setLastLeaderboardType] = useState<string | null>(null);
+  const [shareLink, setShareLink] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
 
   const [liked, setLiked] = useState<boolean>(false);
 
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
-  const { token } = useAuthContext();
+  const { user, token } = useAuthContext();
   const lang = useRecoilValue(store.lang);
   const title = localize(lang, 'com_ui_recommendation');
   const navigate = useNavigate();
 
+  // Allows navigation to user's profile page
   const navigateToProfile = () => {
-    navigate(`/profile/${user?.id}`);
+    navigate(`/profile/${convoUser?.id}`);
   }
 
+  // Fetch the most recent conversations and store in localStorage
   async function fetchRecentConversations() {
     try {
       const response = await fetch('/api/convos/recent', {
@@ -57,13 +61,17 @@ export default function Homepage() {
 
       if (tabValue === 'recent') {
         setConvoData(responseObject);
-        setConvoDataLength(responseObject.length);
+
+        const objKeys = Object.keys(responseObject);
+        setConvoDataLength(objKeys.length);
+        setConvoDataKeys(objKeys);
       }
     } catch (error) {
       console.log(error);
     }
   }
 
+  // Fetch the hottest conversations and store in localStorage
   async function fetchHottestConversations() {
     try {
       const response = await fetch('/api/convos/hottest', {
@@ -78,18 +86,25 @@ export default function Homepage() {
 
       if (tabValue === 'hottest') {
         setConvoData(responseObject);
-        setConvoDataLength(responseObject.length);
+
+        const objKeys = Object.keys(responseObject);
+        setConvoDataLength(objKeys.length);
+        setConvoDataKeys(objKeys);
       }
     } catch (error) {
       console.log(error);
     }
   }
 
+  // Fetch the most recent and the hottest conversations
   async function fetchRecommendations() {
+    const lastFetchedBy = window.localStorage.getItem('lastFetchedBy');
     const last = Number(window.localStorage.getItem('lastFetchTime'));
     const currentTime = Date.now();
 
-    if ((currentTime - last) > 30000) {
+    // It has been more than 30 seconds since the last fetch
+    // We fetch new conversations from the server
+    if ((currentTime - last) > 30000 || lastFetchedBy !== user?.id) {
       setConvoData(null);
       setConvoIdx(0);
 
@@ -97,6 +112,7 @@ export default function Homepage() {
       fetchHottestConversations();
 
       window.localStorage.setItem('lastFetchTime', currentTime.toString());
+      window.localStorage.setItem('lastFetchedBy', user?.id || '');
     } else {
       if (tabValue === lastLeaderboardType) return;
 
@@ -105,6 +121,7 @@ export default function Homepage() {
 
       let conversations: string | null = null;
 
+      // We retrieve from localStorage if fetch is still on cooldown
       if (tabValue === 'recent') {
         conversations = window.localStorage.getItem('recentConversations');
       } else if (tabValue === 'hottest') {
@@ -114,13 +131,17 @@ export default function Homepage() {
       if (conversations) {
         const convoObject = JSON.parse(conversations);
         setConvoData(convoObject);
-        setConvoDataLength(convoObject.length);
+
+        const objKeys = Object.keys(convoObject);
+        setConvoDataLength(objKeys.length);
+        setConvoDataKeys(objKeys);
       }
     }
 
     setLastLeaderboardType(tabValue);
   }
 
+  // Fetch messages of the current conversation
   async function fetchMessagesByConvoId(id: string) {
     setMsgTree(null);
     try {
@@ -138,8 +159,9 @@ export default function Homepage() {
     }
   }
 
+  // Fetch the user who owns the current conversation
   async function fetchConvoUser(id: string | undefined) {
-    setUser(null);
+    setConvoUser(null);
     try {
       const response = await fetch(`/api/user/${id}`, {
         method: 'GET',
@@ -149,7 +171,70 @@ export default function Homepage() {
         }
       });
       const responseObject = await response.json();
-      setUser(responseObject);
+      setConvoUser(responseObject);
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
+  // Likes a conversation
+  async function likeConversation() {
+    if (!convoData || !convoDataKeys || !user) return;
+
+    // update component state
+    setLiked(!liked);
+
+    // update state object
+    if (liked) {
+      convoData[convoDataKeys[convoIdx]].likes = convoData[convoDataKeys[convoIdx]].likes - 1;
+      convoData[convoDataKeys[convoIdx]].likedBy[user.id] = false;
+    } else {
+      convoData[convoDataKeys[convoIdx]].likes = convoData[convoDataKeys[convoIdx]].likes + 1;
+      convoData[convoDataKeys[convoIdx]].likedBy[user.id] = true;
+    }
+
+    // update localStorage
+    if (tabValue === 'recent') {
+      window.localStorage.setItem('recentConversations', JSON.stringify(convoData));
+
+      const storedHottest = window.localStorage.getItem('hottestConversations');
+
+      if (storedHottest) {
+        const convoObject: { string: TConversation } = JSON.parse(storedHottest);
+
+        if (convoObject[convoDataKeys[convoIdx]]) {
+          convoObject[convoDataKeys[convoIdx]] = convoData[convoDataKeys[convoIdx]];
+          window.localStorage.setItem('hottestConversations', JSON.stringify(convoObject));
+        }
+      }
+    } else if (tabValue === 'hottest') {
+      window.localStorage.setItem('hottestConversations', JSON.stringify(convoData));
+
+      const storedRecent = window.localStorage.getItem('recentConversations');
+
+      if (storedRecent) {
+        const convoObject: { string: TConversation } = JSON.parse(storedRecent);
+
+        if (convoObject[convoDataKeys[convoIdx]]) {
+          convoObject[convoDataKeys[convoIdx]] = convoData[convoDataKeys[convoIdx]];
+          window.localStorage.setItem('recentConversations', JSON.stringify(convoObject));
+        }
+      }
+    }
+
+    // update database
+    try {
+      await fetch('/api/convos/like', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          conversationId: convoDataKeys[convoIdx],
+          userId: user?.id,
+          liked: !liked
+        })
+      });
     } catch (error) {
       console.log(error);
     }
@@ -161,26 +246,34 @@ export default function Homepage() {
   const prevConvo = () => convoIdx === 0 ? setConvoIdx(convoDataLength - 1) : setConvoIdx(convoIdx - 1);
   const copyShareLinkHandler = () => {
     if (copied) return;
-    if (convoData) {
-      navigator.clipboard.writeText(window.location.host + `/chat/share/${convoData[convoIdx].conversationId}`);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+    navigator.clipboard.writeText(shareLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
-  // Get recent conversations
+  // Get recommendations on mount and when switching leaderboard types
   useEffect(() => {
-    if (token) {
+    if (user) {
       fetchRecommendations();
     }
-  }, [token]);
+  }, [user, tabValue]);
 
   useEffect(() => {
-    if (convoData) {
-      fetchMessagesByConvoId(convoData[convoIdx].conversationId);
-      fetchConvoUser(convoData[convoIdx].user);
+    if (convoData && convoDataKeys && user) {
+      if (convoDataKeys.length < 1) return;
+      fetchMessagesByConvoId(convoData[convoDataKeys[convoIdx]].conversationId);
+      fetchConvoUser(convoData[convoDataKeys[convoIdx]].user);
+      setShareLink(process.env.NODE_ENV === 'dev' ? `localhost:3090/chat/share/${convoData[convoDataKeys[convoIdx]].conversationId}` :
+        `chat.aitok.us/chat/share/${convoData[convoDataKeys[convoIdx]].conversationId}`);
+
+      const likedBy = convoData[convoDataKeys[convoIdx]].likedBy;
+      if (likedBy) {
+        setLiked(likedBy[user.id] ? true : false);
+      } else {
+        setLiked(false);
+      }
     }
-  }, [convoData, convoIdx]);
+  }, [convoData, convoDataKeys, convoIdx, user]);
 
   useDocumentTitle(title);
 
@@ -193,6 +286,12 @@ export default function Homepage() {
     'font-medium data-[state=active]:text-white text-xs text-white'
   );
   const selectedTab = (val: string) => val + '-tab ' + defaultSelected;
+
+  if (convoDataKeys?.length === 0) return (
+    <div className='ml-2 mt-2'>
+      API server did not return any documents. Check if you have an empty database.
+    </div>
+  );
 
   return (
     <div className='flex flex-col overflow-y-auto gap-2'>
@@ -237,26 +336,26 @@ export default function Homepage() {
                 id="landing-title"
                 className="md:mb-3 ml-auto mr-auto mt-0.5 flex gap-2 text-center text-3xl font-semibold sm:mb-2 md:mt-0.5"
               >
-                {convoData ? convoData[convoIdx].title : ''}
+                {convoData && convoDataKeys ? convoData[convoDataKeys[convoIdx]].title : ''}
               </h1>
-              <div className='my-2 flex flex-row justify-center items-center gap-2 md:my-0'>
-                <div className='flex flex-row justify-center items-center gap-2 md:mb-2 hover:underline'>
-                  {user && (
+              <div className='my-2 flex flex-row justify-self-center gap-2'>
+                <div className='flex flex-row justify-center items-center gap-2 hover:underline'>
+                  {convoUser && (
                     <>
                       <button
-                        title={user?.username}
+                        title={convoUser?.username}
                         style={{
                           width: 30,
                           height: 30
                         }}
-                        className={'justify-self-end col-span-1 relative flex items-center justify-center'}
+                        className={'justify-self-center relative flex items-center justify-center'}
                         onClick={ navigateToProfile }
                       >
                         <img
                           className="rounded-sm"
                           src={
-                            user?.avatar ||
-                            `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name}&fontFamily=Verdana&fontSize=36`
+                            convoUser?.avatar ||
+                            `https://api.dicebear.com/6.x/initials/svg?seed=${convoUser?.name}&fontFamily=Verdana&fontSize=36`
                           }
                           alt="avatar"
                         />
@@ -265,14 +364,14 @@ export default function Homepage() {
                         onClick={ navigateToProfile }
                         className='justify-self-start col-span-1'
                       >
-                        {user?.username}
+                        {convoUser?.username}
                       </button>
                     </>
                   )}
                 </div>
                 <button>
                   <svg
-                    onClick={() => {setLiked(!liked)}}
+                    onClick={ likeConversation }
                     stroke="currentColor"
                     fill={liked ? 'currentColor' : 'none'}
                     strokeWidth="2"
@@ -298,18 +397,18 @@ export default function Homepage() {
             </div>
             <div className="dark:gpt-dark-gray mb-32 h-auto w-full md:mb-48" ref={screenshotTargetRef}>
               <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
-                {convoData && msgTree && user ? (
+                {convoData && convoDataKeys && msgTree && convoUser ? (
                   <MultiMessage
-                    key={convoData[convoIdx].conversationId} // avoid internal state mixture
-                    messageId={convoData[convoIdx].conversationId}
-                    conversation={convoData[convoIdx]}
+                    key={convoData[convoDataKeys[convoIdx]].conversationId} // avoid internal state mixture
+                    messageId={convoData[convoDataKeys[convoIdx]].conversationId}
+                    conversation={convoData[convoDataKeys[convoIdx]]}
                     messagesTree={msgTree}
                     scrollToBottom={null}
                     currentEditId={-1}
                     setCurrentEditId={null}
                     isSearchView={true}
-                    name={user?.name}
-                    userId={user?.id}
+                    name={convoUser?.name}
+                    userId={convoUser?.id}
                   />
                 ) : (
                   <div className="flex w-full h-[25vh] flex-row items-end justify-end">
