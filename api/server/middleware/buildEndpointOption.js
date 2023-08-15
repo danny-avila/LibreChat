@@ -1,6 +1,7 @@
 const openAI = require('../routes/endpoints/openAI');
 const gptPlugins = require('../routes/endpoints/gptPlugins');
 const anthropic = require('../routes/endpoints/anthropic');
+const { parseConvo } = require('../routes/endpoints/schemas');
 
 const buildFunction = {
   openAI: openAI.buildOptions,
@@ -10,7 +11,8 @@ const buildFunction = {
 
 function buildEndpointOption(req, res, next) {
   const { endpoint } = req.body;
-  req.body.endpointOption = buildFunction[endpoint](req);
+  const parsedBody = parseConvo(endpoint, req.body);
+  req.body.endpointOption = buildFunction[endpoint](endpoint, parsedBody);
   next();
 }
 

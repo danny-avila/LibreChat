@@ -1,18 +1,19 @@
-import { z } from 'zod';
+const { z } = require('zod');
 
-export enum EModelEndpoint {
-  azureOpenAI = 'azureOpenAI',
-  openAI = 'openAI',
-  bingAI = 'bingAI',
-  chatGPTBrowser = 'chatGPTBrowser',
-  google = 'google',
-  gptPlugins = 'gptPlugins',
-  anthropic = 'anthropic',
-}
+const EModelEndpoint = {
+  azureOpenAI: 'azureOpenAI',
+  openAI: 'openAI',
+  bingAI: 'bingAI',
+  chatGPTBrowser: 'chatGPTBrowser',
+  google: 'google',
+  gptPlugins: 'gptPlugins',
+  anthropic: 'anthropic',
+};
 
-export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
+const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
-export const tMessageSchema = z.object({
+/*
+const tMessageSchema = z.object({
   messageId: z.string(),
   clientId: z.string().nullable().optional(),
   conversationId: z.string().nullable(),
@@ -36,17 +37,29 @@ export const tMessageSchema = z.object({
   finish_reason: z.string().optional(),
 });
 
-export type TMessage = z.input<typeof tMessageSchema>;
+const tPresetSchema = tConversationSchema
+  .omit({
+    conversationId: true,
+    createdAt: true,
+    updatedAt: true,
+    title: true,
+  })
+  .merge(
+    z.object({
+      conversationId: z.string().optional(),
+      presetId: z.string().nullable().optional(),
+      title: z.string().nullable().optional(),
+    }),
+  );
+*/
 
-export const tPluginAuthConfigSchema = z.object({
+const tPluginAuthConfigSchema = z.object({
   authField: z.string(),
   label: z.string(),
   description: z.string(),
 });
 
-export type TPluginAuthConfig = z.infer<typeof tPluginAuthConfigSchema>;
-
-export const tPluginSchema = z.object({
+const tPluginSchema = z.object({
   name: z.string(),
   pluginKey: z.string(),
   description: z.string(),
@@ -56,9 +69,7 @@ export const tPluginSchema = z.object({
   isButton: z.boolean().optional(),
 });
 
-export type TPlugin = z.infer<typeof tPluginSchema>;
-
-export const tExampleSchema = z.object({
+const tExampleSchema = z.object({
   input: z.object({
     content: z.string(),
   }),
@@ -67,16 +78,14 @@ export const tExampleSchema = z.object({
   }),
 });
 
-export type TExample = z.infer<typeof tExampleSchema>;
-
-export const tAgentOptionsSchema = z.object({
+const tAgentOptionsSchema = z.object({
   agent: z.string(),
   skipCompletion: z.boolean(),
   model: z.string(),
   temperature: z.number(),
 });
 
-export const tConversationSchema = z.object({
+const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
   title: z.string(),
   user: z.string().optional(),
@@ -111,26 +120,7 @@ export const tConversationSchema = z.object({
   agentOptions: tAgentOptionsSchema.nullable().optional(),
 });
 
-export type TConversation = z.infer<typeof tConversationSchema>;
-
-export const tPresetSchema = tConversationSchema
-  .omit({
-    conversationId: true,
-    createdAt: true,
-    updatedAt: true,
-    title: true,
-  })
-  .merge(
-    z.object({
-      conversationId: z.string().optional(),
-      presetId: z.string().nullable().optional(),
-      title: z.string().nullable().optional(),
-    }),
-  );
-
-export type TPreset = z.infer<typeof tPresetSchema>;
-
-export const openAISchema = tConversationSchema
+const openAISchema = tConversationSchema
   .pick({
     model: true,
     chatGptLabel: true,
@@ -160,7 +150,7 @@ export const openAISchema = tConversationSchema
     frequency_penalty: 0,
   }));
 
-export const googleSchema = tConversationSchema
+const googleSchema = tConversationSchema
   .pick({
     model: true,
     modelLabel: true,
@@ -191,7 +181,7 @@ export const googleSchema = tConversationSchema
     topK: 40,
   }));
 
-export const bingAISchema = tConversationSchema
+const bingAISchema = tConversationSchema
   .pick({
     jailbreak: true,
     systemMessage: true,
@@ -226,7 +216,7 @@ export const bingAISchema = tConversationSchema
     invocationId: 1,
   }));
 
-export const anthropicSchema = tConversationSchema
+const anthropicSchema = tConversationSchema
   .pick({
     model: true,
     modelLabel: true,
@@ -256,7 +246,7 @@ export const anthropicSchema = tConversationSchema
     topK: 5,
   }));
 
-export const chatGPTBrowserSchema = tConversationSchema
+const chatGPTBrowserSchema = tConversationSchema
   .pick({
     model: true,
   })
@@ -268,7 +258,7 @@ export const chatGPTBrowserSchema = tConversationSchema
     model: 'text-davinci-002-render-sha',
   }));
 
-export const gptPluginsSchema = tConversationSchema
+const gptPluginsSchema = tConversationSchema
   .pick({
     model: true,
     chatGptLabel: true,
@@ -314,15 +304,7 @@ export const gptPluginsSchema = tConversationSchema
     },
   }));
 
-type EndpointSchema =
-  | typeof openAISchema
-  | typeof googleSchema
-  | typeof bingAISchema
-  | typeof anthropicSchema
-  | typeof chatGPTBrowserSchema
-  | typeof gptPluginsSchema;
-
-const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
+const endpointSchemas = {
   openAI: openAISchema,
   azureOpenAI: openAISchema,
   google: googleSchema,
@@ -332,7 +314,7 @@ const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
   gptPlugins: gptPluginsSchema,
 };
 
-function getFirstDefinedValue(possibleValues: string[]) {
+function getFirstDefinedValue(possibleValues) {
   let returnValue;
   for (const value of possibleValues) {
     if (value) {
@@ -343,15 +325,7 @@ function getFirstDefinedValue(possibleValues: string[]) {
   return returnValue;
 }
 
-type TPossibleValues = {
-  model: string[];
-};
-
-export const parseConvo = (
-  endpoint: EModelEndpoint,
-  conversation: Partial<TConversation | TPreset>,
-  possibleValues?: TPossibleValues,
-) => {
+const parseConvo = (endpoint, conversation, possibleValues) => {
   const schema = endpointSchemas[endpoint];
 
   if (!schema) {
@@ -367,18 +341,7 @@ export const parseConvo = (
   return convo;
 };
 
-export type TEndpointOption = {
-  endpoint: EModelEndpoint;
-  model?: string;
-  promptPrefix?: string;
-  temperature?: number;
-  chatGptLabel?: string | null;
-  modelLabel?: string | null;
-  jailbreak?: boolean;
-  token?: string | null;
-};
-
-export const getResponseSender = (endpointOption: TEndpointOption): string => {
+const getResponseSender = (endpointOption) => {
   const { endpoint, chatGptLabel, modelLabel, jailbreak } = endpointOption;
 
   if (['openAI', 'azureOpenAI', 'gptPlugins', 'chatGPTBrowser'].includes(endpoint)) {
@@ -398,4 +361,9 @@ export const getResponseSender = (endpointOption: TEndpointOption): string => {
   }
 
   return '';
+};
+
+module.exports = {
+  parseConvo,
+  getResponseSender,
 };
