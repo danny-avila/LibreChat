@@ -190,8 +190,10 @@ export default function Nav({ navVisible, setNavVisible }) {
     setCopied(true);
   }
 
+  const navigateToRegister = () => navigate('/register');
+
   const openWidgetHandler = (type) => () => {
-    if (location.pathname.substring(1, 5) !== 'chat') {
+    if (location.pathname.substring(1, 5) !== 'chat' || location.pathname.substring(0, 11) === '/chat/share') {
       newConversation();
       navigate('/chat/new');
       setWidget(`${type}`);
@@ -239,6 +241,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                   <Panel open={false} />
                 </button>
               </div>
+              {/* {!user && <div style={{ color: 'white' }}>yes</div>} */}
               <div
                 className={`flex-1 flex-col overflow-y-auto ${isHovering ? '' : 'scrollbar-transparent'
                 } border-b border-white/20`}
@@ -268,31 +271,31 @@ export default function Nav({ navVisible, setNavVisible }) {
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <HomeIcon />}
                 text={navigator.languages[0] === 'zh-CN' ? '主页' : 'Home'}
-                clickHandler={ openHomepageHandler }
+                clickHandler={ user ? openHomepageHandler : navigateToRegister }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <NotebookIcon />}
                 text={navigator.languages[0] === 'zh-CN' ? '写作小助手' : 'Writing Assistant'}
-                clickHandler={ openWritingAssistantHandler }
+                clickHandler={ user ? openWritingAssistantHandler : navigateToRegister }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <ComputerIcon />}
                 text={navigator.languages[0] === 'zh-CN' ? '编程小助手' : 'Coding Assistant'}
-                clickHandler={ openCodingAssistantHandler }
+                clickHandler={ user ? openCodingAssistantHandler : navigateToRegister }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <LightBulbIcon />}
                 text={navigator.languages[0] === 'zh-CN' ? '万能咨询' : 'Ask Me Anything'}
-                clickHandler={ openAskMeAnythingHandler }
+                clickHandler={ user ? openAskMeAnythingHandler : navigateToRegister }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <LeaderboardIcon />}
                 text={navigator.languages[0] === 'zh-CN' ? '邀请排行榜' : 'Referrals Leaderboard'}
-                clickHandler={ openLeaderboardHandler }
+                clickHandler={ user ? openLeaderboardHandler : navigateToRegister }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
@@ -302,15 +305,17 @@ export default function Nav({ navVisible, setNavVisible }) {
                 ) : (
                   navigator.languages[0] === 'zh-CN' ? '复制邀请链接' : 'Copy Invitation Link'
                 )}
-                clickHandler={ copyLinkHandler }
+                clickHandler={ user ? copyLinkHandler : navigateToRegister }
               />
-              <NavLink
-                className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-                // Add an SVG or icon for the Profile link here
-                svg={() => <ProfileIcon />}
-                text={navigator.languages[0] === 'zh-CN' ? '个人资料' : 'Profile'}
-                clickHandler={openProfileHandler}
-              />
+              {user && (
+                <NavLink
+                  className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                  // Add an SVG or icon for the Profile link here
+                  svg={() => <ProfileIcon />}
+                  text={navigator.languages[0] === 'zh-CN' ? '个人资料' : 'Profile'}
+                  clickHandler={ openProfileHandler }
+                />
+              )}
               <NavLinks clearSearch={clearSearch} isSearchEnabled={isSearchEnabled} />
             </nav>
           </div>

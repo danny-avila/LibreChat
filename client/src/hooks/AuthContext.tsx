@@ -138,6 +138,8 @@ const AuthContextProvider = ({
       const tokenFromCookie = getCookieValue('token');
       if (tokenFromCookie) {
         setUserContext({ token: tokenFromCookie, isAuthenticated: true, user: userQuery.data });
+      } else if (window.location.pathname.substring(0, 11) === '/chat/share') {
+        // Intentionally left blank to allow access to shared conversation without loggin in
       } else {
         navigate('/login');
       }

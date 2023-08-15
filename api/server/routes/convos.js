@@ -9,7 +9,11 @@ const Conversation = require('../../models/schema/convoSchema');
 
 router.get('/', requireJwtAuth, async (req, res) => {
   const pageNumber = req.query.pageNumber || 1;
-  res.status(200).send(await getConvosByPage(req.user.id, pageNumber));
+  if (!req.user) {
+    res.status(401).send();
+  } else {
+    res.status(200).send(await getConvosByPage(req.user.id, pageNumber));
+  }
 });
 
 router.get('/hottest', requireJwtAuth, async (req, res) => {

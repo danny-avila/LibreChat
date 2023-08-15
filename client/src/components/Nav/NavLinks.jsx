@@ -34,6 +34,8 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
     if (exportable) setShowExports(true);
   };
 
+  if (!user) return null;
+
   return (
     <>
       <Menu as="div" className="group relative">
