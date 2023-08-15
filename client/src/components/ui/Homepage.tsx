@@ -34,6 +34,7 @@ export default function Homepage() {
   const [copied, setCopied] = useState<boolean>(false);
 
   const [liked, setLiked] = useState<boolean>(false);
+  const [numOfLikes, setNumOfLikes] = useState<number>(0);
 
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
   const { user, token } = useAuthContext();
@@ -184,11 +185,17 @@ export default function Homepage() {
     // update component state
     setLiked(!liked);
 
+    // Initiate these properties if they do not exist
+    if (!convoData[convoDataKeys[convoIdx]].likedBy) convoData[convoDataKeys[convoIdx]].likedBy = {};
+    if (!convoData[convoDataKeys[convoIdx]].likes) convoData[convoDataKeys[convoIdx]].likes = 0;
+
     // update state object
     if (liked) {
+      setNumOfLikes(numOfLikes - 1);
       convoData[convoDataKeys[convoIdx]].likes = convoData[convoDataKeys[convoIdx]].likes - 1;
       convoData[convoDataKeys[convoIdx]].likedBy[user.id] = false;
     } else {
+      setNumOfLikes(numOfLikes + 1);
       convoData[convoDataKeys[convoIdx]].likes = convoData[convoDataKeys[convoIdx]].likes + 1;
       convoData[convoDataKeys[convoIdx]].likedBy[user.id] = true;
     }
@@ -264,6 +271,7 @@ export default function Homepage() {
       fetchMessagesByConvoId(convoData[convoDataKeys[convoIdx]].conversationId);
       fetchConvoUser(convoData[convoDataKeys[convoIdx]].user);
       setShareLink(window.location.host +  `/chat/share/${convoData[convoDataKeys[convoIdx]].conversationId}`);
+      setNumOfLikes(convoData[convoDataKeys[convoIdx]].likes);
 
       const likedBy = convoData[convoDataKeys[convoIdx]].likedBy;
       if (likedBy) {
@@ -375,23 +383,31 @@ export default function Homepage() {
                     </g>
                   </svg>
                 </button>
-                <button>
-                  <svg
-                    onClick={ likeConversation }
-                    stroke="currentColor"
-                    fill={liked ? 'currentColor' : 'none'}
-                    strokeWidth="2"
-                    viewBox="0 0 24 24"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="h-4 w-4 hover:text-black"
-                    height="1em"
-                    width="1em"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
-                  </svg>
-                </button>
+                <div className='flex flex-row items-center gap-1 ml-0.5'>
+                  <button>
+                    <svg
+                      onClick={ likeConversation }
+                      stroke="currentColor"
+                      fill={liked ? 'currentColor' : 'none'}
+                      strokeWidth="2"
+                      viewBox="0 0 24 24"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-4 w-4 hover:text-black"
+                      height="1em"
+                      width="1em"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
+                    </svg>
+                  </button>
+                  <div className='ml-px mr-0.5'>
+                    {numOfLikes}
+                  </div>
+                  <div>
+                    {localize(lang, 'com_ui_number_of_likes')}
+                  </div>
+                </div>
               </div>
             </div>
             <div className="dark:gpt-dark-gray mb-32 h-auto w-full md:mb-48" ref={screenshotTargetRef}>
