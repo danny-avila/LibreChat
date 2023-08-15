@@ -5,6 +5,7 @@ const { parseConvo } = require('../routes/endpoints/schemas');
 
 const buildFunction = {
   openAI: openAI.buildOptions,
+  azureOpenAI: openAI.buildOptions,
   gptPlugins: gptPlugins.buildOptions,
   anthropic: anthropic.buildOptions,
 };
