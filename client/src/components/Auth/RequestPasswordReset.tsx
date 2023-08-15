@@ -60,7 +60,7 @@ function RequestPasswordReset() {
       setHeaderText(localize('com_auth_reset_password'));
       setBodyText(undefined);
     }
-  }, [requestPasswordReset.isSuccess, config.data?.emailEnabled, resetLink, lang]);
+  }, [requestPasswordReset.isSuccess, config.data?.emailEnabled, resetLink, localize]);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
