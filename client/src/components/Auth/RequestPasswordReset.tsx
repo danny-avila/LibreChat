@@ -122,7 +122,7 @@ function RequestPasswordReset() {
             className="relative mt-4 rounded border border-green-400 bg-green-100 px-4 py-3 text-green-700"
             role="alert"
           >
-            {navigator.languages[0] === 'zh-CN'?'已发送一封电子邮件到'+email+'，其中包含有关如何重置密码的说明。':'An email has been sent with instructions on how to reset your password.'}
+            {navigator.languages[0] === 'zh-CN'?'已发送一封电子邮件到'+email+'，其中包含有关如何重置密码的说明。如果您没有很快看到这封电子邮件，请检查您的垃圾邮件/垃圾邮件文件夹。':'An email has been sent to '+email+' with instructions on how to reset your password.Please check your spam/junk folder if you don\'t see this email shortly.'}
             {/* An email has been sent with instructions on how to reset your password. */}
           </div>
         )}
