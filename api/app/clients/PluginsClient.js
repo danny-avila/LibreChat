@@ -150,6 +150,7 @@ Only respond with your conversational reply to the following User Message:
   }
 
   createLLM(modelOptions, configOptions) {
+    let azure = {};
     let credentials = { openAIApiKey: this.openAIApiKey };
     let configuration = {
       apiKey: this.openAIApiKey,
@@ -158,14 +159,21 @@ Only respond with your conversational reply to the following User Message:
     if (this.azure) {
       credentials = {};
       configuration = {};
+      const { azureOpenAIApiInstanceName, ...rest } = this.azure;
+      azure = {
+        azureOpenAIBasePath: `https://${azureOpenAIApiInstanceName}.openai.azure.com/openai/deployments`,
+        ...rest,
+      };
     }
 
     if (this.options.debug) {
       console.debug('createLLM: configOptions');
       console.debug(configOptions);
+      console.debug('createLLM: azure');
+      console.debug(azure);
     }
 
-    return new ChatOpenAI({ credentials, configuration, ...modelOptions }, configOptions);
+    return new ChatOpenAI({ credentials, configuration, ...azure, ...modelOptions }, configOptions);
   }
 
   async initialize({ user, message, onAgentAction, onChainEnd, signal }) {
