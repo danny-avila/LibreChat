@@ -130,8 +130,8 @@ export default function SharedConvo() {
             >
               {conversation ? conversation.title : ''}
             </h1>
-            <div className='my-2 flex flex-row justify-self-center gap-2 md:my-0'>
-              <div className='flex flex-row justify-center items-center gap-2 md:mb-2 hover:underline'>
+            <div className='my-2 flex flex-row justify-self-center gap-2'>
+              <div className='flex flex-row justify-center items-center gap-2 hover:underline'>
                 {user && (
                   <>
                     <button
@@ -140,7 +140,7 @@ export default function SharedConvo() {
                         width: 30,
                         height: 30
                       }}
-                      className={'justify-self-end col-span-1 relative flex items-center justify-center'}
+                      className={'justify-self-center relative flex items-center justify-center'}
                       onClick={ navigateToProfile }
                     >
                       <img
