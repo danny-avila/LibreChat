@@ -7,19 +7,31 @@ import { CheckMark, CrossIcon } from '~/components/svg/';
 import { Eye, EyeOff } from 'lucide-react';
 import store from '~/store';
 
-export const reverseProxyIsActiveState = atom({
-  key: 'reverseProxyIsActiveState',
-  default: false,
-});
-
-export const reverseProxyUrlState = atom({
-  key: 'reverseProxyUrlState',
-  default: '',
-});
-
-export const reverseProxyApiState = atom({
-  key: 'reverseProxyApiState',
-  default: '',
+const endpointSettings = atom({
+  key: 'endpointSettings',
+  default: {
+    openai: {
+      reverseProxyIsActive: false,
+      tempUrl: '',
+      tempApi: '',
+      url: '',
+      api: '',
+    },
+    azure: {
+      reverseProxyIsActive: false,
+      tempUrl: '',
+      tempApi: '',
+      url: '',
+      api: '',
+    },
+    plugin: {
+      reverseProxyIsActive: false,
+      tempUrl: '',
+      tempApi: '',
+      url: '',
+      api: '',
+    },
+  },
 });
 
 export const EndpointMenu = ({
@@ -63,7 +75,15 @@ export const ToggleReverseProxy = ({ isActive, onCheckedChange }) => {
   );
 };
 
-export const SetReverseProxyUrl = ({ url, onChange }) => {
+export const SetReverseProxyUrl = ({
+  url,
+  onChange,
+  endpoint,
+}: {
+  url: string;
+  onChange: (newUrl: string) => void;
+  endpoint?: string;
+}) => {
   const localize = useLocalize();
 
   const [tempUrl, setTempUrl] = useState(url);
@@ -112,7 +132,15 @@ export const SetReverseProxyUrl = ({ url, onChange }) => {
   );
 };
 
-export const SetReverseProxyApi = ({ api, onChange }) => {
+export const SetReverseProxyApi = ({
+  api,
+  onChange,
+  endpoint,
+}: {
+  api: string;
+  onChange: (newApi: string) => void;
+  endpoint?: string;
+}) => {
   const localize = useLocalize();
 
   const [tempApi, setTempApi] = useState(api);
@@ -167,66 +195,50 @@ export const SetReverseProxyApi = ({ api, onChange }) => {
 
 function Api() {
   const [showApiKey, setShowApiKey] = useState(false);
-  const [endpoint, setEndpoint] = useRecoilState(store.endpoint);
+  const [endpoint, setEndpoint] = useRecoilState(store.reverse);
+  const [endpointSettingsState, setEndpointSettingsState] = useRecoilState(endpointSettings);
 
-  // Create an object to store settings for each endpoint
-  const [endpointSettings, setEndpointSettings] = useState({
-    openai: {
-      reverseProxyIsActive: false,
-      url: '',
-      api: '',
-    },
-    azure: {
-      reverseProxyIsActive: false,
-      url: '',
-      api: '',
-    },
-    plugin: {
-      reverseProxyIsActive: false,
-      url: '',
-      api: '',
-    },
-  });
-
-  const currentEndpointSettings = endpointSettings[endpoint];
+  const currentEndpointSettings = endpointSettingsState[endpoint];
 
   const handleReverseProxyActivityChange = useCallback(
     (value) => {
-      setEndpointSettings((prevSettings) => ({
+      setEndpointSettingsState((prevSettings) => ({
         ...prevSettings,
         [endpoint]: {
           ...prevSettings[endpoint],
           reverseProxyIsActive: value,
+          tempUrl: '',
+          tempApi: '',
         },
       }));
     },
-    [setEndpointSettings, endpoint],
+    [setEndpointSettingsState, endpoint],
   );
 
   const handleReverseProxyUrlChange = useCallback(
     (newUrl) => {
-      setEndpointSettings((prevSettings) => ({
+      setEndpointSettingsState((prevSettings) => ({
         ...prevSettings,
         [endpoint]: {
           ...prevSettings[endpoint],
-          url: newUrl,
+          tempUrl: newUrl,
         },
       }));
     },
-    [setEndpointSettings, endpoint],
+    [setEndpointSettingsState, endpoint],
   );
 
   const handleReverseProxyApiChange = useCallback(
     (newApi) => {
-      setEndpointSettings((prevSettings) => ({
+      setEndpointSettingsState((prevSettings) => ({
         ...prevSettings,
         [endpoint]: {
           ...prevSettings[endpoint],
-          api: newApi,
+          tempApi: newApi,
         },
       }));
     },
-    [setEndpointSettings, endpoint],
+    [setEndpointSettingsState, endpoint],
   );
 
   const handleShowApiKeyChange = useCallback(() => {
@@ -256,13 +268,14 @@ function Api() {
           <>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <SetReverseProxyUrl
-                url={currentEndpointSettings.url}
+                url={currentEndpointSettings.tempUrl}
                 onChange={handleReverseProxyUrlChange}
+                endpoint={undefined}
               />
             </div>
             <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
               <SetReverseProxyApi
-                api={currentEndpointSettings.api}
+                api={currentEndpointSettings.tempApi}
                 onChange={handleReverseProxyApiChange}
                 showApiKey={showApiKey}
                 onShowApiKeyChange={handleShowApiKeyChange}

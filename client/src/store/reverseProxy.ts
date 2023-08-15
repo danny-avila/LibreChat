@@ -1,8 +1,8 @@
 import { atom } from 'recoil';
 
-const endpoint = atom({
+const reverse = atom({
   key: 'endpoint',
   default: 'openai',
 });
 
-export default { endpoint };
+export default { reverse };
