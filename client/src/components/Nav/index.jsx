@@ -23,6 +23,7 @@ import HomeIcon from '../svg/HomeIcon';
 import LightBulbIcon from '../svg/LightBulbIcon';
 import ComputerIcon from '../svg/ComputerIcon';
 import ProfileIcon from '../svg/UserIcon';
+import { localize } from '~/localization/Translation';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
 // const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -59,6 +60,9 @@ export default function Nav({ navVisible, setNavVisible }) {
   // data provider
   const getConversationsQuery = useGetConversationsQuery(pageNumber, { enabled: isAuthenticated });
 
+  // language
+  const lang = useRecoilValue(store.lang);
+
   // search
   const searchQuery = useRecoilValue(store.searchQuery);
   const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
@@ -79,7 +83,6 @@ export default function Nav({ navVisible, setNavVisible }) {
   const [widget, setWidget] = useRecoilState(store.widget);
   const { user } = useAuthContext();
   const navigate = useNavigate();
-  const mode = process.env.NODE_ENV;
 
   const debouncedSearchTerm = useDebounce(searchQuery, 750);
   const searchQueryFn = useSearchQuery(debouncedSearchTerm, pageNumber, {
@@ -210,7 +213,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const openProfileHandler = () => navigate(`/profile/${user.id}`);
 
   useEffect(() => {
-    if (user) setRefLink(mode === 'dev' ? `http://localhost:3090/register/${user.id}` : `chat.aitok.us/register/${user.id}`);
+    if (user) setRefLink(window.location.host +`/register/${user.id}`);
   }, [user]);
 
   useEffect(() => {
@@ -241,7 +244,6 @@ export default function Nav({ navVisible, setNavVisible }) {
                   <Panel open={false} />
                 </button>
               </div>
-              {/* {!user && <div style={{ color: 'white' }}>yes</div>} */}
               <div
                 className={`flex-1 flex-col overflow-y-auto ${isHovering ? '' : 'scrollbar-transparent'
                 } border-b border-white/20`}
@@ -249,7 +251,27 @@ export default function Nav({ navVisible, setNavVisible }) {
                 onMouseLeave={() => setIsHovering(false)}
                 ref={containerRef}
               >
-                <div className={containerClasses}>
+                {!user && <div className='flex flex-col h-full justify-center items-center' style={{ color: 'white' }}>
+                  <svg
+                    stroke="currentColor"
+                    fill="none"
+                    strokeWidth="1"
+                    viewBox="0 0 24 24"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-32 w-32"
+                    height="1em"
+                    width="1em"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                  <button className='font-bold hover:underline' onClick={() => navigate('register')}>
+                    {localize(lang, 'com_ui_register_here')}
+                  </button>
+                </div>}
+                {user && <div className={containerClasses}>
                   {(getConversationsQuery.isLoading && pageNumber === 1) || isFetching ? (
                     <Spinner />
                   ) : (
@@ -265,7 +287,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                     nextPage={nextPage}
                     previousPage={previousPage}
                   />
-                </div>
+                </div>}
               </div>
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
