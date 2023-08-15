@@ -15,23 +15,72 @@ import { localize } from '~/localization/Translation';
 export default function SharedConvo() {
   const [conversation, setConversation] = useState<TConversation | null>(null);
   const [msgTree, setMsgTree] = useState<TMessage[] | null>(null);
-  const [user, setUser] = useState<TUser | null>(null);
+  const [convoUser, setConvoUser] = useState<TUser | null>(null);
   const [isPrivate, setIsPrivate] = useState<boolean>(false);
   const [pageTitle, setPageTitle] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
   const [shareLink, setShareLink] = useState<string>('');
 
   const [liked, setLiked] = useState<boolean>(false);
+  const [numOfLikes, setNumOfLikes] = useState<number>(0);
+  const [showRegMsg, setShowRegMsg] = useState<boolean>(false);
   const lang = useRecoilValue(store.lang);
 
   const { screenshotTargetRef } = useScreenshot();
-  const { token } = useAuthContext();
+  const { user, token } = useAuthContext();
   const { conversationId } = useParams();
   const navigate = useNavigate();
 
   // Allows navigation to user's profile page
   const navigateToProfile = () => {
-    navigate(`/profile/${user?.id}`);
+    navigate(`/profile/${convoUser?.id}`);
+  }
+
+  // Displays message suggesting the viewer to register
+  const showRegMsgHandler = () => {
+    if (showRegMsg) return;
+    setShowRegMsg(true);
+    setTimeout(() => setShowRegMsg(false), 2000);
+  }
+
+  // Likes the conversation
+  const likeHandler = async () => {
+    if (!conversation || !user) return;
+
+    // update component state
+    setLiked(!liked);
+
+    // Initiate these properties if they do not exist
+    if (!conversation.likedBy) conversation.likedBy = {};
+    if (!conversation.likes) conversation.likes = 0;
+
+    // update state object
+    if (liked) {
+      setNumOfLikes(numOfLikes - 1);
+      conversation.likes = conversation.likes - 1;
+      conversation.likedBy[user.id] = false;
+    } else {
+      setNumOfLikes(numOfLikes + 1);
+      conversation.likes = conversation.likes + 1;
+      conversation.likedBy[user.id] = true;
+    }
+
+    // update database
+    try {
+      await fetch('/api/convos/like', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          conversationId: conversation.conversationId,
+          userId: user?.id,
+          liked: !liked
+        })
+      });
+    } catch (error) {
+      console.log(error);
+    }
   }
 
   const copyShareLinkHandler = () => {
@@ -78,7 +127,7 @@ export default function SharedConvo() {
 
   // Fetch the user who owns the current conversation
   async function fetchConvoUser(id: string | undefined) {
-    setUser(null);
+    setConvoUser(null);
     try {
       const response = await fetch(`/api/user/${id}`, {
         method: 'GET',
@@ -88,7 +137,7 @@ export default function SharedConvo() {
         }
       });
       const responseObject = await response.json();
-      setUser(responseObject);
+      setConvoUser(responseObject);
     } catch (error) {
       console.log(error);
     }
@@ -106,12 +155,15 @@ export default function SharedConvo() {
       fetchMessagesByConvoId(conversation.conversationId);
       fetchConvoUser(conversation.user);
       setPageTitle(conversation.title);
-      setShareLink(window.location.host +  `/chat/share/${conversation.conversationId}`)
+      setShareLink(window.location.host +  `/chat/share/${conversation.conversationId}`);
+      setNumOfLikes(conversation.likes);
+
+      if (user) setLiked(conversation.likedBy[user?.id]);
     } else {
       setIsPrivate(true);
       setPageTitle(localize(lang, 'com_ui_private_conversation'));
     }
-  }, [conversation]);
+  }, [conversation, user]);
 
   useDocumentTitle(pageTitle);
 
@@ -132,31 +184,31 @@ export default function SharedConvo() {
             </h1>
             <div className='my-2 flex flex-row justify-self-center gap-2'>
               <div className='flex flex-row justify-center items-center gap-2 hover:underline'>
-                {user && (
+                {convoUser && (
                   <>
                     <button
-                      title={user?.username}
+                      title={convoUser?.username}
                       style={{
                         width: 30,
                         height: 30
                       }}
                       className={'justify-self-center relative flex items-center justify-center'}
-                      onClick={ navigateToProfile }
+                      onClick={ token ? navigateToProfile : () => {}}
                     >
                       <img
                         className="rounded-sm"
                         src={
-                          user?.avatar ||
-                          `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name}&fontFamily=Verdana&fontSize=36`
+                          convoUser?.avatar ||
+                          `https://api.dicebear.com/6.x/initials/svg?seed=${convoUser?.name}&fontFamily=Verdana&fontSize=36`
                         }
                         alt="avatar"
                       />
                     </button>
                     <button
-                      onClick={ navigateToProfile }
+                      onClick={ token ? navigateToProfile : () => {}}
                       className='justify-self-start col-span-1'
                     >
-                      {user?.username}
+                      {convoUser?.username}
                     </button>
                   </>
                 )}
@@ -168,28 +220,36 @@ export default function SharedConvo() {
                   </g>
                 </svg>
               </button>
-              <button>
-                <svg
-                  onClick={() => {setLiked(!liked)}}
-                  stroke="currentColor"
-                  fill={liked ? 'currentColor' : 'none'}
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="h-4 w-4 hover:text-black"
-                  height="1em"
-                  width="1em"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
-                </svg>
-              </button>
+              <div className='flex flex-row items-center gap-1 ml-0.5'>
+                <button>
+                  <svg
+                    onClick={ token ? likeHandler : showRegMsgHandler }
+                    stroke="currentColor"
+                    fill={liked ? 'currentColor' : 'none'}
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-4 w-4 hover:text-black"
+                    height="1em"
+                    width="1em"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
+                  </svg>
+                </button>
+                <div className='ml-px mr-0.5'>
+                  {numOfLikes}
+                </div>
+                <div>
+                  {localize(lang, 'com_ui_number_of_likes')}
+                </div>
+              </div>
             </div>
           </div>
           <div className="dark:gpt-dark-gray mb-32 h-auto w-full md:mb-48" ref={screenshotTargetRef}>
             <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
-              {conversation && msgTree && user ? (
+              {conversation && msgTree && convoUser ? (
                 <MultiMessage
                   key={conversation.conversationId} // avoid internal state mixture
                   messageId={conversation.conversationId}
@@ -199,8 +259,8 @@ export default function SharedConvo() {
                   currentEditId={-1}
                   setCurrentEditId={null}
                   isSearchView={true}
-                  name={user?.name}
-                  userId={user?.id}
+                  name={convoUser?.name}
+                  userId={convoUser?.id}
                 />
               ) : (
                 <div className="flex w-full h-[25vh] flex-row items-end justify-end">
@@ -218,6 +278,18 @@ export default function SharedConvo() {
             <div className='flex flex-col items-center opacity-0 invisible'>
               <div className='absolute bottom-20 text-black text-md bg-gray-200 py-1 px-3 rounded-full'>
                 {localize(lang, 'com_ui_copied')}
+              </div>
+            </div>
+          </CSSTransition>
+          <CSSTransition
+            in={showRegMsg}
+            timeout={2000}
+            classNames="copied-toast"
+            unmountOnExit={false}
+          >
+            <div className='flex flex-col items-center opacity-0 invisible'>
+              <div className='absolute bottom-20 text-black text-md bg-gray-200 py-1 px-3 rounded-full'>
+                {localize(lang, 'com_ui_register_before_like')}
               </div>
             </div>
           </CSSTransition>

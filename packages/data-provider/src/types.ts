@@ -118,7 +118,7 @@ export type TConversation = {
   toneStyle?: string;
   isPrivate: boolean;
   likes: number;
-  likedBy: { string: boolean }
+  likedBy: object
 };
 
 export type TPreset = {
