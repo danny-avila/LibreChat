@@ -159,11 +159,7 @@ Only respond with your conversational reply to the following User Message:
     if (this.azure) {
       credentials = {};
       configuration = {};
-      const { azureOpenAIApiInstanceName, ...rest } = this.azure;
-      azure = {
-        azureOpenAIBasePath: `https://${azureOpenAIApiInstanceName}.openai.azure.com/openai/deployments`,
-        ...rest,
-      };
+      ({ azure } = this);
     }
 
     if (this.options.debug) {
