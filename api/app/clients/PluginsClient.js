@@ -150,6 +150,7 @@ Only respond with your conversational reply to the following User Message:
   }
 
   createLLM(modelOptions, configOptions) {
+    let azure = {};
     let credentials = { openAIApiKey: this.openAIApiKey };
     let configuration = {
       apiKey: this.openAIApiKey,
@@ -158,6 +159,7 @@ Only respond with your conversational reply to the following User Message:
     if (this.azure) {
       credentials = {};
       configuration = {};
+      ({ azure } = this);
     }
 
     if (this.options.debug) {
@@ -165,7 +167,7 @@ Only respond with your conversational reply to the following User Message:
       console.debug(configOptions);
     }
 
-    return new ChatOpenAI({ credentials, configuration, ...modelOptions }, configOptions);
+    return new ChatOpenAI({ credentials, configuration, ...azure, ...modelOptions }, configOptions);
   }
 
   async initialize({ user, message, onAgentAction, onChainEnd, signal }) {
