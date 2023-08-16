@@ -112,7 +112,7 @@ test.describe('Messaging suite', () => {
     (await Promise.all(responsePromise)) as [Response];
 
     // Wait for first Partial tick (it takes 500 ms for server to save the current message stream)
-    await page.waitForTimeout(550);
+    await page.waitForTimeout(250);
     await page.getByRole('button', { name: 'Stop' }).click();
 
     responsePromise = [

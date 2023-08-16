@@ -37,6 +37,7 @@ router.post(
     let metadata;
     let userMessage;
     let lastSavedTimestamp = 0;
+    let saveDelay = 100;
     const userMessageId = parentMessageId;
 
     const addMetadata = (data) => (metadata = data);
@@ -46,7 +47,7 @@ router.post(
       generation,
       onProgress: ({ text: partialText }) => {
         const currentTimestamp = Date.now();
-        if (currentTimestamp - lastSavedTimestamp > 500) {
+        if (currentTimestamp - lastSavedTimestamp > saveDelay) {
           lastSavedTimestamp = currentTimestamp;
           saveMessage({
             messageId: responseMessageId,
@@ -58,6 +59,10 @@ router.post(
             cancelled: false,
             error: false,
           });
+        }
+
+        if (saveDelay < 500) {
+          saveDelay = 500;
         }
       },
     });

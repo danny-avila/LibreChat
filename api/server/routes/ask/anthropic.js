@@ -36,6 +36,7 @@ router.post(
     let userMessageId;
     let responseMessageId;
     let lastSavedTimestamp = 0;
+    let saveDelay = 100;
 
     const getIds = (data) => {
       userMessage = data.userMessage;
@@ -49,7 +50,8 @@ router.post(
     const { onProgress: progressCallback, getPartialText } = createOnProgress({
       onProgress: ({ text: partialText }) => {
         const currentTimestamp = Date.now();
-        if (currentTimestamp - lastSavedTimestamp > 500) {
+
+        if (currentTimestamp - lastSavedTimestamp > saveDelay) {
           lastSavedTimestamp = currentTimestamp;
           saveMessage({
             messageId: responseMessageId,
@@ -61,6 +63,10 @@ router.post(
             cancelled: false,
             error: false,
           });
+        }
+
+        if (saveDelay < 500) {
+          saveDelay = 500;
         }
       },
     });

@@ -38,6 +38,7 @@ router.post(
     let metadata;
     let userMessage;
     let lastSavedTimestamp = 0;
+    let saveDelay = 100;
     const userMessageId = parentMessageId;
     const user = req.user.id;
 
@@ -64,7 +65,7 @@ router.post(
           plugin.loading = false;
         }
 
-        if (currentTimestamp - lastSavedTimestamp > 500) {
+        if (currentTimestamp - lastSavedTimestamp > saveDelay) {
           lastSavedTimestamp = currentTimestamp;
           saveMessage({
             messageId: responseMessageId,
@@ -77,6 +78,10 @@ router.post(
             cancelled: false,
             error: false,
           });
+        }
+
+        if (saveDelay < 500) {
+          saveDelay = 500;
         }
       },
     });
