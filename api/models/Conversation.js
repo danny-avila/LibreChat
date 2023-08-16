@@ -158,6 +158,8 @@ module.exports = {
       const existingConversation = await Conversation.findOne({ conversationId }).exec();
 
       if (existingConversation) {
+        if (existingConversation.likedBy[userId] === liked) return existingConversation;
+
         const update = {};
 
         if (liked) {
