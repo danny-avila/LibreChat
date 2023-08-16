@@ -1,10 +1,9 @@
 const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
+const User = require('../models/User');
 const config = require('../../config/loader');
 const domains = config.domains;
+require('dotenv').config();
 
-const User = require('../models/User');
-
-// google strategy
 const googleLogin = async () =>
   new GoogleStrategy(
     {
@@ -15,27 +14,38 @@ const googleLogin = async () =>
     },
     async (accessToken, refreshToken, profile, cb) => {
       try {
-        const oldUser = await User.findOne({ email: profile.emails[0].value });
-        if (oldUser) {
-          return cb(null, oldUser);
+        const email = profile.emails[0].value;
+        const googleId = profile.id;
+        const ALLOW_SOCIAL_REGISTRATION = process.env.ALLOW_SOCIAL_REGISTRATION === 'true';
+
+        if (!ALLOW_SOCIAL_REGISTRATION) {
+          const oldUser = await User.findOne({ email });
+          if (oldUser) {
+            return cb(null, oldUser);
+          } else {
+            return cb(null, false, { message: 'User not found.' });
+          }
+        } else {
+          const oldUser = await User.findOne({ email });
+          if (oldUser) {
+            return cb(null, oldUser);
+          }
+
+          const newUser = await new User({
+            provider: 'google',
+            googleId,
+            username: profile.name.givenName,
+            email,
+            emailVerified: profile.emails[0].verified,
+            name: `${profile.name.givenName} ${profile.name.familyName}`,
+            avatar: profile.photos[0].value,
+          }).save();
+
+          return cb(null, newUser);
         }
       } catch (err) {
-        console.log(err);
-      }
-
-      try {
-        const newUser = await new User({
-          provider: 'google',
-          googleId: profile.id,
-          username: profile.name.givenName,
-          email: profile.emails[0].value,
-          emailVerified: profile.emails[0].verified,
-          name: `${profile.name.givenName} ${profile.name.familyName}`,
-          avatar: profile.photos[0].value,
-        }).save();
-        cb(null, newUser);
-      } catch (err) {
-        console.log(err);
+        console.error(err);
+        return cb(err);
       }
     },
   );

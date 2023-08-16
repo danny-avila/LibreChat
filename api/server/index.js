@@ -49,34 +49,37 @@ config.validate(); // Validate the config
   app.use(passport.initialize());
   passport.use(await jwtLogin());
   passport.use(await passportLogin());
-  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-    passport.use(await googleLogin());
-  }
-  if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
-    passport.use(await facebookLogin());
-  }
-  if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
-    passport.use(await githubLogin());
-  }
-  if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
-    passport.use(await discordLogin());
-  }
-  if (
-    process.env.OPENID_CLIENT_ID &&
-    process.env.OPENID_CLIENT_SECRET &&
-    process.env.OPENID_ISSUER &&
-    process.env.OPENID_SCOPE &&
-    process.env.OPENID_SESSION_SECRET
-  ) {
-    app.use(
-      session({
-        secret: process.env.OPENID_SESSION_SECRET,
-        resave: false,
-        saveUninitialized: false,
-      }),
-    );
-    app.use(passport.session());
-    await setupOpenId();
+
+  if (process.env.ALLOW_SOCIAL_LOGIN === 'true') {
+    if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+      passport.use(await googleLogin());
+    }
+    if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
+      passport.use(await facebookLogin());
+    }
+    if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
+      passport.use(await githubLogin());
+    }
+    if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
+      passport.use(await discordLogin());
+    }
+    if (
+      process.env.OPENID_CLIENT_ID &&
+      process.env.OPENID_CLIENT_SECRET &&
+      process.env.OPENID_ISSUER &&
+      process.env.OPENID_SCOPE &&
+      process.env.OPENID_SESSION_SECRET
+    ) {
+      app.use(
+        session({
+          secret: process.env.OPENID_SESSION_SECRET,
+          resave: false,
+          saveUninitialized: false,
+        }),
+      );
+      app.use(passport.session());
+      await setupOpenId();
+    }
   }
   app.use('/oauth', routes.oauth);
   // api endpoint
