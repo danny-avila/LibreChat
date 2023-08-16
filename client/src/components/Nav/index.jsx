@@ -22,6 +22,7 @@ import { useNavigate } from 'react-router-dom';
 import HomeIcon from '../svg/HomeIcon';
 import LightBulbIcon from '../svg/LightBulbIcon';
 import ComputerIcon from '../svg/ComputerIcon';
+import { localize } from '~/localization/Translation';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
 // const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -97,6 +98,7 @@ export default function Nav({ navVisible, setNavVisible }) {
     searchPlaceholderConversation();
     setSearchResultMessages(res.messages);
   };
+  const lang = useRecoilValue(store.lang);
 
   useEffect(() => {
     //we use isInitialLoading here instead of isLoading because query is disabled by default
@@ -265,7 +267,8 @@ export default function Nav({ navVisible, setNavVisible }) {
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <HomeIcon />}
-                text={navigator.languages[0] === 'zh-CN' ? '主页' : 'Home'}
+                //text={navigator.languages[0] === 'zh-CN' ? '主页' : 'Home'}
+                text={localize(lang, 'com_ui_homepage')}
                 clickHandler={ openHomepageHandler }
               />
               <NavLink
