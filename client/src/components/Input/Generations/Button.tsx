@@ -11,6 +11,7 @@ export default function Button({
 }) {
   return (
     <button
+      data-testid="generation-button"
       className={cn(
         'custom-btn btn-neutral relative -z-0 whitespace-nowrap border-0 md:border',
         removeFocusOutlines,
