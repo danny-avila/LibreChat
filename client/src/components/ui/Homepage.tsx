@@ -338,7 +338,7 @@ export default function Homepage() {
       <div className="flex h-full flex-col items-center overflow-y-auto pt-0 text-sm dark:bg-gray-800">
         <div className="flex flex-col items-center w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-5xl">
           <>
-            <div className='grid grid-row gap-1 w-full sticky bg-white top-0 z-30 items-center md:gap-0'>
+            <div className='grid grid-row gap-1 w-full sticky bg-white top-0 z-30 items-center md:gap-0 dark:bg-gray-800'>
               <h1
                 id="landing-title"
                 className="ml-auto mr-auto mt-0.5 flex gap-2 text-center text-3xl font-semibold"
