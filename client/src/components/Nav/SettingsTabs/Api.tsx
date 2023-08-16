@@ -13,23 +13,17 @@ const endpointSettings = atom({
     openai: {
       reverseProxyIsActive: false,
       tempUrl: '',
-      tempApi: '',
       url: '',
-      api: '',
     },
     azure: {
       reverseProxyIsActive: false,
       tempUrl: '',
-      tempApi: '',
       url: '',
-      api: '',
     },
     plugin: {
       reverseProxyIsActive: false,
       tempUrl: '',
-      tempApi: '',
       url: '',
-      api: '',
     },
   },
 });
@@ -62,6 +56,7 @@ export const EndpointMenu = ({
     </div>
   );
 };
+
 export const ToggleReverseProxy = ({ isActive, onCheckedChange }) => {
   const localize = useLocalize();
 
@@ -78,7 +73,6 @@ export const ToggleReverseProxy = ({ isActive, onCheckedChange }) => {
 export const SetReverseProxyUrl = ({
   url,
   onChange,
-  endpoint,
 }: {
   url: string;
   onChange: (newUrl: string) => void;
@@ -135,7 +129,6 @@ export const SetReverseProxyUrl = ({
 export const SetReverseProxyApi = ({
   api,
   onChange,
-  endpoint,
 }: {
   api: string;
   onChange: (newApi: string) => void;
@@ -208,7 +201,6 @@ function Api() {
           ...prevSettings[endpoint],
           reverseProxyIsActive: value,
           tempUrl: '',
-          tempApi: '',
         },
       }));
     },
@@ -229,14 +221,35 @@ function Api() {
   );
 
   const handleReverseProxyApiChange = useCallback(
-    (newApi) => {
-      setEndpointSettingsState((prevSettings) => ({
-        ...prevSettings,
-        [endpoint]: {
-          ...prevSettings[endpoint],
-          tempApi: newApi,
-        },
-      }));
+    async (newApi) => {
+      try {
+        const response = await fetch('/api/save-endpoint-settings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            endpoint: endpoint, // Passing the current endpoint
+            tempApi: newApi, // The new temporary API
+          }),
+        });
+        if (response.ok) {
+          // If the request to the server is successful, update the local state
+          setEndpointSettingsState((prevSettings) => ({
+            ...prevSettings,
+            [endpoint]: {
+              ...prevSettings[endpoint],
+              tempApi: newApi,
+            },
+          }));
+        } else {
+          // Handling error if the request to the server is not successful
+          const responseData = await response.json();
+          console.error('Error in server request:', responseData.error);
+        }
+      } catch (error) {
+        // TODO: Handling error in case of network error or exception
+      }
     },
     [setEndpointSettingsState, endpoint],
   );
