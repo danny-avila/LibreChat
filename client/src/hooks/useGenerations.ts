@@ -33,7 +33,7 @@ export default function useGenerations({
 
   const editEnabled =
     !message?.error &&
-    // message?.isCreatedByUser &&
+    message?.isCreatedByUser && // TODO: allow AI editing
     !message?.searchResult &&
     !isEditing &&
     branchingSupported;
