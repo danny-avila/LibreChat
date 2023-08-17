@@ -395,7 +395,7 @@ export default function Homepage() {
                 {/*Conversation author*/}
                 <button
                   onClick={ navigateToProfile }
-                  className='flex flex-row gap-1 py-1 px-2 mx-2 items-center hover:bg-gray-200'
+                  className='flex flex-row gap-1 py-1 px-2 mx-2 items-center hover:bg-gray-200 dark:hover:bg-gray-600'
                 >
                   <div
                     title={convoUser?.username}
@@ -426,7 +426,7 @@ export default function Homepage() {
 
                 <div className='flex flex-row px-2 items-center gap-1'>
                   {/*Share button*/}
-                  <button className='flex flex-row items-center gap-1 p-1 hover:bg-gray-200' onClick={ copyShareLinkHandler }>
+                  <button className='flex flex-row items-center gap-1 p-1 hover:bg-gray-200 dark:hover:bg-gray-600' onClick={ copyShareLinkHandler }>
                     <svg className="h-5 w-5" width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <g id="Communication / Share_iOS_Export">
                         <path id="Vector" d="M9 6L12 3M12 3L15 6M12 3V13M7.00023 10C6.06835 10 5.60241 10 5.23486 10.1522C4.74481 10.3552 4.35523 10.7448 4.15224 11.2349C4 11.6024 4 12.0681 4 13V17.8C4 18.9201 4 19.4798 4.21799 19.9076C4.40973 20.2839 4.71547 20.5905 5.0918 20.7822C5.5192 21 6.07899 21 7.19691 21H16.8036C17.9215 21 18.4805 21 18.9079 20.7822C19.2842 20.5905 19.5905 20.2839 19.7822 19.9076C20 19.4802 20 18.921 20 17.8031V13C20 12.0681 19.9999 11.6024 19.8477 11.2349C19.6447 10.7448 19.2554 10.3552 18.7654 10.1522C18.3978 10 17.9319 10 17 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -436,7 +436,7 @@ export default function Homepage() {
                   </button>
 
                   {/*Like button*/}
-                  <button className='flex flex-row items-center gap-1 p-1 ml-0.5 hover:bg-gray-200' onClick={ likeConversation }>
+                  <button className='flex flex-row items-center gap-1 p-1 ml-0.5 hover:bg-gray-200 dark:hover:bg-gray-600' onClick={ likeConversation }>
                     <div>
                       <svg
                         stroke="currentColor"
@@ -445,7 +445,7 @@ export default function Homepage() {
                         viewBox="0 0 24 24"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        className="h-5 w-5 hover:text-black"
+                        className="h-5 w-5"
                         height="1em"
                         width="1em"
                         xmlns="http://www.w3.org/2000/svg"
