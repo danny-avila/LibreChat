@@ -5,8 +5,6 @@ import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
 import ConvoIcon from '../svg/ConvoIcon';
 import store from '~/store';
-import PrivateButton from './PrivateButton';
-import LikeIcon from '../svg/LikeIcon';
 import { useNavigate, useParams } from 'react-router-dom';
 
 export default function Conversation({ conversation, retainView }) {
@@ -23,12 +21,9 @@ export default function Conversation({ conversation, retainView }) {
   const [renaming, setRenaming] = useState(false);
   const inputRef = useRef(null);
 
-  const { conversationId, title, isPrivate } = conversation;
+  const { conversationId, title } = conversation;
 
   const [titleInput, setTitleInput] = useState(title);
-
-  const [privateState, setPrivateState] = useState(isPrivate);
-  const [isLiked, setIsLiked] = useState(false);
 
   const navigate = useNavigate();
 
@@ -53,44 +48,6 @@ export default function Conversation({ conversation, retainView }) {
   //     console.log('Error fetching like status:', error);
   //   }
   // };
-
-  useEffect(() => {
-    // Get the current like status from localStorage
-    const currentLikeStatus = localStorage.getItem(`liked:${conversationId}`) === 'true';
-
-    // Set the initial isLiked state based on the value from localStorage
-    setIsLiked(currentLikeStatus);
-  }, []);
-
-  const handleLikeClick = async () => {
-    try {
-      const response = await fetch('/api/convos/like', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          conversationId: conversationId,
-          isLiked: !isLiked
-        })
-      });
-      const data = await response.json();
-      if (data.conversation) {
-        console.log(data.conversation);
-        return;
-      }
-      // Get the current like status from localStorage
-      const currentLikeStatus = localStorage.getItem(`liked:${conversationId}`) === 'true';
-
-      // Toggle the like status and update the state
-      setIsLiked(!currentLikeStatus);
-
-      // Update the like status in localStorage
-      localStorage.setItem(`liked:${conversationId}`, !currentLikeStatus);
-    } catch (error) {
-      console.log('Error liking conversation:', error);
-    }
-  };
   const clickHandler = async () => {
     if (currentConversation?.conversationId === conversationId &&
       currentConversation?.conversationId === convoId &&
@@ -113,12 +70,6 @@ export default function Conversation({ conversation, retainView }) {
     }
     setWidget('');
     navigate(`/chat/${conversationId}`);
-  };
-
-  const setPrivateHandler = (e) => {
-    e.preventDefault();
-    updateConvoMutation.mutate({ conversationId, isPrivate: !privateState });
-    setPrivateState(!privateState);
   };
 
   const renameHandler = (e) => {
@@ -196,12 +147,6 @@ export default function Conversation({ conversation, retainView }) {
         currentConversation?.conversationId === convoId &&
         conversationId === convoId) ? (
           <div className="visible absolute right-1 z-10 ml-3 flex text-gray-300">
-            <LikeIcon filled={isLiked} style={{ marginTop: '0.25rem' }} onClick={handleLikeClick} />
-            <PrivateButton
-              conversationId={conversationId}
-              isPrivate={privateState}
-              setPrivateHandler={setPrivateHandler}
-            />
             <RenameButton
               conversationId={conversationId}
               renaming={renaming}

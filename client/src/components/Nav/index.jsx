@@ -22,6 +22,8 @@ import { useNavigate } from 'react-router-dom';
 import HomeIcon from '../svg/HomeIcon';
 import LightBulbIcon from '../svg/LightBulbIcon';
 import ComputerIcon from '../svg/ComputerIcon';
+import ProfileIcon from '../svg/UserIcon';
+import { localize } from '~/localization/Translation';
 
 // import resolveConfig from 'tailwindcss/resolveConfig';
 // const tailwindConfig = import('../../../tailwind.config.cjs');
@@ -58,6 +60,9 @@ export default function Nav({ navVisible, setNavVisible }) {
   // data provider
   const getConversationsQuery = useGetConversationsQuery(pageNumber, { enabled: isAuthenticated });
 
+  // language
+  const lang = useRecoilValue(store.lang);
+
   // search
   const searchQuery = useRecoilValue(store.searchQuery);
   const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
@@ -78,7 +83,6 @@ export default function Nav({ navVisible, setNavVisible }) {
   const [widget, setWidget] = useRecoilState(store.widget);
   const { user } = useAuthContext();
   const navigate = useNavigate();
-  const mode = process.env.NODE_ENV;
 
   const debouncedSearchTerm = useDebounce(searchQuery, 750);
   const searchQueryFn = useSearchQuery(debouncedSearchTerm, pageNumber, {
@@ -189,8 +193,10 @@ export default function Nav({ navVisible, setNavVisible }) {
     setCopied(true);
   }
 
+  const navigateToRegister = () => navigate('/register');
+
   const openWidgetHandler = (type) => () => {
-    if (location.pathname.substring(1, 5) !== 'chat') {
+    if (location.pathname.substring(1, 5) !== 'chat' || location.pathname.substring(0, 11) === '/chat/share') {
       newConversation();
       navigate('/chat/new');
       setWidget(`${type}`);
@@ -204,9 +210,10 @@ export default function Nav({ navVisible, setNavVisible }) {
   const openAskMeAnythingHandler = openWidgetHandler('ama');
   const openLeaderboardHandler = () => navigate('/leaderboard');
   const openHomepageHandler = () => navigate('/home');
+  const openProfileHandler = () => navigate(`/profile/${user.id}`);
 
   useEffect(() => {
-    if (user) setRefLink(mode === 'dev' ? `http://localhost:3090/register/${user.id}` : `chat.aitok.us/register/${user.id}`);
+    if (user) setRefLink(window.location.host +`/register/${user.id}`);
   }, [user]);
 
   useEffect(() => {
@@ -244,7 +251,27 @@ export default function Nav({ navVisible, setNavVisible }) {
                 onMouseLeave={() => setIsHovering(false)}
                 ref={containerRef}
               >
-                <div className={containerClasses}>
+                {!user && <div className='flex flex-col h-full justify-center items-center' style={{ color: 'white' }}>
+                  <svg
+                    stroke="currentColor"
+                    fill="none"
+                    strokeWidth="1"
+                    viewBox="0 0 24 24"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-32 w-32"
+                    height="1em"
+                    width="1em"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                  <button className='font-bold hover:underline' onClick={() => navigate('register')}>
+                    {localize(lang, 'com_ui_register_here')}
+                  </button>
+                </div>}
+                {user && <div className={containerClasses}>
                   {(getConversationsQuery.isLoading && pageNumber === 1) || isFetching ? (
                     <Spinner />
                   ) : (
@@ -260,37 +287,37 @@ export default function Nav({ navVisible, setNavVisible }) {
                     nextPage={nextPage}
                     previousPage={previousPage}
                   />
-                </div>
+                </div>}
               </div>
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <HomeIcon />}
                 text={navigator.languages[0] === 'zh-CN' ? '主页' : 'Home'}
-                clickHandler={ openHomepageHandler }
+                clickHandler={ user ? openHomepageHandler : navigateToRegister }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <NotebookIcon />}
                 text={navigator.languages[0] === 'zh-CN' ? '写作小助手' : 'Writing Assistant'}
-                clickHandler={ openWritingAssistantHandler }
+                clickHandler={ user ? openWritingAssistantHandler : navigateToRegister }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <ComputerIcon />}
                 text={navigator.languages[0] === 'zh-CN' ? '编程小助手' : 'Coding Assistant'}
-                clickHandler={ openCodingAssistantHandler }
+                clickHandler={ user ? openCodingAssistantHandler : navigateToRegister }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <LightBulbIcon />}
                 text={navigator.languages[0] === 'zh-CN' ? '万能咨询' : 'Ask Me Anything'}
-                clickHandler={ openAskMeAnythingHandler }
+                clickHandler={ user ? openAskMeAnythingHandler : navigateToRegister }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <LeaderboardIcon />}
                 text={navigator.languages[0] === 'zh-CN' ? '邀请排行榜' : 'Referrals Leaderboard'}
-                clickHandler={ openLeaderboardHandler }
+                clickHandler={ user ? openLeaderboardHandler : navigateToRegister }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
@@ -300,8 +327,17 @@ export default function Nav({ navVisible, setNavVisible }) {
                 ) : (
                   navigator.languages[0] === 'zh-CN' ? '复制邀请链接' : 'Copy Invitation Link'
                 )}
-                clickHandler={ copyLinkHandler }
+                clickHandler={ user ? copyLinkHandler : navigateToRegister }
               />
+              {user && (
+                <NavLink
+                  className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                  // Add an SVG or icon for the Profile link here
+                  svg={() => <ProfileIcon />}
+                  text={navigator.languages[0] === 'zh-CN' ? '个人资料' : 'Profile'}
+                  clickHandler={ openProfileHandler }
+                />
+              )}
               <NavLinks clearSearch={clearSearch} isSearchEnabled={isSearchEnabled} />
             </nav>
           </div>
