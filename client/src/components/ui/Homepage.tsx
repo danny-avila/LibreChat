@@ -18,7 +18,9 @@ import { localize } from '~/localization/Translation';
 import { useRecoilValue } from 'recoil';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { Spinner } from '../svg';
+import { Plugin } from '~/components/svg';
 import { useNavigate } from 'react-router-dom';
+import { alternateName } from '~/utils';
 
 export default function Homepage() {
   const [tabValue, setTabValue] = useRecoilState<string>(store.tabValue);
@@ -46,6 +48,49 @@ export default function Homepage() {
   const navigateToProfile = () => {
     navigate(`/profile/${convoUser?.id}`);
   }
+
+  const plugins = (
+    <>
+      <Plugin className='' />{' '}
+      <span className="px-1">•</span>
+      <span className="py-0.25 ml-1 rounded bg-blue-200 px-1 text-[10px] font-semibold uppercase text-[#4559A4]">
+        beta
+      </span>
+      <span className="px-1">•</span>
+      Model: {convoData && convoDataKeys && convoDataKeys.length > 0 ? convoData[convoDataKeys[convoIdx]].model : 'No Model'}
+    </>
+  );
+
+  const getConversationTitle = () => {
+    const conversation =
+      convoData && convoDataKeys && convoDataKeys.length > 0 ? convoData[convoDataKeys[convoIdx]] : {};
+    const { endpoint, model } = conversation
+    let _title = `${alternateName[endpoint] ?? endpoint}`;
+
+    if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
+      const { chatGptLabel } = conversation;
+      if (model) _title += `: ${model}`;
+      if (chatGptLabel) _title += ` as ${chatGptLabel}`;
+    } else if (endpoint === 'google') {
+      _title = 'PaLM';
+      const { modelLabel, model } = conversation;
+      if (model) _title += `: ${model}`;
+      if (modelLabel) _title += ` as ${modelLabel}`;
+    } else if (endpoint === 'bingAI') {
+      const { jailbreak, toneStyle } = conversation;
+      if (toneStyle) _title += `: ${toneStyle}`;
+      if (jailbreak) _title += ' as Sydney';
+    } else if (endpoint === 'chatGPTBrowser') {
+      if (model) _title += `: ${model}`;
+    } else if (endpoint === 'gptPlugins') {
+      return plugins;
+    } else if (endpoint === null) {
+      null;
+    } else {
+      null;
+    }
+    return _title;
+  };
 
   // Fetch the most recent conversations and store in localStorage
   async function fetchRecentConversations() {
@@ -265,6 +310,7 @@ export default function Homepage() {
     }
   }, [user, tabValue]);
 
+  // Set current conversation
   useEffect(() => {
     if (convoData && convoDataKeys && user) {
       if (convoDataKeys.length < 1) return;
@@ -345,71 +391,81 @@ export default function Homepage() {
               >
                 {convoData && convoDataKeys ? convoData[convoDataKeys[convoIdx]].title : ''}
               </h1>
-              <div className='my-2 flex flex-row justify-self-center gap-2'>
-                <div className='flex flex-row justify-center items-center gap-2 hover:underline'>
-                  {convoUser && (
-                    <>
-                      <button
-                        title={convoUser?.username}
-                        style={{
-                          width: 30,
-                          height: 30
-                        }}
-                        className={'justify-self-center relative flex items-center justify-center'}
-                        onClick={ navigateToProfile }
-                      >
-                        <img
-                          className="rounded-sm"
-                          src={
-                            convoUser?.avatar ||
-                            `https://api.dicebear.com/6.x/initials/svg?seed=${convoUser?.name}&fontFamily=Verdana&fontSize=36`
-                          }
-                          alt="avatar"
-                        />
-                      </button>
-                      <button
-                        onClick={ navigateToProfile }
-                        className='justify-self-start col-span-1'
-                      >
-                        {convoUser?.username}
-                      </button>
-                    </>
-                  )}
-                </div>
-                <button onClick={ copyShareLinkHandler }>
-                  <svg className="h-4 w-4" width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <g id="Communication / Share_iOS_Export">
-                      <path id="Vector" d="M9 6L12 3M12 3L15 6M12 3V13M7.00023 10C6.06835 10 5.60241 10 5.23486 10.1522C4.74481 10.3552 4.35523 10.7448 4.15224 11.2349C4 11.6024 4 12.0681 4 13V17.8C4 18.9201 4 19.4798 4.21799 19.9076C4.40973 20.2839 4.71547 20.5905 5.0918 20.7822C5.5192 21 6.07899 21 7.19691 21H16.8036C17.9215 21 18.4805 21 18.9079 20.7822C19.2842 20.5905 19.5905 20.2839 19.7822 19.9076C20 19.4802 20 18.921 20 17.8031V13C20 12.0681 19.9999 11.6024 19.8477 11.2349C19.6447 10.7448 19.2554 10.3552 18.7654 10.1522C18.3978 10 17.9319 10 17 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </g>
-                  </svg>
-                </button>
-                <div className='flex flex-row items-center gap-1 ml-0.5'>
-                  <button>
-                    <svg
-                      onClick={ likeConversation }
-                      stroke="currentColor"
-                      fill={liked ? 'currentColor' : 'none'}
-                      strokeWidth="2"
-                      viewBox="0 0 24 24"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-4 w-4 hover:text-black"
-                      height="1em"
-                      width="1em"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
-                    </svg>
-                  </button>
-                  <div className='ml-px mr-0.5'>
-                    {numOfLikes}
+              {convoUser && (<div className='my-2 flex flex-row flex-wrap justify-center items-center justify-self-center text-lg'>
+                {/*Conversation author*/}
+                <button
+                  onClick={ navigateToProfile }
+                  className='flex flex-row gap-1 py-1 px-2 mx-2 items-center hover:bg-gray-200'
+                >
+                  <div
+                    title={convoUser?.username}
+                    style={{
+                      width: 30,
+                      height: 30
+                    }}
+                    className={'justify-self-center relative flex items-center justify-center'}
+                  >
+                    <img
+                      className="rounded-sm"
+                      src={
+                        convoUser?.avatar ||
+                        `https://api.dicebear.com/6.x/initials/svg?seed=${convoUser?.name}&fontFamily=Verdana&fontSize=36`
+                      }
+                      alt="avatar"
+                    />
                   </div>
                   <div>
-                    {localize(lang, 'com_ui_number_of_likes')}
+                    {convoUser?.username}
                   </div>
+                </button>
+
+                {/*Model and endpoint*/}
+                <div className='px-3 py-1 border-x-2'>
+                  {getConversationTitle()}
+                </div>
+
+                <div className='flex flex-row px-2 items-center gap-1'>
+                  {/*Share button*/}
+                  <button className='flex flex-row items-center gap-1 p-1 hover:bg-gray-200' onClick={ copyShareLinkHandler }>
+                    <svg className="h-5 w-5" width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <g id="Communication / Share_iOS_Export">
+                        <path id="Vector" d="M9 6L12 3M12 3L15 6M12 3V13M7.00023 10C6.06835 10 5.60241 10 5.23486 10.1522C4.74481 10.3552 4.35523 10.7448 4.15224 11.2349C4 11.6024 4 12.0681 4 13V17.8C4 18.9201 4 19.4798 4.21799 19.9076C4.40973 20.2839 4.71547 20.5905 5.0918 20.7822C5.5192 21 6.07899 21 7.19691 21H16.8036C17.9215 21 18.4805 21 18.9079 20.7822C19.2842 20.5905 19.5905 20.2839 19.7822 19.9076C20 19.4802 20 18.921 20 17.8031V13C20 12.0681 19.9999 11.6024 19.8477 11.2349C19.6447 10.7448 19.2554 10.3552 18.7654 10.1522C18.3978 10 17.9319 10 17 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </g>
+                    </svg>
+                    {localize(lang, 'com_ui_share')}
+                  </button>
+
+                  {/*Like button*/}
+                  <button className='flex flex-row items-center gap-1 p-1 ml-0.5 hover:bg-gray-200' onClick={ likeConversation }>
+                    <div>
+                      <svg
+                        stroke="currentColor"
+                        fill={liked ? 'currentColor' : 'none'}
+                        strokeWidth="2"
+                        viewBox="0 0 24 24"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="h-5 w-5 hover:text-black"
+                        height="1em"
+                        width="1em"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
+                      </svg>
+                    </div>
+                    <div className='ml-px mr-0.5'>
+                      {numOfLikes}
+                    </div>
+                    <div>
+                      {localize(lang, 'com_ui_number_of_likes')}
+                    </div>
+                  </button>
                 </div>
               </div>
+              )}
             </div>
+
+            {/*Conversation messages*/}
             <div className="dark:gpt-dark-gray mb-32 h-auto w-full md:mb-48" ref={screenshotTargetRef}>
               <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
                 {convoData && convoDataKeys && msgTree && convoUser ? (
