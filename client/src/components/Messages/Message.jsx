@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useState, useEffect, useRef } from 'react';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useSetRecoilState } from 'recoil';
 import copy from 'copy-to-clipboard';
 import Plugin from './Plugin';
 import SubRow from './Content/SubRow';
@@ -25,13 +25,12 @@ export default function Message({
   setSiblingIdx,
 }) {
   const { text, searchResult, isCreatedByUser, error, submitting, unfinished } = message;
-  const isSubmitting = useRecoilValue(store.isSubmitting);
   const setLatestMessage = useSetRecoilState(store.latestMessage);
   const [abortScroll, setAbort] = useState(false);
   const textEditor = useRef(null);
   const last = !message?.children?.length;
   const edit = message.messageId == currentEditId;
-  const { ask, regenerate } = useMessageHandler();
+  const { isSubmitting, ask, regenerate, handleContinue } = useMessageHandler();
   const { switchToConversation } = store.useConversation();
   const blinker = submitting && isSubmitting;
   const getConversationQuery = useGetConversationByIdQuery(message.conversationId, {
@@ -223,12 +222,13 @@ export default function Message({
               )}
             </div>
             <HoverButtons
-              isEditting={edit}
+              isEditing={edit}
               isSubmitting={isSubmitting}
               message={message}
               conversation={conversation}
               enterEdit={() => enterEdit()}
               regenerate={() => regenerateMessage()}
+              handleContinue={handleContinue}
               copyToClipboard={copyToClipboard}
             />
             <SubRow subclasses="switch-container">

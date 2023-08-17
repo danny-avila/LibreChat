@@ -111,7 +111,6 @@ describe('PluginsClient', () => {
       });
 
       const response = await TestAgent.sendMessage(userMessage);
-      console.log(response);
       parentMessageId = response.messageId;
       conversationId = response.conversationId;
       expect(response).toEqual(expectedResult);
