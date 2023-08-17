@@ -23,10 +23,10 @@ const GetError = (text) => {
     } else if (json.type === 'insufficient_quota') {
       return localize(lang, 'com_error_insufficient_quota');
     } else {
-      return localize(lang, 'com_error_unknown');
+      return localize(lang, 'com_error_unknown', errorMessage);
     }
   } else {
-    return localize(lang, 'com_error_unknown');
+    return localize(lang, 'com_error_unknown', errorMessage);
   }
 };
 
