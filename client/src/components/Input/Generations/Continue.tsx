@@ -4,7 +4,7 @@ import Button from './Button';
 
 export default function Continue({ onClick }: TGenButtonProps) {
   return (
-    <Button onClick={onClick}>
+    <Button type="continue" onClick={onClick}>
       <ContinueIcon className="text-gray-600/90" />
       Continue
     </Button>

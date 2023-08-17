@@ -117,7 +117,7 @@ test.describe('Messaging suite', () => {
 
     responsePromise = [
       page.waitForResponse(waitForServerStream),
-      page.getByRole('button', { name: 'Continue' }).click(),
+      page.getByTestId('continue-generation-button').click(),
     ];
 
     (await Promise.all(responsePromise)) as [Response];
