@@ -1,10 +1,12 @@
-import React from 'react';
+type Props = {
+  scrollHandler: React.MouseEventHandler<HTMLButtonElement>;
+};
 
-export default function ScrollToBottom({ scrollHandler }) {
+export default function ScrollToBottom({ scrollHandler }: Props) {
   return (
     <button
       onClick={scrollHandler}
-      className="absolute bottom-[124px] right-6 z-[62] cursor-pointer rounded-full border border-gray-200 bg-gray-50 text-gray-600 dark:border-white/10 dark:bg-white/10 dark:text-gray-200 md:bottom-[120px]"
+      className="absolute bottom-[124px] right-6 z-[62] cursor-pointer rounded-full border border-gray-200 bg-gray-50 text-gray-600 dark:border-white/10 dark:bg-white/10 dark:text-gray-200 md:bottom-[180px] lg:bottom-[120px]"
     >
       <svg
         stroke="currentColor"

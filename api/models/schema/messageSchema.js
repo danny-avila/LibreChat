@@ -67,6 +67,9 @@ const messageSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    finish_reason: {
+      type: String,
+    },
     _meiliIndex: {
       type: Boolean,
       required: false,

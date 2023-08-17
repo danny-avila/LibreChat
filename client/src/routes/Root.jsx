@@ -1,16 +1,16 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect, useState } from 'react';
+import { useSetRecoilState } from 'recoil';
+import { Outlet } from 'react-router-dom';
 import {
   useGetEndpointsQuery,
   useGetPresetsQuery,
   useGetSearchEnabledQuery,
 } from 'librechat-data-provider';
 
-import MessageHandler from '../components/MessageHandler';
-import { Nav, MobileNav } from '../components/Nav';
-import { Outlet } from 'react-router-dom';
+import { Nav, MobileNav } from '~/components/Nav';
 import { useAuthContext } from '~/hooks/AuthContext';
-import { useSetRecoilState } from 'recoil';
+import MessageHandler from './MessageHandler';
 import store from '~/store';
 
 export default function Root() {
