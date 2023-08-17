@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { FileUp } from 'lucide-react';
 import { cn } from '~/utils/';
+import store from '~/store';
+import { useRecoilValue } from 'recoil';
+import { localize } from '~/localization/Translation';
 
 type FileUploadProps = {
   onFileSelected: (event: React.ChangeEvent<HTMLInputElement>) => void;
@@ -21,6 +24,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
   text = null,
   id = '1'
 }) => {
+  const lang = useRecoilValue(store.lang);
   const [statusColor, setStatusColor] = useState<string>('text-gray-600');
   const [status, setStatus] = useState<null | string>(null);
 
@@ -58,7 +62,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
       <FileUp className="mr-1 flex w-[22px] items-center stroke-1" />
       <span className="flex text-xs ">
         {!status
-          ? text || (navigator.languages[0] === 'zh-CN' ? '导入' : 'Import')
+          ? text || (localize(lang, 'com_endpoint_import'))
           : status === 'success' ? successText : invalidText}
       </span>
       <input

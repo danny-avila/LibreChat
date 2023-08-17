@@ -1,6 +1,7 @@
 // French phrases
 
 export default {
+  com_ui_homepage: 'Accueil',
   com_ui_examples: 'Exemples',
   com_ui_new_chat: 'Nouvelle conversation',
   com_ui_example_quantum_computing: 'Expliquer l\'informatique quantique en termes simples',
@@ -70,7 +71,7 @@ export default {
   com_auth_to_reset_your_password: 'pour réinitialiser votre mot de passe.',
   com_auth_reset_password_link_sent: 'Courriel envoyé',
   com_auth_reset_password_email_sent:
-    'Un courriel vous a été envoyé avec des instructions supplémentaires pour réinitialiser votre mot de passe.',
+    'Un e-mail a été envoyé à {0} avec des instructions sur la façon de réinitialiser votre mot de passe.Veuillez vérifier votre dossier spam / indésirable si vous ne voyez pas cet e-mail sous peu.',
   com_auth_error_reset_password:
     'Il y a eu un problème pour réinitialiser votre mot de passe. Aucun utilisateur n\'a été trouvé avec l\'adresse courriel fournie. Veuillez réessayer.',
   com_auth_reset_password_success: 'Réinitialisation du mot de passe réussie',

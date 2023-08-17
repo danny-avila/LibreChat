@@ -3,8 +3,11 @@ import { Dialog, DialogTemplate } from '../ui/';
 import { ClearChatsButton } from './SettingsTabs/';
 import { useClearConversationsMutation } from '@librechat/data-provider';
 import store from '~/store';
+import { useRecoilValue } from 'recoil';
+import { localize } from '~/localization/Translation';
 
 const ClearConvos = ({ open, onOpenChange }) => {
+  const lang = useRecoilValue(store.lang);
   const { newConversation } = store.useConversation();
   const { refreshConversations } = store.useConversations();
   const clearConvosMutation = useClearConversationsMutation();
@@ -30,8 +33,8 @@ const ClearConvos = ({ open, onOpenChange }) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title={navigator.languages[0] === 'zh-CN' ? '清理对话' : 'Clear conversations'}
-        description={navigator.languages[0] === 'zh-CN'?'您确定要清除所有对话吗？这是不可恢复的。':'Are you sure you want to clear all conversations? This is irreversible.'}
+        title={localize(lang, 'com_nav_clear_conversation')}
+        description={localize(lang, 'com_nav_clear_conversation_confirm_message')}
         leftButtons={<ClearChatsButton showText={false} confirmClear={confirmClear} onClick={clearConvos} />}
       />
     </Dialog>

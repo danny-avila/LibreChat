@@ -15,6 +15,7 @@ import { cn } from '~/utils/';
 import store from '~/store';
 import getError from '~/utils/getError';
 import { useAuthContext } from '../../hooks/AuthContext';
+import { localize } from '~/localization/Translation';
 
 export default function Message({
   conversation,
@@ -28,6 +29,7 @@ export default function Message({
   name = '',
   userId = '',
 }) {
+  const lang = useRecoilValue(store.lang);
   const { text, searchResult, isCreatedByUser, error, submitting, unfinished } = message;
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const setLatestMessage = useSetRecoilState(store.latestMessage);
@@ -242,10 +244,10 @@ export default function Message({
                       disabled={isSubmitting}
                       onClick={resubmitMessage}
                     >
-                      {navigator.languages[0] === 'zh-CN' ? '保存并提交' : 'Save & Submit'}
+                      {localize(lang, 'com_msg_save_submit')}
                     </button>
                     <button className="btn btn-neutral relative" onClick={() => enterEdit(true)}>
-                      {navigator.languages[0] === 'zh-CN' ? '取消' : 'Cancel'}
+                      {localize(lang, 'com_msg_cancel')}
                     </button>
                   </div>
                 </div>

@@ -1,6 +1,7 @@
 // Spanish phrases
 
 export default {
+  com_ui_homepage: 'Hogar',
   com_ui_examples: 'Ejemplos',
   com_ui_new_chat: 'Nuevo Chat',
   com_ui_example_quantum_computing: 'Explicar computación cuántica en términos simples',
@@ -44,7 +45,8 @@ export default {
   com_auth_email_pattern: 'Debes ingresar una dirección de email válida',
   com_auth_email_address: 'Dirección de email',
   com_auth_reset_password_link_sent: 'Enlace para restablecer la contraseña enviado',
-  com_auth_reset_password_email_sent: 'Se ha enviado un correo electrónico con instrucciones.',
+  com_auth_reset_password_email_sent:
+    'Se ha enviado un correo electrónico a {0} con instrucciones sobre cómo restablecer su contraseña. Por favor revise su carpeta de spam / basura si no ve este correo electrónico en breve.',
   com_auth_password: 'Contraseña',
   com_auth_password_required: 'Se requiere la contraseña',
   com_auth_password_min_length: 'La contraseña debe tener al menos 8 caracteres',

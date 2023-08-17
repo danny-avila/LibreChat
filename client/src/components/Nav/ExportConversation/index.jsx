@@ -2,12 +2,12 @@ import { useState, forwardRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Download } from 'lucide-react';
 import { cn } from '~/utils/';
-
 import ExportModel from './ExportModel';
-
 import store from '~/store';
+import { localize } from '~/localization/Translation';
 
 const ExportConversation = forwardRef(() => {
+  const lang = useRecoilValue(store.lang);
   const [open, setOpen] = useState(false);
 
   const conversation = useRecoilValue(store.conversation) || {};
@@ -31,7 +31,7 @@ const ExportConversation = forwardRef(() => {
         onClick={clickHandler}
       >
         <Download size={16} />
-        {navigator.languages[0] === 'zh-CN' ? '导出对话' : 'Export conversation'}
+        {localize(lang, 'com_nav_export_conversation')}
       </button>
 
       <ExportModel open={open} onOpenChange={setOpen} />

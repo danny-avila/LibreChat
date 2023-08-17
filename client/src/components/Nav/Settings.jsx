@@ -6,8 +6,11 @@ import { useEffect, useState } from 'react';
 import { cn } from '~/utils/';
 import { useClearConversationsMutation } from '@librechat/data-provider';
 import store from '~/store';
+import { useRecoilValue } from 'recoil';
+import { localize } from '~/localization/Translation';
 
 export default function Settings({ open, onOpenChange }) {
+  const lang = useRecoilValue(store.lang);
   const { newConversation } = store.useConversation();
   const { refreshConversations } = store.useConversations();
   const clearConvosMutation = useClearConversationsMutation();
@@ -56,7 +59,7 @@ export default function Settings({ open, onOpenChange }) {
       <DialogContent className={cn('shadow-2xl dark:bg-gray-900 dark:text-white')}>
         <DialogHeader>
           <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
-            {navigator.languages[0] === 'zh-CN' ? '设置' : 'Settings'}
+            {localize(lang, 'com_nav_settings')}
           </DialogTitle>
         </DialogHeader>
         <div className="px-6">
@@ -84,7 +87,7 @@ export default function Settings({ open, onOpenChange }) {
                 value="general"
               >
                 <CogIcon />
-                {navigator.languages[0] === 'zh-CN' ? '通用' : 'General'}
+                {localize(lang, 'com_nav_setting_general')}
               </Tabs.Trigger>
             </Tabs.List>
             <General />

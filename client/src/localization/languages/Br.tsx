@@ -1,6 +1,7 @@
 // Portuguese phrases
 
 export default {
+  com_ui_homepage: 'Casa',
   com_ui_examples: 'Exemplos',
   com_ui_new_chat: 'Novo Chat',
   com_ui_example_quantum_computing: 'Explicar computação quântica em termos simples',
@@ -51,7 +52,7 @@ export default {
   com_auth_password_not_match: 'As senhas não correspondem',
   com_auth_reset_password_link_sent: 'Link para redefinir a senha enviado',
   com_auth_reset_password_email_sent:
-    'Um email foi enviado para com instruções para redefinir sua senha.',
+    'Um e-mail foi enviado para {0} com instruções sobre como redefinir sua senha. Verifique sua pasta de spam / lixo eletrônico se você não vir este e-mail em breve.',
   com_auth_continue: 'Continuar',
   com_auth_create_account: 'Crie sua conta',
   com_auth_error_create:

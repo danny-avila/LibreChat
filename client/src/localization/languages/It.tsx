@@ -1,6 +1,7 @@
 // Frasi in inglese
 
 export default {
+  com_ui_homepage: 'Casa',
   com_ui_examples: 'Esempi',
   com_ui_new_chat: 'Nuova chat',
   com_ui_example_quantum_computing: 'Spiega il calcolo quantistico in termini semplici',
@@ -70,7 +71,7 @@ export default {
   com_auth_to_reset_your_password: 'per reimpostare la tua password.',
   com_auth_reset_password_link_sent: 'Email inviata',
   com_auth_reset_password_email_sent:
-    'È stata inviata un\'email con ulteriori istruzioni per reimpostare la password.',
+    'È stata inviata un\'e-mail a {0} con le istruzioni su come reimpostare la password. Controlla la tua cartella spam / junk se non vedi questa e-mail a breve.',
   com_auth_error_reset_password:
     'Si è verificato un problema durante la reimpostazione della password. Non è stato trovato alcun utente con l\'indirizzo email fornito. Riprova.',
   com_auth_reset_password_success: 'Reimpostazione della password riuscita',

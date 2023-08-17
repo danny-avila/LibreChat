@@ -15,8 +15,10 @@ import { cn } from '~/utils/';
 import DotsIcon from '../svg/DotsIcon';
 import Profile from '../ui/Profile';
 import store from '~/store';
+import { localize } from '~/localization/Translation';
 
 export default function NavLinks({ clearSearch, isSearchEnabled }) {
+  const lang = useRecoilValue(store.lang);
   const [showExports, setShowExports] = useState(false);
   const [showClearConvos, setShowClearConvos] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -87,7 +89,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                       exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-white/50'
                     )}
                     svg={() => <Download size={16} />}
-                    text={navigator.languages[0] === 'zh-CN' ? '导出对话' : 'Export conversation'}
+                    text={localize(lang, 'com_nav_export_conversation')}
                     clickHandler={clickHandler}
                   />
                 </Menu.Item>
@@ -96,7 +98,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <TrashIcon />}
-                    text={navigator.languages[0] === 'zh-CN' ? '清理对话' : 'Clear conversations'}
+                    text={localize(lang, 'com_nav_clear_conversation')}
                     clickHandler={() => setShowClearConvos(true)}
                   />
                 </Menu.Item>
@@ -104,7 +106,7 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <GearIcon />}
-                    text={navigator.languages[0] === 'zh-CN' ? '设置' : 'Settings'}
+                    text={localize(lang, 'com_nav_settings')}
                     clickHandler={() => setShowSettings(true)}
                   />
                 </Menu.Item>

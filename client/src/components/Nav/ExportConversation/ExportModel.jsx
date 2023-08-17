@@ -14,11 +14,12 @@ import {
 } from '~/components/ui/';
 import { cn } from '~/utils/';
 import { useScreenshot } from '~/utils/screenshotContext';
-
 import store from '~/store';
 import cleanupPreset from '~/utils/cleanupPreset.js';
+import { localize } from '~/localization/Translation';
 
 export default function ExportModel({ open, onOpenChange }) {
+  const lang = useRecoilValue(store.lang);
   const { captureScreenshot } = useScreenshot();
 
   const [filename, setFileName] = useState('');
@@ -40,11 +41,11 @@ export default function ExportModel({ open, onOpenChange }) {
   );
 
   const typeOptions = [
-    { value: 'screenshot', display: navigator.languages[0] === 'zh-CN' ?'截图文件 (.png)':'screenshot (.png)' },
-    { value: 'text', display: navigator.languages[0] === 'zh-CN' ?'文本文件 (.txt)':'text (.txt)' },
-    { value: 'markdown', display: navigator.languages[0] === 'zh-CN' ?'markdown文件 (.md)':'markdown (.md)' },
-    { value: 'json', display: navigator.languages[0] === 'zh-CN' ?'json文件 (.json)':'json (.json)' },
-    { value: 'csv', display: navigator.languages[0] === 'zh-CN' ?'csv文件 (.csv)': 'csv (.csv)' }
+    { value: 'screenshot', display: localize(lang, 'com_nav_file_ext_png') },
+    { value: 'text', display: localize(lang, 'com_nav_file_ext_txt') },
+    { value: 'markdown', display: localize(lang, 'com_nav_file_ext_md') },
+    { value: 'json', display: localize(lang, 'com_nav_file_ext_json') },
+    { value: 'csv', display: localize(lang, 'com_nav_file_ext_csv') }
   ]; //,, 'webpage'];
 
   useEffect(() => {
@@ -186,14 +187,14 @@ export default function ExportModel({ open, onOpenChange }) {
 
   const exportMarkdown = async () => {
     let data =
-      `# Conversation\n` +
+      '# Conversation\n' +
       `- conversationId: ${conversation?.conversationId}\n` +
       `- endpoint: ${conversation?.endpoint}\n` +
       `- title: ${conversation?.title}\n` +
       `- exportAt: ${new Date().toTimeString()}\n`;
 
     if (includeOptions) {
-      data += `\n## Options\n`;
+      data += '\n## Options\n';
       const options = cleanupPreset({ preset: conversation, endpointsConfig });
 
       for (const key of Object.keys(options)) {
@@ -209,12 +210,12 @@ export default function ExportModel({ open, onOpenChange }) {
       recursive: false
     });
 
-    data += `\n## History\n`;
+    data += '\n## History\n';
     for (const message of messages) {
       data += `**${message?.sender}:**\n${message?.text}\n`;
-      if (message.error) data += `*(This is an error message)*\n`;
-      if (message.unfinished) data += `*(This is an unfinished message)*\n`;
-      if (message.cancelled) data += `*(This is a cancelled message)*\n`;
+      if (message.error) data += '*(This is an error message)*\n';
+      if (message.unfinished) data += '*(This is an unfinished message)*\n';
+      if (message.cancelled) data += '*(This is a cancelled message)*\n';
       data += '\n\n';
     }
 
@@ -228,15 +229,15 @@ export default function ExportModel({ open, onOpenChange }) {
 
   const exportText = async () => {
     let data =
-      `Conversation\n` +
-      `########################\n` +
+      'Conversation\n' +
+      '########################\n' +
       `conversationId: ${conversation?.conversationId}\n` +
       `endpoint: ${conversation?.endpoint}\n` +
       `title: ${conversation?.title}\n` +
       `exportAt: ${new Date().toTimeString()}\n`;
 
     if (includeOptions) {
-      data += `\nOptions\n########################\n`;
+      data += '\nOptions\n########################\n';
       const options = cleanupPreset({ preset: conversation, endpointsConfig });
 
       for (const key of Object.keys(options)) {
@@ -252,12 +253,12 @@ export default function ExportModel({ open, onOpenChange }) {
       recursive: false
     });
 
-    data += `\nHistory\n########################\n`;
+    data += '\nHistory\n########################\n';
     for (const message of messages) {
       data += `>> ${message?.sender}:\n${message?.text}\n`;
-      if (message.error) data += `(This is an error message)\n`;
-      if (message.unfinished) data += `(This is an unfinished message)\n`;
-      if (message.cancelled) data += `(This is a cancelled message)\n`;
+      if (message.error) data += '(This is an error message)\n';
+      if (message.unfinished) data += '(This is an unfinished message)\n';
+      if (message.cancelled) data += '(This is a cancelled message)\n';
       data += '\n\n';
     }
 
@@ -314,14 +315,14 @@ export default function ExportModel({ open, onOpenChange }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title={navigator.languages[0] === 'zh-CN' ? '导出对话' : 'Export conversation'}
+        title={localize(lang, 'com_nav_export_conversation')}
         className="max-w-full sm:max-w-2xl"
         main={
           <div className="flex w-full flex-col items-center gap-6">
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="filename" className="text-left text-sm font-medium">
-                  {navigator.languages[0] === 'zh-CN' ? '文件名' : 'Filename'}
+                  {localize(lang, 'com_nav_export_filename')}
                 </Label>
                 <Input
                   id="filename"
@@ -336,7 +337,7 @@ export default function ExportModel({ open, onOpenChange }) {
               </div>
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="type" className="text-left text-sm font-medium">
-                  {navigator.languages[0] === 'zh-CN' ? '文件类型' : 'Type'}
+                  {localize(lang, 'com_nav_export_type')}
                 </Label>
                 <Dropdown
                   id="type"
@@ -355,9 +356,7 @@ export default function ExportModel({ open, onOpenChange }) {
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <div className="grid w-full items-center gap-2">
                   <Label htmlFor="includeOptions" className="text-left text-sm font-medium">
-                    {navigator.languages[0] === 'zh-CN'
-                      ? '包含接入点选项'
-                      : 'Include endpoint options'}
+                    {localize(lang, 'com_nav_export_include_endpoint_options')}
                   </Label>
                   <div className="flex h-[40px] w-full items-center space-x-3">
                     <Checkbox
@@ -371,22 +370,16 @@ export default function ExportModel({ open, onOpenChange }) {
                       htmlFor="includeOptions"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                     >
-                      {navigator.languages[0] === 'zh-CN'
-                        ? exportOptionsSupport
-                          ? '启用'
-                          : '不支持'
-                        : exportOptionsSupport
-                          ? 'Enabled'
-                          : 'Not Supported'}
+                      {exportOptionsSupport
+                        ? localize(lang, 'com_nav_enabled')
+                        : localize(lang, 'com_nav_not_supported')}
                     </label>
                   </div>
                 </div>
               </div>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="exportBranches" className="text-left text-sm font-medium">
-                  {navigator.languages[0] === 'zh-CN'
-                    ? '导出所有消息分支'
-                    : 'Export all message branches'}
+                  {localize(lang, 'com_nav_export_all_message_branches')}
                 </Label>
                 <div className="flex h-[40px] w-full items-center space-x-3">
                   <Checkbox
@@ -400,20 +393,16 @@ export default function ExportModel({ open, onOpenChange }) {
                     htmlFor="exportBranches"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                   >
-                    {navigator.languages[0] === 'zh-CN'
-                      ? exportBranchesSupport
-                        ? '启用'
-                        : '不支持'
-                      : exportBranchesSupport
-                        ? 'Enabled'
-                        : 'Not Supported'}
+                    {exportBranchesSupport
+                      ? localize(lang, 'com_nav_enabled')
+                      : localize(lang, 'com_nav_not_supported')}
                   </label>
                 </div>
               </div>
               {type === 'json' ? (
                 <div className="grid w-full items-center gap-2">
                   <Label htmlFor="recursive" className="text-left text-sm font-medium">
-                    {navigator.languages[0] === 'zh-CN' ? '递归还是顺序？' : 'Recursive or sequential?'}
+                    {localize(lang, 'com_nav_export_recursive_or_sequential')}
                   </Label>
                   <div className="flex h-[40px] w-full items-center space-x-3">
                     <Checkbox
@@ -426,7 +415,7 @@ export default function ExportModel({ open, onOpenChange }) {
                       htmlFor="recursive"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                     >
-                      {navigator.languages[0] === 'zh-CN' ? '递归' : 'Recursive'}
+                      {localize(lang, 'com_nav_export_recursive')}
                     </label>
                   </div>
                 </div>
@@ -440,7 +429,7 @@ export default function ExportModel({ open, onOpenChange }) {
               onClick={exportConversation}
               className="dark:hover:gray-400 border-gray-700 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
             >
-              {navigator.languages[0] === 'zh-CN' ? '导出' : 'Export'}
+              {localize(lang, 'com_endpoint_export')}
             </DialogButton>
           </>
         }

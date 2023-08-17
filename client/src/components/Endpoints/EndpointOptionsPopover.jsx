@@ -5,6 +5,9 @@ import CrossIcon from '../svg/CrossIcon';
 import { Save } from 'lucide-react';
 import { cn } from '~/utils/';
 import CheckMark from '../svg/CheckMark.jsx';
+import store from '~/store';
+import { useRecoilValue } from 'recoil';
+import { localize } from '~/localization/Translation';
 
 function EndpointOptionsPopover({
   content,
@@ -14,6 +17,7 @@ function EndpointOptionsPopover({
   widget = false,
   additionalButton = null
 }) {
+  const lang = useRecoilValue(store.lang);
   const cardStyle =
     'shadow-md rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white';
 
@@ -41,12 +45,12 @@ function EndpointOptionsPopover({
               {!widget ? (
                 <>
                   <Save className="mr-1 w-[14px]" />
-                  {navigator.languages[0] === 'zh-CN' ? '另存为预设' : 'Save as preset'}
+                  {localize(lang, 'com_endpoint_save_as_preset')}
                 </>
               ) : (
                 <>
                   <CheckMark className="mr-1 w-[14px]" />
-                  确认
+                  {localize(lang, 'com_endpoint_confirm')}
                 </>
               )
               }

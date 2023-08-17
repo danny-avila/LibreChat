@@ -18,6 +18,7 @@ import { Spinner } from '../svg';
 import Regenerate from '../svg/RegenerateIcon';
 
 export default function Recommendations({ type: leaderboardType }: {type: string}) {
+  const lang = useRecoilValue(store.lang);
   const [convoIdx, setConvoIdx] = useState<number>(0);
   const [convoDataLength, setConvoDataLength] = useState<number>(1);
   const [convoData, setConvoData] = useState<TConversation[] | null>(null);
@@ -30,7 +31,6 @@ export default function Recommendations({ type: leaderboardType }: {type: string
 
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
   const { token } = useAuthContext();
-  const lang = useRecoilValue(store.lang);
   const title = localize(lang, 'com_ui_recommendation');
 
   async function fetchRecentConversations() {

@@ -3,6 +3,9 @@ import { CheckIcon } from 'lucide-react';
 import { ThemeContext } from '~/hooks/ThemeContext';
 import React, { useState, useContext, useCallback } from 'react';
 import { useClearConversationsMutation } from '@librechat/data-provider';
+import store from '~/store';
+import { useRecoilValue } from 'recoil';
+import { localize } from '~/localization/Translation';
 
 export const ThemeSelector = ({
   theme,
@@ -10,20 +13,23 @@ export const ThemeSelector = ({
 }: {
   theme: string;
   onChange: (value: string) => void;
-}) => (
-  <div className="flex items-center justify-between">
-    <div>{navigator.languages[0] === 'zh-CN' ? '主题' : 'Theme'}</div>
-    <select
-      className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20 dark:bg-gray-900"
-      onChange={(e) => onChange(e.target.value)}
-      value={theme}
-    >
-      <option value="system">{navigator.languages[0] === 'zh-CN' ? '系统默认' : 'System'}</option>
-      <option value="dark">{navigator.languages[0] === 'zh-CN' ? '黑夜模式' : 'Dark'}</option>
-      <option value="light">{navigator.languages[0] === 'zh-CN' ? '白天模式' : 'Light'}</option>
-    </select>
-  </div>
-);
+}) => {
+  const lang = useRecoilValue(store.lang);
+  return(
+    <div className="flex items-center justify-between">
+      <div>{localize(lang, 'com_nav_theme_system')}</div>
+      <select
+        className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20 dark:bg-gray-900"
+        onChange={(e) => onChange(e.target.value)}
+        value={theme}
+      >
+        <option value="system">{localize(lang, 'com_nav_theme_system')}</option>
+        <option value="dark">{localize(lang, 'com_nav_theme_dark')}</option>
+        <option value="light">{localize(lang, 'com_nav_theme_light')}</option>
+      </select>
+    </div>
+  )
+};
 
 export const ClearChatsButton = ({
   confirmClear,
@@ -33,27 +39,30 @@ export const ClearChatsButton = ({
   confirmClear: boolean;
   showText: boolean;
   onClick: () => void;
-}) => (
-  <div className="flex items-center justify-between">
-    {showText && <div>{navigator.languages[0]==='zh-CN'? '清空所有聊天' : 'Clear all chats'}</div>}
-    <button
-      className="btn relative bg-red-600  text-white hover:bg-red-800"
-      type="button"
-      id="clearConvosBtn"
-      onClick={onClick}
-    >
-      {confirmClear ? (
-        <div className="flex w-full items-center justify-center gap-2" id="clearConvosTxt">
-          <CheckIcon className="h-5 w-5" /> Confirm Clear
-        </div>
-      ) : (
-        <div className="flex w-full items-center justify-center gap-2" id="clearConvosTxt">
-          {navigator.languages[0]==='zh-CN'?'清理':'Clear'}
-        </div>
-      )}
-    </button>
-  </div>
-);
+}) => {
+  const lang = useRecoilValue(store.lang);
+  return(
+    <div className="flex items-center justify-between">
+      {showText && <div>{localize(lang, 'com_nav_clear_all_chats')}</div>}
+      <button
+        className="btn relative bg-red-600  text-white hover:bg-red-800"
+        type="button"
+        id="clearConvosBtn"
+        onClick={onClick}
+      >
+        {confirmClear ? (
+          <div className="flex w-full items-center justify-center gap-2" id="clearConvosTxt">
+            <CheckIcon className="h-5 w-5" /> {localize(lang, 'com_nav_confirm_clear')}
+          </div>
+        ) : (
+          <div className="flex w-full items-center justify-center gap-2" id="clearConvosTxt">
+            {localize(lang, 'com_nav_clear')}
+          </div>
+        )}
+      </button>
+    </div>
+  )
+};
 
 function General() {
   const { theme, setTheme } = useContext(ThemeContext);

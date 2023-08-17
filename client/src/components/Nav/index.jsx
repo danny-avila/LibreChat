@@ -45,6 +45,7 @@ import { localize } from '~/localization/Translation';
 // };
 
 export default function Nav({ navVisible, setNavVisible }) {
+  const lang = useRecoilValue(store.lang);
   const [isHovering, setIsHovering] = useState(false);
   const { isAuthenticated } = useAuthContext();
   const containerRef = useRef(null);
@@ -98,7 +99,6 @@ export default function Nav({ navVisible, setNavVisible }) {
     searchPlaceholderConversation();
     setSearchResultMessages(res.messages);
   };
-  const lang = useRecoilValue(store.lang);
 
   useEffect(() => {
     //we use isInitialLoading here instead of isLoading because query is disabled by default
@@ -267,41 +267,40 @@ export default function Nav({ navVisible, setNavVisible }) {
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <HomeIcon />}
-                //text={navigator.languages[0] === 'zh-CN' ? '主页' : 'Home'}
                 text={localize(lang, 'com_ui_homepage')}
                 clickHandler={ openHomepageHandler }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <NotebookIcon />}
-                text={navigator.languages[0] === 'zh-CN' ? '写作小助手' : 'Writing Assistant'}
+                text={localize(lang, 'com_ui_writing_assistant')}
                 clickHandler={ openWritingAssistantHandler }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <ComputerIcon />}
-                text={navigator.languages[0] === 'zh-CN' ? '编程小助手' : 'Coding Assistant'}
+                text={localize(lang, 'com_ui_coding_assistant')}
                 clickHandler={ openCodingAssistantHandler }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <LightBulbIcon />}
-                text={navigator.languages[0] === 'zh-CN' ? '万能咨询' : 'Ask Me Anything'}
+                text={localize(lang, 'com_ui_ask_me_anything')}
                 clickHandler={ openAskMeAnythingHandler }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <LeaderboardIcon />}
-                text={navigator.languages[0] === 'zh-CN' ? '邀请排行榜' : 'Referrals Leaderboard'}
+                text={localize(lang, 'com_ui_referrals_leaderboard')}
                 clickHandler={ openLeaderboardHandler }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => copied ? <CheckMark /> : <Clipboard />}
                 text={copied ? (
-                  navigator.languages[0] === 'zh-CN' ? '复制成功' : 'Copied'
+                  localize(lang, 'com_ui_copied_success')
                 ) : (
-                  navigator.languages[0] === 'zh-CN' ? '复制邀请链接' : 'Copy Invitation Link'
+                  localize(lang, 'com_ui_copy_invitation_link')
                 )}
                 clickHandler={ copyLinkHandler }
               />
@@ -317,7 +316,7 @@ export default function Nav({ navVisible, setNavVisible }) {
           onClick={toggleNavVisible}
         >
           <div className="flex items-center justify-center">
-            <span className="sr-only">Open sidebar</span>
+            <span className="sr-only">{localize(lang, 'com_nav_open_sidebar')}</span>
             <Panel open={true} />
           </div>
         </button>

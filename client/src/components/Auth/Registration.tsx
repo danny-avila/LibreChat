@@ -6,8 +6,12 @@ import {
   TRegisterUser,
   useGetStartupConfig
 } from '@librechat/data-provider';
+import store from '~/store';
+import { useRecoilValue } from 'recoil';
+import { localize } from '~/localization/Translation';
 
 function Registration() {
+  const lang = useRecoilValue(store.lang);
   const navigate = useNavigate();
   const { data: startupConfig } = useGetStartupConfig();
   const { userId } = useParams() || '';
@@ -51,13 +55,13 @@ function Registration() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
       <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl font-semibold">{navigator.languages[0]==='zh-CN'?'创建你的账号':'Create your account'}</h1>
+        <h1 className="mb-4 text-center text-3xl font-semibold">{localize(lang, 'com_auth_create_account')}</h1>
         {error && (
           <div
             className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
             role="alert"
           >
-            {navigator.languages[0]==='zh-CN'?'注册帐户时出错。请重试。':'There was an error attempting to register your account. Please try again.'} {errorMessage}
+            {localize(lang, 'com_auth_error_create')} {errorMessage}
           </div>
         )}
         <form
@@ -74,14 +78,14 @@ function Registration() {
                 autoComplete="name"
                 aria-label="Full name"
                 {...register('name', {
-                  required: 'Name is required',
+                  required: localize(lang, 'com_auth_username_required'),
                   minLength: {
                     value: 3,
-                    message: navigator.languages[0]==='zh-CN'?'名字必须超过3个字符':'Name must be at least 3 characters'
+                    message: localize(lang, 'com_auth_name_min_length')
                   },
                   maxLength: {
                     value: 80,
-                    message: navigator.languages[0]==='zh-CN'?'名字最大长度是80个字符':'Name must be less than 80 characters'
+                    message: localize(lang, 'com_auth_name_max_length')
                   }
                 })}
                 aria-invalid={!!errors.name}
@@ -92,7 +96,7 @@ function Registration() {
                 htmlFor="name"
                 className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
               >
-                {navigator.languages[0]==='zh-CN'?'全名':'Full name'}
+                {localize(lang, 'com_auth_full_name')}
               </label>
             </div>
 
@@ -110,14 +114,14 @@ function Registration() {
                 id="username"
                 aria-label="Username"
                 {...register('username', {
-                  required: 'Username is required',
+                  required: localize(lang, 'com_auth_username_required'),
                   minLength: {
                     value: 3,
-                    message: navigator.languages[0]==='zh-CN'?'用户名长度最少3个字符':'Username must be at least 3 characters'
+                    message: localize(lang, 'com_auth_username_min_length')
                   },
                   maxLength: {
                     value: 20,
-                    message: navigator.languages[0]==='zh-CN'?'用户名必须少于20个字符':'Username must be less than 20 characters'
+                    message: localize(lang, 'com_auth_username_max_length')
                   }
                 })}
                 aria-invalid={!!errors.username}
@@ -129,7 +133,7 @@ function Registration() {
                 htmlFor="username"
                 className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
               >
-                {navigator.languages[0]==='zh-CN'?'用户名':'Username'}
+                {localize(lang, 'com_auth_username')}
               </label>
             </div>
 
@@ -148,18 +152,18 @@ function Registration() {
                 autoComplete="email"
                 aria-label="Email"
                 {...register('email', {
-                  required: 'Email is required',
+                  required: localize(lang, 'com_auth_email_required'),
                   minLength: {
                     value: 3,
-                    message: navigator.languages[0]==='zh-CN'?'邮箱地址至少6个字符':'Email must be at least 6 characters'
+                    message: localize(lang, 'com_auth_email_min_length')
                   },
                   maxLength: {
                     value: 120,
-                    message: navigator.languages[0]==='zh-CN'?'邮箱地址不能超过120个字符':'Email should not be longer than 120 characters'
+                    message: localize(lang, 'com_auth_email_max_length')
                   },
                   pattern: {
                     value: /\S+@\S+\.\S+/,
-                    message: navigator.languages[0]==='zh-CN'?'你必须输入一个有效的邮箱地址':'You must enter a valid email address'
+                    message: localize(lang, 'com_auth_email_pattern')
                   }
                 })}
                 aria-invalid={!!errors.email}
@@ -170,7 +174,7 @@ function Registration() {
                 htmlFor="email"
                 className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
               >
-                {navigator.languages[0]==='zh-CN'?'邮箱':'Email'}
+                {localize(lang, 'com_auth_email')}
               </label>
             </div>
             {errors.email && (
@@ -189,14 +193,14 @@ function Registration() {
                 autoComplete="current-password"
                 aria-label="Password"
                 {...register('password', {
-                  required: 'Password is required',
+                  required: localize(lang, 'com_auth_password_required'),
                   minLength: {
                     value: 8,
-                    message: navigator.languages[0]==='zh-CN'?'密码长度至少8位':'Password must be at least 8 characters'
+                    message: localize(lang, 'com_auth_password_min_length')
                   },
                   maxLength: {
                     value: 128,
-                    message: navigator.languages[0]==='zh-CN'?'密码长度不能超过128个字符':'Password must be less than 128 characters'
+                    message: localize(lang,'com_auth_password_max_length')
                   }
                 })}
                 aria-invalid={!!errors.password}
@@ -207,7 +211,7 @@ function Registration() {
                 htmlFor="password"
                 className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
               >
-                {navigator.languages[0]==='zh-CN'?'密码':'Password'}
+                {localize(lang,'com_auth_password')}
               </label>
             </div>
 
@@ -231,7 +235,7 @@ function Registration() {
                 //   return false;
                 // }}
                 {...register('confirm_password', {
-                  validate: (value) => value === password || 'Passwords do not match'
+                  validate: (value) => value === password || localize(lang, 'com_auth_password_not_match')
                 })}
                 aria-invalid={!!errors.confirm_password}
                 className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
@@ -241,7 +245,7 @@ function Registration() {
                 htmlFor="confirm_password"
                 className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
               >
-                {navigator.languages[0]==='zh-CN'?'再次输入密码':'Confirm password'}
+                {localize(lang, 'com_auth_password_confirm')}
               </label>
             </div>
 
@@ -265,19 +269,19 @@ function Registration() {
               aria-label="Submit registration"
               className="w-full transform rounded-sm bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-green-500"
             >
-              {navigator.languages[0]==='zh-CN'?'继续':'Continue'}
+              {localize(lang,'com_auth_continue')}
             </button>
           </div>
         </form>
         <p className="my-4 text-center text-sm font-light text-gray-700">
           {' '}
-          {navigator.languages[0]==='zh-CN'?'已经有账号？ 点击':'Already have an account?'}{' '}
+          {localize(lang, 'com_auth_already_have_account')}{' '}
           <a
             href="/login"
             aria-label="Login"
             className="p-1 font-medium text-green-500 hover:underline"
           >
-            {navigator.languages[0]==='zh-CN'?'登录':'Login'}
+            {localize(lang,'com_auth_login')}
           </a>
         </p>
         {startupConfig?.googleLoginEnabled && (
@@ -315,7 +319,7 @@ function Registration() {
                     d="m419.404 58.936-82.933 67.896C313.136 112.246 285.552 103.82 256 103.82c-66.729 0-123.429 42.957-143.965 102.724l-83.397-68.276h-.014C71.23 56.123 157.06 0 256 0c62.115 0 119.068 22.126 163.404 58.936z"
                   ></path>
                 </svg>
-                <p>{navigator.languages[0]==='zh-CN'?'Google登录':'Login with Google'}</p>
+                <p>{localize(lang,'com_auth_google_login')}</p>
               </a>
             </div>
           </>
@@ -370,7 +374,7 @@ function Registration() {
                     d="M12 0a12 12 0 0 0-3.84 23.399c.608.112.832-.256.832-.576v-2.015c-3.395.736-4.115-1.632-4.115-1.632a3.241 3.241 0 0 0-1.359-1.792c-1.104-.736.064-.736.064-.736a2.566 2.566 0 0 1 1.824 1.216a2.638 2.638 0 0 0 3.616 1.024a2.607 2.607 0 0 1 .768-1.6c-2.688-.32-5.504-1.344-5.504-5.984a4.677 4.677 0 0 1 1.216-3.168a4.383 4.383 0 0 1 .128-3.136s1.024-.32 3.36 1.216a11.66 11.66 0 0 1 6.112 0c2.336-1.536 3.36-1.216 3.36-1.216a4.354 4.354 0 0 1 .128 3.136a4.628 4.628 0 0 1 1.216 3.168c0 4.672-2.848 5.664-5.536 5.952a2.881 2.881 0 0 1 .832 2.24v3.36c0 .32.224.672.832.576A12 12 0 0 0 12 0z"
                   />
                 </svg>
-                <p>Login with GitHub</p>
+                <p>{localize(lang,'com_auth_github_login')}</p>
               </a>
             </div>
           </>

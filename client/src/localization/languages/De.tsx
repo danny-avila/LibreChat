@@ -1,6 +1,7 @@
 // German phrases
 
 export default {
+  com_ui_homepage: 'Startseite',
   com_ui_examples: 'Beispiel',
   com_ui_new_chat: 'Neuer Chat',
   com_ui_example_quantum_computing: 'Erkläre den Quanten Computer in einfachen Worten',
@@ -69,7 +70,7 @@ export default {
   com_auth_to_reset_your_password: 'um dein Passwort zurückzusetzen.',
   com_auth_reset_password_link_sent: 'E-Mail gesendet',
   com_auth_reset_password_email_sent:
-    'Du hast eine E-Mail mit weiteren Anweisungen zum Zurücksetzen deines Passworts erhalten.',
+    'Es wurde eine E-Mail an {0} mit Anweisungen zum Zurücksetzen Ihres Passworts gesendet. Bitte überprüfen Sie Ihren Spam- / Junk-Ordner, wenn Sie diese E-Mail in Kürze nicht sehen.',
   com_auth_error_reset_password:
     'Es gab ein Problem beim Zurücksetzen ihres Passworts. Es wurde kein Benutzer mit der angegebenen E-Mail Adresse gefunden. Bitte überprüfen sie die E-Mail und versuchen sie es erneut.',
   com_auth_reset_password_success: 'Passwort erfolgreich zurückgesetzt',
