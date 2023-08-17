@@ -131,3 +131,7 @@ export const duplicateConversation = (payload: object) => {
 export const getLeaderboard = () => {
   return request.get(endpoints.leaderboard());
 }
+
+export const getLikedConversations = (userId: string) => {
+  return request.get(endpoints.likedConversations(userId));
+}
