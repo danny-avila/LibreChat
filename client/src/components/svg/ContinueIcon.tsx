@@ -5,11 +5,11 @@ export default function ContinueIcon({ className = '' }: { className?: string })
     <svg
       stroke="currentColor"
       fill="none"
-      strokeWidth="1.5"
+      strokeWidth="2"
       viewBox="0 0 24 24"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={cn('h-3 w-3 -rotate-180', className)}
+      className={cn('h-3 w-3 -rotate-180 text-gray-600 dark:text-gray-400', className)}
       height="1em"
       width="1em"
       xmlns="http://www.w3.org/2000/svg"

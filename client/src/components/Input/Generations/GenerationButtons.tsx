@@ -36,11 +36,10 @@ export default function GenerationButtons({
   }
 
   let button: React.ReactNode = null;
-  const { finish_reason } = latestMessage ?? {};
 
   if (isSubmitting) {
     button = <Stop onClick={handleStopGenerating} />;
-  } else if (finish_reason && finish_reason !== 'stop' && continueSupported) {
+  } else if (continueSupported) {
     button = <Continue onClick={handleContinue} />;
   } else if (messages && messages.length > 0 && regenerateEnabled) {
     button = <Regenerate onClick={handleRegenerate} />;
