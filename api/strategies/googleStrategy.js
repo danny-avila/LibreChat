@@ -16,18 +16,20 @@ const googleLogin = async () =>
       try {
         const email = profile.emails[0].value;
         const googleId = profile.id;
-        const ALLOW_SOCIAL_REGISTRATION = process.env.ALLOW_SOCIAL_REGISTRATION === 'true';
+        const oldUser = await User.findOne({ email });
 
-        if (!ALLOW_SOCIAL_REGISTRATION) {
-          const oldUser = await User.findOne({ email });
+        if (process.env.ALLOW_SOCIAL_LOGIN?.toLowerCase() !== 'true') {
           if (oldUser) {
+            oldUser.avatar = profile.photos[0].value;
+            await oldUser.save();
             return cb(null, oldUser);
           } else {
             return cb(null, false, { message: 'User not found.' });
           }
         } else {
-          const oldUser = await User.findOne({ email });
           if (oldUser) {
+            oldUser.avatar = profile.photos[0].value;
+            await oldUser.save();
             return cb(null, oldUser);
           }
 

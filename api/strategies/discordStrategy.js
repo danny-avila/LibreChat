@@ -16,28 +16,30 @@ const discordLogin = () =>
       try {
         const email = profile.email;
         const discordId = profile.id;
-        const ALLOW_SOCIAL_REGISTRATION = process.env.ALLOW_SOCIAL_REGISTRATION === 'true';
+        const oldUser = await User.findOne({ email });
 
-        if (!ALLOW_SOCIAL_REGISTRATION) {
-          const oldUser = await User.findOne({ email });
+        let avatarURL;
+        if (profile.avatar) {
+          const format = profile.avatar.startsWith('a_') ? 'gif' : 'png';
+          avatarURL = `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.${format}`;
+        } else {
+          const defaultAvatarNum = Number(profile.discriminator) % 5;
+          avatarURL = `https://cdn.discordapp.com/embed/avatars/${defaultAvatarNum}.png`;
+        }
+
+        if (process.env.ALLOW_SOCIAL_LOGIN?.toLowerCase() !== 'true') {
           if (oldUser) {
+            oldUser.avatar = avatarURL;
+            await oldUser.save();
             return cb(null, oldUser);
           } else {
             return cb(null, false, { message: 'User not found.' });
           }
         } else {
-          const oldUser = await User.findOne({ email });
           if (oldUser) {
+            oldUser.avatar = avatarURL;
+            await oldUser.save();
             return cb(null, oldUser);
-          }
-
-          let avatarURL;
-          if (profile.avatar) {
-            const format = profile.avatar.startsWith('a_') ? 'gif' : 'png';
-            avatarURL = `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.${format}`;
-          } else {
-            const defaultAvatarNum = Number(profile.discriminator) % 5;
-            avatarURL = `https://cdn.discordapp.com/embed/avatars/${defaultAvatarNum}.png`;
           }
 
           const newUser = await User.create({

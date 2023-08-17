@@ -15,16 +15,19 @@ const githubLogin = async () =>
     },
     async (accessToken, refreshToken, profile, cb) => {
       try {
-        const ALLOW_SOCIAL_REGISTRATION = process.env.ALLOW_SOCIAL_REGISTRATION === 'true';
         let email;
         if (profile.emails && profile.emails.length > 0) {
           email = profile.emails[0].value;
         }
-        if (!ALLOW_SOCIAL_REGISTRATION) {
-          const oldUser = await User.findOne({
-            email,
-          });
+
+        const oldUser = await User.findOne({
+          email,
+        });
+
+        if (process.env.ALLOW_SOCIAL_LOGIN?.toLowerCase() !== 'true') {
           if (oldUser) {
+            oldUser.avatar = profile.photos[0].value;
+            await oldUser.save();
             return cb(null, oldUser);
           } else {
             return cb(null, false, {
@@ -32,10 +35,9 @@ const githubLogin = async () =>
             });
           }
         } else {
-          const oldUser = await User.findOne({
-            email,
-          });
           if (oldUser) {
+            oldUser.avatar = profile.photos[0].value;
+            await oldUser.save();
             return cb(null, oldUser);
           }
 
