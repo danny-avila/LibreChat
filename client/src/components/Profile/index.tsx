@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Tabs, TabsList, TabsTrigger } from './Tabs';
+import { Tabs, TabsList, TabsTrigger } from '../ui/Tabs';
 import { cn } from '~/utils';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import { useParams } from 'react-router-dom';
 import { TUser } from '@librechat/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
+import LikedConversations from './LikedConversation';
 
 function Profile() {
   const [tabValue, setTabValue] = useState<string>('likes');
@@ -88,7 +89,8 @@ function Profile() {
         </Tabs>
       </div>
       <div>
-        Display tab content here...
+        {(tabValue === 'likes') && (<LikedConversations />)}
+        {!(tabValue === 'likes') && 'Display tab content here...'}
       </div>
     </div>
   );
