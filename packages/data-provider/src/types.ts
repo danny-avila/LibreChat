@@ -116,7 +116,9 @@ export type TConversation = {
   clientId?: string;
   invocationId?: string;
   toneStyle?: string;
-  isPrivate: boolean
+  isPrivate: boolean;
+  likes: number;
+  likedBy: object
 };
 
 export type TPreset = {

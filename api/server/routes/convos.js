@@ -9,7 +9,11 @@ const Conversation = require('../../models/schema/convoSchema');
 
 router.get('/', requireJwtAuth, async (req, res) => {
   const pageNumber = req.query.pageNumber || 1;
-  res.status(200).send(await getConvosByPage(req.user.id, pageNumber));
+  if (!req.user) {
+    res.status(401).send();
+  } else {
+    res.status(200).send(await getConvosByPage(req.user.id, pageNumber));
+  }
 });
 
 router.get('/hottest', requireJwtAuth, async (req, res) => {
@@ -109,10 +113,10 @@ router.post('/duplicate', requireJwtAuth, async (req, res) => {
 });
 
 router.post('/like', async (req, res) => {
-  const { conversationId, isLiked } = req.body;
+  const { conversationId, userId, liked } = req.body;
   console.log('hit like router')
   try {
-    const dbResponse = await likeConvo(conversationId, isLiked);
+    const dbResponse = await likeConvo(conversationId, userId, liked);
     console.log('saved in like router')
 
     res.status(201).send(dbResponse);

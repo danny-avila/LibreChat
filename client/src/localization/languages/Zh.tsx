@@ -2,6 +2,9 @@
 
 export default {
   com_ui_homepage: '主页',
+  com_ui_register_before_like: '需注册账号后才能点赞哦',
+  com_ui_number_of_likes: '次点赞',
+  com_ui_register_here: '没有AITok账号？点击这里注册。',
   com_ui_copied: '已将对话分享链接复制到剪贴板',
   com_ui_private_conversation: '抱歉，此对话是一个私密对话',
   com_ui_recommendation: '对话推荐',

@@ -2,6 +2,9 @@
 
 export default {
   com_ui_homepage: 'Home Page',
+  com_ui_register_before_like: 'Let\'s make yourself an account',
+  com_ui_number_of_likes: 'Likes',
+  com_ui_register_here: 'Don\'t have an account yet? Click here to register.',
   com_ui_copied: 'Copied conversation share link to clipboard',
   com_ui_private_conversation: 'The conversation you are trying to view is a private conversation',
   com_ui_recommendation: 'Recommendations',

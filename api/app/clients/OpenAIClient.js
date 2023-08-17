@@ -1,9 +1,15 @@
 const BaseClient = require('./BaseClient');
 const ChatGPTClient = require('./ChatGPTClient');
-const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('@dqbd/tiktoken');
+const {
+  encoding_for_model: encodingForModel,
+  get_encoding: getEncoding,
+} = require('@dqbd/tiktoken');
 const { maxTokensMap, genAzureChatCompletion } = require('../../utils');
 
+// Cache to store Tiktoken instances
 const tokenizersCache = {};
+// Counter for keeping track of the number of tokenizer calls
+let tokenizerCallsCount = 0;
 
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -12,7 +18,9 @@ class OpenAIClient extends BaseClient {
     this.buildPrompt = this.ChatGPTClient.buildPrompt.bind(this);
     this.getCompletion = this.ChatGPTClient.getCompletion.bind(this);
     this.sender = options.sender ?? 'ChatGPT';
-    this.contextStrategy = options.contextStrategy ? options.contextStrategy.toLowerCase() : 'discard';
+    this.contextStrategy = options.contextStrategy
+      ? options.contextStrategy.toLowerCase()
+      : 'discard';
     this.shouldRefineContext = this.contextStrategy === 'refine';
     this.azure = options.azure || false;
     if (this.azure) {
@@ -45,34 +53,45 @@ class OpenAIClient extends BaseClient {
       this.modelOptions = {
         ...modelOptions,
         model: modelOptions.model || 'gpt-3.5-turbo',
-        temperature: typeof modelOptions.temperature === 'undefined' ? 0.8 : modelOptions.temperature,
+        temperature:
+          typeof modelOptions.temperature === 'undefined' ? 0.8 : modelOptions.temperature,
         top_p: typeof modelOptions.top_p === 'undefined' ? 1 : modelOptions.top_p,
-        presence_penalty: typeof modelOptions.presence_penalty === 'undefined' ? 1 : modelOptions.presence_penalty,
+        presence_penalty:
+          typeof modelOptions.presence_penalty === 'undefined' ? 1 : modelOptions.presence_penalty,
         stop: modelOptions.stop,
       };
     }
 
-    this.isChatCompletion = this.options.reverseProxyUrl || this.options.localAI || this.modelOptions.model.startsWith('gpt-');
+    this.isChatCompletion =
+      this.options.reverseProxyUrl ||
+      this.options.localAI ||
+      this.modelOptions.model.startsWith('gpt-');
     this.isChatGptModel = this.isChatCompletion;
     if (this.modelOptions.model === 'text-davinci-003') {
       this.isChatCompletion = false;
       this.isChatGptModel = false;
     }
     const { isChatGptModel } = this;
-    this.isUnofficialChatGptModel = this.modelOptions.model.startsWith('text-chat') || this.modelOptions.model.startsWith('text-davinci-002-render');
+    this.isUnofficialChatGptModel =
+      this.modelOptions.model.startsWith('text-chat') ||
+      this.modelOptions.model.startsWith('text-davinci-002-render');
     this.maxContextTokens = maxTokensMap[this.modelOptions.model] ?? 4095; // 1 less than maximum
     this.maxResponseTokens = this.modelOptions.max_tokens || 1024;
-    this.maxPromptTokens = this.options.maxPromptTokens || (this.maxContextTokens - this.maxResponseTokens);
+    this.maxPromptTokens =
+      this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
 
     if (this.maxPromptTokens + this.maxResponseTokens > this.maxContextTokens) {
-      throw new Error(`maxPromptTokens + max_tokens (${this.maxPromptTokens} + ${this.maxResponseTokens} = ${this.maxPromptTokens + this.maxResponseTokens}) must be less than or equal to maxContextTokens (${this.maxContextTokens})`);
+      throw new Error(
+        `maxPromptTokens + max_tokens (${this.maxPromptTokens} + ${this.maxResponseTokens} = ${
+          this.maxPromptTokens + this.maxResponseTokens
+        }) must be less than or equal to maxContextTokens (${this.maxContextTokens})`,
+      );
     }
 
     this.userLabel = this.options.userLabel || 'User';
     this.chatGptLabel = this.options.chatGptLabel || 'Assistant';
 
     this.setupTokens();
-    this.setupTokenizer();
 
     if (!this.modelOptions.stop) {
       const stopTokens = [this.startToken];
@@ -116,68 +135,87 @@ class OpenAIClient extends BaseClient {
     }
   }
 
-  setupTokenizer() {
+  // Selects an appropriate tokenizer based on the current configuration of the client instance.
+  // It takes into account factors such as whether it's a chat completion, an unofficial chat GPT model, etc.
+  selectTokenizer() {
+    let tokenizer;
     this.encoding = 'text-davinci-003';
     if (this.isChatCompletion) {
       this.encoding = 'cl100k_base';
-      this.gptEncoder = this.constructor.getTokenizer(this.encoding);
+      tokenizer = this.constructor.getTokenizer(this.encoding);
     } else if (this.isUnofficialChatGptModel) {
-      this.gptEncoder = this.constructor.getTokenizer(this.encoding, true, {
+      const extendSpecialTokens = {
         '<|im_start|>': 100264,
         '<|im_end|>': 100265,
-      });
+      };
+      tokenizer = this.constructor.getTokenizer(this.encoding, true, extendSpecialTokens);
     } else {
       try {
         this.encoding = this.modelOptions.model;
-        this.gptEncoder = this.constructor.getTokenizer(this.modelOptions.model, true);
+        tokenizer = this.constructor.getTokenizer(this.modelOptions.model, true);
       } catch {
-        this.gptEncoder = this.constructor.getTokenizer(this.encoding, true);
+        tokenizer = this.constructor.getTokenizer(this.encoding, true);
       }
     }
-  }
 
-  static getTokenizer(encoding, isModelName = false, extendSpecialTokens = {}) {
-    if (tokenizersCache[encoding]) {
-      return tokenizersCache[encoding];
-    }
-    let tokenizer;
-    if (isModelName) {
-      tokenizer = encodingForModel(encoding, extendSpecialTokens);
-    } else {
-      tokenizer = getEncoding(encoding, extendSpecialTokens);
-    }
-    tokenizersCache[encoding] = tokenizer;
     return tokenizer;
   }
 
-  freeAndResetEncoder() {
-    try {
-      if (!this.gptEncoder) {
-        return;
+  // Retrieves a tokenizer either from the cache or creates a new one if one doesn't exist in the cache.
+  // If a tokenizer is being created, it's also added to the cache.
+  static getTokenizer(encoding, isModelName = false, extendSpecialTokens = {}) {
+    let tokenizer;
+    if (tokenizersCache[encoding]) {
+      tokenizer = tokenizersCache[encoding];
+    } else {
+      if (isModelName) {
+        tokenizer = encodingForModel(encoding, extendSpecialTokens);
+      } else {
+        tokenizer = getEncoding(encoding, extendSpecialTokens);
       }
-      this.gptEncoder.free();
-      delete tokenizersCache[this.encoding];
-      delete tokenizersCache.count;
-      this.setupTokenizer();
+      tokenizersCache[encoding] = tokenizer;
+    }
+    return tokenizer;
+  }
+
+  // Frees all encoders in the cache and resets the count.
+  static freeAndResetAllEncoders() {
+    try {
+      Object.keys(tokenizersCache).forEach((key) => {
+        if (tokenizersCache[key]) {
+          tokenizersCache[key].free();
+          delete tokenizersCache[key];
+        }
+      });
+      // Reset count
+      tokenizerCallsCount = 1;
     } catch (error) {
-      console.log('freeAndResetEncoder error');
+      console.log('Free and reset encoders error');
       console.error(error);
     }
   }
 
-  getTokenCount(text) {
-    try {
-      if (tokenizersCache.count >= 25) {
-        if (this.options.debug) {
-          console.debug('freeAndResetEncoder: reached 25 encodings, reseting...');
-        }
-        this.freeAndResetEncoder();
+  // Checks if the cache of tokenizers has reached a certain size. If it has, it frees and resets all tokenizers.
+  resetTokenizersIfNecessary() {
+    if (tokenizerCallsCount >= 25) {
+      if (this.options.debug) {
+        console.debug('freeAndResetAllEncoders: reached 25 encodings, resetting...');
       }
-      tokenizersCache.count = (tokenizersCache.count || 0) + 1;
-      return this.gptEncoder.encode(text, 'all').length;
+      this.constructor.freeAndResetAllEncoders();
+    }
+    tokenizerCallsCount++;
+  }
+
+  // Returns the token count of a given text. It also checks and resets the tokenizers if necessary.
+  getTokenCount(text) {
+    this.resetTokenizersIfNecessary();
+    try {
+      const tokenizer = this.selectTokenizer();
+      return tokenizer.encode(text, 'all').length;
     } catch (error) {
-      this.freeAndResetEncoder();
-      return this.gptEncoder.encode(text, 'all').length;
+      this.constructor.freeAndResetAllEncoders();
+      const tokenizer = this.selectTokenizer();
+      return tokenizer.encode(text, 'all').length;
     }
   }
 
@@ -185,7 +223,7 @@ class OpenAIClient extends BaseClient {
     return {
       chatGptLabel: this.options.chatGptLabel,
       promptPrefix: this.options.promptPrefix,
-      ...this.modelOptions
+      ...this.modelOptions,
     };
   }
 
@@ -197,9 +235,16 @@ class OpenAIClient extends BaseClient {
     };
   }
 
-  async buildMessages(messages, parentMessageId, { isChatCompletion = false, promptPrefix = null }) {
+  async buildMessages(
+    messages,
+    parentMessageId,
+    { isChatCompletion = false, promptPrefix = null },
+  ) {
     if (!isChatCompletion) {
-      return await this.buildPrompt(messages, parentMessageId, { isChatGptModel: isChatCompletion, promptPrefix });
+      return await this.buildPrompt(messages, parentMessageId, {
+        isChatGptModel: isChatCompletion,
+        promptPrefix,
+      });
     }
 
     let payload;
@@ -214,7 +259,7 @@ class OpenAIClient extends BaseClient {
       instructions = {
         role: 'system',
         name: 'instructions',
-        content: promptPrefix
+        content: promptPrefix,
       };
 
       if (this.contextStrategy) {
@@ -236,7 +281,8 @@ class OpenAIClient extends BaseClient {
       }
 
       if (this.contextStrategy) {
-        formattedMessage.tokenCount = message.tokenCount ?? this.getTokenCountForMessage(formattedMessage);
+        formattedMessage.tokenCount =
+          message.tokenCount ?? this.getTokenCountForMessage(formattedMessage);
       }
 
       return formattedMessage;
@@ -244,8 +290,11 @@ class OpenAIClient extends BaseClient {
 
     // TODO: need to handle interleaving instructions better
     if (this.contextStrategy) {
-      ({ payload, tokenCountMap, promptTokens, messages } =
-        await this.handleContextStrategy({ instructions, orderedMessages, formattedMessages }));
+      ({ payload, tokenCountMap, promptTokens, messages } = await this.handleContextStrategy({
+        instructions,
+        orderedMessages,
+        formattedMessages,
+      }));
     }
 
     const result = {
@@ -272,8 +321,9 @@ class OpenAIClient extends BaseClient {
           if (progressMessage === '[DONE]') {
             return;
           }
-          const token =
-            this.isChatCompletion ? progressMessage.choices?.[0]?.delta?.content : progressMessage.choices?.[0]?.text;
+          const token = this.isChatCompletion
+            ? progressMessage.choices?.[0]?.delta?.content
+            : progressMessage.choices?.[0]?.text;
           // first event's delta content is always undefined
           if (!token) {
             return;

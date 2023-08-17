@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRecoilValue, useRecoilState } from 'recoil';
+import { useAuthContext } from '~/hooks/AuthContext';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
 
@@ -9,6 +10,9 @@ export default function NewChat() {
   const { newConversation } = store.useConversation();
   const navigate = useNavigate();
   const [widget, setWidget] = useRecoilState(store.widget); // eslint-disable-line
+  const { user } = useAuthContext();
+
+  const navigateToRegister = () => navigate('/register');
 
   const clickHandler = () => {
     // dispatch(setInputValue(''));
@@ -20,7 +24,7 @@ export default function NewChat() {
 
   return (
     <a
-      onClick={clickHandler}
+      onClick={ user ? clickHandler : navigateToRegister }
       className="mb-2 flex flex-grow flex-shrink-0 h-11 cursor-pointer items-center gap-3 rounded-md border border-white/20 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10"
     >
       <svg
