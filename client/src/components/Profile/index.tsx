@@ -89,7 +89,7 @@ function Profile() {
         </Tabs>
       </div>
       <div>
-        {(tabValue === 'likes') && (<LikedConversations />)}
+        {(tabValue === 'likes') && (<LikedConversations key={userId} />)}
         {!(tabValue === 'likes') && 'Display tab content here...'}
       </div>
     </div>
