@@ -175,7 +175,7 @@ To disable or re-enable registration, open up the root `.env` file and set `ALLO
 
 To disable or re-enable social registration, open up the root `.env` file and set `ALLOW_SOCIAL_REGISTRATION=true` or `ALLOW_SOCIAL_REGISTRATION=false` depending on if you want social registration open or closed.
 
-**NOTE: OpenID is not affected by this function**
+**NOTE: OpenID does not support the ability to disable only registration.**
 
 ### ⚠️***Warning***
 
