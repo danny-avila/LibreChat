@@ -23,6 +23,8 @@ const githubLogin = async () =>
 
         const oldUser = await User.findOne({ email });
         if (oldUser) {
+          oldUser.avatar = profile.photos[0].value;
+          await oldUser.save();
           return cb(null, oldUser);
         }
 
