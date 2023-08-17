@@ -17,6 +17,8 @@ const googleLogin = async () =>
       try {
         const oldUser = await User.findOne({ email: profile.emails[0].value });
         if (oldUser) {
+          oldUser.avatar = profile.photos[0].value;
+          await oldUser.save();
           return cb(null, oldUser);
         }
       } catch (err) {
