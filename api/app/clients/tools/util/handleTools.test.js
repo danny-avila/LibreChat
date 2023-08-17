@@ -83,7 +83,6 @@ describe('Tool Handlers', () => {
     it('returns valid tools given input tools and user authentication', async () => {
       const validTools = await validateTools(fakeUser._id, initialTools);
       expect(validTools).toBeDefined();
-      console.log('validateTools: validTools', validTools);
       expect(validTools.some((tool) => tool === pluginKey)).toBeTruthy();
       expect(validTools.length).toBeGreaterThan(0);
     });

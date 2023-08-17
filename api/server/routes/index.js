@@ -1,4 +1,5 @@
 const ask = require('./ask');
+const edit = require('./edit');
 const messages = require('./messages');
 const convos = require('./convos');
 const presets = require('./presets');
@@ -15,6 +16,7 @@ const config = require('./config');
 module.exports = {
   search,
   ask,
+  edit,
   messages,
   convos,
   presets,

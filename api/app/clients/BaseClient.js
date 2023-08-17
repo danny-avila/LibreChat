@@ -5,11 +5,12 @@ const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { loadSummarizationChain } = require('langchain/chains');
 const { refinePrompt } = require('./prompts/refinePrompt');
 const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('../../models');
+const { addSpaceIfNeeded } = require('../../server/utils');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
     this.apiKey = apiKey;
-    this.sender = options.sender || 'AI';
+    this.sender = options.sender ?? 'AI';
     this.contextStrategy = null;
     this.currentDateString = new Date().toLocaleDateString('en-us', {
       year: 'numeric',
@@ -51,18 +52,20 @@ class BaseClient {
     if (opts && typeof opts === 'object') {
       this.setOptions(opts);
     }
-    const user = opts.user || null;
-    const conversationId = opts.conversationId || crypto.randomUUID();
-    const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
-    const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
-    const responseMessageId = crypto.randomUUID();
+    const user = opts.user ?? null;
+    const conversationId = opts.conversationId ?? crypto.randomUUID();
+    const parentMessageId = opts.parentMessageId ?? '00000000-0000-0000-0000-000000000000';
+    const userMessageId = opts.overrideParentMessageId ?? crypto.randomUUID();
+    const responseMessageId = opts.responseMessageId ?? crypto.randomUUID();
     const saveOptions = this.getSaveOptions();
-    this.abortController = opts.abortController || new AbortController();
-    this.currentMessages = (await this.loadHistory(conversationId, parentMessageId)) ?? [];
+    const head = opts.isEdited ? responseMessageId : parentMessageId;
+    this.currentMessages = (await this.loadHistory(conversationId, head)) ?? [];
+    this.abortController = opts.abortController ?? new AbortController();
 
     return {
       ...opts,
       user,
+      head,
       conversationId,
       parentMessageId,
       userMessageId,
@@ -72,7 +75,7 @@ class BaseClient {
   }
 
   createUserMessage({ messageId, parentMessageId, conversationId, text }) {
-    const userMessage = {
+    return {
       messageId,
       parentMessageId,
       conversationId,
@@ -80,19 +83,27 @@ class BaseClient {
       text,
       isCreatedByUser: true,
     };
-    return userMessage;
   }
 
   async handleStartMethods(message, opts) {
-    const { user, conversationId, parentMessageId, userMessageId, responseMessageId, saveOptions } =
-      await this.setMessageOptions(opts);
-
-    const userMessage = this.createUserMessage({
-      messageId: userMessageId,
-      parentMessageId,
+    const {
+      user,
+      head,
       conversationId,
-      text: message,
-    });
+      parentMessageId,
+      userMessageId,
+      responseMessageId,
+      saveOptions,
+    } = await this.setMessageOptions(opts);
+
+    const userMessage = opts.isEdited
+      ? this.currentMessages[this.currentMessages.length - 2]
+      : this.createUserMessage({
+        messageId: userMessageId,
+        parentMessageId,
+        conversationId,
+        text: message,
+      });
 
     if (typeof opts?.getIds === 'function') {
       opts.getIds({
@@ -109,6 +120,7 @@ class BaseClient {
     return {
       ...opts,
       user,
+      head,
       conversationId,
       responseMessageId,
       saveOptions,
@@ -373,7 +385,7 @@ class BaseClient {
 
     if (this.options.debug) {
       console.debug('<-------------------------PAYLOAD/TOKEN COUNT MAP------------------------->');
-      console.debug('Payload:', payload);
+      // console.debug('Payload:', payload);
       console.debug('Token Count Map:', tokenCountMap);
       console.debug('Prompt Tokens', promptTokens, remainingContextTokens, this.maxContextTokens);
     }
@@ -382,13 +394,16 @@ class BaseClient {
   }
 
   async sendMessage(message, opts = {}) {
-    const { user, conversationId, responseMessageId, saveOptions, userMessage } =
+    const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
       await this.handleStartMethods(message, opts);
 
     this.user = user;
     // It's not necessary to push to currentMessages
     // depending on subclass implementation of handling messages
-    this.currentMessages.push(userMessage);
+    // When this is an edit, all messages are already in currentMessages, both user and response
+    if (!isEdited) {
+      this.currentMessages.push(userMessage);
+    }
 
     let {
       prompt: payload,
@@ -398,13 +413,13 @@ class BaseClient {
       this.currentMessages,
       // When the userMessage is pushed to currentMessages, the parentMessage is the userMessageId.
       // this only matters when buildMessages is utilizing the parentMessageId, and may vary on implementation
-      userMessage.messageId,
+      isEdited ? head : userMessage.messageId,
       this.getBuildMessagesOptions(opts),
     );
 
     if (this.options.debug) {
       console.debug('payload');
-      console.debug(payload);
+      // console.debug(payload);
     }
 
     if (tokenCountMap) {
@@ -423,7 +438,11 @@ class BaseClient {
       this.handleTokenCountMap(tokenCountMap);
     }
 
-    await this.saveMessageToDatabase(userMessage, saveOptions, user);
+    if (!isEdited) {
+      await this.saveMessageToDatabase(userMessage, saveOptions, user);
+    }
+
+    const generation = isEdited ? this.currentMessages[this.currentMessages.length - 1].text : '';
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
@@ -431,7 +450,7 @@ class BaseClient {
       isCreatedByUser: false,
       model: this.modelOptions.model,
       sender: this.sender,
-      text: await this.sendCompletion(payload, opts),
+      text: addSpaceIfNeeded(generation) + (await this.sendCompletion(payload, opts)),
       promptTokens,
     };
 
@@ -453,7 +472,7 @@ class BaseClient {
       console.debug('Loading history for conversation', conversationId, parentMessageId);
     }
 
-    const messages = (await getMessages({ conversationId })) || [];
+    const messages = (await getMessages({ conversationId })) ?? [];
 
     if (messages.length === 0) {
       return [];

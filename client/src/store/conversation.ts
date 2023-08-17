@@ -7,7 +7,13 @@ import {
   useResetRecoilState,
   useRecoilCallback,
 } from 'recoil';
-import { TConversation, TMessagesAtom, TSubmission, TPreset } from 'librechat-data-provider';
+import {
+  TConversation,
+  TMessagesAtom,
+  TMessage,
+  TSubmission,
+  TPreset,
+} from 'librechat-data-provider';
 import { buildTree, getDefaultConversation } from '~/utils';
 import submission from './submission';
 import endpoints from './endpoints';
@@ -32,7 +38,7 @@ const messagesTree = selector({
   },
 });
 
-const latestMessage = atom({
+const latestMessage = atom<TMessage | null>({
   key: 'latestMessage',
   default: null,
 });
