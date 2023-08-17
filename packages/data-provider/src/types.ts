@@ -1,4 +1,4 @@
-import { TMessage, EModelEndpoint, TConversation } from './schemas';
+import type { TMessage, EModelEndpoint, TConversation, TEndpointOption } from './schemas';
 
 export * from './schemas';
 
@@ -30,16 +30,10 @@ export type TSubmission = {
   top_p?: number;
   presence_penalty?: number;
   frequence_penalty?: number;
+  isEdited?: boolean;
   conversation: TConversation;
   message: TMessage;
   endpointOption: TEndpointOption;
-};
-
-export type TEndpointOption = {
-  endpoint: EModelEndpoint | null;
-  model?: string;
-  promptPrefix?: string;
-  temperature?: number;
 };
 
 export type TPluginAction = {
@@ -116,30 +110,21 @@ export type TSearchResults = {
   filter: object;
 };
 
+export type TConfig = {
+  availableModels: [];
+  userProvide?: boolean | null;
+  availableTools?: [];
+  plugins?: [];
+};
+
 export type TEndpointsConfig = {
-  azureOpenAI: {
-    availableModels: [];
-  } | null;
-  bingAI: {
-    availableModels: [];
-  } | null;
-  chatGPTBrowser: {
-    availableModels: [];
-  } | null;
-  anthropic: {
-    availableModels: [];
-  } | null;
-  google: {
-    availableModels: [];
-  } | null;
-  openAI: {
-    availableModels: [];
-  } | null;
-  gptPlugins: {
-    availableModels: [];
-    availableTools?: [];
-    plugins?: [];
-  } | null;
+  azureOpenAI: TConfig | null;
+  bingAI: TConfig | null;
+  chatGPTBrowser: TConfig | null;
+  anthropic: TConfig | null;
+  google: TConfig | null;
+  openAI: TConfig | null;
+  gptPlugins: TConfig | null;
 };
 
 export type TUpdateTokenCountResponse = {

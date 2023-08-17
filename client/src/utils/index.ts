@@ -5,6 +5,7 @@ export * from './languages';
 export { default as getError } from './getError';
 export { default as buildTree } from './buildTree';
 export { default as cleanupPreset } from './cleanupPreset';
+export { default as getLocalStorageItems } from './getLocalStorageItems';
 export { default as getDefaultConversation } from './getDefaultConversation';
 
 export function cn(...inputs: string[]) {

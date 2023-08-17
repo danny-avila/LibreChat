@@ -10,6 +10,8 @@ export { default as CrossIcon } from './CrossIcon';
 export { default as LogOutIcon } from './LogOutIcon';
 export { default as MessagesSquared } from './MessagesSquared';
 export { default as StopGeneratingIcon } from './StopGeneratingIcon';
+export { default as RegenerateIcon } from './RegenerateIcon';
+export { default as ContinueIcon } from './ContinueIcon';
 export { default as GoogleIcon } from './GoogleIcon';
 export { default as OpenIDIcon } from './OpenIDIcon';
 export { default as GithubIcon } from './GithubIcon';

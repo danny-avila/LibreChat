@@ -21,7 +21,7 @@ export default function buildTree(messages: TMessage[] | null, groupAll = false)
     messages.forEach((message) => {
       messageMap[message.messageId] = { ...message, children: [] };
 
-      const parentMessage = messageMap[message.parentMessageId];
+      const parentMessage = messageMap[message.parentMessageId ?? ''];
       if (parentMessage) {
         parentMessage.children.push(messageMap[message.messageId]);
       } else {

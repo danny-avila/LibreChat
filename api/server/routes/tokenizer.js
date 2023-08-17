@@ -4,7 +4,7 @@ const { Tiktoken } = require('@dqbd/tiktoken/lite');
 const { load } = require('@dqbd/tiktoken/load');
 const registry = require('@dqbd/tiktoken/registry.json');
 const models = require('@dqbd/tiktoken/model_to_encoding.json');
-const requireJwtAuth = require('../../middleware/requireJwtAuth');
+const requireJwtAuth = require('../middleware/requireJwtAuth');
 
 router.post('/', requireJwtAuth, async (req, res) => {
   try {

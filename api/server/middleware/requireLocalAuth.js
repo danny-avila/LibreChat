@@ -1,5 +1,5 @@
 const passport = require('passport');
-const DebugControl = require('../utils/debug.js');
+const DebugControl = require('../../utils/debug.js');
 
 function log({ title, parameters }) {
   DebugControl.log.functionName(title);

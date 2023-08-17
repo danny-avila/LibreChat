@@ -1,7 +1,9 @@
 const _ = require('lodash');
 const citationRegex = /\[\^\d+?\^]/g;
-const { getCitations, citeText } = require('../../../app');
+const { getCitations, citeText } = require('./citations');
 const cursor = '<span className="result-streaming">█</span>';
+
+const addSpaceIfNeeded = (text) => (text.length > 0 && !text.endsWith(' ') ? text + ' ' : text);
 
 const handleError = (res, message) => {
   res.write(`event: error\ndata: ${JSON.stringify(message)}\n\n`);
@@ -15,12 +17,12 @@ const sendMessage = (res, message, event = 'message') => {
   res.write(`event: ${event}\ndata: ${JSON.stringify(message)}\n\n`);
 };
 
-const createOnProgress = ({ onProgress: _onProgress }) => {
+const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
   let i = 0;
   let code = '';
-  let tokens = '';
   let precode = '';
   let codeBlock = false;
+  let tokens = addSpaceIfNeeded(generation);
 
   const progressCallback = async (partial, { res, text, plugin, bing = false, ...rest }) => {
     let chunk = partial === text ? '' : partial;
@@ -155,4 +157,5 @@ module.exports = {
   handleText,
   formatSteps,
   formatAction,
+  addSpaceIfNeeded,
 };

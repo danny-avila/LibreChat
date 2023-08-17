@@ -48,3 +48,17 @@ export type TSetOptionsPayload = {
   checkPluginSelection: (value: string) => boolean;
   setTools: (newValue: string) => void;
 };
+
+export type TPresetItemProps = {
+  preset: TPreset;
+  value: TPreset;
+  onSelect: (preset: TPreset) => void;
+  onChangePreset: (preset: TPreset) => void;
+  onDeletePreset: (preset: TPreset) => void;
+};
+
+export type TOnClick = (e: React.MouseEvent<HTMLButtonElement>) => void;
+
+export type TGenButtonProps = {
+  onClick: TOnClick;
+};
