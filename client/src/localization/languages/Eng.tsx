@@ -1,6 +1,9 @@
 // English phrases
 
 export default {
+  com_ui_share: 'Share',
+  com_ui_public: 'Public',
+  com_ui_private: 'Private',
   com_ui_register_before_like: 'Let\'s make yourself an account',
   com_ui_number_of_likes: 'Likes',
   com_ui_register_here: 'Don\'t have an account yet? Click here to register.',

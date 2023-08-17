@@ -1,6 +1,9 @@
 // Chinese phrases
 
 export default {
+  com_ui_share: '分享',
+  com_ui_public: '公开',
+  com_ui_private: '私密',
   com_ui_register_before_like: '需注册账号后才能点赞哦',
   com_ui_number_of_likes: '次点赞',
   com_ui_register_here: '没有AITok账号？点击这里注册。',
