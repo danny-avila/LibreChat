@@ -211,5 +211,17 @@ module.exports = {
       console.log(error);
       return { message: 'Error getting the hottest conversations' };
     }
+  },
+  getLikedConvos: async (userId) => {
+    try {
+      const filter = {};
+      filter[`likedBy.${userId}`] = true;
+
+      const dbResponse = await Conversation.find(filter).exec();
+      return dbResponse;
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error fetching liked conversations' };
+    }
   }
 };
