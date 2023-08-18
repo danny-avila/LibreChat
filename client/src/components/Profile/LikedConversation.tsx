@@ -83,13 +83,17 @@ function LikedConversations() {
   }
 
   useEffect(() => {
+    getLikedConversationsQuery.refetch();
+  }, []);
+
+  useEffect(() => {
     if (getLikedConversationsQuery.isSuccess) {
       setConversations(getLikedConversationsQuery.data);
     }
-  }, [getLikedConversationsQuery.isSuccess]);
+  }, [getLikedConversationsQuery.isSuccess, getLikedConversationsQuery.data]);
 
   return(
-    <div className="overflow-y-auto border-t-2">
+    <div>
       {getLikedConversationsQuery.isLoading ? (
         <Spinner />
       ) : (

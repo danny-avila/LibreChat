@@ -44,7 +44,7 @@ function Profile() {
   }, [token, userId]);
 
   return (
-    <div className='flex flex-col justify-center md:mx-36'>
+    <div className='flex flex-col h-full justify-center md:mx-36'>
       <div className='flex flex-row my-12'>
         <div
           title='User Icon'
@@ -92,7 +92,7 @@ function Profile() {
           </TabsList>
         </Tabs>
       </div>
-      <div>
+      <div className='flex flex-col h-full overflow-y-auto border-t-2'>
         {(tabValue === 'likes') && (<LikedConversations key={userId} />)}
         {!(tabValue === 'likes') && 'Display tab content here...'}
       </div>

@@ -390,6 +390,7 @@ export const useGetLikedConversationQuery = (userId: string): QueryObserverResul
   return useQuery([QueryKeys.likedConversations, userId], () => dataService.getLikedConversations(userId), {
     refetchOnReconnect: false,
     refetchOnMount: false,
+    refetchOnWindowFocus: false,
     retry: 1
   });
 }
