@@ -7,24 +7,27 @@ const {
   SystemMessagePromptTemplate,
   HumanMessagePromptTemplate,
 } = require('langchain/prompts');
+
 const PREFIX = 'You are a helpful AI assistant.';
 
 function parseOutput(message) {
-  if (message.additional_kwargs.function_call) {
-    const function_call = message.additional_kwargs.function_call;
+  const { additional_kwargs, text } = message;
+  
+  if (additional_kwargs?.function_call) {
+    const { name, arguments } = additional_kwargs.function_call;
     return {
-      tool: function_call.name,
-      toolInput: function_call.arguments ? JSON.parse(function_call.arguments) : {},
-      log: message.text,
+      tool: name,
+      toolInput: arguments ? JSON.parse(arguments) : {},
+      log: text,
     };
   } else {
-    return { returnValues: { output: message.text }, log: message.text };
+    return { returnValues: { output: text }, log: text };
   }
 }
 
 class FunctionsAgent extends Agent {
   constructor(input) {
-    super({ ...input, outputParser: undefined });
+    super({ ...input, outputParser: parseOutput });
     this.tools = input.tools;
   }
 
@@ -73,46 +76,50 @@ class FunctionsAgent extends Agent {
   }
 
   async constructScratchPad(steps) {
-    return steps.flatMap(({ action, observation }) => [
-      new AIChatMessage('', {
-        function_call: {
-          name: action.tool,
-          arguments: JSON.stringify(action.toolInput),
-        },
-      }),
-      new FunctionChatMessage(observation, action.tool),
-    ]);
+    const scratchpad = [];
+    
+    steps.forEach(({ action, observation }) => {
+      scratchpad.push(
+        new AIChatMessage('', {
+          function_call: {
+            name: action.tool,
+            arguments: JSON.stringify(action.toolInput),
+          },
+        }),
+        new FunctionChatMessage(observation, action.tool)
+      );
+    });
+    
+    return scratchpad;
   }
 
   async plan(steps, inputs, callbackManager) {
     // Add scratchpad and stop to inputs
-    const thoughts = await this.constructScratchPad(steps);
-    const newInputs = Object.assign({}, inputs, { agent_scratchpad: thoughts });
+    const scratchPad = await this.constructScratchPad(steps);
+    const newInputs = { ...inputs, agent_scratchpad: scratchPad };
     if (this._stop().length !== 0) {
       newInputs.stop = this._stop();
     }
 
     // Split inputs between prompt and llm
     const llm = this.llmChain.llm;
-    const valuesForPrompt = Object.assign({}, newInputs);
-    const valuesForLLM = {
-      tools: this.tools,
-    };
-    for (let i = 0; i < this.llmChain.llm.callKeys.length; i++) {
-      const key = this.llmChain.llm.callKeys[i];
-      if (key in inputs) {
-        valuesForLLM[key] = inputs[key];
+    const valuesForPrompt = { ...newInputs };
+    const valuesForLLM = { tools: this.tools };
+
+    Object.keys(newInputs).forEach((key) => {
+      if (this.llmChain.llm.callKeys.includes(key)) {
+        valuesForLLM[key] = newInputs[key];
         delete valuesForPrompt[key];
       }
-    }
+    });
 
     const promptValue = await this.llmChain.prompt.formatPromptValue(valuesForPrompt);
     const message = await llm.predictMessages(
       promptValue.toChatMessages(),
       valuesForLLM,
-      callbackManager,
+      callbackManager
     );
-    console.log('message', message);
+
     return parseOutput(message);
   }
 }

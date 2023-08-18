@@ -5,7 +5,6 @@ const initializeFunctionsAgent = async ({
   tools,
   model,
   pastMessages,
-  // currentDateString,
   ...rest
 }) => {
   const memory = new BufferMemory({
@@ -18,11 +17,18 @@ const initializeFunctionsAgent = async ({
     returnMessages: true,
   });
 
-  return await initializeAgentExecutorWithOptions(tools, model, {
-    agentType: 'openai-functions',
-    memory,
-    ...rest,
-  });
+  try {
+    const agentExecutor = await initializeAgentExecutorWithOptions(tools, model, {
+      agentType: 'openai-functions',
+      memory,
+      ...rest,
+    });
+
+    return agentExecutor;
+  } catch (error) {
+    console.error('Failed to initialize functions agent:', error);
+    throw error;
+  }
 };
 
 module.exports = initializeFunctionsAgent;

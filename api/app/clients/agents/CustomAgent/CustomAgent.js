@@ -15,31 +15,25 @@ class CustomAgent extends ZeroShotAgent {
     const { currentDateString, model } = opts;
     const inputVariables = ['input', 'chat_history', 'agent_scratchpad'];
 
-    let prefix, instructions, suffix;
-    if (model.startsWith('gpt-3')) {
-      prefix = gpt3.prefix;
-      instructions = gpt3.instructions;
-      suffix = gpt3.suffix;
-    } else if (model.startsWith('gpt-4')) {
-      prefix = gpt4.prefix;
-      instructions = gpt4.instructions;
-      suffix = gpt4.suffix;
-    }
+    const availableModels = { 'gpt-3': gpt3, 'gpt-4': gpt4 };
+    const selectedModel = availableModels[model];
 
     const toolStrings = tools
       .filter((tool) => tool.name !== 'self-reflection')
       .map((tool) => `${tool.name}: ${tool.description}`)
       .join('\n');
     const toolNames = tools.map((tool) => tool.name);
-    const formatInstructions = (0, renderTemplate)(instructions, 'f-string', {
+    const formatInstructions = renderTemplate(selectedModel.instructions, 'f-string', {
       tool_names: toolNames,
     });
+
     const template = [
-      `Date: ${currentDateString}\n${prefix}`,
+      `Date: ${currentDateString}\n${selectedModel.prefix}`,
       toolStrings,
       formatInstructions,
-      suffix,
+      selectedModel.suffix,
     ].join('\n\n');
+
     return new PromptTemplate({
       template,
       inputVariables,

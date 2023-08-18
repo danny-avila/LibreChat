@@ -16,20 +16,17 @@ const initializeCustomAgent = async ({
   currentDateString,
   ...rest
 }) => {
-  let prompt = CustomAgent.createPrompt(tools, { currentDateString, model: model.modelName });
+  const prompt = CustomAgent.createPrompt(tools, { currentDateString, model: model.modelName });
 
-  const chatPrompt = ChatPromptTemplate.fromPromptMessages([
+  const chatPrompt = new ChatPromptTemplate([
     new SystemMessagePromptTemplate(prompt),
-    HumanMessagePromptTemplate.fromTemplate(`{chat_history}
-Query: {input}
-{agent_scratchpad}`),
+    new HumanMessagePromptTemplate('{chat_history}\nQuery: {input}\n{agent_scratchpad}'),
   ]);
 
   const outputParser = new CustomOutputParser({ tools });
 
   const memory = new BufferMemory({
     chatHistory: new ChatMessageHistory(pastMessages),
-    // returnMessages: true, // commenting this out retains memory
     memoryKey: 'chat_history',
     humanPrefix: 'User',
     aiPrefix: 'Assistant',
@@ -48,7 +45,7 @@ Query: {input}
     allowedTools: tools.map((tool) => tool.name),
   });
 
-  return AgentExecutor.fromAgentAndTools({ agent, tools, memory, ...rest });
+  return new AgentExecutor({ agent, tools, memory, ...rest });
 };
 
 module.exports = initializeCustomAgent;

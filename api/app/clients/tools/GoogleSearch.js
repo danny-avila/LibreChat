@@ -1,10 +1,8 @@
 const { Tool } = require('langchain/tools');
 const { google } = require('googleapis');
+const { pipeline } = require('stream');
+const { promisify } = require('util');
 
-/**
- * Represents a tool that allows an agent to use the Google Custom Search API.
- * @extends Tool
- */
 class GoogleSearchAPI extends Tool {
   constructor(fields = {}) {
     super();
@@ -13,16 +11,8 @@ class GoogleSearchAPI extends Tool {
     this.customSearch = undefined;
   }
 
-  /**
-   * The name of the tool.
-   * @type {string}
-   */
   name = 'google';
 
-  /**
-   * A description for the agent to use
-   * @type {string}
-   */
   description =
     'Use the \'google\' tool to retrieve internet search results relevant to your input. The results will return links and snippets of text from the webpages';
 
@@ -56,6 +46,7 @@ class GoogleSearchAPI extends Tool {
     results.forEach((resultObj, index) => {
       output += `Title: ${resultObj.title}\n`;
       output += `Link: ${resultObj.link}\n`;
+
       if (resultObj.snippet) {
         output += `Snippet: ${resultObj.snippet}\n`;
       }
@@ -68,48 +59,42 @@ class GoogleSearchAPI extends Tool {
     return output;
   }
 
-  /**
-   * Calls the tool with the provided input and returns a promise that resolves with a response from the Google Custom Search API.
-   * @param {string} input - The input to provide to the API.
-   * @returns {Promise<String>} A promise that resolves with a response from the Google Custom Search API.
-   */
-  async _call(input) {
+  async summarizeResults(results) {
+    const snippets = results.map(result => result.snippet);
+    const concatenatedSnippets = snippets.join('\n');
+
+    const summarizer = pipeline("summarization", { model: "facebook/bart-large-cnn" });
+    const summarize = promisify(summarizer);
+
     try {
-      const metadataResults = [];
+      const summary = await summarize(concatenatedSnippets, { max_length: 150, min_length: 40, do_sample: false });
+      return summary[0].summary_text;
+    } catch (error) {
+      console.log(`Error summarizing search results: ${error}`);
+      return 'There was an error summarizing the search results.';
+    }
+  }
+
+  async _call(input, numResults = 10) {
+    try {
       const response = await this.getCustomSearch().cse.list({
         q: input,
         cx: this.cx,
         auth: this.apiKey,
-        num: 5, // Limit the number of results to 5
+        num: numResults, // Retrieve more results
       });
 
-      // return response.data;
-      // console.log(response.data);
-
       if (!response.data.items || response.data.items.length === 0) {
-        return this.resultsToReadableFormat([
-          { title: 'No good Google Search Result was found', link: '' },
-        ]);
+        return 'No good Google Search Result was found';
       }
 
-      // const results = response.items.slice(0, numResults);
-      const results = response.data.items;
+      const results = response.data.items.slice(0, numResults);
 
-      for (const result of results) {
-        const metadataResult = {
-          title: result.title || '',
-          link: result.link || '',
-        };
-        if (result.snippet) {
-          metadataResult.snippet = result.snippet;
-        }
-        metadataResults.push(metadataResult);
-      }
+      const summary = await this.summarizeResults(results);
 
-      return this.resultsToReadableFormat(metadataResults);
+      return summary;
     } catch (error) {
       console.log(`Error searching Google: ${error}`);
-      // throw error;
       return 'There was an error searching Google.';
     }
   }

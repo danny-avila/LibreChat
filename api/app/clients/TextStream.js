@@ -56,4 +56,11 @@ class TextStream extends Readable {
   }
 }
 
-module.exports = TextStream;
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min)) + min;
+}
+
+module.exports = {
+  TextStream,
+  randomInt,
+};

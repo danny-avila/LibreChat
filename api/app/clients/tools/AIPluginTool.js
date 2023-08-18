@@ -1,49 +1,16 @@
-const { Tool } = require('langchain/tools');
 const yaml = require('js-yaml');
-
-/*
-export interface AIPluginToolParams {
-  name: string;
-  description: string;
-  apiSpec: string;
-  openaiSpec: string;
-  model: BaseLanguageModel;
-}
-
-export interface PathParameter {
-  name: string;
-  description: string;
-}
-
-export interface Info {
-  title: string;
-  description: string;
-  version: string;
-}
-export interface PathMethod {
-  summary: string;
-  operationId: string;
-  parameters?: PathParameter[];
-}
-
-interface ApiSpec {
-  openapi: string;
-  info: Info;
-  paths: { [key: string]: { [key: string]: PathMethod } };
-}
-*/
 
 function isJson(str) {
   try {
     JSON.parse(str);
+    return true;
   } catch (e) {
     return false;
   }
-  return true;
 }
 
 function convertJsonToYamlIfApplicable(spec) {
-  if (isJson(spec)) {
+  if (spec.startsWith('{') && spec.endsWith('}')) {
     const jsonData = JSON.parse(spec);
     return yaml.dump(jsonData);
   }
@@ -52,6 +19,7 @@ function convertJsonToYamlIfApplicable(spec) {
 
 function extractShortVersion(openapiSpec) {
   openapiSpec = convertJsonToYamlIfApplicable(openapiSpec);
+  
   try {
     const fullApiSpec = yaml.load(openapiSpec);
     const shortApiSpec = {
@@ -60,19 +28,20 @@ function extractShortVersion(openapiSpec) {
       paths: {},
     };
 
-    for (let path in fullApiSpec.paths) {
+    Object.entries(fullApiSpec.paths).forEach(([path, methods]) => {
       shortApiSpec.paths[path] = {};
-      for (let method in fullApiSpec.paths[path]) {
+
+      Object.entries(methods).forEach(([method, details]) => {
         shortApiSpec.paths[path][method] = {
-          summary: fullApiSpec.paths[path][method].summary,
-          operationId: fullApiSpec.paths[path][method].operationId,
-          parameters: fullApiSpec.paths[path][method].parameters?.map((parameter) => ({
+          summary: details.summary,
+          operationId: details.operationId,
+          parameters: details.parameters?.map((parameter) => ({
             name: parameter.name,
             description: parameter.description,
           })),
         };
-      }
-    }
+      });
+    });
 
     return yaml.dump(shortApiSpec);
   } catch (e) {
@@ -80,31 +49,30 @@ function extractShortVersion(openapiSpec) {
     return '';
   }
 }
+
 function printOperationDetails(operationId, openapiSpec) {
   openapiSpec = convertJsonToYamlIfApplicable(openapiSpec);
   let returnText = '';
-  try {
-    let doc = yaml.load(openapiSpec);
-    let servers = doc.servers;
-    let paths = doc.paths;
-    let components = doc.components;
 
-    for (let path in paths) {
-      for (let method in paths[path]) {
-        let operation = paths[path][method];
+  try {
+    const doc = yaml.load(openapiSpec);
+    const { servers, paths, components } = doc;
+
+    Object.entries(paths).forEach(([path, methods]) => {
+      Object.entries(methods).forEach(([method, operation]) => {
         if (operation.operationId === operationId) {
           returnText += `The API request to do for operationId "${operationId}" is:\n`;
           returnText += `Method: ${method.toUpperCase()}\n`;
 
-          let url = servers[0].url + path;
+          const url = servers[0].url + path;
           returnText += `Path: ${url}\n`;
 
           returnText += 'Parameters:\n';
           if (operation.parameters) {
-            for (let param of operation.parameters) {
-              let required = param.required ? '' : ' (optional),';
+            operation.parameters.forEach((param) => {
+              const required = param.required ? '' : ' (optional),';
               returnText += `- ${param.name} (${param.in},${required} ${param.schema.type}): ${param.description}\n`;
-            }
+            });
           } else {
             returnText += ' None\n';
           }
@@ -115,7 +83,7 @@ function printOperationDetails(operationId, openapiSpec) {
           // Check if schema is a reference
           if (responseSchema.$ref) {
             // Extract schema name from reference
-            let schemaName = responseSchema.$ref.split('/').pop();
+            const schemaName = responseSchema.$ref.split('/').pop();
             // Look up schema in components
             responseSchema = components.schemas[schemaName];
           }
@@ -126,16 +94,18 @@ function printOperationDetails(operationId, openapiSpec) {
           returnText += '  - Type: ' + responseSchema.additionalProperties?.type + '\n';
           if (responseSchema.additionalProperties?.properties) {
             returnText += '  - Properties:\n';
-            for (let prop in responseSchema.additionalProperties.properties) {
+            Object.keys(responseSchema.additionalProperties.properties).forEach((prop) => {
               returnText += `    - ${prop} (${responseSchema.additionalProperties.properties[prop].type}): Description not provided in OpenAPI spec\n`;
-            }
+            });
           }
         }
-      }
-    }
+      });
+    });
+
     if (returnText === '') {
       returnText += `No operation with operationId "${operationId}" found.`;
     }
+
     return returnText;
   } catch (e) {
     console.log(e);
@@ -143,14 +113,12 @@ function printOperationDetails(operationId, openapiSpec) {
   }
 }
 
-class AIPluginTool extends Tool {
-  /*
-  private _name: string;
-  private _description: string;
-  apiSpec: string;
-  openaiSpec: string;
-  model: BaseLanguageModel;
-  */
+class AIPluginTool {
+  _name;
+  _description;
+  apiSpec;
+  openaiSpec;
+  model;
 
   get name() {
     return this._name;
@@ -161,7 +129,6 @@ class AIPluginTool extends Tool {
   }
 
   constructor(params) {
-    super();
     this._name = params.name;
     this._description = params.description;
     this.apiSpec = params.apiSpec;
@@ -170,14 +137,14 @@ class AIPluginTool extends Tool {
   }
 
   async _call(input) {
-    let date = new Date();
-    let fullDate = `Date: ${date.getDate()}/${
+    const date = new Date();
+    const fullDate = `Date: ${date.getDate()}/${
       date.getMonth() + 1
     }/${date.getFullYear()}, Time: ${date.getHours()}:${date.getMinutes()}:${date.getSeconds()}`;
     const prompt = `${fullDate}\nQuestion: ${input} \n${this.apiSpec}.`;
     console.log(prompt);
     const gptResponse = await this.model.predict(prompt);
-    let operationId = gptResponse.match(/operationId: (.*)/)?.[1];
+    const operationId = gptResponse.match(/operationId: (.*)/)?.[1];
     if (!operationId) {
       return 'No operationId found in the response';
     }
@@ -185,7 +152,7 @@ class AIPluginTool extends Tool {
       return 'No API path found to answer the question';
     }
 
-    let openApiData = printOperationDetails(operationId, this.openaiSpec);
+    const openApiData = printOperationDetails(operationId, this.openaiSpec);
 
     return openApiData;
   }
@@ -204,6 +171,7 @@ class AIPluginTool extends Tool {
     }
     const apiUrlJson = await apiUrlRes.text();
     const shortApiSpec = extractShortVersion(apiUrlJson);
+
     return new AIPluginTool({
       name: aiPluginJson.name_for_model.toLowerCase(),
       description: `A \`tool\` to learn the API documentation for ${aiPluginJson.name_for_model.toLowerCase()}, after which you can use 'http_request' to make the actual API call. Short description of how to use the API's results: ${

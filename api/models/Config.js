@@ -34,7 +34,7 @@ const configSchema = mongoose.Schema(
     },
     searchEnabled: {
       type: Boolean,
-      default: false,
+      default: true,
     },
     usersEnabled: {
       type: Boolean,
