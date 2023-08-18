@@ -1,7 +1,7 @@
 import { v4 } from 'uuid';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { parseConvo, getResponseSender } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage, TSubmission } from 'librechat-data-provider';
 import store from '~/store';
 
 type TAskProps = {
@@ -98,7 +98,7 @@ const useMessageHandler = () => {
       error: false,
     };
 
-    const submission = {
+    const submission: TSubmission = {
       conversation: {
         ...currentConversation,
         conversationId,

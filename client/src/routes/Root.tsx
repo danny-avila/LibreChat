@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect, useState } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Outlet } from 'react-router-dom';
 import {
   useGetEndpointsQuery,
@@ -9,8 +9,7 @@ import {
 } from 'librechat-data-provider';
 
 import { Nav, MobileNav } from '~/components/Nav';
-import { useAuthContext } from '~/hooks/AuthContext';
-import MessageHandler from './MessageHandler';
+import { useAuthContext, useServerStream } from '~/hooks';
 import store from '~/store';
 
 export default function Root() {
@@ -18,6 +17,9 @@ export default function Root() {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : false;
   });
+
+  const submission = useRecoilValue(store.submission);
+  useServerStream(submission ?? null);
 
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
   const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
@@ -71,7 +73,6 @@ export default function Root() {
           </div>
         </div>
       </div>
-      <MessageHandler />
     </>
   );
 }
