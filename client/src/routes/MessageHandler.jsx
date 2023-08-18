@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import { SSE, createPayload } from 'librechat-data-provider';
-import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
+import store from '~/store';
 
 export default function MessageHandler() {
   const submission = useRecoilValue(store.submission);
@@ -15,11 +15,18 @@ export default function MessageHandler() {
   const { refreshConversations } = store.useConversations();
 
   const messageHandler = (data, submission) => {
-    const { messages, message, plugin, initialResponse, isRegenerate = false } = submission;
+    const {
+      messages,
+      message,
+      plugin,
+      initialResponse,
+      isRegenerate = false,
+      isEdited = false,
+    } = submission;
 
     if (isRegenerate) {
       setMessages([
-        ...messages,
+        ...(isEdited ? messages.slice(0, -1) : messages),
         {
           ...initialResponse,
           text: data,
@@ -48,13 +55,12 @@ export default function MessageHandler() {
   };
 
   const cancelHandler = (data, submission) => {
-    const { messages, isRegenerate = false } = submission;
-
     const { requestMessage, responseMessage, conversation } = data;
+    const { messages, isRegenerate = false, isEdited = false } = submission;
 
     // update the messages
     if (isRegenerate) {
-      setMessages([...messages, responseMessage]);
+      setMessages([...(isEdited ? messages.slice(0, -1) : messages), responseMessage]);
     } else {
       setMessages([...messages, requestMessage, responseMessage]);
     }
@@ -79,11 +85,17 @@ export default function MessageHandler() {
   };
 
   const createdHandler = (data, submission) => {
-    const { messages, message, initialResponse, isRegenerate = false } = submission;
+    const {
+      messages,
+      message,
+      initialResponse,
+      isRegenerate = false,
+      isEdited = false,
+    } = submission;
 
     if (isRegenerate) {
       setMessages([
-        ...messages,
+        ...(isEdited ? messages.slice(0, -1) : messages),
         {
           ...initialResponse,
           parentMessageId: message?.overrideParentMessageId,
@@ -113,13 +125,12 @@ export default function MessageHandler() {
   };
 
   const finalHandler = (data, submission) => {
-    const { messages, isRegenerate = false } = submission;
-
     const { requestMessage, responseMessage, conversation } = data;
+    const { messages, isRegenerate = false, isEdited = false } = submission;
 
     // update the messages
     if (isRegenerate) {
-      setMessages([...messages, responseMessage]);
+      setMessages([...(isEdited ? messages.slice(0, -1) : messages), responseMessage]);
     } else {
       setMessages([...messages, requestMessage, responseMessage]);
     }
