@@ -69,7 +69,7 @@ We will be using this network when creating our containers.
 
 ## Creating dependant containers
 
-LibreChat currently uses mongoDB and melisearch, so we'll also be creating those containers.
+LibreChat currently uses mongoDB and meilisearch, so we'll also be creating those containers.
 
 ## Mongodb
 
@@ -85,16 +85,16 @@ podman run \
   mongod --noauth;
 ```
 
-## Melisearch 
+## Meilisearch 
 
 Install and boot the melisearch container with the following command:
 
 ```bash
 podman run \
-  --name="librechat-melisearch" \
+  --name="librechat-meilisearch" \
   --network=librechat \
   --env-file="./.env" \
-  -v "librechat-melisearch-data:/meili_data" \
+  -v "librechat-meilisearch-data:/meili_data" \
   --detach \
   docker.io/getmeili/meilisearch:v1.0;
 ```
@@ -128,7 +128,7 @@ To use this method you need to run the following commands:
 First, let's stop any running containers related to LibreChat:
 s
 ```bash
-podman stop librechat librechat-mongodb librechat-melisearch
+podman stop librechat librechat-mongodb librechat-meilisearch
 ```
 
 Next, we'll update our user's systemd configuration to enable lingering. In systemd-based systems, when a user logs in and out, user-based services typically terminate themselves to save CPU, but since we're using rootless containers (which is podman's preferred way of running), we need to indicate that our user has permission to have user-locked services running after their session ends.
@@ -158,7 +158,7 @@ Assuming we aren't running those LibreChat containers from before, we can enable
 
 ```bash
 ./install.sh librechat-mongodb 
-./install.sh librechat-melisearch 
+./install.sh librechat-meilisearch 
 ./install.sh librechat 
 ```
 
@@ -174,8 +174,8 @@ The podman containers above are using named volumes for persistent data, which m
 
 ```bash
 # backup the
-podman volume export librechat-melisearch-data --output "librechat-melisearch-backup-$(date +"%d-%m-%Y").tar"
-podman volume export librechat-mongodb-data --output "librechat-melisearch-backup-$(date +"%d-%m-%Y").tar"
+podman volume export librechat-meilisearch-data --output "librechat-meilisearch-backup-$(date +"%d-%m-%Y").tar"
+podman volume export librechat-mongodb-data --output "librechat-mongodb-backup-$(date +"%d-%m-%Y").tar"
 ```
 
 These will leave archive files that you can do what you wish with, including reverting volumes to a previous state if needed. Refer to [podman documentation](https://docs.podman.io/en/latest/markdown/podman-volume-import.1.html) for how to do this.
