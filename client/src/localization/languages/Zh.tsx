@@ -1,6 +1,9 @@
 // Chinese phrases
 
 export default {
+  com_ui_profile: '个人资料',
+  com_ui_copy_link: '复制链接',
+  com_ui_copy_success: '复制成功',
   com_ui_share: '分享',
   com_ui_public: '公开',
   com_ui_private: '私密',

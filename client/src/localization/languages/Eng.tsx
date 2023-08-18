@@ -1,6 +1,9 @@
 // English phrases
 
 export default {
+  com_ui_profile: 'Profile',
+  com_ui_copy_link: 'Copy link',
+  com_ui_copy_success: 'Copied',
   com_ui_share: 'Share',
   com_ui_public: 'Public',
   com_ui_private: 'Private',
