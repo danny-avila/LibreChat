@@ -1,9 +1,9 @@
 import React, { useState, useCallback, memo, ReactNode } from 'react';
-import { Spinner } from '~/components';
-import { useRecoilValue } from 'recoil';
-import CodeBlock from './Content/CodeBlock.jsx';
-import { Disclosure } from '@headlessui/react';
 import { ChevronDownIcon, LucideProps } from 'lucide-react';
+import { Disclosure } from '@headlessui/react';
+import { useRecoilValue } from 'recoil';
+import { Spinner } from '~/components';
+import CodeBlock from './CodeBlock';
 import { cn } from '~/utils/';
 import store from '~/store';
 
