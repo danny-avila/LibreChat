@@ -1,4 +1,4 @@
-import type { TMessage, EModelEndpoint, TConversation, TEndpointOption } from './schemas';
+import type { TPlugin, TMessage, TConversation, TEndpointOption } from './schemas';
 
 export * from './schemas';
 
@@ -7,32 +7,14 @@ export type TMessages = TMessage[];
 export type TMessagesAtom = TMessages | null;
 
 export type TSubmission = {
-  clientId?: string;
-  context?: string;
-  conversationId?: string;
-  conversationSignature?: string;
-  current: boolean;
-  endpoint: EModelEndpoint | null;
-  invocationId: number;
-  isCreatedByUser: boolean;
-  jailbreak: boolean;
-  jailbreakConversationId?: string;
-  messageId: string;
-  overrideParentMessageId?: string | boolean;
-  parentMessageId?: string;
-  sender: string;
-  systemMessage?: string;
-  text: string;
-  toneStyle?: string;
-  model?: string;
-  promptPrefix?: string;
-  temperature?: number;
-  top_p?: number;
-  presence_penalty?: number;
-  frequence_penalty?: number;
-  isEdited?: boolean;
-  conversation: TConversation;
+  plugin?: TPlugin;
   message: TMessage;
+  isEdited?: boolean;
+  messages: TMessage[];
+  isRegenerate?: boolean;
+  conversationId?: string;
+  initialResponse: TMessage;
+  conversation: TConversation;
   endpointOption: TEndpointOption;
 };
 
@@ -167,7 +149,7 @@ export type TResetPassword = {
 };
 
 export type TStartupConfig = {
-  appTitle: boolean;
+  appTitle: string;
   googleLoginEnabled: boolean;
   openidLoginEnabled: boolean;
   githubLoginEnabled: boolean;
