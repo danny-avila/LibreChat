@@ -8,9 +8,6 @@ import {
   DialogTitle
 } from './';
 import { cn } from '~/utils/';
-import store from '~/store';
-import { useRecoilValue } from 'recoil';
-import { localize } from '~/localization/Translation';
 
 type SelectionProps = {
   selectHandler?: () => void;
@@ -29,7 +26,6 @@ type DialogTemplateProps = {
 };
 
 const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivElement>) => {
-  const lang = useRecoilValue(store.lang);
   const { title, description, main, buttons, leftButtons, selection, className } = props;
   const { selectHandler, selectClasses, selectText } = selection || {};
 
@@ -49,7 +45,7 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
       <DialogFooter>
         <div>{leftButtons ? leftButtons : null}</div>
         <div className="flex gap-2">
-          <DialogClose className="dark:hover:gray-400 border-gray-700">{localize(lang, 'com_msg_cancel')}</DialogClose>
+          <DialogClose className="dark:hover:gray-400 border-gray-700">{navigator.languages[0] === 'zh-CN'?'取消':'Cancel'}</DialogClose>
           {buttons ? buttons : null}
           {selection ? (
             <DialogClose
