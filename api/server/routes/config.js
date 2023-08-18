@@ -5,6 +5,8 @@ router.get('/', async function (req, res) {
   try {
     const appTitle = process.env.APP_TITLE || 'LibreChat';
     const googleLoginEnabled = !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET;
+    const facebookLoginEnabled =
+      !!process.env.FACEBOOK_CLIENT_ID && !!process.env.FACEBOOK_CLIENT_SECRET;
     const openidLoginEnabled =
       !!process.env.OPENID_CLIENT_ID &&
       !!process.env.OPENID_CLIENT_SECRET &&
@@ -27,6 +29,7 @@ router.get('/', async function (req, res) {
     return res.status(200).send({
       appTitle,
       googleLoginEnabled,
+      facebookLoginEnabled,
       openidLoginEnabled,
       openidLabel,
       openidImageUrl,

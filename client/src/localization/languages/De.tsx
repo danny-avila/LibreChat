@@ -34,6 +34,7 @@ export default {
   com_auth_sign_up: 'Registrieren',
   com_auth_sign_in: 'Anmelden',
   com_auth_google_login: 'Anmelden mit Google',
+  com_auth_facebook_login: 'Anmelden mit Facebook',
   com_auth_github_login: 'Anmelden mit Github',
   com_auth_discord_login: 'Anmelden mit Discord',
   com_auth_email: 'E-Mail',

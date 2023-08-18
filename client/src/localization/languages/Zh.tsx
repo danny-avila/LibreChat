@@ -31,6 +31,7 @@ export default {
   com_auth_sign_up: '注册',
   com_auth_sign_in: '登录',
   com_auth_google_login: '谷歌登录',
+  com_auth_facebook_login: 'Facebook登录',
   com_auth_github_login: 'Github登录',
   com_auth_discord_login: 'Discord登录',
   com_auth_email: '电子邮箱',
