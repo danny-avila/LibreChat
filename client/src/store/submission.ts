@@ -12,7 +12,7 @@ import { TSubmission } from 'librechat-data-provider';
 //   isRegenerate=false, // isRegenerate?
 // }
 
-const submission = atom<TSubmission | object | null>({
+const submission = atom<TSubmission | null>({
   key: 'submission',
   default: null,
 });
