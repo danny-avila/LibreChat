@@ -1,4 +1,4 @@
-const _ = require('lodash');
+const throttle = require('lodash/throttle');
 const { genAzureChatCompletion, getAzureCredentials } = require('../utils/');
 
 const titleConvo = async ({ text, response, openAIApiKey, azure = false }) => {
@@ -52,6 +52,6 @@ const titleConvo = async ({ text, response, openAIApiKey, azure = false }) => {
   return title;
 };
 
-const throttledTitleConvo = _.throttle(titleConvo, 1000);
+const throttledTitleConvo = throttle(titleConvo, 1000);
 
 module.exports = throttledTitleConvo;
