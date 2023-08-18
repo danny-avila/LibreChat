@@ -1,20 +1,29 @@
 import { useEffect } from 'react';
-import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
-import { SSE, createPayload } from 'librechat-data-provider';
+import { useResetRecoilState, useSetRecoilState } from 'recoil';
+import { SSE, createPayload, tMessageSchema, tConversationSchema } from 'librechat-data-provider';
+import type { TPlugin, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import store from '~/store';
 
-export default function MessageHandler() {
-  const submission = useRecoilValue(store.submission);
-  const setIsSubmitting = useSetRecoilState(store.isSubmitting);
+type TResData = {
+  plugin: TPlugin;
+  final?: boolean;
+  initial?: boolean;
+  requestMessage: TMessage;
+  responseMessage: TMessage;
+  conversation: TConversation;
+};
+
+export default function useServerStream(submission: TSubmission | null) {
   const setMessages = useSetRecoilState(store.messages);
+  const setIsSubmitting = useSetRecoilState(store.isSubmitting);
   const setConversation = useSetRecoilState(store.conversation);
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
   const { token } = useAuthContext();
 
   const { refreshConversations } = store.useConversations();
 
-  const messageHandler = (data, submission) => {
+  const messageHandler = (data: string, submission: TSubmission) => {
     const {
       messages,
       message,
@@ -30,9 +39,9 @@ export default function MessageHandler() {
         {
           ...initialResponse,
           text: data,
-          parentMessageId: message?.overrideParentMessageId,
+          parentMessageId: message?.overrideParentMessageId ?? null,
           messageId: message?.overrideParentMessageId + '_',
-          plugin: plugin ? plugin : null,
+          plugin: plugin ?? null,
           submitting: true,
           // unfinished: true
         },
@@ -46,7 +55,7 @@ export default function MessageHandler() {
           text: data,
           parentMessageId: message?.messageId,
           messageId: message?.messageId + '_',
-          plugin: plugin ? plugin : null,
+          plugin: plugin ?? null,
           submitting: true,
           // unfinished: true
         },
@@ -54,7 +63,7 @@ export default function MessageHandler() {
     }
   };
 
-  const cancelHandler = (data, submission) => {
+  const cancelHandler = (data: TResData, submission: TSubmission) => {
     const { requestMessage, responseMessage, conversation } = data;
     const { messages, isRegenerate = false, isEdited = false } = submission;
 
@@ -84,7 +93,7 @@ export default function MessageHandler() {
     }));
   };
 
-  const createdHandler = (data, submission) => {
+  const createdHandler = (data: TResData, submission: TSubmission) => {
     const {
       messages,
       message,
@@ -98,7 +107,7 @@ export default function MessageHandler() {
         ...(isEdited ? messages.slice(0, -1) : messages),
         {
           ...initialResponse,
-          parentMessageId: message?.overrideParentMessageId,
+          parentMessageId: message?.overrideParentMessageId ?? null,
           messageId: message?.overrideParentMessageId + '_',
           submitting: true,
         },
@@ -117,14 +126,16 @@ export default function MessageHandler() {
     }
 
     const { conversationId } = message;
-    setConversation((prevState) => ({
-      ...prevState,
-      conversationId,
-    }));
+    setConversation((prevState) =>
+      tConversationSchema.parse({
+        ...prevState,
+        conversationId,
+      }),
+    );
     resetLatestMessage();
   };
 
-  const finalHandler = (data, submission) => {
+  const finalHandler = (data: TResData, submission: TSubmission) => {
     const { requestMessage, responseMessage, conversation } = data;
     const { messages, isRegenerate = false, isEdited = false } = submission;
 
@@ -154,21 +165,21 @@ export default function MessageHandler() {
     }));
   };
 
-  const errorHandler = (data, submission) => {
+  const errorHandler = (data: TResData, submission: TSubmission) => {
     const { messages, message } = submission;
 
     console.log('Error:', data);
-    const errorResponse = {
+    const errorResponse = tMessageSchema.parse({
       ...data,
       error: true,
       parentMessageId: message?.messageId,
-    };
+    });
     setIsSubmitting(false);
     setMessages([...messages, message, errorResponse]);
     return;
   };
 
-  const abortConversation = (conversationId) => {
+  const abortConversation = (conversationId = '', submission: TSubmission) => {
     console.log(submission);
     const { endpoint } = submission?.conversation || {};
 
@@ -212,7 +223,7 @@ export default function MessageHandler() {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
 
-    events.onmessage = (e) => {
+    events.onmessage = (e: MessageEvent) => {
       const data = JSON.parse(e.data);
 
       if (data.final) {
@@ -227,8 +238,8 @@ export default function MessageHandler() {
         createdHandler(data, { ...submission, message });
         console.log('created', message);
       } else {
-        let text = data.text || data.response;
-        let { initial, plugin } = data;
+        const text = data.text || data.response;
+        const { initial, plugin } = data;
         if (initial) {
           console.log(data);
         }
@@ -242,9 +253,9 @@ export default function MessageHandler() {
     events.onopen = () => console.log('connection is opened');
 
     events.oncancel = () =>
-      abortConversation(message?.conversationId || submission?.conversationId);
+      abortConversation(message?.conversationId ?? submission?.conversationId, submission);
 
-    events.onerror = function (e) {
+    events.onerror = function (e: MessageEvent) {
       console.log('error in opening conn.');
       events.close();
 
@@ -268,6 +279,4 @@ export default function MessageHandler() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission]);
-
-  return null;
 }
