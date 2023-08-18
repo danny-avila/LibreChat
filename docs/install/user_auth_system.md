@@ -173,6 +173,10 @@ NOTE: The variable EMAIL_FROM currently does not work. To stay updated, check th
 
 To disable or re-enable registration, open up the root `.env` file and set `ALLOW_REGISTRATION=true` or `ALLOW_REGISTRATION=false` depending on if you want registration open or closed.
 
+To disable or re-enable social registration, open up the root `.env` file and set `ALLOW_SOCIAL_REGISTRATION=true` or `ALLOW_SOCIAL_REGISTRATION=false` depending on if you want social registration open or closed.
+
+**NOTE: OpenID does not support the ability to disable only registration.**
+
 ### ⚠️***Warning***
 
 If you previously implemented your own user system using the original scaffolding that was provided, you will no longer see conversations and presets by switching to the new user system. This is because of a design flaw in the scaffolding implementation that was problematic for the inclusion of social login.
