@@ -7,7 +7,7 @@ import { cn } from '~/utils';
 type THoverButtons = {
   isEditing: boolean;
   enterEdit: () => void;
-  copyToClipboard: (setIsCopied: (isCopied: boolean) => void) => void;
+  copyToClipboard: (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => void;
   conversation: TConversation;
   isSubmitting: boolean;
   message: TMessage;

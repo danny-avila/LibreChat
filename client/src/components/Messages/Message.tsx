@@ -21,17 +21,26 @@ export default function Message({
   siblingCount,
   setSiblingIdx,
 }) {
-  const { text, searchResult, isCreatedByUser, error, submitting, unfinished } = message;
+  const {
+    text,
+    children,
+    messageId,
+    searchResult,
+    isCreatedByUser,
+    error,
+    submitting,
+    unfinished,
+  } = message;
+  const last = !children?.length;
+  const edit = messageId == currentEditId;
   const setLatestMessage = useSetRecoilState(store.latestMessage);
   const [abortScroll, setAbort] = useState(false);
-  const last = !message?.children?.length;
-  const edit = message.messageId == currentEditId;
   const { isSubmitting, ask, regenerate, handleContinue } = useMessageHandler();
   const { switchToConversation } = store.useConversation();
-  const blinker = submitting && isSubmitting;
   const getConversationQuery = useGetConversationByIdQuery(message.conversationId, {
     enabled: false,
   });
+  const blinker = submitting && isSubmitting;
 
   // debugging
   // useEffect(() => {
@@ -51,7 +60,7 @@ export default function Message({
     }
   }, [last, message]);
 
-  const enterEdit = (cancel) => setCurrentEditId(cancel ? -1 : message.messageId);
+  const enterEdit = (cancel?: boolean) => setCurrentEditId(cancel ? -1 : messageId);
 
   const handleWheel = () => {
     if (blinker) {
@@ -64,12 +73,13 @@ export default function Message({
   const props = {
     className:
       'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 bg-white dark:text-gray-100 group dark:bg-gray-800',
+    titleclass: '',
   };
 
   const icon = getIcon({
     ...conversation,
     ...message,
-    model: message?.model || conversation?.model,
+    model: message?.model ?? conversation?.model,
   });
 
   if (!isCreatedByUser) {
@@ -77,20 +87,20 @@ export default function Message({
       'w-full border-b border-black/10 bg-gray-50 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-100 dark:bg-gray-1000';
   }
 
-  if (message.bg && searchResult) {
-    props.className = message.bg.split('hover')[0];
-    props.titleclass = message.bg.split(props.className)[1] + ' cursor-pointer';
+  if (message?.bg && searchResult) {
+    props.className = message?.bg.split('hover')[0];
+    props.titleclass = message?.bg.split(props.className)[1] + ' cursor-pointer';
   }
 
   const regenerateMessage = () => {
-    if (!isSubmitting && !message?.isCreatedByUser) {
+    if (!isSubmitting && !isCreatedByUser) {
       regenerate(message);
     }
   };
 
-  const copyToClipboard = (setIsCopied) => {
+  const copyToClipboard = (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => {
     setIsCopied(true);
-    copy(message?.text);
+    copy(text);
 
     setTimeout(() => {
       setIsCopied(false);
@@ -101,8 +111,14 @@ export default function Message({
     if (!searchResult) {
       return;
     }
+    if (!message) {
+      return;
+    }
     getConversationQuery.refetch(message.conversationId).then((response) => {
-      switchToConversation(response.data);
+      console.log('getConversationQuery response.data:', response.data);
+      if (response.data) {
+        switchToConversation(response.data);
+      }
     });
   };
 
@@ -111,7 +127,7 @@ export default function Message({
       <div {...props} onWheel={handleWheel}>
         <div className="relative m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
           <div className="relative flex h-[30px] w-[30px] flex-col items-end text-right text-xs md:text-sm">
-            {typeof icon === 'string' && icon.match(/[^\\x00-\\x7F]+/) ? (
+            {typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
               <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>
             ) : (
               icon
@@ -131,28 +147,11 @@ export default function Message({
                 subclasses="switch-result pl-2 pb-2"
                 onClick={clickSearchResult}
               >
-                <strong>{`${message.title} | ${message.sender}`}</strong>
+                <strong>{`${message?.title} | ${message?.sender}`}</strong>
               </SubRow>
             )}
             <div className="flex flex-grow flex-col gap-3">
-              {message.plugin && <Plugin plugin={message.plugin} />}
-              {/* Message content goes here */}
-              {/*
-              type TInitialProps = {
-                text: string;
-                edit: boolean;
-                error: boolean;
-                unfinished: boolean;
-                isSubmitting: boolean;
-              };
-              type TAdditionalProps = {
-                ask: TAskFunction;
-                message: TMessage;
-                isCreatedByUser: boolean;
-                enterEdit: (cancel: boolean) => void;
-                setSiblingIdx: () => void;
-              };
-              */}
+              {message?.plugin && <Plugin plugin={message?.plugin} />}
               <MessageContent
                 ask={ask}
                 text={text}
@@ -187,9 +186,9 @@ export default function Message({
         </div>
       </div>
       <MultiMessage
-        messageId={message.messageId}
+        messageId={messageId}
         conversation={conversation}
-        messagesTree={message.children}
+        messagesTree={children}
         scrollToBottom={scrollToBottom}
         currentEditId={currentEditId}
         setCurrentEditId={setCurrentEditId}
