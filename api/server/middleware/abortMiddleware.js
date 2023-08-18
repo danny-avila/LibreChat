@@ -30,10 +30,11 @@ const createAbortController = (res, req, endpointOption, getAbortData) => {
   const abortController = new AbortController();
   const onStart = (userMessage) => {
     sendMessage(res, { message: userMessage, created: true });
-    abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
+    const abortKey = userMessage?.conversationId ?? req.user.id;
+    abortControllers.set(abortKey, { abortController, ...endpointOption });
 
     res.on('finish', function () {
-      abortControllers.delete(userMessage.conversationId);
+      abortControllers.delete(abortKey);
     });
   };
 
