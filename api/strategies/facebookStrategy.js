@@ -3,8 +3,44 @@ const User = require('../models/User');
 const config = require('../../config/loader');
 const domains = config.domains;
 
-// facebook strategy
-const facebookLogin = async () =>
+const facebookLogin = async (accessToken, refreshToken, profile, cb) => {
+  try {
+    console.log('facebookLogin => profile', profile);
+    const email = profile.emails[0].value;
+    const facebookId = profile.id;
+    const oldUser = await User.findOne({
+      email,
+    });
+    const ALLOW_SOCIAL_REGISTRATION =
+      process.env.ALLOW_SOCIAL_REGISTRATION?.toLowerCase() === 'true';
+
+    if (oldUser) {
+      oldUser.avatar = profile.photos[0].value;
+      await oldUser.save();
+      return cb(null, oldUser);
+    } else if (ALLOW_SOCIAL_REGISTRATION) {
+      const newUser = await new User({
+        provider: 'facebook',
+        facebookId,
+        username: profile.name.givenName + profile.name.familyName,
+        email,
+        name: profile.displayName,
+        avatar: profile.photos[0].value,
+      }).save();
+
+      return cb(null, newUser);
+    }
+
+    return cb(null, false, {
+      message: 'User not found.',
+    });
+  } catch (err) {
+    console.error(err);
+    return cb(err);
+  }
+};
+
+module.exports = () =>
   new FacebookStrategy(
     {
       clientID: process.env.FACEBOOK_APP_ID,
@@ -25,35 +61,5 @@ const facebookLogin = async () =>
       //   'picture.type(large)'
       // ]
     },
-    async (accessToken, refreshToken, profile, done) => {
-      console.log('facebookLogin => profile', profile);
-      try {
-        const oldUser = await User.findOne({ email: profile.emails[0].value });
-
-        if (oldUser) {
-          console.log('FACEBOOK LOGIN => found user', oldUser);
-          return done(null, oldUser);
-        }
-      } catch (err) {
-        console.log(err);
-      }
-
-      // register user
-      try {
-        const newUser = await new User({
-          provider: 'facebook',
-          facebookId: profile.id,
-          username: profile.name.givenName + profile.name.familyName,
-          email: profile.emails[0].value,
-          name: profile.displayName,
-          avatar: profile.photos[0].value,
-        }).save();
-
-        done(null, newUser);
-      } catch (err) {
-        console.log(err);
-      }
-    },
+    facebookLogin,
   );
-
-module.exports = facebookLogin;
