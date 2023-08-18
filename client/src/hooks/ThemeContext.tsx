@@ -3,37 +3,39 @@
 
 import React, { createContext, useState, useEffect } from 'react';
 
-const getInitialTheme = () => {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    const storedPrefs = window.localStorage.getItem('color-theme');
-    if (typeof storedPrefs === 'string') {
-      return storedPrefs;
-    }
-
-    const userMedia = window.matchMedia('(prefers-color-scheme: dark)');
-    if (userMedia.matches) {
-      return 'dark';
-    }
-  }
-
-  return 'light'; // light theme as the default;
-};
-
 type ProviderValue = {
   theme: string;
   setTheme: React.Dispatch<React.SetStateAction<string>>;
 };
 
 const defaultContextValue: ProviderValue = {
-  theme: getInitialTheme(),
-  setTheme: () => {
-    return;
-  },
+  theme: 'light',
+  setTheme: () => {},
 };
+
 export const ThemeContext = createContext<ProviderValue>(defaultContextValue);
 
-export const ThemeProvider = ({ initialTheme, children }) => {
-  const [theme, setTheme] = useState(getInitialTheme);
+interface ThemeProviderProps {
+  initialTheme?: string;
+  children: React.ReactNode;
+}
+
+export const ThemeProvider: React.FC<ThemeProviderProps> = ({ initialTheme, children }) => {
+  const getInitialTheme = () => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const storedPrefs = window.localStorage.getItem('color-theme');
+      if (typeof storedPrefs === 'string') {
+        return storedPrefs;
+      }
+      const userMedia = window.matchMedia('(prefers-color-scheme: dark)');
+      if (userMedia.matches) {
+        return 'dark';
+      }
+    }
+    return 'light'; // light theme as the default;
+  };
+
+  const [theme, setTheme] = useState<string>(initialTheme || getInitialTheme());
 
   const rawSetTheme = (rawTheme: string) => {
     const root = window.document.documentElement;
@@ -49,13 +51,13 @@ export const ThemeProvider = ({ initialTheme, children }) => {
     localStorage.setItem('color-theme', rawTheme);
   };
 
-  if (initialTheme) {
-    rawSetTheme(initialTheme);
-  }
-
   useEffect(() => {
     rawSetTheme(theme);
   }, [theme]);
 
-  return <ThemeContext.Provider value={{ theme, setTheme }}>{children}</ThemeContext.Provider>;
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
 };
