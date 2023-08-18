@@ -62,3 +62,17 @@ export type TOnClick = (e: React.MouseEvent<HTMLButtonElement>) => void;
 export type TGenButtonProps = {
   onClick: TOnClick;
 };
+
+export type TAskProps = {
+  text: string;
+  parentMessageId?: string | null;
+  conversationId?: string | null;
+  messageId?: string | null;
+};
+
+export type TOptions = {
+  isRegenerate?: boolean;
+  isEdited?: boolean;
+};
+
+export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
