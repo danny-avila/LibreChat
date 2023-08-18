@@ -84,10 +84,9 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     const getAvailablePluginFromKey = availablePlugins?.find((p) => p.pluginKey === pluginKey);
     setSelectedPlugin(getAvailablePluginFromKey);
 
-    if (
-      getAvailablePluginFromKey?.authConfig.length > 0 &&
-      !getAvailablePluginFromKey?.authenticated
-    ) {
+    const { authConfig, authenticated } = getAvailablePluginFromKey ?? {};
+
+    if (authConfig && authConfig.length > 0 && !authenticated) {
       setShowPluginAuthForm(true);
     } else {
       handleInstall({ pluginKey, action: 'install', auth: null });
