@@ -6,6 +6,9 @@ import { useParams } from 'react-router-dom';
 import { TUser } from '@librechat/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import LikedConversations from './LikedConversation';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
+import { localize } from '~/localization/Translation';
 
 function Profile() {
   const [tabValue, setTabValue] = useState<string>('likes');
@@ -13,6 +16,7 @@ function Profile() {
 
   const { userId } = useParams();
   const { token } = useAuthContext();
+  const lang = useRecoilValue(store.lang);
   useDocumentTitle('Profile');
 
   const defaultClasses = 'p-2 rounded-md min-w-[75px] font-normal text-xs';
@@ -74,7 +78,7 @@ function Profile() {
         <Tabs value={tabValue} onValueChange={(value: string) => setTabValue(value)} className={defaultClasses}>
           <TabsList className="bg-white">
             <TabsTrigger value='likes' className="text-gray-500 dark:text-gray-200">
-              {'Likes'}
+              {localize(lang, 'com_ui_my_likes')}
             </TabsTrigger>
             <TabsTrigger value='conversations' className="text-gray-500 dark:text-gray-200">
               {'Conversations'}
