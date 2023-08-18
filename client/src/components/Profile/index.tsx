@@ -59,18 +59,21 @@ function Profile() {
             alt="avatar"
           />
         </div>
-        <div className='flex flex-col justify-start mx-3 gap-4 dark:text-white'>
+        <div className='flex flex-col justify-center mx-3 gap-4 dark:text-white'>
+          <div className='text-2xl'>
+            {user?.name}
+          </div>
           <div className='text-2xl'>
             {user?.username}
           </div>
-          <div className='flex flex-row gap-y-6 gap-x-12'>
+          {/* <div className='flex flex-row gap-y-6 gap-x-12'>
             <button onClick={() => setTabValue('following')}>
               Following
             </button>
             <button onClick={() => setTabValue('followers')}>
               Followers
             </button>
-          </div>
+          </div> */}
         </div>
       </div>
       <hr />
@@ -80,7 +83,7 @@ function Profile() {
             <TabsTrigger value='likes' className="text-gray-500 dark:text-gray-200">
               {localize(lang, 'com_ui_my_likes')}
             </TabsTrigger>
-            <TabsTrigger value='conversations' className="text-gray-500 dark:text-gray-200">
+            {/* <TabsTrigger value='conversations' className="text-gray-500 dark:text-gray-200">
               {'Conversations'}
             </TabsTrigger>
             <TabsTrigger value='following' className="text-gray-500 dark:text-gray-200">
@@ -88,7 +91,7 @@ function Profile() {
             </TabsTrigger>
             <TabsTrigger value='followers' className="text-gray-500 dark:text-gray-200">
               {'Followers'}
-            </TabsTrigger>
+            </TabsTrigger> */}
           </TabsList>
         </Tabs>
       </div>
