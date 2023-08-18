@@ -2,10 +2,10 @@ import 'test/matchMedia.mock';
 import React from 'react';
 import { render, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
-import { ThemeSelector } from './General';
+import { LangSelector } from './General';
 import { RecoilRoot } from 'recoil';
 
-describe('ThemeSelector', () => {
+describe('LangSelector', () => {
   let mockOnChange;
 
   beforeEach(() => {
@@ -15,23 +15,23 @@ describe('ThemeSelector', () => {
   it('renders correctly', () => {
     const { getByText, getByDisplayValue } = render(
       <RecoilRoot>
-        <ThemeSelector theme="system" onChange={mockOnChange} />
+        <LangSelector langcode="en" onChange={mockOnChange} />
       </RecoilRoot>,
     );
 
-    expect(getByText('Theme')).toBeInTheDocument();
-    expect(getByDisplayValue('System')).toBeInTheDocument();
+    expect(getByText('Language')).toBeInTheDocument();
+    expect(getByDisplayValue('English')).toBeInTheDocument();
   });
 
   it('calls onChange when the select value changes', () => {
     const { getByDisplayValue } = render(
       <RecoilRoot>
-        <ThemeSelector theme="system" onChange={mockOnChange} />
+        <LangSelector langcode="en" onChange={mockOnChange} />
       </RecoilRoot>,
     );
 
-    fireEvent.change(getByDisplayValue('System'), { target: { value: 'dark' } });
+    fireEvent.change(getByDisplayValue('English'), { target: { value: 'it' } });
 
-    expect(mockOnChange).toHaveBeenCalledWith('dark');
+    expect(mockOnChange).toHaveBeenCalledWith('it');
   });
 });
