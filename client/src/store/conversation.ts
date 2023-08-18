@@ -51,7 +51,7 @@ const messagesSiblingIdxFamily = atomFamily({
 const useConversation = () => {
   const setConversation = useSetRecoilState(conversation);
   const setMessages = useSetRecoilState<TMessagesAtom>(messages);
-  const setSubmission = useSetRecoilState<TSubmission | object | null>(submission.submission);
+  const setSubmission = useSetRecoilState<TSubmission | null>(submission.submission);
   const resetLatestMessage = useResetRecoilState(latestMessage);
 
   const _switchToConversation = (
@@ -73,7 +73,7 @@ const useConversation = () => {
 
     setConversation(conversation);
     setMessages(messages);
-    setSubmission({});
+    setSubmission({} as TSubmission);
     resetLatestMessage();
   };
 

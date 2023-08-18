@@ -6,7 +6,7 @@ import { TPreset } from 'librechat-data-provider';
 // an array of saved presets.
 // sample structure
 // [preset1, preset2, preset3]
-const presets = atom({
+const presets = atom<TPreset[]>({
   key: 'presets',
   default: [],
 });

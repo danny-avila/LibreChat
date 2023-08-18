@@ -149,6 +149,10 @@ const ask = async ({
 
     console.log('BING RESPONSE', response);
 
+    if (response.details && response.details.scores) {
+      console.log('SCORES', response.details.scores);
+    }
+
     const newConversationId = endpointOption?.jailbreak
       ? response.jailbreakConversationId
       : response.conversationId || conversationId;

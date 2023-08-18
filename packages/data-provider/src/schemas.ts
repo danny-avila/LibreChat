@@ -12,32 +12,6 @@ export enum EModelEndpoint {
 
 export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
-export const tMessageSchema = z.object({
-  messageId: z.string(),
-  clientId: z.string().nullable().optional(),
-  conversationId: z.string().nullable(),
-  parentMessageId: z.string().nullable(),
-  sender: z.string(),
-  text: z.string(),
-  isCreatedByUser: z.boolean(),
-  error: z.boolean(),
-  createdAt: z
-    .string()
-    .optional()
-    .default(() => new Date().toISOString()),
-  updatedAt: z
-    .string()
-    .optional()
-    .default(() => new Date().toISOString()),
-  current: z.boolean().optional(),
-  unfinished: z.boolean().optional(),
-  submitting: z.boolean().optional(),
-  searchResult: z.boolean().optional(),
-  finish_reason: z.string().optional(),
-});
-
-export type TMessage = z.input<typeof tMessageSchema>;
-
 export const tPluginAuthConfigSchema = z.object({
   authField: z.string(),
   label: z.string(),
@@ -75,6 +49,36 @@ export const tAgentOptionsSchema = z.object({
   model: z.string(),
   temperature: z.number(),
 });
+
+export const tMessageSchema = z.object({
+  messageId: z.string(),
+  clientId: z.string().nullable().optional(),
+  conversationId: z.string().nullable(),
+  parentMessageId: z.string().nullable(),
+  responseMessageId: z.string().nullable().optional(),
+  overrideParentMessageId: z.string().nullable().optional(),
+  plugin: tPluginSchema.nullable().optional(),
+  sender: z.string(),
+  text: z.string(),
+  generation: z.string().nullable().optional(),
+  isCreatedByUser: z.boolean(),
+  error: z.boolean(),
+  createdAt: z
+    .string()
+    .optional()
+    .default(() => new Date().toISOString()),
+  updatedAt: z
+    .string()
+    .optional()
+    .default(() => new Date().toISOString()),
+  current: z.boolean().optional(),
+  unfinished: z.boolean().optional(),
+  submitting: z.boolean().optional(),
+  searchResult: z.boolean().optional(),
+  finish_reason: z.string().optional(),
+});
+
+export type TMessage = z.input<typeof tMessageSchema>;
 
 export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
