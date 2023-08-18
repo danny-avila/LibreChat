@@ -1,20 +1,20 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { useRecoilValue } from 'recoil';
-import { Spinner } from '~/components';
-import throttle from 'lodash/throttle';
+import { useEffect, useState, useRef } from 'react';
 import { CSSTransition } from 'react-transition-group';
+import { useRecoilValue } from 'recoil';
+
 import ScrollToBottom from './ScrollToBottom';
-import MultiMessage from './MultiMessage';
 import MessageHeader from './MessageHeader';
-import { useScreenshot } from '~/hooks';
+import MultiMessage from './MultiMessage';
+import { Spinner } from '~/components';
+import { useScreenshot, useScrollToRef } from '~/hooks';
 
 import store from '~/store';
 
 export default function Messages({ isSearchView = false }) {
   const [currentEditId, setCurrentEditId] = useState(-1);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const scrollableRef = useRef(null);
-  const messagesEndRef = useRef(null);
+  const scrollableRef = useRef<HTMLDivElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const messagesTree = useRecoilValue(store.messagesTree);
   const showPopover = useRecoilValue(store.showPopover);
@@ -22,8 +22,8 @@ export default function Messages({ isSearchView = false }) {
 
   const _messagesTree = isSearchView ? searchResultMessagesTree : messagesTree;
 
-  const conversation = useRecoilValue(store.conversation) || {};
-  const { conversationId } = conversation;
+  const conversation = useRecoilValue(store.conversation);
+  const { conversationId } = conversation ?? {};
 
   const { screenshotTargetRef } = useScreenshot();
 
@@ -62,42 +62,15 @@ export default function Messages({ isSearchView = false }) {
     };
   }, [_messagesTree]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const scrollToBottom = useCallback(
-    throttle(
-      () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
-        setShowScrollButton(false);
-      },
-      450,
-      { leading: true },
-    ),
-    [messagesEndRef],
-  );
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const scrollToBottomSmooth = useCallback(
-    throttle(
-      () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-        setShowScrollButton(false);
-      },
-      750,
-      { leading: true },
-    ),
-    [messagesEndRef],
-  );
-
-  let timeoutId = null;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const debouncedHandleScroll = () => {
     clearTimeout(timeoutId);
     timeoutId = setTimeout(handleScroll, 100);
   };
 
-  const scrollHandler = (e) => {
-    e.preventDefault();
-    scrollToBottomSmooth();
-  };
+  const { scrollToRef: scrollToBottom, handleSmoothToRef } = useScrollToRef(messagesEndRef, () =>
+    setShowScrollButton(false),
+  );
 
   return (
     <div
@@ -137,7 +110,7 @@ export default function Messages({ isSearchView = false }) {
               >
                 {() =>
                   showScrollButton &&
-                  !showPopover && <ScrollToBottom scrollHandler={scrollHandler} />
+                  !showPopover && <ScrollToBottom scrollHandler={handleSmoothToRef} />
                 }
               </CSSTransition>
             </>
