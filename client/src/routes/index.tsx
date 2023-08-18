@@ -2,9 +2,14 @@ import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
 import Root from './Root';
 import Chat from './Chat';
 import Search from './Search';
-import { Login, Registration, RequestPasswordReset, ResetPassword } from '../components/Auth';
-import { AuthContextProvider } from '../hooks/AuthContext';
-import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
+import {
+  Login,
+  Registration,
+  RequestPasswordReset,
+  ResetPassword,
+  ApiErrorWatcher,
+} from '~/components/Auth';
+import { AuthContextProvider } from '~/hooks/AuthContext';
 
 const AuthLayout = () => (
   <AuthContextProvider>

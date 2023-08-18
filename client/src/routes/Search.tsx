@@ -2,8 +2,8 @@ import React, { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRecoilState, useRecoilValue } from 'recoil';
 
-import Messages from '../components/Messages';
-import TextChat from '../components/Input/TextChat';
+import Messages from '~/components/Messages';
+import TextChat from '~/components/Input/TextChat';
 
 import store from '~/store';
 
@@ -34,6 +34,7 @@ export default function Search() {
       // conversationId (in url) should always follow conversation?.conversationId, unless conversation is null
       navigate(`/chat/${conversation?.conversationId}`);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversation, query, searchQuery]);
 
   // if not a search

@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useAuthContext } from '~/hooks/AuthContext';
+import { useAuthContext } from '~/hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 
-import Landing from '../components/ui/Landing';
-import Messages from '../components/Messages';
-import TextChat from '../components/Input/TextChat';
+import Landing from '~/components/ui/Landing';
+import Messages from '~/components/Messages';
+import TextChat from '~/components/Input/TextChat';
 
 import store from '~/store';
 import {
@@ -27,12 +27,12 @@ export default function Chat() {
   const navigate = useNavigate();
 
   //disabled by default, we only enable it when messagesTree is null
-  const messagesQuery = useGetMessagesByConvoId(conversationId, { enabled: false });
-  const getConversationMutation = useGetConversationByIdMutation(conversationId);
+  const messagesQuery = useGetMessagesByConvoId(conversationId ?? '', { enabled: false });
+  const getConversationMutation = useGetConversationByIdMutation(conversationId ?? '');
   const { data: config } = useGetStartupConfig();
 
   useEffect(() => {
-    let timeout = setTimeout(() => {
+    const timeout = setTimeout(() => {
       if (!isAuthenticated) {
         navigate('/login', { replace: true });
       }
@@ -97,11 +97,12 @@ export default function Chat() {
       }
     }
     document.title = conversation?.title || config?.appTitle || 'Chat';
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversation, conversationId, config]);
 
   useEffect(() => {
     if (messagesTree === null && conversation?.conversationId) {
-      messagesQuery.refetch(conversation?.conversationId);
+      messagesQuery.refetch({ queryKey: [conversation?.conversationId] });
     }
   }, [conversation?.conversationId, messagesQuery, messagesTree]);
 
@@ -113,6 +114,7 @@ export default function Chat() {
       console.error(messagesQuery.error);
       setMessages(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messagesQuery.data, messagesQuery.isError, setMessages]);
 
   if (!isAuthenticated) {
