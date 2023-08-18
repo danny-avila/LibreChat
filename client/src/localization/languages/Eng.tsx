@@ -194,6 +194,36 @@ export default {
   com_endpoint_skip_hover:
     'Enable skipping the completion step, which reviews the final answer and generated steps',
   com_endpoint_config_token: 'Config Token',
+  com_endpoint_token_name: 'Token Name',
+  com_endpoint_token_set: 'Set Token for {0}',
+  com_endpoint_token_enter: 'Enter {0}',
+  com_endpoint_token_submit: 'Submit',
+  com_endpoint_config_token_sent_server:
+    'Your token will be sent to the server, but not saved.',
+  com_endpoint_config_token_bing1:
+    'To get your Access token for Bing, login to ',
+  com_endpoint_config_token_bing2:
+    '. Use dev tools or an extension while logged into the site to copy the content of the _U cookie.\nIf this fails, follow these ',
+  com_endpoint_config_token_bing3:
+    ' to provide the full cookie strings.',
+  com_endpoint_config_token_chatgpt1:
+    'To get your Access token For ChatGPT \'Free Version\', login to ',
+  com_endpoint_config_token_chatgpt2:
+    ', then visit ',
+  com_endpoint_config_token_chatgpt3:
+    '. Copy access token.',
+  com_endpoint_config_token_google_import_json_key:
+    'Import Service Account JSON Key',
+  com_endpoint_config_token_google_import_json_key_success:
+    'Successfully Imported Service Account JSON Key',
+  com_endpoint_config_token_google_import_json_key_invalid:
+    'Invalid Service Account JSON Key, Did you import the correct file?',
+  com_endpoint_config_token_google1:
+    'You need to enable ',
+  com_endpoint_config_token_google2:
+    ' API on Google Cloud, then ',
+  com_endpoint_config_token_google3:
+    '. Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role.\nLastly, create a JSON key to import here.',
   com_nav_export_filename: 'Filename',
   com_nav_export_filename_placeholder: 'Set the filename',
   com_nav_export_type: 'Type',

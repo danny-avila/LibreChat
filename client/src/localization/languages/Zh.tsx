@@ -184,7 +184,7 @@ export default {
   com_endpoint_no_presets: '还没有预设',
   com_endpoint_clear_presets: '清除预设',
   com_endpoint_not_available: '没有可用接入点',
-  com_endpoint_clear_all: 'Clear All',
+  com_endpoint_clear_all: '清除所有',
   com_endpoint_view_options: '查看选项',
   com_endpoint_save_convo_as_preset: '将对话另存为预设',
   com_endpoint_my_preset: '我的预设',
@@ -193,7 +193,37 @@ export default {
   com_endpoint_func_hover: '将插件当做OpenAI函数使用',
   com_endpoint_skip_hover:
     '跳过补全步骤， 用于检查最终答案和生成步骤',
-  com_endpoint_config_token: '配置Token',
+  com_endpoint_token_name: '令牌名称',
+  com_endpoint_config_token: '配置令牌',
+  com_endpoint_token_set: '设置{0}令牌',
+  com_endpoint_token_enter: '输入{0}',
+  com_endpoint_token_submit: '提交',
+  com_endpoint_config_token_sent_server:
+    '您的令牌将被发送到服务器，但不会保存。',
+  com_endpoint_config_token_bing1:
+  '要获取必应访问令牌，请登录 ',
+  com_endpoint_config_token_bing2:
+    '。 登录网站时使用开发工具或扩展程序复制"_U cookie"的内容。\n如果失败，请按照以下步骤操作 ',
+  com_endpoint_config_token_bing3:
+    ' 提供完整的cookie字符串。',
+  com_endpoint_config_token_chatgpt1:
+    '要获取ChatGPT免费版的访问令牌，请登录 ',
+  com_endpoint_config_token_chatgpt2:
+    '， 然后访问 ',
+  com_endpoint_config_token_chatgpt3:
+    '。 复制访问令牌。',
+  com_endpoint_config_token_google_import_json_key:
+    '导入服务帐户JSON密钥',
+  com_endpoint_config_token_google_import_json_key_success:
+    '成功导入服务帐户JSON密钥',
+  com_endpoint_config_token_google_import_json_key_invalid:
+    '无效的服务帐户JSON密钥，您是否导入了正确的文件？',
+  com_endpoint_config_token_google1:
+    '你需要在Google Cloud启用 ',
+  com_endpoint_config_token_google2:
+    ' API， 然后 ',
+  com_endpoint_config_token_google3:
+    '。确保单击\'Create and Continue\'至少赋予顶点AI用户角色。\n最后，创建一个JSON密钥以在此处导入。',
   com_nav_export_filename: '文件名',
   com_nav_export_filename_placeholder: '设置文件名',
   com_nav_export_type: '类型',
@@ -217,7 +247,7 @@ export default {
   com_nav_user: '默认用户',
   com_nav_clear_conversation: '清空对话',
   com_nav_clear_conversation_confirm_message:
-    '请确认是否清空所有对话？此操作无法撤回。',
+    '请确认是否清空所有内容？此操作无法撤回。',
   com_nav_help_faq: '帮助',
   com_nav_settings: '设置',
   com_nav_search_placeholder: '文本搜索',
