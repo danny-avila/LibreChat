@@ -21,7 +21,7 @@ export default function MobileNav({ setNavVisible }) {
     else if (location.pathname.substring(0, 8) === '/profile') setTitle(localize(lang, 'com_ui_profile'));
     else if (conversation) setTitle(conversation.title);
     else setTitle(localize(lang, 'com_ui_new_chat'));
-  }, [lang, conversation]);
+  }, [lang, conversation, location.pathname]);
 
   return (
     <div className="fixed left-0 right-0 top-0 z-10 flex items-center border-b border-white/20 bg-gray-800 pl-1 pt-1 text-gray-200 sm:pl-3 md:hidden">
