@@ -24,20 +24,20 @@ theme:
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
-    
+
     # Palette toggle for light mode
     - scheme: default
       primary: cyan
       accent: purple
       toggle:
-        icon: material/brightness-7 
+        icon: material/brightness-7
         name: Switch to dark mode
-  
+
   icon:
     repo: fontawesome/brands/github
     edit: material/pencil
     view: material/eye
-  
+
   features:
     - header.autohide
     - navigation.tabs
@@ -74,11 +74,11 @@ markdown_extensions:
 
 # Page tree
 nav:
-  - Home: 
+  - Home:
     - 'index.md'
     - v0.5.0 Breaking Changes: 'general_info/breaking_changes.md'
     - Project Origin: 'general_info/project_origin.md'
-    - Tech Stack: 'general_info/tech_stack.md'  
+    - Tech Stack: 'general_info/tech_stack.md'
     - Multilingual Information: 'general_info/multilingual_information.md'
   - Installation Guides:
     - Installation:
@@ -98,10 +98,11 @@ nav:
       - Google: 'features/plugins/google_search.md'
       - Stable Diffusion: 'features/plugins/stable_diffusion.md'
       - Wolfram: 'features/plugins/wolfram.md'
+      - Azure Cognitive Search: 'features/plugins/azure_cognitive_search.md'
       - Make Your Own Plugin: 'features/plugins/make_your_own.md'
       - Using official ChatGPT Plugins: 'features/plugins/chatgpt_plugins_openapi.md'
     - Proxy: 'features/proxy.md'
-    - Bing Jailbreak: 'features/bing_jailbreak.md' 
+    - Bing Jailbreak: 'features/bing_jailbreak.md'
   - Cloud Deployment:
     - DigitalOcean (preferred): 'deployment/digitalocean.md'
     - Cloudflare: 'deployment/cloudflare.md'
@@ -123,7 +124,7 @@ extra:
     - icon: fontawesome/brands/github
       link: https://github.com/danny-avila/LibreChat
     - icon: fontawesome/brands/youtube
-      link: https://www.youtube.com/@LibreChat 
+      link: https://www.youtube.com/@LibreChat
 
 copyright:
   © 2023 <a href="https://github.com/danny-avila/LibreChat" target="_blank" rel="noopener">LibreChat</a>
