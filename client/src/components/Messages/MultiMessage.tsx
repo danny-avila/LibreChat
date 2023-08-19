@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
+import type { TMessageProps } from '~/common';
+// eslint-disable-next-line import/no-cycle
 import Message from './Message';
 import store from '~/store';
 
@@ -11,13 +13,13 @@ export default function MultiMessage({
   currentEditId,
   setCurrentEditId,
   isSearchView,
-}) {
+}: TMessageProps) {
   // const [siblingIdx, setSiblingIdx] = useState(0);
 
   const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
 
-  const setSiblingIdxRev = (value) => {
-    setSiblingIdx(messagesTree?.length - value - 1);
+  const setSiblingIdxRev = (value: number) => {
+    setSiblingIdx((messagesTree?.length ?? 0) - value - 1);
   };
 
   useEffect(() => {

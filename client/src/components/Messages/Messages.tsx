@@ -11,7 +11,7 @@ import { useScreenshot, useScrollToRef } from '~/hooks';
 import store from '~/store';
 
 export default function Messages({ isSearchView = false }) {
-  const [currentEditId, setCurrentEditId] = useState(-1);
+  const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const scrollableRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -93,11 +93,11 @@ export default function Messages({ isSearchView = false }) {
             <>
               <MultiMessage
                 key={conversationId} // avoid internal state mixture
-                messageId={conversationId}
+                messageId={conversationId ?? null}
                 conversation={conversation}
                 messagesTree={_messagesTree}
                 scrollToBottom={scrollToBottom}
-                currentEditId={currentEditId}
+                currentEditId={currentEditId ?? null}
                 setCurrentEditId={setCurrentEditId}
                 isSearchView={isSearchView}
               />

@@ -1,4 +1,4 @@
-import type { TPlugin, TMessage, TConversation, TEndpointOption } from './schemas';
+import type { TResPlugin, TMessage, TConversation, TEndpointOption } from './schemas';
 
 export * from './schemas';
 
@@ -7,7 +7,7 @@ export type TMessages = TMessage[];
 export type TMessagesAtom = TMessages | null;
 
 export type TSubmission = {
-  plugin?: TPlugin;
+  plugin?: TResPlugin;
   message: TMessage;
   isEdited?: boolean;
   messages: TMessage[];

@@ -1,4 +1,4 @@
-import { TConversation, TPreset } from 'librechat-data-provider';
+import { TConversation, TMessage, TPreset } from 'librechat-data-provider';
 
 export type TSetOption = (param: number | string) => (newValue: number | string | boolean) => void;
 export type TSetExample = (
@@ -76,3 +76,17 @@ export type TOptions = {
 };
 
 export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
+
+export type TMessageProps = {
+  conversation?: TConversation | null;
+  messageId?: string | null;
+  message?: TMessage;
+  messagesTree?: TMessage[];
+  currentEditId: string | number | null;
+  isSearchView?: boolean;
+  siblingIdx?: number;
+  siblingCount?: number;
+  scrollToBottom?: () => void;
+  setCurrentEditId?: React.Dispatch<React.SetStateAction<string | number | null>> | null;
+  setSiblingIdx?: ((value: number) => void | React.Dispatch<React.SetStateAction<number>>) | null;
+};

@@ -4,11 +4,13 @@ import { useState, useEffect } from 'react';
 import { useSetRecoilState } from 'recoil';
 import copy from 'copy-to-clipboard';
 import { Plugin, SubRow, MessageContent } from './Content';
+// eslint-disable-next-line import/no-cycle
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
 import { getIcon } from '~/components/Endpoints';
 import { useMessageHandler } from '~/hooks';
+import type { TMessageProps } from '~/common';
 import store from '~/store';
 
 export default function Message({
@@ -20,27 +22,26 @@ export default function Message({
   siblingIdx,
   siblingCount,
   setSiblingIdx,
-}) {
-  const {
-    text,
-    children,
-    messageId,
-    searchResult,
-    isCreatedByUser,
-    error,
-    submitting,
-    unfinished,
-  } = message;
-  const last = !children?.length;
-  const edit = messageId == currentEditId;
+}: TMessageProps) {
   const setLatestMessage = useSetRecoilState(store.latestMessage);
   const [abortScroll, setAbort] = useState(false);
   const { isSubmitting, ask, regenerate, handleContinue } = useMessageHandler();
   const { switchToConversation } = store.useConversation();
-  const getConversationQuery = useGetConversationByIdQuery(message.conversationId, {
+  const {
+    text,
+    children,
+    messageId = null,
+    searchResult,
+    isCreatedByUser,
+    error,
+    unfinished,
+  } = message ?? {};
+  const last = !children?.length;
+  const edit = messageId == currentEditId;
+  const getConversationQuery = useGetConversationByIdQuery(message?.conversationId ?? '', {
     enabled: false,
   });
-  const blinker = submitting && isSubmitting;
+  const blinker = message?.submitting && isSubmitting;
 
   // debugging
   // useEffect(() => {
@@ -49,18 +50,25 @@ export default function Message({
   // }, [isSubmitting, unfinished]);
 
   useEffect(() => {
-    if (blinker && !abortScroll) {
+    if (blinker && scrollToBottom && !abortScroll) {
       scrollToBottom();
     }
   }, [isSubmitting, blinker, text, scrollToBottom]);
 
   useEffect(() => {
-    if (last) {
+    if (!message) {
+      return;
+    } else if (last) {
       setLatestMessage({ ...message });
     }
   }, [last, message]);
 
-  const enterEdit = (cancel?: boolean) => setCurrentEditId(cancel ? -1 : messageId);
+  if (!message) {
+    return null;
+  }
+
+  const enterEdit = (cancel?: boolean) =>
+    setCurrentEditId && setCurrentEditId(cancel ? -1 : messageId);
 
   const handleWheel = () => {
     if (blinker) {
@@ -88,8 +96,8 @@ export default function Message({
   }
 
   if (message?.bg && searchResult) {
-    props.className = message?.bg.split('hover')[0];
-    props.titleclass = message?.bg.split(props.className)[1] + ' cursor-pointer';
+    props.className = message?.bg?.split('hover')[0];
+    props.titleclass = message?.bg?.split(props.className)[1] + ' cursor-pointer';
   }
 
   const regenerateMessage = () => {
@@ -100,7 +108,7 @@ export default function Message({
 
   const copyToClipboard = (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => {
     setIsCopied(true);
-    copy(text);
+    copy(text ?? '');
 
     setTimeout(() => {
       setIsCopied(false);
@@ -114,7 +122,7 @@ export default function Message({
     if (!message) {
       return;
     }
-    getConversationQuery.refetch(message.conversationId).then((response) => {
+    getConversationQuery.refetch({ queryKey: [message?.conversationId] }).then((response) => {
       console.log('getConversationQuery response.data:', response.data);
       if (response.data) {
         switchToConversation(response.data);
@@ -154,22 +162,22 @@ export default function Message({
               {message?.plugin && <Plugin plugin={message?.plugin} />}
               <MessageContent
                 ask={ask}
-                text={text}
+                text={text ?? ''}
                 edit={edit}
-                error={error}
+                error={error ?? false}
                 message={message}
                 enterEdit={enterEdit}
-                unfinished={unfinished}
+                unfinished={unfinished ?? false}
                 isSubmitting={isSubmitting}
-                isCreatedByUser={isCreatedByUser}
-                setSiblingIdx={() => setSiblingIdx(siblingIdx - 1)}
+                isCreatedByUser={isCreatedByUser ?? true}
+                setSiblingIdx={() => setSiblingIdx && setSiblingIdx((siblingIdx ?? 0) - 1)}
               />
             </div>
             <HoverButtons
               isEditing={edit}
               isSubmitting={isSubmitting}
               message={message}
-              conversation={conversation}
+              conversation={conversation ?? null}
               enterEdit={() => enterEdit()}
               regenerate={() => regenerateMessage()}
               handleContinue={handleContinue}
@@ -188,7 +196,7 @@ export default function Message({
       <MultiMessage
         messageId={messageId}
         conversation={conversation}
-        messagesTree={children}
+        messagesTree={children ?? []}
         scrollToBottom={scrollToBottom}
         currentEditId={currentEditId}
         setCurrentEditId={setCurrentEditId}

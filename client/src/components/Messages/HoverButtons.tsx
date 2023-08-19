@@ -8,7 +8,7 @@ type THoverButtons = {
   isEditing: boolean;
   enterEdit: () => void;
   copyToClipboard: (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => void;
-  conversation: TConversation;
+  conversation: TConversation | null;
   isSubmitting: boolean;
   message: TMessage;
   regenerate: () => void;
@@ -25,7 +25,7 @@ export default function HoverButtons({
   regenerate,
   handleContinue,
 }: THoverButtons) {
-  const { endpoint } = conversation;
+  const { endpoint } = conversation ?? {};
   const [isCopied, setIsCopied] = useState(false);
   const { editEnabled, regenerateEnabled, continueSupported } = useGenerations({
     isEditing,
@@ -33,7 +33,9 @@ export default function HoverButtons({
     message,
     endpoint: endpoint ?? '',
   });
-
+  if (!conversation) {
+    return null;
+  }
   return (
     <div className="visible mt-2 flex justify-center gap-3 self-end text-gray-400 md:gap-4 lg:absolute lg:right-0 lg:top-0 lg:mt-0 lg:translate-x-full lg:gap-1 lg:self-center lg:pl-2">
       <button
