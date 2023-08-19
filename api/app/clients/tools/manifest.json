@@ -102,5 +102,28 @@
         "description": "You can use Zapier with your API Key from Zapier."
       }
     ]
+  },
+  {
+    "name": "Azure Cognitive Search",
+    "pluginKey": "azure-cognitive-search",
+    "description": "Use Azure Cognitive Search to find information",
+    "icon": "https://i.imgur.com/E7crPze.png",
+    "authConfig": [
+      {
+        "authField": "AZURE_COGNITIVE_SEARCH_SERVICE_ENDPOINT",
+        "label": "Azur Cognitive Search Endpoint",
+        "description": "You need to provide your Endpoint for Azure Cognitive Search."
+      },
+      {
+        "authField": "AZURE_COGNITIVE_SEARCH_INDEX_NAME",
+        "label": "Azur Cognitive Search Index Name",
+        "description": "You need to provide your Index Name for Azure Cognitive Search."
+      },
+      {
+        "authField": "AZURE_COGNITIVE_SEARCH_API_KEY",
+        "label": "Azur Cognitive Search API Key",
+        "description": "You need to provideq your API Key for Azure Cognitive Search."
+      }
+    ]
   }
 ]
