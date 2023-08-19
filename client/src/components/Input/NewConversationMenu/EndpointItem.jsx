@@ -4,11 +4,12 @@ import { Settings } from 'lucide-react';
 import getIcon from '~/utils/getIcon';
 import { useRecoilValue } from 'recoil';
 import { SetTokenDialog } from '../SetTokenDialog';
-
+import { localize } from '~/localization/Translation';
 import store from '~/store';
 import { cn, alternateName } from '~/utils';
 
 export default function ModelItem({ endpoint, value, isSelected }) {
+  const lang = useRecoilValue(store.lang);
   const [setTokenDialogOpen, setSetTokenDialogOpen] = useState(false);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
@@ -53,7 +54,7 @@ export default function ModelItem({ endpoint, value, isSelected }) {
             }}
           >
             <Settings className="mr-1 inline-block w-[16px] items-center stroke-1" />
-            Config Token
+            {localize(lang, 'com_endpoint_config_token')}
           </button>
         ) : null}
       </DropdownMenuRadioItem>

@@ -6,12 +6,12 @@ import { localize } from '~/localization/Translation';
 import store from '~/store';
 
 export default function MobileNav({ setNavVisible }) {
+  const lang = useRecoilValue(store.lang);
   const conversation = useRecoilValue(store.conversation);
   const { newConversation } = store.useConversation();
   // const { title = 'New Chat' } = conversation || {};
   const [title, setTitle] = useState('New Chat');
   const navigate = useNavigate();
-  const lang = useRecoilValue(store.lang);
 
   useEffect(() => {
     if (location.pathname === '/home') setTitle(localize(lang, 'com_ui_recommendation'));
@@ -21,7 +21,7 @@ export default function MobileNav({ setNavVisible }) {
     else if (location.pathname.substring(0, 8) === '/profile') setTitle(localize(lang, 'com_ui_profile'));
     else if (conversation) setTitle(conversation.title);
     else setTitle(localize(lang, 'com_ui_new_chat'));
-  });
+  }, [lang, conversation]);
 
   return (
     <div className="fixed left-0 right-0 top-0 z-10 flex items-center border-b border-white/20 bg-gray-800 pl-1 pt-1 text-gray-200 sm:pl-3 md:hidden">
@@ -30,7 +30,7 @@ export default function MobileNav({ setNavVisible }) {
         className="-ml-0.5 -mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-md hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white dark:hover:text-white"
         onClick={() => setNavVisible((prev) => !prev)}
       >
-        <span className="sr-only">Open sidebar</span>
+        <span className="sr-only">{localize(lang, 'com_nav_open_sidebar')}</span>
         <svg
           stroke="currentColor"
           fill="none"

@@ -1,14 +1,18 @@
 import React from 'react';
 import FileUpload from '../NewConversationMenu/FileUpload';
+import store from '~/store';
+import { useRecoilValue } from 'recoil';
+import { localize } from '~/localization/Translation';
 
 const GoogleConfig = ({ setToken } : { setToken: React.Dispatch<React.SetStateAction<string>> }) => {
+  const lang = useRecoilValue(store.lang);
   return (
     <FileUpload
       id="googleKey"
       className="w-full"
-      text="Import Service Account JSON Key"
-      successText="Successfully Imported Service Account JSON Key"
-      invalidText="Invalid Service Account JSON Key, Did you import the correct file?"
+      text={localize(lang, 'com_endpoint_config_token_google_import_json_key')}
+      successText={localize(lang, 'com_endpoint_config_token_google_import_json_key_success')}
+      invalidText={localize(lang, 'com_endpoint_config_token_google_import_json_key_invalid')}
       validator={(credentials) => {
         if (!credentials) {
           return false;

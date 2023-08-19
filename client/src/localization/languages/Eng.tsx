@@ -8,6 +8,7 @@ export default {
   com_ui_share: 'Share',
   com_ui_public: 'Public',
   com_ui_private: 'Private',
+  com_ui_homepage: 'Home',
   com_ui_register_before_like: 'Let\'s make yourself an account',
   com_ui_number_of_likes: 'Likes',
   com_ui_register_here: 'Don\'t have an account yet? Click here to register.',
@@ -45,11 +46,19 @@ export default {
   com_ui_showing: 'Showing',
   com_ui_of: 'of',
   com_ui_entries: 'Entries',
+  com_ui_pay_per_call: 'All AI conversations in one place. Pay per call and not per month',
+  com_ui_writing_assistant: 'Writing Assistant',
+  com_ui_coding_assistant: 'Coding Assistant',
+  com_ui_ask_me_anything: 'Ask Me Anything',
+  com_ui_referrals_leaderboard: 'Referrals Leaderboard',
+  com_ui_copied_success: 'Copied',
+  com_ui_copy_invitation_link: 'Copy Invitation Link',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_no_account: 'Don\'t have an account?',
   com_auth_sign_up: 'Sign up',
   com_auth_sign_in: 'Sign in',
+  com_auth_or: 'Or',
   com_auth_google_login: 'Login with Google',
   com_auth_github_login: 'Login with Github',
   com_auth_discord_login: 'Login with Discord',
@@ -84,6 +93,9 @@ export default {
   com_auth_click: 'Click',
   com_auth_here: 'HERE',
   com_auth_to_reset_your_password: 'to reset your password.',
+  com_auth_reset_password_link_sent: 'Email Sent',
+  com_auth_reset_password_email_sent:
+    'An email has been sent to {0} with instructions on how to reset your password.Please check your spam/junk folder if you don\'t see this email shortly.',
   com_auth_error_reset_password:
     'There was a problem resetting your password. There was no user found with the email address provided. Please try again.',
   com_auth_reset_password_success: 'Password Reset Success',
@@ -93,4 +105,186 @@ export default {
   com_auth_to_try_again: 'to try again.',
   com_auth_submit_registration: 'Submit registration',
   com_auth_welcome_back: 'Welcome back',
+  com_endpoint_bing_enable_sydney: 'Enable Sydney',
+  com_endpoint_bing_to_enable_sydney: 'To enable Sydney',
+  com_endpoint_bing_jailbreak: 'Jailbreak',
+  com_endpoint_bing_context_placeholder:
+    'Bing can use up to 7k tokens for \'context\', which it can reference for the conversation. The specific limit is not known but may run into errors exceeding 7k tokens',
+  com_endpoint_bing_system_message_placeholder:
+    'WARNING: Misuse of this feature can get you BANNED from using Bing! Click on \'System Message\' for full instructions and the default message if omitted, which is the \'Sydney\' preset that is considered safe.',
+  com_endpoint_system_message: 'System Message',
+  com_endpoint_default_blank: 'default: blank',
+  com_endpoint_default_false: 'default: false',
+  com_endpoint_default_creative: 'default: creative',
+  com_endpoint_default_empty: 'default: empty',
+  com_endpoint_default_with_num: 'default: {0}',
+  com_endpoint_context: 'Context',
+  com_endpoint_tone_style: 'Tone Style',
+  com_endpoint_token_count: 'Token count',
+  com_endpoint_output: 'Output',
+  com_endpoint_google_temp:
+    'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',
+  com_endpoint_google_topp:
+    'Top-p changes how the model selects tokens for output. Tokens are selected from most K (see topK parameter) probable to least until the sum of their probabilities equals the top-p value.',
+  com_endpoint_google_topk:
+    'Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model\'s vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).',
+  com_endpoint_google_maxoutputtokens:
+    ' 	Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses.',
+  com_endpoint_google_custom_name_placeholder: 'Set a custom name for PaLM2',
+  com_endpoint_google_prompt_prefix_placeholder:
+    'Set custom instructions or context. Ignored if empty.',
+  com_endpoint_custom_name: 'Custom Name',
+  com_endpoint_prompt_prefix: 'Prompt Prefix',
+  com_endpoint_temperature: 'Temperature',
+  com_endpoint_default: 'default',
+  com_endpoint_top_p: 'Top P',
+  com_endpoint_top_k: 'Top K',
+  com_endpoint_max_output_tokens: 'Max Output Tokens',
+  com_endpoint_openai_temp:
+    'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',
+  com_endpoint_openai_max:
+    'The max tokens to generate. The total length of input tokens and generated tokens is limited by the model\'s context length.',
+  com_endpoint_openai_topp:
+    'An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered. We recommend altering this or temperature but not both.',
+  com_endpoint_openai_freq:
+    'Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model\'s likelihood to repeat the same line verbatim.',
+  com_endpoint_openai_pres:
+    'Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model\'s likelihood to talk about new topics.',
+  com_endpoint_openai_custom_name_placeholder: 'Set a custom name for ChatGPT',
+  com_endpoint_openai_prompt_prefix_placeholder:
+    'Set custom instructions to include in System Message. Default: none',
+  com_endpoint_anthropic_temp:
+    'Ranges from 0 to 1. Use temp closer to 0 for analytical / multiple choice, and closer to 1 for creative and generative tasks. We recommend altering this or Top P but not both.',
+  com_endpoint_anthropic_topp:
+    'Top-p changes how the model selects tokens for output. Tokens are selected from most K (see topK parameter) probable to least until the sum of their probabilities equals the top-p value.',
+  com_endpoint_anthropic_topk:
+    'Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model\'s vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).',
+  com_endpoint_anthropic_maxoutputtokens:
+    'Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses.',
+  com_endpoint_frequency_penalty: 'Frequency Penalty',
+  com_endpoint_presence_penalty: 'Presence Penalty',
+  com_endpoint_plug_use_functions: 'Use Functions',
+  com_endpoint_plug_skip_completion: 'Skip Completion',
+  com_endpoint_disabled_with_tools: 'disabled with tools',
+  com_endpoint_disabled_with_tools_placeholder: 'Disabled with Tools Selected',
+  com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
+  'Set custom instructions. Defaults to: \'You are ChatGPT, a large language model trained by OpenAI.\'',
+  com_endpoint_set_custom_name: 'Set a custom name, in case you can find this preset',
+  com_endpoint_preset_name: 'Preset Name',
+  com_endpoint_new_topic: 'New Topic',
+  com_endpoint: 'Endpoint',
+  com_endpoint_hide_endpoints: 'Hide endpoints',
+  com_endpoint_show_endpoints: 'Show endpoints',
+  com_endpoint_hide_presets: 'Hide presets',
+  com_endpoint_show_presets: 'Show presets',
+  com_endpoint_examples: ' Examples',
+  com_endpoint_completion: 'Completion',
+  com_endpoint_agent: 'Agent',
+  com_endpoint_show_what_settings: 'Show {0} Settings',
+  com_endpoint_save: 'Save',
+  com_endpoint_import: 'Import',
+  com_endpoint_export: 'Export',
+  com_endpoint_save_as_preset: 'Save As Preset',
+  com_endpoint_confirm: 'Confirm',
+  com_endpoint_not_implemented: 'Not implemented',
+  com_endpoint_edit_preset: 'Edit Preset',
+  com_endpoint_no_presets: 'No preset yet',
+  com_endpoint_clear_presets: 'Clear presets',
+  com_endpoint_not_available: 'No endpoint available',
+  com_endpoint_clear_all: 'Clear All',
+  com_endpoint_view_options: 'View Options',
+  com_endpoint_save_convo_as_preset: 'Save Conversation as Preset',
+  com_endpoint_my_preset: 'My Preset',
+  com_endpoint_agent_model: 'Agent Model (Recommended: GPT-3.5)',
+  com_endpoint_completion_model: 'Completion Model (Recommended: GPT-4)',
+  com_endpoint_func_hover: 'Enable use of Plugins as OpenAI Functions',
+  com_endpoint_skip_hover:
+    'Enable skipping the completion step, which reviews the final answer and generated steps',
+  com_endpoint_config_token: 'Config Token',
+  com_endpoint_token_name: 'Token Name',
+  com_endpoint_token_set: 'Set Token for {0}',
+  com_endpoint_token_enter: 'Enter {0}',
+  com_endpoint_token_submit: 'Submit',
+  com_endpoint_config_token_sent_server:
+    'Your token will be sent to the server, but not saved.',
+  com_endpoint_config_token_bing1:
+    'To get your Access token for Bing, login to ',
+  com_endpoint_config_token_bing2:
+    '. Use dev tools or an extension while logged into the site to copy the content of the _U cookie.\nIf this fails, follow these ',
+  com_endpoint_config_token_bing3:
+    ' to provide the full cookie strings.',
+  com_endpoint_config_token_chatgpt1:
+    'To get your Access token For ChatGPT \'Free Version\', login to ',
+  com_endpoint_config_token_chatgpt2:
+    ', then visit ',
+  com_endpoint_config_token_chatgpt3:
+    '. Copy access token.',
+  com_endpoint_config_token_google_import_json_key:
+    'Import Service Account JSON Key',
+  com_endpoint_config_token_google_import_json_key_success:
+    'Successfully Imported Service Account JSON Key',
+  com_endpoint_config_token_google_import_json_key_invalid:
+    'Invalid Service Account JSON Key, Did you import the correct file?',
+  com_endpoint_config_token_google1:
+    'You need to enable ',
+  com_endpoint_config_token_google2:
+    ' API on Google Cloud, then ',
+  com_endpoint_config_token_google3:
+    '. Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role.\nLastly, create a JSON key to import here.',
+  com_nav_export_filename: 'Filename',
+  com_nav_export_filename_placeholder: 'Set the filename',
+  com_nav_export_type: 'Type',
+  com_nav_export_include_endpoint_options: 'Include endpoint options',
+  com_nav_enabled: 'Enabled',
+  com_nav_not_supported: 'Not Supported',
+  com_nav_export_all_message_branches: 'Export all message branches',
+  com_nav_export_recursive_or_sequential: 'Recursive or sequential?',
+  com_nav_export_recursive: 'Recursive',
+  com_nav_export_conversation: 'Export conversation',
+  com_nav_theme: 'Theme',
+  com_nav_theme_system: 'System',
+  com_nav_theme_dark: 'Dark',
+  com_nav_theme_light: 'Light',
+  com_nav_clear: 'Clear',
+  com_nav_clear_all_chats: 'Clear all chats',
+  com_nav_confirm_clear: 'Confirm Clear',
+  com_nav_close_sidebar: 'Close sidebar',
+  com_nav_open_sidebar: 'Open sidebar',
+  com_nav_log_out: 'Log out',
+  com_nav_user: 'USER',
+  com_nav_clear_conversation: 'Clear conversations',
+  com_nav_clear_conversation_confirm_message:
+    'Are you sure you want to clear all conversations? This is irreversible.',
+  com_nav_help_faq: 'Help & FAQ',
+  com_nav_settings: 'Settings',
+  com_nav_search_placeholder: 'Search messages',
+  com_nav_setting_general: 'General',
+  com_nav_language: 'Language',
+  com_nav_lang_english: 'English',
+  com_nav_lang_chinese: '中文',
+  com_nav_lang_german: 'Deutsch',
+  com_nav_lang_spanish: 'Español',
+  com_nav_lang_french: 'Français ',
+  com_nav_lang_italian: 'Italiano',
+  com_nav_lang_brazilian_portuguese: 'Português Brasileiro',
+  com_nav_file_ext_png: 'screenshot (.png)',
+  com_nav_file_ext_txt: 'text (.txt)',
+  com_nav_file_ext_md: 'markdown (.md)',
+  com_nav_file_ext_json: 'json (.json)',
+  com_nav_file_ext_csv: 'csv (.csv)',
+  com_msg_edit: 'edit',
+  com_msg_copy_to_clipboard: 'Copy to clipboard',
+  com_msg_copied_to_clipboard: 'Copied to clipboard',
+  com_msg_save_submit: 'Save & Submit',
+  com_msg_cancel: 'Cancel',
+  com_msg_open_conversation:
+    'Click a message title to open its conversation.',
+  com_msg_choose_another_model: 'Choose another model or customize GPT again',
+  com_msg_edit_message: 'Edit your message or Regenerate.',
+  com_error_invalid_api_key:
+    'Invalid API key. Please check your API key and try again. You can do this by clicking on the model logo in the left corner of the textbox and selecting "Set Token" for the current selected endpoint. Thank you for your understanding.',
+  com_error_insufficient_quota:
+    'We apologize for any inconvenience caused. The default API key has reached its limit. To continue using this service, please set up your own API key. You can do this by clicking on the model logo in the left corner of the textbox and selecting "Set Token" for the current selected endpoint. Thank you for your understanding.',
+  com_error_unknown:
+    'Oops! Something went wrong. Please try again in a few moments. Here\'s the specific error message we encountered: {0}',
 };

@@ -1,10 +1,14 @@
 import React from 'react';
+import store from '~/store';
+import { useRecoilValue } from 'recoil';
+import { localize } from '~/localization/Translation';
 
 function HelpText({ endpoint } : { endpoint: string }) {
+  const lang = useRecoilValue(store.lang);
   const textMap = {
     bingAI: (
       <small className="break-all text-gray-600">
-        {'To get your Access token for Bing, login to '}
+        {localize(lang, 'com_endpoint_config_token_bing1')}
         <a
           target="_blank"
           href="https://www.bing.com"
@@ -13,8 +17,7 @@ function HelpText({ endpoint } : { endpoint: string }) {
         >
         https://www.bing.com
         </a>
-        {`. Use dev tools or an extension while logged into the site to copy the content of the _U cookie.
-      If this fails, follow these `}
+        {localize(lang, 'com_endpoint_config_token_bing2')}
         <a
           target="_blank"
           href="https://github.com/waylaidwanderer/node-chatgpt-api/issues/378#issuecomment-1559868368"
@@ -23,12 +26,12 @@ function HelpText({ endpoint } : { endpoint: string }) {
         >
         instructions
         </a>
-        {' to provide the full cookie strings.'}
+        {localize(lang,'com_endpoint_config_token_bing3')}
       </small>
     ),
     chatGPTBrowser: (
       <small className="break-all text-gray-600">
-        {'To get your Access token For ChatGPT \'Free Version\', login to '}
+        {localize(lang, 'com_endpoint_config_token_chatgpt1')}
         <a
           target="_blank"
           href="https://chat.openai.com"
@@ -37,7 +40,7 @@ function HelpText({ endpoint } : { endpoint: string }) {
         >
         https://chat.openai.com
         </a>
-      , then visit{' '}
+        {localize(lang, 'com_endpoint_config_token_chatgpt2')}
         <a
           target="_blank"
           href="https://chat.openai.com/api/auth/session"
@@ -46,21 +49,21 @@ function HelpText({ endpoint } : { endpoint: string }) {
         >
         https://chat.openai.com/api/auth/session
         </a>
-      . Copy access token.
+        {localize(lang, 'com_endpoint_config_token_chatgpt3')}
       </small>
     ),
     google: (
       <small className="break-all text-gray-600">
-      You need to{' '}
+        {localize(lang, 'com_endpoint_config_token_google1')}
         <a
           target="_blank"
           href="https://console.cloud.google.com/vertex-ai"
           rel="noreferrer"
           className="text-blue-600 underline"
         >
-        Enable Vertex AI
+        Vertex AI
         </a>{' '}
-      API on Google Cloud, then{' '}
+        {localize(lang, 'com_endpoint_config_token_google2')}
         <a
           target="_blank"
           href="https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts/create?walkthrough_id=iam--create-service-account#step_index=1"
@@ -69,8 +72,7 @@ function HelpText({ endpoint } : { endpoint: string }) {
         >
         Create a Service Account
         </a>
-        {`. Make sure to click 'Create and Continue' to give at least the 'Vertex AI User' role.
-      Lastly, create a JSON key to import here.`}
+        {localize(lang, 'com_endpoint_config_token_google3')}
       </small>
     )
 

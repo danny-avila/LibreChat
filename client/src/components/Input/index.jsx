@@ -14,8 +14,10 @@ import { useMessageHandler } from '../../utils/handleSubmit';
 import store from '~/store';
 import NewConversationMenu from './NewConversationMenu';
 import ChatWidget from './ChatWidgetMenu';
+import { localize } from '~/localization/Translation';
 
 export default function TextChat({ isSearchView = false }) {
+  const lang = useRecoilValue(store.lang);
   const inputRef = useRef(null);
   const isComposing = useRef(false);
 
@@ -101,21 +103,15 @@ export default function TextChat({ isSearchView = false }) {
 
   const getPlaceholderText = () => {
     if (isSearchView) {
-      return navigator.languages[0] === 'zh-CN'
-        ? '单击消息标题以打开其对话。'
-        : 'Click a message title to open its conversation.';
+      return localize(lang, 'com_msg_open_conversation');
     }
 
     if (disabled) {
-      return navigator.languages[0] === 'zh-CN'
-        ? '选择其他型号或再次自定义GPT'
-        : 'Choose another model or customize GPT again';
+      return localize(lang, 'com_msg_choose_another_model');
     }
 
     if (isNotAppendable) {
-      return navigator.languages[0] === 'zh-CN'
-        ? '编辑您的消息或重新生成。'
-        : 'Edit your message or Regenerate.';
+      return localize(lang, 'com_msg_edit_message');
     }
 
     return '';

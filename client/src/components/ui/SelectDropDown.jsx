@@ -2,9 +2,12 @@ import React from 'react';
 import CheckMark from '../svg/CheckMark.jsx';
 import { Listbox, Transition } from '@headlessui/react';
 import { cn } from '~/utils/';
+import store from '~/store';
+import { useRecoilValue } from 'recoil';
+import { localize } from '~/localization/Translation';
 
 function SelectDropDown({
-  title = navigator.languages[0] === 'zh-CN'?'模型':'Model',
+  title,
   value,
   disabled,
   setValue,
@@ -15,9 +18,11 @@ function SelectDropDown({
   subContainerClassName,
   className
 }) {
+  const lang = useRecoilValue(store.lang);
+  title=localize(lang, 'com_ui_model');
   return (
     <div className={cn('flex items-center justify-center gap-2', containerClassName)}>
-      <div className={cn("relative w-full", subContainerClassName)}>
+      <div className={cn('relative w-full', subContainerClassName)}>
         <Listbox value={value} onChange={setValue} disabled={disabled}>
           {({ open }) => (
             <>

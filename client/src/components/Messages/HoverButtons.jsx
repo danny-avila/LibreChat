@@ -5,6 +5,9 @@ import CheckMark from '../svg/CheckMark';
 import EditIcon from '../svg/EditIcon';
 import LikeIcon from '../svg/LikeIcon';
 import RegenerateIcon from '../svg/RegenerateIcon';
+import store from '~/store';
+import { useRecoilValue } from 'recoil';
+import { localize } from '~/localization/Translation';
 
 export default function HoverButtons({
   isEditting,
@@ -17,6 +20,7 @@ export default function HoverButtons({
   message,
   regenerate
 }) {
+  const lang = useRecoilValue(store.lang);
   const { endpoint } = conversation;
   const [isCopied, setIsCopied] = React.useState(false);
 
@@ -50,7 +54,7 @@ export default function HoverButtons({
           className="hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible"
           onClick={enterEdit}
           type="button"
-          title={navigator.languages[0]==='zh-CN'?'编辑':'edit'}
+          title={localize(lang, 'com_msg_edit')}
         >
           {/* <button className="rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400"> */}
           <EditIcon />
@@ -87,7 +91,7 @@ export default function HoverButtons({
         )}
         onClick={() => copyToClipboard(setIsCopied)}
         type="button"
-        title={navigator.languages[0]==='zh-CN'? (isCopied ? '已经复制到剪贴板' : '复制到剪贴板'):(isCopied ? 'Copied to clipboard' : 'Copy to clipboard')}
+        title={isCopied ? localize(lang,'com_msg_copied_to_clipboard') : localize(lang, 'com_msg_copy_to_clipboard')}
       >
         {isCopied ? <CheckMark /> : <Clipboard />}
       </button>

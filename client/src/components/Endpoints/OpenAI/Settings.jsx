@@ -15,8 +15,10 @@ const optionText =
   'p-0 shadow-none text-right pr-1 h-8 border-transparent focus:ring-[#10a37f] focus:ring-offset-0 focus:ring-opacity-100 hover:bg-gray-800/10 dark:hover:bg-white/10 focus:bg-gray-800/10 dark:focus:bg-white/10 transition-colors';
 
 import store from '~/store';
+import { localize } from '~/localization/Translation';
 
 function Settings(props) {
+  const lang = useRecoilValue(store.lang);
   const {
     readonly,
     model,
@@ -64,9 +66,9 @@ function Settings(props) {
             <>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-                  {navigator.languages[0] === 'zh-CN' ? '' : 'Custom Name'}{' '}
+                  {localize(lang, 'com_endpoint_custom_name')}{' '}
                   <small className="opacity-40">
-                    {navigator.languages[0] === 'zh-CN' ? '(默认: 空白)' : '(default: blank)'}
+                    {localize(lang, 'com_endpoint_default_blank')}
                   </small>
                 </Label>
                 <Input
@@ -74,11 +76,7 @@ function Settings(props) {
                   disabled={readonly}
                   value={chatGptLabel || ''}
                   onChange={(e) => setChatGptLabel(e.target.value || null)}
-                  placeholder={
-                    navigator.languages[0] === 'zh-CN'
-                      ? '为ChatGPT设置自定义名称'
-                      : 'Set a custom name for ChatGPT'
-                  }
+                  placeholder={localize(lang, 'com_endpoint_openai_custom_name_placeholder')}
                   className={cn(
                     defaultTextProps,
                     'flex h-10 max-h-10 w-full resize-none px-3 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
@@ -87,9 +85,9 @@ function Settings(props) {
               </div>
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
-                  {navigator.languages[0] === 'zh-CN' ? '提示前缀' : 'Prompt Prefix'}{' '}
+                  {localize(lang, 'com_endpoint_prompt_prefix')}{' '}
                   <small className="opacity-40">
-                    {navigator.languages[0] === 'zh-CN' ? '(默认: 空白)' : '(default: blank)'}
+                    {localize(lang, 'com_endpoint_default_blank')}
                   </small>
                 </Label>
                 <TextareaAutosize
@@ -97,11 +95,10 @@ function Settings(props) {
                   disabled={readonly}
                   value={promptPrefix || ''}
                   onChange={(e) => setPromptPrefix(e.target.value || null)}
-                  placeholder={
-                    navigator.languages[0] === 'zh-CN'
-                      ? '设置自定义指令。默认为：“你ChatGPT，一个由OpenAI训练的大型语言模型。”'
-                      : 'Set custom instructions. Defaults to: \'You are ChatGPT, a large language model trained by OpenAI.\''
-                  }
+                  placeholder={localize(
+                    lang,
+                    'com_endpoint_plug_set_custom_instructions_for_gpt_placeholder'
+                  )}
                   className={cn(
                     defaultTextProps,
                     'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 '
@@ -116,15 +113,11 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="temp-int" className="text-left text-sm font-medium">
-                  {navigator.languages[0] === 'zh-CN' ? '温度' : 'Temperature'}{' '}
+                  {localize(lang, 'com_endpoint_temperature')}{' '}
                   <small className="opacity-40">
-                    {navigator.languages[0] === 'zh-CN'
-                      ? endpoint === 'openAI'
-                        ? '(默认值: 1)'
-                        : '(默认值: 0)'
-                      : endpoint === 'openAI'
-                        ? '(default: 1)'
-                        : '(default: 0)'}
+                    {endpoint === 'openAI'
+                      ? localize(lang, 'com_endpoint_default_with_num', 1)
+                      : localize(lang, 'com_endpoint_default_with_num', 0)}
                   </small>
                 </Label>
                 <InputNumber
@@ -162,9 +155,9 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
-                  {navigator.languages[0] === 'zh-CN' ? '顶部P' : 'Top P'}{' '}
+                  {localize(lang, 'com_endpoint_top_p')}{' '}
                   <small className="opacity-40">
-                    {navigator.languages[0] === 'zh-CN' ? '(默认值: 1)' : '(default: 1)'}
+                    {localize(lang, 'com_endpoint_default_with_num', 1)}
                   </small>
                 </Label>
                 <InputNumber
@@ -203,9 +196,9 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="freq-penalty-int" className="text-left text-sm font-medium">
-                  {navigator.languages[0] === 'zh-CN' ? '频率惩罚' : 'Frequency Penalty'}{' '}
+                  {localize(lang, 'com_endpoint_frequency_penalty')}{' '}
                   <small className="opacity-40">
-                    {navigator.languages[0] === 'zh-CN' ? '(默认值: 0)' : '(default: 0)'}
+                    {localize(lang, 'com_endpoint_default_with_num', 0)}
                   </small>
                 </Label>
                 <InputNumber
@@ -244,9 +237,9 @@ function Settings(props) {
             <HoverCardTrigger className="grid w-full items-center gap-2">
               <div className="flex justify-between">
                 <Label htmlFor="pres-penalty-int" className="text-left text-sm font-medium">
-                  {navigator.languages[0] === 'zh-CN' ? '存在惩罚' : 'Presence Penalty'}{' '}
+                  {localize(lang, 'com_endpoint_presence_penalty')}{' '}
                   <small className="opacity-40">
-                    {navigator.languages[0] === 'zh-CN' ? '(默认值: 0)' : '(default: 0)'}
+                    {localize(lang, 'com_endpoint_default_with_num', 0)}
                   </small>
                 </Label>
                 <InputNumber

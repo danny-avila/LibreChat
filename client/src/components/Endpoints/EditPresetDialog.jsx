@@ -22,8 +22,10 @@ import { cn } from '~/utils/';
 import cleanupPreset from '~/utils/cleanupPreset';
 
 import store from '~/store';
+import { localize } from '~/localization/Translation';
 
 const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
+  const lang = useRecoilValue(store.lang);
   const [preset, setPreset] = useState(_preset);
   const setPresets = useSetRecoilState(store.presets);
   const [showExamples, setShowExamples] = useState(false);
@@ -174,7 +176,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
             <div className="grid w-full gap-6 sm:grid-cols-2">
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-                  Preset Name
+                  {localize(lang, 'com_endpoint_preset_name')}
                 </Label>
                 <Input
                   id="chatGptLabel"
@@ -189,7 +191,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
               </div>
               <div className="col-span-1 flex flex-col items-start justify-start gap-2">
                 <Label htmlFor="endpoint" className="text-left text-sm font-medium">
-                  Endpoint
+                  {localize(lang, 'com_endpoint')}
                 </Label>
                 <Dropdown
                   id="endpoint"
@@ -259,14 +261,14 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }) => {
               onClick={submitPreset}
               className="dark:hover:gray-400 border-gray-700 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
             >
-              Save
+              {localize(lang, 'com_endpoint_save')}
             </DialogClose>
           </>
         }
         leftButtons={
           <>
             <DialogButton onClick={exportPreset} className="dark:hover:gray-400 border-gray-700">
-              Export
+              {localize(lang, 'com_endpoint_export')}
             </DialogButton>
           </>
         }

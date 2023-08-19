@@ -6,11 +6,12 @@ import SaveAsPresetDialog from './SaveAsPresetDialog';
 import cleanupPreset from '~/utils/cleanupPreset';
 import { alternateName } from '~/utils';
 import Settings from './Settings';
-
 import store from '~/store';
+import { localize } from '~/localization/Translation';
 
 // A preset dialog to show readonly preset values.
 const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) => {
+  const lang = useRecoilValue(store.lang);
   const [preset, setPreset] = useState(_preset);
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
@@ -47,7 +48,7 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogTemplate
           title={`${
-            title || (navigator.languages[0] === 'zh-CN' ? '查看选项' : 'View Options')
+            title || (localize(lang, 'com_endpoint_view_options'))
           } - ${endpointName}`}
           className="max-w-full sm:max-w-4xl"
           main={
@@ -63,14 +64,14 @@ const EndpointOptionsDialog = ({ open, onOpenChange, preset: _preset, title }) =
                 onClick={saveAsPreset}
                 className="dark:hover:gray-400 border-gray-700 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
               >
-                {navigator.languages[0] === 'zh-CN' ? '另存为预设' : 'Save As Preset'}
+                {localize(lang, 'com_endpoint_save_as_preset')}
               </DialogButton>
             </>
           }
           leftButtons={
             <>
               <DialogButton onClick={exportPreset} className="dark:hover:gray-400 border-gray-700">
-                {navigator.languages[0] === 'zh-CN' ? '导出' : 'Export'}
+                {localize(lang, 'com_endpoint_export')}
               </DialogButton>
             </>
           }

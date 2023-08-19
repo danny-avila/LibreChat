@@ -25,8 +25,10 @@ import {
 import { cn } from '~/utils/';
 
 import store from '~/store';
+import { localize } from '~/localization/Translation';
 
 export default function NewConversationMenu() {
+  const lang = useRecoilValue(store.lang);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showPresets, setShowPresets] = useState(true);
   const [showEndpoints, setShowEndpoints] = useState(true);
@@ -159,7 +161,7 @@ export default function NewConversationMenu() {
           >
             {icon}
             <span className="max-w-0 overflow-hidden whitespace-nowrap px-0 text-slate-600 transition-all group-hover:max-w-[80px] group-hover:px-2 group-data-[state=open]:max-w-[80px] group-data-[state=open]:px-2 dark:text-slate-300">
-              {navigator.languages[0]==='zh-CN'? '新建话题':'New Topic'}
+              {localize(lang, 'com_endpoint_new_topic')}
             </span>
           </Button>
         </DropdownMenuTrigger>
@@ -171,7 +173,7 @@ export default function NewConversationMenu() {
             className="cursor-pointer dark:text-gray-300"
             onClick={() => setShowEndpoints((prev) => !prev)}
           >
-            {navigator.languages[0]==='zh-CN' ? (showEndpoints ? '隐藏接入点' : '显示接入点') : (showEndpoints ? 'Hide Endpoints' : 'Show Endpoints') }
+            {showEndpoints ? localize(lang, 'com_endpoint_hide_endpoints') : localize(lang, 'com_endpoint_show_endpoints')}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
@@ -188,7 +190,7 @@ export default function NewConversationMenu() {
                 />
               ) : (
                 <DropdownMenuLabel className="dark:text-gray-300">
-                  {navigator.languages[0]==='zh-CN' ? '没有可用接入点':'No endpoint available.'}
+                  {localize(lang, 'com_endpoint_not_available')}
                 </DropdownMenuLabel>
               ))}
           </DropdownMenuRadioGroup>
@@ -200,7 +202,7 @@ export default function NewConversationMenu() {
               className="mr-auto cursor-pointer "
               onClick={() => setShowPresets((prev) => !prev)}
             >
-              {navigator.languages[0]==='zh-CN' ? (showPresets ? '隐藏预设' : '显示预设') : (showPresets ? 'Hide Presets' : 'Show Presets')}
+              {showPresets ? localize(lang, 'com_endpoint_hide_presets') : localize(lang, 'com_endpoint_show_presets')}
             </span>
             <FileUpload onFileSelected={onFileSelected} />
             <Dialog>
@@ -214,17 +216,17 @@ export default function NewConversationMenu() {
                   className="h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-red-700 hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-gray-800 dark:hover:text-red-400"
                 > */}
                   <Trash2 className="mr-1 flex w-[22px] items-center stroke-1" />
-                  {navigator.languages[0]==='zh-CN' ? '全部清理':'Clear All'}
+                  {localize(lang, 'com_endpoint_clear_all')}
                   {/* </Button> */}
                 </label>
               </DialogTrigger>
               <DialogTemplate
-                title="Clear presets"
-                description="Are you sure you want to clear all presets? This is irreversible."
+                title={localize(lang, 'com_endpoint_clear_presets')}
+                description={localize(lang, 'com_nav_clear_conversation_confirm_message')}
                 selection={{
                   selectHandler: clearAllPresets,
                   selectClasses: 'bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
-                  selectText: navigator.languages[0]==='zh-CN' ? '清理' : 'Clear'
+                  selectText: localize(lang, 'com_nav_clear')
                 }}
               />
             </Dialog>
@@ -246,7 +248,7 @@ export default function NewConversationMenu() {
                   onDeletePreset={onDeletePreset}
                 />
               ) : (
-                <DropdownMenuLabel className="dark:text-gray-300">{navigator.languages[0]==='zh-CN'? '还没有预设。':'No preset yet.'}</DropdownMenuLabel>
+                <DropdownMenuLabel className="dark:text-gray-300">{localize(lang, 'com_endpoint_no_presets')}</DropdownMenuLabel>
               ))}
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
