@@ -109,3 +109,7 @@ export const duplicateConversation = () => {
 export const leaderboard = () => {
   return '/api/leaderboard';
 }
+
+export const likedConversations = (userId: string) => {
+  return `/api/convos/likedConvos/${userId}`
+}

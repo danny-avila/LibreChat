@@ -1,10 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Tabs, TabsList, TabsTrigger } from './Tabs';
+import { Tabs, TabsList, TabsTrigger } from '../ui/Tabs';
 import { cn } from '~/utils';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import { useParams } from 'react-router-dom';
 import { TUser } from '@librechat/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
+import LikedConversations from './LikedConversation';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
+import { localize } from '~/localization/Translation';
 
 function Profile() {
   const [tabValue, setTabValue] = useState<string>('likes');
@@ -12,6 +16,7 @@ function Profile() {
 
   const { userId } = useParams();
   const { token } = useAuthContext();
+  const lang = useRecoilValue(store.lang);
   useDocumentTitle('Profile');
 
   const defaultClasses = 'p-2 rounded-md min-w-[75px] font-normal text-xs';
@@ -39,7 +44,7 @@ function Profile() {
   }, [token, userId]);
 
   return (
-    <div className='flex flex-col justify-center md:mx-36'>
+    <div className='flex flex-col h-full justify-center md:mx-36'>
       <div className='flex flex-row my-12'>
         <div
           title='User Icon'
@@ -54,18 +59,21 @@ function Profile() {
             alt="avatar"
           />
         </div>
-        <div className='flex flex-col justify-start mx-3 gap-4 dark:text-white'>
+        <div className='flex flex-col justify-center mx-3 gap-4 dark:text-white'>
+          <div className='text-2xl'>
+            {user?.name}
+          </div>
           <div className='text-2xl'>
             {user?.username}
           </div>
-          <div className='flex flex-row gap-y-6 gap-x-12'>
+          {/* <div className='flex flex-row gap-y-6 gap-x-12'>
             <button onClick={() => setTabValue('following')}>
               Following
             </button>
             <button onClick={() => setTabValue('followers')}>
               Followers
             </button>
-          </div>
+          </div> */}
         </div>
       </div>
       <hr />
@@ -73,9 +81,9 @@ function Profile() {
         <Tabs value={tabValue} onValueChange={(value: string) => setTabValue(value)} className={defaultClasses}>
           <TabsList className="bg-white">
             <TabsTrigger value='likes' className="text-gray-500 dark:text-gray-200">
-              {'Likes'}
+              {localize(lang, 'com_ui_my_likes')}
             </TabsTrigger>
-            <TabsTrigger value='conversations' className="text-gray-500 dark:text-gray-200">
+            {/* <TabsTrigger value='conversations' className="text-gray-500 dark:text-gray-200">
               {'Conversations'}
             </TabsTrigger>
             <TabsTrigger value='following' className="text-gray-500 dark:text-gray-200">
@@ -83,12 +91,13 @@ function Profile() {
             </TabsTrigger>
             <TabsTrigger value='followers' className="text-gray-500 dark:text-gray-200">
               {'Followers'}
-            </TabsTrigger>
+            </TabsTrigger> */}
           </TabsList>
         </Tabs>
       </div>
-      <div>
-        Display tab content here...
+      <div className='flex flex-col h-full overflow-y-auto border-t-2'>
+        {(tabValue === 'likes') && (<LikedConversations key={userId} />)}
+        {!(tabValue === 'likes') && 'Display tab content here...'}
       </div>
     </div>
   );

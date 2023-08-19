@@ -1,6 +1,13 @@
 // Chinese phrases
 
 export default {
+  com_ui_my_likes: '我的点赞',
+  com_ui_profile: '个人资料',
+  com_ui_copy_link: '复制链接',
+  com_ui_copy_success: '复制成功',
+  com_ui_share: '分享',
+  com_ui_public: '公开',
+  com_ui_private: '私密',
   com_ui_homepage: '主页',
   com_ui_register_before_like: '需注册账号后才能点赞哦',
   com_ui_number_of_likes: '次点赞',

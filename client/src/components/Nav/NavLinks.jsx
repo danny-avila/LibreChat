@@ -13,7 +13,7 @@ import Logout from './Logout';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { cn } from '~/utils/';
 import DotsIcon from '../svg/DotsIcon';
-import Profile from '../ui/Profile';
+import Profile from '../Profile';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
 

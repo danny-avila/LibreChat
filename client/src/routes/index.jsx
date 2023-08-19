@@ -2,7 +2,7 @@ import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
 import Root from './Root';
 import Chat from './Chat';
 import Search from './Search';
-import Profile from '../components/ui/Profile';
+import Profile from '../components/Profile';
 import { Login, Registration, RequestPasswordReset, ResetPassword } from '../components/Auth';
 import { AuthContextProvider } from '../hooks/AuthContext';
 import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';

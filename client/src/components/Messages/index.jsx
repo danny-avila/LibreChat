@@ -9,6 +9,7 @@ import MessageHeader from './MessageHeader';
 import { useScreenshot } from '~/utils/screenshotContext.jsx';
 
 import store from '~/store';
+import MessageHeaderButtons from './MessageHeaderButtons';
 
 export default function Messages({ isSearchView = false }) {
   const [currentEditId, setCurrentEditId] = useState(-1);
@@ -98,6 +99,7 @@ export default function Messages({ isSearchView = false }) {
             </div>
           ) : (
             <>
+              <MessageHeaderButtons />
               <MultiMessage
                 key={conversationId} // avoid internal state mixture
                 messageId={conversationId}
