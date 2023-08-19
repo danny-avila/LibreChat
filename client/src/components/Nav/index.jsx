@@ -293,31 +293,31 @@ export default function Nav({ navVisible, setNavVisible }) {
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <HomeIcon />}
                 text={localize(lang, 'com_ui_homepage')}
-                clickHandler={ openHomepageHandler }
+                clickHandler={ user ? openHomepageHandler : navigateToRegister }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <NotebookIcon />}
                 text={localize(lang, 'com_ui_writing_assistant')}
-                clickHandler={ openWritingAssistantHandler }
+                clickHandler={ user ? openWritingAssistantHandler : navigateToRegister }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <ComputerIcon />}
                 text={localize(lang, 'com_ui_coding_assistant')}
-                clickHandler={ openCodingAssistantHandler }
+                clickHandler={ user ? openCodingAssistantHandler : navigateToRegister }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <LightBulbIcon />}
                 text={localize(lang, 'com_ui_ask_me_anything')}
-                clickHandler={ openAskMeAnythingHandler }
+                clickHandler={ user ? openAskMeAnythingHandler : navigateToRegister }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <LeaderboardIcon />}
                 text={localize(lang, 'com_ui_referrals_leaderboard')}
-                clickHandler={ openLeaderboardHandler }
+                clickHandler={ user ? openLeaderboardHandler : navigateToRegister }
               />
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
