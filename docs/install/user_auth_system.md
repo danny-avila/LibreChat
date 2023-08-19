@@ -45,7 +45,8 @@ To enable Google login, you must create an application in the [Google Cloud Cons
 
 ---
 
-## Facebook Authentication
+## Facebook Authentication 
+### (It only works with a domain, not with localhost)
 
 1. Go to [Facebook Developer Portal](https://developers.facebook.com/)
 2. Create a new Application and give it a name
@@ -57,13 +58,6 @@ To enable Google login, you must create an application in the [Google Cloud Cons
 FACEBOOK_CLIENT_ID=your_client_id
 FACEBOOK_CLIENT_SECRET=your_client_secret
 FACEBOOK_CALLBACK_URL=/oauth/facebook/callback # this should be the same for everyone
-```
-8. Save the .env file
-
-```
-DISCORD_CLIENT_ID=your_client_id
-DISCORD_CLIENT_SECRET=your_client_secret
-DISCORD_CALLBACK_URL=/oauth/discord/callback # this should be the same for everyone
 ```
 8. Save the .env file
 
