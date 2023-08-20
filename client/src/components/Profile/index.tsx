@@ -9,7 +9,7 @@ import LikedConversations from './LikedConversation';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
-import RecentConversations from './RecentConversations';
+import PublicConversations from './PublicConversations';
 import { Spinner } from '../svg';
 
 function Profile() {
@@ -108,7 +108,7 @@ function Profile() {
       </div>
       <div className='flex flex-col h-full overflow-y-auto border-t-2'>
         {(tabValue === 'likes') && (<LikedConversations key={userId} />)}
-        {(tabValue === 'conversations') && (<RecentConversations key={userId} />)}
+        {(tabValue === 'conversations') && (<PublicConversations key={userId} />)}
         {(tabValue === '') && <Spinner />}
       </div>
     </div>
