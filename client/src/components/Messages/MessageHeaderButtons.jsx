@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { localize } from '~/localization/Translation';
 import PrivateButton from '../Conversations/PrivateButton';
-import LikeIcon from '../svg/LikeIcon';
 import { CSSTransition } from 'react-transition-group';
 import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -115,14 +114,24 @@ export default function MessageHeaderButtons() {
             className='flex flex-row items-center gap-1 ml-0.5 pr-1 hover:bg-gray-200 hover:dark:bg-gray-600'
             onClick={ likeHandler }
           >
-            <div className='p-1'>
-              <LikeIcon filled={liked} />
-            </div>
-            <div className='mr-0.5'>
-              {numOfLikes}
+            <div className='p-0.5'>
+              <svg
+                stroke="currentColor"
+                fill={liked ? 'currentColor' : 'none'}
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-4 w-4"
+                height="1em"
+                width="1em"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
+              </svg>
             </div>
             <div>
-              {localize(lang, 'com_ui_number_of_likes')}
+              {localize(lang, 'com_ui_number_of_likes', numOfLikes.toString())}
             </div>
           </button>
         </div>

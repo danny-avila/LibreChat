@@ -453,11 +453,8 @@ export default function Homepage() {
                         <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
                       </svg>
                     </div>
-                    <div className='ml-px mr-0.5'>
-                      {numOfLikes}
-                    </div>
                     <div>
-                      {localize(lang, 'com_ui_number_of_likes')}
+                      {localize(lang, 'com_ui_number_of_likes', numOfLikes.toString())}
                     </div>
                   </button>
                 </div>
