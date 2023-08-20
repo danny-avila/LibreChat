@@ -387,7 +387,7 @@ export default function Homepage() {
             <div className='grid grid-row gap-1 w-full sticky bg-white top-0 z-30 items-center md:gap-0 dark:bg-gray-800'>
               <h1
                 id="landing-title"
-                className="ml-auto mr-auto mt-0.5 flex gap-2 text-center text-3xl font-semibold"
+                className="ml-auto mr-auto mt-0.5 flex gap-2 text-center text-2xl font-semibold"
               >
                 {convoData && convoDataKeys ? convoData[convoDataKeys[convoIdx]].title : ''}
               </h1>

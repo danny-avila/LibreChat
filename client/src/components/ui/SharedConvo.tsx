@@ -228,7 +228,7 @@ export default function SharedConvo() {
               <div className='grid grid-row w-full gap-1 sticky bg-white top-0 z-30 justify-center items-center text-gray-800 dark:text-gray-100 dark:bg-gray-800'>
                 <h1
                   id="landing-title"
-                  className="ml-auto mr-auto mt-0.5 flex gap-2 text-center text-3xl font-semibold"
+                  className="ml-auto mr-auto mt-0.5 flex gap-2 text-center text-2xl font-semibold"
                 >
                   {conversation ? conversation.title : ''}
                 </h1>
