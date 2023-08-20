@@ -1,17 +1,14 @@
-import { TConversation, useGetLikedConversationQuery, useGetPublicConversationQuery } from '@librechat/data-provider';
+import { TConversation, useGetPublicConversationQuery } from '@librechat/data-provider';
 import { useEffect, useState } from 'react';
 import { Spinner } from '../svg';
 import { useNavigate, useParams } from 'react-router-dom';
 import ConvoIcon from '../svg/ConvoIcon';
-import { useAuthContext } from '~/hooks/AuthContext';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
 import { useRecoilValue } from 'recoil';
 
 function PublicConversations() {
-  const { user } = useAuthContext();
   const { userId = '' } = useParams();
-  const { switchToConversation } = store.useConversation();
   const navigate = useNavigate();
   const getLikedConversationsQuery = useGetPublicConversationQuery(userId);
 
