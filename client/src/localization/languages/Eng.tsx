@@ -1,6 +1,7 @@
 // English phrases
 
 export default {
+  com_ui_conversations: 'Conversations',
   com_ui_my_likes: 'Likes',
   com_ui_profile: 'Profile',
   com_ui_copy_link: 'Copy link',

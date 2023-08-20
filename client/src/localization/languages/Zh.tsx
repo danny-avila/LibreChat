@@ -1,6 +1,7 @@
 // Chinese phrases
 
 export default {
+  com_ui_conversations: '对话',
   com_ui_my_likes: '我的点赞',
   com_ui_profile: '个人资料',
   com_ui_copy_link: '复制链接',
