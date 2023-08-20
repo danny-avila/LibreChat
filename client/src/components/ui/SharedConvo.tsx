@@ -228,7 +228,7 @@ export default function SharedConvo() {
               <div className='grid grid-row w-full gap-1 sticky bg-white top-0 z-30 justify-center items-center text-gray-800 dark:text-gray-100 dark:bg-gray-800'>
                 <h1
                   id="landing-title"
-                  className="ml-auto mr-auto mt-0.5 flex gap-2 text-center text-3xl font-semibold"
+                  className="ml-auto mr-auto mt-0.5 flex gap-2 text-center text-2xl font-semibold"
                 >
                   {conversation ? conversation.title : ''}
                 </h1>
@@ -295,11 +295,8 @@ export default function SharedConvo() {
                             <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
                           </svg>
                         </div>
-                        <div className='ml-px mr-0.5'>
-                          {numOfLikes}
-                        </div>
                         <div>
-                          {localize(lang, 'com_ui_number_of_likes')}
+                          {localize(lang, 'com_ui_number_of_likes' , numOfLikes.toString())}
                         </div>
                       </button>
                     </div>

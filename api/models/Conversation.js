@@ -217,7 +217,20 @@ module.exports = {
       const filter = {};
       filter[`likedBy.${userId}`] = true;
 
-      const dbResponse = await Conversation.find(filter).exec();
+      const dbResponse = await Conversation.find(filter).limit(30).exec();
+      return dbResponse;
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error fetching liked conversations' };
+    }
+  },
+  getPublicConvos: async (userId) => {
+    try {
+      const dbResponse = await Conversation.find({
+        user: { $eq: userId },
+        isPrivate: { $eq: false }
+      }).sort({ createdAt: -1 }).limit(30).exec();
+
       return dbResponse;
     } catch (error) {
       console.log(error);

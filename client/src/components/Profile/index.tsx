@@ -9,13 +9,15 @@ import LikedConversations from './LikedConversation';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
+import PublicConversations from './PublicConversations';
+import { Spinner } from '../svg';
 
 function Profile() {
-  const [tabValue, setTabValue] = useState<string>('likes');
-  const [user, setUser] = useState<TUser | null>(null);
+  const [tabValue, setTabValue] = useState<string>('');
+  const [profileUser, setProfileUser] = useState<TUser | null>(null);
 
   const { userId } = useParams();
-  const { token } = useAuthContext();
+  const { user, token } = useAuthContext();
   const lang = useRecoilValue(store.lang);
   useDocumentTitle('Profile');
 
@@ -23,7 +25,7 @@ function Profile() {
   const defaultSelected = cn(defaultClasses, 'font-medium data-[state=active]:text-white text-xs text-white');
 
   async function fetchConvoUser(id: string | undefined) {
-    setUser(null);
+    setProfileUser(null);
     try {
       const response = await fetch(`/api/user/${id}`, {
         method: 'GET',
@@ -33,7 +35,7 @@ function Profile() {
         }
       });
       const responseObject = await response.json();
-      setUser(responseObject);
+      setProfileUser(responseObject);
     } catch (error) {
       console.log(error);
     }
@@ -42,6 +44,11 @@ function Profile() {
   useEffect(() => {
     if (token) fetchConvoUser(userId);
   }, [token, userId]);
+
+  useEffect(() => {
+    if (userId === user?.id) setTabValue('likes');
+    else setTabValue('conversations');
+  }, [user, userId]);
 
   return (
     <div className='flex flex-col h-full justify-center md:mx-36'>
@@ -53,18 +60,18 @@ function Profile() {
           <img
             className="rounded-md"
             src={
-              user?.avatar ||
-              `https://api.dicebear.com/6.x/initials/svg?seed=${user?.name}&fontFamily=Verdana&fontSize=36&size=96`
+              profileUser?.avatar ||
+              `https://api.dicebear.com/6.x/initials/svg?seed=${profileUser?.name}&fontFamily=Verdana&fontSize=36&size=96`
             }
             alt="avatar"
           />
         </div>
         <div className='flex flex-col justify-center mx-3 gap-4 dark:text-white'>
           <div className='text-2xl'>
-            {user?.name}
+            {profileUser?.name}
           </div>
           <div className='text-2xl'>
-            {user?.username}
+            {profileUser?.username}
           </div>
           {/* <div className='flex flex-row gap-y-6 gap-x-12'>
             <button onClick={() => setTabValue('following')}>
@@ -80,13 +87,17 @@ function Profile() {
       <div className='flex flex-col items-center'>
         <Tabs value={tabValue} onValueChange={(value: string) => setTabValue(value)} className={defaultClasses}>
           <TabsList className="bg-white">
-            <TabsTrigger value='likes' className="text-gray-500 dark:text-gray-200">
-              {localize(lang, 'com_ui_my_likes')}
-            </TabsTrigger>
-            {/* <TabsTrigger value='conversations' className="text-gray-500 dark:text-gray-200">
-              {'Conversations'}
-            </TabsTrigger>
-            <TabsTrigger value='following' className="text-gray-500 dark:text-gray-200">
+            {userId === user?.id && (
+              <TabsTrigger value='likes' className="text-gray-500 dark:text-gray-200">
+                {localize(lang, 'com_ui_my_likes')}
+              </TabsTrigger>
+            )}
+            {userId != user?.id && (
+              <TabsTrigger value='conversations' className="text-gray-500 dark:text-gray-200">
+                {localize(lang, 'com_ui_conversations')}
+              </TabsTrigger>
+            )}
+            {/* <TabsTrigger value='following' className="text-gray-500 dark:text-gray-200">
               {'Following'}
             </TabsTrigger>
             <TabsTrigger value='followers' className="text-gray-500 dark:text-gray-200">
@@ -97,7 +108,8 @@ function Profile() {
       </div>
       <div className='flex flex-col h-full overflow-y-auto border-t-2'>
         {(tabValue === 'likes') && (<LikedConversations key={userId} />)}
-        {!(tabValue === 'likes') && 'Display tab content here...'}
+        {(tabValue === 'conversations') && (<PublicConversations key={userId} />)}
+        {(tabValue === '') && <Spinner />}
       </div>
     </div>
   );

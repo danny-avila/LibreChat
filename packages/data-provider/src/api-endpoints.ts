@@ -113,3 +113,7 @@ export const leaderboard = () => {
 export const likedConversations = (userId: string) => {
   return `/api/convos/likedConvos/${userId}`
 }
+
+export const publicConversations = (userId: string) => {
+  return `/api/convos/publicConvos/${userId}`
+}

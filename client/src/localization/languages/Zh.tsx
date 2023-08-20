@@ -1,6 +1,7 @@
 // Chinese phrases
 
 export default {
+  com_ui_conversations: '对话',
   com_ui_my_likes: '我的点赞',
   com_ui_profile: '个人资料',
   com_ui_copy_link: '复制链接',
@@ -10,7 +11,7 @@ export default {
   com_ui_private: '私密',
   com_ui_homepage: '主页',
   com_ui_register_before_like: '需注册账号后才能点赞哦',
-  com_ui_number_of_likes: '次点赞',
+  com_ui_number_of_likes: '赞 {0}',
   com_ui_register_here: '没有AITok账号？点击这里注册。',
   com_ui_copied: '已将对话分享链接复制到剪贴板',
   com_ui_private_conversation: '抱歉，此对话是一个私密对话',
