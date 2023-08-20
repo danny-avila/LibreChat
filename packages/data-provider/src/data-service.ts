@@ -135,3 +135,7 @@ export const getLeaderboard = () => {
 export const getLikedConversations = (userId: string) => {
   return request.get(endpoints.likedConversations(userId));
 }
+
+export const getPublicConverstaions = (userId: string) => {
+  return request.get(endpoints.publicConversations(userId));
+}
