@@ -6,7 +6,6 @@ import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-qu
 import { ThemeProvider } from './hooks/ThemeContext';
 import { useApiErrorBoundary } from './hooks/ApiErrorBoundaryContext';
 import { router } from './routes';
-import SetLanguage from './utils/setLang.jsx';
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
@@ -25,7 +24,6 @@ const App = () => {
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
         <ThemeProvider>
-          <SetLanguage />
           <RouterProvider router={router} />
           <ReactQueryDevtools initialIsOpen={false} position="top-right" />
         </ThemeProvider>
