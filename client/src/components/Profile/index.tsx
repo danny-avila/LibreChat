@@ -16,6 +16,7 @@ function Profile() {
   const [tabValue, setTabValue] = useState<string>('');
   const [profileUser, setProfileUser] = useState<TUser | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
+  const followers = 0;
 
   const { userId } = useParams();
   const { user, token } = useAuthContext();
@@ -53,10 +54,10 @@ function Profile() {
 
   return (
     <div className='flex flex-col h-full justify-center md:mx-36'>
-      <div className='flex flex-row flex-wrap mt-6 mb-3 md:my-12'>
+      <div className='flex flex-row items-center flex-wrap mt-6 mb-3 md:my-12'>
         <div
           title='User Icon'
-          className='relative flex items-center justify-center my-1 mx-4 md:my-3 md:mx-12'
+          className='relative flex items-center justify-center my-1 mx-4 md:my-3 md:ml-12'
         >
           <img
             className="rounded-md"
@@ -67,25 +68,22 @@ function Profile() {
             alt="avatar"
           />
         </div>
-        <div className='flex flex-col justify-center mx-3 gap-4 dark:text-white'>
-          <div className='text-2xl'>
+        <div className='flex flex-col justify-center mx-3 gap-4 dark:text-gray-200 text-2xl'>
+          <div>
             {profileUser?.name}
           </div>
-          <div className='text-2xl'>
+          <div>
             {profileUser?.username}
           </div>
-          {/* <div className='flex flex-row gap-y-6 gap-x-12'>
-            <button onClick={() => setTabValue('following')}>
-              Following
-            </button>
-            <button onClick={() => setTabValue('followers')}>
-              Followers
-            </button>
-          </div> */}
         </div>
+        {(userId !== user?.id) &&
+          <button className='ml-12 px-3 py-1 text-lg font-bold rounded-md bg-gray-200 text-gray-800 hover:text-black dark:bg-gray-600 dark:text-gray-400 dark:hover:text-gray-200'>
+            Follow
+          </button>
+        }
         <div className='flex flex-row ml-5 py-3 text-xl gap-4 items-center md:ml-9'>
           <button
-            className='w-32 text-gray-600 hover:text-black'
+            className='w-32 text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200'
             onClick={() => {
               if (copied) return;
               setCopied(true);
@@ -121,16 +119,25 @@ function Profile() {
                   </svg>
                   {localize(lang, 'com_ui_share_profile')}
                 </>
-
               )}
             </div>
           </button>
-          {/* <button className='w-24 text-start text-gray-600 hover:text-black'>
+          <button
+            className='flex flex-col leading-[22px] items-center w-24 text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200'
+            onClick={() => {setTabValue('followers')}}
+          >
+            {followers}
+            <br />
             {localize(lang, 'com_ui_followers')}
           </button>
-          <button className='w-24 text-start text-gray-600 hover:text-black'>
+          <button
+            className='flex flex-col leading-[22px] items-center w-24 text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200'
+            onClick={() => {setTabValue('following')}}
+          >
+            {followers}
+            <br />
             {localize(lang, 'com_ui_following')}
-          </button> */}
+          </button>
         </div>
       </div>
       <hr />
@@ -147,12 +154,12 @@ function Profile() {
                 {localize(lang, 'com_ui_conversations')}
               </TabsTrigger>
             )}
-            {/* <TabsTrigger value='following' className="text-gray-500 dark:text-gray-200">
-              {'Following'}
-            </TabsTrigger>
             <TabsTrigger value='followers' className="text-gray-500 dark:text-gray-200">
               {'Followers'}
-            </TabsTrigger> */}
+            </TabsTrigger>
+            <TabsTrigger value='following' className="text-gray-500 dark:text-gray-200">
+              {'Following'}
+            </TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
