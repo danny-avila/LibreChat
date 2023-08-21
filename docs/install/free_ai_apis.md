@@ -26,7 +26,7 @@ OPENAI_REVERSE_PROXY=https://chimeragpt.adventblocks.cc/api/v1/chat/completions
 # OPENAI_MODELS=gpt-3.5-turbo,gpt-3.5-turbo-16k,gpt-3.5-turbo-0301,text-davinci-003,gpt-4,gpt-4-0314,gpt-4-0613
 ```
 
-**Note:** The `OPENAI_MODELS` variable is commented out so that the server can fetch chimeragpt/v1/api/models for all available models. Uncomment and adjust if you wish to specify which exact models you want to use.
+**Note:** The `OPENAI_MODELS` variable is commented out so that the server can fetch chimeragpt/api/v1/models for all available models. Uncomment and adjust if you wish to specify which exact models you want to use.
 
 It's worth noting that not all models listed by their API will work, with or without this project. The exact URL may also change, just make sure you include `/v1/chat/completions` in the reverse proxy URL if it ever changes.
 
