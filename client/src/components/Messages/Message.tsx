@@ -142,6 +142,7 @@ export default function Message({
             )}
             <div className="sibling-switch invisible absolute left-0 top-2 -ml-4 flex -translate-x-full items-center justify-center gap-1 text-xs group-hover:visible">
               <SiblingSwitch
+                message={message}
                 siblingIdx={siblingIdx}
                 siblingCount={siblingCount}
                 setSiblingIdx={setSiblingIdx}
@@ -191,6 +192,7 @@ export default function Message({
             />
             <SubRow subclasses="switch-container">
               <SiblingSwitch
+                message={message}
                 siblingIdx={siblingIdx}
                 siblingCount={siblingCount}
                 setSiblingIdx={setSiblingIdx}

@@ -1,13 +1,36 @@
-import React from 'react';
+import { useSetRecoilState } from 'recoil';
+import type { TMessageProps } from '~/common';
+import store from '~/store';
 
-export default function SiblingSwitch({ siblingIdx, siblingCount, setSiblingIdx }) {
+type TSiblingSwitchProps = Pick<
+  TMessageProps,
+  'message' | 'siblingIdx' | 'siblingCount' | 'setSiblingIdx'
+>;
+
+export default function SiblingSwitch({
+  message,
+  siblingIdx,
+  siblingCount,
+  setSiblingIdx,
+}: TSiblingSwitchProps) {
+  const setLatestMessage = useSetRecoilState(store.latestMessage);
+
+  if (siblingIdx === undefined) {
+    return null;
+  } else if (siblingCount === undefined) {
+    return null;
+  }
+
   const previous = () => {
-    setSiblingIdx(siblingIdx - 1);
+    setSiblingIdx && setSiblingIdx(siblingIdx - 1);
+    message && setLatestMessage(message);
   };
 
   const next = () => {
-    setSiblingIdx(siblingIdx + 1);
+    setSiblingIdx && setSiblingIdx(siblingIdx + 1);
+    message && setLatestMessage(message);
   };
+
   return siblingCount > 1 ? (
     <>
       <button
@@ -27,7 +50,7 @@ export default function SiblingSwitch({ siblingIdx, siblingCount, setSiblingIdx 
           width="1em"
           xmlns="http://www.w3.org/2000/svg"
         >
-          <polyline points="15 18 9 12 15 6"></polyline>
+          <polyline points="15 18 9 12 15 6" />
         </svg>
       </button>
       <span className="flex-shrink-0 flex-grow">
@@ -50,7 +73,7 @@ export default function SiblingSwitch({ siblingIdx, siblingCount, setSiblingIdx 
           width="1em"
           xmlns="http://www.w3.org/2000/svg"
         >
-          <polyline points="9 18 15 12 9 6"></polyline>
+          <polyline points="9 18 15 12 9 6" />
         </svg>
       </button>
     </>

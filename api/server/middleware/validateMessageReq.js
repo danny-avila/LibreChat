@@ -4,6 +4,10 @@ const { getConvo } = require('../../models');
 const validateMessageReq = async (req, res, next) => {
   let conversationId = req.params.conversationId || req.body.conversationId;
 
+  if (conversationId === 'new') {
+    return res.status(200).send([]);
+  }
+
   if (!conversationId && req.body.message) {
     conversationId = req.body.message.conversationId;
   }
