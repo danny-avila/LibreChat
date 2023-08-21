@@ -128,6 +128,7 @@ router.post(
 
       let response = await client.sendMessage(text, {
         user,
+        generation,
         isEdited: true,
         conversationId,
         parentMessageId,

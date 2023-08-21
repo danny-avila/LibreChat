@@ -90,6 +90,7 @@ router.post(
 
       let response = await client.sendMessage(text, {
         user: req.user.id,
+        generation,
         isEdited: true,
         conversationId,
         parentMessageId,

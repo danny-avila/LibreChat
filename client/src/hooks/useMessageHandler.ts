@@ -77,6 +77,7 @@ const useMessageHandler = () => {
 
     // construct the placeholder response message
     const generation = latestMessage?.text ?? '';
+    console.log('Generation:', generation);
     const responseText = isEdited ? generation : '<span className="result-streaming">█</span>';
 
     const responseMessageId = isEdited ? latestMessage?.messageId : null;

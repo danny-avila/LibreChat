@@ -397,11 +397,15 @@ class BaseClient {
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
       await this.handleStartMethods(message, opts);
 
+    const { generation = '' } = opts;
+
     this.user = user;
     // It's not necessary to push to currentMessages
     // depending on subclass implementation of handling messages
     // When this is an edit, all messages are already in currentMessages, both user and response
-    if (!isEdited) {
+    if (isEdited) {
+      this.currentMessages[this.currentMessages.length - 1].text = generation;
+    } else {
       this.currentMessages.push(userMessage);
     }
 
@@ -442,7 +446,6 @@ class BaseClient {
       await this.saveMessageToDatabase(userMessage, saveOptions, user);
     }
 
-    const generation = isEdited ? this.currentMessages[this.currentMessages.length - 1].text : '';
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,

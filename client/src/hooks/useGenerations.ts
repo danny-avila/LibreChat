@@ -39,7 +39,7 @@ export default function useGenerations({
 
   const editEnabled =
     !error &&
-    isCreatedByUser && // TODO: allow AI editing
+    // isCreatedByUser && // TODO: allow AI editing
     !searchResult &&
     !isEditing &&
     branchingSupported;

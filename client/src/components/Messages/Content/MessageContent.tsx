@@ -52,14 +52,18 @@ const EditMessage = ({
   const textEditor = useRef<HTMLDivElement | null>(null);
   const resubmitMessage = () => {
     const text = textEditor?.current?.innerText ?? '';
-
-    ask({
+    const payload = {
       text,
       parentMessageId: message?.parentMessageId,
       conversationId: message?.conversationId,
-    });
+    };
 
-    // setSiblingIdx(siblingCount - 1);
+    if (message.isCreatedByUser) {
+      ask(payload);
+    } else {
+      ask(payload, { isRegenerate: true, isEdited: true });
+    }
+
     setSiblingIdx();
     enterEdit(true);
   };
@@ -108,7 +112,7 @@ const UnfinishedMessage = () => (
   <ErrorMessage text="This is an unfinished message. The AI may still be generating a response, it was aborted, or a censor was triggered. Refresh or visit later to see more updates." />
 );
 
-// Main Component
+// Content Component
 const MessageContent = ({
   text,
   edit,
