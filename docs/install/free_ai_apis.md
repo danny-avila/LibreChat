@@ -6,7 +6,7 @@ Feel free to check out the others, but I haven't personally tested them: [Free A
 
 ### ChimeraGPT
 
-Since ChimeraGPT works with LibreChat, and offers Llama2 along with OpenAI models, let's start with that one: [ChimeraGPT](https://discord.gg/chimeragpt)
+Since ChimeraGPT works with LibreChat, and offers Llama2 along with OpenAI models, let's start with that one: [ChimeraGPT](https://discord.gg/ge48uqZUSr)
 
 > ⚠️ Never trust 3rd parties. Use at your own risk of privacy loss. Your data may be used for AI training at best or for nefarious reasons at worst; this is true in all cases, even with official endpoints: never give an LLM sensitive/identifying information. If something is free, you are the product. If errors arise, they are more likely to be due to the 3rd party, and not this project, as I test the official endpoints first and foremost.
 
