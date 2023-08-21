@@ -101,6 +101,10 @@ const useMessageHandler = () => {
       error: false,
     };
 
+    if (isContinued) {
+      currentMessages = currentMessages.filter((msg) => msg.messageId !== responseMessageId);
+    }
+
     const submission: TSubmission = {
       conversation: {
         ...currentConversation,
@@ -123,12 +127,9 @@ const useMessageHandler = () => {
     console.log('User Input:', text, submission);
 
     if (isRegenerate) {
-      setMessages([
-        ...(isContinued ? currentMessages.slice(0, -1) : currentMessages),
-        initialResponse,
-      ]);
+      setMessages([...submission.messages, initialResponse]);
     } else {
-      setMessages([...currentMessages, currentMsg, initialResponse]);
+      setMessages([...submission.messages, currentMsg, initialResponse]);
     }
     setSubmission(submission);
   };
