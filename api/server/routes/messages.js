@@ -29,11 +29,10 @@ router.get('/:conversationId/:messageId', requireJwtAuth, validateMessageReq, as
 });
 
 // UPDATE
-router.put('/:conversationId/:messageId', requireJwtAuth, validateMessageReq, (req, res) => {
+router.put('/:conversationId/:messageId', requireJwtAuth, validateMessageReq, async (req, res) => {
   const { messageId } = req.params;
   const { text } = req.body;
-  updateMessage({ messageId, text });
-  res.status(202).send();
+  res.status(201).send(await updateMessage({ messageId, text }));
 });
 
 // DELETE
