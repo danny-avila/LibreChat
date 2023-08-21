@@ -42,8 +42,8 @@ function Profile() {
   }
 
   useEffect(() => {
-    if (token) fetchConvoUser(userId);
-  }, [token, userId]);
+    fetchConvoUser(userId);
+  }, [userId]);
 
   useEffect(() => {
     if (userId === user?.id) setTabValue('likes');

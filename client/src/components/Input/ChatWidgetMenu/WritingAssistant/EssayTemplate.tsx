@@ -97,7 +97,7 @@ export default function EssayTemplate({ type }: { type: string }) {
   const SubType = () => {
     return(
       <SelectDropDown
-        title={''}
+        title={'副类型'}
         value={subType}
         setValue={(value: string) => setSubType(value)}
         availableValues={['全文', '文章段落']}
@@ -111,11 +111,8 @@ export default function EssayTemplate({ type }: { type: string }) {
 
   const Author =
     <div className="grid w-full items-center gap-y-2">
-      <Label htmlFor="toneStyle-dropdown" className="text-left text-sm font-medium">
-        写作水平
-      </Label>
       <SelectDropDown
-        title={''}
+        title={'写作水平'}
         value={level}
         setValue={(value: string) => setLevel(value)}
         availableValues={['小学三年级', '小学六年级', '初中生', '高中生', '本科生', '学士', '硕士', '博士']}
