@@ -29,9 +29,10 @@ router.get('/:conversationId/:messageId', requireJwtAuth, validateMessageReq, as
 });
 
 // UPDATE
-router.put('/:conversationId', requireJwtAuth, validateMessageReq, (req, res) => {
-  const { message } = req.body;
-  updateMessage(message);
+router.put('/:conversationId/:messageId', requireJwtAuth, validateMessageReq, (req, res) => {
+  const { messageId } = req.params;
+  const { text } = req.body;
+  updateMessage({ messageId, text });
   res.status(202).send();
 });
 

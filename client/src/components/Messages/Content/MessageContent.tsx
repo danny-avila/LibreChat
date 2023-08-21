@@ -1,5 +1,6 @@
 import { useRef } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useRecoilState } from 'recoil';
+import { useUpdateMessageMutation } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { TAskFunction } from '~/common';
 import { cn, getError } from '~/utils';
@@ -53,8 +54,10 @@ const EditMessage = ({
   siblingIdx,
   setSiblingIdx,
 }: TEditProps) => {
-  const messages = useRecoilValue(store.messages);
+  const [messages, setMessages] = useRecoilState(store.messages);
   const textEditor = useRef<HTMLDivElement | null>(null);
+  const { conversationId, parentMessageId, messageId } = message;
+  const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
 
   const resubmitMessage = () => {
     const text = textEditor?.current?.innerText ?? '';
@@ -62,13 +65,13 @@ const EditMessage = ({
     if (message.isCreatedByUser) {
       ask({
         text,
-        parentMessageId: message?.parentMessageId,
-        conversationId: message?.conversationId,
+        parentMessageId,
+        conversationId,
       });
 
       setSiblingIdx((siblingIdx ?? 0) - 1);
     } else {
-      const parentMessage = messages?.find((msg) => msg.messageId == message?.parentMessageId);
+      const parentMessage = messages?.find((msg) => msg.messageId === parentMessageId);
 
       if (!parentMessage) {
         return;
@@ -77,7 +80,7 @@ const EditMessage = ({
         { ...parentMessage },
         {
           editedText: text,
-          editedMessageId: message?.messageId,
+          editedMessageId: messageId,
           isRegenerate: true,
           isEdited: true,
         },
@@ -88,6 +91,30 @@ const EditMessage = ({
 
     enterEdit(true);
   };
+
+  const updateMessage = () => {
+    if (!messages) {
+      return;
+    }
+    const text = textEditor?.current?.innerText ?? '';
+    updateMessageMutation.mutate({
+      conversationId: conversationId ?? '',
+      messageId,
+      text,
+    });
+    setMessages(() =>
+      messages.map((msg) =>
+        msg.messageId === messageId
+          ? {
+            ...msg,
+            text,
+          }
+          : msg,
+      ),
+    );
+    enterEdit(true);
+  };
+
   return (
     <Container>
       <div
@@ -105,6 +132,13 @@ const EditMessage = ({
           onClick={resubmitMessage}
         >
           Save & Submit
+        </button>
+        <button
+          className="btn btn-secondary relative mr-2"
+          disabled={isSubmitting}
+          onClick={updateMessage}
+        >
+          Save
         </button>
         <button className="btn btn-neutral relative" onClick={() => enterEdit(true)}>
           Cancel
