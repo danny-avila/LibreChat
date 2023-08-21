@@ -7,8 +7,8 @@ import { Login, Registration, RequestPasswordReset, ResetPassword } from '../com
 import { AuthContextProvider } from '../hooks/AuthContext';
 import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
 import Leaderboard from '~/components/ui/Leaderboard';
-import Homepage from '~/components/ui/Homepage';
 import SharedConvo from '~/components/ui/SharedConvo';
+import Recommendations from '~/components/ui/Recommendations';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -63,7 +63,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'home',
-            element: <Homepage />
+            element: <Recommendations />
           },
           {
             path: 'profile/:userId?',

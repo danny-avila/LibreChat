@@ -7,7 +7,7 @@ export * from './HoverCard';
 export * from './Input';
 export * from './InputNumber';
 export * from './Label';
-export * from './Homepage';
+export * from './Recommendations';
 export * from './ModelSelect';
 export * from './Prompt';
 export * from './Slider';

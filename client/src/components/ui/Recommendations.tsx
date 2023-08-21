@@ -22,7 +22,7 @@ import { Plugin } from '~/components/svg';
 import { useNavigate } from 'react-router-dom';
 import { alternateName } from '~/utils';
 
-export default function Homepage() {
+export default function Recommendations() {
   const [tabValue, setTabValue] = useRecoilState<string>(store.tabValue);
 
   const [convoIdx, setConvoIdx] = useState<number>(0);
