@@ -1,6 +1,9 @@
 // English phrases
 
 export default {
+  com_ui_followers: 'Followers',
+  com_ui_following: 'Following',
+  com_ui_share_profile: 'Share Profile',
   com_ui_conversations: 'Conversations',
   com_ui_my_likes: 'Likes',
   com_ui_profile: 'Profile',
@@ -9,7 +12,8 @@ export default {
   com_ui_share: 'Share',
   com_ui_public: 'Public',
   com_ui_private: 'Private',
-  com_ui_homepage: 'Home',
+  com_ui_homepage: 'My Profile',
+  com_ui_others_homepage: '{0}\' s Profile',
   com_ui_register_before_like: 'Let\'s make yourself an account',
   com_ui_number_of_likes: '{0} Likes',
   com_ui_register_here: 'Don\'t have an account yet? Click here to register.',

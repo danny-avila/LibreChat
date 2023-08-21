@@ -1,6 +1,9 @@
 // Chinese phrases
 
 export default {
+  com_ui_followers: '粉丝',
+  com_ui_following: '关注',
+  com_ui_share_profile: '分享主页',
   com_ui_conversations: '对话',
   com_ui_my_likes: '我的点赞',
   com_ui_profile: '个人资料',
@@ -9,7 +12,8 @@ export default {
   com_ui_share: '分享',
   com_ui_public: '公开',
   com_ui_private: '私密',
-  com_ui_homepage: '主页',
+  com_ui_homepage: '我的主页',
+  com_ui_others_homepage: '{0}的主页',
   com_ui_register_before_like: '需注册账号后才能点赞哦',
   com_ui_number_of_likes: '赞 {0}',
   com_ui_register_here: '没有AITok账号？点击这里注册。',
