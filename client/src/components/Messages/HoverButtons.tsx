@@ -46,7 +46,6 @@ export default function HoverButtons({
         title="edit"
         disabled={!editEnabled}
       >
-        {/* <button className="rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400"> */}
         <EditIcon />
       </button>
       <button
@@ -67,8 +66,7 @@ export default function HoverButtons({
           type="button"
           title="regenerate"
         >
-          {/* <button className="rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400"> */}
-          <RegenerateIcon />
+          <RegenerateIcon className="hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>
       ) : null}
       {continueSupported ? (
@@ -78,7 +76,7 @@ export default function HoverButtons({
           type="button"
           title="continue"
         >
-          <ContinueIcon className="h-4 w-4" />
+          <ContinueIcon className="h-4 w-4 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>
       ) : null}
     </div>
