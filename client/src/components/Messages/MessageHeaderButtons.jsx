@@ -131,7 +131,7 @@ export default function MessageHeaderButtons() {
               </svg>
             </div>
             <div>
-              {localize(lang, 'com_ui_number_of_likes', numOfLikes.toString())}
+              {localize(lang, 'com_ui_number_of_likes', numOfLikes ? numOfLikes.toString() : '0')}
             </div>
           </button>
         </div>
