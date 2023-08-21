@@ -43,11 +43,8 @@ function WritingAssistant() {
         <div className="grid gap-6 sm:grid-cols-2">
           <div className="col-span-1 flex flex-col items-center justify-start gap-6">
             <div className="grid w-full items-center gap-y-2">
-              <Label htmlFor="toneStyle-dropdown" className="text-left text-sm font-medium">
-                写作类型
-              </Label>
               <SelectDropDown
-                title={''}
+                title={'写作类型'}
                 value={type}
                 setValue={(value: string) => setType(value)}
                 availableValues={['作文']}

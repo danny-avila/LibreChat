@@ -63,11 +63,8 @@ function CodingAssistant() {
         <div className="grid gap-6 sm:grid-cols-2">
           <div className="col-span-1 flex flex-col items-center justify-start gap-6">
             <div className="grid w-full items-center gap-y-2">
-              <Label htmlFor="toneStyle-dropdown" className="text-left text-sm font-medium">
-                语言
-              </Label>
               <SelectDropDown
-                title={''}
+                title={'语言'}
                 value={lang}
                 setValue={(value: string) => setLang(value)}
                 availableValues={['Python', 'Javascript', 'Java', 'C#', 'C++', 'Swift', 'HTML']}
@@ -81,11 +78,8 @@ function CodingAssistant() {
               />
             </div>
             <div className="grid w-full items-center gap-y-2">
-              <Label htmlFor="toneStyle-dropdown" className="text-left text-sm font-medium">
-                类型
-              </Label>
               <SelectDropDown
-                title={''}
+                title={'类型'}
                 value={type}
                 setValue={(value: string) => setType(value)}
                 availableValues={['代码生成', '代码优化', '错误信息']}

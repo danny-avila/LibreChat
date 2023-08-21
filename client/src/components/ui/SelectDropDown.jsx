@@ -19,7 +19,7 @@ function SelectDropDown({
   className
 }) {
   const lang = useRecoilValue(store.lang);
-  title=localize(lang, 'com_ui_model');
+  title=title || localize(lang, 'com_ui_model');
   return (
     <div className={cn('flex items-center justify-center gap-2', containerClassName)}>
       <div className={cn('relative w-full', subContainerClassName)}>
