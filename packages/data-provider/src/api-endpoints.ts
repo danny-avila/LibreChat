@@ -2,6 +2,10 @@ export const user = () => {
   return '/api/user';
 };
 
+export const userById = (id: string) => {
+  return `/api/user/${id}`
+}
+
 export const userPlugins = () => {
   return '/api/user/plugins';
 };

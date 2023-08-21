@@ -16,6 +16,7 @@ export enum QueryKeys {
   conversation = 'conversation',
   searchEnabled = 'searchEnabled',
   user = 'user',
+  userById = 'userById',
   endpoints = 'endpoints',
   presets = 'presets',
   searchResults = 'searchResults',
@@ -48,6 +49,17 @@ export const useGetUserQuery = (
     refetchOnMount: false,
     retry: false,
     ...config
+  });
+};
+
+export const useGetUserByIdQuery = (
+  id: string,
+) => {
+  return useQuery([QueryKeys.userById, id], () => dataService.getUserById(id), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
   });
 };
 

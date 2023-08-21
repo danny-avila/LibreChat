@@ -61,6 +61,10 @@ export function getUser(): Promise<t.TUser> {
   return request.get(endpoints.user());
 }
 
+export function getUserById(id: string) {
+  return request.get(endpoints.userById(id));
+}
+
 export const searchConversations = async (
   q: string,
   pageNumber: string
