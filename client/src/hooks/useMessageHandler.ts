@@ -17,7 +17,13 @@ const useMessageHandler = () => {
 
   const ask: TAskFunction = (
     { text, parentMessageId = null, conversationId = null, messageId = null },
-    { isRegenerate = false, isEdited = false } = {},
+    {
+      editedText = null,
+      editedMessageId = null,
+      isRegenerate = false,
+      isContinued = false,
+      isEdited = false,
+    } = {},
   ) => {
     if (!!isSubmitting || text === '') {
       return;
@@ -34,11 +40,12 @@ const useMessageHandler = () => {
       return;
     }
 
-    if (isEdited && !latestMessage) {
-      console.error('cannot edit AI message without latestMessage!');
+    if (isContinued && !latestMessage) {
+      console.error('cannot continue AI message without latestMessage!');
       return;
     }
 
+    const isEditOrContinue = isEdited || isContinued;
     const { userProvide } = endpointsConfig[endpoint] ?? {};
 
     // set the endpoint option
@@ -71,16 +78,17 @@ const useMessageHandler = () => {
       isCreatedByUser: true,
       parentMessageId,
       conversationId,
-      messageId: isEdited && messageId ? messageId : fakeMessageId,
+      messageId: isContinued && messageId ? messageId : fakeMessageId,
       error: false,
     };
 
     // construct the placeholder response message
-    const generation = latestMessage?.text ?? '';
-    console.log('Generation:', generation);
-    const responseText = isEdited ? generation : '<span className="result-streaming">█</span>';
+    const generation = editedText ?? latestMessage?.text ?? '';
+    const responseText = isEditOrContinue
+      ? generation
+      : '<span className="result-streaming">█</span>';
 
-    const responseMessageId = isEdited ? latestMessage?.messageId : null;
+    const responseMessageId = editedMessageId ?? latestMessage?.messageId ?? null;
     const initialResponse: TMessage = {
       sender: responseSender,
       text: responseText,
@@ -106,7 +114,8 @@ const useMessageHandler = () => {
         overrideParentMessageId: isRegenerate ? messageId : null,
       },
       messages: currentMessages,
-      isEdited,
+      isEdited: isEditOrContinue,
+      isContinued,
       isRegenerate,
       initialResponse,
     };
@@ -115,7 +124,7 @@ const useMessageHandler = () => {
 
     if (isRegenerate) {
       setMessages([
-        ...(isEdited ? currentMessages.slice(0, -1) : currentMessages),
+        ...(isContinued ? currentMessages.slice(0, -1) : currentMessages),
         initialResponse,
       ]);
     } else {
@@ -147,7 +156,7 @@ const useMessageHandler = () => {
     );
 
     if (parentMessage && parentMessage.isCreatedByUser) {
-      ask({ ...parentMessage }, { isRegenerate: true, isEdited: true });
+      ask({ ...parentMessage }, { isContinued: true, isRegenerate: true, isEdited: true });
     } else {
       console.error(
         'Failed to regenerate the message: parentMessage not found, or not created by user.',

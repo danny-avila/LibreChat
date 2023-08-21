@@ -30,12 +30,12 @@ export default function useServerStream(submission: TSubmission | null) {
       plugin,
       initialResponse,
       isRegenerate = false,
-      isEdited = false,
+      isContinued = false,
     } = submission;
 
     if (isRegenerate) {
       setMessages([
-        ...(isEdited ? messages.slice(0, -1) : messages),
+        ...(isContinued ? messages.slice(0, -1) : messages),
         {
           ...initialResponse,
           text: data,
@@ -65,11 +65,11 @@ export default function useServerStream(submission: TSubmission | null) {
 
   const cancelHandler = (data: TResData, submission: TSubmission) => {
     const { requestMessage, responseMessage, conversation } = data;
-    const { messages, isRegenerate = false, isEdited = false } = submission;
+    const { messages, isRegenerate = false, isContinued = false } = submission;
 
     // update the messages
     if (isRegenerate) {
-      setMessages([...(isEdited ? messages.slice(0, -1) : messages), responseMessage]);
+      setMessages([...(isContinued ? messages.slice(0, -1) : messages), responseMessage]);
     } else {
       setMessages([...messages, requestMessage, responseMessage]);
     }
@@ -99,12 +99,12 @@ export default function useServerStream(submission: TSubmission | null) {
       message,
       initialResponse,
       isRegenerate = false,
-      isEdited = false,
+      isContinued = false,
     } = submission;
 
     if (isRegenerate) {
       setMessages([
-        ...(isEdited ? messages.slice(0, -1) : messages),
+        ...(isContinued ? messages.slice(0, -1) : messages),
         {
           ...initialResponse,
           parentMessageId: message?.overrideParentMessageId ?? null,
@@ -137,11 +137,11 @@ export default function useServerStream(submission: TSubmission | null) {
 
   const finalHandler = (data: TResData, submission: TSubmission) => {
     const { requestMessage, responseMessage, conversation } = data;
-    const { messages, isRegenerate = false, isEdited = false } = submission;
+    const { messages, isRegenerate = false, isContinued = false } = submission;
 
     // update the messages
     if (isRegenerate) {
-      setMessages([...(isEdited ? messages.slice(0, -1) : messages), responseMessage]);
+      setMessages([...(isContinued ? messages.slice(0, -1) : messages), responseMessage]);
     } else {
       setMessages([...messages, requestMessage, responseMessage]);
     }

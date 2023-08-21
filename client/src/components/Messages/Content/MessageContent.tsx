@@ -1,7 +1,9 @@
 import { useRef } from 'react';
+import { useRecoilValue } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import type { TAskFunction } from '~/common';
 import { cn, getError } from '~/utils';
+import store from '~/store';
 import Content from './Content';
 
 type TInitialProps = {
@@ -15,8 +17,9 @@ type TAdditionalProps = {
   ask: TAskFunction;
   message: TMessage;
   isCreatedByUser: boolean;
+  siblingIdx: number;
   enterEdit: (cancel: boolean) => void;
-  setSiblingIdx: () => void;
+  setSiblingIdx: (value: number) => void;
 };
 
 type TMessageContent = TInitialProps & TAdditionalProps;
@@ -47,24 +50,42 @@ const EditMessage = ({
   isSubmitting,
   ask,
   enterEdit,
+  siblingIdx,
   setSiblingIdx,
 }: TEditProps) => {
+  const messages = useRecoilValue(store.messages);
   const textEditor = useRef<HTMLDivElement | null>(null);
+
   const resubmitMessage = () => {
     const text = textEditor?.current?.innerText ?? '';
-    const payload = {
-      text,
-      parentMessageId: message?.parentMessageId,
-      conversationId: message?.conversationId,
-    };
-
+    console.log('siblingIdx:', siblingIdx);
     if (message.isCreatedByUser) {
-      ask(payload);
+      ask({
+        text,
+        parentMessageId: message?.parentMessageId,
+        conversationId: message?.conversationId,
+      });
+
+      setSiblingIdx((siblingIdx ?? 0) - 1);
     } else {
-      ask(payload, { isRegenerate: true, isEdited: true });
+      const parentMessage = messages?.find((msg) => msg.messageId == message?.parentMessageId);
+
+      if (!parentMessage) {
+        return;
+      }
+      ask(
+        { ...parentMessage },
+        {
+          editedText: text,
+          editedMessageId: message?.messageId,
+          isRegenerate: true,
+          isEdited: true,
+        },
+      );
+
+      setSiblingIdx((siblingIdx ?? 0) - 1);
     }
 
-    setSiblingIdx();
     enterEdit(true);
   };
   return (

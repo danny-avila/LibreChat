@@ -170,7 +170,13 @@ export default function Message({
                 unfinished={unfinished ?? false}
                 isSubmitting={isSubmitting}
                 isCreatedByUser={isCreatedByUser ?? true}
-                setSiblingIdx={() => setSiblingIdx && setSiblingIdx((siblingIdx ?? 0) - 1)}
+                siblingIdx={siblingIdx ?? 0}
+                setSiblingIdx={
+                  setSiblingIdx ??
+                  (() => {
+                    return;
+                  })
+                }
               />
             </div>
             <HoverButtons

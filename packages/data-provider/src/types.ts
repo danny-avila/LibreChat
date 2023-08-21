@@ -10,6 +10,7 @@ export type TSubmission = {
   plugin?: TResPlugin;
   message: TMessage;
   isEdited?: boolean;
+  isContinued?: boolean;
   messages: TMessage[];
   isRegenerate?: boolean;
   conversationId?: string;

@@ -71,7 +71,10 @@ export type TAskProps = {
 };
 
 export type TOptions = {
+  editedMessageId?: string | null;
+  editedText?: string | null;
   isRegenerate?: boolean;
+  isContinued?: boolean;
   isEdited?: boolean;
 };
 

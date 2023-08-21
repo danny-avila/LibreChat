@@ -52,15 +52,23 @@ class BaseClient {
     if (opts && typeof opts === 'object') {
       this.setOptions(opts);
     }
+
+    const { isEdited, isContinued } = opts;
     const user = opts.user ?? null;
+    const saveOptions = this.getSaveOptions();
+    this.abortController = opts.abortController ?? new AbortController();
     const conversationId = opts.conversationId ?? crypto.randomUUID();
     const parentMessageId = opts.parentMessageId ?? '00000000-0000-0000-0000-000000000000';
     const userMessageId = opts.overrideParentMessageId ?? crypto.randomUUID();
-    const responseMessageId = opts.responseMessageId ?? crypto.randomUUID();
-    const saveOptions = this.getSaveOptions();
-    const head = opts.isEdited ? responseMessageId : parentMessageId;
+    let responseMessageId = opts.responseMessageId ?? crypto.randomUUID();
+    let head = isEdited ? responseMessageId : parentMessageId;
     this.currentMessages = (await this.loadHistory(conversationId, head)) ?? [];
-    this.abortController = opts.abortController ?? new AbortController();
+
+    if (isEdited && !isContinued) {
+      responseMessageId = crypto.randomUUID();
+      head = responseMessageId;
+      this.currentMessages[this.currentMessages.length - 1].messageId = head;
+    }
 
     return {
       ...opts,
@@ -404,6 +412,7 @@ class BaseClient {
     // depending on subclass implementation of handling messages
     // When this is an edit, all messages are already in currentMessages, both user and response
     if (isEdited) {
+      /* TODO: edge case where latest message doesn't exist */
       this.currentMessages[this.currentMessages.length - 1].text = generation;
     } else {
       this.currentMessages.push(userMessage);
@@ -421,10 +430,10 @@ class BaseClient {
       this.getBuildMessagesOptions(opts),
     );
 
-    if (this.options.debug) {
-      console.debug('payload');
-      // console.debug(payload);
-    }
+    console.debug('payload');
+    console.debug(payload);
+    // if (this.options.debug) {
+    // }
 
     if (tokenCountMap) {
       console.dir(tokenCountMap, { depth: null });

@@ -29,7 +29,7 @@ export default function MultiMessage({
   }, [messagesTree?.length]);
 
   // if (!messageList?.length) return null;
-  if (!(messagesTree && messagesTree.length)) {
+  if (!(messagesTree && messagesTree?.length)) {
     return null;
   }
 
