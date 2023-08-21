@@ -202,7 +202,7 @@ export default function SharedConvo() {
       setShareLink(window.location.host +  `/chat/share/${conversation.conversationId}`);
       setNumOfLikes(conversation.likes);
 
-      if (user) setLiked(conversation.likedBy[user?.id]);
+      if (user && conversation.likedBy) setLiked(conversation.likedBy[user?.id]);
     } else {
       setIsPrivate(true);
       setPageTitle(localize(lang, 'com_ui_private_conversation'));
