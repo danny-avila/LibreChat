@@ -1,20 +1,12 @@
-import { useSetRecoilState } from 'recoil';
 import type { TMessageProps } from '~/common';
-import store from '~/store';
 
-type TSiblingSwitchProps = Pick<
-  TMessageProps,
-  'message' | 'siblingIdx' | 'siblingCount' | 'setSiblingIdx'
->;
+type TSiblingSwitchProps = Pick<TMessageProps, 'siblingIdx' | 'siblingCount' | 'setSiblingIdx'>;
 
 export default function SiblingSwitch({
-  message,
   siblingIdx,
   siblingCount,
   setSiblingIdx,
 }: TSiblingSwitchProps) {
-  const setLatestMessage = useSetRecoilState(store.latestMessage);
-
   if (siblingIdx === undefined) {
     return null;
   } else if (siblingCount === undefined) {
@@ -23,12 +15,10 @@ export default function SiblingSwitch({
 
   const previous = () => {
     setSiblingIdx && setSiblingIdx(siblingIdx - 1);
-    message && setLatestMessage(message);
   };
 
   const next = () => {
     setSiblingIdx && setSiblingIdx(siblingIdx + 1);
-    message && setLatestMessage(message);
   };
 
   return siblingCount > 1 ? (
