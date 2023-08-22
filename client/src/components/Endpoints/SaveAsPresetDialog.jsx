@@ -5,8 +5,10 @@ import { cn } from '~/utils/';
 import cleanupPreset from '~/utils/cleanupPreset';
 import { useCreatePresetMutation } from '@librechat/data-provider';
 import store from '~/store';
+import { localize } from '~/localization/Translation';
 
 const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
+  const lang = useRecoilValue(store.lang);
   const [title, setTitle] = useState(preset?.title || 'My Preset');
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const createPresetMutation = useCreatePresetMutation();
@@ -37,7 +39,7 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }) => {
         main={
           <div className="grid w-full items-center gap-2">
             <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-              Preset Name
+              {localize(lang, 'com_endpoint_preset_name')}
             </Label>
             <Input
               id="chatGptLabel"
