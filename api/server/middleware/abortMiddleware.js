@@ -79,6 +79,7 @@ const handleAbortError = async (res, req, error, data) => {
       cancelled: false,
       error: true,
       text: error.message,
+      isCreatedByUser: false,
     };
     if (abortControllers.has(conversationId)) {
       const { abortController } = abortControllers.get(conversationId);
