@@ -185,7 +185,7 @@ export default function Message({
               isSubmitting={isSubmitting}
               message={message}
               conversation={conversation ?? null}
-              enterEdit={() => enterEdit()}
+              enterEdit={enterEdit}
               regenerate={() => regenerateMessage()}
               handleContinue={handleContinue}
               copyToClipboard={copyToClipboard}
