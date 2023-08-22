@@ -155,37 +155,22 @@ module.exports = {
 
   likeConvo: async (conversationId, userId, liked) => {
     try {
-      const existingConversation = await Conversation.findOne({ conversationId }).exec();
+      const update = {};
 
-      if (existingConversation) {
-        if (existingConversation.likedBy[userId] === liked) return existingConversation;
-
-        const update = {};
-
-        if (liked) {
-          // Increment the likesCount by 1
-          update.likes = existingConversation.likes + 1;
-
-          const likedBy = existingConversation.likedBy;
-          likedBy[userId] = true;
-          update.likedBy = likedBy;
-        } else {
-          // Ensure likesCount doesn't go below 0
-          update.likes = existingConversation.likes > 0 ? existingConversation.likes - 1 : 0;
-
-          const likedBy = existingConversation.likedBy;
-          likedBy[userId] = false;
-          update.likedBy = likedBy;
-        }
-
+      if (liked) {
+        update[`likedBy.${userId}`] = true;
         return await Conversation.findOneAndUpdate(
           { conversationId },
-          update,
+          { $set: update, $inc: { likes: 1 } },
           { new: true, upsert: false }
         ).exec();
       } else {
-        // Handle if the conversation doesn't exist for the user
-        return { message: 'Conversation not found.' };
+        update[`likedBy.${userId}`] = false;
+        return await Conversation.findOneAndUpdate(
+          { conversationId },
+          { $set: update, $inc: { likes: -1 } },
+          { new: true, upsert: false }
+        ).exec();
       }
     } catch (error) {
       console.log(error);
