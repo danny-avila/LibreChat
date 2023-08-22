@@ -1,8 +1,8 @@
-import { createContext, useRef, useContext, Ref } from 'react';
+import { createContext, useRef, useContext, RefObject } from 'react';
 import { toCanvas } from 'html-to-image';
 
 type ScreenshotContextType = {
-  ref?: Ref<HTMLElement>;
+  ref?: RefObject<HTMLDivElement>;
 };
 
 const ScreenshotContext = createContext<ScreenshotContextType>({});

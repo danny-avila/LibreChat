@@ -22,7 +22,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.5.4",
     "@azure/search-documents": "^11.3.2",
-    "@dqbd/tiktoken": "^1.0.2",
+    "@dqbd/tiktoken": "^1.0.7",
     "@fortaine/fetch-event-source": "^3.0.6",
     "@keyv/mongo": "^2.1.8",
     "@waylaidwanderer/chatgpt-api": "^1.37.2",

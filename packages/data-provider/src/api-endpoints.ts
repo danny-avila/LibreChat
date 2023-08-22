@@ -6,8 +6,8 @@ export const userPlugins = () => {
   return '/api/user/plugins';
 };
 
-export const messages = (id: string) => {
-  return `/api/messages/${id}`;
+export const messages = (conversationId: string, messageId?: string) => {
+  return `/api/messages/${conversationId}${messageId ? `/${messageId}` : ''}`;
 };
 
 export const abortRequest = (endpoint: string) => {

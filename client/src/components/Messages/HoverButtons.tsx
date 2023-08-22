@@ -6,9 +6,9 @@ import { cn } from '~/utils';
 
 type THoverButtons = {
   isEditing: boolean;
-  enterEdit: () => void;
-  copyToClipboard: (setIsCopied: (isCopied: boolean) => void) => void;
-  conversation: TConversation;
+  enterEdit: (cancel?: boolean) => void;
+  copyToClipboard: (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => void;
+  conversation: TConversation | null;
   isSubmitting: boolean;
   message: TMessage;
   regenerate: () => void;
@@ -25,33 +25,47 @@ export default function HoverButtons({
   regenerate,
   handleContinue,
 }: THoverButtons) {
-  const { endpoint } = conversation;
+  const { endpoint } = conversation ?? {};
   const [isCopied, setIsCopied] = useState(false);
-  const { editEnabled, regenerateEnabled, continueSupported } = useGenerations({
+  const { hideEditButton, regenerateEnabled, continueSupported } = useGenerations({
     isEditing,
     isSubmitting,
     message,
     endpoint: endpoint ?? '',
   });
+  if (!conversation) {
+    return null;
+  }
+
+  const { isCreatedByUser } = message;
+
+  const onEdit = () => {
+    if (isEditing) {
+      return enterEdit(true);
+    }
+    enterEdit();
+  };
 
   return (
     <div className="visible mt-2 flex justify-center gap-3 self-end text-gray-400 md:gap-4 lg:absolute lg:right-0 lg:top-0 lg:mt-0 lg:translate-x-full lg:gap-1 lg:self-center lg:pl-2">
       <button
         className={cn(
           'hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible',
-          message?.isCreatedByUser ? '' : 'opacity-0',
+          isCreatedByUser ? '' : 'active',
+          hideEditButton ? 'opacity-0' : '',
+          isEditing ? 'active bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200' : '',
         )}
-        onClick={enterEdit}
+        onClick={onEdit}
         type="button"
         title="edit"
-        disabled={!editEnabled}
+        disabled={hideEditButton}
       >
         <EditIcon />
       </button>
       <button
         className={cn(
           'hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible',
-          message?.isCreatedByUser ? '' : 'active',
+          isCreatedByUser ? '' : 'active',
         )}
         onClick={() => copyToClipboard(setIsCopied)}
         type="button"

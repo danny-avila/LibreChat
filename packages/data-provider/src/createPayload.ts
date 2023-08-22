@@ -2,7 +2,7 @@ import { tConversationSchema } from './schemas';
 import { TSubmission, EModelEndpoint } from './types';
 
 export default function createPayload(submission: TSubmission) {
-  const { conversation, message, endpointOption, isEdited } = submission;
+  const { conversation, message, endpointOption, isEdited, isContinued } = submission;
   const { conversationId } = tConversationSchema.parse(conversation);
   const { endpoint } = endpointOption as { endpoint: EModelEndpoint };
 
@@ -26,6 +26,7 @@ export default function createPayload(submission: TSubmission) {
   const payload = {
     ...message,
     ...endpointOption,
+    isContinued: isEdited && isContinued,
     conversationId,
   };
 
