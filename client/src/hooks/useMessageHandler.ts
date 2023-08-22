@@ -6,11 +6,14 @@ import type { TAskFunction } from '~/common';
 import store from '~/store';
 
 const useMessageHandler = () => {
+  const latestMessage = useRecoilValue(store.latestMessage);
+  const setSiblingIdx = useSetRecoilState(
+    store.messagesSiblingIdxFamily(latestMessage?.parentMessageId),
+  );
   const currentConversation = useRecoilValue(store.conversation) || { endpoint: null };
   const setSubmission = useSetRecoilState(store.submission);
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
-  const latestMessage = useRecoilValue(store.latestMessage);
   const [messages, setMessages] = useRecoilState(store.messages);
   const { endpoint } = currentConversation;
   const { getToken } = store.useToken(endpoint ?? '');
@@ -187,6 +190,7 @@ const useMessageHandler = () => {
   const handleContinue = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     continueGeneration();
+    setSiblingIdx(0);
   };
 
   return {
