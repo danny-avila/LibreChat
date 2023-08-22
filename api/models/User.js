@@ -93,7 +93,15 @@ const userSchema = mongoose.Schema(
     numOfReferrals: {
       type: Number,
       default: 0
-    }
+    },
+    followers: {
+      type: Object,
+      default: {}
+    },
+    following: {
+      type: Object,
+      default: {}
+    },
   },
   { timestamps: true }
 );

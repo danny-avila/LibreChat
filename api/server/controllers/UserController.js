@@ -11,7 +11,9 @@ const getUserController = async (req, res) => {
       const id = user._id;
       const name = user.name;
       const username = user.username;
-      res.status(200).send({ id, name, username });
+      const followers = user.followers;
+      const following = user.following;
+      res.status(200).send({ id, name, username, followers, following });
     }
   } catch (error) {
     console.log(error);
@@ -63,7 +65,43 @@ const updateUserPluginsController = async (req, res) => {
   }
 };
 
+const followUserController = async (req, res) => {
+  try {
+    const { user, isFollowing, otherUser } = req.body.arg;
+
+    // Get the users involed from DB
+    const dbUser = await User.findById(user.id).exec();
+    const dbOtherUser = await User.findById(otherUser.id).exec();
+
+    // Build the updates
+    const userUpdate = {};
+    const otherUserUpdate = {};
+
+    userUpdate['following'] = dbUser.following || {};
+    userUpdate['following'][otherUser.id] = { isFollowing: isFollowing, name: otherUser.name, username: otherUser.username };
+
+    otherUserUpdate['followers'] = dbOtherUser.followers || {};
+    otherUserUpdate['followers'][user.id] = { isFollower: isFollowing, name: user.name, username: user.username };
+
+    // Updates to the DB
+    await User.findByIdAndUpdate(user.id, userUpdate, { new: true, upsert: false });
+    const dbResponse = await User.findByIdAndUpdate(otherUser.id, otherUserUpdate, { new: true, upsert: false });
+
+    // Returns the updated profile page user
+    const id = dbResponse._id;
+    const name = dbResponse.name;
+    const username = dbResponse.username;
+    const followers = dbResponse.followers;
+    const following = dbResponse.following;
+    res.status(200).send({ id, name, username, followers, following });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ message: err.message });
+  }
+}
+
 module.exports = {
   getUserController,
-  updateUserPluginsController
+  updateUserPluginsController,
+  followUserController
 };
