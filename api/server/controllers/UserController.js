@@ -69,19 +69,12 @@ const followUserController = async (req, res) => {
   try {
     const { user, isFollowing, otherUser } = req.body.arg;
 
-    // Get the users involed from DB
-    const dbUser = await User.findById(user.id).exec();
-    const dbOtherUser = await User.findById(otherUser.id).exec();
-
     // Build the updates
     const userUpdate = {};
     const otherUserUpdate = {};
 
-    userUpdate['following'] = dbUser.following || {};
-    userUpdate['following'][otherUser.id] = { isFollowing: isFollowing, name: otherUser.name, username: otherUser.username };
-
-    otherUserUpdate['followers'] = dbOtherUser.followers || {};
-    otherUserUpdate['followers'][user.id] = { isFollower: isFollowing, name: user.name, username: user.username };
+    userUpdate[`following.${otherUser.id}`] = { isFollowing: isFollowing, name: otherUser.name, username: otherUser.username };
+    otherUserUpdate[`followers.${user.id}`] = { isFollower: isFollowing, name: user.name, username: user.username };
 
     // Updates to the DB
     await User.findByIdAndUpdate(user.id, userUpdate, { new: true, upsert: false });
