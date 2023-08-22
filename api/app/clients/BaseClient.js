@@ -430,10 +430,10 @@ class BaseClient {
       this.getBuildMessagesOptions(opts),
     );
 
-    console.debug('payload');
-    console.debug(payload);
-    // if (this.options.debug) {
-    // }
+    if (this.options.debug) {
+      console.debug('payload');
+      console.debug(payload);
+    }
 
     if (tokenCountMap) {
       console.dir(tokenCountMap, { depth: null });
