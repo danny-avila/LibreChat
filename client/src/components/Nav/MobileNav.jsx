@@ -31,7 +31,7 @@ export default function MobileNav({ setNavVisible }) {
 
   useEffect(() => {
     if (!profileUser) return;
-    if (user.id === userId) {
+    if (user && user.id === userId) {
       setProfileName(localize(lang, 'com_ui_homepage'));
     } else {
       setProfileName(localize(lang, 'com_ui_others_homepage', profileUser.username));
