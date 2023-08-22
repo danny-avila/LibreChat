@@ -3,7 +3,7 @@ import { Tabs, TabsList, TabsTrigger } from '../ui/Tabs';
 import { cn } from '~/utils';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import { useParams } from 'react-router-dom';
-import { TUser } from '@librechat/data-provider';
+import { TUser, useFollowUserMutation, useGetUserByIdQuery } from '@librechat/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import LikedConversations from './LikedConversation';
 import { useRecoilValue } from 'recoil';
@@ -16,41 +16,56 @@ function Profile() {
   const [tabValue, setTabValue] = useState<string>('');
   const [profileUser, setProfileUser] = useState<TUser | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
+  const [isFollower, setIsFollower] = useState<boolean>(false);
   const followers = 0;
 
-  const { userId } = useParams();
-  const { user, token } = useAuthContext();
+  const { userId = '' } = useParams();
+  const { user } = useAuthContext();
   const lang = useRecoilValue(store.lang);
   useDocumentTitle('Profile');
+
+  const getUserByIdQuery = useGetUserByIdQuery(userId);
+  const followUserMutation = useFollowUserMutation();
 
   const defaultClasses = 'p-2 rounded-md min-w-[75px] font-normal text-xs';
   const defaultSelected = cn(defaultClasses, 'font-medium data-[state=active]:text-white text-xs text-white');
 
-  async function fetchConvoUser(id: string | undefined) {
-    setProfileUser(null);
-    try {
-      const response = await fetch(`/api/user/${id}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        }
-      });
-      const responseObject = await response.json();
-      setProfileUser(responseObject);
-    } catch (error) {
-      console.log(error);
+  const followUserController = () => {
+    const payload = {
+      user: user,
+      otherUser: profileUser
     }
+
+    if (profileUser) {
+      if (profileUser.followers && profileUser.followers[`${user?.id}`] && profileUser.followers[`${user?.id}`].isFollower) {
+        payload['isFollowing'] = false;
+      } else {
+        payload['isFollowing'] = true;
+      }
+    }
+
+    followUserMutation.mutate(payload);
   }
 
   useEffect(() => {
-    fetchConvoUser(userId);
-  }, [userId]);
+    if (getUserByIdQuery.isSuccess) {
+      setProfileUser(getUserByIdQuery.data);
+      setIsFollower(getUserByIdQuery.data.followers && getUserByIdQuery.data.followers[`${user?.id}`] ?
+        getUserByIdQuery.data.followers[`${user?.id}`].isFollower : false);
+    }
+  }, [getUserByIdQuery.isSuccess, getUserByIdQuery.data, user]);
 
   useEffect(() => {
     if (userId === user?.id) setTabValue('likes');
     else setTabValue('conversations');
   }, [user, userId]);
+
+  useEffect(() => {
+    if (followUserMutation.isSuccess) {
+      setProfileUser(followUserMutation.data);
+      setIsFollower(!isFollower);
+    }
+  }, [followUserMutation.isSuccess, followUserMutation.data]);
 
   return (
     <div className='flex flex-col h-full justify-center md:mx-36'>
@@ -76,9 +91,12 @@ function Profile() {
             {profileUser?.username}
           </div>
         </div>
-        {(userId !== user?.id) &&
-          <button className='ml-12 px-3 py-1 text-lg font-bold rounded-md bg-gray-200 text-gray-800 hover:text-black dark:bg-gray-600 dark:text-gray-400 dark:hover:text-gray-200'>
-            Follow
+        {(userId !== user?.id && profileUser && user) &&
+          <button
+            className='ml-9 px-3 py-1 text-lg font-bold rounded-md bg-gray-200 text-gray-800 hover:text-black dark:bg-gray-600 dark:text-gray-400 dark:hover:text-gray-200'
+            onClick={ followUserController }
+          >
+            {isFollower ? 'Unfollow' : 'Follow'}
           </button>
         }
         <div className='flex flex-row ml-5 py-3 text-xl gap-4 items-center md:ml-9'>
