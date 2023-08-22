@@ -118,6 +118,7 @@ const EditMessage = ({
   return (
     <Container>
       <div
+        data-testid="message-text-editor"
         className="markdown prose dark:prose-invert light w-full whitespace-pre-wrap break-words border-none focus:outline-none"
         contentEditable={true}
         ref={textEditor}
