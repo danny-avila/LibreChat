@@ -14,8 +14,6 @@ export default function MultiMessage({
   setCurrentEditId,
   isSearchView,
 }: TMessageProps) {
-  // const [siblingIdx, setSiblingIdx] = useState(0);
-
   const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
 
   const setSiblingIdxRev = (value: number) => {
@@ -23,7 +21,7 @@ export default function MultiMessage({
   };
 
   useEffect(() => {
-    // reset siblingIdx when changes, mostly a new message is submitting.
+    // reset siblingIdx when the tree changes, mostly when a new message is submitting.
     setSiblingIdx(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messagesTree?.length]);
