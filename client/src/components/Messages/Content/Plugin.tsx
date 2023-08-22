@@ -1,27 +1,12 @@
-import React, { useState, useCallback, memo, ReactNode } from 'react';
-import { Spinner } from '~/components';
-import { useRecoilValue } from 'recoil';
-import CodeBlock from './Content/CodeBlock.jsx';
-import { Disclosure } from '@headlessui/react';
+import { useState, useCallback, memo, ReactNode } from 'react';
+import type { TResPlugin, TInput } from 'librechat-data-provider';
 import { ChevronDownIcon, LucideProps } from 'lucide-react';
+import { Disclosure } from '@headlessui/react';
+import { useRecoilValue } from 'recoil';
+import { Spinner } from '~/components';
+import CodeBlock from './CodeBlock';
 import { cn } from '~/utils/';
 import store from '~/store';
-
-interface Input {
-  inputStr: string;
-}
-
-interface PluginProps {
-  plugin: {
-    plugin: string;
-    input: string;
-    thought: string;
-    loading?: boolean;
-    outputs?: string;
-    latest?: string;
-    inputs?: Input[];
-  };
-}
 
 type PluginsMap = {
   [pluginKey: string]: string;
@@ -31,7 +16,7 @@ type PluginIconProps = LucideProps & {
   className?: string;
 };
 
-function formatInputs(inputs: Input[]) {
+function formatInputs(inputs: TInput[]) {
   let output = '';
 
   for (let i = 0; i < inputs.length; i++) {
@@ -44,6 +29,10 @@ function formatInputs(inputs: Input[]) {
 
   return output;
 }
+
+type PluginProps = {
+  plugin: TResPlugin;
+};
 
 const Plugin: React.FC<PluginProps> = ({ plugin }) => {
   const [loading, setLoading] = useState(plugin.loading);

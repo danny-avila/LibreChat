@@ -110,6 +110,17 @@ export const useUpdateConversationMutation = (
   );
 };
 
+export const useUpdateMessageMutation = (
+  id: string,
+): UseMutationResult<unknown, unknown, t.TUpdateMessageRequest, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: t.TUpdateMessageRequest) => dataService.updateMessage(payload), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.messages, id]);
+    },
+  });
+};
+
 export const useDeleteConversationMutation = (
   id?: string,
 ): UseMutationResult<

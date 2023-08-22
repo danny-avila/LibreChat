@@ -24,8 +24,8 @@ export function clearAllConversations(): Promise<unknown> {
   return request.post(endpoints.deleteConversation(), { arg: {} });
 }
 
-export function getMessagesByConvoId(id: string): Promise<s.TMessage[]> {
-  return request.get(endpoints.messages(id));
+export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
+  return request.get(endpoints.messages(conversationId));
 }
 
 export function getConversationById(id: string): Promise<s.TConversation> {
@@ -36,6 +36,15 @@ export function updateConversation(
   payload: t.TUpdateConversationRequest,
 ): Promise<t.TUpdateConversationResponse> {
   return request.post(endpoints.updateConversation(), { arg: payload });
+}
+
+export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown> {
+  const { conversationId, messageId, text } = payload;
+  if (!conversationId) {
+    throw new Error('conversationId is required');
+  }
+
+  return request.put(endpoints.messages(conversationId, messageId), { text });
 }
 
 export function getPresets(): Promise<s.TPreset[]> {
