@@ -25,6 +25,7 @@ services:
       target: node                             # ^------v
     # image: ghcr.io/danny-avila/librechat:latest # Uncomment this & comment above to build from docker hub image
     restart: always
+    user: "${UID}:${GID}"
     extra_hosts: # if you are running APIs on docker you need access to, you will need to uncomment this line and next
     - "host.docker.internal:host-gateway"
     env_file:
@@ -50,6 +51,7 @@ services:
     #   - 27018:27017
     image: mongo
     restart: always
+    user: "${UID}:${GID}"
     volumes:
       - ./data-node:/data/db
     command: mongod --noauth
@@ -61,6 +63,7 @@ services:
     #   - 7700:7700 # if exposing these ports, make sure your master key is not the default value
     env_file:
       - .env
+    user: "${UID}:${GID}"
     environment:
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_HTTP_ADDR=meilisearch:7700
