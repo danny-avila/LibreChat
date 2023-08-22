@@ -1,6 +1,11 @@
-import React from 'react';
+type TSubRowProps = {
+  children: React.ReactNode;
+  classes?: string;
+  subclasses?: string;
+  onClick?: () => void;
+};
 
-export default function SubRow({ children, classes = '', subclasses = '', onClick }) {
+export default function SubRow({ children, classes = '', subclasses = '', onClick }: TSubRowProps) {
   return (
     <div className={`flex justify-between ${classes}`} onClick={onClick}>
       <div

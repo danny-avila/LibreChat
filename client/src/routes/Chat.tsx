@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 
 import Landing from '~/components/ui/Landing';
-import Messages from '~/components/Messages';
+import Messages from '~/components/Messages/Messages';
 import TextChat from '~/components/Input/TextChat';
 
 import store from '~/store';

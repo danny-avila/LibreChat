@@ -2,28 +2,31 @@ import { v4 } from 'uuid';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { parseConvo, getResponseSender } from 'librechat-data-provider';
 import type { TMessage, TSubmission } from 'librechat-data-provider';
+import type { TAskFunction } from '~/common';
 import store from '~/store';
 
-type TAskProps = {
-  text: string;
-  parentMessageId?: string | null;
-  conversationId?: string | null;
-  messageId?: string | null;
-};
-
 const useMessageHandler = () => {
+  const latestMessage = useRecoilValue(store.latestMessage);
+  const setSiblingIdx = useSetRecoilState(
+    store.messagesSiblingIdxFamily(latestMessage?.parentMessageId),
+  );
   const currentConversation = useRecoilValue(store.conversation) || { endpoint: null };
   const setSubmission = useSetRecoilState(store.submission);
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
-  const latestMessage = useRecoilValue(store.latestMessage);
   const [messages, setMessages] = useRecoilState(store.messages);
   const { endpoint } = currentConversation;
   const { getToken } = store.useToken(endpoint ?? '');
 
-  const ask = (
-    { text, parentMessageId = null, conversationId = null, messageId = null }: TAskProps,
-    { isRegenerate = false, isEdited = false } = {},
+  const ask: TAskFunction = (
+    { text, parentMessageId = null, conversationId = null, messageId = null },
+    {
+      editedText = null,
+      editedMessageId = null,
+      isRegenerate = false,
+      isContinued = false,
+      isEdited = false,
+    } = {},
   ) => {
     if (!!isSubmitting || text === '') {
       return;
@@ -40,11 +43,12 @@ const useMessageHandler = () => {
       return;
     }
 
-    if (isEdited && !latestMessage) {
-      console.error('cannot edit AI message without latestMessage!');
+    if (isContinued && !latestMessage) {
+      console.error('cannot continue AI message without latestMessage!');
       return;
     }
 
+    const isEditOrContinue = isEdited || isContinued;
     const { userProvide } = endpointsConfig[endpoint] ?? {};
 
     // set the endpoint option
@@ -77,15 +81,17 @@ const useMessageHandler = () => {
       isCreatedByUser: true,
       parentMessageId,
       conversationId,
-      messageId: isEdited && messageId ? messageId : fakeMessageId,
+      messageId: isContinued && messageId ? messageId : fakeMessageId,
       error: false,
     };
 
     // construct the placeholder response message
-    const generation = latestMessage?.text ?? '';
-    const responseText = isEdited ? generation : '<span className="result-streaming">█</span>';
+    const generation = editedText ?? latestMessage?.text ?? '';
+    const responseText = isEditOrContinue
+      ? generation
+      : '<span className="result-streaming">█</span>';
 
-    const responseMessageId = isEdited ? latestMessage?.messageId : null;
+    const responseMessageId = editedMessageId ?? latestMessage?.messageId ?? null;
     const initialResponse: TMessage = {
       sender: responseSender,
       text: responseText,
@@ -97,6 +103,10 @@ const useMessageHandler = () => {
       isCreatedByUser: false,
       error: false,
     };
+
+    if (isContinued) {
+      currentMessages = currentMessages.filter((msg) => msg.messageId !== responseMessageId);
+    }
 
     const submission: TSubmission = {
       conversation: {
@@ -111,7 +121,8 @@ const useMessageHandler = () => {
         overrideParentMessageId: isRegenerate ? messageId : null,
       },
       messages: currentMessages,
-      isEdited,
+      isEdited: isEditOrContinue,
+      isContinued,
       isRegenerate,
       initialResponse,
     };
@@ -119,12 +130,9 @@ const useMessageHandler = () => {
     console.log('User Input:', text, submission);
 
     if (isRegenerate) {
-      setMessages([
-        ...(isEdited ? currentMessages.slice(0, -1) : currentMessages),
-        initialResponse,
-      ]);
+      setMessages([...submission.messages, initialResponse]);
     } else {
-      setMessages([...currentMessages, currentMsg, initialResponse]);
+      setMessages([...submission.messages, currentMsg, initialResponse]);
     }
     setSubmission(submission);
   };
@@ -152,7 +160,7 @@ const useMessageHandler = () => {
     );
 
     if (parentMessage && parentMessage.isCreatedByUser) {
-      ask({ ...parentMessage }, { isRegenerate: true, isEdited: true });
+      ask({ ...parentMessage }, { isContinued: true, isRegenerate: true, isEdited: true });
     } else {
       console.error(
         'Failed to regenerate the message: parentMessage not found, or not created by user.',
@@ -182,6 +190,7 @@ const useMessageHandler = () => {
   const handleContinue = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     continueGeneration();
+    setSiblingIdx(0);
   };
 
   return {

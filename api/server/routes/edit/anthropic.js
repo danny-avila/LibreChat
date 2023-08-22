@@ -29,11 +29,12 @@ router.post(
       endpointOption,
       conversationId,
       responseMessageId,
+      isContinued = false,
       parentMessageId = null,
       overrideParentMessageId = null,
     } = req.body;
     console.log('edit log');
-    console.dir({ text, conversationId, endpointOption }, { depth: null });
+    console.dir({ text, generation, isContinued, conversationId, endpointOption }, { depth: null });
     let metadata;
     let userMessage;
     let lastSavedTimestamp = 0;
@@ -41,7 +42,10 @@ router.post(
     const userMessageId = parentMessageId;
 
     const addMetadata = (data) => (metadata = data);
-    const getIds = (data) => (userMessage = data.userMessage);
+    const getIds = (data) => {
+      userMessage = data.userMessage;
+      responseMessageId = data.responseMessageId;
+    };
 
     const { onProgress: progressCallback, getPartialText } = createOnProgress({
       generation,
@@ -87,6 +91,8 @@ router.post(
 
       let response = await client.sendMessage(text, {
         user: req.user.id,
+        generation,
+        isContinued,
         isEdited: true,
         conversationId,
         parentMessageId,

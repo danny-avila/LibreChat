@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
+import type { TPreset } from 'librechat-data-provider';
 import { Plugin } from '~/components/svg';
 import EndpointOptionsDialog from '../Endpoints/EndpointOptionsDialog';
 import { cn, alternateName } from '~/utils/';
@@ -10,7 +11,17 @@ const MessageHeader = ({ isSearchView = false }) => {
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
   const conversation = useRecoilValue(store.conversation);
   const searchQuery = useRecoilValue(store.searchQuery);
+
+  if (!conversation) {
+    return null;
+  }
+
   const { endpoint, model } = conversation;
+
+  if (!endpoint) {
+    return null;
+  }
+
   const isNotClickable = endpoint === 'chatGPTBrowser';
 
   const plugins = (
@@ -89,7 +100,7 @@ const MessageHeader = ({ isSearchView = false }) => {
       <EndpointOptionsDialog
         open={saveAsDialogShow}
         onOpenChange={setSaveAsDialogShow}
-        preset={conversation}
+        preset={conversation as TPreset}
       />
     </>
   );

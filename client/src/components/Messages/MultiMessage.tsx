@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
+import type { TMessageProps } from '~/common';
+// eslint-disable-next-line import/no-cycle
 import Message from './Message';
 import store from '~/store';
 
@@ -11,23 +13,21 @@ export default function MultiMessage({
   currentEditId,
   setCurrentEditId,
   isSearchView,
-}) {
-  // const [siblingIdx, setSiblingIdx] = useState(0);
-
+}: TMessageProps) {
   const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
 
-  const setSiblingIdxRev = (value) => {
-    setSiblingIdx(messagesTree?.length - value - 1);
+  const setSiblingIdxRev = (value: number) => {
+    setSiblingIdx((messagesTree?.length ?? 0) - value - 1);
   };
 
   useEffect(() => {
-    // reset siblingIdx when changes, mostly a new message is submitting.
+    // reset siblingIdx when the tree changes, mostly when a new message is submitting.
     setSiblingIdx(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messagesTree?.length]);
 
   // if (!messageList?.length) return null;
-  if (!(messagesTree && messagesTree.length)) {
+  if (!(messagesTree && messagesTree?.length)) {
     return null;
   }
 

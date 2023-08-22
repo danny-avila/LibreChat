@@ -1,4 +1,4 @@
-const _ = require('lodash');
+const partialRight = require('lodash/partialRight');
 const citationRegex = /\[\^\d+?\^]/g;
 const { getCitations, citeText } = require('./citations');
 const cursor = '<span className="result-streaming">█</span>';
@@ -73,7 +73,7 @@ const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
   };
 
   const onProgress = (opts) => {
-    return _.partialRight(progressCallback, opts);
+    return partialRight(progressCallback, opts);
   };
 
   const getPartialText = () => {
