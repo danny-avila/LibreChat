@@ -54,7 +54,7 @@ export const useGetUserQuery = (
 
 export const useGetUserByIdQuery = (
   id: string,
-) => {
+): QueryObserverResult<t.TUser> => {
   return useQuery([QueryKeys.userById, id], () => dataService.getUserById(id), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -416,3 +416,7 @@ export const useGetPublicConversationQuery = (userId: string): QueryObserverResu
     retry: 1
   });
 }
+
+export const useFollowUserMutation = (): UseMutationResult<t.TUser, unknown, object, unknown> => {
+  return useMutation((payload: object) => dataService.followUser(payload));
+};

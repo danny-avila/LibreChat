@@ -143,3 +143,7 @@ export const getLikedConversations = (userId: string) => {
 export const getPublicConverstaions = (userId: string) => {
   return request.get(endpoints.publicConversations(userId));
 }
+
+export const followUser = (payload: object): Promise<t.TUser> => {
+  return request.post(endpoints.followUser(), { arg: payload });
+}

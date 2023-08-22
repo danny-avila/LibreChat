@@ -121,3 +121,7 @@ export const likedConversations = (userId: string) => {
 export const publicConversations = (userId: string) => {
   return `/api/convos/publicConvos/${userId}`
 }
+
+export const followUser = () => {
+  return '/api/user/follow'
+}
