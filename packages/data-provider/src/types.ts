@@ -38,6 +38,7 @@ export type TError = {
     data?: {
       message?: string;
     };
+    status?: number;
   };
 };
 

@@ -27,6 +27,7 @@ export default function useGenerations({
     finish_reason &&
     finish_reason !== 'stop' &&
     !isEditing &&
+    !searchResult &&
     isEditableEndpoint;
 
   const branchingSupported =
@@ -41,21 +42,14 @@ export default function useGenerations({
       'anthropic',
     ].find((e) => e === endpoint);
 
-  const editEnabled =
-    !error &&
-    isEditableEndpoint && // TODO: support bingAI editing
-    !searchResult &&
-    !isEditing &&
-    branchingSupported;
-
   const regenerateEnabled =
     !isCreatedByUser && !searchResult && !isEditing && !isSubmitting && branchingSupported;
 
-  const hideEditButton = !branchingSupported || (!isEditableEndpoint && !isCreatedByUser);
+  const hideEditButton =
+    error || searchResult || !branchingSupported || (!isEditableEndpoint && !isCreatedByUser);
 
   return {
     continueSupported,
-    editEnabled,
     regenerateEnabled,
     hideEditButton,
   };
