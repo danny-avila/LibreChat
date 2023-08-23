@@ -102,7 +102,7 @@ function Profile() {
     }
 
     if (profileUser) {
-      if (profileUser.followers && profileUser.followers[`${user?.id}`] && profileUser.followers[`${user?.id}`].isFollower) {
+      if (profileUser.followers && profileUser.followers[`${user?.id}`]) {
         payload['isFollowing'] = false;
       } else {
         payload['isFollowing'] = true;
@@ -117,7 +117,7 @@ function Profile() {
       setProfileUser(getUserByIdQuery.data);
 
       if (getUserByIdQuery.data.followers) {
-        setIsFollower(getUserByIdQuery.data.followers[`${user?.id}`] ? getUserByIdQuery.data.followers[`${user?.id}`].isFollower : false);
+        setIsFollower(getUserByIdQuery.data.followers[`${user?.id}`] ? true : false);
         setNumOfFollowers(Object.keys(getUserByIdQuery.data.followers).length);
       } else {
         setIsFollower(false);
@@ -277,10 +277,13 @@ function Profile() {
       <div className='flex flex-col h-full overflow-y-auto border-t-2'>
         {(tabValue === 'likes') && (<LikedConversations key={userId} />)}
         {(tabValue === 'conversations') && (<PublicConversations key={userId} />)}
+
+        {/*New followers and follwings are added at the end of the object in MongoDB. */}
+        {/*We reverse the array to dsiplay the most recent follwers and followings at the top. */}
         {(tabValue === 'followers') && (
           <div>
             {
-              Object.entries(profileUser ? profileUser.followers : {}).map(([id, info]) =>
+              Object.entries(profileUser ? profileUser.followers : {}).reverse().map(([id, info]) =>
                 <ListItem key={id} id={id} info={info}/>)
             }
           </div>
@@ -288,7 +291,7 @@ function Profile() {
         {(tabValue === 'following') && (
           <div>
             {
-              Object.entries(profileUser ? profileUser.following : {}).map(([id, info]) =>
+              Object.entries(profileUser ? profileUser.following : {}).reverse().map(([id, info]) =>
                 <ListItem key={id} id={id} info={info}/>)
             }
           </div>
