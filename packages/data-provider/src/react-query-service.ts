@@ -420,3 +420,18 @@ export const useGetPublicConversationQuery = (userId: string): QueryObserverResu
 export const useFollowUserMutation = (): UseMutationResult<t.TUser, unknown, object, unknown> => {
   return useMutation((payload: object) => dataService.followUser(payload));
 };
+
+export const useLikeConversationMutation = (
+  id: string
+) => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: object) => dataService.likeConversation(payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.conversation, id]);
+        queryClient.invalidateQueries([QueryKeys.allConversations]);
+      }
+    }
+  );
+};
