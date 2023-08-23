@@ -1,26 +1,26 @@
 import { useEffect, useState } from 'react';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilValue } from 'recoil';
 import { localize } from '~/localization/Translation';
 import PrivateButton from '../Conversations/PrivateButton';
 import { CSSTransition } from 'react-transition-group';
 import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
-import { useUpdateConversationMutation } from '@librechat/data-provider';
+import { useLikeConversationMutation, useUpdateConversationMutation } from '@librechat/data-provider';
 
 export default function MessageHeaderButtons() {
   const { user } = useAuthContext();
   const lang = useRecoilValue(store.lang);
-  const [conversation, setConversation] = useRecoilState(store.conversation);
+  const conversation = useRecoilValue(store.conversation);
   const { conversationId } = conversation;
   const updateConvoMutation = useUpdateConversationMutation(conversation?.conversationId);
-  const { refreshConversations } = store.useConversations();
+  const likeConvoMutation = useLikeConversationMutation(conversation?.conversationId);
 
   // UI states
-  const [privateState, setPrivateState] = useState(conversation.isPrivate);
+  const [privateState, setPrivateState] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [liked, setLiked] = useState(conversation.likedBy ? conversation.likedBy[user.id] : false);
-  const [numOfLikes, setNumOfLikes] = useState(conversation.likes);
-  const [likedBy, setLikedBy] = useState(conversation.likedBy);
+  const [liked, setLiked] = useState(false);
+  const [numOfLikes, setNumOfLikes] = useState(0);
+  const [likedBy, setLikedBy] = useState({});
 
   // Copies conversation share link
   const copyShareLinkHandler = () => {
@@ -42,52 +42,28 @@ export default function MessageHeaderButtons() {
     // update component state
     setLiked(!liked);
 
+    // Initiate these properties if they do not exist
+    if (!likedBy) setLikedBy({});
+
+    // update states
     if (liked) {
-      // update states
-      const likedyByUpdate = {};
-      likedyByUpdate[`${user.id}`] = false;
-      setLikedBy({ ...likedBy, ...likedyByUpdate });
+      delete likedBy[user.id];
       setNumOfLikes(numOfLikes - 1);
-
-      // update DB
-      const update = {}
-      update[`likedBy.${user.id}`] = false;
-      update.likes = numOfLikes - 1;
-      updateConvoMutation.mutate({ conversationId, ...update });
     } else {
-      // update states
-      const likedyByUpdate = {};
-      likedyByUpdate[`${user.id}`] = true;
-      setLikedBy({ ...likedBy, ...likedyByUpdate });
+      likedBy[user.id] = new Date();
       setNumOfLikes(numOfLikes + 1);
-
-      // update DB
-      const update = {}
-      update[`likedBy.${user.id}`] = true;
-      update.likes = numOfLikes + 1;
-      updateConvoMutation.mutate({ conversationId, ...update });
     }
+
+    // update DB
+    likeConvoMutation.mutate({ conversationId: conversationId, userId: user.id, liked: !liked });
   }
 
   useEffect(() => {
-    setLiked(conversation.likedBy ? conversation.likedBy[user.id] : false);
+    setLiked((conversation.likedBy && conversation.likedBy[user.id]) ? true : false);
     setNumOfLikes(conversation.likes);
     setPrivateState(conversation.isPrivate);
-    setLikedBy(conversation.likedBy);
+    setLikedBy({ ...conversation.likedBy } || {});
   }, [conversation]);
-
-  useEffect(() => {
-    if (updateConvoMutation.isSuccess) {
-      refreshConversations();
-      setConversation((prevState) => ({
-        ...prevState,
-        isPrivate: privateState,
-        likes: numOfLikes,
-        likedBy: likedBy
-      })
-      )
-    }
-  }, [updateConvoMutation.isSuccess]);
 
   return(
     <>
@@ -147,7 +123,6 @@ export default function MessageHeaderButtons() {
           {localize(lang, 'com_ui_copied')}
         </div>
       </CSSTransition>
-
     </>
   );
 }

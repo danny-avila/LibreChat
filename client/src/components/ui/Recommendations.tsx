@@ -11,6 +11,7 @@ import {
   TConversation,
   TMessage,
   TUser,
+  useLikeConversationMutation,
 } from '@librechat/data-provider';
 import SwitchPage from './SwitchPage';
 import store from '~/store';
@@ -43,6 +44,9 @@ export default function Recommendations() {
   const lang = useRecoilValue(store.lang);
   const title = localize(lang, 'com_ui_recommendation');
   const navigate = useNavigate();
+  const likeConvoMutation = useLikeConversationMutation(
+    convoData && convoDataKeys && convoData[convoDataKeys[convoIdx]].conversationId
+  );
 
   // Allows navigation to user's profile page
   const navigateToProfile = () => {
@@ -238,11 +242,11 @@ export default function Recommendations() {
     if (liked) {
       setNumOfLikes(numOfLikes - 1);
       convoData[convoDataKeys[convoIdx]].likes = convoData[convoDataKeys[convoIdx]].likes - 1;
-      convoData[convoDataKeys[convoIdx]].likedBy[user.id] = false;
+      delete convoData[convoDataKeys[convoIdx]].likedBy[user.id];
     } else {
       setNumOfLikes(numOfLikes + 1);
       convoData[convoDataKeys[convoIdx]].likes = convoData[convoDataKeys[convoIdx]].likes + 1;
-      convoData[convoDataKeys[convoIdx]].likedBy[user.id] = true;
+      convoData[convoDataKeys[convoIdx]].likedBy[user.id] = new Date();
     }
 
     // update localStorage
@@ -274,22 +278,9 @@ export default function Recommendations() {
       }
     }
 
-    // update database
-    try {
-      await fetch('/api/convos/like', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          conversationId: convoDataKeys[convoIdx],
-          userId: user?.id,
-          liked: !liked
-        })
-      });
-    } catch (error) {
-      console.log(error);
-    }
+    // Update the Db
+    const conversationId = convoData[convoDataKeys[convoIdx]].conversationId;
+    likeConvoMutation.mutate({ conversationId: conversationId, userId: convoUser?.id, liked: !liked });
   }
 
   const { screenshotTargetRef } = useScreenshot();

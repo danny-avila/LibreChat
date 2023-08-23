@@ -1,4 +1,4 @@
-import { TConversation, TUser, TMessage } from '@librechat/data-provider';
+import { TConversation, TUser, TMessage, useLikeConversationMutation } from '@librechat/data-provider';
 import React, { useEffect, useState } from 'react';
 import { CSSTransition } from 'react-transition-group';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -31,6 +31,7 @@ export default function SharedConvo() {
   const { screenshotTargetRef } = useScreenshot();
   const { user, token } = useAuthContext();
   const { conversationId } = useParams();
+  const likeConversationMutation = useLikeConversationMutation(conversationId || '');
   const navigate = useNavigate();
 
   const plugins = (
@@ -102,29 +103,15 @@ export default function SharedConvo() {
     if (liked) {
       setNumOfLikes(numOfLikes - 1);
       conversation.likes = conversation.likes - 1;
-      conversation.likedBy[user.id] = false;
+      delete conversation.likedBy[user.id];
     } else {
       setNumOfLikes(numOfLikes + 1);
       conversation.likes = conversation.likes + 1;
-      conversation.likedBy[user.id] = true;
+      conversation.likedBy[user.id] = new Date();
     }
 
     // update database
-    try {
-      await fetch('/api/convos/like', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          conversationId: conversation.conversationId,
-          userId: user?.id,
-          liked: !liked
-        })
-      });
-    } catch (error) {
-      console.log(error);
-    }
+    likeConversationMutation.mutate({ conversationId: conversation.conversationId, userId: user?.id, liked: !liked });
   }
 
   const copyShareLinkHandler = () => {
@@ -202,7 +189,7 @@ export default function SharedConvo() {
       setShareLink(window.location.host +  `/chat/share/${conversation.conversationId}`);
       setNumOfLikes(conversation.likes);
 
-      if (user && conversation.likedBy) setLiked(conversation.likedBy[user?.id]);
+      if (user && conversation.likedBy) setLiked(conversation.likedBy[user?.id] ? true : false);
     } else {
       setIsPrivate(true);
       setPageTitle(localize(lang, 'com_ui_private_conversation'));
