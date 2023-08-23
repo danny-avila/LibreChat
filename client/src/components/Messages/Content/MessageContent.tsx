@@ -61,7 +61,6 @@ const EditMessage = ({
 
   const resubmitMessage = () => {
     const text = textEditor?.current?.innerText ?? '';
-    console.log('siblingIdx:', siblingIdx);
     if (message.isCreatedByUser) {
       ask({
         text,
