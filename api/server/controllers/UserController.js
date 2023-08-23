@@ -69,17 +69,26 @@ const followUserController = async (req, res) => {
   try {
     const { user, isFollowing, otherUser } = req.body.arg;
 
-    // Build the updates
+    let dbResponse;
     const userUpdate = {};
     const otherUserUpdate = {};
 
+    // Build the updates
     userUpdate[`following.${otherUser.id}`] = { isFollowing: isFollowing, name: otherUser.name, username: otherUser.username };
     otherUserUpdate[`followers.${user.id}`] = { isFollower: isFollowing, name: user.name, username: user.username };
 
     // Updates to the DB
-    await User.findByIdAndUpdate(user.id, userUpdate, { new: true, upsert: false });
-    const dbResponse = await User.findByIdAndUpdate(otherUser.id, otherUserUpdate, { new: true, upsert: false });
-
+    if (isFollowing) {
+      await User.findByIdAndUpdate(user.id, { $set: userUpdate }, { new: true, upsert: false });
+      dbResponse = await User.findByIdAndUpdate(otherUser.id, { $set: otherUserUpdate }, { new: true, upsert: false });
+    } else {
+      await User.findByIdAndUpdate(user.id, { $unset: userUpdate }, { new: true, upsert: false });
+      dbResponse = await User.findByIdAndUpdate(
+        otherUser.id,
+        { $unset: otherUserUpdate },
+        { new: true, upsert: false }
+      );
+    }
     // Returns the updated profile page user
     const id = dbResponse._id;
     const name = dbResponse.name;
