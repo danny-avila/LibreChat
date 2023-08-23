@@ -13,7 +13,7 @@ import PublicConversations from './PublicConversations';
 import { Spinner } from '../svg';
 import UserIcon from '../svg/UserIcon';
 
-function Profile() {
+function ProfileContent() {
   const [tabValue, setTabValue] = useState<string>('');
   const [profileUser, setProfileUser] = useState<TUser | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
@@ -300,6 +300,13 @@ function Profile() {
       </div>
     </div>
   );
+}
+
+// To avoid internal state mixture
+function Profile() {
+  const { userId } = useParams();
+
+  return <ProfileContent key={ userId } />
 }
 
 export default Profile;
