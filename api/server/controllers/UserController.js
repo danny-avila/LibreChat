@@ -11,7 +11,9 @@ const getUserController = async (req, res) => {
       const id = user._id;
       const name = user.name;
       const username = user.username;
-      res.status(200).send({ id, name, username });
+      const followers = user.followers;
+      const following = user.following;
+      res.status(200).send({ id, name, username, followers, following });
     }
   } catch (error) {
     console.log(error);
@@ -63,7 +65,45 @@ const updateUserPluginsController = async (req, res) => {
   }
 };
 
+const followUserController = async (req, res) => {
+  try {
+    const { user, isFollowing, otherUser } = req.body.arg;
+
+    let dbResponse;
+    const userUpdate = {};
+    const otherUserUpdate = {};
+
+    // Build the updates
+    userUpdate[`following.${otherUser.id}`] = { name: otherUser.name, username: otherUser.username };
+    otherUserUpdate[`followers.${user.id}`] = { name: user.name, username: user.username };
+
+    // Updates to the DB
+    if (isFollowing) {
+      await User.findByIdAndUpdate(user.id, { $set: userUpdate }, { new: true, upsert: false });
+      dbResponse = await User.findByIdAndUpdate(otherUser.id, { $set: otherUserUpdate }, { new: true, upsert: false });
+    } else {
+      await User.findByIdAndUpdate(user.id, { $unset: userUpdate }, { new: true, upsert: false });
+      dbResponse = await User.findByIdAndUpdate(
+        otherUser.id,
+        { $unset: otherUserUpdate },
+        { new: true, upsert: false }
+      );
+    }
+    // Returns the updated profile page user
+    const id = dbResponse._id;
+    const name = dbResponse.name;
+    const username = dbResponse.username;
+    const followers = dbResponse.followers;
+    const following = dbResponse.following;
+    res.status(200).send({ id, name, username, followers, following });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ message: err.message });
+  }
+}
+
 module.exports = {
   getUserController,
-  updateUserPluginsController
+  updateUserPluginsController,
+  followUserController
 };

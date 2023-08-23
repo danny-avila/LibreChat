@@ -16,6 +16,7 @@ export enum QueryKeys {
   conversation = 'conversation',
   searchEnabled = 'searchEnabled',
   user = 'user',
+  userById = 'userById',
   endpoints = 'endpoints',
   presets = 'presets',
   searchResults = 'searchResults',
@@ -48,6 +49,17 @@ export const useGetUserQuery = (
     refetchOnMount: false,
     retry: false,
     ...config
+  });
+};
+
+export const useGetUserByIdQuery = (
+  id: string,
+): QueryObserverResult<t.TUser> => {
+  return useQuery([QueryKeys.userById, id], () => dataService.getUserById(id), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
   });
 };
 
@@ -404,3 +416,22 @@ export const useGetPublicConversationQuery = (userId: string): QueryObserverResu
     retry: 1
   });
 }
+
+export const useFollowUserMutation = (): UseMutationResult<t.TUser, unknown, object, unknown> => {
+  return useMutation((payload: object) => dataService.followUser(payload));
+};
+
+export const useLikeConversationMutation = (
+  id: string
+) => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: object) => dataService.likeConversation(payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.conversation, id]);
+        queryClient.invalidateQueries([QueryKeys.allConversations]);
+      }
+    }
+  );
+};

@@ -17,6 +17,8 @@ function LikedConversations() {
 
   const [conversations, setConversations] = useState<TConversation[]>([]);
 
+  // Component to display liked conversations
+  // Displays conversation title
   function ListItem({ convo }: { convo: TConversation }) {
     const [copied, setCopied] = useState<boolean>(false);
     const lang = useRecoilValue(store.lang);

@@ -135,7 +135,7 @@ router.post('/duplicate', requireJwtAuth, async (req, res) => {
 });
 
 router.post('/like', async (req, res) => {
-  const { conversationId, userId, liked } = req.body;
+  const { conversationId, userId, liked } = req.body.arg;
   console.log('hit like router')
   try {
     const dbResponse = await likeConvo(conversationId, userId, liked);

@@ -61,6 +61,10 @@ export function getUser(): Promise<t.TUser> {
   return request.get(endpoints.user());
 }
 
+export function getUserById(id: string) {
+  return request.get(endpoints.userById(id));
+}
+
 export const searchConversations = async (
   q: string,
   pageNumber: string
@@ -138,4 +142,12 @@ export const getLikedConversations = (userId: string) => {
 
 export const getPublicConverstaions = (userId: string) => {
   return request.get(endpoints.publicConversations(userId));
+}
+
+export const followUser = (payload: object): Promise<t.TUser> => {
+  return request.post(endpoints.followUser(), { arg: payload });
+}
+
+export function likeConversation(payload: object) {
+  return request.post(endpoints.likeConversation(), { arg: payload });
 }

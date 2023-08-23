@@ -292,7 +292,7 @@ export default function Nav({ navVisible, setNavVisible }) {
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <HomeIcon />}
-                text={localize(lang, 'com_ui_homepage')}
+                text={localize(lang, 'com_ui_recommendation')}
                 clickHandler={ user ? openHomepageHandler : navigateToRegister }
               />
               <NavLink
@@ -334,7 +334,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                   className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                   // Add an SVG or icon for the Profile link here
                   svg={() => <ProfileIcon />}
-                  text={localize(lang, 'com_ui_profile')}
+                  text={localize(lang, 'com_ui_homepage')}
                   clickHandler={ openProfileHandler }
                 />
               )}

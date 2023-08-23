@@ -2,6 +2,10 @@ export const user = () => {
   return '/api/user';
 };
 
+export const userById = (id: string) => {
+  return `/api/user/${id}`
+}
+
 export const userPlugins = () => {
   return '/api/user/plugins';
 };
@@ -117,3 +121,11 @@ export const likedConversations = (userId: string) => {
 export const publicConversations = (userId: string) => {
   return `/api/convos/publicConvos/${userId}`
 }
+
+export const followUser = () => {
+  return '/api/user/follow'
+}
+
+export const likeConversation = () => {
+  return '/api/convos/like';
+};
