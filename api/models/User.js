@@ -126,7 +126,9 @@ userSchema.methods.toJSON = function () {
     emailVerified: this.emailVerified,
     plugins: this.plugins,
     createdAt: this.createdAt,
-    updatedAt: this.updatedAt
+    updatedAt: this.updatedAt,
+    followers: this.followers,
+    following: this.following
   };
 };
 
