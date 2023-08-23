@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import type { TMessage } from 'librechat-data-provider';
 import { useRecoilValue } from 'recoil';
 import ReactMarkdown from 'react-markdown';
+import type { PluggableList } from 'unified';
 import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
 import remarkMath from 'remark-math';
@@ -11,8 +13,18 @@ import CodeBlock from './CodeBlock';
 import store from '~/store';
 import { langSubset } from '~/utils';
 
-const code = React.memo((props) => {
-  const { inline, className, children } = props;
+type TCodeProps = {
+  inline: boolean;
+  className: string;
+  children: React.ReactNode;
+};
+
+type TContentProps = {
+  content: string;
+  message: TMessage;
+};
+
+const code = React.memo(({ inline, className, children }: TCodeProps) => {
   const match = /language-(\w+)/.exec(className || '');
   const lang = match && match[1];
 
@@ -23,11 +35,11 @@ const code = React.memo((props) => {
   }
 });
 
-const p = React.memo((props) => {
-  return <p className="mb-2 whitespace-pre-wrap">{props?.children}</p>;
+const p = React.memo(({ children }: { children: React.ReactNode }) => {
+  return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
 });
 
-const Content = React.memo(({ content, message }) => {
+const Content = React.memo(({ content, message }: TContentProps) => {
   const [cursor, setCursor] = useState('█');
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const latestMessage = useRecoilValue(store.latestMessage);
@@ -57,7 +69,7 @@ const Content = React.memo(({ content, message }) => {
     };
   }, [isSubmitting, isLatestMessage]);
 
-  let rehypePlugins = [
+  const rehypePlugins: PluggableList = [
     [rehypeKatex, { output: 'mathml' }],
     [
       rehypeHighlight,
@@ -79,10 +91,14 @@ const Content = React.memo(({ content, message }) => {
       remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
       rehypePlugins={rehypePlugins}
       linkTarget="_new"
-      components={{
-        code,
-        p,
-      }}
+      components={
+        {
+          code,
+          p,
+        } as {
+          [nodeType: string]: React.ElementType;
+        }
+      }
     >
       {isLatestMessage && isSubmitting && !isInitializing
         ? currentContent + cursor

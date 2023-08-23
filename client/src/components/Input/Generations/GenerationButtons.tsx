@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import { useMessageHandler, useMediaQuery, useGenerations } from '~/hooks';
 import { cn } from '~/utils';
@@ -31,6 +32,27 @@ export default function GenerationButtons({
     isSubmitting,
   });
 
+  const [userStopped, setUserStopped] = useState(false);
+
+  const handleStop = (e: React.MouseEvent<HTMLButtonElement>) => {
+    setUserStopped(true);
+    handleStopGenerating(e);
+  };
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+
+    if (userStopped) {
+      timer = setTimeout(() => {
+        setUserStopped(false);
+      }, 200);
+    }
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [userStopped]);
+
   if (isSmallScreen) {
     return null;
   }
@@ -38,8 +60,8 @@ export default function GenerationButtons({
   let button: React.ReactNode = null;
 
   if (isSubmitting) {
-    button = <Stop onClick={handleStopGenerating} />;
-  } else if (continueSupported) {
+    button = <Stop onClick={handleStop} />;
+  } else if (userStopped || continueSupported) {
     button = <Continue onClick={handleContinue} />;
   } else if (messages && messages.length > 0 && regenerateEnabled) {
     button = <Regenerate onClick={handleRegenerate} />;

@@ -102,6 +102,7 @@ const ask = async ({
   let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
 
   let responseMessageId = crypto.randomUUID();
+  const model = endpointOption?.jailbreak ? 'Sydney' : 'BingAI';
 
   if (preSendRequest) {
     sendMessage(res, { message: userMessage, created: true });
@@ -115,13 +116,15 @@ const ask = async ({
         lastSavedTimestamp = currentTimestamp;
         saveMessage({
           messageId: responseMessageId,
-          sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
+          sender: model,
           conversationId,
           parentMessageId: overrideParentMessageId || userMessageId,
+          model,
           text: text,
           unfinished: true,
           cancelled: false,
           error: false,
+          isCreatedByUser: false,
         });
       }
     },
@@ -178,14 +181,16 @@ const ask = async ({
       messageId: responseMessageId,
       newMessageId: newResponseMessageId,
       parentMessageId: overrideParentMessageId || newUserMessageId,
-      sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
+      sender: model,
       text: await handleText(response, true),
+      model,
       suggestions:
         response.details.suggestedResponses &&
         response.details.suggestedResponses.map((s) => s.text),
       unfinished,
       cancelled: false,
       error: false,
+      isCreatedByUser: false,
     };
 
     await saveMessage(responseMessage);
@@ -246,14 +251,15 @@ const ask = async ({
     if (partialText?.length > 2) {
       const responseMessage = {
         messageId: responseMessageId,
-        sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
+        sender: model,
         conversationId,
         parentMessageId: overrideParentMessageId || userMessageId,
         text: partialText,
-        model: endpointOption.modelOptions.model,
+        model,
         unfinished: true,
         cancelled: false,
         error: false,
+        isCreatedByUser: false,
       };
 
       saveMessage(responseMessage);
@@ -269,13 +275,15 @@ const ask = async ({
       console.log(error);
       const errorMessage = {
         messageId: responseMessageId,
-        sender: endpointOption?.jailbreak ? 'Sydney' : 'BingAI',
+        sender: model,
         conversationId,
         parentMessageId: overrideParentMessageId || userMessageId,
         unfinished: false,
         cancelled: false,
         error: true,
         text: error.message,
+        model,
+        isCreatedByUser: false,
       };
       await saveMessage(errorMessage);
       handleError(res, errorMessage);

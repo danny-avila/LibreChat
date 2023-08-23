@@ -12,7 +12,10 @@ function isUUID(uuid: string) {
 }
 
 const waitForServerStream = async (response: Response) => {
-  return response.url().includes(`/api/ask/${endpoint}`) && response.status() === 200;
+  const endpointCheck =
+    response.url().includes(`/api/ask/${endpoint}`) ||
+    response.url().includes(`/api/edit/${endpoint}`);
+  return endpointCheck && response.status() === 200;
 };
 
 async function clearConvos(page: Page) {
@@ -52,7 +55,7 @@ test.afterEach(async ({ page }) => {
 });
 
 test.describe('Messaging suite', () => {
-  test('textbox should be focused after receiving message & test expected navigation', async ({
+  test('textbox should be focused after generation, test expected navigation, & test editing messages', async ({
     page,
   }) => {
     test.setTimeout(120000);
@@ -91,6 +94,33 @@ test.describe('Messaging suite', () => {
     const finalUrl = page.url();
     const conversationId = finalUrl.split(basePath).pop() ?? '';
     expect(isUUID(conversationId)).toBeTruthy();
+
+    // Check if editing works
+    const editText = 'All work and no play makes Johnny a poor boy';
+    await page.getByRole('button', { name: 'edit' }).click();
+    const textEditor = page.getByTestId('message-text-editor');
+    await textEditor.click();
+    await textEditor.fill(editText);
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+    const updatedTextElement = page.getByText(editText);
+    expect(updatedTextElement).toBeTruthy();
+
+    // Check edit response
+    await page.getByRole('button', { name: 'edit' }).click();
+    const editResponsePromise = [
+      page.waitForResponse(waitForServerStream),
+      await page.getByRole('button', { name: 'Save & Submit' }).click(),
+    ];
+
+    const [editResponse] = (await Promise.all(editResponsePromise)) as [Response];
+    const editResponseBody = await editResponse.body();
+    const editSuccess = editResponseBody.includes('"final":true');
+    expect(editSuccess).toBe(true);
+
+    // The generated message should include the edited text
+    const currentTextContent = await updatedTextElement.innerText();
+    expect(currentTextContent.includes(editText)).toBeTruthy();
   });
 
   test('message should stop and continue', async ({ page }) => {
@@ -124,6 +154,9 @@ test.describe('Messaging suite', () => {
 
     const regenerateButton = page.getByRole('button', { name: 'Regenerate' });
     expect(regenerateButton).toBeTruthy();
+
+    // Clear conversation since it seems to persist despite other tests clearing it
+    await page.getByTestId('convo-item').getByRole('button').nth(1).click();
   });
 
   // in this spec as we are testing post-message navigation, we are not testing the message response
