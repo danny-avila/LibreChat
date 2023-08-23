@@ -12,7 +12,7 @@ const registerSchema = Joi.object().keys({
     .allow('')
     .min(2)
     .max(80)
-    .regex(/^[a-zA-Z0-9_.-]+$/),
+    .regex(/^[a-zA-Z0-9_.-@#$%&*() ]+$/),
   email: Joi.string().trim().email().required(),
   password: Joi.string().trim().min(8).max(128).required(),
   confirm_password: Joi.string().trim().min(8).max(128).required(),
