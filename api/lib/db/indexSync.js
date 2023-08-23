@@ -6,7 +6,6 @@ let currentTimeout = null;
 // eslint-disable-next-line no-unused-vars
 async function indexSync(req, res, next) {
   if (process.env.SEARCH && process.env.SEARCH.toLowerCase() !== 'true') {
-    console.log('MeiliSearch is disabled');
     return;
   }
 
