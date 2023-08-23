@@ -17,7 +17,8 @@ function Profile() {
   const [profileUser, setProfileUser] = useState<TUser | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
   const [isFollower, setIsFollower] = useState<boolean>(false);
-  const followers = 0;
+  const [numOfFollowers, setNumOfFollowers] = useState<number>(0);
+  const [numOfFollowing, setNumOfFollowing] = useState<number>(0);
 
   const { userId = '' } = useParams();
   const { user } = useAuthContext();
@@ -50,8 +51,20 @@ function Profile() {
   useEffect(() => {
     if (getUserByIdQuery.isSuccess) {
       setProfileUser(getUserByIdQuery.data);
-      setIsFollower(getUserByIdQuery.data.followers && getUserByIdQuery.data.followers[`${user?.id}`] ?
-        getUserByIdQuery.data.followers[`${user?.id}`].isFollower : false);
+
+      if (getUserByIdQuery.data.followers) {
+        setIsFollower(getUserByIdQuery.data.followers[`${user?.id}`] ? getUserByIdQuery.data.followers[`${user?.id}`].isFollower : false);
+        setNumOfFollowers(Object.keys(getUserByIdQuery.data.followers).length);
+      } else {
+        setIsFollower(false);
+        setNumOfFollowers(0);
+      }
+
+      if (getUserByIdQuery.data.following) {
+        setNumOfFollowing(Object.keys(getUserByIdQuery.data.following).length);
+      } else {
+        setNumOfFollowing(0);
+      }
     }
   }, [getUserByIdQuery.isSuccess, getUserByIdQuery.data, user]);
 
@@ -64,6 +77,14 @@ function Profile() {
     if (followUserMutation.isSuccess) {
       setProfileUser(followUserMutation.data);
       setIsFollower(!isFollower);
+
+      if (followUserMutation.data.followers) {
+        setNumOfFollowers(Object.keys(followUserMutation.data.followers).length);
+      }
+
+      if (followUserMutation.data.following) {
+        setNumOfFollowing(Object.keys(followUserMutation.data.following).length);
+      }
     }
   }, [followUserMutation.isSuccess, followUserMutation.data]);
 
@@ -144,7 +165,7 @@ function Profile() {
             className='flex flex-col leading-[22px] items-center w-24 text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200'
             onClick={() => {setTabValue('followers')}}
           >
-            {followers}
+            {numOfFollowers}
             <br />
             {localize(lang, 'com_ui_followers')}
           </button>
@@ -152,7 +173,7 @@ function Profile() {
             className='flex flex-col leading-[22px] items-center w-24 text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200'
             onClick={() => {setTabValue('following')}}
           >
-            {followers}
+            {numOfFollowing}
             <br />
             {localize(lang, 'com_ui_following')}
           </button>
