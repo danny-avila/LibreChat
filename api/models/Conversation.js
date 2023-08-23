@@ -156,19 +156,18 @@ module.exports = {
   likeConvo: async (conversationId, userId, liked) => {
     try {
       const update = {};
+      update[`likedBy.${userId}`] = { $type: 'date' };
 
       if (liked) {
-        update[`likedBy.${userId}`] = true;
         return await Conversation.findOneAndUpdate(
           { conversationId },
-          { $set: update, $inc: { likes: 1 } },
+          { $currentDate: update, $inc: { likes: 1 } },
           { new: true, upsert: false }
         ).exec();
       } else {
-        update[`likedBy.${userId}`] = false;
         return await Conversation.findOneAndUpdate(
           { conversationId },
-          { $set: update, $inc: { likes: -1 } },
+          { $unset: update, $inc: { likes: -1 } },
           { new: true, upsert: false }
         ).exec();
       }
@@ -200,7 +199,7 @@ module.exports = {
   getLikedConvos: async (userId) => {
     try {
       const filter = {};
-      filter[`likedBy.${userId}`] = true;
+      filter[`likedBy.${userId}`] = { $exists: true };
 
       const dbResponse = await Conversation.find(filter).limit(30).exec();
       return dbResponse;
