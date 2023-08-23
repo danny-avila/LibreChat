@@ -16,7 +16,6 @@ const {
   OpenAICreateImage,
   StableDiffusionAPI,
   StructuredSD,
-  CodeInterpreterTools,
   AzureCognitiveSearch,
   StructuredACS,
   E2BTools,
