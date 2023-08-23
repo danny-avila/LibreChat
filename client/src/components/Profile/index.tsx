@@ -150,37 +150,31 @@ function Profile() {
 
   return (
     <div className='flex flex-col h-full justify-center md:mx-36'>
-      <div className='flex flex-row items-center flex-wrap mt-6 mb-3 md:my-12'>
-        <div
-          title='User Icon'
-          className='relative flex items-center justify-center my-1 mx-4 md:my-3 md:ml-12'
-        >
-          <img
-            className="rounded-md"
-            src={
-              profileUser?.avatar ||
-              `https://api.dicebear.com/6.x/initials/svg?seed=${profileUser?.name}&fontFamily=Verdana&fontSize=36&size=96`
-            }
-            alt="avatar"
-          />
-        </div>
-        <div className='flex flex-col justify-center mx-3 gap-4 dark:text-gray-200 text-2xl'>
-          <div>
-            {profileUser?.name}
-          </div>
-          <div>
-            {profileUser?.username}
-          </div>
-        </div>
-        {(userId !== user?.id && profileUser && user) &&
-          <button
-            className='ml-9 px-3 py-1 text-lg font-bold rounded-md bg-gray-200 text-gray-800 hover:text-black dark:bg-gray-600 dark:text-gray-400 dark:hover:text-gray-200'
-            onClick={ followUserController }
+      <div className='flex flex-col md:flex-row md:gap-6 items-start flex-wrap mt-6 mb-3 md:my-12'>
+        <div className='flex flex row items-center'>
+          <div
+            title='User Icon'
+            className='relative flex items-center justify-center my-1 mx-4 md:my-3 md:ml-12'
           >
-            {isFollower ? 'Unfollow' : 'Follow'}
-          </button>
-        }
-        <div className='flex flex-row ml-5 py-3 text-xl gap-4 items-center md:ml-9'>
+            <img
+              className="rounded-md"
+              src={
+                profileUser?.avatar ||
+                `https://api.dicebear.com/6.x/initials/svg?seed=${profileUser?.name}&fontFamily=Verdana&fontSize=36&size=96`
+              }
+              alt="avatar"
+            />
+          </div>
+          <div className='flex flex-col justify-center mx-3 gap-4 dark:text-gray-200 text-2xl'>
+            <div>
+              {profileUser?.name}
+            </div>
+            <div>
+              {profileUser?.username}
+            </div>
+          </div>
+        </div>
+        <div className='flex flex-row self-center px-3 py-3 text-xl gap-4 items-center'>
           <button
             className='w-32 text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200'
             onClick={() => {
@@ -238,6 +232,14 @@ function Profile() {
             {localize(lang, 'com_ui_following')}
           </button>
         </div>
+        {(userId !== user?.id && profileUser && user) &&
+          <button
+            className='self-center w-24 px-3 py-1 text-lg text-center font-bold rounded-md bg-gray-200 text-gray-800 hover:text-black dark:bg-gray-600 dark:text-gray-400 dark:hover:text-gray-200'
+            onClick={ followUserController }
+          >
+            {isFollower ? localize(lang, 'com_ui_unfollow') : localize(lang, 'com_ui_follow')}
+          </button>
+        }
       </div>
       <hr />
       <div className='flex flex-col items-center'>
@@ -254,10 +256,10 @@ function Profile() {
               </TabsTrigger>
             )}
             <TabsTrigger value='followers' className="text-gray-500 dark:text-gray-200">
-              {'Followers'}
+              {localize(lang, 'com_ui_followers')}
             </TabsTrigger>
             <TabsTrigger value='following' className="text-gray-500 dark:text-gray-200">
-              {'Following'}
+              {localize(lang, 'com_ui_following')}
             </TabsTrigger>
           </TabsList>
         </Tabs>

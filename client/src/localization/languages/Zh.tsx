@@ -1,6 +1,8 @@
 // Chinese phrases
 
 export default {
+  com_ui_unfollow: '停止关注',
+  com_ui_follow: '关注',
   com_ui_followers: '粉丝',
   com_ui_following: '关注',
   com_ui_share_profile: '分享主页',

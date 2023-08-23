@@ -1,6 +1,8 @@
 // English phrases
 
 export default {
+  com_ui_unfollow: 'Unfollow',
+  com_ui_follow: 'Follow',
   com_ui_followers: 'Followers',
   com_ui_following: 'Following',
   com_ui_share_profile: 'Share Profile',
