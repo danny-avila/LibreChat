@@ -74,8 +74,8 @@ const followUserController = async (req, res) => {
     const otherUserUpdate = {};
 
     // Build the updates
-    userUpdate[`following.${otherUser.id}`] = { isFollowing: isFollowing, name: otherUser.name, username: otherUser.username };
-    otherUserUpdate[`followers.${user.id}`] = { isFollower: isFollowing, name: user.name, username: user.username };
+    userUpdate[`following.${otherUser.id}`] = { name: otherUser.name, username: otherUser.username };
+    otherUserUpdate[`followers.${user.id}`] = { name: user.name, username: user.username };
 
     // Updates to the DB
     if (isFollowing) {
