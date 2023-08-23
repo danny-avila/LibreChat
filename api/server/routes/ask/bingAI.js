@@ -282,6 +282,7 @@ const ask = async ({
         cancelled: false,
         error: true,
         text: error.message,
+        model,
         isCreatedByUser: false,
       };
       await saveMessage(errorMessage);
