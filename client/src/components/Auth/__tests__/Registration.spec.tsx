@@ -114,7 +114,7 @@ test('shows validation error messages', async () => {
   const alerts = getAllByRole('alert');
   expect(alerts).toHaveLength(5);
   expect(alerts[0]).toHaveTextContent(/Name must be at least 3 characters/i);
-  expect(alerts[1]).toHaveTextContent(/Username must be at least 3 characters/i);
+  expect(alerts[1]).toHaveTextContent(/Username must be at least 2 characters/i);
   expect(alerts[2]).toHaveTextContent(/You must enter a valid email address/i);
   expect(alerts[3]).toHaveTextContent(/Password must be at least 8 characters/i);
   expect(alerts[4]).toHaveTextContent(/Passwords do not match/i);
