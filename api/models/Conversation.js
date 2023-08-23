@@ -201,7 +201,11 @@ module.exports = {
       const filter = {};
       filter[`likedBy.${userId}`] = { $exists: true };
 
-      const dbResponse = await Conversation.find(filter).limit(30).exec();
+      const sortOrder = {};
+      sortOrder[`likedBy.${userId}`] = -1;
+      sortOrder['title'] = 1;
+
+      const dbResponse = await Conversation.find(filter).limit(30).sort(sortOrder).exec();
       return dbResponse;
     } catch (error) {
       console.log(error);
