@@ -33,6 +33,8 @@ function Profile() {
   const defaultClasses = 'p-2 rounded-md min-w-[75px] font-normal text-xs';
   const defaultSelected = cn(defaultClasses, 'font-medium data-[state=active]:text-white text-xs text-white');
 
+  // Component to display user's followers and who they are following
+  // Displays username only
   function ListItem({ id, info }: { id: string, info: TUser }) {
     const [copied, setCopied] = useState<boolean>(false);
     const lang = useRecoilValue(store.lang);
@@ -48,6 +50,8 @@ function Profile() {
             {info.username}
           </div>
         </div>
+
+        {/*Copy profile URL button */}
         <button
           className='visible absolute rounded-md right-1 z-10 p-1 hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600'
           onClick={() => {
@@ -151,6 +155,7 @@ function Profile() {
   return (
     <div className='flex flex-col h-full justify-center md:mx-36'>
       <div className='flex flex-col md:flex-row md:gap-6 items-start flex-wrap mt-6 mb-3 md:my-12'>
+        {/*User icon, full name, and username */}
         <div className='flex flex row items-center'>
           <div
             title='User Icon'
@@ -174,6 +179,7 @@ function Profile() {
             </div>
           </div>
         </div>
+        {/*Copy profile page URL button */}
         <div className='flex flex-row self-center px-3 py-3 text-xl gap-4 items-center'>
           <button
             className='w-32 text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200'
@@ -215,6 +221,7 @@ function Profile() {
               )}
             </div>
           </button>
+          {/*Number of followers */}
           <button
             className='flex flex-col leading-[22px] items-center w-24 text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200'
             onClick={() => {setTabValue('followers')}}
@@ -223,6 +230,7 @@ function Profile() {
             <br />
             {localize(lang, 'com_ui_followers')}
           </button>
+          {/*Number of following */}
           <button
             className='flex flex-col leading-[22px] items-center w-24 text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200'
             onClick={() => {setTabValue('following')}}
@@ -232,6 +240,7 @@ function Profile() {
             {localize(lang, 'com_ui_following')}
           </button>
         </div>
+        {/*Follow user button */}
         {(userId !== user?.id && profileUser && user) &&
           <button
             className='self-center w-24 px-3 py-1 text-lg text-center font-bold rounded-md bg-gray-200 text-gray-800 hover:text-black dark:bg-gray-600 dark:text-gray-400 dark:hover:text-gray-200'
@@ -242,6 +251,7 @@ function Profile() {
         }
       </div>
       <hr />
+      {/*Tabs and tab content */}
       <div className='flex flex-col items-center'>
         <Tabs value={tabValue} onValueChange={(value: string) => setTabValue(value)} className={defaultClasses}>
           <TabsList className="bg-white">
