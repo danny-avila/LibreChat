@@ -280,7 +280,7 @@ export default function Recommendations() {
 
     // Update the Db
     const conversationId = convoData[convoDataKeys[convoIdx]].conversationId;
-    likeConvoMutation.mutate({ conversationId: conversationId, userId: convoUser?.id, liked: !liked });
+    likeConvoMutation.mutate({ conversationId: conversationId, userId: user.id, liked: !liked });
   }
 
   const { screenshotTargetRef } = useScreenshot();
