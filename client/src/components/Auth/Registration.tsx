@@ -115,13 +115,13 @@ function Registration() {
                 id="username"
                 aria-label={localize('com_auth_username')}
                 {...register('username', {
-                  required: localize('com_auth_username_required'),
+                  // required: localize('com_auth_username_required'),
                   minLength: {
-                    value: 3,
+                    value: 2,
                     message: localize('com_auth_username_min_length'),
                   },
                   maxLength: {
-                    value: 20,
+                    value: 80,
                     message: localize('com_auth_username_max_length'),
                   },
                 })}
