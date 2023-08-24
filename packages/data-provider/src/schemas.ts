@@ -32,6 +32,20 @@ export const tPluginSchema = z.object({
 
 export type TPlugin = z.infer<typeof tPluginSchema>;
 
+export type TInput = {
+  inputStr: string;
+};
+
+export type TResPlugin = {
+  plugin: string;
+  input: string;
+  thought: string;
+  loading?: boolean;
+  outputs?: string;
+  latest?: string;
+  inputs?: TInput[];
+};
+
 export const tExampleSchema = z.object({
   input: z.object({
     content: z.string(),
@@ -57,7 +71,9 @@ export const tMessageSchema = z.object({
   parentMessageId: z.string().nullable(),
   responseMessageId: z.string().nullable().optional(),
   overrideParentMessageId: z.string().nullable().optional(),
-  plugin: tPluginSchema.nullable().optional(),
+  bg: z.string().nullable().optional(),
+  model: z.string().nullable().optional(),
+  title: z.string().nullable().optional(),
   sender: z.string(),
   text: z.string(),
   generation: z.string().nullable().optional(),
@@ -78,7 +94,10 @@ export const tMessageSchema = z.object({
   finish_reason: z.string().optional(),
 });
 
-export type TMessage = z.input<typeof tMessageSchema>;
+export type TMessage = z.input<typeof tMessageSchema> & {
+  children?: TMessage[];
+  plugin?: TResPlugin | null;
+};
 
 export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
