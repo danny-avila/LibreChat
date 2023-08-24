@@ -1,4 +1,3 @@
-const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
 const {
@@ -8,8 +7,6 @@ const {
   facebookLogin,
   setupOpenId,
 } = require('../strategies');
-
-const app = express();
 
 const configureSocialLogins = (app) => {
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
@@ -42,9 +39,5 @@ const configureSocialLogins = (app) => {
     setupOpenId();
   }
 };
-
-if (process.env.ALLOW_SOCIAL_LOGIN === 'true') {
-  configureSocialLogins(app);
-}
 
 module.exports = configureSocialLogins;
