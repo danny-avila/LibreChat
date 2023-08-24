@@ -289,6 +289,15 @@ export default function Nav({ navVisible, setNavVisible }) {
                   />
                 </div>}
               </div>
+              {user && (
+                <NavLink
+                  className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                  // Add an SVG or icon for the Profile link here
+                  svg={() => <ProfileIcon />}
+                  text={localize(lang, 'com_ui_homepage')}
+                  clickHandler={ openProfileHandler }
+                />
+              )}
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <HomeIcon />}
@@ -329,15 +338,6 @@ export default function Nav({ navVisible, setNavVisible }) {
                 )}
                 clickHandler={ user ? copyLinkHandler : navigateToRegister }
               />
-              {user && (
-                <NavLink
-                  className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-                  // Add an SVG or icon for the Profile link here
-                  svg={() => <ProfileIcon />}
-                  text={localize(lang, 'com_ui_homepage')}
-                  clickHandler={ openProfileHandler }
-                />
-              )}
               <NavLinks clearSearch={clearSearch} isSearchEnabled={isSearchEnabled} />
             </nav>
           </div>

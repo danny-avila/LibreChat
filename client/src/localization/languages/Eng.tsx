@@ -21,7 +21,7 @@ export default {
   com_ui_register_here: 'Don\'t have an account yet? Click here to register.',
   com_ui_copied: 'Copied conversation share link to clipboard',
   com_ui_private_conversation: 'The conversation you are trying to view is a private conversation',
-  com_ui_recommendation: 'Recommendations',
+  com_ui_recommendation: 'Browse Conversations',
   com_ui_leaderboard: 'Leaderboard',
   com_ui_convo_public_reminder: 'New conversations defaults to public. You can select a conversation from the left menu, and then set the conversation as private.',
   com_ui_examples: 'Examples',
