@@ -358,7 +358,7 @@ export default function Recommendations() {
               className={`${tabValue === 'recent' ? selectedTab('creative') : defaultClasses}`}
             >
               <div onClick={ fetchRecommendations }>
-                {'最新对话'}
+                {localize(lang, 'com_ui_recent')}
               </div>
             </TabsTrigger>
             <TabsTrigger
@@ -366,7 +366,7 @@ export default function Recommendations() {
               className={`${tabValue === 'hottest' ? selectedTab('balanced') : defaultClasses}`}
             >
               <div onClick={ fetchRecommendations }>
-                {'热门对话'}
+                {localize(lang, 'com_ui_hottest')}
               </div>
             </TabsTrigger>
           </TabsList>
@@ -382,7 +382,7 @@ export default function Recommendations() {
               >
                 {convoData && convoDataKeys ? convoData[convoDataKeys[convoIdx]].title : ''}
               </h1>
-              {convoUser && (<div className='my-2 flex flex-row flex-wrap justify-center items-center justify-self-center text-lg'>
+              {convoUser && (<div className='my-2 flex flex-row flex-wrap justify-center items-center justify-self-center text-base'>
                 {/*Conversation author*/}
                 <button
                   onClick={ navigateToProfile }
@@ -391,8 +391,8 @@ export default function Recommendations() {
                   <div
                     title={convoUser?.username}
                     style={{
-                      width: 30,
-                      height: 30
+                      width: 25,
+                      height: 25
                     }}
                     className={'justify-self-center relative flex items-center justify-center'}
                   >
