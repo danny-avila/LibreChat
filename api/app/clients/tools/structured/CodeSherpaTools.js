@@ -19,6 +19,11 @@ class RunCode extends StructuredTool {
     super();
     this.name = 'RunCode';
     this.url = fields.CODESHERPA_SERVER_URL || getServerURL();
+    this.description_for_model = `Run code: provide "code" and "language"
+- Execute Python code interactively for general programming, tasks, data analysis, visualizations, and more.
+- Pre-installed packages: matplotlib, seaborn, pandas, numpy, scipy, openpyxl. If you need to install additional packages, use the \`pip install\` command.
+- When a user asks for visualization, save the plot to \`static/images/\` directory, and embed it in the response using \`${this.url}/static/images/\` URL.
+- Always save all media files created to \`static/images/\` directory, and embed them in responses using \`${this.url}/static/images/\` URL.`;
     this.description = `This plugin allows interactive code execution.
 
 - Always use this plugin when you are asked to write code so you can test and execute it in a safe environment.
@@ -54,6 +59,11 @@ class RunCommand extends StructuredTool {
     super();
     this.name = 'RunCommand';
     this.url = fields.CODESHERPA_SERVER_URL || getServerURL();
+    this.description_for_model = `Run command: provide "command" only
+- Run terminal commands and interact with the filesystem, run scripts, and more.
+- Install python packages using \`pip install\` command.
+- Always embed media files created or uploaded using \`${this.url}/static/images/\` URL in responses.
+- Access user-uploaded files in \`static/uploads/\` directory using \`${this.url}/static/uploads/\` URL.`;
     this.description = `A plugin for interactive shell command execution.
 - Run terminal commands and interact with the filesystem, run scripts, and more.
 - Install python packages using \`pip install\` command.

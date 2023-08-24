@@ -95,6 +95,8 @@ router.post(
 
     const onAgentAction = (action, start = false) => {
       const formattedAction = formatAction(action);
+      // console.log('PLUGIN ACTION');
+      // console.dir(action, { depth: null });
       plugin.inputs.push(formattedAction);
       plugin.latest = formattedAction.plugin;
       if (!start) {

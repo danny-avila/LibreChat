@@ -149,7 +149,7 @@ Only respond with your conversational reply to the following User Message:
     };
   }
 
-  createLLM(modelOptions, configOptions) {
+  createLLM(modelOptions, configOptions, onProgress) {
     let azure = {};
     let credentials = { openAIApiKey: this.openAIApiKey };
     let configuration = {
@@ -167,10 +167,26 @@ Only respond with your conversational reply to the following User Message:
       console.debug(configOptions);
     }
 
-    return new ChatOpenAI({ credentials, configuration, ...azure, ...modelOptions }, configOptions);
+    return new ChatOpenAI(
+      {
+        streaming: true,
+        credentials,
+        configuration,
+        ...azure,
+        ...modelOptions,
+        callbackManager: CallbackManager.fromHandlers({
+          async handleLLMNewToken(token) {
+            if (typeof onProgress === 'function' && this.functionsAgent) {
+              onProgress(token);
+            }
+          },
+        }),
+      },
+      configOptions,
+    );
   }
 
-  async initialize({ user, message, onAgentAction, onChainEnd, signal }) {
+  async initialize({ user, message, onAgentAction, onChainEnd, onProgress, signal }) {
     const modelOptions = {
       modelName: this.agentOptions.model,
       temperature: this.agentOptions.temperature,
@@ -182,7 +198,7 @@ Only respond with your conversational reply to the following User Message:
       configOptions.basePath = this.langchainProxy;
     }
 
-    const model = this.createLLM(modelOptions, configOptions);
+    const model = this.createLLM(modelOptions, configOptions, onProgress);
 
     if (this.options.debug) {
       console.debug(
@@ -421,6 +437,7 @@ Only respond with your conversational reply to the following User Message:
       onAgentAction,
       onChainEnd,
       signal: this.abortController.signal,
+      onProgress: opts.onProgress,
     });
     await this.executorCall(message, this.abortController.signal);
 
