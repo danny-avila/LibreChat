@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import { useAuthContext } from '~/hooks/AuthContext';
 import store from '~/store';
@@ -11,8 +11,15 @@ export default function NewChat() {
   const navigate = useNavigate();
   const [widget, setWidget] = useRecoilState(store.widget); // eslint-disable-line
   const { user } = useAuthContext();
+  const { userId } = useParams();
 
-  const navigateToRegister = () => navigate('/register');
+  const navigateToRegister = () => {
+    if (!user && userId) {
+      navigate(`/register/${userId}`);
+    } else {
+      navigate('/register');
+    }
+  }
 
   const clickHandler = () => {
     // dispatch(setInputValue(''));
