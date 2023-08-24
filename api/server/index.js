@@ -1,5 +1,4 @@
 const express = require('express');
-const session = require('express-session');
 const connectDb = require('../lib/db/connectDb');
 const indexSync = require('../lib/db/indexSync');
 const path = require('path');
@@ -7,35 +6,26 @@ const cors = require('cors');
 const routes = require('./routes');
 const errorController = require('./controllers/ErrorController');
 const passport = require('passport');
+const configureSocialLogins = require('./socialLogins');
+
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
 const projectPath = path.join(__dirname, '..', '..', 'client');
-const {
-  jwtLogin,
-  passportLogin,
-  googleLogin,
-  githubLogin,
-  discordLogin,
-  facebookLogin,
-  setupOpenId,
-} = require('../strategies');
+const { jwtLogin, passportLogin } = require('../strategies');
 
-// Init the config and validate it
-const config = require('../../config/loader');
-config.validate(); // Validate the config
-
-(async () => {
+const startServer = async () => {
   await connectDb();
   console.log('Connected to MongoDB');
   await indexSync();
 
   const app = express();
+
+  // Middleware
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(express.static(path.join(projectPath, 'dist')));
   app.use(express.static(path.join(projectPath, 'public')));
-
   app.set('trust proxy', 1); // trust first proxy
   app.use(cors());
 
@@ -51,38 +41,11 @@ config.validate(); // Validate the config
   passport.use(await passportLogin());
 
   if (process.env.ALLOW_SOCIAL_LOGIN === 'true') {
-    if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-      passport.use(await googleLogin());
-    }
-    if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
-      passport.use(await facebookLogin());
-    }
-    if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
-      passport.use(await githubLogin());
-    }
-    if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
-      passport.use(await discordLogin());
-    }
-    if (
-      process.env.OPENID_CLIENT_ID &&
-      process.env.OPENID_CLIENT_SECRET &&
-      process.env.OPENID_ISSUER &&
-      process.env.OPENID_SCOPE &&
-      process.env.OPENID_SESSION_SECRET
-    ) {
-      app.use(
-        session({
-          secret: process.env.OPENID_SESSION_SECRET,
-          resave: false,
-          saveUninitialized: false,
-        }),
-      );
-      app.use(passport.session());
-      await setupOpenId();
-    }
+    configureSocialLogins(app);
   }
+
   app.use('/oauth', routes.oauth);
-  // api endpoint
+  // API Endpoints
   app.use('/api/auth', routes.auth);
   app.use('/api/user', routes.user);
   app.use('/api/search', routes.search);
@@ -97,7 +60,7 @@ config.validate(); // Validate the config
   app.use('/api/plugins', routes.plugins);
   app.use('/api/config', routes.config);
 
-  // static files
+  // Static files
   app.get('/*', function (req, res) {
     res.sendFile(path.join(projectPath, 'dist', 'index.html'));
   });
@@ -105,13 +68,15 @@ config.validate(); // Validate the config
   app.listen(port, host, () => {
     if (host == '0.0.0.0') {
       console.log(
-        `Server listening on all interface at port ${port}. Use http://localhost:${port} to access it`,
+        `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,
       );
     } else {
       console.log(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
   });
-})();
+};
+
+startServer();
 
 let messageCount = 0;
 process.on('uncaughtException', (err) => {

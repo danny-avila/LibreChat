@@ -2,10 +2,14 @@ const Conversation = require('../../models/schema/convoSchema');
 const Message = require('../../models/schema/messageSchema');
 const { MeiliSearch } = require('meilisearch');
 let currentTimeout = null;
+const searchEnabled = process.env?.SEARCH?.toLowerCase() === 'true';
 
 // eslint-disable-next-line no-unused-vars
 async function indexSync(req, res, next) {
-  const searchEnabled = process.env.SEARCH && process.env.SEARCH.toLowerCase() === 'true';
+  if (!searchEnabled) {
+    return;
+  }
+
   try {
     if (!process.env.MEILI_HOST || !process.env.MEILI_MASTER_KEY || !searchEnabled) {
       throw new Error('Meilisearch not configured, search will be disabled.');
