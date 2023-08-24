@@ -35,8 +35,6 @@ type PluginProps = {
 };
 
 const Plugin: React.FC<PluginProps> = ({ plugin }) => {
-  const [loading, setLoading] = useState(plugin.loading);
-  const finished = plugin.outputs && plugin.outputs.length > 0;
   const plugins: PluginsMap = useRecoilValue(store.plugins);
 
   const getPluginName = useCallback(
@@ -63,20 +61,16 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
     return null;
   }
 
-  if (finished && loading) {
-    setLoading(false);
-  }
-
   const generateStatus = (): ReactNode => {
-    if (!loading && latestPlugin === 'self reflection') {
+    if (!plugin.loading && latestPlugin === 'self reflection') {
       return 'Finished';
     } else if (latestPlugin === 'self reflection') {
       return 'I\'m  thinking...';
     } else {
       return (
         <>
-          {loading ? 'Using' : 'Used'} <b>{latestPlugin}</b>
-          {loading ? '...' : ''}
+          {plugin.loading ? 'Using' : 'Used'} <b>{latestPlugin}</b>
+          {plugin.loading ? '...' : ''}
         </>
       );
     }
@@ -93,7 +87,7 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
             <>
               <div
                 className={cn(
-                  loading ? 'bg-green-100' : 'bg-[#ECECF1]',
+                  plugin.loading ? 'bg-green-100' : 'bg-[#ECECF1]',
                   'flex items-center rounded p-3 text-sm text-gray-900',
                 )}
               >
@@ -102,7 +96,7 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
                     <div>{generateStatus()}</div>
                   </div>
                 </div>
-                {loading && <Spinner className="ml-1" />}
+                {plugin.loading && <Spinner className="ml-1" />}
                 <Disclosure.Button className="ml-12 flex items-center gap-2">
                   <ChevronDownIcon {...iconProps} />
                 </Disclosure.Button>
@@ -115,7 +109,7 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
                   plugin={true}
                   classProp="max-h-[450px]"
                 />
-                {finished && (
+                {plugin.outputs && plugin.outputs.length > 0 && (
                   <CodeBlock
                     lang="OUTPUTS"
                     codeChildren={plugin.outputs ?? ''}

@@ -1,11 +1,12 @@
-import { useRef } from 'react';
+import { useRef, Fragment } from 'react';
 import { useRecoilState } from 'recoil';
 import { useUpdateMessageMutation } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage, TResPlugin } from 'librechat-data-provider';
 import type { TAskFunction } from '~/common';
 import { cn, getError } from '~/utils';
 import store from '~/store';
 import Content from './Content';
+import Plugin from './Plugin';
 
 type TInitialProps = {
   text: string;
@@ -181,12 +182,38 @@ const MessageContent = ({
   } else if (edit) {
     return <EditMessage text={text} isSubmitting={isSubmitting} {...props} />;
   } else {
-    return (
-      <>
-        <DisplayMessage text={text} {...props} />
-        {!isSubmitting && unfinished && <UnfinishedMessage />}
-      </>
-    );
+    const marker = '\n:::plugin:::\n';
+    const splitText = text.split(marker);
+    const { message } = props;
+    const { plugins, messageId } = message;
+    console.log('splitText', splitText);
+    console.log('plugins', plugins);
+    let emptyCount = 0;
+    return splitText.map((text, idx) => {
+      console.log('idx', idx);
+      let plugin: TResPlugin | null = null;
+      if (plugins) {
+        plugin = plugins[idx];
+      }
+
+      if (text === '') {
+        emptyCount++;
+      }
+
+      const showEmpty = isSubmitting && text.length === 0 ? emptyCount === 2 : text?.length > 0;
+
+      return (
+        <Fragment key={idx}>
+          {plugin && <Plugin key={`plugin-${messageId}-${idx}`} plugin={plugin} />}
+          {showEmpty ? (
+            <DisplayMessage key={`display-${messageId}-${idx}`} text={text} {...props} />
+          ) : null}
+          {!isSubmitting && unfinished && (
+            <UnfinishedMessage key={`unfinished-${messageId}-${idx}`} />
+          )}
+        </Fragment>
+      );
+    });
   }
 };
 

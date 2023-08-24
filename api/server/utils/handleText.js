@@ -24,7 +24,7 @@ const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
   let codeBlock = false;
   let tokens = addSpaceIfNeeded(generation);
 
-  const progressCallback = async (partial, { res, text, plugin, bing = false, ...rest }) => {
+  const progressCallback = async (partial, { res, text, plugins, bing = false, ...rest }) => {
     let chunk = partial === text ? '' : partial;
     tokens += chunk;
     precode += chunk;
@@ -54,15 +54,16 @@ const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
     }
 
     const payload = { text: tokens, message: true, initial: i === 0, ...rest };
-    if (plugin) {
-      payload.plugin = plugin;
+    if (plugins) {
+      payload.plugin = plugins;
     }
     sendMessage(res, { ...payload, text: tokens });
     _onProgress && _onProgress(payload);
     i++;
   };
 
-  const sendIntermediateMessage = (res, payload) => {
+  const sendIntermediateMessage = (res, payload, extraTokens = '') => {
+    tokens += extraTokens;
     sendMessage(res, {
       text: tokens?.length === 0 ? cursor : tokens,
       message: true,

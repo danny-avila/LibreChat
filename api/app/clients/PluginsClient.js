@@ -177,6 +177,7 @@ Only respond with your conversational reply to the following User Message:
         callbackManager: CallbackManager.fromHandlers({
           async handleLLMNewToken(token) {
             if (typeof onProgress === 'function' && this.functionsAgent) {
+              console.log('<----------INVOKING ON PROGRESS----------->');
               onProgress(token);
             }
           },
@@ -447,10 +448,19 @@ Only respond with your conversational reply to the following User Message:
       return await this.handleResponseMessage(responseMessage, saveOptions, user);
     }
 
+    if (this.agentOptions.skipCompletion && this.result.output && this.functionsAgent) {
+      const partialText = opts.getPartialText();
+      const trimmedPartial = opts.getPartialText().replaceAll('\n:::plugin:::\n', '');
+      responseMessage.text =
+        trimmedPartial.length === 0 ? `${partialText}${this.result.output}` : partialText;
+      await this.generateTextStream(this.result.output, opts.onProgress, { delay: 5 });
+      return await this.handleResponseMessage(responseMessage, saveOptions, user);
+    }
+
     if (this.agentOptions.skipCompletion && this.result.output) {
       responseMessage.text = this.result.output;
       this.addImages(this.result.intermediateSteps, responseMessage);
-      await this.generateTextStream(this.result.output, opts.onProgress, { delay: 8 });
+      await this.generateTextStream(this.result.output, opts.onProgress, { delay: 5 });
       return await this.handleResponseMessage(responseMessage, saveOptions, user);
     }
 

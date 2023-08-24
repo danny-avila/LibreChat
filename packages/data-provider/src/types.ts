@@ -8,6 +8,7 @@ export type TMessagesAtom = TMessages | null;
 
 export type TSubmission = {
   plugin?: TResPlugin;
+  plugins?: TResPlugin[];
   message: TMessage;
   isEdited?: boolean;
   isContinued?: boolean;

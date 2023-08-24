@@ -130,7 +130,9 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
       // let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
       // openAIApiKey = openAIApiKey === 'user_provided' ? null : openAIApiKey;
       // openAIApiKey = openAIApiKey || (await getUserPluginAuthValue(user, 'OPENAI_API_KEY'));
-      return new WebBrowser({ model, embeddings: new OpenAIEmbeddings({ openAIApiKey }) });
+      const browser = new WebBrowser({ model, embeddings: new OpenAIEmbeddings({ openAIApiKey }) });
+      browser.description_for_model = browser.description;
+      return browser;
     },
     serpapi: async () => {
       let apiKey = process.env.SERPAPI_API_KEY;

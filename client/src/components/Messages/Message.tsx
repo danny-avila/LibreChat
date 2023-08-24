@@ -3,7 +3,7 @@ import { useGetConversationByIdQuery } from 'librechat-data-provider';
 import { useState, useEffect } from 'react';
 import { useSetRecoilState } from 'recoil';
 import copy from 'copy-to-clipboard';
-import { Plugin, SubRow, MessageContent } from './Content';
+import { SubRow, MessageContent } from './Content';
 // eslint-disable-next-line import/no-cycle
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
@@ -159,7 +159,7 @@ export default function Message({
               </SubRow>
             )}
             <div className="flex flex-grow flex-col gap-3">
-              {message?.plugin && <Plugin plugin={message?.plugin} />}
+              {/* {message?.plugin && <Plugin plugin={message?.plugin} />} */}
               <MessageContent
                 ask={ask}
                 text={text ?? ''}

@@ -24,7 +24,14 @@ export default function useServerStream(submission: TSubmission | null) {
   const { refreshConversations } = store.useConversations();
 
   const messageHandler = (data: string, submission: TSubmission) => {
-    const { messages, message, plugin, initialResponse, isRegenerate = false } = submission;
+    const {
+      messages,
+      message,
+      plugin,
+      plugins,
+      initialResponse,
+      isRegenerate = false,
+    } = submission;
 
     if (isRegenerate) {
       setMessages([
@@ -35,6 +42,7 @@ export default function useServerStream(submission: TSubmission | null) {
           parentMessageId: message?.overrideParentMessageId ?? null,
           messageId: message?.overrideParentMessageId + '_',
           plugin: plugin ?? null,
+          plugins: plugins ?? [],
           submitting: true,
           // unfinished: true
         },
@@ -49,6 +57,7 @@ export default function useServerStream(submission: TSubmission | null) {
           parentMessageId: message?.messageId,
           messageId: message?.messageId + '_',
           plugin: plugin ?? null,
+          plugins: plugins ?? [],
           submitting: true,
           // unfinished: true
         },
@@ -214,7 +223,8 @@ export default function useServerStream(submission: TSubmission | null) {
       const data = JSON.parse(e.data);
 
       if (data.final) {
-        finalHandler(data, { ...submission, message });
+        const { plugins } = data;
+        finalHandler(data, { ...submission, plugins, message });
         console.log('final', data);
       }
       if (data.created) {
@@ -226,13 +236,13 @@ export default function useServerStream(submission: TSubmission | null) {
         console.log('created', message);
       } else {
         const text = data.text || data.response;
-        const { initial, plugin } = data;
+        const { initial, plugin, plugins } = data;
         if (initial) {
           console.log(data);
         }
 
         if (data.message) {
-          messageHandler(text, { ...submission, plugin, message });
+          messageHandler(text, { ...submission, plugin, plugins, message });
         }
       }
     };

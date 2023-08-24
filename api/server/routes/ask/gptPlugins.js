@@ -43,12 +43,7 @@ router.post(
     const newConvo = !conversationId;
     const user = req.user.id;
 
-    const plugin = {
-      loading: true,
-      inputs: [],
-      latest: null,
-      outputs: null,
-    };
+    const plugins = [];
 
     const addMetadata = (data) => (metadata = data);
     const getIds = (data) => {
@@ -68,9 +63,9 @@ router.post(
       onProgress: ({ text: partialText }) => {
         const currentTimestamp = Date.now();
 
-        if (plugin.loading === true) {
-          plugin.loading = false;
-        }
+        // if (plugin.loading === true) {
+        //   plugin.loading = false;
+        // }
 
         if (currentTimestamp - lastSavedTimestamp > saveDelay) {
           lastSavedTimestamp = currentTimestamp;
@@ -95,24 +90,45 @@ router.post(
 
     const onAgentAction = (action, start = false) => {
       const formattedAction = formatAction(action);
+      const latestPlugin = {
+        loading: true,
+        inputs: [],
+        latest: null,
+        outputs: null,
+      };
       // console.log('PLUGIN ACTION');
       // console.dir(action, { depth: null });
-      plugin.inputs.push(formattedAction);
-      plugin.latest = formattedAction.plugin;
+      if (plugins.length > 0) {
+        const previousPlugin = plugins[plugins.length - 1];
+        previousPlugin.loading = false;
+        plugins[plugins.length - 1] = previousPlugin;
+      }
+      latestPlugin.inputs.push(formattedAction);
+      latestPlugin.latest = formattedAction.plugin;
       if (!start) {
         saveMessage(userMessage);
       }
-      sendIntermediateMessage(res, { plugin });
+
+      const extraTokens = '\n:::plugin:::\n';
+      plugins.push(latestPlugin);
+      console.log('<---------------onAgentAction PLUGINS--------------->');
+      console.log(plugins);
+
+      sendIntermediateMessage(res, { plugins }, extraTokens);
       // console.log('PLUGIN ACTION', formattedAction);
     };
 
     const onChainEnd = (data) => {
       let { intermediateSteps: steps } = data;
-      plugin.outputs = steps && steps[0].action ? formatSteps(steps) : 'An error occurred.';
-      plugin.loading = false;
+      const latestPlugin = plugins[plugins.length - 1];
+      latestPlugin.outputs = steps && steps[0].action ? formatSteps(steps) : 'An error occurred.';
+      latestPlugin.loading = false;
+      plugins[plugins.length - 1] = latestPlugin;
       saveMessage(userMessage);
-      sendIntermediateMessage(res, { plugin });
+      sendIntermediateMessage(res, { plugins });
       // console.log('CHAIN END', plugin.outputs);
+      console.log('<---------------onChainEnd PLUGINS--------------->');
+      console.log(plugins);
     };
 
     const getAbortData = () => ({
@@ -121,7 +137,8 @@ router.post(
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId,
       text: getPartialText(),
-      plugin: { ...plugin, loading: false },
+      // plugin: { ...plugin, loading: false },
+      plugins: plugins.map((p) => ({ ...p, loading: false })),
       userMessage,
     });
     const { abortController, onStart } = createAbortController(
@@ -145,12 +162,13 @@ router.post(
         onChainEnd,
         onStart,
         addMetadata,
+        getPartialText,
         ...endpointOption,
         onProgress: progressCallback.call(null, {
           res,
           text,
-          plugin,
           parentMessageId: overrideParentMessageId || userMessageId,
+          plugins,
         }),
         abortController,
       });
@@ -165,7 +183,8 @@ router.post(
 
       console.log('CLIENT RESPONSE');
       console.dir(response, { depth: null });
-      response.plugin = { ...plugin, loading: false };
+      // response.plugin = { ...plugin, loading: false };
+      response.plugins = plugins.map((p) => ({ ...p, loading: false }));
       await saveMessage(response);
 
       sendMessage(res, {
