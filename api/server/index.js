@@ -1,5 +1,4 @@
 const express = require('express');
-const session = require('express-session');
 const connectDb = require('../lib/db/connectDb');
 const indexSync = require('../lib/db/indexSync');
 const path = require('path');
@@ -7,19 +6,12 @@ const cors = require('cors');
 const routes = require('./routes');
 const errorController = require('./controllers/ErrorController');
 const passport = require('passport');
+const configureSocialLogins = require('./socialLogins');
 
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
 const projectPath = path.join(__dirname, '..', '..', 'client');
-const {
-  jwtLogin,
-  passportLogin,
-  googleLogin,
-  githubLogin,
-  discordLogin,
-  facebookLogin,
-  setupOpenId,
-} = require('../strategies');
+const { jwtLogin, passportLogin } = require('../strategies');
 
 const startServer = async () => {
   await connectDb();
@@ -82,38 +74,6 @@ const startServer = async () => {
       console.log(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
   });
-};
-
-const configureSocialLogins = (app) => {
-  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-    passport.use(googleLogin());
-  }
-  if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
-    passport.use(facebookLogin());
-  }
-  if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
-    passport.use(githubLogin());
-  }
-  if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
-    passport.use(discordLogin());
-  }
-  if (
-    process.env.OPENID_CLIENT_ID &&
-    process.env.OPENID_CLIENT_SECRET &&
-    process.env.OPENID_ISSUER &&
-    process.env.OPENID_SCOPE &&
-    process.env.OPENID_SESSION_SECRET
-  ) {
-    app.use(
-      session({
-        secret: process.env.OPENID_SESSION_SECRET,
-        resave: false,
-        saveUninitialized: false,
-      }),
-    );
-    app.use(passport.session());
-    setupOpenId();
-  }
 };
 
 startServer();
