@@ -1,6 +1,8 @@
 // English phrases
 
 export default {
+  com_ui_recent: 'Recent',
+  com_ui_hottest: 'Hottest',
   com_ui_unfollow: 'Unfollow',
   com_ui_follow: 'Follow',
   com_ui_followers: 'Followers',

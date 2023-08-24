@@ -1,6 +1,8 @@
 // Chinese phrases
 
 export default {
+  com_ui_recent: '最新对话',
+  com_ui_hottest: '热门对话',
   com_ui_unfollow: '停止关注',
   com_ui_follow: '关注',
   com_ui_followers: '粉丝',
