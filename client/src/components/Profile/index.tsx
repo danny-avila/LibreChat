@@ -42,7 +42,7 @@ function ProfileContent() {
     return(
       <div className="group relative flex flex-row items-center cursor-pointer my-2" >
         <div
-          className='flex flex-row h-full w-full items-center rounded-lg px-2 py-2 gap-2 text-lg hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600'
+          className='flex flex-row h-full w-full items-center rounded-lg px-2 py-2 gap-2 text-base hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600'
           onClick={() => { navigate(`/profile/${id}`) }}
         >
           <UserIcon />
@@ -170,7 +170,7 @@ function ProfileContent() {
               alt="avatar"
             />
           </div>
-          <div className='flex flex-col justify-center mx-3 gap-4 dark:text-gray-200 text-2xl'>
+          <div className='flex flex-col justify-center mx-3 gap-4 dark:text-gray-200 text-xl'>
             <div>
               {profileUser?.name}
             </div>
@@ -180,7 +180,7 @@ function ProfileContent() {
           </div>
         </div>
         {/*Copy profile page URL button */}
-        <div className='flex flex-row self-center px-3 py-3 text-xl gap-4 items-center'>
+        <div className='flex flex-row self-center px-3 py-3 text-lg gap-4 items-center'>
           <button
             className='w-32 text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200'
             onClick={() => {

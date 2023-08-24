@@ -23,7 +23,7 @@ function PublicConversations() {
     return(
       <div className="group relative flex flex-row items-center cursor-pointer my-2" >
         <div
-          className='flex flex-row h-full w-full items-center rounded-lg px-2 py-2 gap-2 text-lg hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600'
+          className='flex flex-row h-full w-full items-center rounded-lg px-2 py-2 gap-2 text-base hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600'
           onClick={() => navigate(`/chat/share/${convo.conversationId}`)}
         >
           <ConvoIcon />
