@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getConvo, saveConvo, likeConvo } = require('../../models');
-const { getConvosByPage, deleteConvos, getRecentConvos, getHottestConvo, getSharedConvo, getLikedConvos, getPublicConvos } = require('../../models/Conversation');
+const { getConvosByPage, deleteConvos, getRecentConvos, getHottestConvo, getSharedConvo, getLikedConvos, getPublicConvos, getFollowingConvos } = require('../../models/Conversation');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 const { duplicateMessages } = require('../../models/Message');
 const crypto = require('crypto');
@@ -32,6 +32,17 @@ router.get('/recent', requireJwtAuth, async (req, res) => {
     const userId = req.user.id;
     const recentConvos = await getRecentConvos(userId);
     res.status(200).send(recentConvos);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send(error);
+  }
+});
+
+router.get('/following', requireJwtAuth, async (req, res) => {
+  try {
+    const following = req.user.following;
+    const followingConvos = await getFollowingConvos(Object.keys(following));
+    res.status(200).send(followingConvos);
   } catch (error) {
     console.error(error);
     res.status(500).send(error);

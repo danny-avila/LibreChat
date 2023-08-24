@@ -146,7 +146,33 @@ export default function Recommendations() {
     }
   }
 
-  // Fetch the most recent and the hottest conversations
+  // Fetch the conversations by user whom you are following and store in localStorage
+  async function fetchFollowingConversations() {
+    try {
+      const response = await fetch('/api/convos/following', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const responseObject = await response.json();
+      window.localStorage.setItem('followingConversations', JSON.stringify(responseObject));
+
+      if (tabValue === 'following') {
+        setConvoData(responseObject);
+
+        const objKeys = Object.keys(responseObject);
+        setConvoDataLength(objKeys.length);
+        setConvoDataKeys(objKeys);
+      }
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
+  // Fetch the most recent and the hottest conversations, as well as conversations by users
+  // whom you are following
   async function fetchRecommendations() {
     const lastFetchedBy = window.localStorage.getItem('lastFetchedBy');
     const last = Number(window.localStorage.getItem('lastFetchTime'));
@@ -160,6 +186,7 @@ export default function Recommendations() {
 
       fetchRecentConversations();
       fetchHottestConversations();
+      fetchFollowingConversations();
 
       window.localStorage.setItem('lastFetchTime', currentTime.toString());
       window.localStorage.setItem('lastFetchedBy', user?.id || '');
@@ -176,6 +203,8 @@ export default function Recommendations() {
         conversations = window.localStorage.getItem('recentConversations');
       } else if (tabValue === 'hottest') {
         conversations = window.localStorage.getItem('hottestConversations');
+      } else if (tabValue === 'following') {
+        conversations = window.localStorage.getItem('followingConversations');
       }
 
       if (conversations) {
@@ -367,6 +396,14 @@ export default function Recommendations() {
             >
               <div onClick={ fetchRecommendations }>
                 {localize(lang, 'com_ui_hottest')}
+              </div>
+            </TabsTrigger>
+            <TabsTrigger
+              value='following'
+              className={`${tabValue === 'following' ? selectedTab('fast') : defaultClasses}`}
+            >
+              <div onClick={ fetchRecommendations }>
+                {localize(lang, 'com_ui_my_following')}
               </div>
             </TabsTrigger>
           </TabsList>
