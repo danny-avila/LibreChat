@@ -450,7 +450,7 @@ Only respond with your conversational reply to the following User Message:
 
     if (this.agentOptions.skipCompletion && this.result.output && this.functionsAgent) {
       const partialText = opts.getPartialText();
-      const trimmedPartial = opts.getPartialText().replaceAll('\n:::plugin:::\n', '');
+      const trimmedPartial = opts.getPartialText().replaceAll(':::plugin:::\n', '');
       responseMessage.text =
         trimmedPartial.length === 0 ? `${partialText}${this.result.output}` : partialText;
       await this.generateTextStream(this.result.output, opts.onProgress, { delay: 5 });

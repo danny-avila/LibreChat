@@ -109,7 +109,7 @@ router.post(
         saveMessage(userMessage);
       }
 
-      const extraTokens = '\n:::plugin:::\n';
+      const extraTokens = ':::plugin:::\n';
       plugins.push(latestPlugin);
       console.log('<---------------onAgentAction PLUGINS--------------->');
       console.log(plugins);

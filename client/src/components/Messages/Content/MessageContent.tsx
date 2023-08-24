@@ -182,7 +182,7 @@ const MessageContent = ({
   } else if (edit) {
     return <EditMessage text={text} isSubmitting={isSubmitting} {...props} />;
   } else {
-    const marker = '\n:::plugin:::\n';
+    const marker = ':::plugin:::\n';
     const splitText = text.split(marker);
     const { message } = props;
     const { plugins, messageId } = message;
@@ -190,23 +190,27 @@ const MessageContent = ({
     console.log('plugins', plugins);
     let emptyCount = 0;
     return splitText.map((text, idx) => {
+      const currentText = text.trim();
       console.log('idx', idx);
       let plugin: TResPlugin | null = null;
       if (plugins) {
         plugin = plugins[idx];
       }
 
-      if (text === '') {
+      if (currentText === '') {
         emptyCount++;
       }
 
-      const showEmpty = isSubmitting && text.length === 0 ? emptyCount === 2 : text?.length > 0;
+      const showEmpty =
+        isSubmitting && currentText.length === 0
+          ? emptyCount === splitText.length
+          : text?.length > 0;
 
       return (
         <Fragment key={idx}>
           {plugin && <Plugin key={`plugin-${messageId}-${idx}`} plugin={plugin} />}
           {showEmpty ? (
-            <DisplayMessage key={`display-${messageId}-${idx}`} text={text} {...props} />
+            <DisplayMessage key={`display-${messageId}-${idx}`} text={currentText} {...props} />
           ) : null}
           {!isSubmitting && unfinished && (
             <UnfinishedMessage key={`unfinished-${messageId}-${idx}`} />
