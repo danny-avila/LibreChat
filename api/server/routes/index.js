@@ -8,6 +8,7 @@ const tokenizer = require('./tokenizer');
 const auth = require('./auth');
 const oauth = require('./oauth');
 const { router: endpoints } = require('./endpoints');
+const saveapi = require('./saveapi');
 const plugins = require('./plugins');
 const user = require('./user');
 const config = require('./config');
@@ -24,6 +25,7 @@ module.exports = {
   user,
   tokenizer,
   endpoints,
+  saveapi,
   plugins,
   config,
 };

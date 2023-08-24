@@ -90,6 +90,7 @@ config.validate(); // Validate the config
   app.use('/api/prompts', routes.prompts);
   app.use('/api/tokenizer', routes.tokenizer);
   app.use('/api/endpoints', routes.endpoints);
+  app.use('/api/saveapi', routes.saveapi);
   app.use('/api/plugins', routes.plugins);
   app.use('/api/config', routes.config);
 

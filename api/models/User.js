@@ -152,6 +152,21 @@ userSchema.methods.comparePassword = function (candidatePassword, callback) {
   });
 };
 
+userSchema.statics.saveApiSettings = async function (user, { endpoint, tempApi }) {
+  try {
+    const update = { endpoint, tempApi };
+
+    return await this.findOneAndUpdate(
+      { _id: user },
+      { $set: update },
+      { new: true, upsert: true },
+    );
+  } catch (error) {
+    console.log(error);
+    return { message: 'Error saving API settings' };
+  }
+};
+
 module.exports.hashPassword = async (password) => {
   const hashedPassword = await new Promise((resolve, reject) => {
     bcrypt.hash(password, 10, function (err, hash) {

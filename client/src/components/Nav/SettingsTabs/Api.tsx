@@ -6,6 +6,7 @@ import { useLocalize } from '~/hooks';
 import { CheckMark, CrossIcon } from '~/components/svg/';
 import { Eye, EyeOff } from 'lucide-react';
 import store from '~/store';
+import axios from 'axios';
 
 const endpointSettings = atom({
   key: 'endpointSettings',
@@ -223,18 +224,12 @@ function Api() {
   const handleReverseProxyApiChange = useCallback(
     async (newApi) => {
       try {
-        const response = await fetch('/api/save-endpoint-settings', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            endpoint: endpoint, // Passing the current endpoint
-            tempApi: newApi, // The new temporary API
-          }),
+        const response = await axios.post('/api/save-api-settings', {
+          endpoint: endpoint,
+          tempApi: newApi,
         });
-        if (response.ok) {
-          // If the request to the server is successful, update the local state
+
+        if (response.status === 200) {
           setEndpointSettingsState((prevSettings) => ({
             ...prevSettings,
             [endpoint]: {
@@ -242,13 +237,13 @@ function Api() {
               tempApi: newApi,
             },
           }));
-        } else {
-          // Handling error if the request to the server is not successful
-          const responseData = await response.json();
-          console.error('Error in server request:', responseData.error);
         }
       } catch (error) {
-        // TODO: Handling error in case of network error or exception
+        if (axios.isAxiosError(error)) {
+          console.error('Error in server request:', error.response?.data.error);
+        } else {
+          console.error('An error occurred:', error);
+        }
       }
     },
     [setEndpointSettingsState, endpoint],
