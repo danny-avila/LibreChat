@@ -138,7 +138,26 @@ module.exports = {
       const dbResponse = await Conversation.find({
         user: { $ne: userId },
         isPrivate: { $eq: false }
-      }).sort( { updatedAt: -1 } ).limit(200).exec();
+      }).sort( { createdAt: -1 } ).limit(200).exec();
+
+      // Converts the conversation array into objects mapping each conversation to its conversationId
+      const convoObject = {};
+      for (let i = 0; i < dbResponse.length; i++) {
+        const convoId = dbResponse[i].conversationId;
+        convoObject[convoId] = dbResponse[i];
+      }
+      return convoObject;
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error fetching recent conversations' };
+    }
+  },
+  getFollowingConvos: async (following) => {
+    try {
+      const dbResponse = await Conversation.find({
+        user: { $in: following },
+        isPrivate: { $eq: false }
+      }).sort( { createdAt: -1 } ).limit(200).exec();
 
       // Converts the conversation array into objects mapping each conversation to its conversationId
       const convoObject = {};
