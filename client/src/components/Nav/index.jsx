@@ -18,7 +18,7 @@ import Clipboard from '../svg/Clipboard';
 import useDebounce from '~/hooks/useDebounce';
 import LeaderboardIcon from '../svg/LeaderboardIcon';
 import NotebookIcon from '../svg/NotebookIcon';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import HomeIcon from '../svg/HomeIcon';
 import LightBulbIcon from '../svg/LightBulbIcon';
 import ComputerIcon from '../svg/ComputerIcon';
@@ -82,6 +82,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const [copied, setCopied] = useState(false);
   const [widget, setWidget] = useRecoilState(store.widget);
   const { user } = useAuthContext();
+  const { userId } = useParams();
   const navigate = useNavigate();
 
   const debouncedSearchTerm = useDebounce(searchQuery, 750);
@@ -193,7 +194,13 @@ export default function Nav({ navVisible, setNavVisible }) {
     setCopied(true);
   }
 
-  const navigateToRegister = () => navigate('/register');
+  const navigateToRegister = () => {
+    if (!user && userId) {
+      navigate(`/register/${userId}`);
+    } else {
+      navigate('/register');
+    }
+  }
 
   const openWidgetHandler = (type) => () => {
     if (location.pathname.substring(1, 5) !== 'chat' || location.pathname.substring(0, 11) === '/chat/share') {
@@ -267,7 +274,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                     <circle cx="12" cy="7" r="4" />
                   </svg>
-                  <button className='font-bold hover:underline' onClick={() => navigate('register')}>
+                  <button className='font-bold hover:underline' onClick={ navigateToRegister }>
                     {localize(lang, 'com_ui_register_here')}
                   </button>
                 </div>}
