@@ -23,8 +23,7 @@ export enum QueryKeys {
   tokenCount = 'tokenCount',
   availablePlugins = 'availablePlugins',
   startupConfig = 'startupConfig',
-  recentConversations = 'recentConversations',
-  hottestConversations = 'hottestConversations',
+  recommendations = 'recommendations',
   numOfReferrals = 'numOfReferrals',
   likedConversations = 'likedConversations',
   publicConversatons = 'publicConversatons'
@@ -371,21 +370,19 @@ export const useGetStartupConfig = (): QueryObserverResult<t.TStartupConfig> => 
   });
 }
 
-export const useGetRecentConversations = (): QueryObserverResult<t.TConversation[]> => {
-  return useQuery([QueryKeys.recentConversations], () => dataService.getRecentConversations(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false
-  });
+export const useGetRecommendationsQuery = (
+  type: string,
+): QueryObserverResult<t.TConversation[]> => {
+  return useQuery<t.TConversation[]>(
+    [QueryKeys.recommendations, type],
+    () => dataService.getRecommendations(type),
+    {
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: 1,
+    }
+  );
 };
-
-export const useGetHottestConversations = (): QueryObserverResult<t.TConversation[]> => {
-  return useQuery([QueryKeys.hottestConversations], () => dataService.getHottestConversations(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false
-  });
-}
 
 export const useDuplicateConvoMutation = (): any => {
   return useMutation((payload: object) => dataService.duplicateConversation(payload))

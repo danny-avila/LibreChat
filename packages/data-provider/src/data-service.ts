@@ -120,12 +120,8 @@ export const getStartupConfig = (): Promise<t.TStartupConfig> => {
   return request.get(endpoints.config());
 }
 
-export const getRecentConversations = () => {
-  return request.get(endpoints.recentConversations());
-}
-
-export const getHottestConversations = () => {
-  return request.get(endpoints.hottestConversations());
+export const getRecommendations = (type: string): Promise<t.TConversation[]> => {
+  return request.get(endpoints.recommendations(type));
 }
 
 export const duplicateConversation = (payload: object) => {
