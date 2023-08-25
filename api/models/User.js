@@ -63,6 +63,11 @@ const userSchema = mongoose.Schema(
       unique: true,
       sparse: true,
     },
+    facebookId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
     openidId: {
       type: String,
       unique: true,
