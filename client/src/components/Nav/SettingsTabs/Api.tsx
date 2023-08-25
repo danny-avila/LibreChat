@@ -224,7 +224,7 @@ function Api() {
   const handleReverseProxyApiChange = useCallback(
     async (newApi) => {
       try {
-        const response = await axios.post('/api/save-api-settings', {
+        const response = await axios.post('/api/saveapi', {
           endpoint: endpoint,
           tempApi: newApi,
         });

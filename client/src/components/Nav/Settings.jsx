@@ -3,15 +3,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, CogIcon, ApiIcon } fr
 import { General, Api } from './SettingsTabs';
 import { useEffect, useState } from 'react';
 import { cn } from '~/utils/';
-import { useRecoilValue } from 'recoil';
-import { localize } from '~/localization/Translation';
-import store from '~/store';
+import { useLocalize } from '~/hooks';
 import { useMediaQuery } from '~/hooks';
 
 export default function Settings({ open, onOpenChange }) {
   const [confirmClear, setConfirmClear] = useState(false);
   const isMobile = useMediaQuery('(max-width: 768px)');
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
 
   useEffect(() => {
     // If the user clicks in the dialog when confirmClear is true, set it to false
@@ -33,7 +31,7 @@ export default function Settings({ open, onOpenChange }) {
       <DialogContent className={cn('shadow-2xl dark:bg-gray-900 dark:text-white md:w-[680px] ')}>
         <DialogHeader>
           <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
-            {localize(lang, 'com_nav_settings')}
+            {localize('com_nav_settings')}
           </DialogTitle>
         </DialogHeader>
         <div className="px-6">
@@ -61,7 +59,7 @@ export default function Settings({ open, onOpenChange }) {
                 value="general"
               >
                 <CogIcon />
-                {localize(lang, 'com_nav_setting_general')}
+                {localize('com_nav_setting_general')}
               </Tabs.Trigger>
               <Tabs.Trigger
                 className={cn(
@@ -72,7 +70,7 @@ export default function Settings({ open, onOpenChange }) {
                 value="api"
               >
                 <ApiIcon />
-                {localize(lang, 'com_nav_setting_api')}
+                {localize('com_nav_setting_api')}
               </Tabs.Trigger>
             </Tabs.List>
             <General />

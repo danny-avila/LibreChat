@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireJwtAuth } = require('./auth');
+const { requireJwtAuth } = require('../middleware');
 const User = require('../../models/User');
 
 router.post('/api/saveapi', requireJwtAuth, async (req, res) => {
@@ -15,3 +15,5 @@ router.post('/api/saveapi', requireJwtAuth, async (req, res) => {
     res.status(500).send(error);
   }
 });
+
+module.exports = router;

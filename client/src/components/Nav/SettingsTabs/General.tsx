@@ -104,14 +104,14 @@ export const LangSelector = ({
         onChange={(e) => onChange(e.target.value)}
         value={langcode}
       >
-        <option value="en">{localize(lang, 'com_nav_lang_english')}</option>
-        <option value="cn">{localize(lang, 'com_nav_lang_chinese')}</option>
-        <option value="de">{localize(lang, 'com_nav_lang_german')}</option>
-        <option value="es">{localize(lang, 'com_nav_lang_spanish')}</option>
-        <option value="fr">{localize(lang, 'com_nav_lang_french')}</option>
-        <option value="it">{localize(lang, 'com_nav_lang_italian')}</option>
-        <option value="br">{localize(lang, 'com_nav_lang_brazilian_portuguese')}</option>
-        <option value="ru">{localize(lang, 'com_nav_lang_russian')}</option>
+        <option value="en">{localize('com_nav_lang_english')}</option>
+        <option value="cn">{localize('com_nav_lang_chinese')}</option>
+        <option value="de">{localize('com_nav_lang_german')}</option>
+        <option value="es">{localize('com_nav_lang_spanish')}</option>
+        <option value="fr">{localize('com_nav_lang_french')}</option>
+        <option value="it">{localize('com_nav_lang_italian')}</option>
+        <option value="br">{localize('com_nav_lang_brazilian_portuguese')}</option>
+        <option value="ru">{localize('com_nav_lang_russian')}</option>
       </select>
     </div>
   );
