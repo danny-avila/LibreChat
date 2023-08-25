@@ -1,6 +1,6 @@
-# Docker Installation Guide
+# Docker Compose Installation Guide
 
-Docker installation is recommended for most use cases. It's the easiest, simplest, and most reliable method to get started.
+Docker Compose installation is recommended for most use cases. It's the easiest, simplest, and most reliable method to get started.
 
 See the video guide for [Windows](windows_install.md#recommended) or [Ubuntu 22.04 LTS](linux_install.md#recommended)
 ## Installation and Configuration
