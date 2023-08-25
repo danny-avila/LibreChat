@@ -135,18 +135,10 @@ module.exports = {
   },
   getRecentConvos: async (userId) => {
     try {
-      const dbResponse = await Conversation.find({
+      return await Conversation.find({
         user: { $ne: userId },
         isPrivate: { $eq: false }
       }).sort( { createdAt: -1 } ).limit(200).exec();
-
-      // Converts the conversation array into objects mapping each conversation to its conversationId
-      const convoObject = {};
-      for (let i = 0; i < dbResponse.length; i++) {
-        const convoId = dbResponse[i].conversationId;
-        convoObject[convoId] = dbResponse[i];
-      }
-      return convoObject;
     } catch (error) {
       console.log(error);
       return { message: 'Error fetching recent conversations' };
@@ -154,18 +146,10 @@ module.exports = {
   },
   getFollowingConvos: async (following) => {
     try {
-      const dbResponse = await Conversation.find({
+      return await Conversation.find({
         user: { $in: following },
         isPrivate: { $eq: false }
       }).sort( { createdAt: -1 } ).limit(200).exec();
-
-      // Converts the conversation array into objects mapping each conversation to its conversationId
-      const convoObject = {};
-      for (let i = 0; i < dbResponse.length; i++) {
-        const convoId = dbResponse[i].conversationId;
-        convoObject[convoId] = dbResponse[i];
-      }
-      return convoObject;
     } catch (error) {
       console.log(error);
       return { message: 'Error fetching recent conversations' };
@@ -197,19 +181,11 @@ module.exports = {
   },
   getHottestConvo: async (userId) => {
     try {
-      const dbResponse = await Conversation.find({
+      return await Conversation.find({
         user: { $ne: userId },
         isPrivate: { $eq: false }
       }).sort({ likes: -1 }) // Sort by count in descending order (hottest first)
         .limit(200).exec();
-
-      // Converts the conversation array into objects mapping each conversation to its conversationId
-      const convoObject = {};
-      for (let i = 0; i < dbResponse.length; i++) {
-        const convoId = dbResponse[i].conversationId;
-        convoObject[convoId] = dbResponse[i];
-      }
-      return convoObject;
     } catch (error) {
       console.log(error);
       return { message: 'Error getting the hottest conversations' };
