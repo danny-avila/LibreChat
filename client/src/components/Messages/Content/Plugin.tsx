@@ -1,4 +1,4 @@
-import { useState, useCallback, memo, ReactNode } from 'react';
+import { useCallback, memo, ReactNode } from 'react';
 import type { TResPlugin, TInput } from 'librechat-data-provider';
 import { ChevronDownIcon, LucideProps } from 'lucide-react';
 import { Disclosure } from '@headlessui/react';

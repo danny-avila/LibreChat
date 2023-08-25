@@ -79,6 +79,7 @@ router.post(
             unfinished: true,
             cancelled: false,
             error: false,
+            plugins,
           });
         }
 
@@ -183,7 +184,6 @@ router.post(
 
       console.log('CLIENT RESPONSE');
       console.dir(response, { depth: null });
-      // response.plugin = { ...plugin, loading: false };
       response.plugins = plugins.map((p) => ({ ...p, loading: false }));
       await saveMessage(response);
 
