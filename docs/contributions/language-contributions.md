@@ -84,7 +84,11 @@ The only line of code to add is:
         modified:   client/src/localization/languages/Eng.tsx
 ```
 
-12. Commit your changes using git add *, git commit -m "Language translation: your-language translation" and git push.
+12. Commit your changes using:
+    - `git add *` 
+    - `git commit -m "Language translation: your-language translation"` 
+    - `git push`
+
 13. Open your repository in a browser and click on "Contribute"
 
 ![image](https://github.com/Berry-13/LibreChat/assets/81851188/ab91cf4b-1830-4419-9d0c-68fcb2fd5f5e)
