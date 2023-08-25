@@ -34,6 +34,7 @@ export default {
   com_auth_sign_up: 'Cadastre-se',
   com_auth_sign_in: 'Entrar',
   com_auth_google_login: 'Entrar com o Google',
+  com_auth_facebook_login: 'Entrar com o Facebook',
   com_auth_github_login: 'Entrar com o Github',
   com_auth_discord_login: 'Entrar com o Discord',
   com_auth_email: 'Email',
