@@ -412,8 +412,21 @@ class BaseClient {
     // depending on subclass implementation of handling messages
     // When this is an edit, all messages are already in currentMessages, both user and response
     if (isEdited) {
-      /* TODO: edge case where latest message doesn't exist */
-      this.currentMessages[this.currentMessages.length - 1].text = generation;
+      let latestMessage = this.currentMessages[this.currentMessages.length - 1];
+      if (!latestMessage) {
+        latestMessage = {
+          messageId: responseMessageId,
+          conversationId,
+          parentMessageId: userMessage.messageId,
+          isCreatedByUser: false,
+          model: this.modelOptions.model,
+          sender: this.sender,
+          text: generation,
+        };
+        this.currentMessages.push(userMessage, latestMessage);
+      } else {
+        latestMessage.text = generation;
+      }
     } else {
       this.currentMessages.push(userMessage);
     }
