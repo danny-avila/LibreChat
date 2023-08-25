@@ -7,7 +7,7 @@ import {
   TRegisterUser,
   useGetStartupConfig,
 } from 'librechat-data-provider';
-import { GoogleIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
+import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
 
 function Registration() {
   const navigate = useNavigate();
@@ -115,13 +115,13 @@ function Registration() {
                 id="username"
                 aria-label={localize('com_auth_username')}
                 {...register('username', {
-                  required: localize('com_auth_username_required'),
+                  // required: localize('com_auth_username_required'),
                   minLength: {
-                    value: 3,
+                    value: 2,
                     message: localize('com_auth_username_min_length'),
                   },
                   maxLength: {
-                    value: 20,
+                    value: 80,
                     message: localize('com_auth_username_max_length'),
                   },
                 })}
@@ -304,6 +304,20 @@ function Registration() {
               >
                 <GoogleIcon />
                 <p>{localize('com_auth_google_login')}</p>
+              </a>
+            </div>
+          </>
+        )}
+        {startupConfig?.facebookLoginEnabled && startupConfig?.socialLoginEnabled && (
+          <>
+            <div className="mt-2 flex gap-x-2">
+              <a
+                aria-label="Login with Facebook"
+                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
+                href={`${startupConfig.serverDomain}/oauth/facebook`}
+              >
+                <FacebookIcon />
+                <p>{localize('com_auth_facebook_login')}</p>
               </a>
             </div>
           </>

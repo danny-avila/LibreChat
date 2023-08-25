@@ -345,7 +345,8 @@ Only respond with your conversational reply to the following User Message:
   }
 
   async sendMessage(message, opts = {}) {
-    const completionMode = this.options.tools.length === 0;
+    // If a message is edited, no tools can be used.
+    const completionMode = this.options.tools.length === 0 || opts.isEdited;
     if (completionMode) {
       this.setOptions(opts);
       return super.sendMessage(message, opts);

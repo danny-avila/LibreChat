@@ -23,7 +23,7 @@ function PluginAuthForm({ plugin, onSubmit }: TPluginAuthFormProps) {
           className="col-span-1 flex w-full flex-col items-start justify-start gap-2"
           method="POST"
           onSubmit={handleSubmit((auth) =>
-            onSubmit({ pluginKey: plugin?.pluginKey, action: 'install', auth }),
+            onSubmit({ pluginKey: plugin?.pluginKey ?? '', action: 'install', auth }),
           )}
         >
           {plugin?.authConfig?.map((config: TPluginAuthConfig, i: number) => (

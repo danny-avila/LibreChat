@@ -24,6 +24,7 @@ const setup = ({
     isError: false,
     data: {
       googleLoginEnabled: true,
+      facebookLoginEnabled: true,
       openidLoginEnabled: true,
       openidLabel: 'Test OpenID',
       openidImageUrl: 'http://test-server.com',
@@ -75,6 +76,21 @@ test('renders registration form', () => {
     'href',
     'mock-server/oauth/google',
   );
+  expect(getByRole('link', { name: /Login with Facebook/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Login with Facebook/i })).toHaveAttribute(
+    'href',
+    'mock-server/oauth/facebook',
+  );
+  expect(getByRole('link', { name: /Login with Github/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Login with Github/i })).toHaveAttribute(
+    'href',
+    'mock-server/oauth/github',
+  );
+  expect(getByRole('link', { name: /Login with Discord/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Login with Discord/i })).toHaveAttribute(
+    'href',
+    'mock-server/oauth/discord',
+  );
 });
 
 // eslint-disable-next-line jest/no-commented-out-tests
@@ -114,7 +130,7 @@ test('shows validation error messages', async () => {
   const alerts = getAllByRole('alert');
   expect(alerts).toHaveLength(5);
   expect(alerts[0]).toHaveTextContent(/Name must be at least 3 characters/i);
-  expect(alerts[1]).toHaveTextContent(/Username must be at least 3 characters/i);
+  expect(alerts[1]).toHaveTextContent(/Username must be at least 2 characters/i);
   expect(alerts[2]).toHaveTextContent(/You must enter a valid email address/i);
   expect(alerts[3]).toHaveTextContent(/Password must be at least 8 characters/i);
   expect(alerts[4]).toHaveTextContent(/Passwords do not match/i);

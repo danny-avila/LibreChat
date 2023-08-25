@@ -314,12 +314,17 @@ class OpenAIClient extends BaseClient {
   async sendCompletion(payload, opts = {}) {
     let reply = '';
     let result = null;
+    let streamResult = null;
     if (typeof opts.onProgress === 'function') {
       await this.getCompletion(
         payload,
         (progressMessage) => {
           if (progressMessage === '[DONE]') {
             return;
+          }
+
+          if (progressMessage.choices) {
+            streamResult = progressMessage;
           }
           const token = this.isChatCompletion
             ? progressMessage.choices?.[0]?.delta?.content
@@ -355,6 +360,10 @@ class OpenAIClient extends BaseClient {
       }
     }
 
+    if (streamResult && typeof opts.addMetadata === 'function') {
+      const { finish_reason } = streamResult.choices[0];
+      opts.addMetadata({ finish_reason });
+    }
     return reply.trim();
   }
 

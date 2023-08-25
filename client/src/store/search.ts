@@ -2,7 +2,7 @@ import { TMessage } from 'librechat-data-provider';
 import { atom, selector } from 'recoil';
 import { buildTree } from '~/utils';
 
-const isSearchEnabled = atom({
+const isSearchEnabled = atom<boolean | null>({
   key: 'isSearchEnabled',
   default: null,
 });

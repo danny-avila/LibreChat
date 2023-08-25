@@ -7,6 +7,8 @@ const StableDiffusionAPI = require('./StableDiffusion');
 const WolframAlphaAPI = require('./Wolfram');
 const StructuredWolfram = require('./structured/Wolfram');
 const SelfReflectionTool = require('./SelfReflection');
+const AzureCognitiveSearch = require('./AzureCognitiveSearch');
+const StructuredACS = require('./structured/AzureCognitiveSearch');
 const availableTools = require('./manifest.json');
 
 module.exports = {
@@ -20,4 +22,6 @@ module.exports = {
   WolframAlphaAPI,
   StructuredWolfram,
   SelfReflectionTool,
+  AzureCognitiveSearch,
+  StructuredACS,
 };

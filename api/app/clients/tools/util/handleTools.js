@@ -15,6 +15,8 @@ const {
   OpenAICreateImage,
   StableDiffusionAPI,
   StructuredSD,
+  AzureCognitiveSearch,
+  StructuredACS,
 } = require('../');
 const { loadSpecs } = require('./loadSpecs');
 
@@ -78,6 +80,7 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
     wolfram: functions ? StructuredWolfram : WolframAlphaAPI,
     'dall-e': OpenAICreateImage,
     'stable-diffusion': functions ? StructuredSD : StableDiffusionAPI,
+    'azure-cognitive-search': functions ? StructuredACS : AzureCognitiveSearch,
   };
 
   const customConstructors = {

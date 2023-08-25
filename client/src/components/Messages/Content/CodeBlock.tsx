@@ -51,7 +51,7 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(({ lang, codeRef, plugin = nu
 
 interface CodeBlockProps {
   lang: string;
-  codeChildren: string;
+  codeChildren: React.ReactNode;
   classProp?: string;
   plugin?: boolean;
 }

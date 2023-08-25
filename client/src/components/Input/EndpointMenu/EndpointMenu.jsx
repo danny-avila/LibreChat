@@ -103,10 +103,18 @@ export default function NewConversationMenu() {
   };
 
   // set the current model
+  const isModular = modularEndpoints.has(endpoint);
   const onSelectPreset = (newPreset) => {
     setMenuOpen(false);
+    if (!newPreset) {
+      return;
+    }
 
-    if (modularEndpoints.has(endpoint) && modularEndpoints.has(newPreset?.endpoint)) {
+    if (
+      isModular &&
+      modularEndpoints.has(newPreset?.endpoint) &&
+      endpoint === newPreset?.endpoint
+    ) {
       const currentConvo = getDefaultConversation({
         conversation,
         endpointsConfig,
@@ -115,10 +123,6 @@ export default function NewConversationMenu() {
 
       setConversation(currentConvo);
       setMessages(messages);
-      return;
-    }
-
-    if (!newPreset) {
       return;
     }
 

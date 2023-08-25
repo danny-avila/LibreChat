@@ -41,7 +41,8 @@ router.get(
 router.get(
   '/facebook',
   passport.authenticate('facebook', {
-    scope: ['public_profile', 'email'],
+    scope: ['public_profile'],
+    profileFields: ['id', 'email', 'name'],
     session: false,
   }),
 );
@@ -52,7 +53,8 @@ router.get(
     failureRedirect: `${domains.client}/login`,
     failureMessage: true,
     session: false,
-    scope: ['public_profile', 'email'],
+    scope: ['public_profile'],
+    profileFields: ['id', 'email', 'name'],
   }),
   (req, res) => {
     const token = req.user.generateToken();
