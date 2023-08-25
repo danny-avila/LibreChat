@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vera-librechat.fullname" . }}
+  labels:
+    {{- include "vera-librechat.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: 3080
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "vera-librechat.selectorLabels" . | nindent 4 }}
