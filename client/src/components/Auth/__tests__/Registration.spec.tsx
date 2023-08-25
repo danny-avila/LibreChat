@@ -24,6 +24,7 @@ const setup = ({
     isError: false,
     data: {
       googleLoginEnabled: true,
+      facebookLoginEnabled: true,
       openidLoginEnabled: true,
       openidLabel: 'Test OpenID',
       openidImageUrl: 'http://test-server.com',
@@ -74,6 +75,21 @@ test('renders registration form', () => {
   expect(getByRole('link', { name: /Login with Google/i })).toHaveAttribute(
     'href',
     'mock-server/oauth/google',
+  );
+  expect(getByRole('link', { name: /Login with Facebook/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Login with Facebook/i })).toHaveAttribute(
+    'href',
+    'mock-server/oauth/facebook',
+  );
+  expect(getByRole('link', { name: /Login with Github/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Login with Github/i })).toHaveAttribute(
+    'href',
+    'mock-server/oauth/github',
+  );
+  expect(getByRole('link', { name: /Login with Discord/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Login with Discord/i })).toHaveAttribute(
+    'href',
+    'mock-server/oauth/discord',
   );
 });
 

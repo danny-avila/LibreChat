@@ -35,6 +35,7 @@ export default {
   com_auth_sign_up: 'Registrarse',
   com_auth_sign_in: 'Iniciar sesión',
   com_auth_google_login: 'Iniciar sesión con Google',
+  com_auth_facebook_login: 'Iniciar sesión con Facebook',
   com_auth_github_login: 'Iniciar sesión con GitHub',
   com_auth_discord_login: 'Iniciar sesión con Discord',
   com_auth_email: 'Email',

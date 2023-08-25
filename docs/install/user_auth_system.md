@@ -45,6 +45,24 @@ To enable Google login, you must create an application in the [Google Cloud Cons
 
 ---
 
+## Facebook Authentication 
+### (It only works with a domain, not with localhost)
+
+1. Go to [Facebook Developer Portal](https://developers.facebook.com/)
+2. Create a new Application and give it a name
+4. In the Dashboard tab select product and select "Facebook login", then tap on "Configure" and "Settings". Male sure "OAuth client access", "Web OAuth access", "Apply HTTPS" and "Use limited mode for redirect URIs" are **enabled** 
+5. In the Valid OAuth Redirect URIs add "your-domain/oauth/facebook/callback" (example: http://example.com/oauth/facebook/callback)
+6. Save changes and in the "settings" tab, reset the Client Secret
+7. Put the Client ID and Client Secret in the .env file:
+```bash
+FACEBOOK_CLIENT_ID=your_client_id
+FACEBOOK_CLIENT_SECRET=your_client_secret
+FACEBOOK_CALLBACK_URL=/oauth/facebook/callback # this should be the same for everyone
+```
+8. Save the .env file
+
+---
+
 ## OpenID Authentication with Azure AD
 
 1. Go to the [Azure Portal](https://portal.azure.com/) and sign in with your account.
@@ -132,6 +150,7 @@ DISCORD_CLIENT_SECRET=your_client_secret
 DISCORD_CALLBACK_URL=/oauth/discord/callback # this should be the same for everyone
 ```
 8. Save the .env file
+
 ---
 ## **Email and Password Reset** 
 

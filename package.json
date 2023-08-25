@@ -54,7 +54,8 @@
   },
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "dependencies": {
-    "axios": "^1.4.0"
+    "axios": "^1.4.0",
+    "passport-facebook": "^3.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.32.1",
