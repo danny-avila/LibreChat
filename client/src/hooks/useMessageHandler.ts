@@ -6,7 +6,7 @@ import type { TAskFunction } from '~/common';
 import store from '~/store';
 
 const useMessageHandler = () => {
-  const latestMessage = useRecoilValue(store.latestMessage);
+  const [latestMessage, setLatestMessage] = useRecoilState(store.latestMessage);
   const setSiblingIdx = useSetRecoilState(
     store.messagesSiblingIdxFamily(latestMessage?.parentMessageId),
   );
@@ -134,6 +134,7 @@ const useMessageHandler = () => {
     } else {
       setMessages([...submission.messages, currentMsg, initialResponse]);
     }
+    setLatestMessage(initialResponse);
     setSubmission(submission);
   };
 
