@@ -292,7 +292,7 @@ Only respond with your conversational reply to the following User Message:
     }
   }
 
-  async executorCall(message, signal) {
+  async executorCall(message, { signal, stream, onToolStart, onToolEnd }) {
     let errorMessage = '';
     const maxAttempts = 1;
 
@@ -309,7 +309,31 @@ Only respond with your conversational reply to the following User Message:
       }
 
       try {
-        this.result = await this.executor.call({ input, signal });
+        this.result = await this.executor.call({ input, signal }, [
+          {
+            async handleToolStart(...args) {
+              console.log('<----------handleToolStart---------->');
+              console.dir(args, { depth: null });
+              await onToolStart(...args);
+            },
+            async handleToolEnd(...args) {
+              console.log('<----------handleToolEnd---------->');
+              console.dir(args, { depth: null });
+              await onToolEnd(...args);
+            },
+            async handleLLMEnd(output) {
+              console.log('<----------handleLLMEnd---------->');
+              const { generations } = output;
+              const { text } = generations[0][0];
+              if (text && typeof stream === 'function') {
+                console.log('<----------INVOKING ON PROGRESS----------->');
+                await stream(text);
+              }
+              console.dir(text, { depth: null });
+              console.log('typeof stream === \'function\'', typeof stream === 'function');
+            },
+          },
+        ]);
         break; // Exit the loop if the function call is successful
       } catch (err) {
         console.error(err);
@@ -375,7 +399,9 @@ Only respond with your conversational reply to the following User Message:
       this.setOptions(opts);
       return super.sendMessage(message, opts);
     }
-    console.log('Plugins sendMessage', message, opts);
+    if (this.options.debug) {
+      console.log('Plugins sendMessage', message, opts);
+    }
     const {
       user,
       conversationId,
@@ -384,6 +410,8 @@ Only respond with your conversational reply to the following User Message:
       userMessage,
       onAgentAction,
       onChainEnd,
+      onToolStart,
+      onToolEnd,
     } = await this.handleStartMethods(message, opts);
 
     this.conversationId = conversationId;
@@ -440,7 +468,16 @@ Only respond with your conversational reply to the following User Message:
       signal: this.abortController.signal,
       onProgress: opts.onProgress,
     });
-    await this.executorCall(message, this.abortController.signal);
+
+    const stream = async (text) => {
+      await this.generateTextStream.call(this, text, opts.onProgress, { delay: 1 });
+    };
+    await this.executorCall(message, {
+      signal: this.abortController.signal,
+      stream,
+      onToolStart,
+      onToolEnd,
+    });
 
     // If message was aborted mid-generation
     if (this.result?.errorMessage?.length > 0 && this.result?.errorMessage?.includes('cancel')) {

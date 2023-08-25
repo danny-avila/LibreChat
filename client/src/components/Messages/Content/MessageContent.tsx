@@ -29,7 +29,10 @@ type TMessageContent = TInitialProps & TAdditionalProps;
 type TText = Pick<TInitialProps, 'text'>;
 type TEditProps = Pick<TInitialProps, 'text' | 'isSubmitting'> &
   Omit<TAdditionalProps, 'isCreatedByUser'>;
-type TDisplayProps = TText & Pick<TAdditionalProps, 'isCreatedByUser' | 'message'>;
+type TDisplayProps = TText &
+  Pick<TAdditionalProps, 'isCreatedByUser' | 'message'> & {
+    showCursor?: boolean;
+  };
 
 // Container Component
 const Container = ({ children }: { children: React.ReactNode }) => (
@@ -150,7 +153,7 @@ const EditMessage = ({
 };
 
 // Display Message Component
-const DisplayMessage = ({ text, isCreatedByUser, message }: TDisplayProps) => (
+const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => (
   <Container>
     <div
       className={cn(
@@ -158,7 +161,11 @@ const DisplayMessage = ({ text, isCreatedByUser, message }: TDisplayProps) => (
         isCreatedByUser ? 'whitespace-pre-wrap' : '',
       )}
     >
-      {!isCreatedByUser ? <Content content={text} message={message} /> : <>{text}</>}
+      {!isCreatedByUser ? (
+        <Content content={text} message={message} showCursor={showCursor} />
+      ) : (
+        <>{text}</>
+      )}
     </div>
   </Container>
 );
@@ -188,29 +195,46 @@ const MessageContent = ({
     const { plugins, messageId } = message;
     console.log('splitText', splitText);
     console.log('plugins', plugins);
-    let emptyCount = 0;
+    const displayedIndices = new Set<number>();
+    // Function to get the next non-empty text index
+    const getNextNonEmptyTextIndex = (currentIndex: number) => {
+      for (let i = currentIndex + 1; i < splitText.length; i++) {
+        if (splitText[i].trim() !== '' && !displayedIndices.has(i)) {
+          return i;
+        }
+      }
+      return currentIndex; // If no non-empty text is found, return the current index
+    };
+
     return splitText.map((text, idx) => {
-      const currentText = text.trim();
+      let currentText = text.trim();
       console.log('idx', idx);
       let plugin: TResPlugin | null = null;
+
       if (plugins) {
         plugin = plugins[idx];
       }
 
-      if (currentText === '') {
-        emptyCount++;
-      }
-
-      const showEmpty =
-        isSubmitting && currentText.length === 0
-          ? emptyCount === splitText.length
-          : text?.length > 0;
+      // If the current text is empty, get the next non-empty text index
+      const displayTextIndex = currentText === '' ? getNextNonEmptyTextIndex(idx) : idx;
+      currentText = splitText[displayTextIndex];
+      const isLastIndex = displayTextIndex === splitText.length - 1;
+      const isEmpty = currentText.trim() === '';
+      const showText =
+        (currentText && !isEmpty && !displayedIndices.has(displayTextIndex)) ||
+        (isEmpty && isLastIndex);
+      displayedIndices.add(displayTextIndex);
 
       return (
         <Fragment key={idx}>
           {plugin && <Plugin key={`plugin-${messageId}-${idx}`} plugin={plugin} />}
-          {showEmpty ? (
-            <DisplayMessage key={`display-${messageId}-${idx}`} text={currentText} {...props} />
+          {showText ? (
+            <DisplayMessage
+              key={`display-${messageId}-${idx}`}
+              showCursor={isLastIndex}
+              text={currentText}
+              {...props}
+            />
           ) : null}
           {!isSubmitting && unfinished && (
             <UnfinishedMessage key={`unfinished-${messageId}-${idx}`} />

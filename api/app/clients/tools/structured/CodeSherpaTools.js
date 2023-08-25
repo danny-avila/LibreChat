@@ -19,17 +19,22 @@ class RunCode extends StructuredTool {
     super();
     this.name = 'RunCode';
     this.url = fields.CODESHERPA_SERVER_URL || getServerURL();
-    this.description_for_model = `Run code: provide "code" and "language"
-- Execute Python code interactively for general programming, tasks, data analysis, visualizations, and more.
-- Pre-installed packages: matplotlib, seaborn, pandas, numpy, scipy, openpyxl. If you need to install additional packages, use the \`pip install\` command.
-- When a user asks for visualization, save the plot to \`static/images/\` directory, and embed it in the response using \`${this.url}/static/images/\` URL.
-- Always save all media files created to \`static/images/\` directory, and embed them in responses using \`${this.url}/static/images/\` URL.`;
+    this.description_for_model = `// Run code: provide "code" and "language"
+// A plugin for interactive code execution
+// Execute Python code interactively for general programming, tasks, data analysis, visualizations, and more.
+// Pre-installed packages: matplotlib, seaborn, pandas, numpy, scipy, openpyxl.If you need to install additional packages, use the \`pip install\` command.
+// When a user asks for visualization, save the plot to \`static/images/\` directory, and embed it in the response using \`${this.url}/static/images/\` URL.
+// Always save alls media files created to \`static/images/\` directory, and embed them in responses using \`${this.url}/static/images/\` URL.
+// Always embed media files created or uploaded using \`${this.url}/static/images/\` URL in responses.
+// Access user-uploaded files in\`static/uploads/\` directory using \`${this.url}/static/uploads/\` URL.
+// Remember to save any plots/images created, so you can embed it in the response, to \`static/images/\` directory, and embed them as instructed before.`;
     this.description = `This plugin allows interactive code execution.
 
+- Always provide code as such: {"code": "print('Hello World!')"}
 - Always use this plugin when you are asked to write code so you can test and execute it in a safe environment.
 - Python has pre-installed packages: matplotlib, seaborn, pandas, numpy, scipy, openpyxl. Additional ones can be installed via pip with RunCommand.
 - When a user asks for visualization, save the plot to \`static/images/\` directory, and embed it in the response using \`${this.url}/static/images/\` URL.
-- Always save all media files created to \`static/images/\` directory, and embed them in responses using \`${this.url}/static/images/\` URL.
+- Remember to save any plots/images created, so you can embed it in the response, to \`static/images/\` directory, and embed them as instructed before.
 `;
     this.headers = headers;
     this.schema = z.object({
@@ -42,14 +47,14 @@ class RunCode extends StructuredTool {
   }
 
   async _call({ code, language = 'python' }) {
-    console.log('<--------------- Running Code --------------->', { code, language });
+    // console.log('<--------------- Running Code --------------->', { code, language });
     const response = await axios({
       url: `${this.url}/repl`,
       method: 'post',
       headers: this.headers,
       data: { code, language },
     });
-    console.log('<--------------- Sucessfully ran Code --------------->', response.data);
+    // console.log('<--------------- Sucessfully ran Code --------------->', response.data);
     return response.data.result;
   }
 }
@@ -59,11 +64,11 @@ class RunCommand extends StructuredTool {
     super();
     this.name = 'RunCommand';
     this.url = fields.CODESHERPA_SERVER_URL || getServerURL();
-    this.description_for_model = `Run command: provide "command" only
-- Run terminal commands and interact with the filesystem, run scripts, and more.
-- Install python packages using \`pip install\` command.
-- Always embed media files created or uploaded using \`${this.url}/static/images/\` URL in responses.
-- Access user-uploaded files in \`static/uploads/\` directory using \`${this.url}/static/uploads/\` URL.`;
+    this.description_for_model = `// Run command: provide "command" only
+// Run terminal commands and interact with the filesystem, run scripts, and more.
+// Install python packages using \`pip install\` command.
+// Always embed media files created or uploaded using \`${this.url}/static/images/\` URL in responses.
+// Access user-uploaded files in\`static/uploads/\` directory using \`${this.url}/static/uploads/\` URL.`;
     this.description = `A plugin for interactive shell command execution.
 - Run terminal commands and interact with the filesystem, run scripts, and more.
 - Install python packages using \`pip install\` command.

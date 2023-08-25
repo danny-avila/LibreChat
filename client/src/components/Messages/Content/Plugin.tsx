@@ -20,7 +20,7 @@ function formatInputs(inputs: TInput[]) {
   let output = '';
 
   for (let i = 0; i < inputs.length; i++) {
-    output += `${inputs[i].inputStr}`;
+    output += `${inputs[i]?.inputStr ?? inputs[i]}`;
 
     if (inputs.length > 1 && i !== inputs.length - 1) {
       output += ',\n';
@@ -35,6 +35,7 @@ type PluginProps = {
 };
 
 const Plugin: React.FC<PluginProps> = ({ plugin }) => {
+  console.log('plugin', plugin);
   const plugins: PluginsMap = useRecoilValue(store.plugins);
 
   const getPluginName = useCallback(

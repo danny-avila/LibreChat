@@ -3,7 +3,7 @@ const { getAzureCredentials } = require('../../../../utils');
 
 const initializeClient = (req, endpointOption) => {
   const clientOptions = {
-    debug: true,
+    // debug: true,
     reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
     proxy: process.env.PROXY || null,
     ...endpointOption,

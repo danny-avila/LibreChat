@@ -22,6 +22,7 @@ type TCodeProps = {
 type TContentProps = {
   content: string;
   message: TMessage;
+  showCursor?: boolean;
 };
 
 const code = React.memo(({ inline, className, children }: TCodeProps) => {
@@ -39,7 +40,7 @@ const p = React.memo(({ children }: { children: React.ReactNode }) => {
   return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
 });
 
-const Content = React.memo(({ content, message }: TContentProps) => {
+const Content = React.memo(({ content, message, showCursor }: TContentProps) => {
   const [cursor, setCursor] = useState('█');
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const latestMessage = useRecoilValue(store.latestMessage);
@@ -50,6 +51,11 @@ const Content = React.memo(({ content, message }: TContentProps) => {
 
   useEffect(() => {
     let timer1, timer2;
+
+    if (!showCursor) {
+      setCursor('ㅤ');
+      return;
+    }
 
     if (isSubmitting && isLatestMessage) {
       timer1 = setInterval(() => {
@@ -67,7 +73,7 @@ const Content = React.memo(({ content, message }: TContentProps) => {
       clearInterval(timer1);
       clearTimeout(timer2);
     };
-  }, [isSubmitting, isLatestMessage]);
+  }, [isSubmitting, isLatestMessage, showCursor]);
 
   const rehypePlugins: PluggableList = [
     [rehypeKatex, { output: 'mathml' }],

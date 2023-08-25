@@ -5,7 +5,7 @@ const { validateTools } = require('../../../app');
 const { addTitle } = require('../endpoints/openAI');
 const { initializeClient } = require('../endpoints/gptPlugins');
 const { saveMessage, getConvoTitle, getConvo } = require('../../../models');
-const { sendMessage, createOnProgress, formatSteps, formatAction } = require('../../utils');
+const { sendMessage, createOnProgress, formatSteps } = require('../../utils');
 const {
   handleAbort,
   createAbortController,
@@ -55,6 +55,9 @@ router.post(
       }
     };
 
+    let streaming = null;
+    let timer = null;
+
     const {
       onProgress: progressCallback,
       sendIntermediateMessage,
@@ -62,6 +65,10 @@ router.post(
     } = createOnProgress({
       onProgress: ({ text: partialText }) => {
         const currentTimestamp = Date.now();
+
+        if (timer) {
+          clearTimeout(timer);
+        }
 
         // if (plugin.loading === true) {
         //   plugin.loading = false;
@@ -86,37 +93,78 @@ router.post(
         if (saveDelay < 500) {
           saveDelay = 500;
         }
+
+        streaming = new Promise((resolve) => {
+          timer = setTimeout(() => {
+            resolve();
+          }, 250);
+        });
       },
     });
 
-    const onAgentAction = (action, start = false) => {
-      const formattedAction = formatAction(action);
+    // const onAgentAction = async (action, start = false) => {
+    const onAgentAction = async () => {
+      // const formattedAction = formatAction(action);
+      // const latestPlugin = {
+      //   loading: true,
+      //   inputs: [],
+      //   latest: null,
+      //   outputs: null,
+      // };
+      // console.log('PLUGIN ACTION');
+      // // console.dir(action, { depth: null });
+
+      // latestPlugin.inputs.push(formattedAction);
+      // latestPlugin.latest = formattedAction.plugin;
+      // if (!start) {
+      //   saveMessage(userMessage);
+      // }
+
+      // if (streaming) {
+      //   await streaming;
+      // }
+      // const extraTokens = ':::plugin:::\n';
+      // plugins.push(latestPlugin);
+      sendIntermediateMessage(res, { plugins });
+      // console.log('PLUGIN ACTION', formattedAction);
+    };
+
+    const onToolStart = async (tool, input, runId) => {
+      // console.log('PLUGIN START');
+      // console.log(tool, input, runId);
       const latestPlugin = {
+        runId,
         loading: true,
-        inputs: [],
-        latest: null,
+        inputs: [input],
+        latest: tool.id[tool.id.length - 1],
         outputs: null,
       };
-      // console.log('PLUGIN ACTION');
-      // console.dir(action, { depth: null });
-      if (plugins.length > 0) {
-        const previousPlugin = plugins[plugins.length - 1];
-        previousPlugin.loading = false;
-        plugins[plugins.length - 1] = previousPlugin;
-      }
-      latestPlugin.inputs.push(formattedAction);
-      latestPlugin.latest = formattedAction.plugin;
-      if (!start) {
-        saveMessage(userMessage);
-      }
 
+      // if (!start) {
+      //   saveMessage(userMessage);
+      // }
+
+      if (streaming) {
+        await streaming;
+      }
       const extraTokens = ':::plugin:::\n';
       plugins.push(latestPlugin);
-      console.log('<---------------onAgentAction PLUGINS--------------->');
-      console.log(plugins);
-
+      // console.log('latestPlugin', latestPlugin);
       sendIntermediateMessage(res, { plugins }, extraTokens);
-      // console.log('PLUGIN ACTION', formattedAction);
+    };
+
+    const onToolEnd = async (output, runId) => {
+      if (streaming) {
+        await streaming;
+      }
+
+      // Find the index of the plugin with the matching runId
+      const pluginIndex = plugins.findIndex((plugin) => plugin.runId === runId);
+
+      if (pluginIndex !== -1) {
+        plugins[pluginIndex].loading = false;
+        plugins[pluginIndex].outputs = output;
+      }
     };
 
     const onChainEnd = (data) => {
@@ -128,8 +176,6 @@ router.post(
       saveMessage(userMessage);
       sendIntermediateMessage(res, { plugins });
       // console.log('CHAIN END', plugin.outputs);
-      console.log('<---------------onChainEnd PLUGINS--------------->');
-      console.log(plugins);
     };
 
     const getAbortData = () => ({
@@ -161,6 +207,8 @@ router.post(
         getIds,
         onAgentAction,
         onChainEnd,
+        onToolStart,
+        onToolEnd,
         onStart,
         addMetadata,
         getPartialText,
