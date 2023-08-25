@@ -158,21 +158,36 @@ module.exports = {
 
   likeConvo: async (conversationId, userId, liked) => {
     try {
+      const conversation = await Conversation.findOne({ conversationId });
+      const likedBy = conversation.likedBy;
+
       const update = {};
       update[`likedBy.${userId}`] = { $type: 'date' };
 
-      if (liked) {
+      if (!likedBy) { // If the likedBy object is undefined, that means this conversation has 0 likes
         return await Conversation.findOneAndUpdate(
           { conversationId },
           { $currentDate: update, $inc: { likes: 1 } },
           { new: true, upsert: false }
         ).exec();
       } else {
-        return await Conversation.findOneAndUpdate(
-          { conversationId },
-          { $unset: update, $inc: { likes: -1 } },
-          { new: true, upsert: false }
-        ).exec();
+        // User request is the same as DB record
+        // e.g. User wants to like the conversation, but DB says that the user has already liked the conversation
+        if ((likedBy[userId] && liked) || (!likedBy[userId] && !liked)) {
+          return conversation;
+        } else if (liked) {
+          return await Conversation.findOneAndUpdate(
+            { conversationId },
+            { $currentDate: update, $inc: { likes: 1 } },
+            { new: true, upsert: false }
+          ).exec();
+        } else { // User request is different from DB record
+          return await Conversation.findOneAndUpdate(
+            { conversationId },
+            { $unset: update, $inc: { likes: -1 } },
+            { new: true, upsert: false }
+          ).exec();
+        }
       }
     } catch (error) {
       console.log(error);
