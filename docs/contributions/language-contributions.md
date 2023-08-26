@@ -9,7 +9,7 @@
 
 
 1. Fork the LibreChat repository and download it using git clone https://github.com/danny-avila/LibreChat
-2. Navigate to the `client\src\localization` folder and open the `Translation.tsx` file
+2. Navigate to the "client\src\localization" folder and open the "Translation.tsx" file
 3. At the beginning of the code, add your language below all the others in this format:
 
 `import Language-name from './languages/** ';`
@@ -25,11 +25,11 @@ If you don't know the ISO 3166 code for your language, check it [here](https://e
 
 Replace "**" with the ISO 3166 Alpha-2 code of your language (in lowercase). Here's an example: `if (langCode === 'en') return English;`)
 
-7.Go into the `languages` folder and create a file named as follows: `**.tsx`
+7.Go into the "languages" folder and create a file named as follows: **.tsx
 
-For example: `En.tsx`
+For example: En.tsx
 
-9. Copy all the content from `En.tsx` into your file and modify it as follows:
+9. Copy all the content from En.tsx into your file and modify it as follows:
 
 ```
 // your-language-name phrases
@@ -50,13 +50,9 @@ export default {
 };
 ```
 
-Delete the Language list after `com_nav_setting_general: 'General',` (You do not need to translate those)
-
-Open `En.tsx` and add your language to the language list in the bottom of the document.
-
 ⚠️DO NOT CHANGE com_... ⚠️
 
-10. To add your language to the menu, open the file `client\src\components\Nav\SettingsTabs\General.tsx` and add your language to the `LangSelector` variable in the following way:
+10. To add your language to the menu, open the file "client\src\components\Nav\SettingsTabs\General.tsx" and add your language to the "LangSelector" variable in the following way:
 
 ```
 export const LangSelector = ({
@@ -70,26 +66,13 @@ export const LangSelector = ({
 };
 ```
 
-where ** is the ISO 3166 Alpha-2 code and `com_nav_lang_your-language-name` stands for the name in your language (for example `com_nav_lang_english` or `com_nav_lang_italian`)
+where ** is the ISO 3166 Alpha-2 code and "com_nav_lang_your-language-name" stands for the name in your language (for example com_nav_lang_english or com_nav_lang_italian)
 The only line of code to add is:
 
 `<option value="**">{localize(lang, 'com_nav_lang_your-language-name')}</option>`
 
-11. If you followed everything you should have one new file and 3 modified files:
-
-```bash
-        new file:   client/src/localization/languages/**.tsx            <-----new language
-        modified:   client/src/components/Nav/SettingsTabs/General.tsx
-        modified:   client/src/localization/Translation.tsx
-        modified:   client/src/localization/languages/Eng.tsx
-```
-
-12. Commit your changes using:
-    - `git add *` 
-    - `git commit -m "Language translation: your-language translation"` 
-    - `git push`
-
-13. Open your repository in a browser and click on "Contribute"
+11. Commit your changes using git add *, git commit -m "Language translation: your-language translation" and git push.
+12. Open your repository in a browser and click on "Contribute"
 
 ![image](https://github.com/Berry-13/LibreChat/assets/81851188/ab91cf4b-1830-4419-9d0c-68fcb2fd5f5e)
 
