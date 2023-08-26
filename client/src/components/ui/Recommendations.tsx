@@ -44,7 +44,6 @@ export default function Recommendations() {
   const navigate = useNavigate();
 
   // Data provider
-  const getRecommendationsQuery = useGetRecommendationsQuery(tabValue);
   const likeConvoMutation = useLikeConversationMutation(
     convoData && convoData.length > 0 ? convoData[convoIdx].conversationId : ''
   );
@@ -96,6 +95,51 @@ export default function Recommendations() {
     }
     return _title;
   };
+
+  // Fetch recommendations from API server (recent/hottset/following)
+  async function fetchRecommendations() {
+    setConvoIdx(0);
+    setConvoData(null);
+    setConvoUser(null);
+    try {
+      const response = await fetch(`/api/convos/${tabValue}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const responseObject = await response.json();
+      window.localStorage.setItem(`${tabValue}Conversations`, JSON.stringify(responseObject));
+      window.localStorage.setItem(`${tabValue}LastFetched`, JSON.stringify(Date.now()));
+      window.localStorage.setItem('lastFetchedBy', user?.id || '');
+      setConvoData(responseObject);
+      setConvoDataLength(responseObject.length);
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
+  // Get recommendations from localStorage or API server
+  async function getRecommendations() {
+    const currentTime = Date.now();
+    const lastFetchedTime = Number(window.localStorage.getItem(`${tabValue}LastFetched`));
+    const lastFetchedBy = window.localStorage.getItem('lastFetchedBy');
+
+    if ((currentTime - lastFetchedTime > 30000 || lastFetchedBy !== user?.id)) {
+      fetchRecommendations();
+    } else {
+      const localStorage = window.localStorage.getItem(`${tabValue}Conversations`) ;
+      if (localStorage) {
+        setConvoIdx(0);
+        setConvoData(null);
+        setConvoUser(null);
+        const convoObject = JSON.parse(localStorage);
+        setConvoData(convoObject);
+        setConvoDataLength(convoObject.length);
+      }
+    }
+  }
 
   // Fetch messages of the current conversation
   async function fetchMessagesByConvoId(id: string) {
@@ -170,19 +214,20 @@ export default function Recommendations() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
-
-  // Get recommendations on mount and when switching leaderboard types
-  useEffect(() => {
-    if (getRecommendationsQuery.isSuccess) {
-      setConvoIdx(0);
-      setConvoDataLength(getRecommendationsQuery.data.length);
-      setConvoData(getRecommendationsQuery.data);
+  const tabClickHandler = (value: string) => () => {
+    if (tabValue === value) {
+      fetchRecommendations();
+    } else {
+      setTabValue(value);
     }
-  }, [getRecommendationsQuery.isSuccess, getRecommendationsQuery.data]);
+  }
 
+  // Fetch recommendations on mount
   useEffect(() => {
-    getRecommendationsQuery.refetch();
-  }, [tabValue]);
+    if (user) {
+      getRecommendations();
+    }
+  }, [user, tabValue]);
 
   // Set current conversation
   useEffect(() => {
@@ -232,24 +277,26 @@ export default function Recommendations() {
             cardStyle +
             ' z-50 flex h-[40px] flex-none items-center justify-center px-0 hover:bg-slate-50 dark:hover:bg-gray-600'
           }
-          onValueChange={(value: string) => setTabValue(value)}
         >
           <TabsList className="bg-white/[.60] dark:bg-gray-700">
             <TabsTrigger
               value='recent'
               className={`${tabValue === 'recent' ? selectedTab('creative') : defaultClasses}`}
+              onClick={ tabClickHandler('recent') }
             >
               {localize(lang, 'com_ui_recent')}
             </TabsTrigger>
             <TabsTrigger
               value='hottest'
               className={`${tabValue === 'hottest' ? selectedTab('balanced') : defaultClasses}`}
+              onClick={ tabClickHandler('hottest') }
             >
               {localize(lang, 'com_ui_hottest')}
             </TabsTrigger>
             <TabsTrigger
               value='following'
               className={`${tabValue === 'following' ? selectedTab('fast') : defaultClasses}`}
+              onClick={ tabClickHandler('following') }
             >
               {localize(lang, 'com_ui_my_following')}
             </TabsTrigger>
