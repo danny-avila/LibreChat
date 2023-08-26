@@ -10,7 +10,9 @@ import {
   TConversation,
   TMessage,
   TUser,
+  useGetMessagesByConvoId,
   useGetRecommendationsQuery,
+  useGetUserByIdQuery,
   useLikeConversationMutation,
 } from '@librechat/data-provider';
 import SwitchPage from './SwitchPage';
@@ -38,13 +40,21 @@ export default function Recommendations() {
   const [numOfLikes, setNumOfLikes] = useState<number>(0);
 
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
-  const { user, token } = useAuthContext();
+  const { user } = useAuthContext();
   const lang = useRecoilValue(store.lang);
   const title = localize(lang, 'com_ui_recommendation');
   const navigate = useNavigate();
 
   // Data provider
   const getRecommendationsQuery = useGetRecommendationsQuery(tabValue);
+  const getMessagesByConvoId = useGetMessagesByConvoId(
+    convoData && convoData.length > 0 ? convoData[convoIdx].conversationId : '00000000-0000-0000-0000-000000000000',
+    { enabled: false }
+  );
+  const getUserByIdQuery = useGetUserByIdQuery(
+    convoData && convoData.length > 0 ? convoData[convoIdx].user || '' : '',
+    { enabled: false }
+  );
   const likeConvoMutation = useLikeConversationMutation(
     convoData && convoData.length > 0 ? convoData[convoIdx].conversationId : ''
   );
@@ -97,42 +107,6 @@ export default function Recommendations() {
     return _title;
   };
 
-  // Fetch messages of the current conversation
-  async function fetchMessagesByConvoId(id: string) {
-    setMsgTree(null);
-    try {
-      const response = await fetch(`/api/messages/${id}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        }
-      });
-      const responseObject = await response.json();
-      setMsgTree(buildTree(responseObject));
-    } catch (error) {
-      console.log(error);
-    }
-  }
-
-  // Fetch the user who owns the current conversation
-  async function fetchConvoUser(id: string | undefined) {
-    setConvoUser(null);
-    try {
-      const response = await fetch(`/api/user/${id}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        }
-      });
-      const responseObject = await response.json();
-      setConvoUser(responseObject);
-    } catch (error) {
-      console.log(error);
-    }
-  }
-
   // Likes a conversation
   async function likeConversation() {
     if (!convoData || !user) return;
@@ -170,6 +144,10 @@ export default function Recommendations() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
+  const refreshRecommendations = () => {
+    getRecommendationsQuery.remove();
+    getRecommendationsQuery.refetch();
+  }
 
   // Get recommendations on mount and when switching leaderboard types
   useEffect(() => {
@@ -181,14 +159,24 @@ export default function Recommendations() {
   }, [getRecommendationsQuery.isSuccess, getRecommendationsQuery.data]);
 
   useEffect(() => {
+    if (getUserByIdQuery.isSuccess) {
+      setConvoUser(getUserByIdQuery.data);
+    }
+  }, [getUserByIdQuery.isSuccess, getUserByIdQuery.data]);
+
+  useEffect(() => {
+    if (getMessagesByConvoId.isSuccess) {
+      setMsgTree(buildTree(getMessagesByConvoId.data));
+    }
+  }, [getMessagesByConvoId.isSuccess, getMessagesByConvoId.data]);
+
+  useEffect(() => {
     getRecommendationsQuery.refetch();
   }, [tabValue]);
 
   // Set current conversation
   useEffect(() => {
     if (convoData && user) {
-      fetchMessagesByConvoId(convoData[convoIdx].conversationId);
-      fetchConvoUser(convoData[convoIdx].user);
       setShareLink(window.location.host +  `/chat/share/${convoData[convoIdx].conversationId}`);
       setNumOfLikes(convoData[convoIdx].likes);
 
@@ -199,6 +187,10 @@ export default function Recommendations() {
         setLiked(false);
       }
     }
+    getMessagesByConvoId.remove();
+    getUserByIdQuery.remove();
+    getMessagesByConvoId.refetch();
+    getUserByIdQuery.refetch();
   }, [convoData, convoIdx, user]);
 
   useDocumentTitle(title);
@@ -238,18 +230,21 @@ export default function Recommendations() {
             <TabsTrigger
               value='recent'
               className={`${tabValue === 'recent' ? selectedTab('creative') : defaultClasses}`}
+              onClick={ refreshRecommendations }
             >
               {localize(lang, 'com_ui_recent')}
             </TabsTrigger>
             <TabsTrigger
               value='hottest'
               className={`${tabValue === 'hottest' ? selectedTab('balanced') : defaultClasses}`}
+              onClick={ refreshRecommendations }
             >
               {localize(lang, 'com_ui_hottest')}
             </TabsTrigger>
             <TabsTrigger
               value='following'
               className={`${tabValue === 'following' ? selectedTab('fast') : defaultClasses}`}
+              onClick={ refreshRecommendations }
             >
               {localize(lang, 'com_ui_my_following')}
             </TabsTrigger>
@@ -266,7 +261,7 @@ export default function Recommendations() {
               >
                 {convoData ? convoData[convoIdx].title : ''}
               </h1>
-              {convoUser && (<div className='my-2 flex flex-row flex-wrap justify-center items-center justify-self-center text-base'>
+              {getUserByIdQuery.isSuccess && (<div className='my-2 flex flex-row flex-wrap justify-center items-center justify-self-center text-base'>
                 {/*Conversation author*/}
                 <button
                   onClick={ navigateToProfile }
@@ -340,7 +335,7 @@ export default function Recommendations() {
             {/*Conversation messages*/}
             <div className="dark:gpt-dark-gray mb-32 h-auto w-full md:mb-48" ref={screenshotTargetRef}>
               <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
-                {convoData && msgTree && convoUser ? (
+                {convoData && getMessagesByConvoId.isSuccess && getUserByIdQuery.isSuccess ? (
                   <MultiMessage
                     key={convoData[convoIdx].conversationId} // avoid internal state mixture
                     messageId={convoData[convoIdx].conversationId}

@@ -53,12 +53,14 @@ export const useGetUserQuery = (
 
 export const useGetUserByIdQuery = (
   id: string,
+  config?: any
 ): QueryObserverResult<t.TUser> => {
   return useQuery([QueryKeys.userById, id], () => dataService.getUserById(id), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
     retry: false,
+    ...config
   });
 };
 
