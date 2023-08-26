@@ -173,7 +173,7 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
       user,
       message: options.message,
       map: true,
-      verbose: options?.debug,
+      verbose: false,
     });
     console.dir(specs, { depth: null });
   }
@@ -215,7 +215,20 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
     }
   }
 
-  return requestedTools;
+  // load tools
+  let result = [];
+  for (const tool of tools) {
+    const validTool = requestedTools[tool];
+    const plugin = await validTool();
+
+    if (Array.isArray(plugin)) {
+      result = [...result, ...plugin];
+    } else if (plugin) {
+      result.push(plugin);
+    }
+  }
+
+  return result;
 };
 
 module.exports = {

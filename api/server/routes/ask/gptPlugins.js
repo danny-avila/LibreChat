@@ -5,7 +5,7 @@ const { validateTools } = require('../../../app');
 const { addTitle } = require('../endpoints/openAI');
 const { initializeClient } = require('../endpoints/gptPlugins');
 const { saveMessage, getConvoTitle, getConvo } = require('../../../models');
-const { sendMessage, createOnProgress, formatSteps } = require('../../utils');
+const { sendMessage, createOnProgress, formatSteps, formatAction } = require('../../utils');
 const {
   handleAbort,
   createAbortController,
@@ -70,10 +70,6 @@ router.post(
           clearTimeout(timer);
         }
 
-        // if (plugin.loading === true) {
-        //   plugin.loading = false;
-        // }
-
         if (currentTimestamp - lastSavedTimestamp > saveDelay) {
           lastSavedTimestamp = currentTimestamp;
           saveMessage({
@@ -102,54 +98,30 @@ router.post(
       },
     });
 
-    // const onAgentAction = async (action, start = false) => {
-    const onAgentAction = async () => {
-      // const formattedAction = formatAction(action);
-      // const latestPlugin = {
-      //   loading: true,
-      //   inputs: [],
-      //   latest: null,
-      //   outputs: null,
-      // };
-      // console.log('PLUGIN ACTION');
-      // // console.dir(action, { depth: null });
-
-      // latestPlugin.inputs.push(formattedAction);
-      // latestPlugin.latest = formattedAction.plugin;
-      // if (!start) {
-      //   saveMessage(userMessage);
-      // }
-
-      // if (streaming) {
-      //   await streaming;
-      // }
-      // const extraTokens = ':::plugin:::\n';
-      // plugins.push(latestPlugin);
+    const pluginMap = new Map();
+    const onAgentAction = async (action, runId) => {
+      const formattedAction = formatAction(action);
+      pluginMap.set(runId, formattedAction);
       sendIntermediateMessage(res, { plugins });
-      // console.log('PLUGIN ACTION', formattedAction);
     };
 
-    const onToolStart = async (tool, input, runId) => {
+    const onToolStart = async (tool, input, runId, parentRunId) => {
       // console.log('PLUGIN START');
-      // console.log(tool, input, runId);
+      console.log(tool);
+      const action = pluginMap.get(parentRunId);
       const latestPlugin = {
         runId,
         loading: true,
         inputs: [input],
-        latest: tool.id[tool.id.length - 1],
+        latest: action.plugin,
         outputs: null,
       };
-
-      // if (!start) {
-      //   saveMessage(userMessage);
-      // }
 
       if (streaming) {
         await streaming;
       }
       const extraTokens = ':::plugin:::\n';
       plugins.push(latestPlugin);
-      // console.log('latestPlugin', latestPlugin);
       sendIntermediateMessage(res, { plugins }, extraTokens);
     };
 

@@ -1,12 +1,10 @@
 const OpenAIClient = require('./OpenAIClient');
-const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { CallbackManager } = require('langchain/callbacks');
-const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents/');
-// const { findMessageContent } = require('../../utils');
-const { loadTools } = require('./tools/util');
-const { SelfReflectionTool } = require('./tools/');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
-const { instructions, imageInstructions, errorInstructions } = require('./prompts/instructions');
+const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents/');
+const { addImages, createLLM, buildErrorInput, buildPromptPrefix } = require('./agents/methods/');
+const { SelfReflectionTool } = require('./tools/');
+const { loadTools } = require('./tools/util');
 
 class PluginsClient extends OpenAIClient {
   constructor(apiKey, options = {}) {
@@ -17,89 +15,6 @@ class PluginsClient extends OpenAIClient {
     this.openAIApiKey = apiKey;
     this.setOptions(options);
     this.executor = null;
-  }
-
-  getActions(input = null) {
-    let output = 'Internal thoughts & actions taken:\n"';
-    let actions = input || this.actions;
-
-    if (actions[0]?.action && this.functionsAgent) {
-      actions = actions.map((step) => ({
-        log: `Action: ${step.action?.tool || ''}\nInput: ${
-          JSON.stringify(step.action?.toolInput) || ''
-        }\nObservation: ${step.observation}`,
-      }));
-    } else if (actions[0]?.action) {
-      actions = actions.map((step) => ({
-        log: `${step.action.log}\nObservation: ${step.observation}`,
-      }));
-    }
-
-    actions.forEach((actionObj, index) => {
-      output += `${actionObj.log}`;
-      if (index < actions.length - 1) {
-        output += '\n';
-      }
-    });
-
-    return output + '"';
-  }
-
-  buildErrorInput(message, errorMessage) {
-    const log = errorMessage.includes('Could not parse LLM output:')
-      ? `A formatting error occurred with your response to the human's last message. You didn't follow the formatting instructions. Remember to ${instructions}`
-      : `You encountered an error while replying to the human's last message. Attempt to answer again or admit an answer cannot be given.\nError: ${errorMessage}`;
-
-    return `
-      ${log}
-
-      ${this.getActions()}
-
-      Human's last message: ${message}
-      `;
-  }
-
-  buildPromptPrefix(result, message) {
-    if ((result.output && result.output.includes('N/A')) || result.output === undefined) {
-      return null;
-    }
-
-    if (
-      result?.intermediateSteps?.length === 1 &&
-      result?.intermediateSteps[0]?.action?.toolInput === 'N/A'
-    ) {
-      return null;
-    }
-
-    const internalActions =
-      result?.intermediateSteps?.length > 0
-        ? this.getActions(result.intermediateSteps)
-        : 'Internal Actions Taken: None';
-
-    const toolBasedInstructions = internalActions.toLowerCase().includes('image')
-      ? imageInstructions
-      : '';
-
-    const errorMessage = result.errorMessage ? `${errorInstructions} ${result.errorMessage}\n` : '';
-
-    const preliminaryAnswer =
-      result.output?.length > 0 ? `Preliminary Answer: "${result.output.trim()}"` : '';
-    const prefix = preliminaryAnswer
-      ? 'review and improve the answer you generated using plugins in response to the User Message below. The user hasn\'t seen your answer or thoughts yet.'
-      : 'respond to the User Message below based on your preliminary thoughts & actions.';
-
-    return `As a helpful AI Assistant, ${prefix}${errorMessage}\n${internalActions}
-${preliminaryAnswer}
-Reply conversationally to the User based on your ${
-  preliminaryAnswer ? 'preliminary answer, ' : ''
-}internal actions, thoughts, and observations, making improvements wherever possible, but do not modify URLs.
-${
-  preliminaryAnswer
-    ? ''
-    : '\nIf there is an incomplete thought or action, you are expected to complete it in your response now.\n'
-}You must cite sources if you are using any web links. ${toolBasedInstructions}
-Only respond with your conversational reply to the following User Message:
-"${message}"`;
   }
 
   setOptions(options) {
@@ -149,45 +64,7 @@ Only respond with your conversational reply to the following User Message:
     };
   }
 
-  createLLM(modelOptions, configOptions, onProgress) {
-    let azure = {};
-    let credentials = { openAIApiKey: this.openAIApiKey };
-    let configuration = {
-      apiKey: this.openAIApiKey,
-    };
-
-    if (this.azure) {
-      credentials = {};
-      configuration = {};
-      ({ azure } = this);
-    }
-
-    if (this.options.debug) {
-      console.debug('createLLM: configOptions');
-      console.debug(configOptions);
-    }
-
-    return new ChatOpenAI(
-      {
-        streaming: true,
-        credentials,
-        configuration,
-        ...azure,
-        ...modelOptions,
-        callbackManager: CallbackManager.fromHandlers({
-          async handleLLMNewToken(token) {
-            if (typeof onProgress === 'function' && this.functionsAgent) {
-              console.log('<----------INVOKING ON PROGRESS----------->');
-              onProgress(token);
-            }
-          },
-        }),
-      },
-      configOptions,
-    );
-  }
-
-  async initialize({ user, message, onAgentAction, onChainEnd, onProgress, signal }) {
+  async initialize({ user, message, onAgentAction, onChainEnd, signal }) {
     const modelOptions = {
       modelName: this.agentOptions.model,
       temperature: this.agentOptions.temperature,
@@ -199,7 +76,12 @@ Only respond with your conversational reply to the following User Message:
       configOptions.basePath = this.langchainProxy;
     }
 
-    const model = this.createLLM(modelOptions, configOptions, onProgress);
+    const model = createLLM({
+      modelOptions,
+      configOptions,
+      openAIApiKey: this.openAIApiKey,
+      azure: this.azure,
+    });
 
     if (this.options.debug) {
       console.debug(
@@ -207,7 +89,7 @@ Only respond with your conversational reply to the following User Message:
       );
     }
 
-    this.availableTools = await loadTools({
+    this.tools = await loadTools({
       user,
       model,
       tools: this.options.tools,
@@ -219,17 +101,6 @@ Only respond with your conversational reply to the following User Message:
         message,
       },
     });
-    // load tools
-    for (const tool of this.options.tools) {
-      const validTool = this.availableTools[tool];
-      const plugin = await validTool();
-
-      if (Array.isArray(plugin)) {
-        this.tools = [...this.tools, ...plugin];
-      } else if (plugin) {
-        this.tools.push(plugin);
-      }
-    }
 
     if (this.tools.length > 0 && !this.functionsAgent) {
       this.tools.push(new SelfReflectionTool({ message, isGpt3: false }));
@@ -244,7 +115,7 @@ Only respond with your conversational reply to the following User Message:
       console.debug(this.tools.map((tool) => tool.name));
     }
 
-    const handleAction = (action, callback = null) => {
+    const handleAction = (action, runId, callback = null) => {
       this.saveLatestAction(action);
 
       if (this.options.debug) {
@@ -252,7 +123,7 @@ Only respond with your conversational reply to the following User Message:
       }
 
       if (typeof callback === 'function') {
-        callback(action);
+        callback(action, runId);
       }
     };
 
@@ -276,8 +147,8 @@ Only respond with your conversational reply to the following User Message:
       verbose: this.options.debug,
       returnIntermediateSteps: true,
       callbackManager: CallbackManager.fromHandlers({
-        async handleAgentAction(action) {
-          handleAction(action, onAgentAction);
+        async handleAgentAction(action, runId) {
+          handleAction(action, runId, onAgentAction);
         },
         async handleChainEnd(action) {
           if (typeof onChainEnd === 'function') {
@@ -297,7 +168,12 @@ Only respond with your conversational reply to the following User Message:
     const maxAttempts = 1;
 
     for (let attempts = 1; attempts <= maxAttempts; attempts++) {
-      const errorInput = this.buildErrorInput(message, errorMessage);
+      const errorInput = buildErrorInput({
+        message,
+        errorMessage,
+        actions: this.actions,
+        functionsAgent: this.functionsAgent,
+      });
       const input = attempts > 1 ? errorInput : message;
 
       if (this.options.debug) {
@@ -357,31 +233,6 @@ Only respond with your conversational reply to the following User Message:
         }
       }
     }
-  }
-
-  addImages(intermediateSteps, responseMessage) {
-    if (!intermediateSteps || !responseMessage) {
-      return;
-    }
-
-    intermediateSteps.forEach((step) => {
-      const { observation } = step;
-      if (!observation || !observation.includes('![')) {
-        return;
-      }
-
-      // Extract the image file path from the observation
-      const observedImagePath = observation.match(/\(\/images\/.*\.\w*\)/g)[0];
-
-      // Check if the responseMessage already includes the image file path
-      if (!responseMessage.text.includes(observedImagePath)) {
-        // If the image file path is not found, append the whole observation
-        responseMessage.text += '\n' + observation;
-        if (this.options.debug) {
-          console.debug('added image from intermediateSteps');
-        }
-      }
-    });
   }
 
   async handleResponseMessage(responseMessage, saveOptions, user) {
@@ -469,12 +320,12 @@ Only respond with your conversational reply to the following User Message:
       onProgress: opts.onProgress,
     });
 
-    const stream = async (text) => {
-      await this.generateTextStream.call(this, text, opts.onProgress, { delay: 1 });
-    };
+    // const stream = async (text) => {
+    //   await this.generateTextStream.call(this, text, opts.onProgress, { delay: 1 });
+    // };
     await this.executorCall(message, {
       signal: this.abortController.signal,
-      stream,
+      // stream,
       onToolStart,
       onToolEnd,
     });
@@ -496,7 +347,7 @@ Only respond with your conversational reply to the following User Message:
 
     if (this.agentOptions.skipCompletion && this.result.output) {
       responseMessage.text = this.result.output;
-      this.addImages(this.result.intermediateSteps, responseMessage);
+      addImages(this.result.intermediateSteps, responseMessage);
       await this.generateTextStream(this.result.output, opts.onProgress, { delay: 5 });
       return await this.handleResponseMessage(responseMessage, saveOptions, user);
     }
@@ -506,7 +357,11 @@ Only respond with your conversational reply to the following User Message:
       console.debug(this.result);
     }
 
-    const promptPrefix = this.buildPromptPrefix(this.result, message);
+    const promptPrefix = buildPromptPrefix({
+      result: this.result,
+      message,
+      functionsAgent: this.functionsAgent,
+    });
 
     if (this.options.debug) {
       console.debug('Plugins: promptPrefix');
