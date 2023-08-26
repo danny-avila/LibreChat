@@ -16,11 +16,20 @@ type PluginIconProps = LucideProps & {
   className?: string;
 };
 
+function formatJSON(json: string) {
+  try {
+    return JSON.stringify(JSON.parse(json), null, 2);
+  } catch (e) {
+    return json;
+  }
+}
+
 function formatInputs(inputs: TInput[]) {
   let output = '';
 
   for (let i = 0; i < inputs.length; i++) {
-    output += `${inputs[i]?.inputStr ?? inputs[i]}`;
+    const input = formatJSON(`${inputs[i]?.inputStr ?? inputs[i]}`);
+    output += input;
 
     if (inputs.length > 1 && i !== inputs.length - 1) {
       output += ',\n';
@@ -89,7 +98,7 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
               <div
                 className={cn(
                   plugin.loading ? 'bg-green-100' : 'bg-[#ECECF1]',
-                  'flex items-center rounded p-3 text-sm text-gray-900',
+                  'flex items-center rounded p-3 text-xs text-gray-900',
                 )}
               >
                 <div>
@@ -105,15 +114,17 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
 
               <Disclosure.Panel className="my-3 flex max-w-full flex-col gap-3">
                 <CodeBlock
-                  lang={latestPlugin?.toUpperCase() || 'INPUTS'}
+                  lang={latestPlugin ? `REQUEST TO ${latestPlugin?.toUpperCase()}` : 'REQUEST'}
                   codeChildren={formatInputs(plugin.inputs ?? [])}
                   plugin={true}
                   classProp="max-h-[450px]"
                 />
                 {plugin.outputs && plugin.outputs.length > 0 && (
                   <CodeBlock
-                    lang="OUTPUTS"
-                    codeChildren={plugin.outputs ?? ''}
+                    lang={
+                      latestPlugin ? `RESPONSE FROM ${latestPlugin?.toUpperCase()}` : 'RESPONSE'
+                    }
+                    codeChildren={formatJSON(plugin.outputs ?? '')}
                     plugin={true}
                     classProp="max-h-[450px]"
                   />

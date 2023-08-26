@@ -5,7 +5,7 @@ const { validateTools } = require('../../../app');
 const { addTitle } = require('../endpoints/openAI');
 const { initializeClient } = require('../endpoints/gptPlugins');
 const { saveMessage, getConvoTitle, getConvo } = require('../../../models');
-const { sendMessage, createOnProgress, formatSteps, formatAction } = require('../../utils');
+const { sendMessage, createOnProgress } = require('../../utils');
 const {
   handleAbort,
   createAbortController,
@@ -100,20 +100,17 @@ router.post(
 
     const pluginMap = new Map();
     const onAgentAction = async (action, runId) => {
-      const formattedAction = formatAction(action);
-      pluginMap.set(runId, formattedAction);
+      pluginMap.set(runId, action.tool);
       sendIntermediateMessage(res, { plugins });
     };
 
     const onToolStart = async (tool, input, runId, parentRunId) => {
-      // console.log('PLUGIN START');
-      console.log(tool);
-      const action = pluginMap.get(parentRunId);
+      const pluginName = pluginMap.get(parentRunId);
       const latestPlugin = {
         runId,
         loading: true,
         inputs: [input],
-        latest: action.plugin,
+        latest: pluginName,
         outputs: null,
       };
 
@@ -130,7 +127,6 @@ router.post(
         await streaming;
       }
 
-      // Find the index of the plugin with the matching runId
       const pluginIndex = plugins.findIndex((plugin) => plugin.runId === runId);
 
       if (pluginIndex !== -1) {
@@ -139,15 +135,9 @@ router.post(
       }
     };
 
-    const onChainEnd = (data) => {
-      let { intermediateSteps: steps } = data;
-      const latestPlugin = plugins[plugins.length - 1];
-      latestPlugin.outputs = steps && steps[0].action ? formatSteps(steps) : 'An error occurred.';
-      latestPlugin.loading = false;
-      plugins[plugins.length - 1] = latestPlugin;
+    const onChainEnd = () => {
       saveMessage(userMessage);
       sendIntermediateMessage(res, { plugins });
-      // console.log('CHAIN END', plugin.outputs);
     };
 
     const getAbortData = () => ({
@@ -156,7 +146,6 @@ router.post(
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId,
       text: getPartialText(),
-      // plugin: { ...plugin, loading: false },
       plugins: plugins.map((p) => ({ ...p, loading: false })),
       userMessage,
     });
