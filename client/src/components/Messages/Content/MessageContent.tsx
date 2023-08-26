@@ -199,6 +199,12 @@ const MessageContent = ({
     // Function to get the next non-empty text index
     const getNextNonEmptyTextIndex = (currentIndex: number) => {
       for (let i = currentIndex + 1; i < splitText.length; i++) {
+        // Allow the last index to be last in case it has text
+        // this may need to change if I add back streaming
+        if (i === splitText.length - 1) {
+          return currentIndex;
+        }
+
         if (splitText[i].trim() !== '' && !displayedIndices.has(i)) {
           return i;
         }
