@@ -31,6 +31,8 @@ const initializeFunctionsAgent = async ({
     agentArgs: {
       prefix,
     },
+    handleParsingErrors:
+      'Please try again, paying close attention to the function parameter values',
   });
 };
 
