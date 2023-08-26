@@ -188,25 +188,17 @@ class PluginsClient extends OpenAIClient {
         this.result = await this.executor.call({ input, signal }, [
           {
             async handleToolStart(...args) {
-              console.log('<----------handleToolStart---------->');
-              console.dir(args, { depth: null });
               await onToolStart(...args);
             },
             async handleToolEnd(...args) {
-              console.log('<----------handleToolEnd---------->');
-              console.dir(args, { depth: null });
               await onToolEnd(...args);
             },
             async handleLLMEnd(output) {
-              console.log('<----------handleLLMEnd---------->');
               const { generations } = output;
               const { text } = generations[0][0];
               if (text && typeof stream === 'function') {
-                console.log('<----------INVOKING ON PROGRESS----------->');
                 await stream(text);
               }
-              console.dir(text, { depth: null });
-              console.log('typeof stream === \'function\'', typeof stream === 'function');
             },
           },
         ]);
@@ -215,12 +207,6 @@ class PluginsClient extends OpenAIClient {
         console.error(err);
         errorMessage = err.message;
         let content = '';
-        // try {
-        //   content = findMessageContent(message);
-        // } catch (error) {
-        //   console.error('Encountered an error while attempting to respond. Error: ', error);
-        //   break;
-        // }
         if (content) {
           errorMessage = content;
           break;
