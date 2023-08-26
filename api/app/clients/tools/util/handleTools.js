@@ -84,7 +84,14 @@ const loadToolWithAuth = async (user, authFields, ToolConstructor, options = {})
   };
 };
 
-const loadTools = async ({ user, model, functions = null, tools = [], options = {} }) => {
+const loadTools = async ({
+  user,
+  model,
+  functions = null,
+  returnMap = false,
+  tools = [],
+  options = {},
+}) => {
   const toolConstructors = {
     calculator: Calculator,
     codeinterpreter: CodeInterpreter,
@@ -213,6 +220,10 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
       );
       requestedTools[tool] = toolInstance;
     }
+  }
+
+  if (returnMap) {
+    return requestedTools;
   }
 
   // load tools
