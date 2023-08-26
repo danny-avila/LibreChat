@@ -104,8 +104,10 @@ function ProfileContent() {
     if (profileUser) {
       if (profileUser.followers && profileUser.followers[`${user?.id}`]) {
         payload['isFollowing'] = false;
+        delete user?.following[profileUser.id]
       } else {
         payload['isFollowing'] = true;
+        if (user) user.following[profileUser.id] = new Date();
       }
     }
 
