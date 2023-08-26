@@ -19,8 +19,9 @@ class RunCode extends StructuredTool {
     super();
     this.name = 'RunCode';
     this.url = fields.CODESHERPA_SERVER_URL || getServerURL();
-    this.description_for_model = `// Run code: provide "code" and "language"
-// A plugin for interactive code execution
+    this.description_for_model = `// A plugin for interactive code execution
+// Guidelines:
+// Always provide code and language as such: {{"code": "print('Hello World!')", "language": "python"}}
 // Execute Python code interactively for general programming, tasks, data analysis, visualizations, and more.
 // Pre-installed packages: matplotlib, seaborn, pandas, numpy, scipy, openpyxl.If you need to install additional packages, use the \`pip install\` command.
 // When a user asks for visualization, save the plot to \`static/images/\` directory, and embed it in the response using \`${this.url}/static/images/\` URL.
@@ -28,14 +29,8 @@ class RunCode extends StructuredTool {
 // Always embed media files created or uploaded using \`${this.url}/static/images/\` URL in responses.
 // Access user-uploaded files in\`static/uploads/\` directory using \`${this.url}/static/uploads/\` URL.
 // Remember to save any plots/images created, so you can embed it in the response, to \`static/images/\` directory, and embed them as instructed before.`;
-    this.description = `This plugin allows interactive code execution.
-
-- Always provide code as such: {"code": "print('Hello World!')"}
-- Always use this plugin when you are asked to write code so you can test and execute it in a safe environment.
-- Python has pre-installed packages: matplotlib, seaborn, pandas, numpy, scipy, openpyxl. Additional ones can be installed via pip with RunCommand.
-- When a user asks for visualization, save the plot to \`static/images/\` directory, and embed it in the response using \`${this.url}/static/images/\` URL.
-- Remember to save any plots/images created, so you can embed it in the response, to \`static/images/\` directory, and embed them as instructed before.
-`;
+    this.description =
+      'This plugin allows interactive code execution. Follow the guidelines to get the best results.';
     this.headers = headers;
     this.schema = z.object({
       code: z.string().optional().describe('The code to be executed in the REPL-like environment.'),
@@ -64,15 +59,14 @@ class RunCommand extends StructuredTool {
     super();
     this.name = 'RunCommand';
     this.url = fields.CODESHERPA_SERVER_URL || getServerURL();
-    this.description_for_model = `// Run command: provide "command" only
-// Run terminal commands and interact with the filesystem, run scripts, and more.
+    this.description_for_model = `// Run terminal commands and interact with the filesystem, run scripts, and more.
+// Guidelines:
+// Always provide command as such: {{"command": "ls -l"}}
 // Install python packages using \`pip install\` command.
 // Always embed media files created or uploaded using \`${this.url}/static/images/\` URL in responses.
 // Access user-uploaded files in\`static/uploads/\` directory using \`${this.url}/static/uploads/\` URL.`;
-    this.description = `A plugin for interactive shell command execution.
-- Run terminal commands and interact with the filesystem, run scripts, and more.
-- Install python packages using \`pip install\` command.
-- Always embed media files created or uploaded using \`${this.url}/static/images/\` URL in responses.`;
+    this.description =
+      'A plugin for interactive shell command execution. Follow the guidelines to get the best results.';
     this.headers = headers;
     this.schema = z.object({
       command: z.string().describe('The terminal command to be executed.'),
