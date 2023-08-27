@@ -10,7 +10,6 @@ import {
   TConversation,
   TMessage,
   TUser,
-  useGetRecommendationsQuery,
   useLikeConversationMutation,
 } from '@librechat/data-provider';
 import SwitchPage from './SwitchPage';
@@ -26,6 +25,7 @@ import { alternateName } from '~/utils';
 export default function Recommendations() {
   const [tabValue, setTabValue] = useState<string>('recent');
 
+  // UI states
   const [convoIdx, setConvoIdx] = useState<number>(0);
   const [convoDataLength, setConvoDataLength] = useState<number>(1);
   const [convoData, setConvoData] = useState<TConversation[] | null>(null);
@@ -33,9 +33,12 @@ export default function Recommendations() {
   const [convoUser, setConvoUser] = useState<TUser | null>(null);
   const [shareLink, setShareLink] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
-
   const [liked, setLiked] = useState<boolean>(false);
   const [numOfLikes, setNumOfLikes] = useState<number>(0);
+
+  // Message and user cache
+  const [cache, setCache] = useState<{ user: TUser, messages: TMessage[] }[]>([]);
+  const [cacheIdx, setCacheIdx] = useState<number>(0);
 
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
   const { user, token } = useAuthContext();
@@ -51,6 +54,12 @@ export default function Recommendations() {
   // Allows navigation to user's profile page
   const navigateToProfile = () => {
     navigate(`/profile/${convoUser?.id}`);
+  }
+
+  // Save cached users and messages to localStorage
+  const saveCache = () => {
+    const cachePackage = { cache: cache, cacheIdx: cacheIdx, convoIdx: convoIdx };
+    window.localStorage.setItem(`${tabValue}Cache`, JSON.stringify(cachePackage));
   }
 
   const plugins = (
@@ -98,6 +107,11 @@ export default function Recommendations() {
 
   // Fetch recommendations from API server (recent/hottset/following)
   async function fetchRecommendations() {
+    // Invalidate caches
+    setCache([]);
+    setCacheIdx(0);
+
+    // Reset UI states
     setConvoIdx(0);
     setConvoData(null);
     setConvoUser(null);
@@ -114,10 +128,6 @@ export default function Recommendations() {
       // Cache the conversations in localStorage
       window.localStorage.setItem(`${tabValue}Conversations`, JSON.stringify(responseObject));
 
-      // Remembers when this type of recommendations was last fetched, and which user fetched it
-      window.localStorage.setItem(`${tabValue}LastFetched`, JSON.stringify(Date.now()));
-      window.localStorage.setItem('lastFetchedBy', user?.id || '');
-
       // Update UI states
       setConvoData(responseObject);
       setConvoDataLength(responseObject.length);
@@ -126,61 +136,72 @@ export default function Recommendations() {
     }
   }
 
-  // Get recommendations from localStorage or API server
+  // Try to get recommendations from localStorage
+  // Fetch from server if localStorage is empty
   async function getRecommendations() {
-    const currentTime = Date.now();
-    const lastFetchedTime = Number(window.localStorage.getItem(`${tabValue}LastFetched`));
-    const lastFetchedBy = window.localStorage.getItem('lastFetchedBy');
+    const conversations = window.localStorage.getItem(`${tabValue}Conversations`);
+    const cacheLS = window.localStorage.getItem(`${tabValue}Cache`);
 
-    // Fetch from server if it has been more than 30 seconds since the last fetch
-    // or a new user has signed in since last fetch
-    if ((currentTime - lastFetchedTime > 30000 || lastFetchedBy !== user?.id)) {
+    if (conversations && cacheLS) {
+      setConvoData(null);
+      setConvoUser(null);
+      const convoObject = JSON.parse(conversations);
+      setConvoData(convoObject);
+      setConvoDataLength(convoObject.length);
+
+      const { cache, cacheIdx, convoIdx } = JSON.parse(cacheLS);
+      setCache(cache);
+      setCacheIdx(cacheIdx);
+      setConvoIdx(convoIdx);
+    } else if (user) {
       fetchRecommendations();
-    } else {
-      // We get from localStorage otherwise
-      const localStorage = window.localStorage.getItem(`${tabValue}Conversations`) ;
-      if (localStorage) {
-        setConvoIdx(0);
-        setConvoData(null);
-        setConvoUser(null);
-        const convoObject = JSON.parse(localStorage);
-        setConvoData(convoObject);
-        setConvoDataLength(convoObject.length);
-      }
     }
   }
 
-  // Fetch messages of the current conversation
-  async function fetchMessagesByConvoId(id: string) {
+  // Fetch user and messages of the current conversation
+  async function fetchConvoMessagesAndUser(convoId: string, userId: string) {
     setMsgTree(null);
-    try {
-      const response = await fetch(`/api/messages/${id}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        }
-      });
-      const responseObject = await response.json();
-      setMsgTree(buildTree(responseObject));
-    } catch (error) {
-      console.log(error);
-    }
-  }
-
-  // Fetch the user who owns the current conversation
-  async function fetchConvoUser(id: string | undefined) {
     setConvoUser(null);
     try {
-      const response = await fetch(`/api/user/${id}`, {
+      const messagesResponse = await fetch(`/api/messages/${convoId}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         }
       });
-      const responseObject = await response.json();
-      setConvoUser(responseObject);
+
+      const userResponse = await fetch(`/api/user/${userId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      const messagesResponseObject = await messagesResponse.json();
+      const userResponseObject = await userResponse.json();
+      const cacheObject = { user: userResponseObject, messages: messagesResponseObject }
+
+      // Cache the newly fetched user and messages and maintain the cache size to 5
+      if (cacheIdx > cache.length - 1) {
+        const newLength = cache.push(cacheObject);
+
+        if (newLength > 5) {
+          cache.shift();
+          setCacheIdx(4);
+        }
+      } else if (cacheIdx < 0) {
+        const newLength = cache.unshift(cacheObject);
+        setCacheIdx(0);
+
+        if (newLength > 5) {
+          cache.pop();
+        }
+      }
+
+      setMsgTree(buildTree(messagesResponseObject));
+      setConvoUser(userResponseObject);
     } catch (error) {
       console.log(error);
     }
@@ -215,8 +236,19 @@ export default function Recommendations() {
 
   const { screenshotTargetRef } = useScreenshot();
 
-  const nextConvo = () => convoIdx === convoDataLength - 1 ? setConvoIdx(0) : setConvoIdx(convoIdx + 1);
-  const prevConvo = () => convoIdx === 0 ? setConvoIdx(convoDataLength - 1) : setConvoIdx(convoIdx - 1);
+  // Browse next conversation
+  const nextConvo = () => {
+    convoIdx === convoDataLength - 1 ? setConvoIdx(0) : setConvoIdx(convoIdx + 1);
+    setCacheIdx(cacheIdx + 1);
+  }
+
+  // Browse previous conversation
+  const prevConvo = () => {
+    convoIdx === 0 ? setConvoIdx(convoDataLength - 1) : setConvoIdx(convoIdx - 1);
+    setCacheIdx(cacheIdx - 1);
+  }
+
+  // Copies conversations share link
   const copyShareLinkHandler = () => {
     if (copied) return;
     navigator.clipboard.writeText(shareLink);
@@ -225,27 +257,41 @@ export default function Recommendations() {
   }
 
   // Manually refetch recommendations from server when clicking on the same tab we are currently on
-  // Set new tab value otherwise
+  // Write the cache to localStorage and set the new tab value otherwise
   const tabClickHandler = (value: string) => () => {
     if (tabValue === value) {
       fetchRecommendations();
     } else {
+      // Store the cache and browse location in localStorage before switching tabs
+      saveCache();
       setTabValue(value);
     }
   }
 
-  // Fetch recommendations on mount
+  // Clear all cache before unload
   useEffect(() => {
-    if (user) {
-      getRecommendations();
-    }
+    window.addEventListener('unload', () => window.localStorage.clear());
+
+    return () => window.removeEventListener('unload', () => window.localStorage.clear());
+  }, []);
+
+  // Get recommendations on mount and on tab switch
+  useEffect(() => {
+    getRecommendations();
   }, [user, tabValue]);
 
   // Set current conversation
   useEffect(() => {
     if (convoData && convoData.length > 0 && user) {
-      fetchMessagesByConvoId(convoData[convoIdx].conversationId);
-      fetchConvoUser(convoData[convoIdx].user);
+      // Get from cache if possible
+      if (cache[cacheIdx]) {
+        const { user, messages } = cache[cacheIdx];
+        setMsgTree(buildTree(messages));
+        setConvoUser(user);
+      } else {
+        fetchConvoMessagesAndUser(convoData[convoIdx].conversationId, convoData[convoIdx].user || '');
+      }
+
       setShareLink(window.location.host +  `/chat/share/${convoData[convoIdx].conversationId}`);
       setNumOfLikes(convoData[convoIdx].likes);
 
