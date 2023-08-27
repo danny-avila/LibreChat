@@ -31,7 +31,7 @@ podman build \
     --file ./LibreChat/Dockerfile;
 ```
 
-> Not the downside of running a base container that has a live root is that image revisions need to be done manually. The easiest way is to remove and recreate the image when the container is no longer. If that's not possible for you, manually updating the image to increment versions can be done manually. Simply amend $image with the version you're building.
+> Note: the downside of running a base container that has a live root is that image revisions need to be done manually. The easiest way is to remove and recreate the image when the container is no longer. If that's not possible for you, manually updating the image to increment versions can be done manually. Simply amend $image with the version you're building.
 
 > We'll document how to go about the update process more effectively further on. You wont need to remove your existing containers, or lose any data when updating.
 

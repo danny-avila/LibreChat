@@ -2,6 +2,7 @@ import English from './languages/Eng';
 import Chinese from './languages/Zh';
 import German from './languages/De';
 import Italian from './languages/It';
+import Polish from './languages/Pl';
 import Portuguese from './languages/Br';
 import Spanish from './languages/Es';
 import French from './languages/Fr';
@@ -41,6 +42,9 @@ export const getTranslations = (langCode: string) => {
   }
   if (langCode === 'it') {
     return Italian;
+  }
+  if (langCode === 'pl') {
+    return Polish;
   }
   if (langCode === 'br') {
     return Portuguese;
