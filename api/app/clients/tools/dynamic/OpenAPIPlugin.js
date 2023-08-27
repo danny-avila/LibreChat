@@ -7,13 +7,20 @@ const { DynamicStructuredTool } = require('langchain/tools');
 const { createOpenAPIChain } = require('langchain/chains');
 const { ChatPromptTemplate, HumanMessagePromptTemplate } = require('langchain/prompts');
 
+function addLinePrefix(text, prefix = '// ') {
+  return text
+    .split('\n')
+    .map((line) => prefix + line)
+    .join('\n');
+}
+
 function createPrompt(name, functions) {
   const prefix = `// The ${name} tool has the following functions. Determine the desired or most optimal function for the user's query:`;
   const functionDescriptions = functions
     .map((func) => `// - ${func.name}: ${func.description}`)
     .join('\n');
   return `${prefix}\n${functionDescriptions}
-// The user's message will be passed as a natural language query to be used with the function.
+// The user's message will be passed as the function's query.
 // Always provide the function name as such: {{"func": "function_name"}}`;
 }
 
@@ -91,7 +98,7 @@ async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }
   }
 
   const headers = {};
-  const { auth, description_for_model } = data;
+  const { auth, name_for_model, description_for_model, description_for_human } = data;
   if (auth && AuthDefinition.parse(auth)) {
     verbose && console.debug('auth detected', auth);
     const { openai } = auth.verification_tokens;
@@ -123,9 +130,8 @@ async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }
 
   chainOptions.prompt = ChatPromptTemplate.fromPromptMessages([
     HumanMessagePromptTemplate.fromTemplate(
-      `# Use the provided API's to respond to this query:\n\n{query}\n\n## Instructions:\n${description_for_model.replaceAll(
-        '\n',
-        '\n// ',
+      `# Use the provided API's to respond to this query:\n\n{query}\n\n## Instructions:\n${addLinePrefix(
+        description_for_model,
       )}`,
     ),
   ]);
@@ -134,9 +140,12 @@ async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }
   const { functions } = chain.chains[0].lc_kwargs.llmKwargs;
 
   return new DynamicStructuredTool({
-    name: data.name_for_model,
-    description_for_model: createPrompt(data.name_for_model, functions),
-    description: `${data.description_for_human}`,
+    name: name_for_model,
+    description_for_model: `${addLinePrefix(description_for_human)}${createPrompt(
+      name_for_model,
+      functions,
+    )}`,
+    description: `${description_for_human}`,
     schema: z.object({
       func: z
         .string()
@@ -148,7 +157,6 @@ async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }
     }),
     func: async ({ func = '' }) => {
       const result = await chain.run(`${message}${func?.length > 0 ? `\nUse ${func}` : ''}`);
-      console.log('api chain run result', result);
       return result;
     },
   });
