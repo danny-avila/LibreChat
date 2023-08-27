@@ -24,3 +24,8 @@ This app is a webview for LibreChat instance Android independent app, this proje
 
 ## [LibreChat Azure Deployment](https://github.com/thunderbug1/LibreChatAzureDeployment)
 A Terraform setup to deploy LibreChat to Azure and setup all the necessary services.
+
+
+---
+
+#### Note: If you would like to include your own tool in the list, you're welcome to submit a Pull Request.
