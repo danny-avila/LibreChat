@@ -214,7 +214,6 @@ const MessageContent = ({
 
     return splitText.map((text, idx) => {
       let currentText = text.trim();
-      console.log('idx', idx);
       let plugin: TResPlugin | null = null;
 
       if (plugins) {

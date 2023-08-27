@@ -44,7 +44,6 @@ type PluginProps = {
 };
 
 const Plugin: React.FC<PluginProps> = ({ plugin }) => {
-  console.log('plugin', plugin);
   const plugins: PluginsMap = useRecoilValue(store.plugins);
 
   const getPluginName = useCallback(
