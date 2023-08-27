@@ -18,7 +18,7 @@ export default {
   com_ui_close: '关闭',
   com_ui_model: '模型',
   com_ui_select_model: '模型选择',
-  com_ui_use_prompt: 'Use prompt',
+  com_ui_use_prompt: '使用提示词',
   com_ui_prev: '上一页',
   com_ui_next: '下一页',
   com_ui_prompt_templates: '对话模板',
@@ -56,7 +56,7 @@ export default {
   com_auth_name_required: '姓名为必填项',
   com_auth_name_min_length: '姓名至少3个字符',
   com_auth_name_max_length: '姓名最多80个字符',
-  com_auth_username: '用户名',
+  com_auth_username: '用户名（可选）',
   com_auth_username_required: '用户名为必填项',
   com_auth_username_min_length: '用户名至少3个字符',
   com_auth_username_max_length: '用户名最多20个字符',
@@ -78,9 +78,9 @@ export default {
   com_endpoint_bing_to_enable_sydney: '启用 Sydney',
   com_endpoint_bing_jailbreak: '破解',
   com_endpoint_bing_context_placeholder:
-    'Bing can use up to 7k tokens for \'context\', which it can reference for the conversation. The specific limit is not known but may run into errors exceeding 7k tokens',
+    '必应可以使用多达7000个词元作为“上下文（context）”，参照这些内容进行对话。其具体限制并不清楚，但可能会在超过7000个词元时出现错误',
   com_endpoint_bing_system_message_placeholder:
-    'WARNING: Misuse of this feature can get you BANNED from using Bing! Click on \'System Message\' for full instructions and the default message if omitted, which is the \'Sydney\' preset that is considered safe.',
+    '警告：滥用此功能可能导致你被禁止使用必应！点击“系统消息”查看完整的使用指南，如果你忽略了默认消息，那么将会使用被视为安全的“Sydney”预设。',
   com_endpoint_system_message: '系统消息',
   com_endpoint_default_blank: '初始值: 空',
   com_endpoint_default_false: '初始值: false',
@@ -98,7 +98,7 @@ export default {
   com_endpoint_google_topk:
     'Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model\'s vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).',
   com_endpoint_google_maxoutputtokens:
-    ' 	Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses.',
+    ' 	响应生成中可以使用的最大令牌数。指定较低的值会得到更短的响应，而指定较高的值则会得到更长的响应。',
   com_endpoint_google_custom_name_placeholder: '为PaLM2设置一个名称',
   com_endpoint_google_prompt_prefix_placeholder: '自定义指令和上下文，默认为空。',
   com_endpoint_custom_name: '自定义名称',
