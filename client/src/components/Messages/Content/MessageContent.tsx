@@ -14,6 +14,7 @@ type TInitialProps = {
   error: boolean;
   unfinished: boolean;
   isSubmitting: boolean;
+  isLast: boolean;
 };
 type TAdditionalProps = {
   ask: TAskFunction;
@@ -182,6 +183,7 @@ const MessageContent = ({
   error,
   unfinished,
   isSubmitting,
+  isLast,
   ...props
 }: TMessageContent) => {
   if (error) {
@@ -193,8 +195,6 @@ const MessageContent = ({
     const splitText = text.split(marker);
     const { message } = props;
     const { plugins, messageId } = message;
-    console.log('splitText', splitText);
-    console.log('plugins', plugins);
     const displayedIndices = new Set<number>();
     // Function to get the next non-empty text index
     const getNextNonEmptyTextIndex = (currentIndex: number) => {
@@ -237,7 +237,7 @@ const MessageContent = ({
           {showText ? (
             <DisplayMessage
               key={`display-${messageId}-${idx}`}
-              showCursor={isLastIndex}
+              showCursor={isLastIndex && isLast}
               text={currentText}
               {...props}
             />
