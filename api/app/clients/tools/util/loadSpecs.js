@@ -56,7 +56,9 @@ async function loadSpecs({ llm, user, message, tools = [], map = false, verbose 
   }
 
   if (files.length === 0) {
-    return null;
+    files = (await fs.promises.readdir(directoryPath)).filter(
+      (file) => path.extname(file) === '.json',
+    );
   }
 
   const validJsons = [];
