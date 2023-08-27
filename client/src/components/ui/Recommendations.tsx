@@ -10,7 +10,6 @@ import {
   TConversation,
   TMessage,
   TUser,
-  useGetRecommendationsQuery,
   useLikeConversationMutation,
 } from '@librechat/data-provider';
 import SwitchPage from './SwitchPage';
@@ -26,6 +25,7 @@ import { alternateName } from '~/utils';
 export default function Recommendations() {
   const [tabValue, setTabValue] = useState<string>('recent');
 
+  // UI states
   const [convoIdx, setConvoIdx] = useState<number>(0);
   const [convoDataLength, setConvoDataLength] = useState<number>(1);
   const [convoData, setConvoData] = useState<TConversation[] | null>(null);
@@ -33,9 +33,12 @@ export default function Recommendations() {
   const [convoUser, setConvoUser] = useState<TUser | null>(null);
   const [shareLink, setShareLink] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
-
   const [liked, setLiked] = useState<boolean>(false);
   const [numOfLikes, setNumOfLikes] = useState<number>(0);
+
+  // Message and user cache
+  const [cache, setCache] = useState<{ user: TUser, messages: TMessage[] }[]>([]);
+  const [cacheIdx, setCacheIdx] = useState<number>(0);
 
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
   const { user, token } = useAuthContext();
@@ -150,37 +153,49 @@ export default function Recommendations() {
     }
   }
 
-  // Fetch messages of the current conversation
-  async function fetchMessagesByConvoId(id: string) {
+  // Fetch user and messages of the current conversation
+  async function fetchConvoMessagesAndUser(convoId: string, userId: string) {
     setMsgTree(null);
-    try {
-      const response = await fetch(`/api/messages/${id}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        }
-      });
-      const responseObject = await response.json();
-      setMsgTree(buildTree(responseObject));
-    } catch (error) {
-      console.log(error);
-    }
-  }
-
-  // Fetch the user who owns the current conversation
-  async function fetchConvoUser(id: string | undefined) {
     setConvoUser(null);
     try {
-      const response = await fetch(`/api/user/${id}`, {
+      const messagesResponse = await fetch(`/api/messages/${convoId}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         }
       });
-      const responseObject = await response.json();
-      setConvoUser(responseObject);
+
+      const userResponse = await fetch(`/api/user/${userId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      const messagesResponseObject = await messagesResponse.json();
+      const userResponseObject = await userResponse.json();
+      const cacheObject = { user: userResponseObject, messages: messagesResponseObject }
+
+      if (cacheIdx > cache.length - 1) {
+        const newLength = cache.push(cacheObject);
+
+        if (newLength > 5) {
+          cache.shift();
+          setCacheIdx(4);
+        }
+      } else if (cacheIdx < 0) {
+        const newLength = cache.unshift(cacheObject);
+        setCacheIdx(0);
+
+        if (newLength > 5) {
+          cache.pop();
+        }
+      }
+
+      setMsgTree(buildTree(messagesResponseObject));
+      setConvoUser(userResponseObject);
     } catch (error) {
       console.log(error);
     }
@@ -215,8 +230,14 @@ export default function Recommendations() {
 
   const { screenshotTargetRef } = useScreenshot();
 
-  const nextConvo = () => convoIdx === convoDataLength - 1 ? setConvoIdx(0) : setConvoIdx(convoIdx + 1);
-  const prevConvo = () => convoIdx === 0 ? setConvoIdx(convoDataLength - 1) : setConvoIdx(convoIdx - 1);
+  const nextConvo = () => {
+    convoIdx === convoDataLength - 1 ? setConvoIdx(0) : setConvoIdx(convoIdx + 1);
+    setCacheIdx(cacheIdx + 1);
+  }
+  const prevConvo = () => {
+    convoIdx === 0 ? setConvoIdx(convoDataLength - 1) : setConvoIdx(convoIdx - 1);
+    setCacheIdx(cacheIdx - 1);
+  }
   const copyShareLinkHandler = () => {
     if (copied) return;
     navigator.clipboard.writeText(shareLink);
@@ -244,8 +265,14 @@ export default function Recommendations() {
   // Set current conversation
   useEffect(() => {
     if (convoData && convoData.length > 0 && user) {
-      fetchMessagesByConvoId(convoData[convoIdx].conversationId);
-      fetchConvoUser(convoData[convoIdx].user);
+      if (cache[cacheIdx]) {
+        const { user, messages } = cache[cacheIdx];
+        setMsgTree(buildTree(messages));
+        setConvoUser(user);
+      } else {
+        fetchConvoMessagesAndUser(convoData[convoIdx].conversationId, convoData[convoIdx].user || '');
+      }
+
       setShareLink(window.location.host +  `/chat/share/${convoData[convoIdx].conversationId}`);
       setNumOfLikes(convoData[convoIdx].likes);
 
