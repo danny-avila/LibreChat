@@ -231,7 +231,7 @@ export default function Recommendations() {
 
   // Set current conversation
   useEffect(() => {
-    if (convoData && user) {
+    if (convoData && convoData.length > 0 && user) {
       fetchMessagesByConvoId(convoData[convoIdx].conversationId);
       fetchConvoUser(convoData[convoIdx].user);
       setShareLink(window.location.host +  `/chat/share/${convoData[convoIdx].conversationId}`);
@@ -257,12 +257,6 @@ export default function Recommendations() {
     'font-medium data-[state=active]:text-white text-xs text-white'
   );
   const selectedTab = (val: string) => val + '-tab ' + defaultSelected;
-
-  if (convoData?.length === 0) return (
-    <div className='ml-2 mt-2'>
-      API server did not return any documents. Check if you have an empty database.
-    </div>
-  );
 
   return (
     <div className='flex flex-col overflow-y-auto gap-2'>
@@ -311,7 +305,7 @@ export default function Recommendations() {
                 id="landing-title"
                 className="ml-auto mr-auto mt-0.5 flex gap-2 text-center text-2xl font-semibold"
               >
-                {convoData ? convoData[convoIdx].title : ''}
+                {convoData && convoData.length > 0 ? convoData[convoIdx].title : ''}
               </h1>
               {convoUser && (<div className='my-2 flex flex-row flex-wrap justify-center items-center justify-self-center text-base'>
                 {/*Conversation author*/}
@@ -387,23 +381,47 @@ export default function Recommendations() {
             {/*Conversation messages*/}
             <div className="dark:gpt-dark-gray mb-32 h-auto w-full md:mb-48" ref={screenshotTargetRef}>
               <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
-                {convoData && msgTree && convoUser ? (
-                  <MultiMessage
-                    key={convoData[convoIdx].conversationId} // avoid internal state mixture
-                    messageId={convoData[convoIdx].conversationId}
-                    conversation={convoData[convoIdx]}
-                    messagesTree={msgTree}
-                    scrollToBottom={null}
-                    currentEditId={-1}
-                    setCurrentEditId={null}
-                    isSearchView={true}
-                    name={convoUser?.name}
-                    userId={convoUser?.id}
-                  />
+                {convoData?.length === 0 ? (
+                  <>
+                    {tabValue === 'following' ? (
+                      <>
+                        {Object.keys(user?.following || {}).length === 0 ? (
+                          <div className='ml-2 mt-2'>
+                            {localize(lang, 'com_ui_no_following')}
+                          </div>
+                        ) : (
+                          <div>
+                            {localize(lang, 'com_ui_following_no_convo')}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className='ml-2 mt-2'>
+                        API server did not return any documents. Check if you have an empty database.
+                      </div>
+                    )}
+                  </>
                 ) : (
-                  <div className="flex w-full h-[25vh] flex-row items-end justify-end">
-                    <Spinner />
-                  </div>
+                  <>
+                    {convoData && convoData?.length > 0 && msgTree && convoUser ? (
+                      <MultiMessage
+                        key={convoData[convoIdx].conversationId} // avoid internal state mixture
+                        messageId={convoData[convoIdx].conversationId}
+                        conversation={convoData[convoIdx]}
+                        messagesTree={msgTree}
+                        scrollToBottom={null}
+                        currentEditId={-1}
+                        setCurrentEditId={null}
+                        isSearchView={true}
+                        name={convoUser?.name}
+                        userId={convoUser?.id}
+                      />
+                    ) : (
+                      <div className="flex w-full h-[25vh] flex-row items-end justify-end">
+                        <Spinner />
+                      </div>
+                    )}
+                  </>
                 )}
                 <SwitchPage key={ 'left_switch' } switchHandler={ prevConvo } direction={ 'left' } />
                 <SwitchPage key={ 'right_switch' } switchHandler={ nextConvo } direction={ 'right' } />
