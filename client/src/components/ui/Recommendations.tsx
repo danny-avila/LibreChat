@@ -110,9 +110,15 @@ export default function Recommendations() {
         }
       });
       const responseObject = await response.json();
+
+      // Cache the conversations in localStorage
       window.localStorage.setItem(`${tabValue}Conversations`, JSON.stringify(responseObject));
+
+      // Remembers when this type of recommendations was last fetched, and which user fetched it
       window.localStorage.setItem(`${tabValue}LastFetched`, JSON.stringify(Date.now()));
       window.localStorage.setItem('lastFetchedBy', user?.id || '');
+
+      // Update UI states
       setConvoData(responseObject);
       setConvoDataLength(responseObject.length);
     } catch (error) {
@@ -126,9 +132,12 @@ export default function Recommendations() {
     const lastFetchedTime = Number(window.localStorage.getItem(`${tabValue}LastFetched`));
     const lastFetchedBy = window.localStorage.getItem('lastFetchedBy');
 
+    // Fetch from server if it has been more than 30 seconds since the last fetch
+    // or a new user has signed in since last fetch
     if ((currentTime - lastFetchedTime > 30000 || lastFetchedBy !== user?.id)) {
       fetchRecommendations();
     } else {
+      // We get from localStorage otherwise
       const localStorage = window.localStorage.getItem(`${tabValue}Conversations`) ;
       if (localStorage) {
         setConvoIdx(0);
@@ -214,6 +223,9 @@ export default function Recommendations() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
+
+  // Manually refetch recommendations from server when clicking on the same tab we are currently on
+  // Set new tab value otherwise
   const tabClickHandler = (value: string) => () => {
     if (tabValue === value) {
       fetchRecommendations();
@@ -381,21 +393,21 @@ export default function Recommendations() {
             {/*Conversation messages*/}
             <div className="dark:gpt-dark-gray mb-32 h-auto w-full md:mb-48" ref={screenshotTargetRef}>
               <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
-                {convoData?.length === 0 ? (
+                {convoData?.length === 0 ? ( // Server returned an empty array...
                   <>
                     {tabValue === 'following' ? (
                       <>
-                        {Object.keys(user?.following || {}).length === 0 ? (
+                        {Object.keys(user?.following || {}).length === 0 ? ( // The user might not be following anyone...
                           <div className='ml-2 mt-2'>
                             {localize(lang, 'com_ui_no_following')}
                           </div>
-                        ) : (
+                        ) : ( // The users whom the current user is following does not have any public conversations
                           <div>
                             {localize(lang, 'com_ui_following_no_convo')}
                           </div>
                         )}
                       </>
-                    ) : (
+                    ) : ( // Fresh database
                       <div className='ml-2 mt-2'>
                         API server did not return any documents. Check if you have an empty database.
                       </div>
