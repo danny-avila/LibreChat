@@ -172,17 +172,9 @@ const loadTools = async ({
   };
 
   const requestedTools = {};
-  let specs = null;
+
   if (functions) {
     toolConstructors.codesherpa = CodeSherpa;
-    specs = await loadSpecs({
-      llm: model,
-      user,
-      message: options.message,
-      map: true,
-      verbose: false,
-    });
-    console.dir(specs, { depth: null });
   }
 
   const toolOptions = {
@@ -199,14 +191,11 @@ const loadTools = async ({
     toolAuthFields[tool.pluginKey] = tool.authConfig.map((auth) => auth.authField);
   });
 
+  const remainingTools = [];
+
   for (const tool of tools) {
     if (customConstructors[tool]) {
       requestedTools[tool] = customConstructors[tool];
-      continue;
-    }
-
-    if (specs && specs[tool]) {
-      requestedTools[tool] = specs[tool];
       continue;
     }
 
@@ -219,6 +208,29 @@ const loadTools = async ({
         options,
       );
       requestedTools[tool] = toolInstance;
+      continue;
+    }
+
+    if (functions) {
+      remainingTools.push(tool);
+    }
+  }
+
+  let specs = null;
+  if (functions && remainingTools.length > 0) {
+    specs = await loadSpecs({
+      llm: model,
+      user,
+      message: options.message,
+      tools: remainingTools,
+      map: true,
+      verbose: false,
+    });
+  }
+
+  for (const tool of remainingTools) {
+    if (specs && specs[tool]) {
+      requestedTools[tool] = specs[tool];
     }
   }
 
