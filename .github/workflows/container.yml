@@ -32,6 +32,7 @@ jobs:
         run: |
           cp .env.example .env
           docker-compose build
+          docker build -f Dockerfile.multi --target api-build -t librechat-api .
 
       # Get Tag Name
       - name: Get Tag Name
@@ -45,3 +46,7 @@ jobs:
           docker push ghcr.io/${{ github.repository_owner }}/librechat:${{ env.TAG_NAME }}
           docker tag librechat:latest ghcr.io/${{ github.repository_owner }}/librechat:latest
           docker push ghcr.io/${{ github.repository_owner }}/librechat:latest
+          docker tag librechat-api:latest ghcr.io/${{ github.repository_owner }}/librechat-api:${{ env.TAG_NAME }}
+          docker push ghcr.io/${{ github.repository_owner }}/librechat-api:${{ env.TAG_NAME }}
+          docker tag librechat-api:latest ghcr.io/${{ github.repository_owner }}/librechat-api:latest
+          docker push ghcr.io/${{ github.repository_owner }}/librechat-api:latest
