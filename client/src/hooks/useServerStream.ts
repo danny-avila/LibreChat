@@ -233,13 +233,9 @@ export default function useServerStream(submission: TSubmission | null) {
           overrideParentMessageId: message?.overrideParentMessageId,
         };
         createdHandler(data, { ...submission, message });
-        console.log('created', message);
       } else {
         const text = data.text || data.response;
-        const { initial, plugin, plugins } = data;
-        if (initial) {
-          console.log(data);
-        }
+        const { plugin, plugins } = data;
 
         if (data.message) {
           messageHandler(text, { ...submission, plugin, plugins, message });
