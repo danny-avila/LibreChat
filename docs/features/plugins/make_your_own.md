@@ -177,6 +177,7 @@ If your Tool class requires more advanced initialization, you would add it to th
 The default initialization can be seen in the `loadToolWithAuth` function, and most custom plugins should be initialized this way.
 
 Here are a few customConstructors, which have varying initializations
+
 ```javascript
   const customConstructors = {
     browser: async () => {
@@ -196,7 +197,7 @@ Here are a few customConstructors, which have varying initializations
       ]
     }
   };
-  ```
+```
 
 ## Step 6: Export your Plugin into index.js
 
@@ -240,7 +241,7 @@ module.exports = {
       }
     ]
   },
-  ```
+```
   
   Each of the fields of the "plugin" object are important. Follow this format strictly. If your plugin requires authentication, you will add those details under `authConfig` as an array since there could be multiple authentication variables. See the Calculator plugin for an example of one that doesn't require authentication, where the authConfig is an empty array (an array is always required).
   
@@ -248,7 +249,8 @@ module.exports = {
   **Note:** the `authField` prop must match the process.env variable name
   
   Here is an example of a plugin with more than one credential variable
-  ```json
+
+```json
   [
   {
     "name": "Google",
@@ -268,7 +270,7 @@ module.exports = {
       }
     ]
   },
-  ```
+```
 
 ## Example: WolframAlphaAPI Tool
 
