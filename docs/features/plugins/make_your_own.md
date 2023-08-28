@@ -159,6 +159,7 @@ const StableDiffusionAPI = require('./StableDiffusion');
 ```
 
 In handleTools.js, find the beginning of the `loadTools` function and add your plugin/tool to the toolConstructors object.
+
 ```js
 const loadTools = async ({ user, model, tools = [], options = {} }) => {
   const toolConstructors = {
@@ -169,7 +170,7 @@ const loadTools = async ({ user, model, tools = [], options = {} }) => {
     'stable-diffusion': StableDiffusionAPI // <----- Newly Added. Note: the key is the 'name' provided in the class. 
     // We will now refer to this name as the `pluginKey`
   };
-  ```
+```
   
 If your Tool class requires more advanced initialization, you would add it to the customConstructors object.
 
