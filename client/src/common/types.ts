@@ -93,3 +93,30 @@ export type TMessageProps = {
   setCurrentEditId?: React.Dispatch<React.SetStateAction<string | number | null>> | null;
   setSiblingIdx?: ((value: number) => void | React.Dispatch<React.SetStateAction<number>>) | null;
 };
+
+export type TInitialProps = {
+  text: string;
+  edit: boolean;
+  error: boolean;
+  unfinished: boolean;
+  isSubmitting: boolean;
+  isLast: boolean;
+};
+export type TAdditionalProps = {
+  ask: TAskFunction;
+  message: TMessage;
+  isCreatedByUser: boolean;
+  siblingIdx: number;
+  enterEdit: (cancel: boolean) => void;
+  setSiblingIdx: (value: number) => void;
+};
+
+export type TMessageContent = TInitialProps & TAdditionalProps;
+
+export type TText = Pick<TInitialProps, 'text'>;
+export type TEditProps = Pick<TInitialProps, 'text' | 'isSubmitting'> &
+  Omit<TAdditionalProps, 'isCreatedByUser'>;
+export type TDisplayProps = TText &
+  Pick<TAdditionalProps, 'isCreatedByUser' | 'message'> & {
+    showCursor?: boolean;
+  };

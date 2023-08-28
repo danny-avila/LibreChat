@@ -31,6 +31,32 @@
     ]
   },
   {
+    "name": "E2B Code Interpreter",
+    "pluginKey": "e2b_code_interpreter",
+    "description": "[Experimental] Sandboxed cloud environment where you can run any process, use filesystem and access the internet. Requires https://github.com/e2b-dev/chatgpt-plugin",
+    "icon": "https://raw.githubusercontent.com/e2b-dev/chatgpt-plugin/main/logo.png",
+    "authConfig": [
+      {
+        "authField": "E2B_SERVER_URL",
+        "label": "E2B Server URL",
+        "description": "Hosted endpoint must be provided"
+      }
+    ]
+  },
+  {
+    "name": "CodeSherpa",
+    "pluginKey": "codesherpa_tools",
+    "description": "[Experimental] A REPL for your chat. Requires https://github.com/iamgreggarcia/codesherpa",
+    "icon": "https://github.com/iamgreggarcia/codesherpa/blob/main/localserver/_logo.png",
+    "authConfig": [
+      {
+        "authField": "CODESHERPA_SERVER_URL",
+        "label": "CodeSherpa Server URL",
+        "description": "Hosted endpoint must be provided"
+      }
+    ]
+  },
+  {
     "name": "Browser",
     "pluginKey": "web-browser",
     "description": "Scrape and summarize webpage data",
@@ -129,7 +155,7 @@
   {
     "name": "Code Interpreter",
     "pluginKey": "codeinterpreter",
-    "description": "Analyze files and run code online with ease",
+    "description": "[Experimental] Analyze files and run code online with ease. Requires dockerized python server in /pyserver/",
     "icon": "/assets/code.png",
     "authConfig": [
       {

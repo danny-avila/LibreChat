@@ -25,6 +25,8 @@ class GoogleSearchAPI extends Tool {
    */
   description =
     'Use the \'google\' tool to retrieve internet search results relevant to your input. The results will return links and snippets of text from the webpages';
+  description_for_model =
+    'Use the \'google\' tool to retrieve internet search results relevant to your input. The results will return links and snippets of text from the webpages';
 
   getCx() {
     const cx = process.env.GOOGLE_CSE_ID || '';

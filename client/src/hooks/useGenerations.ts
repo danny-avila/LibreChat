@@ -46,7 +46,11 @@ export default function useGenerations({
     !isCreatedByUser && !searchResult && !isEditing && !isSubmitting && branchingSupported;
 
   const hideEditButton =
-    error || searchResult || !branchingSupported || (!isEditableEndpoint && !isCreatedByUser);
+    isSubmitting ||
+    error ||
+    searchResult ||
+    !branchingSupported ||
+    (!isEditableEndpoint && !isCreatedByUser);
 
   return {
     continueSupported,

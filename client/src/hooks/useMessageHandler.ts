@@ -127,8 +127,6 @@ const useMessageHandler = () => {
       initialResponse,
     };
 
-    console.log('User Input:', text, submission);
-
     if (isRegenerate) {
       setMessages([...submission.messages, initialResponse]);
     } else {
