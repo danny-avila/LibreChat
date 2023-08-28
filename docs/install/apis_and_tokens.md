@@ -91,9 +91,9 @@ You should also consider changing the `AZURE_OPENAI_MODELS` variable to the mode
 
 These two variables are optional but may be used in future updates of this project.
 
-### Plugin Endpoint Variables
+### Using Plugins with Azure
 
-Note: To use the Plugins endpoint with Azure OpenAI, you need a deployment supporting [function calling](https://techcommunity.microsoft.com/t5/azure-ai-services-blog/function-calling-is-now-available-in-azure-openai-service/ba-p/3879241). Otherwise, you need to set "Functions" off in the Agent settings. When not using "functions" mode, it's recommend to have "skip completion" off as well, which is a review step of what the agent generated.
+Note: To use the Plugins endpoint with Azure OpenAI, you need a deployment supporting [function calling](https://techcommunity.microsoft.com/t5/azure-ai-services-blog/function-calling-is-now-available-in-azure-openai-service/ba-p/3879241). Otherwise, you need to set "Functions" off in the Agent settings. When you are not using "functions" mode, it's recommend to have "skip completion" off as well, which is a review step of what the agent generated.
 
 To use Azure with the Plugins endpoint, make sure the following environment variables are set:
 
