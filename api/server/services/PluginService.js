@@ -7,6 +7,7 @@ const getUserPluginAuthValue = async (user, authField) => {
     if (!pluginAuth) {
       return null;
     }
+
     const decryptedValue = decrypt(pluginAuth.value);
     return decryptedValue;
   } catch (err) {
