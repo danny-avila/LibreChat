@@ -106,8 +106,7 @@ export default {
   com_endpoint_google_maxoutputtokens:
     ' 	Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses.',
   com_endpoint_google_custom_name_placeholder: 'Set a custom name for PaLM2',
-  com_endpoint_google_prompt_prefix_placeholder:
-    'Set custom instructions or context. Ignored if empty.',
+  com_endpoint_prompt_prefix_placeholder: 'Set custom instructions or context. Ignored if empty.',
   com_endpoint_custom_name: 'Custom Name',
   com_endpoint_prompt_prefix: 'Prompt Prefix',
   com_endpoint_temperature: 'Temperature',
@@ -136,6 +135,7 @@ export default {
     'Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model\'s vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).',
   com_endpoint_anthropic_maxoutputtokens:
     'Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses.',
+  com_endpoint_anthropic_custom_name_placeholder: 'Set a custom name for Anthropic',
   com_endpoint_frequency_penalty: 'Frequency Penalty',
   com_endpoint_presence_penalty: 'Presence Penalty',
   com_endpoint_plug_use_functions: 'Use Functions',
@@ -171,6 +171,26 @@ export default {
   com_endpoint_skip_hover:
     'Enable skipping the completion step, which reviews the final answer and generated steps',
   com_endpoint_config_token: 'Config Token',
+  com_endpoint_config_token_server: 'Your token will be sent to the server, but not saved.',
+  com_endpoint_config_token_import_json_key: 'Import Service Account JSON Key.',
+  com_endpoint_config_token_import_json_key_succesful: 'Import Service Account JSON Key.',
+  com_endpoint_config_token_import_json_key_invalid:
+    'Invalid Service Account JSON Key, Did you import the correct file?',
+  com_endpoint_config_token_get_edge_key: 'To get your Access token for Bing, login to',
+  com_endpoint_config_token_get_edge_key_dev_tool:
+    'Use dev tools or an extension while logged into the site to copy the content of the _U cookie. If this fails, follow these',
+  com_endpoint_config_token_edge_instructions: 'instructions',
+  com_endpoint_config_token_edge_full_token_string: 'to provide the full cookie strings.',
+  com_endpoint_config_token_chatgpt:
+    'To get your Access token For ChatGPT \'Free Version\', login to',
+  com_endpoint_config_token_chatgpt_then_visit: 'then visit',
+  com_endpoint_config_token_chatgpt_copy_token: 'Copy access token.',
+  com_endpoint_config_token_google_need_to: 'You need to',
+  com_endpoint_config_token_google_vertex_ai: 'Enable Vertex AI',
+  com_endpoint_config_token_google_vertex_api: 'API on Google Cloud, then',
+  com_endpoint_config_token_google_service_account: 'Create a Service Account',
+  com_endpoint_config_token_google_vertex_api_role:
+    'Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role. Lastly, create a JSON key to import here.',
   com_nav_export_filename: 'Filename',
   com_nav_export_filename_placeholder: 'Set the filename',
   com_nav_export_type: 'Type',
