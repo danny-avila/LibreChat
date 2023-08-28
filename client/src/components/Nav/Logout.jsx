@@ -20,8 +20,8 @@ const Logout = forwardRef(() => {
       onClick={handleLogout}
     >
       <LogOutIcon />
-      {user?.username || 'USER'}
-      <small>{localize(lang, 'com_nav_log_out')}</small>
+      {user?.username || 'USER'}{' '}
+      {localize(lang, 'com_nav_log_out')}
     </button>
   );
 });
