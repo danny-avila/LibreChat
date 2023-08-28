@@ -35,6 +35,8 @@
     "dotenv": "^16.0.3",
     "eslint": "^8.41.0",
     "express": "^4.18.2",
+    "express-mongo-sanitize": "^2.2.0",
+    "express-rate-limit": "^6.9.0",
     "express-session": "^1.17.3",
     "googleapis": "^118.0.0",
     "handlebars": "^4.7.7",
@@ -64,7 +66,7 @@
   },
   "devDependencies": {
     "jest": "^29.5.0",
-    "nodemon": "^2.0.20",
+    "nodemon": "^3.0.1",
     "path": "^0.12.7",
     "supertest": "^6.3.3"
   }

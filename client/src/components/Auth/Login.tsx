@@ -19,6 +19,8 @@ function Login() {
     }
   }, [isAuthenticated, navigate]);
 
+  console.log('error', error);
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
       <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
@@ -30,7 +32,9 @@ function Login() {
             className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
             role="alert"
           >
-            {localize('com_auth_error_login')}
+            {error?.includes('429')
+              ? localize('com_auth_error_login_rl')
+              : localize('com_auth_error_login')}
           </div>
         )}
         <LoginForm onSubmit={login} />
