@@ -21,24 +21,28 @@ Digital Ocean is also my preferred choice for testing deployment, as it comes wi
 ## Table of Contents
 
 - **[Part I: Starting from Zero](#part-i-starting-from-zero)**
-  - [1. DigitalOcean signup](#1-click-here-or-on-the-banner-above-to-get-started-on-digitalocean)
-  - [2. Access console](#2-access-your-droplet-console)
-  - [3. Console user setup](#3-once-you-have-logged-in-immediately-create-a-new-non-root-user)
+    - [1. DigitalOcean signup](#1-click-here-or-on-the-banner-above-to-get-started-on-digitalocean)
+    - [2. Access console](#2-access-your-droplet-console)
+    - [3. Console user setup](#3-once-you-have-logged-in-immediately-create-a-new-non-root-user)
+    - [4. Firewall Setup](#4-firewall-setup)
 - **[Part II: Installing Docker & Other Dependencies](#part-ii-installing-docker-and-other-dependencies)**
-  - [1. Update and Install Docker dependencies](#1-update-and-install-docker-dependencies)
-  - [2. Add Docker Repository to APT Sources](#2-add-docker-repository-to-apt-sources)
-  - [3. Install Docker](#3-install-docker)
-  - [4. Verify Docker](#4-verify-that-docker-is-running-on-ubuntu)
-  - [5. Install the Latest Version of Docker Compose](#5-install-the-latest-version-of-docker-compose)
-  - [6. Install git & npm](#6-as-part-of-this-guide-i-will-recommend-you-have-git-and-npm-installed)
+    - [1. Update and Install Docker dependencies](#1-update-and-install-docker-dependencies)
+    - [2. Add Docker Repository to APT Sources](#2-add-docker-repository-to-apt-sources)
+    - [3. Install Docker](#3-install-docker)
+    - [4. Verify Docker](#4-verify-that-docker-is-running-on-ubuntu)
+    - [5. Install the Latest Version of Docker Compose](#5-install-the-latest-version-of-docker-compose)
+    - [6. Install git & npm](#6-as-part-of-this-guide-i-will-recommend-you-have-git-and-npm-installed)
 - **[Part III: Setup LibreChat](#part-iii-setup-librechat)**
-  - [1. Clone down the repo](#1-clone-down-the-repo)
-  - [2. Create a global environment file](#2-create-a-global-environment-file)
-  - [3. Start docker and run LibreChat](#3-start-docker-and-then-run-the-installationupdate-script)
-  - [4. Access LibreChat](#4-once-the-app-is-running-you-can-access-it-at-httpyourserverip)
+    - [1. Clone down the repo](#1-clone-down-the-repo)
+    - [2. Create a global environment file](#2-create-a-global-environment-file)
+    - [3. Start docker and run LibreChat](#3-start-docker-and-then-run-the-installationupdate-script)
+    - [4. Access LibreChat](#4-once-the-app-is-running-you-can-access-it-at-httpyourserverip)
 - **[Part IV: Updating LibreChat](#part-iv-updating-librechat)**
-- **[Part V: Editing the NGINX file (optional)](#part-v-editing-the-nginx-file-for-custom-domains-and-advanced-configs)**
 
+> The last sections are all optional configurations
+
+- **[Part V: Editing the NGINX file](#part-v-editing-the-nginx-file-for-custom-domains-and-advanced-configs)**
+- **[Part VI: Use the Latest Stable Release instead of Latest Main Branch](#part-vi-use-the-latest-stable-release-instead-of-latest-main-branch)**
 
 ## Part I: Starting from Zero:
 
@@ -119,6 +123,18 @@ getent group sudo | cut -d: -f4
 # example: su - danny
 su - <yourusername>
 ```
+
+### **4. Firewall Setup**
+
+It's highly recommended you setup a simple firewall for your setup. 
+
+Click on your droplet from the projects page again, and goto the Networking tab on the left-hand side under your ipv4:
+
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/20a2f31b-83ec-4052-bca7-27a672c3770a)
+
+Create a firewall, add your droplet to it, and add these inbound rules (will work for this guide, but configure as needed)
+
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/d9bbdd7b-3702-4d2d-899b-c6457e6d221a)
 
 ---
 
@@ -287,11 +303,20 @@ cd LibreChat/
 ``` 
 
 ### **2. Create a global environment file.**
-The default values are enough to get you started and running the app! API credentials can be provided when accessing the web app.
+The default values are enough to get you started and running the app.
 
 ```bash
 # Copies the example file as your global env file
 cp .env.example .env
+```
+
+However, it's highly recommended you use environment variables for any sensitive credentials until we remove use of localStorage for passing credentials from the frontend
+
+```bash
+nano .env
+
+# then, add your credentials
+OPENAI_API_KEY=sk-yourKey
 ```
 
 **That's it!**
@@ -447,8 +472,7 @@ You should be all set!
 
 > Note that any changes to the code in this environment won't be reflected because the compose file is pulling the docker images built automatically by GitHub
 
-<!-- TODO: since the api images are not part of the tag workflow yet
-## Part VI: Latest Stable Release vs. Latest Release (editing the compose file)
+## Part VI: Use the Latest Stable Release instead of Latest Main Branch
 
 By default, this setup will pull the latest updates to the main branch of Librechat. If you would rather have the latest "stable" release, which is defined by the [latest tags](https://github.com/danny-avila/LibreChat/releases), you will need to edit deploy-compose.yml and commit your changes exactly as above in Part V.
 
@@ -457,8 +481,14 @@ Let's edit `deploy-compose.yml`:
 ```bash
 nano deploy-compose.yml
 ```
--->
 
+Change `librechat-dev-api` to `librechat-api`:
+
+```yaml
+image: ghcr.io/danny-avila/librechat-api:latest
+```
+
+Stage and commit as in Part V, and you're all set!
 
 ---
 
