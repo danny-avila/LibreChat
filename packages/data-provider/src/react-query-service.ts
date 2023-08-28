@@ -16,14 +16,14 @@ export enum QueryKeys {
   conversation = 'conversation',
   searchEnabled = 'searchEnabled',
   user = 'user',
+  userById = 'userById',
   endpoints = 'endpoints',
   presets = 'presets',
   searchResults = 'searchResults',
   tokenCount = 'tokenCount',
   availablePlugins = 'availablePlugins',
   startupConfig = 'startupConfig',
-  recentConversations = 'recentConversations',
-  hottestConversations = 'hottestConversations',
+  recommendations = 'recommendations',
   numOfReferrals = 'numOfReferrals',
   likedConversations = 'likedConversations',
   publicConversatons = 'publicConversatons'
@@ -48,6 +48,17 @@ export const useGetUserQuery = (
     refetchOnMount: false,
     retry: false,
     ...config
+  });
+};
+
+export const useGetUserByIdQuery = (
+  id: string,
+): QueryObserverResult<t.TUser> => {
+  return useQuery([QueryKeys.userById, id], () => dataService.getUserById(id), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
   });
 };
 
@@ -359,21 +370,19 @@ export const useGetStartupConfig = (): QueryObserverResult<t.TStartupConfig> => 
   });
 }
 
-export const useGetRecentConversations = (): QueryObserverResult<t.TConversation[]> => {
-  return useQuery([QueryKeys.recentConversations], () => dataService.getRecentConversations(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false
-  });
+export const useGetRecommendationsQuery = (
+  type: string,
+): QueryObserverResult<t.TConversation[]> => {
+  return useQuery<t.TConversation[]>(
+    [QueryKeys.recommendations, type],
+    () => dataService.getRecommendations(type),
+    {
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: 1,
+    }
+  );
 };
-
-export const useGetHottestConversations = (): QueryObserverResult<t.TConversation[]> => {
-  return useQuery([QueryKeys.hottestConversations], () => dataService.getHottestConversations(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false
-  });
-}
 
 export const useDuplicateConvoMutation = (): any => {
   return useMutation((payload: object) => dataService.duplicateConversation(payload))
@@ -404,3 +413,22 @@ export const useGetPublicConversationQuery = (userId: string): QueryObserverResu
     retry: 1
   });
 }
+
+export const useFollowUserMutation = (): UseMutationResult<t.TUser, unknown, object, unknown> => {
+  return useMutation((payload: object) => dataService.followUser(payload));
+};
+
+export const useLikeConversationMutation = (
+  id: string
+) => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: object) => dataService.likeConversation(payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.conversation, id]);
+        queryClient.invalidateQueries([QueryKeys.allConversations]);
+      }
+    }
+  );
+};

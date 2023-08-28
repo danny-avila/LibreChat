@@ -18,7 +18,7 @@ import Clipboard from '../svg/Clipboard';
 import useDebounce from '~/hooks/useDebounce';
 import LeaderboardIcon from '../svg/LeaderboardIcon';
 import NotebookIcon from '../svg/NotebookIcon';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import HomeIcon from '../svg/HomeIcon';
 import LightBulbIcon from '../svg/LightBulbIcon';
 import ComputerIcon from '../svg/ComputerIcon';
@@ -82,6 +82,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const [copied, setCopied] = useState(false);
   const [widget, setWidget] = useRecoilState(store.widget);
   const { user } = useAuthContext();
+  const { userId } = useParams();
   const navigate = useNavigate();
 
   const debouncedSearchTerm = useDebounce(searchQuery, 750);
@@ -193,7 +194,13 @@ export default function Nav({ navVisible, setNavVisible }) {
     setCopied(true);
   }
 
-  const navigateToRegister = () => navigate('/register');
+  const navigateToRegister = () => {
+    if (!user && userId) {
+      navigate(`/register/${userId}`);
+    } else {
+      navigate('/register');
+    }
+  }
 
   const openWidgetHandler = (type) => () => {
     if (location.pathname.substring(1, 5) !== 'chat' || location.pathname.substring(0, 11) === '/chat/share') {
@@ -267,7 +274,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                     <circle cx="12" cy="7" r="4" />
                   </svg>
-                  <button className='font-bold hover:underline' onClick={() => navigate('register')}>
+                  <button className='font-bold hover:underline' onClick={ navigateToRegister }>
                     {localize(lang, 'com_ui_register_here')}
                   </button>
                 </div>}
@@ -289,10 +296,19 @@ export default function Nav({ navVisible, setNavVisible }) {
                   />
                 </div>}
               </div>
+              {user && (
+                <NavLink
+                  className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                  // Add an SVG or icon for the Profile link here
+                  svg={() => <ProfileIcon />}
+                  text={localize(lang, 'com_ui_homepage')}
+                  clickHandler={ openProfileHandler }
+                />
+              )}
               <NavLink
                 className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                 svg={() => <HomeIcon />}
-                text={localize(lang, 'com_ui_homepage')}
+                text={localize(lang, 'com_ui_recommendation')}
                 clickHandler={ user ? openHomepageHandler : navigateToRegister }
               />
               <NavLink
@@ -329,15 +345,6 @@ export default function Nav({ navVisible, setNavVisible }) {
                 )}
                 clickHandler={ user ? copyLinkHandler : navigateToRegister }
               />
-              {user && (
-                <NavLink
-                  className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-                  // Add an SVG or icon for the Profile link here
-                  svg={() => <ProfileIcon />}
-                  text={localize(lang, 'com_ui_profile')}
-                  clickHandler={ openProfileHandler }
-                />
-              )}
               <NavLinks clearSearch={clearSearch} isSearchEnabled={isSearchEnabled} />
             </nav>
           </div>

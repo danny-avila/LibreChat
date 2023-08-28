@@ -135,18 +135,21 @@ module.exports = {
   },
   getRecentConvos: async (userId) => {
     try {
-      const dbResponse = await Conversation.find({
+      return await Conversation.find({
         user: { $ne: userId },
         isPrivate: { $eq: false }
-      }).sort( { updatedAt: -1 } ).limit(200).exec();
-
-      // Converts the conversation array into objects mapping each conversation to its conversationId
-      const convoObject = {};
-      for (let i = 0; i < dbResponse.length; i++) {
-        const convoId = dbResponse[i].conversationId;
-        convoObject[convoId] = dbResponse[i];
-      }
-      return convoObject;
+      }).sort( { createdAt: -1 } ).limit(200).exec();
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error fetching recent conversations' };
+    }
+  },
+  getFollowingConvos: async (following) => {
+    try {
+      return await Conversation.find({
+        user: { $in: following },
+        isPrivate: { $eq: false }
+      }).sort( { createdAt: -1 } ).limit(200).exec();
     } catch (error) {
       console.log(error);
       return { message: 'Error fetching recent conversations' };
@@ -155,37 +158,36 @@ module.exports = {
 
   likeConvo: async (conversationId, userId, liked) => {
     try {
-      const existingConversation = await Conversation.findOne({ conversationId }).exec();
+      const conversation = await Conversation.findOne({ conversationId });
+      const likedBy = conversation.likedBy;
 
-      if (existingConversation) {
-        if (existingConversation.likedBy[userId] === liked) return existingConversation;
+      const update = {};
+      update[`likedBy.${userId}`] = { $type: 'date' };
 
-        const update = {};
-
-        if (liked) {
-          // Increment the likesCount by 1
-          update.likes = existingConversation.likes + 1;
-
-          const likedBy = existingConversation.likedBy;
-          likedBy[userId] = true;
-          update.likedBy = likedBy;
-        } else {
-          // Ensure likesCount doesn't go below 0
-          update.likes = existingConversation.likes > 0 ? existingConversation.likes - 1 : 0;
-
-          const likedBy = existingConversation.likedBy;
-          likedBy[userId] = false;
-          update.likedBy = likedBy;
-        }
-
+      if (!likedBy) { // If the likedBy object is undefined, that means this conversation has 0 likes
         return await Conversation.findOneAndUpdate(
           { conversationId },
-          update,
+          { $currentDate: update, $inc: { likes: 1 } },
           { new: true, upsert: false }
         ).exec();
       } else {
-        // Handle if the conversation doesn't exist for the user
-        return { message: 'Conversation not found.' };
+        // User request is the same as DB record
+        // e.g. User wants to like the conversation, but DB says that the user has already liked the conversation
+        if ((likedBy[userId] && liked) || (!likedBy[userId] && !liked)) {
+          return conversation;
+        } else if (liked) {
+          return await Conversation.findOneAndUpdate(
+            { conversationId },
+            { $currentDate: update, $inc: { likes: 1 } },
+            { new: true, upsert: false }
+          ).exec();
+        } else { // User request is different from DB record
+          return await Conversation.findOneAndUpdate(
+            { conversationId },
+            { $unset: update, $inc: { likes: -1 } },
+            { new: true, upsert: false }
+          ).exec();
+        }
       }
     } catch (error) {
       console.log(error);
@@ -194,19 +196,11 @@ module.exports = {
   },
   getHottestConvo: async (userId) => {
     try {
-      const dbResponse = await Conversation.find({
+      return await Conversation.find({
         user: { $ne: userId },
         isPrivate: { $eq: false }
       }).sort({ likes: -1 }) // Sort by count in descending order (hottest first)
         .limit(200).exec();
-
-      // Converts the conversation array into objects mapping each conversation to its conversationId
-      const convoObject = {};
-      for (let i = 0; i < dbResponse.length; i++) {
-        const convoId = dbResponse[i].conversationId;
-        convoObject[convoId] = dbResponse[i];
-      }
-      return convoObject;
     } catch (error) {
       console.log(error);
       return { message: 'Error getting the hottest conversations' };
@@ -215,9 +209,13 @@ module.exports = {
   getLikedConvos: async (userId) => {
     try {
       const filter = {};
-      filter[`likedBy.${userId}`] = true;
+      filter[`likedBy.${userId}`] = { $exists: true };
 
-      const dbResponse = await Conversation.find(filter).limit(30).exec();
+      const sortOrder = {};
+      sortOrder[`likedBy.${userId}`] = -1;
+      sortOrder['title'] = 1;
+
+      const dbResponse = await Conversation.find(filter).limit(30).sort(sortOrder).exec();
       return dbResponse;
     } catch (error) {
       console.log(error);

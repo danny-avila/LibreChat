@@ -77,8 +77,14 @@ const registerUser = async (user) => {
       username,
       name,
       avatar: null,
-      refBy: refBy
+      refBy: refBy,
+      following: {}
     });
+
+    const referrer = await User.findById(refBy);
+    if (referrer) {
+      newUser.following[`${referrer._id}`] = { name: referrer.name, username: referrer.username };
+    }
 
     // todo: implement refresh token
     // const refreshToken = newUser.generateRefreshToken();
@@ -89,8 +95,17 @@ const registerUser = async (user) => {
     const registrationResult = await newUser.save();
 
     if (refBy !== '') {
-      await User.updateOne({ _id: refBy }, { $push: { referrals: registrationResult.id },
-        $inc: { numOfReferrals: 1 } })
+      const follower = {};
+      follower[`followers.${registrationResult.id}`] = { name: registrationResult.name, username: registrationResult.username };
+
+      await User.updateOne(
+        { _id: refBy },
+        {
+          $push: { referrals: registrationResult.id },
+          $inc: { numOfReferrals: 1 },
+          $set: follower
+        }
+      );
     }
     return { status: 200, user: newUser };
   } catch (err) {

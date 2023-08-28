@@ -160,6 +160,8 @@ export type TUser = {
   numOfReferrals: number;
   createdAt: string;
   updatedAt: string;
+  followers: object;
+  following: object;
 };
 
 export type TGetConversationsResponse = {
