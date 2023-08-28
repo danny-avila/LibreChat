@@ -1,8 +1,7 @@
 # ⚠️ **Breaking Changes** ⚠️
 
-## Note:
+> **Note:**
 **If you experience any issues after updating, we recommend clearing your browser cache and cookies.**
-
 Certain changes in the updates may impact cookies, leading to unexpected behaviors if not cleared properly.
 
 ## v0.5.7
