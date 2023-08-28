@@ -18,8 +18,18 @@ const {
   StructuredSD,
   AzureCognitiveSearch,
   StructuredACS,
+  E2BTools,
+  CodeSherpa,
+  CodeSherpaTools,
 } = require('../');
 const { loadSpecs } = require('./loadSpecs');
+const { loadToolSuite } = require('./loadToolSuite');
+
+const getOpenAIKey = async (options, user) => {
+  let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
+  openAIApiKey = openAIApiKey === 'user_provided' ? null : openAIApiKey;
+  return openAIApiKey || (await getUserPluginAuthValue(user, 'OPENAI_API_KEY'));
+};
 
 const validateTools = async (user, tools = []) => {
   try {
@@ -74,7 +84,14 @@ const loadToolWithAuth = async (user, authFields, ToolConstructor, options = {})
   };
 };
 
-const loadTools = async ({ user, model, functions = null, tools = [], options = {} }) => {
+const loadTools = async ({
+  user,
+  model,
+  functions = null,
+  returnMap = false,
+  tools = [],
+  options = {},
+}) => {
   const toolConstructors = {
     calculator: Calculator,
     codeinterpreter: CodeInterpreter,
@@ -85,12 +102,44 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
     'azure-cognitive-search': functions ? StructuredACS : AzureCognitiveSearch,
   };
 
+  const openAIApiKey = await getOpenAIKey(options, user);
+
   const customConstructors = {
+    e2b_code_interpreter: async () => {
+      if (!functions) {
+        return null;
+      }
+
+      return await loadToolSuite({
+        pluginKey: 'e2b_code_interpreter',
+        tools: E2BTools,
+        user,
+        options: {
+          model,
+          openAIApiKey,
+          ...options,
+        },
+      });
+    },
+    codesherpa_tools: async () => {
+      if (!functions) {
+        return null;
+      }
+
+      return await loadToolSuite({
+        pluginKey: 'codesherpa_tools',
+        tools: CodeSherpaTools,
+        user,
+        options,
+      });
+    },
     'web-browser': async () => {
-      let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
-      openAIApiKey = openAIApiKey === 'user_provided' ? null : openAIApiKey;
-      openAIApiKey = openAIApiKey || (await getUserPluginAuthValue(user, 'OPENAI_API_KEY'));
-      return new WebBrowser({ model, embeddings: new OpenAIEmbeddings({ openAIApiKey }) });
+      // let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
+      // openAIApiKey = openAIApiKey === 'user_provided' ? null : openAIApiKey;
+      // openAIApiKey = openAIApiKey || (await getUserPluginAuthValue(user, 'OPENAI_API_KEY'));
+      const browser = new WebBrowser({ model, embeddings: new OpenAIEmbeddings({ openAIApiKey }) });
+      browser.description_for_model = browser.description;
+      return browser;
     },
     serpapi: async () => {
       let apiKey = process.env.SERPAPI_API_KEY;
@@ -123,16 +172,9 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
   };
 
   const requestedTools = {};
-  let specs = null;
+
   if (functions) {
-    specs = await loadSpecs({
-      llm: model,
-      user,
-      message: options.message,
-      map: true,
-      verbose: options?.debug,
-    });
-    console.dir(specs, { depth: null });
+    toolConstructors.codesherpa = CodeSherpa;
   }
 
   const toolOptions = {
@@ -149,14 +191,11 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
     toolAuthFields[tool.pluginKey] = tool.authConfig.map((auth) => auth.authField);
   });
 
+  const remainingTools = [];
+
   for (const tool of tools) {
     if (customConstructors[tool]) {
       requestedTools[tool] = customConstructors[tool];
-      continue;
-    }
-
-    if (specs && specs[tool]) {
-      requestedTools[tool] = specs[tool];
       continue;
     }
 
@@ -169,10 +208,50 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
         options,
       );
       requestedTools[tool] = toolInstance;
+      continue;
+    }
+
+    if (functions) {
+      remainingTools.push(tool);
     }
   }
 
-  return requestedTools;
+  let specs = null;
+  if (functions && remainingTools.length > 0) {
+    specs = await loadSpecs({
+      llm: model,
+      user,
+      message: options.message,
+      tools: remainingTools,
+      map: true,
+      verbose: false,
+    });
+  }
+
+  for (const tool of remainingTools) {
+    if (specs && specs[tool]) {
+      requestedTools[tool] = specs[tool];
+    }
+  }
+
+  if (returnMap) {
+    return requestedTools;
+  }
+
+  // load tools
+  let result = [];
+  for (const tool of tools) {
+    const validTool = requestedTools[tool];
+    const plugin = await validTool();
+
+    if (Array.isArray(plugin)) {
+      result = [...result, ...plugin];
+    } else if (plugin) {
+      result.push(plugin);
+    }
+  }
+
+  return result;
 };
 
 module.exports = {

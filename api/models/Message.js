@@ -17,6 +17,7 @@ module.exports = {
     finish_reason = null,
     tokenCount = null,
     plugin = null,
+    plugins = null,
     model = null,
   }) {
     try {
@@ -36,6 +37,7 @@ module.exports = {
           cancelled,
           tokenCount,
           plugin,
+          plugins,
           model,
         },
         { upsert: true, new: true },

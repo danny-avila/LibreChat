@@ -4,7 +4,7 @@ const { promisify } = require('util');
 const fs = require('fs');
 
 class CodeInterpreter extends Tool {
-  constructor(fields) {
+  constructor() {
     super();
     this.name = 'code-interpreter';
     this.description = `If there is plotting or any image related tasks, save the result as .png file. 
@@ -21,30 +21,30 @@ class CodeInterpreter extends Tool {
 
   async _call(input) {
     const websocket = new WebSocket('ws://localhost:3380'); // Update with your WebSocket server URL
-  
+
     // Wait until the WebSocket connection is open
     await new Promise((resolve) => {
       websocket.onopen = resolve;
     });
-  
+
     // Send the Python code to the server
     websocket.send(input);
-  
+
     // Wait for the result from the server
     const result = await new Promise((resolve) => {
       websocket.onmessage = (event) => {
         resolve(event.data);
       };
-  
+
       // Handle WebSocket connection closed
       websocket.onclose = () => {
         resolve('Python Engine Failed');
       };
     });
-  
+
     // Close the WebSocket connection
     websocket.close();
-  
+
     return result;
   }
 }

@@ -9,9 +9,12 @@ const StructuredWolfram = require('./structured/Wolfram');
 const SelfReflectionTool = require('./SelfReflection');
 const AzureCognitiveSearch = require('./AzureCognitiveSearch');
 const StructuredACS = require('./structured/AzureCognitiveSearch');
+const ChatTool = require('./structured/ChatTool');
+const E2BTools = require('./structured/E2BTools');
+const CodeSherpa = require('./structured/CodeSherpa');
+const CodeSherpaTools = require('./structured/CodeSherpaTools');
 const availableTools = require('./manifest.json');
 const CodeInterpreter = require('./CodeInterpreter');
-
 
 module.exports = {
   availableTools,
@@ -26,5 +29,9 @@ module.exports = {
   SelfReflectionTool,
   AzureCognitiveSearch,
   StructuredACS,
+  E2BTools,
+  ChatTool,
+  CodeSherpa,
+  CodeSherpaTools,
   CodeInterpreter,
 };

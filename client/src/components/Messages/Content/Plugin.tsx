@@ -1,4 +1,4 @@
-import { useState, useCallback, memo, ReactNode } from 'react';
+import { useCallback, memo, ReactNode } from 'react';
 import type { TResPlugin, TInput } from 'librechat-data-provider';
 import { ChevronDownIcon, LucideProps } from 'lucide-react';
 import { Disclosure } from '@headlessui/react';
@@ -16,11 +16,20 @@ type PluginIconProps = LucideProps & {
   className?: string;
 };
 
+function formatJSON(json: string) {
+  try {
+    return JSON.stringify(JSON.parse(json), null, 2);
+  } catch (e) {
+    return json;
+  }
+}
+
 function formatInputs(inputs: TInput[]) {
   let output = '';
 
   for (let i = 0; i < inputs.length; i++) {
-    output += `${inputs[i].inputStr}`;
+    const input = formatJSON(`${inputs[i]?.inputStr ?? inputs[i]}`);
+    output += input;
 
     if (inputs.length > 1 && i !== inputs.length - 1) {
       output += ',\n';
@@ -35,8 +44,6 @@ type PluginProps = {
 };
 
 const Plugin: React.FC<PluginProps> = ({ plugin }) => {
-  const [loading, setLoading] = useState(plugin.loading);
-  const finished = plugin.outputs && plugin.outputs.length > 0;
   const plugins: PluginsMap = useRecoilValue(store.plugins);
 
   const getPluginName = useCallback(
@@ -63,20 +70,16 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
     return null;
   }
 
-  if (finished && loading) {
-    setLoading(false);
-  }
-
   const generateStatus = (): ReactNode => {
-    if (!loading && latestPlugin === 'self reflection') {
+    if (!plugin.loading && latestPlugin === 'self reflection') {
       return 'Finished';
     } else if (latestPlugin === 'self reflection') {
       return 'I\'m  thinking...';
     } else {
       return (
         <>
-          {loading ? 'Using' : 'Used'} <b>{latestPlugin}</b>
-          {loading ? '...' : ''}
+          {plugin.loading ? 'Using' : 'Used'} <b>{latestPlugin}</b>
+          {plugin.loading ? '...' : ''}
         </>
       );
     }
@@ -93,8 +96,8 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
             <>
               <div
                 className={cn(
-                  loading ? 'bg-green-100' : 'bg-[#ECECF1]',
-                  'flex items-center rounded p-3 text-sm text-gray-900',
+                  plugin.loading ? 'bg-green-100' : 'bg-[#ECECF1]',
+                  'flex items-center rounded p-3 text-xs text-gray-900',
                 )}
               >
                 <div>
@@ -102,7 +105,7 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
                     <div>{generateStatus()}</div>
                   </div>
                 </div>
-                {loading && <Spinner className="ml-1" />}
+                {plugin.loading && <Spinner className="ml-1" />}
                 <Disclosure.Button className="ml-12 flex items-center gap-2">
                   <ChevronDownIcon {...iconProps} />
                 </Disclosure.Button>
@@ -110,15 +113,17 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
 
               <Disclosure.Panel className="my-3 flex max-w-full flex-col gap-3">
                 <CodeBlock
-                  lang={latestPlugin?.toUpperCase() || 'INPUTS'}
+                  lang={latestPlugin ? `REQUEST TO ${latestPlugin?.toUpperCase()}` : 'REQUEST'}
                   codeChildren={formatInputs(plugin.inputs ?? [])}
                   plugin={true}
                   classProp="max-h-[450px]"
                 />
-                {finished && (
+                {plugin.outputs && plugin.outputs.length > 0 && (
                   <CodeBlock
-                    lang="OUTPUTS"
-                    codeChildren={plugin.outputs ?? ''}
+                    lang={
+                      latestPlugin ? `RESPONSE FROM ${latestPlugin?.toUpperCase()}` : 'RESPONSE'
+                    }
+                    codeChildren={formatJSON(plugin.outputs ?? '')}
                     plugin={true}
                     classProp="max-h-[450px]"
                   />

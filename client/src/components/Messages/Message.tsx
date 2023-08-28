@@ -3,7 +3,7 @@ import { useGetConversationByIdQuery } from 'librechat-data-provider';
 import { useState, useEffect } from 'react';
 import { useSetRecoilState } from 'recoil';
 import copy from 'copy-to-clipboard';
-import { Plugin, SubRow, MessageContent } from './Content';
+import { SubRow, Plugin, MessageContent } from './Content';
 // eslint-disable-next-line import/no-cycle
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
@@ -36,7 +36,7 @@ export default function Message({
     error,
     unfinished,
   } = message ?? {};
-  const last = !children?.length;
+  const isLast = !children?.length;
   const edit = messageId == currentEditId;
   const getConversationQuery = useGetConversationByIdQuery(message?.conversationId ?? '', {
     enabled: false,
@@ -58,10 +58,10 @@ export default function Message({
   useEffect(() => {
     if (!message) {
       return;
-    } else if (last) {
+    } else if (isLast) {
       setLatestMessage({ ...message });
     }
-  }, [last, message]);
+  }, [isLast, message]);
 
   if (!message) {
     return null;
@@ -159,16 +159,18 @@ export default function Message({
               </SubRow>
             )}
             <div className="flex flex-grow flex-col gap-3">
+              {/* Legacy Plugins */}
               {message?.plugin && <Plugin plugin={message?.plugin} />}
               <MessageContent
                 ask={ask}
-                text={text ?? ''}
                 edit={edit}
-                error={error ?? false}
+                isLast={isLast}
+                text={text ?? ''}
                 message={message}
                 enterEdit={enterEdit}
-                unfinished={unfinished ?? false}
+                error={error ?? false}
                 isSubmitting={isSubmitting}
+                unfinished={unfinished ?? false}
                 isCreatedByUser={isCreatedByUser ?? true}
                 siblingIdx={siblingIdx ?? 0}
                 setSiblingIdx={

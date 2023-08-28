@@ -49,6 +49,7 @@ const createAbortController = (res, req, endpointOption, getAbortData) => {
       unfinished: false,
       cancelled: true,
       error: false,
+      isCreatedByUser: false,
     };
 
     saveMessage(responseMessage);

@@ -90,6 +90,7 @@ const messageSchema = mongoose.Schema(
         required: false,
       },
     },
+    plugins: [{ type: mongoose.Schema.Types.Mixed }],
   },
   { timestamps: true },
 );

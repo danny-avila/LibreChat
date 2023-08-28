@@ -5,7 +5,7 @@ const { validateTools } = require('../../../app');
 const { addTitle } = require('../endpoints/openAI');
 const { initializeClient } = require('../endpoints/gptPlugins');
 const { saveMessage, getConvoTitle, getConvo } = require('../../../models');
-const { sendMessage, createOnProgress, formatSteps, formatAction } = require('../../utils');
+const { sendMessage, createOnProgress } = require('../../utils');
 const {
   handleAbort,
   createAbortController,
@@ -43,12 +43,7 @@ router.post(
     const newConvo = !conversationId;
     const user = req.user.id;
 
-    const plugin = {
-      loading: true,
-      inputs: [],
-      latest: null,
-      outputs: null,
-    };
+    const plugins = [];
 
     const addMetadata = (data) => (metadata = data);
     const getIds = (data) => {
@@ -60,6 +55,9 @@ router.post(
       }
     };
 
+    let streaming = null;
+    let timer = null;
+
     const {
       onProgress: progressCallback,
       sendIntermediateMessage,
@@ -68,8 +66,8 @@ router.post(
       onProgress: ({ text: partialText }) => {
         const currentTimestamp = Date.now();
 
-        if (plugin.loading === true) {
-          plugin.loading = false;
+        if (timer) {
+          clearTimeout(timer);
         }
 
         if (currentTimestamp - lastSavedTimestamp > saveDelay) {
@@ -84,33 +82,62 @@ router.post(
             unfinished: true,
             cancelled: false,
             error: false,
+            plugins,
           });
         }
 
         if (saveDelay < 500) {
           saveDelay = 500;
         }
+
+        streaming = new Promise((resolve) => {
+          timer = setTimeout(() => {
+            resolve();
+          }, 250);
+        });
       },
     });
 
-    const onAgentAction = (action, start = false) => {
-      const formattedAction = formatAction(action);
-      plugin.inputs.push(formattedAction);
-      plugin.latest = formattedAction.plugin;
-      if (!start) {
-        saveMessage(userMessage);
-      }
-      sendIntermediateMessage(res, { plugin });
-      // console.log('PLUGIN ACTION', formattedAction);
+    const pluginMap = new Map();
+    const onAgentAction = async (action, runId) => {
+      pluginMap.set(runId, action.tool);
+      sendIntermediateMessage(res, { plugins });
     };
 
-    const onChainEnd = (data) => {
-      let { intermediateSteps: steps } = data;
-      plugin.outputs = steps && steps[0].action ? formatSteps(steps) : 'An error occurred.';
-      plugin.loading = false;
+    const onToolStart = async (tool, input, runId, parentRunId) => {
+      const pluginName = pluginMap.get(parentRunId);
+      const latestPlugin = {
+        runId,
+        loading: true,
+        inputs: [input],
+        latest: pluginName,
+        outputs: null,
+      };
+
+      if (streaming) {
+        await streaming;
+      }
+      const extraTokens = ':::plugin:::\n';
+      plugins.push(latestPlugin);
+      sendIntermediateMessage(res, { plugins }, extraTokens);
+    };
+
+    const onToolEnd = async (output, runId) => {
+      if (streaming) {
+        await streaming;
+      }
+
+      const pluginIndex = plugins.findIndex((plugin) => plugin.runId === runId);
+
+      if (pluginIndex !== -1) {
+        plugins[pluginIndex].loading = false;
+        plugins[pluginIndex].outputs = output;
+      }
+    };
+
+    const onChainEnd = () => {
       saveMessage(userMessage);
-      sendIntermediateMessage(res, { plugin });
-      // console.log('CHAIN END', plugin.outputs);
+      sendIntermediateMessage(res, { plugins });
     };
 
     const getAbortData = () => ({
@@ -119,7 +146,7 @@ router.post(
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId,
       text: getPartialText(),
-      plugin: { ...plugin, loading: false },
+      plugins: plugins.map((p) => ({ ...p, loading: false })),
       userMessage,
     });
     const { abortController, onStart } = createAbortController(
@@ -141,14 +168,17 @@ router.post(
         getIds,
         onAgentAction,
         onChainEnd,
+        onToolStart,
+        onToolEnd,
         onStart,
         addMetadata,
+        getPartialText,
         ...endpointOption,
         onProgress: progressCallback.call(null, {
           res,
           text,
-          plugin,
           parentMessageId: overrideParentMessageId || userMessageId,
+          plugins,
         }),
         abortController,
       });
@@ -163,7 +193,7 @@ router.post(
 
       console.log('CLIENT RESPONSE');
       console.dir(response, { depth: null });
-      response.plugin = { ...plugin, loading: false };
+      response.plugins = plugins.map((p) => ({ ...p, loading: false }));
       await saveMessage(response);
 
       sendMessage(res, {
