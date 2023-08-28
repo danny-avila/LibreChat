@@ -125,5 +125,18 @@
         "description": "You need to provideq your API Key for Azure Cognitive Search."
       }
     ]
+  },
+  {
+    "name": "Code Interpreter",
+    "pluginKey": "codeinterpreter",
+    "description": "Analyze files and run code online with ease",
+    "icon": "/assets/code.png",
+    "authConfig": [
+      {
+        "authField": "OPENAI_API_KEY",
+        "label": "OpenAI API Key",
+        "description": "Gets Code from Open AI API"
+      }
+    ]
   }
 ]
