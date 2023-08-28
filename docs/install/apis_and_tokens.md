@@ -93,16 +93,12 @@ These two variables are optional but may be used in future updates of this proje
 
 ### Plugin Endpoint Variables
 
-Note: The Plugins endpoint may not work as expected with Azure OpenAI, which may not support OpenAI Functions yet. Even when results were generated, they were not great compared to the regular OpenAI endpoint. You should set the "Functions" off in the Agent settings, and it's recommend to not skip completion with functions off.
+Note: To use the Plugins endpoint with Azure OpenAI, you need a deployment supporting [function calling](https://techcommunity.microsoft.com/t5/azure-ai-services-blog/function-calling-is-now-available-in-azure-openai-service/ba-p/3879241). Otherwise, you need to set "Functions" off in the Agent settings. When not using "functions" mode, it's recommend to have "skip completion" off as well, which is a review step of what the agent generated.
 
-To use Azure with the Plugins endpoint, there are some extra steps to take as the langchain library is particular with envrionment variables:
+To use Azure with the Plugins endpoint, make sure the following environment variables are set:
 
-* `PLUGINS_USE_AZURE`: If set to "true" or any truthy value, this will enable the program to use Azure with the Plugins endpoint. 
-* `AZURE_OPENAI_API_KEY`: Your Azure API key must be set to this environment variable, not to be confused with `AZURE_API_KEY`, which can remain as before.
-* `OPENAI_API_KEY`: Must be omitted or commented to use Azure with Plugins
-
-These steps are quick workarounds as other solutions would require renaming environment variables. This is due to langchain overriding environment variables, and will have to be solved with a later solution.
-
+* `PLUGINS_USE_AZURE`: If set to "true" or any truthy value, this will enable the program to use Azure with the Plugins endpoint.
+* `AZURE_API_KEY`: Your Azure API key must be set with an environment variable.
 
 ## That's it! You're all set. 🎉
 

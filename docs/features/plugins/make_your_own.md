@@ -2,13 +2,15 @@
 
 Creating custom plugins for this project involves extending the `Tool` class from the `langchain/tools` module. 
 
-**Note:** I will use the word plugin interchangeably with tool, as the latter is specific to langchain, and we are mainly conforming to the library in this implementation.
+**Note:** I will use the word plugin interchangeably with tool, as the latter is specific to LangChain, and we are mainly conforming to the library.
 
-You are essentially creating DynamicTools in Langchain speak. See the [langchainjs docs](https://js.langchain.com/docs/modules/agents/tools/dynamic) for more info.
+You are essentially creating DynamicTools in LangChain speak. See the [LangChainJS docs](https://js.langchain.com/docs/modules/agents/tools/dynamic) for more info.
 
 This guide will walk you through the process of creating your own custom plugins, using the `StableDiffusionAPI` and `WolframAlphaAPI` tools as examples.
 
-The most common implementation is to make an API call based on the natural language input from the AI.
+When using the Functions Agent (the default mode for plugins), tools are converted to [OpenAI functions](https://openai.com/blog/function-calling-and-other-api-updates); in any case, plugins/tools are invoked conditionally based on the LLM generating a specific format that we parse. 
+
+The most common implementation of a plugin is to make an API call based on the natural language input from the AI, but there is virtually no limit in programmatic use case.
 
 ---
 
@@ -19,11 +21,11 @@ Here are the key takeaways for creating your own plugin:
 
 **1.** [**Import Required Modules:**](make_your_own.md#step-1-import-required-modules) Import the necessary modules for your plugin, including the `Tool` class from `langchain/tools` and any other modules your plugin might need.
 
-**2.** [**Define Your Plugin Class:**](make_your_own.md#step-2-define-your-tool-class) Define a class for your plugin that extends the `Tool` class. Set the `name` and `description` properties in the constructor. If your plugin requires credentials or other variables, set them from the fields parameter or from a method that retrieves them from your process environment.
+**2.** [**Define Your Plugin Class:**](make_your_own.md#step-2-define-your-tool-class) Define a class for your plugin that extends the `Tool` class. Set the `name` and `description` properties in the constructor. If your plugin requires credentials or other variables, set them from the fields parameter or from a method that retrieves them from your process environment. Note: if your plugin requires long, detailed instructions, you can add a `description_for_model` property and make `description` more general.
 
 **3.** [**Define Helper Methods:**](make_your_own.md#step-3-define-helper-methods) Define helper methods within your class to handle specific tasks if needed.
 
-**4.** [**Implement the `_call` Method:**](make_your_own.md#step-4-implement-the-_call-method) Implement the `_call` method where the main functionality of your plugin is defined. This method is called when the language model decides to use your plugin. It should take an `input` parameter and return a result. If an error occurs, the function should return a string representing an error, rather than throwing an error.
+**4.** [**Implement the `_call` Method:**](make_your_own.md#step-4-implement-the-_call-method) Implement the `_call` method where the main functionality of your plugin is defined. This method is called when the language model decides to use your plugin. It should take an `input` parameter and return a result. If an error occurs, the function should return a string representing an error, rather than throwing an error. If your plugin requires multiple inputs from the LLM, read the [StructuredTools](#StructuredTools) section.
 
 **5.** [**Export Your Plugin and Import into handleTools.js:**](make_your_own.md#step-5-export-your-plugin-and-import-into-handletoolsjs) Export your plugin and import it into `handleTools.js`. Add your plugin to the `toolConstructors` object in the `loadTools` function. If your plugin requires more advanced initialization, add it to the `customConstructors` object.
 
@@ -34,6 +36,14 @@ Here are the key takeaways for creating your own plugin:
 Remember, the key to creating a custom plugin is to extend the `Tool` class and implement the `_call` method. The `_call` method is where you define what your plugin does. You can also define helper methods and properties in your class to support the functionality of your plugin.
 
 **Note: You can find all the files mentioned in this guide in the `.\api\app\langchain\tools` folder.**
+
+---
+
+## StructuredTools
+
+**Multi-Input Plugins**
+
+If you would like to make a plugin that would benefit from multiple inputs from the LLM, instead of a singular input string as we will review, you need to make a LangChain [StructuredTool](https://blog.langchain.dev/structured-tools/) instead. A detailed guide for this is in progress, but for now, you can look at how I've made StructuredTools in this directory: `api\app\clients\tools\structured\`. This guide is foundational to understanding StructuredTools, and it's recommended you continue reading to better understand LangChain tools first. The blog linked above is also helpful once you've read through this guide.
 
 ---
 
@@ -63,11 +73,33 @@ class StableDiffusionAPI extends Tool {
 }
 ```
 
-Note that we're getting the necessary variable from the process env with this method if it isn't passed in the fields object.
-
-A distinction has to be made. The credentials are passed through `fields` when the user provides it from the frontend; otherwise, the admin can "authorize" the plugin through environment variables.
+**Optional:** As of v0.5.8, when using Functions, you can add longer, more detailed instructions, with the `description_for_model` property. When doing so, it's recommended you make the `description` property more generalized to optimize tokens. Each line in this property is prefixed with `// ` to mirror how the prompt is generated for ChatGPT (chat.openai.com). This format more closely aligns to the prompt engineering of official ChatGPT plugins.
 
 ```js
+// ...
+    this.description_for_model = `// Generate images and visuals using text with 'stable-diffusion'.
+// Guidelines:
+// - ALWAYS use {{"prompt": "7+ detailed keywords", "negative_prompt": "7+ detailed keywords"}} structure for queries.
+// - Visually describe the moods, details, structures, styles, and/or proportions of the image. Remember, the focus is on visual attributes.
+// - Craft your input by "showing" and not "telling" the imagery. Think in terms of what you'd want to see in a photograph or a painting.
+// - Here's an example for generating a realistic portrait photo of a man:
+// "prompt":"photo of a man in black clothes, half body, high detailed skin, coastline, overcast weather, wind, waves, 8k uhd, dslr, soft lighting, high quality, film grain, Fujifilm XT3"
+// "negative_prompt":"semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime, out of frame, low quality, ugly, mutation, deformed"
+// - Generate images only once per human query unless explicitly requested by the user`;
+    this.description = 'You can generate images using text with \'stable-diffusion\'. This tool is exclusively for visual content.';
+// ...
+```
+
+Within the constructor, note that we're getting a sensitive variable from either the fields object or from the **getServerURL** method we define to access an environment variable.
+
+```js
+this.url = fields.SD_WEBUI_URL || this.getServerURL();
+```
+
+Any credentials necessary are passed through `fields` when the user provides it from the frontend; otherwise, the admin can "authorize" the plugin for all users through environment variables. All credentials passed from the frontend are encrypted.
+
+```js
+// It's recommended you follow this convention when accessing environment variables.
   getServerURL() {
     const url = process.env.SD_WEBUI_URL || '';
     if (!url) {
@@ -76,7 +108,6 @@ A distinction has to be made. The credentials are passed through `fields` when t
     return url;
   }
 ```
-
 
 ## Step 3: Define Helper Methods
 
@@ -95,6 +126,8 @@ class StableDiffusionAPI extends Tool {
 ## Step 4: Implement the `_call` Method
 
 The `_call` method is where the main functionality of your plugin is implemented. This method is called when the language model decides to use your plugin. It should take an `input` parameter and return a result.
+
+> In a basic Tool, the LLM will generate one string value as an input. If your plugin requires multiple inputs from the LLM, read the [StructuredTools](#StructuredTools) section.
 
 ```javascript
 class StableDiffusionAPI extends Tool {
