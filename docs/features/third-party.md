@@ -17,7 +17,7 @@ The LibreChat-DiscordBot is a versatile and user-friendly Discord bot designed t
 
 ## [LibreChat Android App](https://github.com/goodair220917/LibreChat-Android-App)
 
-This app is a webview for LibreChat instance Android independent app, this project is forked from ChatGPT-android-app. Default webpage of this app has been set to LibreChat's GitHub Page. This app is optimized for LibreChat's function which is not in original project. For example, Social Login Oauth login support is added to this build.
+This app is a webview for LibreChat instance Android independent app, this project is forked from ChatGPT-android-app. Default webpage of this app has been set to LibreChat's GitHub Page. This app is optimized for LibreChat's function which is not an original project. For example, Social Login Oauth login support is added to this build.
 
 <div>
 <img src="https://github.com/fuegovic/LibreChat/assets/32828263/2da13b4c-8d77-42fc-9d36-75e9913d0545" width=300>
