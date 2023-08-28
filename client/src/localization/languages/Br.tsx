@@ -11,6 +11,7 @@ export default {
   com_ui_capability_remember: 'Lembrar o que o usuário disse antes na conversa',
   com_ui_capability_correction: 'Permite que o usuário forneça correções adicionais',
   com_ui_capability_decline_requests: 'Treinado para rejeitar pedidos inadequados',
+  com_ui_pay_per_call: 'Todas as conversas de IA em um só lugar. Pague por chamada e não por mês.',
   com_ui_limitations: 'Limitações',
   com_ui_limitation_incorrect_info: 'Pode ocasionalmente gerar informações incorretas',
   com_ui_limitation_harmful_biased:
