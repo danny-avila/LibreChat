@@ -34,6 +34,7 @@ export default {
   com_auth_sign_up: 'Sign up',
   com_auth_sign_in: 'Sign in',
   com_auth_google_login: 'Login with Google',
+  com_auth_facebook_login: 'Login with Facebook',
   com_auth_github_login: 'Login with Github',
   com_auth_discord_login: 'Login with Discord',
   com_auth_email: 'Email',
@@ -205,5 +206,7 @@ export default {
   com_nav_lang_spanish: 'Español',
   com_nav_lang_french: 'Français ',
   com_nav_lang_italian: 'Italiano',
+  com_nav_lang_polish: 'Polski',
   com_nav_lang_brazilian_portuguese: 'Português Brasileiro',
+  com_nav_lang_russian: 'Русский',
 };

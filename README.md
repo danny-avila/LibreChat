@@ -72,7 +72,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
     * [APIs and Tokens](docs/install/apis_and_tokens.md)
     * [User Auth System](docs/install/user_auth_system.md)
     * [Online MongoDB Database](docs/install/mongodb.md)
-    * [Languages](docs/install/languages.md)
+    * [Default Language](docs/install/default_language.md)
 </details>
 
 <details>
@@ -116,6 +116,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   
   * [Contributor Guidelines](CONTRIBUTING.md)
   * [Documentation Guidelines](docs/contributions/documentation_guidelines.md)
+  * [Contribute a Translation](docs/contributions/translation_contribution.md)
   * [Code Standards and Conventions](docs/contributions/coding_conventions.md)
   * [Testing](docs/contributions/testing.md)
   * [Security](SECURITY.md)
