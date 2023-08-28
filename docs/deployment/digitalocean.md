@@ -130,8 +130,11 @@ It's highly recommended you setup a simple firewall for your setup.
 
 Click on your droplet from the projects page again, and goto the Networking tab on the left-hand side under your ipv4:
 
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/20a2f31b-83ec-4052-bca7-27a672c3770a)
 
 Create a firewall, add your droplet to it, and add these inbound rules (will work for this guide, but configure as needed)
+
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/d9bbdd7b-3702-4d2d-899b-c6457e6d221a)
 
 ---
 
