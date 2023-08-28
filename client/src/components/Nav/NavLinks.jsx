@@ -45,7 +45,7 @@ export default function NavLinks() {
                 open ? 'bg-gray-800' : '',
               )}
             >
-              <div className="-ml-0.5 h-5 w-5 flex-shrink-0">
+              <div className="-ml-0.9 -mt-0.8 h-9 w-8 flex-shrink-0">
                 <div className="relative flex">
                   <img
                     className="rounded-sm"
@@ -67,12 +67,12 @@ export default function NavLinks() {
 
             <Transition
               as={Fragment}
-              enter="transition ease-out duration-100"
-              enterFrom="transform opacity-0 scale-95"
-              enterTo="transform opacity-100 scale-100"
-              leave="transition ease-in duration-75"
-              leaveFrom="transform opacity-100 scale-100"
-              leaveTo="transform opacity-0 scale-95"
+              enter="transition ease-out duration-100 transform"
+              enterFrom="translate-y-2 opacity-0"
+              enterTo="translate-y-0 opacity-100"
+              leave="transition ease-in duration-75 transform"
+              leaveFrom="translate-y-0 opacity-100"
+              leaveTo="translate-y-2 opacity-0"
             >
               <Menu.Items className="absolute bottom-full left-0 z-20 mb-2 w-full translate-y-0 overflow-hidden rounded-md bg-[#050509] py-1.5 opacity-100 outline-none">
                 <Menu.Item as="div">
