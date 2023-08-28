@@ -19,8 +19,6 @@ function Login() {
     }
   }, [isAuthenticated, navigate]);
 
-  console.log('error', error);
-
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
       <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
