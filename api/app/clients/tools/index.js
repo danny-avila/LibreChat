@@ -10,6 +10,8 @@ const SelfReflectionTool = require('./SelfReflection');
 const AzureCognitiveSearch = require('./AzureCognitiveSearch');
 const StructuredACS = require('./structured/AzureCognitiveSearch');
 const availableTools = require('./manifest.json');
+const CodeInterpreter = require('./CodeInterpreter');
+
 
 module.exports = {
   availableTools,
@@ -24,4 +26,5 @@ module.exports = {
   SelfReflectionTool,
   AzureCognitiveSearch,
   StructuredACS,
+  CodeInterpreter,
 };
