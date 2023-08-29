@@ -31,7 +31,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
             autoComplete="email"
             aria-label="Email"
             {...register('email', {
-              required: 'Email is required',
+              required: localize(lang, 'com_auth_email_required'),
               minLength: {
                 value: 3,
                 message: localize(lang, 'com_auth_email_min_length')
@@ -69,16 +69,16 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
             type="password"
             id="password"
             autoComplete="current-password"
-            aria-label="Password"
+            aria-label= {localize(lang, 'com_auth_password')}
             {...register('password', {
-              required: 'Password is required',
+              required: localize(lang, 'com_auth_password_required'),
               minLength: {
                 value: 8,
-                message: 'Password must be at least 8 characters'
+                message: localize(lang, 'com_auth_password_min_length')
               },
               maxLength: {
                 value: 40,
-                message: 'Password must be 128 characters or less'
+                message: localize(lang, 'com_auth_password_max_length')
               }
             })}
             aria-invalid={!!errors.password}

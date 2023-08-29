@@ -2,8 +2,12 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useResetPasswordMutation, TResetPassword } from '@librechat/data-provider';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import store from '~/store';
+import { useRecoilValue } from 'recoil';
+import { localize } from '~/localization/Translation';
 
 function ResetPassword() {
+  const lang = useRecoilValue(store.lang);
   const {
     register,
     handleSubmit,
@@ -93,11 +97,11 @@ function ResetPassword() {
                     required: 'Password is required',
                     minLength: {
                       value: 8,
-                      message: 'Password must be at least 8 characters'
+                      message: localize(lang, 'com_auth_password_min_length')
                     },
                     maxLength: {
                       value: 128,
-                      message: 'Password must be 128 characters or less'
+                      message: localize(lang, 'com_auth_password_max_length')
                     }
                   })}
                   aria-invalid={!!errors.password}
