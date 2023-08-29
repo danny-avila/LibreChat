@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from './';
 import { cn } from '~/utils/';
+import { useLocalize } from '~/hooks';
 
 type SelectionProps = {
   selectHandler?: () => void;
@@ -30,6 +31,7 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
   const { title, description, main, buttons, leftButtons, selection, className, headerClassName } =
     props;
   const { selectHandler, selectClasses, selectText } = selection || {};
+  const localize = useLocalize();
 
   const defaultSelect =
     'bg-gray-900 text-white transition-colors hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900';
@@ -49,7 +51,9 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
       <DialogFooter>
         <div>{leftButtons ? leftButtons : null}</div>
         <div className="flex h-auto gap-2">
-          <DialogClose className="dark:hover:gray-400 border-gray-700">Cancel</DialogClose>
+          <DialogClose className="dark:hover:gray-400 border-gray-700">
+            {localize('com_ui_cancel')}
+          </DialogClose>
           {buttons ? buttons : null}
           {selection ? (
             <DialogClose

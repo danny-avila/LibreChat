@@ -30,6 +30,13 @@ export default {
   com_ui_entries: 'Voci',
   com_ui_pay_per_call:
     'Tutte le conversazioni AI in un unico posto. Paga per chiamata e non al mese',
+  com_ui_enter: 'Inserisci',
+  com_ui_submit: 'Invia',
+  com_ui_cancel: 'Annulla',
+  com_ui_save: 'Salva',
+  com_ui_copy_to_clipboard: 'Copia negli appunti',
+  com_ui_copied_to_clipboard: 'Copiato negli appunti',
+  com_ui_regenerate: 'Rigenera',
   com_auth_error_login:
     'Impossibile accedere con le informazioni fornite. Controlla le tue credenziali e riprova.',
   com_auth_no_account: 'Non hai un account?',
@@ -174,7 +181,10 @@ export default {
   com_endpoint_func_hover: 'Abilitare l\'uso dei Plugin come funzioni OpenAI',
   com_endpoint_skip_hover:
     'Abilita la possibilità di saltare la fase di completamento, che rivede la risposta finale e le fasi generate',
-  com_endpoint_config_token: 'Token di Configurazione',
+  com_endpoint_config_token: 'Imposta Token',
+  com_endpoint_config_token_for: 'Token per',
+  com_endpoint_config_token_name: 'nome del token',
+  com_endpoint_config_token_name_placeholder: 'Imposta il nome del token',
   com_endpoint_config_token_server: 'Il tuo token verrà inviato al server, ma non verrà salvato.',
   com_endpoint_config_token_import_json_key: 'Importa Chiave JSON del Service Account.',
   com_endpoint_config_token_import_json_key_succesful: 'Importa Chiave JSON del Service Account.',

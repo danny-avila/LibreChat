@@ -28,6 +28,15 @@ export default {
   com_ui_of: 'of',
   com_ui_entries: 'Entries',
   com_ui_pay_per_call: 'All AI conversations in one place. Pay per call and not per month',
+  com_ui_enter: 'Enter',
+  com_ui_submit: 'Submit',
+  com_ui_cancel: 'Cancel',
+  com_ui_save: 'Save',
+  com_ui_copy_to_clipboard: 'Copy to clipboard',
+  com_ui_copied_to_clipboard: 'Copied to clipboard',
+  com_ui_regenerate: 'Regenerate',
+  com_ui_continue: 'Continue',
+  com_ui_edit: 'Edit',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_no_account: 'Don\'t have an account?',
@@ -145,6 +154,7 @@ export default {
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
     'Set custom instructions to include in System Message. Default: none',
   com_endpoint_set_custom_name: 'Set a custom name, in case you can find this preset',
+  com_endpoint_preset: 'Preset',
   com_endpoint_preset_name: 'Preset Name',
   com_endpoint_new_topic: 'New Topic',
   com_endpoint: 'Endpoint',
@@ -171,6 +181,8 @@ export default {
   com_endpoint_skip_hover:
     'Enable skipping the completion step, which reviews the final answer and generated steps',
   com_endpoint_config_token: 'Config Token',
+  com_endpoint_config_token_for: 'Config Token for',
+  com_endpoint_config_token_name: 'Token Name',
   com_endpoint_config_token_server: 'Your token will be sent to the server, but not saved.',
   com_endpoint_config_token_import_json_key: 'Import Service Account JSON Key.',
   com_endpoint_config_token_import_json_key_succesful: 'Import Service Account JSON Key.',
