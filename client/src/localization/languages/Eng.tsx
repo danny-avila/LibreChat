@@ -32,10 +32,12 @@ export default {
   com_ui_examples: 'Examples',
   com_ui_new_chat: 'New Chat',
   com_ui_example_quantum_computing: 'Explain quantum computing in simple terms',
-  com_ui_example_10_year_old_b_day: 'Got any creative ideas for a 10 year old\'s birthday?',
+  com_ui_example_10_year_old_b_day:
+    'Got any creative ideas for a 10 year old\'s birthday?',
   com_ui_example_http_in_js: 'How do I make an HTTP request in Javascript?',
   com_ui_capabilities: 'Capabilities',
-  com_ui_capability_remember: 'Remembers what user said earlier in the conversation',
+  com_ui_capability_remember:
+    'Remembers what user said earlier in the conversation',
   com_ui_capability_correction: 'Allows user to provide follow-up corrections',
   com_ui_capability_decline_requests: 'Trained to decline inappropriate requests',
   com_ui_limitations: 'Limitations',
@@ -112,8 +114,10 @@ export default {
   com_auth_error_reset_password:
     'There was a problem resetting your password. There was no user found with the email address provided. Please try again.',
   com_auth_reset_password_success: 'Password Reset Success',
-  com_auth_login_with_new_password: 'You may now login with your new password.',
-  com_auth_error_invalid_reset_token: 'This password reset token is no longer valid.',
+  com_auth_login_with_new_password:
+    'You may now login with your new password.',
+  com_auth_error_invalid_reset_token:
+    'This password reset token is no longer valid.',
   com_auth_click_here: 'Click here',
   com_auth_to_try_again: 'to try again.',
   com_auth_submit_registration: 'Submit registration',
