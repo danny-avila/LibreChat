@@ -10,8 +10,8 @@ import supersub from 'remark-supersub';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import CodeBlock from './CodeBlock';
-import store from '~/store';
 import { langSubset } from '~/utils';
+import store from '~/store';
 
 type TCodeProps = {
   inline: boolean;
@@ -22,6 +22,7 @@ type TCodeProps = {
 type TContentProps = {
   content: string;
   message: TMessage;
+  showCursor?: boolean;
 };
 
 const code = React.memo(({ inline, className, children }: TCodeProps) => {
@@ -39,7 +40,7 @@ const p = React.memo(({ children }: { children: React.ReactNode }) => {
   return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
 });
 
-const Content = React.memo(({ content, message }: TContentProps) => {
+const Markdown = React.memo(({ content, message, showCursor }: TContentProps) => {
   const [cursor, setCursor] = useState('█');
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const latestMessage = useRecoilValue(store.latestMessage);
@@ -49,7 +50,12 @@ const Content = React.memo(({ content, message }: TContentProps) => {
   const isIFrame = currentContent.includes('<iframe');
 
   useEffect(() => {
-    let timer1, timer2;
+    let timer1: NodeJS.Timeout, timer2: NodeJS.Timeout;
+
+    if (!showCursor) {
+      setCursor('ㅤ');
+      return;
+    }
 
     if (isSubmitting && isLatestMessage) {
       timer1 = setInterval(() => {
@@ -67,7 +73,7 @@ const Content = React.memo(({ content, message }: TContentProps) => {
       clearInterval(timer1);
       clearTimeout(timer2);
     };
-  }, [isSubmitting, isLatestMessage]);
+  }, [isSubmitting, isLatestMessage, showCursor]);
 
   const rehypePlugins: PluggableList = [
     [rehypeKatex, { output: 'mathml' }],
@@ -107,4 +113,4 @@ const Content = React.memo(({ content, message }: TContentProps) => {
   );
 });
 
-export default Content;
+export default Markdown;

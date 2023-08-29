@@ -1,9 +1,11 @@
-import { useRef } from 'react';
-import { useRecoilState } from 'recoil';
-import { useUpdateMessageMutation } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
-import type { TAskFunction } from '~/common';
+import { Fragment } from 'react';
+import type { TResPlugin } from 'librechat-data-provider';
+import type { TMessageContent, TText, TDisplayProps } from '~/common';
 import { cn, getError } from '~/utils';
+import EditMessage from './EditMessage';
+import Container from './Container';
+import Markdown from './Markdown';
+import Plugin from './Plugin';
 import store from '~/store';
 import Content from './Content';
 import { useLocalize } from '~/hooks';
@@ -45,112 +47,8 @@ const ErrorMessage = ({ text }: TText) => (
   </Container>
 );
 
-// Edit Message Component
-const EditMessage = ({
-  text,
-  message,
-  isSubmitting,
-  ask,
-  enterEdit,
-  siblingIdx,
-  setSiblingIdx,
-}: TEditProps) => {
-  const [messages, setMessages] = useRecoilState(store.messages);
-  const textEditor = useRef<HTMLDivElement | null>(null);
-  const { conversationId, parentMessageId, messageId } = message;
-  const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
-  const localize = useLocalize();
-  const resubmitMessage = () => {
-    const text = textEditor?.current?.innerText ?? '';
-    if (message.isCreatedByUser) {
-      ask({
-        text,
-        parentMessageId,
-        conversationId,
-      });
-
-      setSiblingIdx((siblingIdx ?? 0) - 1);
-    } else {
-      const parentMessage = messages?.find((msg) => msg.messageId === parentMessageId);
-
-      if (!parentMessage) {
-        return;
-      }
-      ask(
-        { ...parentMessage },
-        {
-          editedText: text,
-          editedMessageId: messageId,
-          isRegenerate: true,
-          isEdited: true,
-        },
-      );
-
-      setSiblingIdx((siblingIdx ?? 0) - 1);
-    }
-
-    enterEdit(true);
-  };
-
-  const updateMessage = () => {
-    if (!messages) {
-      return;
-    }
-    const text = textEditor?.current?.innerText ?? '';
-    updateMessageMutation.mutate({
-      conversationId: conversationId ?? '',
-      messageId,
-      text,
-    });
-    setMessages(() =>
-      messages.map((msg) =>
-        msg.messageId === messageId
-          ? {
-            ...msg,
-            text,
-          }
-          : msg,
-      ),
-    );
-    enterEdit(true);
-  };
-
-  return (
-    <Container>
-      <div
-        data-testid="message-text-editor"
-        className="markdown prose dark:prose-invert light w-full whitespace-pre-wrap break-words border-none focus:outline-none"
-        contentEditable={true}
-        ref={textEditor}
-        suppressContentEditableWarning={true}
-      >
-        {text}
-      </div>
-      <div className="mt-2 flex w-full justify-center text-center">
-        <button
-          className="btn btn-primary relative mr-2"
-          disabled={isSubmitting}
-          onClick={resubmitMessage}
-        >
-          {localize('com_ui_save')} {'&'} {localize('com_ui_submit')}
-        </button>
-        <button
-          className="btn btn-secondary relative mr-2"
-          disabled={isSubmitting}
-          onClick={updateMessage}
-        >
-          {localize('com_ui_save')}
-        </button>
-        <button className="btn btn-neutral relative" onClick={() => enterEdit(true)}>
-          {localize('com_ui_cancel')}
-        </button>
-      </div>
-    </Container>
-  );
-};
-
 // Display Message Component
-const DisplayMessage = ({ text, isCreatedByUser, message }: TDisplayProps) => (
+const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => (
   <Container>
     <div
       className={cn(
@@ -158,7 +56,11 @@ const DisplayMessage = ({ text, isCreatedByUser, message }: TDisplayProps) => (
         isCreatedByUser ? 'whitespace-pre-wrap' : '',
       )}
     >
-      {!isCreatedByUser ? <Content content={text} message={message} /> : <>{text}</>}
+      {!isCreatedByUser ? (
+        <Markdown content={text} message={message} showCursor={showCursor} />
+      ) : (
+        <>{text}</>
+      )}
     </div>
   </Container>
 );
@@ -175,6 +77,7 @@ const MessageContent = ({
   error,
   unfinished,
   isSubmitting,
+  isLast,
   ...props
 }: TMessageContent) => {
   if (error) {
@@ -182,12 +85,62 @@ const MessageContent = ({
   } else if (edit) {
     return <EditMessage text={text} isSubmitting={isSubmitting} {...props} />;
   } else {
-    return (
-      <>
-        <DisplayMessage text={text} {...props} />
-        {!isSubmitting && unfinished && <UnfinishedMessage />}
-      </>
-    );
+    const marker = ':::plugin:::\n';
+    const splitText = text.split(marker);
+    const { message } = props;
+    const { plugins, messageId } = message;
+    const displayedIndices = new Set<number>();
+    // Function to get the next non-empty text index
+    const getNextNonEmptyTextIndex = (currentIndex: number) => {
+      for (let i = currentIndex + 1; i < splitText.length; i++) {
+        // Allow the last index to be last in case it has text
+        // this may need to change if I add back streaming
+        if (i === splitText.length - 1) {
+          return currentIndex;
+        }
+
+        if (splitText[i].trim() !== '' && !displayedIndices.has(i)) {
+          return i;
+        }
+      }
+      return currentIndex; // If no non-empty text is found, return the current index
+    };
+
+    return splitText.map((text, idx) => {
+      let currentText = text.trim();
+      let plugin: TResPlugin | null = null;
+
+      if (plugins) {
+        plugin = plugins[idx];
+      }
+
+      // If the current text is empty, get the next non-empty text index
+      const displayTextIndex = currentText === '' ? getNextNonEmptyTextIndex(idx) : idx;
+      currentText = splitText[displayTextIndex];
+      const isLastIndex = displayTextIndex === splitText.length - 1;
+      const isEmpty = currentText.trim() === '';
+      const showText =
+        (currentText && !isEmpty && !displayedIndices.has(displayTextIndex)) ||
+        (isEmpty && isLastIndex);
+      displayedIndices.add(displayTextIndex);
+
+      return (
+        <Fragment key={idx}>
+          {plugin && <Plugin key={`plugin-${messageId}-${idx}`} plugin={plugin} />}
+          {showText ? (
+            <DisplayMessage
+              key={`display-${messageId}-${idx}`}
+              showCursor={isLastIndex && isLast}
+              text={currentText}
+              {...props}
+            />
+          ) : null}
+          {!isSubmitting && unfinished && (
+            <UnfinishedMessage key={`unfinished-${messageId}-${idx}`} />
+          )}
+        </Fragment>
+      );
+    });
   }
 };
 

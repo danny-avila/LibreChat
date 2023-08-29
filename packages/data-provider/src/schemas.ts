@@ -97,6 +97,7 @@ export const tMessageSchema = z.object({
 export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
   plugin?: TResPlugin | null;
+  plugins?: TResPlugin[];
 };
 
 export const tConversationSchema = z.object({

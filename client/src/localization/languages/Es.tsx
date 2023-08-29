@@ -17,6 +17,7 @@ export default {
     'Puede producir ocasionalmente instrucciones perjudiciales o contenido sesgado',
   com_ui_limitation_limited_2021:
     'Conocimiento limitado sobre el mundo y eventos posteriores a 2021',
+  com_ui_pay_per_call: 'Todas las conversaciones de IA en un solo lugar. Pague por llamada y no por mes.',
   com_ui_input: 'Entrada',
   com_ui_close: 'Cerrar',
   com_ui_model: 'Modelo',
