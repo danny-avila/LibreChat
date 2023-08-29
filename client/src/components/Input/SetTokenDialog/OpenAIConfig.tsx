@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react';
 // import * as Checkbox from '@radix-ui/react-checkbox';
 // import { CheckIcon } from '@radix-ui/react-icons';
 import InputWithLabel from './InputWithLabel';
-import store from '~/store';
 
 function isJson(str: string) {
   try {
@@ -23,14 +22,12 @@ type OpenAIConfigProps = {
 
 const OpenAIConfig = ({ token, setToken, endpoint }: OpenAIConfigProps) => {
   const [showPanel, setShowPanel] = useState(endpoint === 'azureOpenAI');
-  const { getToken } = store.useToken(endpoint);
 
   useEffect(() => {
-    const oldToken = getToken();
     if (isJson(token)) {
       setShowPanel(true);
     }
-    setToken(oldToken ?? '');
+    setToken('');
   }, []);
 
   useEffect(() => {

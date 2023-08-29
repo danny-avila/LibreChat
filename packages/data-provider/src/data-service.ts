@@ -47,6 +47,15 @@ export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown
   return request.put(endpoints.messages(conversationId, messageId), { text });
 }
 
+export function updateUserKey(payload: t.TUpdateUserKeyRequest) {
+  const { value } = payload;
+  if (!value) {
+    throw new Error('value is required');
+  }
+
+  return request.put(endpoints.keys(), payload);
+}
+
 export function getPresets(): Promise<s.TPreset[]> {
   return request.get(endpoints.presets());
 }

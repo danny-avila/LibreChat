@@ -69,6 +69,12 @@ export type TUpdateMessageRequest = {
   text: string;
 };
 
+export type TUpdateUserKeyRequest = {
+  key: string;
+  value: string;
+  expiresAt: string;
+};
+
 export type TUpdateConversationRequest = {
   conversationId: string;
   title: string;

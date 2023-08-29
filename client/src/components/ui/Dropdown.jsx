@@ -3,7 +3,7 @@ import CheckMark from '../svg/CheckMark';
 import { Listbox } from '@headlessui/react';
 import { cn } from '~/utils/';
 
-function Dropdown({ value, onChange, options, className, containerClassName }) {
+function Dropdown({ value, label = '', onChange, options, className, containerClassName }) {
   const currentOption =
     options.find((element) => element === value || element?.value === value) ?? value;
   return (
@@ -18,7 +18,7 @@ function Dropdown({ value, onChange, options, className, containerClassName }) {
           >
             <span className="inline-flex w-full truncate">
               <span className="flex h-6 items-center gap-1 truncate text-sm text-black dark:text-white">
-                {currentOption?.display ?? value}
+                {`${label}${currentOption?.display ?? value}`}
               </span>
             </span>
             <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">

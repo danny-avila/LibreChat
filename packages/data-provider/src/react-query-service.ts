@@ -121,6 +121,20 @@ export const useUpdateMessageMutation = (
   });
 };
 
+export const useUpdateUserKeysMutation = (): UseMutationResult<
+  t.TUser,
+  unknown,
+  t.TUpdateUserKeyRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: t.TUpdateUserKeyRequest) => dataService.updateUserKey(payload), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.user]);
+    },
+  });
+};
+
 export const useDeleteConversationMutation = (
   id?: string,
 ): UseMutationResult<
