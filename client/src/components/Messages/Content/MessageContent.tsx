@@ -6,37 +6,6 @@ import EditMessage from './EditMessage';
 import Container from './Container';
 import Markdown from './Markdown';
 import Plugin from './Plugin';
-import store from '~/store';
-import Content from './Content';
-import { useLocalize } from '~/hooks';
-
-type TInitialProps = {
-  text: string;
-  edit: boolean;
-  error: boolean;
-  unfinished: boolean;
-  isSubmitting: boolean;
-};
-type TAdditionalProps = {
-  ask: TAskFunction;
-  message: TMessage;
-  isCreatedByUser: boolean;
-  siblingIdx: number;
-  enterEdit: (cancel: boolean) => void;
-  setSiblingIdx: (value: number) => void;
-};
-
-type TMessageContent = TInitialProps & TAdditionalProps;
-
-type TText = Pick<TInitialProps, 'text'>;
-type TEditProps = Pick<TInitialProps, 'text' | 'isSubmitting'> &
-  Omit<TAdditionalProps, 'isCreatedByUser'>;
-type TDisplayProps = TText & Pick<TAdditionalProps, 'isCreatedByUser' | 'message'>;
-
-// Container Component
-const Container = ({ children }: { children: React.ReactNode }) => (
-  <div className="flex min-h-[20px] flex-grow flex-col items-start gap-4">{children}</div>
-);
 
 // Error Message Component
 const ErrorMessage = ({ text }: TText) => (
