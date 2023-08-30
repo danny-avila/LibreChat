@@ -161,7 +161,6 @@ export default {
   com_endpoint_export: 'Exporter',
   com_endpoint_save_as_preset: 'Enregistrer comme préréglage',
   com_endpoint_not_implemented: 'Non implémenté',
-  com_endpoint_edit_preset: 'Modifier le préréglage',
   com_endpoint_view_options: 'Voir les options',
   com_endpoint_save_convo_as_preset: 'Enregistrer la conversation comme préréglage',
   com_endpoint_my_preset: 'Mon préréglage',

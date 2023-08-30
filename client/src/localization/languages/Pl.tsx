@@ -158,7 +158,6 @@ export default {
   com_endpoint_export: 'Eksportuj',
   com_endpoint_save_as_preset: 'Zapisz jako predefiniowane ustawienie',
   com_endpoint_not_implemented: 'Nie zaimplementowano',
-  com_endpoint_edit_preset: 'Edytuj predefiniowane ustawienie',
   com_endpoint_no_presets: 'Brak zapisanych predefiniowanych ustawień',
   com_endpoint_not_available: 'Punkt końcowy niedostępny',
   com_endpoint_clear_all: 'Usuń wszystko',
