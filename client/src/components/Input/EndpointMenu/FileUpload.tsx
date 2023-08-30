@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FileUp } from 'lucide-react';
 import { cn } from '~/utils/';
+import { useLocalize } from '~/hooks';
 
 type FileUploadProps = {
   onFileSelected: (event: React.ChangeEvent<HTMLInputElement>) => void;
@@ -23,6 +24,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
 }) => {
   const [statusColor, setStatusColor] = useState<string>('text-gray-600');
   const [status, setStatus] = useState<null | string>(null);
+  const localize = useLocalize();
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
@@ -59,7 +61,11 @@ const FileUpload: React.FC<FileUploadProps> = ({
     >
       <FileUp className="mr-1 flex w-[22px] items-center stroke-1" />
       <span className="flex text-xs ">
-        {!status ? text || 'Import' : status === 'success' ? successText : invalidText}
+        {!status
+          ? text || localize('com_endpoint_import')
+          : status === localize('com_ui_succes')
+            ? successText
+            : invalidText}
       </span>
       <input
         id={`file-upload-${id}`}

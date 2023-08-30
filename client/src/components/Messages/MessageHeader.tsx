@@ -4,6 +4,7 @@ import type { TPreset } from 'librechat-data-provider';
 import { Plugin } from '~/components/svg';
 import EndpointOptionsDialog from '../Endpoints/EndpointOptionsDialog';
 import { cn, alternateName } from '~/utils/';
+import { useLocalize } from '~/hooks';
 
 import store from '~/store';
 
@@ -11,6 +12,7 @@ const MessageHeader = ({ isSearchView = false }) => {
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
   const conversation = useRecoilValue(store.conversation);
   const searchQuery = useRecoilValue(store.searchQuery);
+  const localize = useLocalize();
 
   if (!conversation) {
     return null;
@@ -31,7 +33,7 @@ const MessageHeader = ({ isSearchView = false }) => {
         beta
       </span>
       <span className="px-1">•</span> */}
-      Model: {model}
+      {localize('com_ui_model')}: {model}
     </>
   );
 
