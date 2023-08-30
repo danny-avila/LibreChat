@@ -165,7 +165,7 @@ export default function NewConversationMenu() {
             }
           >
             {icon}
-            <span className="max-w-0 overflow-hidden whitespace-nowrap px-0 text-slate-600 transition-all group-hover:max-w-[80px] group-hover:px-2 group-data-[state=open]:max-w-[80px] group-data-[state=open]:px-2 dark:text-slate-300">
+            <span className="max-w-0 overflow-hidden whitespace-nowrap px-0 text-slate-600 transition-all group-data-[state=open]:max-w-[80px] group-data-[state=open]:px-2 dark:text-slate-300">
               {localize('com_endpoint_new_topic')}
             </span>
           </Button>

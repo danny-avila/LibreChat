@@ -3,7 +3,7 @@ import { CheckIcon } from 'lucide-react';
 import { DialogButton } from '~/components/ui';
 import React, { useState, useContext, useEffect, useCallback } from 'react';
 import { useClearConversationsMutation } from 'librechat-data-provider';
-import { useRecoilValue, useRecoilState } from 'recoil';
+import { useRecoilState } from 'recoil';
 import store from '~/store';
 import { ThemeContext } from '~/hooks';
 import { cn } from '~/utils';
