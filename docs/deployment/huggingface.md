@@ -1,4 +1,4 @@
-# HuggingFace Deployment 🤗
+# Hugging Face Deployment 🤗
 
 >#### ⚠️ Note - Some features are not supported by HuggingFace:
 >- Meilisearch
@@ -7,111 +7,77 @@
 > #### ❗Also:
 >- You will have to create an online MongoDB Atlas Database to be able to properly deploy
 
-## Getting Started
+## Create and Configure your Database (Required)
 
-**1.** Login or Create an account on [HuggingFace](https://huggingface.co/)
-
-**2.** Visit [https://huggingface.co/spaces/LibreChat/LibreChat](https://huggingface.co/spaces/LibreChat/LibreChat) and click on 'Get Started for Free` to create an account and Login
-
-**3.** Go into your dashboard
-
-**4.** Select `New` then `Web Service`
-  
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/4edeceaf-6032-4bd0-9575-0dda76fd9958)
-
-**5.** Add `https://github.com/danny-avila/LibreChat` in the public repositories section and click `continue`
-  
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/4f3990f9-ab91-418d-baf3-05fef306a991)
-
-**6.** Give it a unique name and continue with the free tier and click on the `create web service` button in the bottom of the page
-  
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/ec7604ed-f833-4c23-811a-b99bdd09fb34)
-
-**7.** At that point it will try to automatically deploy, you should cancel the deployment as it is not properly configured yet.
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/7b6973b1-68fa-4877-b78f-9cb2ee6e4f33)
-
-
-## Add Environement Variables
-
-**1.** Next you want to go in the `Environement` section of the menu to manually add the `Environement Variables`
-  - You need to use the `Add Environement Variables` and add them one by one as adding a secret file will not work in our case.
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/4a1a08d5-a1f0-4e24-8393-d6740c58b19a)
-
-**2.** You will need to copy and paste all of these:
-
-| Key | Value |
-| --- | --- |
-| ALLOW_REGISTRATION | true |
-| ANTHROPIC_API_KEY | user_provided |
-| BINGAI_TOKEN |  | 
-| CHATGPT_TOKEN | user_provided |
-| CREDS_IV | e2341419ec3dd3d19b13a1a87fafcbfb |
-| CREDS_KEY | f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0 |
-| HOST | 0.0.0.0 |
-| JWT_REFRESH_SECRET | secret |
-| JWT_SECRET | secret |
-| OPENAI_API_KEY | user_provided |
-| PALM_KEY | user_provided |
-| PORT | 3080 |
-| SESSION_EXPIRY | (1000 * 60 * 60 * 24) * 7 |
-
-⬆️ **Add a single space in the value field for `BINGAI_TOKEN` and all other endpoints that you wish to disable.**
-
-**DO NOT FORGET TO SAVE YOUR CHANGES**
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/1101669f-b793-4e0a-80c2-7784131f7dae)
-
-
-**3.** Also add `DOMAIN_CLIENT` `DOMAIN_SERVER` and use the custom render address you were attributed in the value fields
-
-| Key | Value |
-| --- | --- |
-| DOMAIN_CLIENT | add your custom `onrender.com` address here |
-| DOMAIN_SERVER | add your custom `onrender.com` address here |
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/735afb66-0adc-4ae3-adbc-54f2648dd5a1)
-
-
-## Create and Configure your Database
-
-The last thing you need is to create a MongoDB Atlas Database and get your connection string.
+The first thing you need is to create a MongoDB Atlas Database and get your connection string.
 
 Follow the instructions in this document: [Online MongoDB Database](..\install\mongodb.md)
 
-## Complete the Environment Variables configuration 
+## Getting Started
 
-**1.** Go back to render.com and enter one last key / value in your `Environment Variables`
+**1.** Login or Create an account on [Hugging Face](https://huggingface.co/)
 
-| Key | Value |
+**2.** Visit [https://huggingface.co/spaces/LibreChat/LibreChat](https://huggingface.co/spaces/LibreChat/LibreChat) and click on `Duplicate this Space` to copy LibreChat into your profile
+  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/fd684254-cbe0-4039-ba4a-7c492b16a453)
+
+**3.** Name your Space and Fill the `Secrets` and `Variables`
+ 
+  >You can also decide here to make it public or private
+
+  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/13a039b9-bb78-4d56-bab1-74eb48171516)
+
+You will need to fill these values:
+
+| Secrets | Values |
 | --- | --- |
-| MONGO_URI | `mongodb+srv://USERNAME:PASSWORD@render-librechat.fgycwpi.mongodb.net/?retryWrites=true&w=majority` |
+| MONGO_URI | * use the string aquired in the previous step |
+| OPENAI_API_KEY | `user_provided` | 
+| BINGAI_TOKEN | `user_provided` | 
+| CHATGPT_TOKEN | `user_provided` |
+| ANTHROPIC_API_KEY | `user_provided` |
+| PALM_KEY | `user_provided` |
+| CREDS_KEY | * see bellow |
+| CREDS_IV | * see bellow |
+| JWT_SECRET | * see bellow |
+| JWT_REFRESH_SECRET | * see bellow |
 
-**2.** **Important**: Remember to replace `<password>` with the database password you created earlier (when you did **step 6** of the database creation **(do not leave the `<` `>` each side of the password)**
+>⚠️ setting the API keys and token to `user_provided` allows you to provide them safely from the webUI
 
-**3.** Save Changes
+>* For `CREDS_KEY`, `CREDS_IV` and `JWT_SECRET` use this tool: [https://replit.com/@daavila/crypto#index.js](https://replit.com/@daavila/crypto#index.js).
+>* Run the tool a second time and use the new `JWT_SECRET` value for the `JWT_REFRESH_SECRET`
 
-**4.** You should now have all these variables 
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/a99ef7b1-8fd3-4fd4-999f-45fc28378ad9)
+| Variables | Values |
+| --- | --- |
+| APP_TITLE | LibreChat |
+| ALLOW_REGISTRATION | true |
 
 
 ## Deployment
 
-**1.** Now click on `Manual Deploy` and select `Deploy latest commit`
+**1.** When you're done filling the `secrets` and `variables`, click `Duplicate Space` in the bottom of that window
 
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/d39baffd-e15d-422e-b866-a29501795a34)
+  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/55d596a3-2be9-4e14-ac0d-0b493d463b1b)
 
-**2.** It will take a couple of minutes
 
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/418ce867-b15e-4532-abcc-e4b601748a58)
+**2.** The project will now build, this will take a couple of minutes
 
-**3.** When it's ready you will see `your service is live 🎉` in the console and the green `Live` icon on top
+  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/f9fd10e4-ae50-4b5f-a9b5-0077d9e4eaf6)
 
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/c200e052-8a12-46b2-9f64-b3cdff146980)
+
+**3.** When ready, `Building` will change to `Running` 
+
+  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/91442e84-9c9e-4398-9011-76c479b6f272)
+
+  And you will be able to access LibreChat!
+
+  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/cd5950d4-ecce-4f13-bbbf-b9109e462e10)
+
 
 ## Conclusion
-You can now access it by clicking the link, congrattulation, you've sucessfully deployed LibreChat on render.com
+  You can now access it with from the current URL. If you want to access it without the Hugging Face overlay, you can modify this URL template with your info:
 
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+  `https://username-projectname.hf.space/` 
+  
+  e.g. `https://cooluser-librechat.hf.space/`
+
+### Congratulation, you've sucessfully deployed LibreChat on Hugging Face! 🎉
