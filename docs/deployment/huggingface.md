@@ -18,6 +18,7 @@ Follow the instructions in this document: [Online MongoDB Database](..\install\m
 **1.** Login or Create an account on [Hugging Face](https://huggingface.co/)
 
 **2.** Visit [https://huggingface.co/spaces/LibreChat/LibreChat](https://huggingface.co/spaces/LibreChat/LibreChat) and click on `Duplicate this Space` to copy LibreChat into your profile
+
   ![image](https://github.com/fuegovic/LibreChat/assets/32828263/fd684254-cbe0-4039-ba4a-7c492b16a453)
 
 **3.** Name your Space and Fill the `Secrets` and `Variables`
@@ -74,6 +75,11 @@ You will need to fill these values:
 
   ![image](https://github.com/fuegovic/LibreChat/assets/32828263/cd5950d4-ecce-4f13-bbbf-b9109e462e10)
 
+## Update
+  To update LibreChat, simply select `Factory Reboot` from the ⚙️Settings menu
+
+  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/66f20129-0ffd-44f5-b91c-fcce1932112f)
+
 
 ## Conclusion
   You can now access it with from the current URL. If you want to access it without the Hugging Face overlay, you can modify this URL template with your info:
@@ -82,4 +88,4 @@ You will need to fill these values:
   
   e.g. `https://cooluser-librechat.hf.space/`
 
-### Congratulation, you've sucessfully deployed LibreChat on Hugging Face! 🎉
+### 🎉 Congratulation, you've sucessfully deployed LibreChat on Hugging Face! 🤗
