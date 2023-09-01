@@ -13,7 +13,7 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
   const localize = useLocalize();
   const [token, setToken] = useState('');
   const [expiresAtLabel, setExpiresAtLabel] = useState('In 12 hours');
-  const { saveToken } = store.useToken(endpoint);
+  const { getToken, saveToken } = store.useToken(endpoint);
 
   const expirationOptions = [
     { display: 'in 1 minute', value: 60 * 1000 },
@@ -31,7 +31,7 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
   const submit = () => {
     const selectedOption = expirationOptions.find((option) => option.display === expiresAtLabel);
     const expiresAt = Date.now() + (selectedOption ? selectedOption.value : 0);
-    saveToken(token, new Date(expiresAt));
+    saveToken(token, expiresAt);
     onOpenChange(false);
     setToken('');
   };
@@ -45,6 +45,7 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
   };
 
   const EndpointComponent = endpointComponents[endpoint] || endpointComponents['default'];
+  const timeString = getToken();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -69,7 +70,9 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
               containerClassName="flex w-full resize-none z-[51]"
             />
             <small className="text-red-600">
-              Your token will be encrypted and deleted after the expiry time.
+              {`Your token will be encrypted and deleted ${
+                !timeString ? 'at the expiry time' : `at ${new Date(timeString).toLocaleString()}`
+              }`}
             </small>
             <HelpText endpoint={endpoint} />
           </div>

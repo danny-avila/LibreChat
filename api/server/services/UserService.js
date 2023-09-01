@@ -30,14 +30,30 @@ const getUserKey = async ({ userId, key }) => {
 };
 
 const updateUserKey = async ({ userId, key, value, expiresAt }) => {
+  console.log({ userId, key, value, expiresAt });
+  const expiresAtDate = new Date(expiresAt);
   const encryptedValue = encrypt(value);
-  await User.updateOne(
-    { _id: userId, 'keys.name': key },
-    {
-      $set: { 'keys.$.value': encryptedValue, 'keys.$.expiresAt': expiresAt },
-    },
-    { upsert: true },
-  );
+
+  // Check if the key exists
+  const user = await User.findOne({ _id: userId, 'keys.name': key });
+
+  if (user) {
+    // If the key exists, update it
+    await User.updateOne(
+      { _id: userId, 'keys.name': key },
+      {
+        $set: { 'keys.$.value': encryptedValue, 'keys.$.expiresAt': expiresAtDate },
+      },
+    );
+  } else {
+    // If the key doesn't exist, add a new one
+    await User.updateOne(
+      { _id: userId },
+      {
+        $push: { keys: { name: key, value: encryptedValue, expiresAt: expiresAtDate } },
+      },
+    );
+  }
 };
 
 const deleteUserKey = async ({ userId, key }) => {
