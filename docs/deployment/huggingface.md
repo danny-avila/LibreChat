@@ -41,6 +41,8 @@ You will need to fill these values:
 | JWT_SECRET | * see bellow |
 | JWT_REFRESH_SECRET | * see bellow |
 
+> ⬆️ **Leave the value field blank for any endpoints that you wish to disable.**
+
 >⚠️ setting the API keys and token to `user_provided` allows you to provide them safely from the webUI
 
 >* For `CREDS_KEY`, `CREDS_IV` and `JWT_SECRET` use this tool: [https://replit.com/@daavila/crypto#index.js](https://replit.com/@daavila/crypto#index.js).
