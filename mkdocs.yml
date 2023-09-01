@@ -114,6 +114,7 @@ nav:
     - Ngrok: 'deployment/ngrok.md'
     - Render: 'deployment/render.md'
     - Azure (Terraform): 'deployment/azure-terraform.md'
+    - HuggingFace: 'deployment/huggingface.md'
   - Contributions:
     - Documentation Guidelines: 'contributions/documentation_guidelines.md'
     - Contribute a Translation: 'contributions/translation_contribution.md'
