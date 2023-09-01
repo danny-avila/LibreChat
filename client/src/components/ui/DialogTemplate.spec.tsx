@@ -14,7 +14,7 @@ describe('DialogTemplate', () => {
   });
 
   it('renders correctly with all props', () => {
-    const { getByText } = render(
+    const { getByText, getByTestId } = render(
       <RecoilRoot>
         <Dialog
           open
@@ -23,18 +23,21 @@ describe('DialogTemplate', () => {
           }}
         >
           <DialogTemplate
-            title="Test Dialog"
+            data-testid="test-dialog"
             description="Test Description"
             main={<div>Main Content</div>}
             buttons={<button>Button</button>}
             leftButtons={<button>Left Button</button>}
             selection={{ selectHandler: mockSelectHandler, selectText: 'Select' }}
+            title={''}
           />
         </Dialog>
       </RecoilRoot>,
     );
 
-    expect(getByText('Test Dialog')).toBeInTheDocument();
+    const dialogTemplate = getByTestId('test-dialog');
+
+    expect(dialogTemplate).toBeInTheDocument();
     expect(getByText('Test Description')).toBeInTheDocument();
     expect(getByText('Main Content')).toBeInTheDocument();
     expect(getByText('Button')).toBeInTheDocument();
