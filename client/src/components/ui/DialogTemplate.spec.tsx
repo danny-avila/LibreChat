@@ -3,19 +3,8 @@ import React from 'react';
 import { render, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
 import DialogTemplate from './DialogTemplate';
-import { useLocalize } from '~/hooks';
 import { Dialog } from '@radix-ui/react-dialog';
 import { RecoilRoot } from 'recoil';
-
-jest.mock('~/hooks', () => ({
-  useLocalize: () => (key) => {
-    const localizationStrings = {
-      com_ui_cancel: 'Cancel',
-      // Add more localization keys and strings as needed
-    };
-    return localizationStrings[key];
-  },
-}));
 
 describe('DialogTemplate', () => {
   let mockSelectHandler;
