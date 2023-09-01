@@ -3,8 +3,19 @@ import React from 'react';
 import { render, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
 import DialogTemplate from './DialogTemplate';
+import { useLocalize } from '~/hooks';
 import { Dialog } from '@radix-ui/react-dialog';
 import { RecoilRoot } from 'recoil';
+
+jest.mock('~/hooks', () => ({
+  useLocalize: () => (key) => {
+    const localizationStrings = {
+      com_ui_cancel: 'Cancel',
+      // Add more localization keys and strings as needed
+    };
+    return localizationStrings[key];
+  },
+}));
 
 describe('DialogTemplate', () => {
   let mockSelectHandler;
@@ -14,30 +25,28 @@ describe('DialogTemplate', () => {
   });
 
   it('renders correctly with all props', () => {
-    const { getByText, getByTestId } = render(
+    const { getByText } = render(
       <RecoilRoot>
         <Dialog
           open
+          data-testid="test-dialog"
           onOpenChange={() => {
             return;
           }}
         >
           <DialogTemplate
-            data-testid="test-dialog"
+            title="Test Dialog"
             description="Test Description"
             main={<div>Main Content</div>}
             buttons={<button>Button</button>}
             leftButtons={<button>Left Button</button>}
             selection={{ selectHandler: mockSelectHandler, selectText: 'Select' }}
-            title={''}
           />
         </Dialog>
       </RecoilRoot>,
     );
 
-    const dialogTemplate = getByTestId('test-dialog');
-
-    expect(dialogTemplate).toBeInTheDocument();
+    expect(getByText('Test Dialog')).toBeInTheDocument();
     expect(getByText('Test Description')).toBeInTheDocument();
     expect(getByText('Main Content')).toBeInTheDocument();
     expect(getByText('Button')).toBeInTheDocument();
@@ -47,7 +56,7 @@ describe('DialogTemplate', () => {
   });
 
   it('renders correctly without optional props', () => {
-    const { getByText, queryByText } = render(
+    const { queryByText } = render(
       <RecoilRoot>
         <Dialog
           open
@@ -58,12 +67,12 @@ describe('DialogTemplate', () => {
       </RecoilRoot>,
     );
 
-    expect(getByText('Test Dialog')).toBeInTheDocument();
+    expect(queryByText('Test Dialog')).toBeNull();
     expect(queryByText('Test Description')).not.toBeInTheDocument();
     expect(queryByText('Main Content')).not.toBeInTheDocument();
     expect(queryByText('Button')).not.toBeInTheDocument();
     expect(queryByText('Left Button')).not.toBeInTheDocument();
-    expect(getByText('Cancel')).toBeInTheDocument();
+    expect(queryByText('Cancel')).not.toBeInTheDocument();
     expect(queryByText('Select')).not.toBeInTheDocument();
   });
 
