@@ -109,8 +109,8 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Linode](docs/deployment/linode.md)
   * [Cloudflare](docs/deployment/cloudflare.md)
   * [Ngrok](docs/deployment/ngrok.md)
-  * [Render](docs/deployment/render.md)
   * [HuggingFace](docs/deployment/huggingface.md)
+  * [Render](docs/deployment/render.md)
   * [Hetzner](docs/deployment/hetzner_ubuntu.md)
   * [Heroku](docs/deployment/heroku.md)
 </details>
