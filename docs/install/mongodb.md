@@ -4,7 +4,7 @@
 - Open a new tab and go to [https://account.mongodb.com/account/register](https://account.mongodb.com/account/register) to create an account.
 
 ## Create a project
-- Once you have set up your account, create a new project and name it:
+- Once you have set up your account, create a new project and name it (the name can be anything):
 
   ![image](https://github.com/fuegovic/LibreChat/assets/32828263/5cdeeba0-2982-47c3-8228-17e8500fd0d7)
 
