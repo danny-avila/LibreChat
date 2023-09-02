@@ -105,6 +105,9 @@ export default function Recommendations() {
     return _title;
   };
 
+  const originalTitle = getConversationTitle() as string;
+  const slicedTitle = originalTitle.slice(0, 15) + '...';
+
   // Fetch recommendations from API server (recent/hottset/following)
   async function fetchRecommendations() {
     // Invalidate caches
@@ -395,7 +398,7 @@ export default function Recommendations() {
 
                 {/*Model and endpoint*/}
                 <div className='px-3 py-1 border-x-2'>
-                  {getConversationTitle()}
+                  {slicedTitle}
                 </div>
 
                 <div className='flex flex-row px-2 items-center gap-1'>
