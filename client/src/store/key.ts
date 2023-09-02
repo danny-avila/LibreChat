@@ -2,7 +2,7 @@ import { useUpdateUserKeysMutation } from 'librechat-data-provider';
 
 const useKey = (endpoint: string) => {
   const updateKey = useUpdateUserKeysMutation();
-  const getExpiry = () => localStorage.getItem(`${endpoint}_key`);
+  const getExpiry = () => localStorage.getItem(`${endpoint}_expiry`);
 
   const checkExpiry = () => {
     const expiresAt = getExpiry();
@@ -19,7 +19,7 @@ const useKey = (endpoint: string) => {
 
   const saveKey = (value: string, expiresAt: number) => {
     const dateStr = new Date(expiresAt).toISOString();
-    localStorage.setItem(`${endpoint}_key`, dateStr);
+    localStorage.setItem(`${endpoint}_expiry`, dateStr);
     updateKey.mutate({
       name: `${endpoint}`,
       value,
