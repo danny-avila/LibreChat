@@ -1,8 +1,8 @@
 import React from 'react';
 import FileUpload from '../EndpointMenu/FileUpload';
-import { ConfigProps } from '~/common';
+import type { TConfigProps } from '~/common';
 
-const GoogleConfig = ({ setUserKey }: Pick<ConfigProps, 'setUserKey'>) => {
+const GoogleConfig = ({ setUserKey }: Pick<TConfigProps, 'setUserKey'>) => {
   return (
     <FileUpload
       id="googleKey"

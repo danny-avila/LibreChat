@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 // import * as Checkbox from '@radix-ui/react-checkbox';
 // import { CheckIcon } from '@radix-ui/react-icons';
 import InputWithLabel from './InputWithLabel';
-import { ConfigProps } from '~/common';
+import type { TConfigProps } from '~/common';
 
 function isJson(str: string) {
   try {
@@ -15,11 +15,11 @@ function isJson(str: string) {
   return true;
 }
 
-type OpenAIConfigProps = ConfigProps & {
+type TOpenAIConfigProps = TConfigProps & {
   endpoint: string;
 };
 
-const OpenAIConfig = ({ userKey, setUserKey, endpoint }: OpenAIConfigProps) => {
+const OpenAIConfig = ({ userKey, setUserKey, endpoint }: TOpenAIConfigProps) => {
   const [showPanel, setShowPanel] = useState(endpoint === 'azureOpenAI');
 
   useEffect(() => {

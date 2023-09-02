@@ -121,7 +121,7 @@ export type TDisplayProps = TText &
     showCursor?: boolean;
   };
 
-export type ConfigProps = {
+export type TConfigProps = {
   userKey: string;
   setUserKey: React.Dispatch<React.SetStateAction<string>>;
 };
