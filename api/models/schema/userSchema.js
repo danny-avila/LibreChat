@@ -78,23 +78,11 @@ const userSchema = mongoose.Schema(
       type: Array,
       default: [],
     },
-    keys: [
-      {
-        name: String,
-        value: String,
-        expiresAt: {
-          type: Date,
-          expires: 0,
-        },
-      },
-    ],
     refreshToken: {
       type: [Session],
     },
   },
   { timestamps: true },
 );
-
-userSchema.index({ 'keys.expiresAt': 1 }, { expireAfterSeconds: 0 });
 
 module.exports = userSchema;

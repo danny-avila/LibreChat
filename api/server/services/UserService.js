@@ -1,4 +1,4 @@
-const User = require('../../models/User');
+const { User, Key } = require('../../models');
 const { encrypt, decrypt } = require('../utils');
 
 const updateUserPluginsService = async (user, pluginKey, action) => {
@@ -20,44 +20,26 @@ const updateUserPluginsService = async (user, pluginKey, action) => {
   }
 };
 
-const getUserKey = async ({ userId, key }) => {
-  const user = await User.findById(userId, 'keys.$[elem]').arrayFilters([{ 'elem.name': key }]);
-  const keyValue = user.keys.find((k) => k.name === key);
-  if (!keyValue) {
-    throw new Error('Key not found');
-  }
+const getUserKey = async ({ userId, name }) => {
+  const keyValue = await Key.findOne({ userId, name }).lean();
   return decrypt(keyValue.value);
 };
 
-const updateUserKey = async ({ userId, key, value, expiresAt }) => {
-  console.log({ userId, key, value, expiresAt });
-  const expiresAtDate = new Date(expiresAt);
+const updateUserKey = async ({ userId, name, value, expiresAt }) => {
   const encryptedValue = encrypt(value);
-
-  // Check if the key exists
-  const user = await User.findOne({ _id: userId, 'keys.name': key });
-
-  if (user) {
-    // If the key exists, update it
-    await User.updateOne(
-      { _id: userId, 'keys.name': key },
-      {
-        $set: { 'keys.$.value': encryptedValue, 'keys.$.expiresAt': expiresAtDate },
-      },
-    );
-  } else {
-    // If the key doesn't exist, add a new one
-    await User.updateOne(
-      { _id: userId },
-      {
-        $push: { keys: { name: key, value: encryptedValue, expiresAt: expiresAtDate } },
-      },
-    );
-  }
+  return await Key.findOneAndUpdate(
+    { userId, name },
+    {
+      userId,
+      name,
+      value: encryptedValue,
+      expiresAt: new Date(expiresAt),
+    },
+    { upsert: true, new: true },
+  ).lean();
 };
 
-const deleteUserKey = async ({ userId, key }) => {
-  return await User.updateOne({ _id: userId }, { $pull: { keys: { name: key } } });
-};
+const deleteUserKey = async ({ userId, name }) =>
+  await Key.findOneAndDelete({ userId, name }).lean();
 
 module.exports = { updateUserPluginsService, getUserKey, updateUserKey, deleteUserKey };

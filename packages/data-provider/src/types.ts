@@ -70,7 +70,7 @@ export type TUpdateMessageRequest = {
 };
 
 export type TUpdateUserKeyRequest = {
-  key: string;
+  name: string;
   value: string;
   expiresAt: string;
 };
