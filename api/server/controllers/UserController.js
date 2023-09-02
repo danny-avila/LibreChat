@@ -13,11 +13,44 @@ const getUserController = async (req, res) => {
       const username = user.username;
       const followers = user.followers;
       const following = user.following;
-      res.status(200).send({ id, name, username, followers, following });
+      const biography = user.biography;
+      res.status(200).send({ id, name, username, followers, following, biography });
     }
   } catch (error) {
     console.log(error);
     return { message: 'Error getting user' };
+  }
+};
+
+// update biography
+const postBiographyController = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { biography } = req.body;
+
+    if (userId !== req.user.id) {
+      return res.status(403).json({ message: 'Unauthorized to update biography' });
+    }
+
+    const updatedFields = {};
+    if (biography !== undefined) {
+      updatedFields.biography = biography;
+      // updatedFields.profession = profession;
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $set: updatedFields },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.status(200).json(updatedUser);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error updating biography' });
   }
 };
 
@@ -105,5 +138,6 @@ const followUserController = async (req, res) => {
 module.exports = {
   getUserController,
   updateUserPluginsController,
-  followUserController
+  followUserController,
+  postBiographyController
 };

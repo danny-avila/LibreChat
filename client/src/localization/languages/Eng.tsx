@@ -10,6 +10,8 @@ export default {
   com_ui_follow: 'Follow',
   com_ui_followers: 'Followers',
   com_ui_following: 'Following',
+  com_ui_about_yourself: 'About Yourself',
+  com_ui_profession: 'Profession',
   com_ui_share_profile: 'Share Profile',
   com_ui_conversations: 'Conversations',
   com_ui_my_likes: 'Likes',
