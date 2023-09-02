@@ -1,7 +1,6 @@
 const { OpenAIClient } = require('../../../../app');
 const { getAzureCredentials } = require('../../../../utils');
-const { checkExpiry } = require('../../../utils');
-const { getUserKey } = require('../../../services/UserService');
+const { getUserKey, checkUserKeyExpiry } = require('../../../services/UserService');
 
 const initializeClient = async (req, endpointOption) => {
   const { PROXY, OPENAI_API_KEY, OPENAI_REVERSE_PROXY } = process.env;
@@ -17,7 +16,10 @@ const initializeClient = async (req, endpointOption) => {
   let key = null;
   console.log('expiresAt', expiresAt);
   if (expiresAt) {
-    checkExpiry(expiresAt, 'Your OpenAI API key has expired. Please provide your API key again.');
+    checkUserKeyExpiry(
+      expiresAt,
+      'Your OpenAI API key has expired. Please provide your API key again.',
+    );
     key = await getUserKey({ userId: req.user.id, name: endpoint });
   }
 

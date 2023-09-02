@@ -1,13 +1,12 @@
 const { AnthropicClient } = require('../../../../app');
-const { checkExpiry } = require('../../../utils');
-const { getUserKey } = require('../../../services/UserService');
+const { getUserKey, checkUserKeyExpiry } = require('../../../services/UserService');
 
 const initializeClient = async (req) => {
   const { ANTHROPIC_API_KEY } = process.env;
   const { key: expiresAt } = req.body;
   let key = null;
   if (expiresAt) {
-    checkExpiry(
+    checkUserKeyExpiry(
       expiresAt,
       'Your ANTHROPIC_API_KEY has expired. Please provide your API key again.',
     );

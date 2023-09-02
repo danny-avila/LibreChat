@@ -3,8 +3,8 @@ const router = express.Router();
 const crypto = require('crypto');
 const { titleConvo, GoogleClient } = require('../../../app');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress, checkExpiry } = require('../../utils');
-const { getUserKey } = require('../../services/UserService');
+const { handleError, sendMessage, createOnProgress } = require('../../utils');
+const { getUserKey, checkUserKeyExpiry } = require('../../services/UserService');
 const { requireJwtAuth, setHeaders } = require('../../middleware');
 
 router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
@@ -91,7 +91,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
 
     let key;
     if (endpointOption.key) {
-      checkExpiry(
+      checkUserKeyExpiry(
         endpointOption.key,
         'Your GOOGLE_TOKEN has expired. Please provide your token again.',
       );

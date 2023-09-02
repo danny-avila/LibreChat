@@ -1,7 +1,6 @@
 require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
-const { checkExpiry } = require('../server/utils');
-const { getUserKey } = require('../server/services/UserService');
+const { getUserKey, checkUserKeyExpiry } = require('../server/services/UserService');
 
 const browserClient = async ({
   text,
@@ -21,7 +20,7 @@ const browserClient = async ({
 
   let key = null;
   if (expiresAt) {
-    checkExpiry(
+    checkUserKeyExpiry(
       expiresAt,
       'Your ChatGPT Access Token has expired. Please provide your token again.',
     );

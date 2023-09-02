@@ -1,7 +1,6 @@
 require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
-const { checkExpiry } = require('../server/utils');
-const { getUserKey } = require('../server/services/UserService');
+const { getUserKey, checkUserKeyExpiry } = require('../server/services/UserService');
 
 const askBing = async ({
   text,
@@ -26,7 +25,10 @@ const askBing = async ({
 
   let key = null;
   if (expiresAt) {
-    checkExpiry(expiresAt, 'Your BingAI Cookies have expired. Please provide your cookies again.');
+    checkUserKeyExpiry(
+      expiresAt,
+      'Your BingAI Cookies have expired. Please provide your cookies again.',
+    );
     key = await getUserKey({ userId, name: 'bingAI' });
   }
 
