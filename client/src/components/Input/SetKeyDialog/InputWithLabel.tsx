@@ -21,7 +21,7 @@ const InputWithLabel: FC<InputWithLabelProps> = ({ value, onChange, label, id })
 
       <Input
         id={id}
-        value={value || ''}
+        value={value ?? ''}
         onChange={onChange}
         placeholder={`${localize('com_ui_enter')} ${label}`}
         className={cn(

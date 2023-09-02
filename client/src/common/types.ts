@@ -122,6 +122,6 @@ export type TDisplayProps = TText &
   };
 
 export type ConfigProps = {
-  key: string;
-  setKey: React.Dispatch<React.SetStateAction<string>>;
+  userKey: string;
+  setUserKey: React.Dispatch<React.SetStateAction<string>>;
 };

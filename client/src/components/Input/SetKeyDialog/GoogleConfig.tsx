@@ -2,7 +2,7 @@ import React from 'react';
 import FileUpload from '../EndpointMenu/FileUpload';
 import { ConfigProps } from '~/common';
 
-const GoogleConfig = ({ setKey }: Pick<ConfigProps, 'setKey'>) => {
+const GoogleConfig = ({ setUserKey }: Pick<ConfigProps, 'setUserKey'>) => {
   return (
     <FileUpload
       id="googleKey"
@@ -42,7 +42,7 @@ const GoogleConfig = ({ setKey }: Pick<ConfigProps, 'setKey'>) => {
         return true;
       }}
       onFileSelected={(data) => {
-        setKey(JSON.stringify(data));
+        setUserKey(JSON.stringify(data));
       }}
     />
   );

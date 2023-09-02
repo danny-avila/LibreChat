@@ -9,7 +9,7 @@ import { cn, defaultTextProps, removeFocusOutlines, alternateName } from '~/util
 import store from '~/store';
 
 const SetKeyDialog = ({ open, onOpenChange, endpoint }) => {
-  const [key, setKey] = useState('');
+  const [userKey, setUserKey] = useState('');
   const [expiresAtLabel, setExpiresAtLabel] = useState('In 12 hours');
   const { getExpiry, checkExpiry, saveKey } = store.useKey(endpoint);
 
@@ -29,9 +29,9 @@ const SetKeyDialog = ({ open, onOpenChange, endpoint }) => {
   const submit = () => {
     const selectedOption = expirationOptions.find((option) => option.display === expiresAtLabel);
     const expiresAt = Date.now() + (selectedOption ? selectedOption.value : 0);
-    saveKey(key, expiresAt);
+    saveKey(userKey, expiresAt);
     onOpenChange(false);
-    setKey('');
+    setUserKey('');
   };
 
   const endpointComponents = {
@@ -69,7 +69,7 @@ const SetKeyDialog = ({ open, onOpenChange, endpoint }) => {
               )}
               containerClassName="flex w-1/2 md:w-1/3 resize-none z-[51]"
             />
-            <EndpointComponent key={key} setKey={setKey} endpoint={endpoint} />
+            <EndpointComponent userKey={userKey} setUserKey={setUserKey} endpoint={endpoint} />
             <HelpText endpoint={endpoint} />
           </div>
         }

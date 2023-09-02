@@ -3,13 +3,13 @@ import InputWithLabel from './InputWithLabel';
 import { ConfigProps } from '~/common';
 import { useLocalize } from '~/hooks';
 
-const OtherConfig = ({ key, setKey }: ConfigProps) => {
+const OtherConfig = ({ userKey, setUserKey }: ConfigProps) => {
   const localize = useLocalize();
   return (
     <InputWithLabel
       id={'chatGPTLabel'}
-      value={key ?? ''}
-      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKey(e.target.value ?? '')}
+      value={userKey ?? ''}
+      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUserKey(e.target.value ?? '')}
       label={localize('com_endpoint_config_token_name')}
     />
   );
