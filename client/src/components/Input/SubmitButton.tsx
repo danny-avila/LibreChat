@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { StopGeneratingIcon } from '~/components';
 import { Settings } from 'lucide-react';
 import { SetKeyDialog } from './SetKeyDialog';
+import type { TOnClick } from '~/common';
 import store from '~/store';
 import { useLocalize } from '~/hooks';
 
@@ -20,7 +21,7 @@ export default function SubmitButton({
   const endpointsToHideSetKeys = new Set(['openAI', 'azureOpenAI', 'bingAI']);
   const localize = useLocalize();
 
-  const clickHandler = (e) => {
+  const clickHandler: TOnClick = (e) => {
     e.preventDefault();
     submitMessage();
   };
