@@ -1,16 +1,15 @@
 import React from 'react';
 import FileUpload from '../EndpointMenu/FileUpload';
-import { useLocalize } from '~/hooks';
+import { ConfigProps } from '~/common';
 
-const GoogleConfig = ({ setToken }: { setToken: React.Dispatch<React.SetStateAction<string>> }) => {
-  const localize = useLocalize();
+const GoogleConfig = ({ setKey }: Pick<ConfigProps, 'setKey'>) => {
   return (
     <FileUpload
       id="googleKey"
       className="w-full"
-      text={localize('com_endpoint_config_token_import_json_key')}
-      successText={localize('com_endpoint_config_token_import_json_key_succesful')}
-      invalidText={localize('com_endpoint_config_token_import_json_key_invalid')}
+      text="Import Service Account JSON Key"
+      successText="Successfully Imported Service Account JSON Key"
+      invalidText="Invalid Service Account JSON Key, Did you import the correct file?"
       validator={(credentials) => {
         if (!credentials) {
           return false;
@@ -43,7 +42,7 @@ const GoogleConfig = ({ setToken }: { setToken: React.Dispatch<React.SetStateAct
         return true;
       }}
       onFileSelected={(data) => {
-        setToken(JSON.stringify(data));
+        setKey(JSON.stringify(data));
       }}
     />
   );

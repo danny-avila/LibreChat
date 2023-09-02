@@ -3,7 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { Settings } from 'lucide-react';
 import { DropdownMenuRadioItem } from '~/components';
 import { getIcon } from '~/components/Endpoints';
-import { SetTokenDialog } from '../SetTokenDialog';
+import { SetKeyDialog } from '../SetKeyDialog';
 import { useLocalize } from '~/hooks';
 
 import store from '~/store';
@@ -18,7 +18,7 @@ export default function ModelItem({
   value: string;
   isSelected: boolean;
 }) {
-  const [setTokenDialogOpen, setSetTokenDialogOpen] = useState(false);
+  const [isDialogOpen, setDialogOpen] = useState(false);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   const icon = getIcon({
@@ -60,7 +60,7 @@ export default function ModelItem({
             )}
             onClick={(e) => {
               e.preventDefault();
-              setSetTokenDialogOpen(true);
+              setDialogOpen(true);
             }}
           >
             <Settings className="mr-1 inline-block w-[16px] items-center stroke-1" />
@@ -68,11 +68,7 @@ export default function ModelItem({
           </button>
         ) : null}
       </DropdownMenuRadioItem>
-      <SetTokenDialog
-        open={setTokenDialogOpen}
-        onOpenChange={setSetTokenDialogOpen}
-        endpoint={endpoint}
-      />
+      <SetKeyDialog open={isDialogOpen} onOpenChange={setDialogOpen} endpoint={endpoint} />
     </>
   );
 }

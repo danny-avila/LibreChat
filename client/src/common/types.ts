@@ -120,3 +120,8 @@ export type TDisplayProps = TText &
   Pick<TAdditionalProps, 'isCreatedByUser' | 'message'> & {
     showCursor?: boolean;
   };
+
+export type ConfigProps = {
+  key: string;
+  setKey: React.Dispatch<React.SetStateAction<string>>;
+};

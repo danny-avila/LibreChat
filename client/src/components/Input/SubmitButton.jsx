@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StopGeneratingIcon } from '~/components';
 import { Settings } from 'lucide-react';
-import { SetTokenDialog } from './SetTokenDialog';
+import { SetKeyDialog } from './SetKeyDialog';
 import store from '~/store';
 import { useLocalize } from '~/hooks';
 
@@ -13,11 +13,11 @@ export default function SubmitButton({
   isSubmitting,
   endpointsConfig,
 }) {
-  const [setTokenDialogOpen, setSetTokenDialogOpen] = useState(false);
-  const { getToken } = store.useToken(endpoint);
+  const [isDialogOpen, setDialogOpen] = useState(false);
+  const { checkExpiry } = store.useKey(endpoint);
 
-  const isTokenProvided = endpointsConfig?.[endpoint]?.userProvide ? !!getToken() : true;
-  const endpointsToHideSetTokens = new Set(['openAI', 'azureOpenAI', 'bingAI']);
+  const isKeyProvided = endpointsConfig?.[endpoint]?.userProvide ? checkExpiry() : true;
+  const endpointsToHideSetKeys = new Set(['openAI', 'azureOpenAI', 'bingAI']);
   const localize = useLocalize();
 
   const clickHandler = (e) => {
@@ -25,8 +25,8 @@ export default function SubmitButton({
     submitMessage();
   };
 
-  const setToken = () => {
-    setSetTokenDialogOpen(true);
+  const setKey = () => {
+    setDialogOpen(true);
   };
 
   if (isSubmitting) {
@@ -41,11 +41,11 @@ export default function SubmitButton({
         </div>
       </button>
     );
-  } else if (!isTokenProvided && !endpointsToHideSetTokens.has(endpoint)) {
+  } else if (!isKeyProvided && !endpointsToHideSetKeys.has(endpoint)) {
     return (
       <>
         <button
-          onClick={setToken}
+          onClick={setKey}
           type="button"
           className="group absolute bottom-0 right-0 z-[101] flex h-[100%] w-auto items-center justify-center bg-transparent pr-1 text-gray-500"
         >
@@ -56,11 +56,7 @@ export default function SubmitButton({
             </div>
           </div>
         </button>
-        <SetTokenDialog
-          open={setTokenDialogOpen}
-          onOpenChange={setSetTokenDialogOpen}
-          endpoint={endpoint}
-        />
+        <SetKeyDialog open={isDialogOpen} onOpenChange={setDialogOpen} endpoint={endpoint} />
       </>
     );
   } else {

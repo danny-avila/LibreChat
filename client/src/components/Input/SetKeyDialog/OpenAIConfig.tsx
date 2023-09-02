@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 // import * as Checkbox from '@radix-ui/react-checkbox';
 // import { CheckIcon } from '@radix-ui/react-icons';
 import InputWithLabel from './InputWithLabel';
+import { ConfigProps } from '~/common';
 
 function isJson(str: string) {
   try {
@@ -14,45 +15,43 @@ function isJson(str: string) {
   return true;
 }
 
-type OpenAIConfigProps = {
-  token: string;
-  setToken: React.Dispatch<React.SetStateAction<string>>;
+type OpenAIConfigProps = ConfigProps & {
   endpoint: string;
 };
 
-const OpenAIConfig = ({ token, setToken, endpoint }: OpenAIConfigProps) => {
+const OpenAIConfig = ({ key, setKey, endpoint }: OpenAIConfigProps) => {
   const [showPanel, setShowPanel] = useState(endpoint === 'azureOpenAI');
 
   useEffect(() => {
-    if (isJson(token)) {
+    if (isJson(key)) {
       setShowPanel(true);
     }
-    setToken('');
+    setKey('');
   }, []);
 
   useEffect(() => {
-    if (!showPanel && isJson(token)) {
-      setToken('');
+    if (!showPanel && isJson(key)) {
+      setKey('');
     }
   }, [showPanel]);
 
   function getAzure(name: string) {
-    if (isJson(token)) {
-      const newToken = JSON.parse(token);
-      return newToken[name];
+    if (isJson(key)) {
+      const newKey = JSON.parse(key);
+      return newKey[name];
     } else {
       return '';
     }
   }
 
   function setAzure(name: string, value: number | string | boolean) {
-    let newToken = {};
-    if (isJson(token)) {
-      newToken = JSON.parse(token);
+    let newKey = {};
+    if (isJson(key)) {
+      newKey = JSON.parse(key);
     }
-    newToken[name] = value;
+    newKey[name] = value;
 
-    setToken(JSON.stringify(newToken));
+    setKey(JSON.stringify(newKey));
   }
   return (
     <>
@@ -60,8 +59,8 @@ const OpenAIConfig = ({ token, setToken, endpoint }: OpenAIConfigProps) => {
         <>
           <InputWithLabel
             id={'chatGPTLabel'}
-            value={token || ''}
-            onChange={(e: { target: { value: string } }) => setToken(e.target.value || '')}
+            value={key || ''}
+            onChange={(e: { target: { value: string } }) => setKey(e.target.value || '')}
             label={'OpenAI API Key'}
           />
         </>

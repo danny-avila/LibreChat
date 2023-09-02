@@ -7,13 +7,11 @@ import { Dialog, Dropdown } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { cn, defaultTextProps, removeFocusOutlines, alternateName } from '~/utils/';
 import store from '~/store';
-import { useLocalize } from '~/hooks';
 
-const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
-  const localize = useLocalize();
-  const [token, setToken] = useState('');
+const SetKeyDialog = ({ open, onOpenChange, endpoint }) => {
+  const [key, setKey] = useState('');
   const [expiresAtLabel, setExpiresAtLabel] = useState('In 12 hours');
-  const { getToken, saveToken } = store.useToken(endpoint);
+  const { getExpiry, checkExpiry, saveKey } = store.useKey(endpoint);
 
   const expirationOptions = [
     { display: 'in 1 minute', value: 60 * 1000 },
@@ -31,9 +29,9 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
   const submit = () => {
     const selectedOption = expirationOptions.find((option) => option.display === expiresAtLabel);
     const expiresAt = Date.now() + (selectedOption ? selectedOption.value : 0);
-    saveToken(token, expiresAt);
+    saveKey(key, expiresAt);
     onOpenChange(false);
-    setToken('');
+    setKey('');
   };
 
   const endpointComponents = {
@@ -45,18 +43,20 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
   };
 
   const EndpointComponent = endpointComponents[endpoint] || endpointComponents['default'];
-  const timeString = getToken();
+  const timeString = getExpiry();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title={`${localize('com_endpoint_config_token_for')} ${
-          alternateName[endpoint] ?? endpoint
-        }`}
+        title={`Set Key for ${alternateName[endpoint] ?? endpoint}`}
         className="w-full max-w-[650px] sm:w-3/4 md:w-3/4 lg:w-3/4"
         main={
           <div className="grid w-full items-center gap-2">
-            <EndpointComponent token={token} setToken={setToken} endpoint={endpoint} />
+            <small className="text-red-600">
+              {`Your key will be encrypted and deleted ${
+                !timeString ? 'at the expiry time' : `at ${new Date(timeString).toLocaleString()}`
+              }`}
+            </small>
             <Dropdown
               label="Expires "
               value={expiresAtLabel}
@@ -64,27 +64,23 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
               options={expirationOptions.map((option) => option.display)}
               className={cn(
                 defaultTextProps,
-                'flex h-10 max-h-10 w-full resize-none ',
+                'flex h-10 max-h-10 w-full resize-none',
                 removeFocusOutlines,
               )}
-              containerClassName="flex w-full resize-none z-[51]"
+              containerClassName="flex w-1/2 md:w-1/3 resize-none z-[51]"
             />
-            <small className="text-red-600">
-              {`Your token will be encrypted and deleted ${
-                !timeString ? 'at the expiry time' : `at ${new Date(timeString).toLocaleString()}`
-              }`}
-            </small>
+            <EndpointComponent key={key} setKey={setKey} endpoint={endpoint} />
             <HelpText endpoint={endpoint} />
           </div>
         }
         selection={{
           selectHandler: submit,
           selectClasses: 'bg-green-600 hover:bg-green-700 dark:hover:bg-green-800 text-white',
-          selectText: localize('com_ui_submit'),
+          selectText: 'Submit',
         }}
       />
     </Dialog>
   );
 };
 
-export default SetTokenDialog;
+export default SetKeyDialog;
