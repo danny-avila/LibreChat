@@ -55,7 +55,7 @@ const useMessageHandler = () => {
     const endpointOption = {
       endpoint,
       ...convo,
-      key: checkExpiry() ? getExpiry() : null,
+      key: getExpiry(),
     };
     const responseSender = getResponseSender(endpointOption);
 

@@ -15,8 +15,9 @@ const initializeClient = async (req, endpointOption) => {
   };
 
   let key = null;
+  console.log('expiresAt', expiresAt);
   if (expiresAt) {
-    checkExpiry(expiresAt, 'Your OPENAI_API_KEY has expired. Please provide your API key again.');
+    checkExpiry(expiresAt, 'Your OpenAI API key has expired. Please provide your API key again.');
     key = await getUserKey({ userId: req.user.id, name: endpoint });
   }
 
