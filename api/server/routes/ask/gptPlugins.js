@@ -158,7 +158,7 @@ router.post(
 
     try {
       endpointOption.tools = await validateTools(user, endpointOption.tools);
-      const { client, azure, openAIApiKey } = initializeClient(req, endpointOption);
+      const { client, azure, openAIApiKey } = await initializeClient(req, endpointOption);
 
       let response = await client.sendMessage(text, {
         user,

@@ -1,12 +1,14 @@
 require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
+const { checkExpiry } = require('../server/utils');
+const { getUserKey } = require('../server/services/UserService');
 
 const browserClient = async ({
   text,
   parentMessageId,
   conversationId,
   model,
-  token,
+  key: expiresAt,
   onProgress,
   onEventMessage,
   abortController,
@@ -17,16 +19,25 @@ const browserClient = async ({
     store: new KeyvFile({ filename: './data/cache.json' }),
   };
 
+  let key = null;
+  if (expiresAt) {
+    checkExpiry(
+      expiresAt,
+      'Your ChatGPT Access Token has expired. Please provide your token again.',
+    );
+    key = await getUserKey({ userId, key: 'chatGPTBrowser' });
+  }
+
   const clientOptions = {
     // Warning: This will expose your access token to a third party. Consider the risks before using this.
     reverseProxyUrl:
-      process.env.CHATGPT_REVERSE_PROXY || 'https://ai.fakeopen.com/api/conversation',
+      process.env.CHATGPT_REVERSE_PROXY ?? 'https://ai.fakeopen.com/api/conversation',
     // Access token from https://chat.openai.com/api/auth/session
     accessToken:
-      process.env.CHATGPT_TOKEN == 'user_provided' ? token : process.env.CHATGPT_TOKEN ?? null,
+      process.env.CHATGPT_TOKEN == 'user_provided' ? key : process.env.CHATGPT_TOKEN ?? null,
     model: model,
     debug: false,
-    proxy: process.env.PROXY || null,
+    proxy: process.env.PROXY ?? null,
     user: userId,
   };
 

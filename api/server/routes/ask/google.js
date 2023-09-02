@@ -3,7 +3,8 @@ const router = express.Router();
 const crypto = require('crypto');
 const { titleConvo, GoogleClient } = require('../../../app');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress } = require('../../utils');
+const { handleError, sendMessage, createOnProgress, checkExpiry } = require('../../utils');
+const { getUserKey } = require('../../services/UserService');
 const { requireJwtAuth, setHeaders } = require('../../middleware');
 
 router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
@@ -19,7 +20,7 @@ router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
   const endpointOption = {
     examples: req.body?.examples ?? [{ input: { content: '' }, output: { content: '' } }],
     promptPrefix: req.body?.promptPrefix ?? null,
-    token: req.body?.token ?? null,
+    key: req.body?.key ?? null,
     modelOptions: {
       model: req.body?.model ?? 'chat-bison',
       modelLabel: req.body?.modelLabel ?? null,
@@ -89,9 +90,14 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     const abortController = new AbortController();
 
     let key;
-    if (endpointOption.token) {
-      key = JSON.parse(endpointOption.token);
-      delete endpointOption.token;
+    if (endpointOption.key) {
+      checkExpiry(
+        endpointOption.key,
+        'Your GOOGLE_TOKEN has expired. Please provide your token again.',
+      );
+      key = await getUserKey({ userId: req.user.id, key: 'google' });
+      key = JSON.parse(endpointOption.key);
+      delete endpointOption.key;
       console.log('Using service account key provided by User for PaLM models');
     }
 

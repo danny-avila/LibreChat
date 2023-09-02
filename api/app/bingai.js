@@ -1,5 +1,7 @@
 require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
+const { checkExpiry } = require('../server/utils');
+const { getUserKey } = require('../server/services/UserService');
 
 const askBing = async ({
   text,
@@ -13,20 +15,27 @@ const askBing = async ({
   clientId,
   invocationId,
   toneStyle,
-  token,
+  key: expiresAt,
   onProgress,
+  userId,
 }) => {
   const { BingAIClient } = await import('@waylaidwanderer/chatgpt-api');
   const store = {
     store: new KeyvFile({ filename: './data/cache.json' }),
   };
 
+  let key = null;
+  if (expiresAt) {
+    checkExpiry(expiresAt, 'Your BingAI Cookies have expired. Please provide your cookies again.');
+    key = await getUserKey({ userId, key: 'bingAI' });
+  }
+
   const bingAIClient = new BingAIClient({
     // "_U" cookie from bing.com
     // userToken:
     //   process.env.BINGAI_TOKEN == 'user_provided' ? token : process.env.BINGAI_TOKEN ?? null,
     // If the above doesn't work, provide all your cookies as a string instead
-    cookies: process.env.BINGAI_TOKEN == 'user_provided' ? token : process.env.BINGAI_TOKEN ?? null,
+    cookies: process.env.BINGAI_TOKEN == 'user_provided' ? key : process.env.BINGAI_TOKEN ?? null,
     debug: false,
     cache: store,
     host: process.env.BINGAI_HOST || null,

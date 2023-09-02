@@ -16,6 +16,7 @@ const useMessageHandler = () => {
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const [messages, setMessages] = useRecoilState(store.messages);
   const { endpoint } = currentConversation;
+  const { getExpiry, checkExpiry } = store.useKey(endpoint ?? '');
 
   const ask: TAskFunction = (
     { text, parentMessageId = null, conversationId = null, messageId = null },
@@ -54,6 +55,7 @@ const useMessageHandler = () => {
     const endpointOption = {
       endpoint,
       ...convo,
+      key: checkExpiry() ? getExpiry() : null,
     };
     const responseSender = getResponseSender(endpointOption);
 

@@ -94,7 +94,7 @@ router.post(
     );
 
     try {
-      const { client, openAIApiKey } = initializeClient(req, endpointOption);
+      const { client, openAIApiKey } = await initializeClient(req, endpointOption);
 
       let response = await client.sendMessage(text, {
         user,
