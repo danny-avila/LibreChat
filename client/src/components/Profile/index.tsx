@@ -347,21 +347,33 @@ function ProfileContent() {
         <div className="w-full rounded-lg p-6 dark:text-gray-200">
           {editMode ? (
             <form className="flex flex-col space-y-4" onSubmit={handleSubmit}>
-              {/* ... (your edit form here) */}
+              <div className="flex items-center">
+                <label htmlFor="bio" className="flex items-center justify-center pl-5 pr-5">
+                  <span className="text-lg">{localize(lang, 'com_ui_about_yourself')}</span>
+                </label>
+                <textarea
+                  id="bio"
+                  value={bio}
+                  placeholder="分享一下你的兴趣、技能和人生态度..."
+                  onChange={(e) => setBio(e.target.value)}
+                  className="flex-1 border border-gray-300 bg-transparent p-2"
+                ></textarea>
+              </div>
+
               <div className="flex justify-end space-x-4">
                 <button
                   type="button"
                   onClick={handleEditProfile}
                   className="rounded bg-gray-300 px-4 py-1 hover:bg-gray-500"
                 >
-            Back
+                 Back
                 </button>
                 <button
                   type="submit"
                   className="rounded bg-green-500 px-4 py-1 text-white hover:bg-green-600"
                   onClick={handleSubmit}
                 >
-            Save
+                 Save
                 </button>
               </div>
             </form>
