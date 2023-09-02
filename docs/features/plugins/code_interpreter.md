@@ -62,7 +62,7 @@ plot sepal.length to petal.length of this dataset https://gist.githubusercontent
 
 ### Tutorial Video
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/fC3ajXopn3c?si=xl7ZgWnFh2Vv7gM0" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+[![Tutorial Video](https://img.youtube.com/vi/fC3ajXopn3c/0.jpg)](https://www.youtube.com/watch?v=fC3ajXopn3c)
 
 ### Output
 
