@@ -17,7 +17,7 @@ const initializeClient = async (req, endpointOption) => {
   let key = null;
   if (expiresAt) {
     checkExpiry(expiresAt, 'Your OPENAI_API_KEY has expired. Please provide your API key again.');
-    key = await getUserKey({ userId: req.user.id, key: endpoint });
+    key = await getUserKey({ userId: req.user.id, name: endpoint });
   }
 
   const isUserProvided = OPENAI_API_KEY === 'user_provided';

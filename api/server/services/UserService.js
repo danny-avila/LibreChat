@@ -22,6 +22,9 @@ const updateUserPluginsService = async (user, pluginKey, action) => {
 
 const getUserKey = async ({ userId, name }) => {
   const keyValue = await Key.findOne({ userId, name }).lean();
+  if (!keyValue) {
+    throw new Error('User Provided Key not found');
+  }
   return decrypt(keyValue.value);
 };
 

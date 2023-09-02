@@ -25,7 +25,7 @@ const browserClient = async ({
       expiresAt,
       'Your ChatGPT Access Token has expired. Please provide your token again.',
     );
-    key = await getUserKey({ userId, key: 'chatGPTBrowser' });
+    key = await getUserKey({ userId, name: 'chatGPTBrowser' });
   }
 
   const clientOptions = {

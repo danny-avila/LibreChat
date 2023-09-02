@@ -95,7 +95,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
         endpointOption.key,
         'Your GOOGLE_TOKEN has expired. Please provide your token again.',
       );
-      key = await getUserKey({ userId: req.user.id, key: 'google' });
+      key = await getUserKey({ userId: req.user.id, name: 'google' });
       key = JSON.parse(endpointOption.key);
       delete endpointOption.key;
       console.log('Using service account key provided by User for PaLM models');

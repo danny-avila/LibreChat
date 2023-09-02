@@ -11,7 +11,7 @@ const initializeClient = async (req) => {
       expiresAt,
       'Your ANTHROPIC_API_KEY has expired. Please provide your API key again.',
     );
-    key = await getUserKey({ userId: req.user.id, key: 'anthropic' });
+    key = await getUserKey({ userId: req.user.id, name: 'anthropic' });
   }
   let anthropicApiKey = ANTHROPIC_API_KEY === 'user_provided' ? key : ANTHROPIC_API_KEY;
   const client = new AnthropicClient(anthropicApiKey);
