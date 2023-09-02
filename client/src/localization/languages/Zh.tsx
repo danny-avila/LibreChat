@@ -10,6 +10,8 @@ export default {
   com_ui_follow: '关注',
   com_ui_followers: '粉丝',
   com_ui_following: '关注',
+  com_ui_about_yourself: '关于自己',
+  com_ui_profession: '职业',
   com_ui_share_profile: '分享主页',
   com_ui_conversations: '对话',
   com_ui_my_likes: '我的点赞',
