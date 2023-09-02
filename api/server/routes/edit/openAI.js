@@ -138,7 +138,7 @@ router.post(
         conversationId,
         sender: getResponseSender(endpointOption),
         messageId: responseMessageId,
-        parentMessageId: userMessageId,
+        parentMessageId: userMessageId ?? parentMessageId,
       });
     }
   },
