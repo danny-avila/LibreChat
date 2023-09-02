@@ -94,7 +94,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
     * [Wolfram](docs/features/plugins/wolfram.md)
     * [Make Your Own Plugin](docs/features/plugins/make_your_own.md)
     * [Using official ChatGPT Plugins](docs/features/plugins/chatgpt_plugins_openapi.md)
-
+    * [Code Interpreter Plugin](docs/features/plugins/code_interpreter.md)
   
   * [Third-Party Tools](docs/features/third-party.md)
   * [Proxy](docs/features/proxy.md)

@@ -9,13 +9,18 @@
 ### Start the Python Env Server
 - Pull the docker container: 
 ```sh
-docker pull ronith128/code-interpreter-librechat:0.1
+sudo docker pull ronith128/code-interpreter-librechat:0.1
 ```
-- Start the container with BASE_URL env variable.
+- Start the container with BASE_URL env variable and path to the pyassets folder created before.
     - BASE_URL is the domain/IP of LibreChat instance. 
 ```sh
-sudo docker run -v path/to/assets/pyassets:/app/pyassets -p 3380:3380 -e BASE_URL='https://baseurl' python-server
+sudo docker run -v path/to/pyassets:/app/pyassets -p 3380:3380 -e BASE_URL='https://domain.com' ronith128/code-interpreter-librechat:0.1
 ```
+
+### Example
+```bash
+docker run -v /home/ubuntu/LibreChat/client/public/assets/pyassets/:/app/pyassets -p 5000:3380 -e BASE_URL='https://gpt.domain.com' ronith128/code-interpreter-librechat:0.1
+```` 
 
 ## Optional 
 
@@ -23,7 +28,7 @@ sudo docker run -v path/to/assets/pyassets:/app/pyassets -p 3380:3380 -e BASE_UR
 During the docker run command, specify the desired port number. For example, to use port 5000, you can run the command as follows:
 
 ```bash
-docker run -p 5000:3380 openai/code-interpreter
+docker run -v path/to/pyassets:/app/pyassets -p 5000:3380 -e BASE_URL='https://yourdomain' ronith128/code-interpreter-librechat:0.1
 ```
 This will map port 5000 on your local machine to port 3380 inside the Docker container.
 
@@ -37,7 +42,11 @@ Change the port number from 3380 to your desired port number. For example, if yo
 ```js
 const websocket = new WebSocket('ws://localhost:5000');
 ```
-Save the file after making the change.
+Save the file and build to the project to save the changes
+
+```js
+npm run frontend
+```
 
 ### Install new modules from Pip
 
@@ -50,6 +59,11 @@ pipmain(['install', 'module_name'])
 ```
 plot sepal.length to petal.length of this dataset https://gist.githubusercontent.com/netj/8836201/raw/6f9306ad21398ea43cba4f7d537619d0e07d5ae3/iris.csv and save as png
 ```
+
+### Tutorial Video
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/fC3ajXopn3c?si=xl7ZgWnFh2Vv7gM0" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+
 ### Output
 
 ![Demo](https://i.ibb.co/5FMc72R/Screenshot-2023-09-01-235043.png)
