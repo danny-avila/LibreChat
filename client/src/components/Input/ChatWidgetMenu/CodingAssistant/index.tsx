@@ -36,7 +36,7 @@ function CodingAssistant() {
     } else if (type === '代码优化') {
       setText(`用${lang}优化下面这段代码：\n${topic}`);
     } else if (type === '错误信息') {
-      setText(`生成一段${lang}错误信息，主题是：${topic}`);
+      setText(`分析${lang}错误信息原因：${topic}`);
     }
   };
   const showExampleHandler = () => {
@@ -122,7 +122,7 @@ function CodingAssistant() {
     } else if (type === '代码优化') {
       setInputTitle('原代码');
     } else if (type === '错误信息') {
-      setInputTitle('主题');
+      setInputTitle('错误信息');
     }
   }, [type]);
 
