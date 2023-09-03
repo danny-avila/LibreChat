@@ -139,7 +139,7 @@ export default function Recommendations() {
       console.log(error);
     }
   }
-
+  // for new commit
   // Try to get recommendations from localStorage
   // Fetch from server if localStorage is empty
   async function getRecommendations() {
