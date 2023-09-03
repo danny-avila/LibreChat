@@ -55,6 +55,7 @@ class BaseClient {
 
     const { isEdited, isContinued } = opts;
     const user = opts.user ?? null;
+    this.user = user;
     const saveOptions = this.getSaveOptions();
     this.abortController = opts.abortController ?? new AbortController();
     const conversationId = opts.conversationId ?? crypto.randomUUID();
@@ -407,7 +408,6 @@ class BaseClient {
 
     const { generation = '' } = opts;
 
-    this.user = user;
     // It's not necessary to push to currentMessages
     // depending on subclass implementation of handling messages
     // When this is an edit, all messages are already in currentMessages, both user and response

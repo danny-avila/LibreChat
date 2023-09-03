@@ -315,6 +315,7 @@ class OpenAIClient extends BaseClient {
     let reply = '';
     let result = null;
     let streamResult = null;
+    this.modelOptions.user = this.user;
     if (typeof opts.onProgress === 'function') {
       await this.getCompletion(
         payload,
