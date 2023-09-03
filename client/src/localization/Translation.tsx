@@ -1,9 +1,12 @@
 import English from './languages/Eng';
 import Chinese from './languages/Zh';
+import German from './languages/De';
 import Italian from './languages/It';
+import Polish from './languages/Pl';
 import Portuguese from './languages/Br';
 import Spanish from './languages/Es';
-import German from './languages/De';
+import French from './languages/Fr';
+import Russian from './languages/Ru';
 // === import additional language files here === //
 
 // New method on String allow using "{\d}" placeholder for
@@ -31,8 +34,17 @@ export const getTranslations = (langCode: string) => {
   if (langCode === 'cn') {
     return Chinese;
   }
+  if (langCode === 'fr') {
+    return French;
+  }
+  if (langCode === 'de') {
+    return German;
+  }
   if (langCode === 'it') {
     return Italian;
+  }
+  if (langCode === 'pl') {
+    return Polish;
   }
   if (langCode === 'br') {
     return Portuguese;
@@ -40,9 +52,10 @@ export const getTranslations = (langCode: string) => {
   if (langCode === 'es') {
     return Spanish;
   }
-  if (langCode === 'de') {
-    return German;
+  if (langCode === 'ru') {
+    return Russian;
   }
+
   // === add conditionals here for additional languages here === //
   return English; // default to English
 };

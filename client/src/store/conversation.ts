@@ -7,7 +7,13 @@ import {
   useResetRecoilState,
   useRecoilCallback,
 } from 'recoil';
-import { TConversation, TMessagesAtom, TSubmission, TPreset } from 'librechat-data-provider';
+import {
+  TConversation,
+  TMessagesAtom,
+  TMessage,
+  TSubmission,
+  TPreset,
+} from 'librechat-data-provider';
 import { buildTree, getDefaultConversation } from '~/utils';
 import submission from './submission';
 import endpoints from './endpoints';
@@ -32,7 +38,7 @@ const messagesTree = selector({
   },
 });
 
-const latestMessage = atom({
+const latestMessage = atom<TMessage | null>({
   key: 'latestMessage',
   default: null,
 });
@@ -45,7 +51,7 @@ const messagesSiblingIdxFamily = atomFamily({
 const useConversation = () => {
   const setConversation = useSetRecoilState(conversation);
   const setMessages = useSetRecoilState<TMessagesAtom>(messages);
-  const setSubmission = useSetRecoilState<TSubmission | object | null>(submission.submission);
+  const setSubmission = useSetRecoilState<TSubmission | null>(submission.submission);
   const resetLatestMessage = useResetRecoilState(latestMessage);
 
   const _switchToConversation = (
@@ -67,7 +73,7 @@ const useConversation = () => {
 
     setConversation(conversation);
     setMessages(messages);
-    setSubmission({});
+    setSubmission({} as TSubmission);
     resetLatestMessage();
   };
 

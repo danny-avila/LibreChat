@@ -45,6 +45,18 @@ const fakeMessages = [];
 const userMessage = 'Hello, ChatGPT!';
 const apiKey = 'fake-api-key';
 
+const messageHistory = [
+  { role: 'user', isCreatedByUser: true, text: 'Hello', messageId: '1' },
+  { role: 'assistant', isCreatedByUser: false, text: 'Hi', messageId: '2', parentMessageId: '1' },
+  {
+    role: 'user',
+    isCreatedByUser: true,
+    text: 'What\'s up',
+    messageId: '3',
+    parentMessageId: '2',
+  },
+];
+
 describe('BaseClient', () => {
   let TestClient;
   const options = {
@@ -277,9 +289,54 @@ describe('BaseClient', () => {
     });
 
     test('should return chat history', async () => {
-      const chatMessages = await TestClient.loadHistory(conversationId, parentMessageId);
-      expect(TestClient.currentMessages).toHaveLength(4);
-      expect(chatMessages[0].text).toEqual(userMessage);
+      TestClient = initializeFakeClient(apiKey, options, messageHistory);
+      const chatMessages = await TestClient.loadHistory(conversationId, '2');
+      expect(TestClient.currentMessages).toHaveLength(2);
+      expect(chatMessages[0].text).toEqual('Hello');
+
+      const chatMessages2 = await TestClient.loadHistory(conversationId, '3');
+      expect(TestClient.currentMessages).toHaveLength(3);
+      expect(chatMessages2[chatMessages2.length - 1].text).toEqual('What\'s up');
+    });
+
+    /* Most of the new sendMessage logic revolving around edited/continued AI messages
+     *  can be summarized by the following test. The condition will load the entire history up to
+     *  the message that is being edited, which will trigger the AI API to 'continue' the response.
+     *  The 'userMessage' is only passed by convention and is not necessary for the generation.
+     */
+    it('should not push userMessage to currentMessages when isEdited is true and vice versa', async () => {
+      const overrideParentMessageId = 'user-message-id';
+      const responseMessageId = 'response-message-id';
+      const newHistory = messageHistory.slice();
+      newHistory.push({
+        role: 'assistant',
+        isCreatedByUser: false,
+        text: 'test message',
+        messageId: responseMessageId,
+        parentMessageId: '3',
+      });
+
+      TestClient = initializeFakeClient(apiKey, options, newHistory);
+      const sendMessageOptions = {
+        isEdited: true,
+        overrideParentMessageId,
+        parentMessageId: '3',
+        responseMessageId,
+      };
+
+      await TestClient.sendMessage('test message', sendMessageOptions);
+      const currentMessages = TestClient.currentMessages;
+      expect(currentMessages[currentMessages.length - 1].messageId).not.toEqual(
+        overrideParentMessageId,
+      );
+
+      // Test the opposite case
+      sendMessageOptions.isEdited = false;
+      await TestClient.sendMessage('test message', sendMessageOptions);
+      const currentMessages2 = TestClient.currentMessages;
+      expect(currentMessages2[currentMessages2.length - 1].messageId).toEqual(
+        overrideParentMessageId,
+      );
     });
 
     test('setOptions is called with the correct arguments', async () => {

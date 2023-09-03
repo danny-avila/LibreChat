@@ -46,8 +46,8 @@ services:
       - ./images:/app/client/public/images
   mongodb:
     container_name: chat-mongodb
-    ports:
-      - 27018:27017
+    # ports:  # Uncomment this to access mongodb from outside docker, not safe in deployment
+    #   - 27018:27017
     image: mongo
     restart: always
     volumes:
@@ -57,8 +57,8 @@ services:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.0
     restart: always
-    ports:
-      - 7700:7700
+    # ports: # Uncomment this to access meilisearch from outside docker
+    #   - 7700:7700 # if exposing these ports, make sure your master key is not the default value
     env_file:
       - .env
     environment:

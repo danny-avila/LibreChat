@@ -8,7 +8,7 @@ import NavLink from './NavLink';
 import Logout from './Logout';
 import { ExportModel } from './ExportConversation';
 import { LinkIcon, DotsIcon, GearIcon } from '~/components';
-import { localize } from '~/localization/Translation';
+import { useLocalize } from '~/hooks';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { cn } from '~/utils/';
 
@@ -19,7 +19,7 @@ export default function NavLinks() {
   const [showClearConvos, setShowClearConvos] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const { user } = useAuthContext();
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
 
   const conversation = useRecoilValue(store.conversation) || {};
 
@@ -45,7 +45,7 @@ export default function NavLinks() {
                 open ? 'bg-gray-800' : '',
               )}
             >
-              <div className="-ml-0.5 h-5 w-5 flex-shrink-0">
+              <div className="-ml-0.9 -mt-0.8 h-9 w-8 flex-shrink-0">
                 <div className="relative flex">
                   <img
                     className="rounded-sm"
@@ -60,19 +60,19 @@ export default function NavLinks() {
                 </div>
               </div>
               <div className="grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-white">
-                {user?.name || localize(lang, 'com_nav_user')}
+                {user?.name || localize('com_nav_user')}
               </div>
               <DotsIcon />
             </Menu.Button>
 
             <Transition
               as={Fragment}
-              enter="transition ease-out duration-100"
-              enterFrom="transform opacity-0 scale-95"
-              enterTo="transform opacity-100 scale-100"
-              leave="transition ease-in duration-75"
-              leaveFrom="transform opacity-100 scale-100"
-              leaveTo="transform opacity-0 scale-95"
+              enter="transition ease-out duration-100 transform"
+              enterFrom="translate-y-2 opacity-0"
+              enterTo="translate-y-0 opacity-100"
+              leave="transition ease-in duration-75 transform"
+              leaveFrom="translate-y-0 opacity-100"
+              leaveTo="translate-y-2 opacity-0"
             >
               <Menu.Items className="absolute bottom-full left-0 z-20 mb-2 w-full translate-y-0 overflow-hidden rounded-md bg-[#050509] py-1.5 opacity-100 outline-none">
                 <Menu.Item as="div">
@@ -82,7 +82,7 @@ export default function NavLinks() {
                       exportable ? 'cursor-pointer text-white' : 'cursor-not-allowed text-white/50',
                     )}
                     svg={() => <Download size={16} />}
-                    text={localize(lang, 'com_nav_export_conversation')}
+                    text={localize('com_nav_export_conversation')}
                     clickHandler={clickHandler}
                   />
                 </Menu.Item>
@@ -91,7 +91,7 @@ export default function NavLinks() {
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <LinkIcon />}
-                    text={localize(lang, 'com_nav_help_faq')}
+                    text={localize('com_nav_help_faq')}
                     clickHandler={() => window.open('https://docs.librechat.ai/', '_blank')}
                   />
                 </Menu.Item>
@@ -99,7 +99,7 @@ export default function NavLinks() {
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <GearIcon />}
-                    text={localize(lang, 'com_nav_settings')}
+                    text={localize('com_nav_settings')}
                     clickHandler={() => setShowSettings(true)}
                   />
                 </Menu.Item>

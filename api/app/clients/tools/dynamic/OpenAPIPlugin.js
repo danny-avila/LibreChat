@@ -5,7 +5,24 @@ const yaml = require('js-yaml');
 const path = require('path');
 const { DynamicStructuredTool } = require('langchain/tools');
 const { createOpenAPIChain } = require('langchain/chains');
-const SUFFIX = 'Prioritize using responses for subsequent requests to better fulfill the query.';
+const { ChatPromptTemplate, HumanMessagePromptTemplate } = require('langchain/prompts');
+
+function addLinePrefix(text, prefix = '// ') {
+  return text
+    .split('\n')
+    .map((line) => prefix + line)
+    .join('\n');
+}
+
+function createPrompt(name, functions) {
+  const prefix = `// The ${name} tool has the following functions. Determine the desired or most optimal function for the user's query:`;
+  const functionDescriptions = functions
+    .map((func) => `// - ${func.name}: ${func.description}`)
+    .join('\n');
+  return `${prefix}\n${functionDescriptions}
+// The user's message will be passed as the function's query.
+// Always provide the function name as such: {{"func": "function_name"}}`;
+}
 
 const AuthBearer = z
   .object({
@@ -81,7 +98,7 @@ async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }
   }
 
   const headers = {};
-  const { auth, description_for_model } = data;
+  const { auth, name_for_model, description_for_model, description_for_human } = data;
   if (auth && AuthDefinition.parse(auth)) {
     verbose && console.debug('auth detected', auth);
     const { openai } = auth.verification_tokens;
@@ -91,42 +108,55 @@ async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }
     }
   }
 
+  const chainOptions = {
+    llm,
+    verbose,
+  };
+
+  if (data.headers && data.headers['librechat_user_id']) {
+    verbose && console.debug('id detected', headers);
+    headers[data.headers['librechat_user_id']] = user;
+  }
+
+  if (Object.keys(headers).length > 0) {
+    verbose && console.debug('headers detected', headers);
+    chainOptions.headers = headers;
+  }
+
+  if (data.params) {
+    verbose && console.debug('params detected', data.params);
+    chainOptions.params = data.params;
+  }
+
+  chainOptions.prompt = ChatPromptTemplate.fromPromptMessages([
+    HumanMessagePromptTemplate.fromTemplate(
+      `# Use the provided API's to respond to this query:\n\n{query}\n\n## Instructions:\n${addLinePrefix(
+        description_for_model,
+      )}`,
+    ),
+  ]);
+
+  const chain = await createOpenAPIChain(spec, chainOptions);
+  const { functions } = chain.chains[0].lc_kwargs.llmKwargs;
+
   return new DynamicStructuredTool({
-    name: data.name_for_model,
-    description: `${data.description_for_human} ${SUFFIX}`,
+    name: name_for_model,
+    description_for_model: `${addLinePrefix(description_for_human)}${createPrompt(
+      name_for_model,
+      functions,
+    )}`,
+    description: `${description_for_human}`,
     schema: z.object({
-      query: z
+      func: z
         .string()
         .describe(
-          'For the query, be specific in a conversational manner. It will be interpreted by a human.',
+          `The function to invoke. The functions available are: ${functions
+            .map((func) => func.name)
+            .join(', ')}`,
         ),
     }),
-    func: async () => {
-      const chainOptions = {
-        llm,
-        verbose,
-      };
-
-      if (data.headers && data.headers['librechat_user_id']) {
-        verbose && console.debug('id detected', headers);
-        headers[data.headers['librechat_user_id']] = user;
-      }
-
-      if (Object.keys(headers).length > 0) {
-        verbose && console.debug('headers detected', headers);
-        chainOptions.headers = headers;
-      }
-
-      if (data.params) {
-        verbose && console.debug('params detected', data.params);
-        chainOptions.params = data.params;
-      }
-
-      const chain = await createOpenAPIChain(spec, chainOptions);
-      const result = await chain.run(
-        `${message}\n\n||>Instructions: ${description_for_model}\n${SUFFIX}`,
-      );
-      console.log('api chain run result', result);
+    func: async ({ func = '' }) => {
+      const result = await chain.run(`${message}${func?.length > 0 ? `\nUse ${func}` : ''}`);
       return result;
     },
   });

@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "0.5.6",
+  "version": "0.5.8",
   "description": "",
   "scripts": {
     "data-provider": "cd .. && npm run build:data-provider",
@@ -52,7 +52,7 @@
     "esbuild": "0.17.19",
     "export-from-json": "^1.7.2",
     "filenamify": "^6.0.0",
-    "html2canvas": "^1.4.1",
+    "html-to-image": "^1.11.11",
     "librechat-data-provider": "*",
     "lodash": "^4.17.21",
     "lucide-react": "^0.220.0",
@@ -97,7 +97,7 @@
     "@types/node": "^20.3.0",
     "@types/react": "^18.2.11",
     "@types/react-dom": "^18.2.4",
-    "@vitejs/plugin-react": "^4.0.0",
+    "@vitejs/plugin-react": "^4.0.4",
     "autoprefixer": "^10.4.13",
     "babel-jest": "^29.5.0",
     "babel-loader": "^9.1.2",
@@ -125,7 +125,7 @@
     "ts-jest": "^29.1.0",
     "ts-loader": "^9.4.2",
     "typescript": "^5.0.4",
-    "vite": "^4.3.9",
+    "vite": "^4.4.9",
     "vite-plugin-html": "^3.2.0"
   }
 }
