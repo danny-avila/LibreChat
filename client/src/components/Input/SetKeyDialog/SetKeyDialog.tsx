@@ -8,19 +8,21 @@ import DialogTemplate from '~/components/ui/DialogTemplate';
 import { cn, defaultTextProps, removeFocusOutlines, alternateName } from '~/utils';
 import { useUserKey } from '~/hooks';
 
+const EXPIRY = {
+  THIRTY_MINUTES: { display: 'in 30 minutes', value: 30 * 60 * 1000 },
+  TWO_HOURS: { display: 'in 2 hours', value: 2 * 60 * 60 * 1000 },
+  TWELVE_HOURS: { display: 'in 12 hours', value: 12 * 60 * 60 * 1000 },
+  ONE_DAY: { display: 'in 1 day', value: 24 * 60 * 60 * 1000 },
+  ONE_WEEK: { display: 'in 7 days', value: 7 * 24 * 60 * 60 * 1000 },
+  ONE_MONTH: { display: 'in 30 days', value: 30 * 24 * 60 * 60 * 1000 },
+};
+
 const SetKeyDialog = ({ open, onOpenChange, endpoint }) => {
   const [userKey, setUserKey] = useState('');
-  const [expiresAtLabel, setExpiresAtLabel] = useState('In 12 hours');
+  const [expiresAtLabel, setExpiresAtLabel] = useState(EXPIRY.TWELVE_HOURS.display);
   const { getExpiry, saveUserKey } = useUserKey(endpoint);
 
-  const expirationOptions = [
-    { display: 'in 1 minute', value: 60 * 1000 },
-    { display: 'in 2 hours', value: 2 * 60 * 60 * 1000 },
-    { display: 'in 12 hours', value: 12 * 60 * 60 * 1000 },
-    { display: 'in 1 day', value: 24 * 60 * 60 * 1000 },
-    { display: 'in 7 days', value: 7 * 24 * 60 * 60 * 1000 },
-    { display: 'in 30 days', value: 30 * 24 * 60 * 60 * 1000 },
-  ];
+  const expirationOptions = Object.values(EXPIRY);
 
   const handleExpirationChange = (label: string) => {
     setExpiresAtLabel(label);
@@ -42,7 +44,7 @@ const SetKeyDialog = ({ open, onOpenChange, endpoint }) => {
     default: OtherConfig,
   };
 
-  const EndpointComponent = endpointComponents[endpoint] || endpointComponents['default'];
+  const EndpointComponent = endpointComponents[endpoint] ?? endpointComponents['default'];
   const timeString = getExpiry();
 
   return (
@@ -64,9 +66,10 @@ const SetKeyDialog = ({ open, onOpenChange, endpoint }) => {
               options={expirationOptions.map((option) => option.display)}
               className={cn(
                 defaultTextProps,
-                'flex h-10 max-h-10 w-full resize-none',
+                'flex h-full w-full resize-none',
                 removeFocusOutlines,
               )}
+              optionsClassName="max-h-72"
               containerClassName="flex w-1/2 md:w-1/3 resize-none z-[51]"
             />
             <EndpointComponent userKey={userKey} setUserKey={setUserKey} endpoint={endpoint} />

@@ -3,7 +3,15 @@ import CheckMark from '../svg/CheckMark';
 import { Listbox } from '@headlessui/react';
 import { cn } from '~/utils/';
 
-function Dropdown({ value, label = '', onChange, options, className, containerClassName }) {
+function Dropdown({
+  value,
+  label = '',
+  onChange,
+  options,
+  className,
+  containerClassName,
+  optionsClassName = '',
+}) {
   const currentOption =
     options.find((element) => element === value || element?.value === value) ?? value;
   return (
@@ -38,7 +46,12 @@ function Dropdown({ value, label = '', onChange, options, className, containerCl
               </svg>
             </span>
           </Listbox.Button>
-          <Listbox.Options className="absolute z-50 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%] ">
+          <Listbox.Options
+            className={cn(
+              'absolute z-50 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%] ',
+              optionsClassName,
+            )}
+          >
             {options.map((item, i) => (
               <Listbox.Option
                 key={i}
