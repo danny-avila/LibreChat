@@ -92,7 +92,7 @@ const refreshController = async (req, res) => {
       res.status(401).send('Invalid refresh token');
     }
   } else {
-    res.status(401).send('Refresh token not provided');
+    res.status(200).send('Refresh token not provided');
   }
 };    
 
