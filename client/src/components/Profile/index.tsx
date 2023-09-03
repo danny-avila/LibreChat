@@ -27,7 +27,7 @@ function ProfileContent() {
   const [editMode, setEditMode] = useState<boolean>(false);
   const [bio, setBio] = useState(initialBio || '');
   // const [profession, setProfession] = useState(initialProfession || '');
-
+  // new commit
   const { userId = '' } = useParams();
   const { user, token } = useAuthContext();
   const lang = useRecoilValue(store.lang);
