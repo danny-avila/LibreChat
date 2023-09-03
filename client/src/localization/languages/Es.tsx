@@ -31,7 +31,6 @@ export default {
   com_ui_entries: 'Entradas',
   com_ui_pay_per_call: 'Todas las conversaciones de IA en un solo lugar. Pague por llamada y no por mes.',
   com_ui_delete: 'Eliminar',
-  com_ui_pay_per_call: 'Todas las conversaciones de IA en un solo lugar. Pague por llamada y no por mes.',
   com_ui_delete_conversation: '¿Eliminar conversación?',
   com_ui_delete_conversation_confirm: 'Esto eliminará',
   com_auth_error_login:
