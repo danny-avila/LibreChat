@@ -131,6 +131,13 @@ const AuthContextProvider = ({
           setUserContext({ token, isAuthenticated: true, user });
         } else {
           console.log('Token is not present. User is not authenticated.');
+          if (isAuthenticated) {
+            setUserContext({
+              token: undefined,
+              isAuthenticated: false,
+              user: undefined,
+            });
+          }
           navigate('/login');
         }
       },
@@ -176,24 +183,12 @@ const AuthContextProvider = ({
       });
     };
 
-    const handleLogout = () => {
-      console.log('logout event received');
-      setUserContext({
-        token: undefined,
-        isAuthenticated: false,
-        user: undefined,
-        redirect: '/login',
-      });
-    };
-
     window.addEventListener('tokenUpdated', handleTokenUpdate);
-    window.addEventListener('logout', handleLogout);
 
     return () => {
       window.removeEventListener('tokenUpdated', handleTokenUpdate);
-      window.removeEventListener('logout', handleLogout);
     };
-  }, [setUserContext, user, logout]);
+  }, [setUserContext, user]);
 
   // Make the provider update only when it should
   const memoedValue = useMemo(
