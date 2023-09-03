@@ -373,6 +373,42 @@ class OpenAIClient extends BaseClient {
       content: response.text,
     });
   }
+
+  async titleConvo({ text, responseText = '' }) {
+    let title = 'New Chat';
+
+    try {
+      const instructionsPayload = [
+        {
+          role: 'system',
+          content: `Detect user language and write in the same language an extremely concise title for this conversation, which you must accurately detect. Write in the detected language. Title in 5 Words or Less. No Punctuation or Quotation. All first letters of every word should be capitalized and complete only the title in User Language only.
+
+    ||>User:
+    "${text}"
+    ||>Response:
+    "${JSON.stringify(responseText)}"
+    
+    ||>Title:`,
+        },
+      ];
+
+      const modelOptions = {
+        model: 'gpt-3.5-turbo',
+        temperature: 0,
+        presence_penalty: 0,
+        frequency_penalty: 0,
+        max_tokens: 10,
+      };
+
+      title = (await this.sendPayload(instructionsPayload, { modelOptions })).replaceAll('"', '');
+    } catch (e) {
+      console.error(e);
+      console.log('There was an issue generating title, see error above');
+    }
+
+    console.log('CONVERSATION TITLE', title);
+    return title;
+  }
 }
 
 module.exports = OpenAIClient;

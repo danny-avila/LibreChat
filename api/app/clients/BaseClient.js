@@ -600,6 +600,14 @@ class BaseClient {
     // Sum the number of tokens in all properties and add `tokensPerMessage` for metadata
     return propertyTokenCounts.reduce((a, b) => a + b, tokensPerMessage);
   }
+
+  async sendPayload(payload, opts = {}) {
+    if (opts && typeof opts === 'object') {
+      this.setOptions(opts);
+    }
+
+    return await this.sendCompletion(payload, opts);
+  }
 }
 
 module.exports = BaseClient;
