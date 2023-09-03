@@ -33,7 +33,7 @@ test('displays validation error messages', async () => {
   await userEvent.type(passwordInput, 'pass');
   await userEvent.click(submitButton);
 
-  expect(getByText(/You must enter a valid email address/i)).toBeInTheDocument();
+  expect(getByText(/请输入正确的电子邮箱格式/i)).toBeInTheDocument();
   expect(getByText(/Password must be at least 8 characters/i)).toBeInTheDocument();
 });
 

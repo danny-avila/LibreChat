@@ -57,7 +57,7 @@ const setup = ({
 
 test('renders registration form', () => {
   const { getByText, getByTestId, getByRole } = setup();
-  expect(getByText(/Create your account/i)).toBeInTheDocument();
+  expect(getByText(/创建账号/i)).toBeInTheDocument();
   expect(getByRole('textbox', { name: /Full name/i })).toBeInTheDocument();
   expect(getByRole('form', { name: /Registration form/i })).toBeVisible();
   expect(getByRole('textbox', { name: /Username/i })).toBeInTheDocument();
@@ -108,11 +108,11 @@ test('shows validation error messages', async () => {
   await userEvent.type(getByTestId('confirm_password'), 'password1');
   const alerts = getAllByRole('alert');
   expect(alerts).toHaveLength(5);
-  expect(alerts[0]).toHaveTextContent(/Name must be at least 3 characters/i);
-  expect(alerts[1]).toHaveTextContent(/Username must be at least 3 characters/i);
-  expect(alerts[2]).toHaveTextContent(/You must enter a valid email address/i);
-  expect(alerts[3]).toHaveTextContent(/Password must be at least 8 characters/i);
-  expect(alerts[4]).toHaveTextContent(/Passwords do not match/i);
+  expect(alerts[0]).toHaveTextContent(/姓名至少3个字符/i);
+  expect(alerts[1]).toHaveTextContent(/用户名至少3个字符/i);
+  expect(alerts[2]).toHaveTextContent(/请输入正确的电子邮箱格式/i);
+  expect(alerts[3]).toHaveTextContent(/密码至少8个字符/i);
+  expect(alerts[4]).toHaveTextContent(/密码不一致/i);
 });
 
 test('shows error message when registration fails', async () => {

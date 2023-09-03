@@ -18,8 +18,8 @@ describe('ClearChatsButton', () => {
       </RecoilRoot>,
     );
 
-    expect(getByText('Clear all chats')).toBeInTheDocument();
-    expect(getByText('Clear')).toBeInTheDocument();
+    expect(getByText('清空所有对话')).toBeInTheDocument();
+    expect(getByText('清空')).toBeInTheDocument();
   });
 
   it('renders confirm clear when confirmClear is true', () => {
@@ -29,7 +29,7 @@ describe('ClearChatsButton', () => {
       </RecoilRoot>,
     );
 
-    expect(getByText('Confirm Clear')).toBeInTheDocument();
+    expect(getByText('确认清空')).toBeInTheDocument();
   });
 
   it('calls onClick when the button is clicked', () => {
@@ -39,7 +39,7 @@ describe('ClearChatsButton', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.click(getByText('Clear'));
+    fireEvent.click(getByText('清空'));
 
     expect(mockOnClick).toHaveBeenCalled();
   });

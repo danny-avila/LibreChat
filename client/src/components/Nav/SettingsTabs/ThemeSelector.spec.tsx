@@ -18,8 +18,8 @@ describe('ThemeSelector', () => {
       </RecoilRoot>,
     );
 
-    expect(getByText('Theme')).toBeInTheDocument();
-    expect(getByDisplayValue('System')).toBeInTheDocument();
+    expect(getByText('主题')).toBeInTheDocument();
+    expect(getByDisplayValue('系统默认')).toBeInTheDocument();
   });
 
   it('calls onChange when the select value changes', () => {
@@ -29,7 +29,7 @@ describe('ThemeSelector', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.change(getByDisplayValue('System'), { target: { value: 'dark' } });
+    fireEvent.change(getByDisplayValue('系统默认'), { target: { value: 'dark' } });
 
     expect(mockOnChange).toHaveBeenCalledWith('dark');
   });
