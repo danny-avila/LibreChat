@@ -398,7 +398,7 @@ class OpenAIClient extends BaseClient {
         temperature: 0,
         presence_penalty: 0,
         frequency_penalty: 0,
-        max_tokens: 10,
+        max_tokens: 12,
       };
 
       title = (await this.sendPayload(instructionsPayload, { modelOptions })).replaceAll('"', '');
