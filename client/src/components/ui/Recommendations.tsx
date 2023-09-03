@@ -46,11 +46,13 @@ export default function Recommendations() {
   const title = localize(lang, 'com_ui_recommendation');
   const navigate = useNavigate();
 
+  // createdDate
+  const [ConvoCreatedDate, setConvoCreatedDate] = useState<string>('time');
   // Data provider
   const likeConvoMutation = useLikeConversationMutation(
     convoData && convoData.length > 0 ? convoData[convoIdx].conversationId : ''
   );
-
+  console.log(convoData);
   // Allows navigation to user's profile page
   const navigateToProfile = () => {
     navigate(`/profile/${convoUser?.id}`);
@@ -302,6 +304,17 @@ export default function Recommendations() {
       setShareLink(window.location.host + `/chat/share/${convoData[convoIdx].conversationId}`);
       setNumOfLikes(convoData[convoIdx].likes);
 
+      // set convo created data
+      const isoTimeString = convoData[convoIdx].createdAt;
+      const isoDate = new Date(isoTimeString);
+      const year = isoDate.getFullYear(); // Get the full year (e.g., 2023)
+      const month = isoDate.getMonth() + 1; // Get the month (0-11), so add 1 to get (1-12)
+      const day = isoDate.getDate(); // Get the day of the month (1-31)
+
+      // You can format these numeric components as needed, e.g., as a string
+      const formattedDate = `${year}-${month}-${day}`;
+      setConvoCreatedDate(formattedDate)
+
       const likedBy = convoData[convoIdx].likedBy;
       if (likedBy) {
         setLiked(likedBy[user.id] ? true : false);
@@ -453,7 +466,7 @@ export default function Recommendations() {
                 </div>
               )}
             </div>
-
+            <div>{ConvoCreatedDate}</div>
             {/*Conversation messages*/}
             <div
               className="dark:gpt-dark-gray mb-32 h-auto w-full md:mb-48"
@@ -465,7 +478,9 @@ export default function Recommendations() {
                     {tabValue === 'following' ? (
                       <>
                         {Object.keys(user?.following || {}).length === 0 ? ( // The user might not be following anyone...
-                          <div className="ml-2 mt-2">{localize(lang, 'com_ui_no_following')}</div>
+                          <>
+                            <div className="ml-2 mt-2">{localize(lang, 'com_ui_no_following')}</div>
+                          </>
                         ) : (
                           // The users whom the current user is following does not have any public conversations
                           <div>{localize(lang, 'com_ui_following_no_convo')}</div>
