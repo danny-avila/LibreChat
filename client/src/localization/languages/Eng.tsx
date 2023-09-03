@@ -28,6 +28,9 @@ export default {
   com_ui_of: 'of',
   com_ui_entries: 'Entries',
   com_ui_pay_per_call: 'All AI conversations in one place. Pay per call and not per month',
+  com_ui_delete: 'Delete',
+  com_ui_delete_conversation: 'Delete chat?',
+  com_ui_delete_conversation_confirm: 'This will delete',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_no_account: 'Don\'t have an account?',
