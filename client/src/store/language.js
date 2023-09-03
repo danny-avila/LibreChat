@@ -5,7 +5,7 @@ const localStorage = window.localStorage.getItem('lang'); // Get last seleceted 
 const lang = atom({
   key: 'lang',
   // If localStorage is null, defaults to Chinese if the domain is iAITok.com; English otherwise
-  default: localStorage || (window.location.host === 'iAITok.com' ? 'cn' : 'en'),
+  default: localStorage || 'cn',
 });
 
 export default { lang };
