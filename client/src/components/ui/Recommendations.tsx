@@ -64,12 +64,11 @@ export default function Recommendations() {
 
   const plugins = (
     <>
-      <Plugin className="" /> <span className="px-1">•</span>
       <span className="py-0.25 ml-1 rounded bg-blue-200 px-1 text-[10px] font-semibold uppercase text-[#4559A4]">
         beta
       </span>
       <span className="px-1">•</span>
-      Model: {convoData && convoData.length > 0 ? convoData[convoIdx].model : 'No Model'}
+      {convoData && convoData.length > 0 ? convoData[convoIdx].model : 'No Model'}
     </>
   );
 
