@@ -4,6 +4,8 @@ export default {
   com_ui_following_no_convo: 'The users you are following does not have any public conversations.',
   com_ui_no_following: 'You are not following any users yet.',
   com_ui_my_following: 'Following',
+  com_ui_back: 'Back',
+  com_ui_save: 'Save',
   com_ui_recent: 'Recent',
   com_ui_hottest: 'Hottest',
   com_ui_unfollow: 'Unfollow',
