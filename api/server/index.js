@@ -36,6 +36,7 @@ const startServer = async () => {
   }
 
   // OAUTH
+  require('./jobs/removeExpiredSessions.js');
   app.use(passport.initialize());
   passport.use(await jwtLogin());
   passport.use(await passportLogin());
