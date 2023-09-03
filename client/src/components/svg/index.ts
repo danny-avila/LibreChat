@@ -23,3 +23,5 @@ export { default as DotsIcon } from './DotsIcon';
 export { default as GearIcon } from './GearIcon';
 export { default as TrashIcon } from './TrashIcon';
 export { default as ListeningIcon } from './ListeningIcon';
+export { default as VolumeIcon } from './VolumeIcon';
+export { default as VolumeMuteIcon } from './VolumeMuteIcon';
