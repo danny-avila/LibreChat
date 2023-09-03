@@ -29,6 +29,8 @@ export default {
   com_ui_entries: 'Voci',
   com_ui_pay_per_call:
     'Tutte le conversazioni con l\'IA in un unico posto. Paga per chiamata e non al mese',
+  com_ui_delete_conversation: 'Elimina chat?',
+  com_ui_delete_conversation_confirm: 'Questo eliminerà',
   com_auth_error_login:
     'Impossibile effettuare l\'accesso con le informazioni fornite. Controlla le tue credenziali e riprova.',
   com_auth_no_account: 'Non hai un account?',
