@@ -13,6 +13,7 @@ import PublicConversations from './PublicConversations';
 import { Spinner } from '../svg';
 import UserIcon from '../svg/UserIcon';
 import { log } from 'console';
+import  EditIcon from '../svg/EditIcon';
 
 function ProfileContent() {
   let initialBio = '来个大开脑洞，自爆一下你的人生经验，让大家开开眼界！';
@@ -452,7 +453,7 @@ function ProfileContent() {
                       className="flex w-24 flex-col items-center leading-[22px] text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200"
                       onClick={handleEditProfile}
                     >
-                      编辑资料
+                      <EditIcon />
                     </button>
                   </p>
                 </div>
