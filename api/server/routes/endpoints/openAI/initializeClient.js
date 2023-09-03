@@ -14,7 +14,6 @@ const initializeClient = async (req, endpointOption) => {
   };
 
   let key = null;
-  console.log('expiresAt', expiresAt);
   if (expiresAt) {
     checkUserKeyExpiry(
       expiresAt,

@@ -81,9 +81,6 @@ const getOpenAIModels = async (opts = { azure: false, plugins: false }) => {
   }
 
   if (userProvidedOpenAI) {
-    console.warn(
-      `When setting OPENAI_API_KEY to 'user_provided', ${key} must be set manually or default values will be used`,
-    );
     return models;
   }
 
