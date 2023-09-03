@@ -260,6 +260,7 @@ export default function Recommendations() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // new commit
   // Manually refetch recommendations from server when clicking on the same tab we are currently on
   // Write the cache to localStorage and set the new tab value otherwise
   const tabClickHandler = (value: string) => () => {
