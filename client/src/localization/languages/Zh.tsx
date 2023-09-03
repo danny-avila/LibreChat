@@ -4,6 +4,8 @@ export default {
   com_ui_following_no_convo: '您关注的用户没有公开的对话。',
   com_ui_no_following: '你还未关注其他用户。',
   com_ui_my_following: '我的关注',
+  com_ui_back: '后退',
+  com_ui_save: '保存',
   com_ui_recent: '最新对话',
   com_ui_hottest: '热门对话',
   com_ui_unfollow: '停止关注',

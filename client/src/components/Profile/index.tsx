@@ -369,14 +369,14 @@ function ProfileContent() {
                   onClick={handleEditProfile}
                   className="rounded px-4 py-1 hover:bg-gray-500"
                 >
-                  Back
+                  {localize(lang, 'com_ui_back')}
                 </button>
                 <button
                   type="submit"
                   className="rounded bg-green-500 px-4 py-1 text-white hover:bg-green-600"
                   onClick={handleSubmit}
                 >
-                  Save
+                  {localize(lang, 'com_ui_save')}
                 </button>
               </div>
             </form>
