@@ -131,13 +131,6 @@ const AuthContextProvider = ({
           setUserContext({ token, isAuthenticated: true, user });
         } else {
           console.log('Token is not present. User is not authenticated.');
-          if (isAuthenticated) {
-            setUserContext({
-              token: undefined,
-              isAuthenticated: false,
-              user: undefined,
-            });
-          }
           navigate('/login');
         }
       },
