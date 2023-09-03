@@ -1,6 +1,6 @@
 {
   "name": "@librechat/backend",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "",
   "scripts": {
     "start": "echo 'please run this from the root directory'",
@@ -21,7 +21,8 @@
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.5.4",
-    "@dqbd/tiktoken": "^1.0.2",
+    "@azure/search-documents": "^11.3.2",
+    "@dqbd/tiktoken": "^1.0.7",
     "@fortaine/fetch-event-source": "^3.0.6",
     "@keyv/mongo": "^2.1.8",
     "@waylaidwanderer/chatgpt-api": "^1.37.2",
@@ -43,7 +44,7 @@
     "jsonwebtoken": "^9.0.0",
     "keyv": "^4.5.2",
     "keyv-file": "^0.2.0",
-    "langchain": "^0.0.114",
+    "langchain": "^0.0.134",
     "lodash": "^4.17.21",
     "meilisearch": "^0.33.0",
     "mongoose": "^7.1.1",

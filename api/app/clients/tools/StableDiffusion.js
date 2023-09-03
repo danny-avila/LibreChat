@@ -46,7 +46,11 @@ Guidelines:
     const payload = {
       prompt: input.split('|')[0],
       negative_prompt: input.split('|')[1],
-      steps: 20,
+      sampler_index: 'DPM++ 2M Karras',
+      cfg_scale: 4.5,
+      steps: 22,
+      width: 1024,
+      height: 1024,
     };
     const response = await axios.post(`${url}/sdapi/v1/txt2img`, payload);
     const image = response.data.images[0];

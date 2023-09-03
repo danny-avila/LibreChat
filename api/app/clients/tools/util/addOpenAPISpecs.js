@@ -20,7 +20,6 @@ async function addOpenAPISpecs(availableTools) {
     }
     return availableTools;
   } catch (error) {
-    console.log('addOpenAPISpecs error', error);
     return availableTools;
   }
 }

@@ -1,5 +1,7 @@
 const OpenAIClient = require('../OpenAIClient');
 
+jest.mock('meilisearch');
+
 describe('OpenAIClient', () => {
   let client, client2;
   const model = 'gpt-4';
@@ -25,6 +27,9 @@ describe('OpenAIClient', () => {
       content: 'Refined answer',
       tokenCount: 30,
     });
+    client.buildPrompt = jest
+      .fn()
+      .mockResolvedValue({ prompt: messages.map((m) => m.text).join('\n') });
     client.constructor.freeAndResetAllEncoders();
   });
 

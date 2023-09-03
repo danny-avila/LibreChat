@@ -1,10 +1,10 @@
-const User = require('../../models/User');
-const Token = require('../../models/schema/tokenSchema');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const User = require('../../models/User');
+const Token = require('../../models/schema/tokenSchema');
 const { registerSchema } = require('../../strategies/validators');
-const { sendEmail } = require('../../utils');
 const config = require('../../../config/loader');
+const { sendEmail } = require('../utils');
 const domains = config.domains;
 
 /**

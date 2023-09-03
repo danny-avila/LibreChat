@@ -72,7 +72,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
     * [APIs and Tokens](docs/install/apis_and_tokens.md)
     * [User Auth System](docs/install/user_auth_system.md)
     * [Online MongoDB Database](docs/install/mongodb.md)
-    * [Languages](docs/install/languages.md)
+    * [Default Language](docs/install/default_language.md)
 </details>
 
 <details>
@@ -95,6 +95,8 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
     * [Make Your Own Plugin](docs/features/plugins/make_your_own.md)
     * [Using official ChatGPT Plugins](docs/features/plugins/chatgpt_plugins_openapi.md)
 
+  
+  * [Third-Party Tools](docs/features/third-party.md)
   * [Proxy](docs/features/proxy.md)
   * [Bing Jailbreak](docs/features/bing_jailbreak.md)
 </details>
@@ -102,13 +104,15 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 <details>
   <summary><strong>Cloud Deployment</strong></summary>
 
-  * [Hetzner](docs/deployment/hetzner_ubuntu.md)
-  * [Heroku](docs/deployment/heroku.md)
+  * [DigitalOcean](docs/deployment/digitalocean.md)
+  * [Azure](docs/deployment/azure-terraform.md)
   * [Linode](docs/deployment/linode.md)
   * [Cloudflare](docs/deployment/cloudflare.md)
   * [Ngrok](docs/deployment/ngrok.md)
+  * [HuggingFace](docs/deployment/huggingface.md)
   * [Render](docs/deployment/render.md)
-  * [Azure](docs/deployment/azure-terraform.md)
+  * [Hetzner](docs/deployment/hetzner_ubuntu.md)
+  * [Heroku](docs/deployment/heroku.md)
 </details>
 
 <details>
@@ -116,6 +120,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   
   * [Contributor Guidelines](CONTRIBUTING.md)
   * [Documentation Guidelines](docs/contributions/documentation_guidelines.md)
+  * [Contribute a Translation](docs/contributions/translation_contribution.md)
   * [Code Standards and Conventions](docs/contributions/coding_conventions.md)
   * [Testing](docs/contributions/testing.md)
   * [Security](SECURITY.md)
