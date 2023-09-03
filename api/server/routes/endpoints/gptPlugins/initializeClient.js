@@ -12,8 +12,10 @@ const initializeClient = async (req, endpointOption) => {
     ...endpointOption,
   };
 
+  const isUserProvided = OPENAI_API_KEY === 'user_provided';
+
   let key = null;
-  if (expiresAt) {
+  if (expiresAt && isUserProvided) {
     checkUserKeyExpiry(
       expiresAt,
       'Your OpenAI API key has expired. Please provide your API key again.',
@@ -21,7 +23,6 @@ const initializeClient = async (req, endpointOption) => {
     key = await getUserKey({ userId: req.user.id, name: endpoint });
   }
 
-  const isUserProvided = OPENAI_API_KEY === 'user_provided';
   let openAIApiKey = isUserProvided ? key : OPENAI_API_KEY;
 
   if (PLUGINS_USE_AZURE) {

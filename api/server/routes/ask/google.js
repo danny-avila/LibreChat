@@ -89,8 +89,10 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
 
     const abortController = new AbortController();
 
+    const isUserProvided = process.env.PALM_KEY === 'user_provided';
+
     let key;
-    if (endpointOption.key) {
+    if (endpointOption.key && isUserProvided) {
       checkUserKeyExpiry(
         endpointOption.key,
         'Your GOOGLE_TOKEN has expired. Please provide your token again.',
@@ -102,9 +104,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     }
 
     try {
-      if (!key) {
-        key = require('../../../data/auth.json');
-      }
+      key = require('../../../data/auth.json');
     } catch (e) {
       console.log('No \'auth.json\' file (service account key) found in /api/data/ for PaLM models');
     }

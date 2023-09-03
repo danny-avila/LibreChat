@@ -13,13 +13,10 @@ const browserClient = async ({
   abortController,
   userId,
 }) => {
-  const { ChatGPTBrowserClient } = await import('@waylaidwanderer/chatgpt-api');
-  const store = {
-    store: new KeyvFile({ filename: './data/cache.json' }),
-  };
+  const isUserProvided = process.env.CHATGPT_TOKEN === 'user_provided';
 
   let key = null;
-  if (expiresAt) {
+  if (expiresAt && isUserProvided) {
     checkUserKeyExpiry(
       expiresAt,
       'Your ChatGPT Access Token has expired. Please provide your token again.',
@@ -27,13 +24,17 @@ const browserClient = async ({
     key = await getUserKey({ userId, name: 'chatGPTBrowser' });
   }
 
+  const { ChatGPTBrowserClient } = await import('@waylaidwanderer/chatgpt-api');
+  const store = {
+    store: new KeyvFile({ filename: './data/cache.json' }),
+  };
+
   const clientOptions = {
     // Warning: This will expose your access token to a third party. Consider the risks before using this.
     reverseProxyUrl:
       process.env.CHATGPT_REVERSE_PROXY ?? 'https://ai.fakeopen.com/api/conversation',
     // Access token from https://chat.openai.com/api/auth/session
-    accessToken:
-      process.env.CHATGPT_TOKEN == 'user_provided' ? key : process.env.CHATGPT_TOKEN ?? null,
+    accessToken: isUserProvided ? key : process.env.CHATGPT_TOKEN ?? null,
     model: model,
     debug: false,
     proxy: process.env.PROXY ?? null,

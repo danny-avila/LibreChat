@@ -4,15 +4,18 @@ const { getUserKey, checkUserKeyExpiry } = require('../../../services/UserServic
 const initializeClient = async (req) => {
   const { ANTHROPIC_API_KEY } = process.env;
   const { key: expiresAt } = req.body;
+
+  const isUserProvided = ANTHROPIC_API_KEY === 'user_provided';
+
   let key = null;
-  if (expiresAt) {
+  if (expiresAt && isUserProvided) {
     checkUserKeyExpiry(
       expiresAt,
       'Your ANTHROPIC_API_KEY has expired. Please provide your API key again.',
     );
     key = await getUserKey({ userId: req.user.id, name: 'anthropic' });
   }
-  let anthropicApiKey = ANTHROPIC_API_KEY === 'user_provided' ? key : ANTHROPIC_API_KEY;
+  let anthropicApiKey = isUserProvided ? key : ANTHROPIC_API_KEY;
   const client = new AnthropicClient(anthropicApiKey);
   return {
     client,
