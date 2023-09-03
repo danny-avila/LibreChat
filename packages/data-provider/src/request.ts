@@ -13,7 +13,6 @@ const processQueue = (error: AxiosError | null, token: string | null = null) => 
       prom.resolve(token);
     }
   });
-
   failedQueue = [];
 };
 
@@ -21,11 +20,6 @@ axios.interceptors.response.use(
   (response) => response,
   (error) => {
     const originalRequest = error.config;
-    if (error.response.status === 401 && originalRequest.url.includes('/api/auth/refresh')) {
-      processQueue(error);
-      isRefreshing = false;
-      return Promise.reject(error);
-    }
     if (error.response.status === 401 && !originalRequest._retry) {
       if (isRefreshing) {
         return new Promise(function(resolve, reject) {
@@ -44,11 +38,15 @@ axios.interceptors.response.use(
       return new Promise(function(resolve, reject) {
         refreshToken()
           .then(({token}) => {
-            originalRequest.headers['Authorization'] = 'Bearer ' + token;
-            setTokenHeader(token);
-            window.dispatchEvent(new CustomEvent('tokenUpdated', { detail: token }));
-            processQueue(null, token);
-            resolve(axios(originalRequest));
+            if (token) {
+              originalRequest.headers['Authorization'] = 'Bearer ' + token;
+              setTokenHeader(token);
+              window.dispatchEvent(new CustomEvent('tokenUpdated', { detail: token }));
+              processQueue(null, token);
+              resolve(axios(originalRequest));
+            } else {
+              window.location.href = '/login';
+            }
           })
           .catch((err) => {
             processQueue(err, null);
