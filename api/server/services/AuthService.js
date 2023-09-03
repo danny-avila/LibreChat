@@ -1,35 +1,31 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const User = require('../../models/User');
-const Session = require('../../models/Session');
 const Token = require('../../models/schema/tokenSchema');
 const { registerSchema } = require('../../strategies/validators');
 const config = require('../../../config/loader');
 const { sendEmail } = require('../utils');
 const domains = config.domains;
-const isProduction = config.isProduction;
 
 /**
  * Logout user
  *
- * @param {String} userId
+ * @param {Object} user
  * @param {*} refreshToken
  * @returns
  */
-const logoutUser = async (userId, refreshToken) => {
+const logoutUser = async (user, refreshToken) => {
   try {
-    const hash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    const userFound = await User.findById(user._id);
+    const tokenIndex = userFound.refreshToken.findIndex(
+      (item) => item.refreshToken === refreshToken,
+    );
 
-    // Find the session with the matching user and refreshTokenHash
-    const session = await Session.findOne({ user: userId, refreshTokenHash: hash });
-    if (session) {
-       try {
-        await Session.deleteOne({ _id: session._id });
-       } catch (deleteErr) {
-         console.error(deleteErr);
-         return { status: 500, message: 'Failed to delete session.' };
-      }
+    if (tokenIndex !== -1) {
+      userFound.refreshToken.id(userFound.refreshToken[tokenIndex]._id).remove();
     }
+
+    await userFound.save();
 
     return { status: 200, message: 'Logout successful' };
   } catch (err) {
@@ -87,6 +83,9 @@ const registerUser = async (user) => {
       role: isFirstRegisteredUser ? 'ADMIN' : 'USER',
     });
 
+    // todo: implement refresh token
+    // const refreshToken = newUser.generateRefreshToken();
+    // newUser.refreshToken.push({ refreshToken });
     const salt = bcrypt.genSaltSync(10);
     const hash = bcrypt.hashSync(newUser.password, salt);
     newUser.password = hash;
@@ -189,49 +188,9 @@ const resetPassword = async (userId, token, password) => {
   return { message: 'Password reset was successful' };
 };
 
-/**
- * Set Auth Tokens
- *
- * @param {String} userId
- * @param {Object} res
- * @param {String} sessionId
- * @returns
- */
-const setAuthTokens = async (userId, res, sessionId = null) => {
-  try {
-    const user = await User.findOne({ _id: userId });
-    const token = await user.generateToken();
-
-    let session;
-    let refreshTokenExpires;
-    if (sessionId) {
-      session = await Session.findById(sessionId);
-      refreshTokenExpires = session.expiration.getTime();
-    } else {
-      session = new Session({ user: userId });
-      refreshTokenExpires = Date.now() + eval(process.env.REFRESH_TOKEN_EXPIRY);
-    }
-
-    const refreshToken = await session.generateRefreshToken();
-
-    res.cookie('refreshToken', refreshToken, {
-      expires: new Date(refreshTokenExpires),
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'strict',
-    });
-
-    return token;
-  } catch (error) {
-    console.log('Error in setting authentication tokens:', error);
-    throw error;
-  }
-};
-
 module.exports = {
   registerUser,
   logoutUser,
   requestPasswordReset,
   resetPassword,
-  setAuthTokens,
 };
