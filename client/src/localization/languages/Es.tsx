@@ -30,6 +30,10 @@ export default {
   com_ui_showing: 'Mostrando',
   com_ui_of: 'de',
   com_ui_entries: 'Entradas',
+  com_ui_delete: 'Eliminar',
+  com_ui_pay_per_call: 'Todas las conversaciones de IA en un solo lugar. Pague por llamada y no por mes.',
+  com_ui_delete_conversation: '¿Eliminar conversación?',
+  com_ui_delete_conversation_confirm: 'Esto eliminará',
   com_auth_error_login:
     'No se puede iniciar sesión con la información proporcionada. Verifica tus credenciales e intenta nuevamente.',
   com_auth_no_account: '¿No tienes una cuenta?',
