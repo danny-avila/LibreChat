@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StopGeneratingIcon } from '~/components';
 import { Settings } from 'lucide-react';
 import { SetKeyDialog } from './SetKeyDialog';
 import type { TOnClick } from '~/common';
-import store from '~/store';
-import { useLocalize } from '~/hooks';
+import { useUserKey, useLocalize } from '~/hooks';
 
 export default function SubmitButton({
   endpoint,
@@ -15,7 +14,7 @@ export default function SubmitButton({
   endpointsConfig,
 }) {
   const [isDialogOpen, setDialogOpen] = useState(false);
-  const { checkExpiry } = store.useKey(endpoint);
+  const { checkExpiry } = useUserKey(endpoint);
 
   const isKeyProvided = endpointsConfig?.[endpoint]?.userProvide ? checkExpiry() : true;
   const endpointsToHideSetKeys = new Set(['openAI', 'azureOpenAI', 'bingAI']);

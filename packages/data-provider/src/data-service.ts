@@ -107,9 +107,10 @@ export const register = (payload: t.TRegisterUser) => {
   return request.post(endpoints.register(), payload);
 };
 
-export const refreshToken = () => {
-  return request.post(endpoints.refreshToken());
-};
+export const refreshToken = () => request.post(endpoints.refreshToken());
+
+export const userKeyQuery = (name: string): Promise<t.TCheckUserKeyResponse> =>
+  request.get(endpoints.userKeyQuery(name));
 
 export const getLoginGoogle = () => {
   return request.get(endpoints.loginGoogle());

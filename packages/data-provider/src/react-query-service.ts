@@ -16,6 +16,7 @@ export enum QueryKeys {
   conversation = 'conversation',
   searchEnabled = 'searchEnabled',
   user = 'user',
+  name = 'name',
   endpoints = 'endpoints',
   presets = 'presets',
   searchResults = 'searchResults',
@@ -327,6 +328,28 @@ export const useRefreshTokenMutation = (): UseMutationResult<
   unknown
 > => {
   return useMutation(() => dataService.refreshToken(), {});
+};
+
+export const useUserKeyQuery = (
+  name: string,
+  config?: UseQueryOptions<t.TCheckUserKeyResponse>,
+): QueryObserverResult<t.TCheckUserKeyResponse> => {
+  return useQuery<t.TCheckUserKeyResponse>(
+    [QueryKeys.name, name],
+    () => {
+      if (!name) {
+        return Promise.resolve({ expiresAt: '' });
+      }
+      return dataService.userKeyQuery(name);
+    },
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+    },
+  );
 };
 
 export const useRequestPasswordResetMutation = (): UseMutationResult<

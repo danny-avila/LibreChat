@@ -28,6 +28,14 @@ const getUserKey = async ({ userId, name }) => {
   return decrypt(keyValue.value);
 };
 
+const getUserKeyExpiry = async ({ userId, name }) => {
+  const keyValue = await Key.findOne({ userId, name }).lean();
+  if (!keyValue) {
+    return { expiresAt: null };
+  }
+  return { expiresAt: keyValue.expiresAt };
+};
+
 const updateUserKey = async ({ userId, name, value, expiresAt }) => {
   const encryptedValue = encrypt(value);
   return await Key.findOneAndUpdate(
@@ -57,6 +65,7 @@ const checkUserKeyExpiry = (expiresAt, message) => {
 module.exports = {
   updateUserPluginsService,
   getUserKey,
+  getUserKeyExpiry,
   updateUserKey,
   deleteUserKey,
   checkUserKeyExpiry,

@@ -183,6 +183,10 @@ export type TRefreshTokenResponse = {
   user: TUser;
 };
 
+export type TCheckUserKeyResponse = {
+  expiresAt: string;
+};
+
 export type TRequestPasswordResetResponse = {
   link?: string;
   message?: string;

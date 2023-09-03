@@ -5,13 +5,13 @@ import OpenAIConfig from './OpenAIConfig';
 import OtherConfig from './OtherConfig';
 import { Dialog, Dropdown } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { cn, defaultTextProps, removeFocusOutlines, alternateName } from '~/utils/';
-import store from '~/store';
+import { cn, defaultTextProps, removeFocusOutlines, alternateName } from '~/utils';
+import { useUserKey } from '~/hooks';
 
 const SetKeyDialog = ({ open, onOpenChange, endpoint }) => {
   const [userKey, setUserKey] = useState('');
   const [expiresAtLabel, setExpiresAtLabel] = useState('In 12 hours');
-  const { getExpiry, checkExpiry, saveKey } = store.useKey(endpoint);
+  const { getExpiry, saveUserKey } = useUserKey(endpoint);
 
   const expirationOptions = [
     { display: 'in 1 minute', value: 60 * 1000 },
@@ -29,7 +29,7 @@ const SetKeyDialog = ({ open, onOpenChange, endpoint }) => {
   const submit = () => {
     const selectedOption = expirationOptions.find((option) => option.display === expiresAtLabel);
     const expiresAt = Date.now() + (selectedOption ? selectedOption.value : 0);
-    saveKey(userKey, expiresAt);
+    saveUserKey(userKey, expiresAt);
     onOpenChange(false);
     setUserKey('');
   };

@@ -7,6 +7,8 @@ export const messages = (conversationId: string, messageId?: string) =>
 
 export const keys = () => '/api/keys';
 
+export const userKeyQuery = (name: string) => `${keys()}?name=${name}`;
+
 export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 
 export const conversations = (pageNumber: string) => `/api/convos?pageNumber=${pageNumber}`;

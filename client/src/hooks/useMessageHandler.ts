@@ -3,6 +3,7 @@ import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { parseConvo, getResponseSender } from 'librechat-data-provider';
 import type { TMessage, TSubmission } from 'librechat-data-provider';
 import type { TAskFunction } from '~/common';
+import useUserKey from './useUserKey';
 import store from '~/store';
 
 const useMessageHandler = () => {
@@ -16,7 +17,7 @@ const useMessageHandler = () => {
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const [messages, setMessages] = useRecoilState(store.messages);
   const { endpoint } = currentConversation;
-  const { getExpiry, checkExpiry } = store.useKey(endpoint ?? '');
+  const { getExpiry } = useUserKey(endpoint ?? '');
 
   const ask: TAskFunction = (
     { text, parentMessageId = null, conversationId = null, messageId = null },
