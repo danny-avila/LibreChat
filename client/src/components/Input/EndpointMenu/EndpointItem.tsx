@@ -68,7 +68,9 @@ export default function ModelItem({
           </button>
         ) : null}
       </DropdownMenuRadioItem>
-      <SetKeyDialog open={isDialogOpen} onOpenChange={setDialogOpen} endpoint={endpoint} />
+      {isUserProvided && (
+        <SetKeyDialog open={isDialogOpen} onOpenChange={setDialogOpen} endpoint={endpoint} />
+      )}
     </>
   );
 }

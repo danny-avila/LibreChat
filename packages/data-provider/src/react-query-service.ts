@@ -131,7 +131,7 @@ export const useUpdateUserKeysMutation = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation((payload: t.TUpdateUserKeyRequest) => dataService.updateUserKey(payload), {
     onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.user]);
+      queryClient.invalidateQueries([QueryKeys.name]);
     },
   });
 };
