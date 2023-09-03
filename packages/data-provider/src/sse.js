@@ -118,7 +118,6 @@ var SSE = function (url, options) {
         window.dispatchEvent(new CustomEvent('tokenUpdated', { detail: refreshResponse.token }));
         this.stream();
       } catch (err) {
-        window.dispatchEvent(new CustomEvent('logout'));
         this._onStreamFailure(e);
         return;
       }    
