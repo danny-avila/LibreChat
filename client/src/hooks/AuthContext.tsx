@@ -127,7 +127,12 @@ const AuthContextProvider = ({
     refreshToken.mutate(undefined, {
       onSuccess: (data: TLoginResponse) => {
         const { user, token } = data;
-        setUserContext({ token, isAuthenticated: true, user });
+        if (token) {
+          setUserContext({ token, isAuthenticated: true, user });
+        } else {
+          console.log('Token is not present. User is not authenticated.');
+          navigate('/login');
+        }
       },
       onError: (error) => {
         console.log('refreshToken mutation error:', error);
