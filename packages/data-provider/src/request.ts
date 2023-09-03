@@ -22,6 +22,8 @@ axios.interceptors.response.use(
   (error) => {
     const originalRequest = error.config;
     if (error.response.status === 401 && originalRequest.url.includes('/api/auth/refresh')) {
+      processQueue(error);
+      isRefreshing = false;
       return Promise.reject(error);
     }
     if (error.response.status === 401 && !originalRequest._retry) {
