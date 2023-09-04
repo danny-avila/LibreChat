@@ -18,7 +18,7 @@ describe('LangSelector', () => {
       </RecoilRoot>,
     );
 
-    expect(getByText('语言')).toBeInTheDocument();
+    expect(getByText('Language')).toBeInTheDocument();
     expect(getByDisplayValue('English')).toBeInTheDocument();
   });
 
@@ -29,8 +29,8 @@ describe('LangSelector', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.change(getByDisplayValue('English'), { target: { value: 'en' } });
+    fireEvent.change(getByDisplayValue('English'), { target: { value: 'cn' } });
 
-    expect(mockOnChange).toHaveBeenCalledWith('en');
+    expect(mockOnChange).toHaveBeenCalledWith('cn');
   });
 });

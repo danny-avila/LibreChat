@@ -58,8 +58,8 @@ test('renders login form', () => {
   expect(getByLabelText(/email/i)).toBeInTheDocument();
   expect(getByLabelText(/password/i)).toBeInTheDocument();
   expect(getByRole('button', { name: /Sign in/i })).toBeInTheDocument();
-  expect(getByRole('link', { name: /注册/i })).toBeInTheDocument();
-  expect(getByRole('link', { name: /注册/i })).toHaveAttribute('href', '/register');
+  expect(getByRole('link', { name: /Sign up/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Sign up/i })).toHaveAttribute('href', '/register');
   expect(getByRole('link', { name: /Login with Google/i })).toBeInTheDocument();
   expect(getByRole('link', { name: /Login with Google/i })).toHaveAttribute(
     'href',
