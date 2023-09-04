@@ -1,10 +1,11 @@
 const OpenAIClient = require('./OpenAIClient');
 const { CallbackManager } = require('langchain/callbacks');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
-const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents/');
-const { addImages, createLLM, buildErrorInput, buildPromptPrefix } = require('./agents/methods/');
-const { SelfReflectionTool } = require('./tools/');
+const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents');
+const { addImages, buildErrorInput, buildPromptPrefix } = require('./output_parsers');
+const { SelfReflectionTool } = require('./tools');
 const { loadTools } = require('./tools/util');
+const { createLLM } = require('./llm');
 
 class PluginsClient extends OpenAIClient {
   constructor(apiKey, options = {}) {
