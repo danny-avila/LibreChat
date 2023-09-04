@@ -53,6 +53,7 @@ export default function HoverButtons({
   const toggleSpeech = () => {
     if (isSpeaking) {
       cancelSpeech();
+      setIsSpeaking(!isSpeaking);
     } else {
       synthesizeSpeech(message?.text ?? "");
     }
