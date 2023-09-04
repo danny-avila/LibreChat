@@ -51,6 +51,16 @@ export default function HoverButtons({
       <button
         className={cn(
           'hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible',
+        )}
+        onClick={toggleSpeech}
+        type="button"
+        title={isSpeaking ? 'Mute' : 'Speak'}
+      >
+        {isSpeaking ? <VolumeMuteIcon /> : <VolumeIcon />}
+      </button>
+      <button
+        className={cn(
+          'hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible',
           isCreatedByUser ? '' : 'active',
           hideEditButton ? 'opacity-0' : '',
           isEditing ? 'active bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200' : '',
