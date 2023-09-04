@@ -2,6 +2,7 @@ import React from 'react';
 import CheckMark from '../svg/CheckMark';
 import { Listbox, Transition } from '@headlessui/react';
 import { cn } from '~/utils/';
+import { useLocalize } from '~/hooks';
 
 type SelectDropDownProps = {
   id?: string;
@@ -18,7 +19,7 @@ type SelectDropDownProps = {
 };
 
 function SelectDropDown({
-  title = 'Model',
+  title,
   value,
   disabled,
   setValue,
@@ -29,10 +30,16 @@ function SelectDropDown({
   subContainerClassName,
   className,
 }: SelectDropDownProps) {
+  const localize = useLocalize();
   const transitionProps = { className: 'top-full mt-3' };
   if (showAbove) {
     transitionProps.className = 'bottom-full mb-3';
   }
+
+  if (!title) {
+    title = localize('com_ui_model');
+  }
+
   return (
     <div className={cn('flex items-center justify-center gap-2', containerClassName ?? '')}>
       <div className={cn('relative w-full', subContainerClassName ?? '')}>

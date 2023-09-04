@@ -158,7 +158,6 @@ export default {
   com_endpoint_export: 'Экспорт',
   com_endpoint_save_as_preset: 'Сохранить как предустановку',
   com_endpoint_not_implemented: 'Не реализовано',
-  com_endpoint_edit_preset: 'Редактировать предустановку',
   com_endpoint_no_presets: 'Пока нет предустановок',
   com_endpoint_not_available: 'Нет доступных конечных точек',
   com_endpoint_clear_all: 'Очистить все',

@@ -4,6 +4,7 @@ import { useUpdateMessageMutation } from 'librechat-data-provider';
 import type { TEditProps } from '~/common';
 import store from '~/store';
 import Container from './Container';
+import { useLocalize } from '~/hooks';
 
 const EditMessage = ({
   text,
@@ -18,6 +19,7 @@ const EditMessage = ({
   const textEditor = useRef<HTMLDivElement | null>(null);
   const { conversationId, parentMessageId, messageId } = message;
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
+  const localize = useLocalize();
 
   const resubmitMessage = () => {
     const text = textEditor?.current?.innerText ?? '';
@@ -91,17 +93,17 @@ const EditMessage = ({
           disabled={isSubmitting}
           onClick={resubmitMessage}
         >
-          Save & Submit
+          {localize('com_ui_save')} {'&'} {localize('com_ui_submit')}
         </button>
         <button
           className="btn btn-secondary relative mr-2"
           disabled={isSubmitting}
           onClick={updateMessage}
         >
-          Save
+          {localize('com_ui_save')}
         </button>
         <button className="btn btn-neutral relative" onClick={() => enterEdit(true)}>
-          Cancel
+          {localize('com_ui_cancel')}
         </button>
       </div>
     </Container>

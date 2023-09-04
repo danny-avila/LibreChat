@@ -154,7 +154,6 @@ export default {
   com_endpoint_export: 'Exportar',
   com_endpoint_save_as_preset: 'Guardar como Configuración',
   com_endpoint_not_implemented: 'No implementado',
-  com_endpoint_edit_preset: 'Editar Configuración',
   com_endpoint_view_options: 'Ver Opciones',
   com_endpoint_my_preset: 'Mi Configuración',
   com_endpoint_agent_model: 'Modelo del Agente (Recomendado: GPT-3.5)',

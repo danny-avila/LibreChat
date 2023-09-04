@@ -165,7 +165,7 @@ export default function NewConversationMenu() {
             }
           >
             {icon}
-            <span className="max-w-0 overflow-hidden whitespace-nowrap px-0 text-slate-600 transition-all group-hover:max-w-[80px] group-hover:px-2 group-data-[state=open]:max-w-[80px] group-data-[state=open]:px-2 dark:text-slate-300">
+            <span className="max-w-0 overflow-hidden whitespace-nowrap px-0 text-slate-600 transition-all group-data-[state=open]:max-w-[80px] group-data-[state=open]:px-2 dark:text-slate-300">
               {localize('com_endpoint_new_topic')}
             </span>
           </Button>
@@ -209,7 +209,7 @@ export default function NewConversationMenu() {
               onClick={() => setShowPresets((prev) => !prev)}
             >
               {showPresets ? localize('com_endpoint_hide') : localize('com_endpoint_show')}{' '}
-              {localize('com_endpoint_examples')}
+              {localize('com_endpoint_presets')}
             </span>
             <FileUpload onFileSelected={onFileSelected} />
             <Dialog>
@@ -223,18 +223,19 @@ export default function NewConversationMenu() {
                   className="h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-red-700 hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-gray-800 dark:hover:text-red-400"
                 > */}
                   <Trash2 className="mr-1 flex w-[22px] items-center stroke-1" />
-                  {localize('com_endpoint_clear_all')}
+                  {localize('com_ui_clear')} {localize('com_ui_all')}
                   {/* </Button> */}
                 </label>
               </DialogTrigger>
               <DialogTemplate
-                title="Clear presets"
-                description="Are you sure you want to clear all presets? This is irreversible."
+                title={`${localize('com_ui_clear')} ${localize('com_endpoint_presets')}`}
+                description={localize('com_endpoint_presets_clear_warning')}
                 selection={{
                   selectHandler: clearAllPresets,
                   selectClasses: 'bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
-                  selectText: 'Clear',
+                  selectText: localize('com_ui_clear'),
                 }}
+                className="max-w-[500px]"
               />
             </Dialog>
           </DropdownMenuLabel>
