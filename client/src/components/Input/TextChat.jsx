@@ -31,7 +31,7 @@ export default function TextChat({ isSearchView = false }) {
     if (isListening && speechText) {
       setText(speechText);
     } else {
-      setText('');
+      // setText('');
     }
   }, [speechText, isListening, setText]);
   
