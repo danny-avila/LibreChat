@@ -452,7 +452,25 @@ function ProfileContent() {
           ) : (
             // Profile view mode
             <>
-              <div className="pl-7">{bio}</div>
+              <div className="pl-1">
+                {expanded ? (
+                  <div>
+                    <div className="pl-1">{bio}</div>
+                    <button className="ml-2 text-green-500 hover:text-green-300" onClick={toggleExpand}>
+           Show Less
+                    </button>
+                  </div>
+                ) : (
+                  <div className="pl-1">
+                    {bio.length > 100 ? `${bio.slice(0, 100)}...` : bio}
+                    {bio.length > 100 && (
+                      <button className="ml-2 text-green-500 hover:text-green-300" onClick={toggleExpand}>
+                        {expanded ? 'Show Less' : 'Show More'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
               <div className="flex flex-col md:flex-row md:items-start md:space-x-4">
                 <div className="ml-auto md:flex-none">
                   <p className="mt-4">
