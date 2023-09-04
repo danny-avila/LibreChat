@@ -8,6 +8,8 @@ afterEach(() => {
   delete process.env.APP_TITLE;
   delete process.env.GOOGLE_CLIENT_ID;
   delete process.env.GOOGLE_CLIENT_SECRET;
+  delete process.env.FACEBOOK_CLIENT_ID;
+  delete process.env.FACEBOOK_CLIENT_SECRET;
   delete process.env.OPENID_CLIENT_ID;
   delete process.env.OPENID_CLIENT_SECRET;
   delete process.env.OPENID_ISSUER;
@@ -31,6 +33,8 @@ describe.skip('GET /', () => {
     process.env.APP_TITLE = 'Test Title';
     process.env.GOOGLE_CLIENT_ID = 'Test Google Client Id';
     process.env.GOOGLE_CLIENT_SECRET = 'Test Google Client Secret';
+    process.env.FACEBOOK_CLIENT_ID = 'Test Facebook Client Id';
+    process.env.FACEBOOK_CLIENT_SECRET = 'Test Facebook Client Secret';
     process.env.OPENID_CLIENT_ID = 'Test OpenID Id';
     process.env.OPENID_CLIENT_SECRET = 'Test OpenID Secret';
     process.env.OPENID_ISSUER = 'Test OpenID Issuer';
@@ -51,6 +55,7 @@ describe.skip('GET /', () => {
     expect(response.body).toEqual({
       appTitle: 'Test Title',
       googleLoginEnabled: true,
+      facebookLoginEnabled: true,
       openidLoginEnabled: true,
       openidLabel: 'Test OpenID',
       openidImageUrl: 'http://test-server.com',

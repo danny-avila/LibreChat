@@ -1,5 +1,8 @@
 # User/Auth System
 
+
+>⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+
 ## **First Time Setup**
 
 In order for the auth system to function properly, there are some environment variables that are needed. Note that this information is also included in the [/.env.example](/.env.example) file.
@@ -42,6 +45,24 @@ To enable Google login, you must create an application in the [Google Cloud Cons
 9. Click on "Create" and copy your client ID and client secret.
 10. Paste them into your `/.env` file.
 11. Enable the feature in the `/.env` file
+
+---
+
+## Facebook Authentication 
+### (It only works with a domain, not with localhost)
+
+1. Go to [Facebook Developer Portal](https://developers.facebook.com/)
+2. Create a new Application and give it a name
+4. In the Dashboard tab select product and select "Facebook login", then tap on "Configure" and "Settings". Male sure "OAuth client access", "Web OAuth access", "Apply HTTPS" and "Use limited mode for redirect URIs" are **enabled** 
+5. In the Valid OAuth Redirect URIs add "your-domain/oauth/facebook/callback" (example: http://example.com/oauth/facebook/callback)
+6. Save changes and in the "settings" tab, reset the Client Secret
+7. Put the Client ID and Client Secret in the .env file:
+```bash
+FACEBOOK_CLIENT_ID=your_client_id
+FACEBOOK_CLIENT_SECRET=your_client_secret
+FACEBOOK_CALLBACK_URL=/oauth/facebook/callback # this should be the same for everyone
+```
+8. Save the .env file
 
 ---
 
@@ -132,6 +153,7 @@ DISCORD_CLIENT_SECRET=your_client_secret
 DISCORD_CALLBACK_URL=/oauth/discord/callback # this should be the same for everyone
 ```
 8. Save the .env file
+
 ---
 ## **Email and Password Reset** 
 
@@ -172,6 +194,10 @@ NOTE: The variable EMAIL_FROM currently does not work. To stay updated, check th
 ## **Disable User Registration**
 
 To disable or re-enable registration, open up the root `.env` file and set `ALLOW_REGISTRATION=true` or `ALLOW_REGISTRATION=false` depending on if you want registration open or closed.
+
+To disable or re-enable social registration, open up the root `.env` file and set `ALLOW_SOCIAL_REGISTRATION=true` or `ALLOW_SOCIAL_REGISTRATION=false` depending on if you want social registration open or closed.
+
+**NOTE: OpenID does not support the ability to disable only registration.**
 
 ### ⚠️***Warning***
 

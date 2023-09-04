@@ -45,7 +45,7 @@ Download the Plugin manifest file, or copy the raw JSON data into a new file, an
 
 `api\app\clients\tools\.well-known`
 
-You should see multiple manifest files that I've already tested/edited and work with LibreChat as of 7/12/23. I've renamed them by their `name_for_model` property and it's recommended, but not required, that you do the same.
+You should see multiple manifest files that have been tested, or edited, to work with LibreChat. ~~I've renamed them by their `name_for_model` property and it's recommended, but not required, that you do the same.~~ As of v0.5.8, It's **required** to name the manifest JSON file after its `name_for_model` property should you add one yourself.
 
 After doing so, start/re-start the project server and they should now load in the Plugin store.
 

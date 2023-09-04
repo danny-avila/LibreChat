@@ -83,7 +83,6 @@ describe('Tool Handlers', () => {
     it('returns valid tools given input tools and user authentication', async () => {
       const validTools = await validateTools(fakeUser._id, initialTools);
       expect(validTools).toBeDefined();
-      console.log('validateTools: validTools', validTools);
       expect(validTools.some((tool) => tool === pluginKey)).toBeTruthy();
       expect(validTools.length).toBeGreaterThan(0);
     });
@@ -128,6 +127,7 @@ describe('Tool Handlers', () => {
         user: fakeUser._id,
         model: BaseChatModel,
         tools: sampleTools,
+        returnMap: true,
       });
       loadTool1 = toolFunctions[sampleTools[0]];
       loadTool2 = toolFunctions[sampleTools[1]];
@@ -169,6 +169,7 @@ describe('Tool Handlers', () => {
         user: fakeUser._id,
         model: BaseChatModel,
         tools: [testPluginKey],
+        returnMap: true,
       });
       const Tool = await toolFunctions[testPluginKey]();
       expect(Tool).toBeInstanceOf(TestClass);
@@ -177,6 +178,7 @@ describe('Tool Handlers', () => {
       toolFunctions = await loadTools({
         user: fakeUser._id,
         model: BaseChatModel,
+        returnMap: true,
       });
       expect(toolFunctions).toEqual({});
     });
@@ -187,6 +189,7 @@ describe('Tool Handlers', () => {
         model: BaseChatModel,
         tools: ['stable-diffusion'],
         functions: true,
+        returnMap: true,
       });
       const structuredTool = await toolFunctions['stable-diffusion']();
       expect(structuredTool).toBeInstanceOf(StructuredSD);

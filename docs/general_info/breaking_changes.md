@@ -1,9 +1,14 @@
 # ⚠️ **Breaking Changes** ⚠️
 
+> **Note:**
+**If you experience any issues after updating, we recommend clearing your browser cache and cookies.**
+Certain changes in the updates may impact cookies, leading to unexpected behaviors if not cleared properly.
+
 ## v0.5.8
 **If you have issues after updating, please try to clear your browser cache and cookies!**
 
-Some of the latest changes affect the cookies and can cause weird behaviors if not properly cleared.
+- It's now required to name manifest JSON files (for [ChatGPT Plugins](..\features\plugins\chatgpt_plugins_openapi.md)) in the `api\app\clients\tools\.well-known` directory after their `name_for_model` property should you add one yourself.
+    - This was a recommended convention before, but is now required.
 
 ## v0.5.7
 

@@ -5,6 +5,8 @@ router.get('/', async function (req, res) {
   try {
     const appTitle = process.env.APP_TITLE || 'LibreChat';
     const googleLoginEnabled = !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET;
+    const facebookLoginEnabled =
+      !!process.env.FACEBOOK_CLIENT_ID && !!process.env.FACEBOOK_CLIENT_SECRET;
     const openidLoginEnabled =
       !!process.env.OPENID_CLIENT_ID &&
       !!process.env.OPENID_CLIENT_SECRET &&
@@ -16,8 +18,8 @@ router.get('/', async function (req, res) {
     const discordLoginEnabled =
       !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET;
     const serverDomain = process.env.DOMAIN_SERVER || 'http://localhost:3080';
-    const registrationEnabled = process.env.ALLOW_REGISTRATION === 'true';
-    const socialLoginEnabled = process.env.ALLOW_SOCIAL_LOGIN === 'true';
+    const registrationEnabled = process.env.ALLOW_REGISTRATION?.toLowerCase() === 'true';
+    const socialLoginEnabled = process.env.ALLOW_SOCIAL_LOGIN?.toLowerCase() === 'true';
     const emailEnabled =
       !!process.env.EMAIL_SERVICE &&
       !!process.env.EMAIL_USERNAME &&
@@ -27,6 +29,7 @@ router.get('/', async function (req, res) {
     return res.status(200).send({
       appTitle,
       googleLoginEnabled,
+      facebookLoginEnabled,
       openidLoginEnabled,
       openidLabel,
       openidImageUrl,

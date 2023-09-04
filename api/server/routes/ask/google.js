@@ -2,12 +2,11 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const { titleConvo, GoogleClient } = require('../../../app');
-// const GoogleClient = require('../../../app/google/GoogleClient');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress } = require('./handlers');
-const requireJwtAuth = require('../../../middleware/requireJwtAuth');
+const { handleError, sendMessage, createOnProgress } = require('../../utils');
+const { requireJwtAuth, setHeaders } = require('../../middleware');
 
-router.post('/', requireJwtAuth, async (req, res) => {
+router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId: oldConversationId } = req.body;
   if (text.length === 0) {
     return handleError(res, { text: 'Prompt empty or too short' });
@@ -50,13 +49,6 @@ router.post('/', requireJwtAuth, async (req, res) => {
 });
 
 const ask = async ({ text, endpointOption, parentMessageId = null, conversationId, req, res }) => {
-  res.writeHead(200, {
-    Connection: 'keep-alive',
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    'Access-Control-Allow-Origin': '*',
-    'X-Accel-Buffering': 'no',
-  });
   let userMessage;
   let userMessageId;
   let responseMessageId;

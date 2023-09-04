@@ -1,4 +1,4 @@
-const _ = require('lodash');
+const throttle = require('lodash/throttle');
 
 const titleConvo = async ({ text, response }) => {
   let title = 'New Chat';
@@ -32,6 +32,6 @@ const titleConvo = async ({ text, response }) => {
   return title;
 };
 
-const throttledTitleConvo = _.throttle(titleConvo, 3000);
+const throttledTitleConvo = throttle(titleConvo, 3000);
 
 module.exports = throttledTitleConvo;

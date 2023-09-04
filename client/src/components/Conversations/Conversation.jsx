@@ -126,6 +126,7 @@ export default function Conversation({ conversation, retainView }) {
             renaming={renaming}
             cancelHandler={cancelHandler}
             retainView={retainView}
+            title={title}
           />
         </div>
       ) : (

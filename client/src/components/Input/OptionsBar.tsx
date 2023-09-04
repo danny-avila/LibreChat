@@ -12,7 +12,7 @@ import { Button } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
 import { useSetOptions } from '~/hooks';
 import { ModelSelect } from './ModelSelect';
-import GenerationButtons from './GenerationButtons';
+import { GenerationButtons } from './Generations';
 import store from '~/store';
 
 export default function OptionsBar() {
@@ -76,7 +76,11 @@ export default function OptionsBar() {
     : () => setShowPopover((prev) => !prev);
   return (
     <div className="relative py-2 last:mb-2 md:mx-4 md:mb-[-16px] md:py-4 md:pt-2 md:last:mb-6 lg:mx-auto lg:mb-[-32px] lg:max-w-2xl lg:pt-6 xl:max-w-3xl">
-      <GenerationButtons showPopover={showPopover} opacityClass={opacityClass} />
+      <GenerationButtons
+        endpoint={endpoint}
+        showPopover={showPopover}
+        opacityClass={opacityClass}
+      />
       <span className="flex w-full flex-col items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
         <div
           className={cn(

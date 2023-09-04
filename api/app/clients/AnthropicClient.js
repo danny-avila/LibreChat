@@ -1,4 +1,3 @@
-const Keyv = require('keyv');
 // const { Agent, ProxyAgent } = require('undici');
 const BaseClient = require('./BaseClient');
 const {
@@ -15,8 +14,6 @@ const tokenizersCache = {};
 class AnthropicClient extends BaseClient {
   constructor(apiKey, options = {}, cacheOptions = {}) {
     super(apiKey, options, cacheOptions);
-    cacheOptions.namespace = cacheOptions.namespace || 'anthropic';
-    this.conversationsCache = new Keyv(cacheOptions);
     this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
     this.sender = 'Anthropic';
     this.userLabel = HUMAN_PROMPT;
@@ -107,6 +104,23 @@ class AnthropicClient extends BaseClient {
       content: message?.content ?? message.text,
     }));
 
+    let lastAuthor = '';
+    let groupedMessages = [];
+
+    for (let message of formattedMessages) {
+      // If last author is not same as current author, add to new group
+      if (lastAuthor !== message.author) {
+        groupedMessages.push({
+          author: message.author,
+          content: [message.content],
+        });
+        lastAuthor = message.author;
+        // If same author, append content to the last group
+      } else {
+        groupedMessages[groupedMessages.length - 1].content.push(message.content);
+      }
+    }
+
     let identityPrefix = '';
     if (this.options.userLabel) {
       identityPrefix = `\nHuman's name: ${this.options.userLabel}`;
@@ -129,8 +143,12 @@ class AnthropicClient extends BaseClient {
       promptPrefix = `${identityPrefix}${promptPrefix}`;
     }
 
-    const promptSuffix = `${promptPrefix}${this.assistantLabel}\n`; // Prompt AI to respond.
-    let currentTokenCount = this.getTokenCount(promptSuffix);
+    // Prompt AI to respond, empty if last message was from AI
+    let isEdited = lastAuthor === this.assistantLabel;
+    const promptSuffix = isEdited ? '' : `${promptPrefix}${this.assistantLabel}\n`;
+    let currentTokenCount = isEdited
+      ? this.getTokenCount(promptPrefix)
+      : this.getTokenCount(promptSuffix);
 
     let promptBody = '';
     const maxTokenCount = this.maxPromptTokens;
@@ -148,10 +166,13 @@ class AnthropicClient extends BaseClient {
     };
 
     const buildPromptBody = async () => {
-      if (currentTokenCount < maxTokenCount && formattedMessages.length > 0) {
-        const message = formattedMessages.pop();
+      if (currentTokenCount < maxTokenCount && groupedMessages.length > 0) {
+        const message = groupedMessages.pop();
         const isCreatedByUser = message.author === this.userLabel;
-        const messageString = `${message.author}\n${message.content}${this.endToken}\n`;
+        // Use promptPrefix if message is edited assistant'
+        const messagePrefix =
+          isCreatedByUser || !isEdited ? message.author : `${promptPrefix}${message.author}`;
+        const messageString = `${messagePrefix}\n${message.content}${this.endToken}\n`;
         let newPromptBody = `${messageString}${promptBody}`;
 
         context.unshift(message);
@@ -182,6 +203,12 @@ class AnthropicClient extends BaseClient {
         }
         promptBody = newPromptBody;
         currentTokenCount = newTokenCount;
+
+        // Switch off isEdited after using it for the first time
+        if (isEdited) {
+          isEdited = false;
+        }
+
         // wait for next tick to avoid blocking the event loop
         await new Promise((resolve) => setImmediate(resolve));
         return buildPromptBody();
@@ -197,7 +224,8 @@ class AnthropicClient extends BaseClient {
       context.shift();
     }
 
-    const prompt = `${promptBody}${promptSuffix}`;
+    let prompt = `${promptBody}${promptSuffix}`;
+
     // Add 2 tokens for metadata after all messages have been counted.
     currentTokenCount += 2;
 

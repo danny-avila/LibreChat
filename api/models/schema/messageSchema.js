@@ -67,6 +67,9 @@ const messageSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    finish_reason: {
+      type: String,
+    },
     _meiliIndex: {
       type: Boolean,
       required: false,
@@ -87,6 +90,7 @@ const messageSchema = mongoose.Schema(
         required: false,
       },
     },
+    plugins: [{ type: mongoose.Schema.Types.Mixed }],
   },
   { timestamps: true },
 );
