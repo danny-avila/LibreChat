@@ -24,6 +24,14 @@ export function clearAllConversations(): Promise<unknown> {
   return request.post(endpoints.deleteConversation(), { arg: {} });
 }
 
+export function revokeUserKey(name: string): Promise<unknown> {
+  return request.delete(endpoints.revokeUserKey(name));
+}
+
+export function revokeAllUserKeys(): Promise<unknown> {
+  return request.delete(endpoints.revokeAllUserKeys());
+}
+
 export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
   return request.get(endpoints.messages(conversationId));
 }

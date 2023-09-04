@@ -16,7 +16,7 @@ export enum QueryKeys {
   conversation = 'conversation',
   searchEnabled = 'searchEnabled',
   user = 'user',
-  name = 'name',
+  name = 'name', // user key name
   endpoints = 'endpoints',
   presets = 'presets',
   searchResults = 'searchResults',
@@ -161,6 +161,24 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
   return useMutation(() => dataService.clearAllConversations(), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.allConversations]);
+    },
+  });
+};
+
+export const useRevokeUserKeyMutation = (name: string): UseMutationResult<unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.revokeUserKey(name), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.name]);
+    },
+  });
+};
+
+export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.revokeAllUserKeys(), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.name]);
     },
   });
 };

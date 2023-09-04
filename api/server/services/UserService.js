@@ -50,8 +50,13 @@ const updateUserKey = async ({ userId, name, value, expiresAt }) => {
   ).lean();
 };
 
-const deleteUserKey = async ({ userId, name }) =>
+const deleteUserKey = async ({ userId, name, all = false }) => {
+  if (all) {
+    return await Key.deleteMany({ userId });
+  }
+
   await Key.findOneAndDelete({ userId, name }).lean();
+};
 
 const checkUserKeyExpiry = (expiresAt, message) => {
   const expiresAtDate = new Date(expiresAt);

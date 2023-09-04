@@ -5,9 +5,15 @@ export const userPlugins = () => '/api/user/plugins';
 export const messages = (conversationId: string, messageId?: string) =>
   `/api/messages/${conversationId}${messageId ? `/${messageId}` : ''}`;
 
-export const keys = () => '/api/keys';
+const keysEndpoint = '/api/keys';
 
-export const userKeyQuery = (name: string) => `${keys()}?name=${name}`;
+export const keys = () => keysEndpoint;
+
+export const userKeyQuery = (name: string) => `${keysEndpoint}?name=${name}`;
+
+export const revokeUserKey = (name: string) => `${keysEndpoint}/${name}`;
+
+export const revokeAllUserKeys = () => `${keysEndpoint}?all=true`;
 
 export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 
