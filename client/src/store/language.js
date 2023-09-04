@@ -4,7 +4,7 @@ const localStorage = window.localStorage.getItem('lang'); // Get last seleceted 
 
 const lang = atom({
   key: 'lang',
-  default: localStorage || 'cn', // Fall back to English if localStorage is null
+  default: localStorage || 'en', // Fall back to English if localStorage is null
 });
 
 export default { lang };
