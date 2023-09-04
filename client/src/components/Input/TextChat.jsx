@@ -27,13 +27,13 @@ export default function TextChat({ isSearchView = false }) {
   const { conversationId, jailbreak } = conversation || {};
   const { isSpeechSupported, isListening, text: speechText } = useSpeechRecognition(ask);
 
-  //useEffect(() => {
-  //  if (isListening && speechText) {
-  //    setText(speechText);
-  //  } else {
-  //    setText('');
-  //  }
-  //}, [speechText, isListening, setText]);
+  useEffect(() => {
+    if (isListening && speechText) {
+      setText(speechText);
+    } else {
+      setText('');
+    }
+  }, [speechText, isListening, setText]);
   
   // auto focus to input, when enter a conversation.
   useEffect(() => {
