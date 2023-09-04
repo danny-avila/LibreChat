@@ -62,7 +62,7 @@ export default function SubmitButton({
           <div className="flex items-center justify-center rounded-md text-xs group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
             <div className="m-0 mr-0 flex items-center justify-center rounded-md p-2 sm:p-2">
               <Settings className="mr-1 inline-block h-auto w-[18px]" />
-              {localize('com_endpoint_config_token_name_placeholder')}
+              {localize('com_endpoint_config_key_name_placeholder')}
             </div>
           </div>
         </button>

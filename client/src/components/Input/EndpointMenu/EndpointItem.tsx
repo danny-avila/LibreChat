@@ -64,7 +64,7 @@ export default function ModelItem({
             }}
           >
             <Settings className="mr-1 inline-block w-[16px] items-center stroke-1" />
-            {localize('com_endpoint_config_token')}
+            {localize('com_endpoint_config_key')}
           </button>
         ) : null}
       </DropdownMenuRadioItem>

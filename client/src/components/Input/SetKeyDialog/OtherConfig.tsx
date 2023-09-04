@@ -10,7 +10,7 @@ const OtherConfig = ({ userKey, setUserKey }: TConfigProps) => {
       id={'chatGPTLabel'}
       value={userKey ?? ''}
       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUserKey(e.target.value ?? '')}
-      label={localize('com_endpoint_config_token_name')}
+      label={localize('com_endpoint_config_key_name')}
     />
   );
 };

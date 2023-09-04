@@ -1,4 +1,7 @@
 import type { TResPlugin, TMessage, TConversation, TEndpointOption } from './schemas';
+import type { UseMutationResult } from '@tanstack/react-query';
+
+export type TMutation = UseMutationResult<unknown>;
 
 export * from './schemas';
 

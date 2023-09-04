@@ -10,4 +10,5 @@ export { default as useSetOptions } from './useSetOptions';
 export { default as useGenerations } from './useGenerations';
 export { default as useScrollToRef } from './useScrollToRef';
 export { default as useServerStream } from './useServerStream';
+export { default as useOnClickOutside } from './useOnClickOutside';
 export { default as useMessageHandler } from './useMessageHandler';

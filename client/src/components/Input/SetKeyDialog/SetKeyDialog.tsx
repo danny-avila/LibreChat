@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import HelpText from './HelpText';
+import { Dialog, Dropdown } from '~/components/ui';
+import DialogTemplate from '~/components/ui/DialogTemplate';
+import { RevokeKeysButton } from '~/components/Nav';
+import { cn, defaultTextProps, removeFocusOutlines, alternateName } from '~/utils';
+import { useUserKey, useLocalize } from '~/hooks';
 import GoogleConfig from './GoogleConfig';
 import OpenAIConfig from './OpenAIConfig';
 import OtherConfig from './OtherConfig';
-import { Dialog, Dropdown } from '~/components/ui';
-import DialogTemplate from '~/components/ui/DialogTemplate';
-import { cn, defaultTextProps, removeFocusOutlines, alternateName } from '~/utils';
-import { useUserKey } from '~/hooks';
+import HelpText from './HelpText';
 
 const EXPIRY = {
   THIRTY_MINUTES: { display: 'in 30 minutes', value: 30 * 60 * 1000 },
@@ -21,6 +22,7 @@ const SetKeyDialog = ({ open, onOpenChange, endpoint }) => {
   const [userKey, setUserKey] = useState('');
   const [expiresAtLabel, setExpiresAtLabel] = useState(EXPIRY.TWELVE_HOURS.display);
   const { getExpiry, saveUserKey } = useUserKey(endpoint);
+  const localize = useLocalize();
 
   const expirationOptions = Object.values(EXPIRY);
 
@@ -50,13 +52,15 @@ const SetKeyDialog = ({ open, onOpenChange, endpoint }) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title={`Set Key for ${alternateName[endpoint] ?? endpoint}`}
+        title={`${localize('com_endpoint_config_key_for')} ${alternateName[endpoint] ?? endpoint}`}
         className="w-full max-w-[650px] sm:w-3/4 md:w-3/4 lg:w-3/4"
         main={
           <div className="grid w-full items-center gap-2">
             <small className="text-red-600">
-              {`Your key will be encrypted and deleted ${
-                !timeString ? 'at the expiry time' : `at ${new Date(timeString).toLocaleString()}`
+              {`${localize('com_endpoint_config_key_encryption')} ${
+                !timeString
+                  ? localize('com_endpoint_config_key_expiry')
+                  : `${new Date(timeString).toLocaleString()}`
               }`}
             </small>
             <Dropdown
@@ -79,8 +83,11 @@ const SetKeyDialog = ({ open, onOpenChange, endpoint }) => {
         selection={{
           selectHandler: submit,
           selectClasses: 'bg-green-600 hover:bg-green-700 dark:hover:bg-green-800 text-white',
-          selectText: 'Submit',
+          selectText: localize('com_ui_submit'),
         }}
+        leftButtons={
+          <RevokeKeysButton endpoint={endpoint} showText={false} disabled={!timeString} />
+        }
       />
     </Dialog>
   );
