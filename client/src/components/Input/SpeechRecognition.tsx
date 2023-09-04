@@ -32,7 +32,7 @@ const useSpeechRecognition = (ask) => {
 
         if (result.isFinal) {
           setText(transcript);
-          ask({ text: transcript });
+          //ask({ text: transcript });
         }
       }
 
