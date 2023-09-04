@@ -1,47 +1,51 @@
 import { useState, useEffect } from 'react';
 
 function useSpeechSynthesis() {
-  const [isSpeechEnabled, setIsSpeechEnabled] = useState(false);
-  const [textToSpeak, setTextToSpeak] = useState('');
+  //const [isSpeechEnabled, setIsSpeechEnabled] = useState(false);
+  //const [textToSpeak, setTextToSpeak] = useState('');
 
   const synthesizeSpeech = (text) => {
-    setTextToSpeak(text);
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    synth.speak(utterance);
+    //setTextToSpeak(text);
   };
 
-  const toggleSpeechSynthesis = () => {
-    setIsSpeechEnabled(!isSpeechEnabled);
-    console.log('Toggle Text-To-Speech', !isSpeechEnabled);
-  };
+  //const toggleSpeechSynthesis = () => {
+  //  setIsSpeechEnabled(!isSpeechEnabled);
+  //  console.log('Toggle Text-To-Speech', !isSpeechEnabled);
+  //};
 
   const cancelSpeech = () => {
     const synth = window.speechSynthesis;
     synth.cancel();
   };
   
-  const handleKeyDown = (event) => {
-    if (event.shiftKey && event.altKey && event.key === 'P') {
-      toggleSpeechSynthesis();
-    }
-  };
+  //const handleKeyDown = (event) => {
+  //  if (event.shiftKey && event.altKey && event.key === 'P') {
+  //    toggleSpeechSynthesis();
+  //  }
+  //};
 
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
+  //useEffect(() => {
+  //  window.addEventListener('keydown', handleKeyDown);
 
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isSpeechEnabled]);
+ //   return () => {
+ //     window.removeEventListener('keydown', handleKeyDown);
+ //   };
+ // }, [isSpeechEnabled]);
 
-  useEffect(() => {
-    if (!isSpeechEnabled || !textToSpeak) return;
+  //useEffect(() => {
+  //  if (!isSpeechEnabled || !textToSpeak) return;
 
-    const synth = window.speechSynthesis;
-    synth.cancel();
-    const utterance = new SpeechSynthesisUtterance(textToSpeak);
-    synth.speak(utterance);
-  }, [textToSpeak, isSpeechEnabled]);
-
-  return { synthesizeSpeech, toggleSpeechSynthesis, cancelSpeech, isSpeechEnabled };
+  //  const synth = window.speechSynthesis;
+  //  synth.cancel();
+  //  const utterance = new SpeechSynthesisUtterance(textToSpeak);
+  //  synth.speak(utterance);
+  //}, [textToSpeak, isSpeechEnabled]);
+// return { synthesizeSpeech, toggleSpeechSynthesis, cancelSpeech, isSpeechEnabled };
+  return { synthesizeSpeech, cancelSpeech };
 }
 
 export default useSpeechSynthesis;
