@@ -11,7 +11,6 @@ export default {
   com_ui_capability_remember: 'Lembrar o que o usuário disse antes na conversa',
   com_ui_capability_correction: 'Permite que o usuário forneça correções adicionais',
   com_ui_capability_decline_requests: 'Treinado para rejeitar pedidos inadequados',
-  com_ui_pay_per_call: 'Todas as conversas de IA em um só lugar. Pague por chamada e não por mês.',
   com_ui_limitations: 'Limitações',
   com_ui_limitation_incorrect_info: 'Pode ocasionalmente gerar informações incorretas',
   com_ui_limitation_harmful_biased:
@@ -29,6 +28,10 @@ export default {
   com_ui_showing: 'Exibindo',
   com_ui_of: 'de',
   com_ui_entries: 'Entradas',
+  com_ui_pay_per_call: 'Todas as conversas de IA em um só lugar. Pague por chamada e não por mês.',
+  com_ui_delete: 'Deletar',
+  com_ui_delete_conversation: 'Deletar chat?',
+  com_ui_delete_conversation_confirm: 'Isso vai deletar',
   com_auth_error_login:
     'Não é possível fazer login com as informações fornecidas. Verifique suas credenciais e tente novamente.',
   com_auth_no_account: 'Não tem uma conta?',
