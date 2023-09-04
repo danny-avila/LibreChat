@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import hotkeys from 'hotkeys-js';
 
 const useSpeechRecognition = (ask) => {
   const [isSpeechSupported, setIsSpeechSupported] = useState(false);
@@ -66,21 +67,17 @@ const useSpeechRecognition = (ask) => {
     }
   };
 
-  const handleKeyDown = (e) => {
-    if (e.shiftKey && e.altKey && e.key === 'L') {
+  useEffect(() => {
+    hotkeys('shift+alt+l', (event, handler) => {
       if (isSpeechSupported) {
         toggleListening();
       }
-    }
-  };
-
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
+    });
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      hotkeys.unbind('shift+alt+l');
     };
-  });
+  }, [isSpeechSupported]);
   
   return { isSpeechSupported, isListening, text, toggleListening };
 };
