@@ -32,6 +32,7 @@ const useSpeechRecognition = (ask) => {
 
         if (result.isFinal) {
           setText(transcript);
+          //Enable below code to auto submit
           //ask({ text: transcript });
         }
       }
@@ -42,7 +43,7 @@ const useSpeechRecognition = (ask) => {
 
     recognition.onend = () => {
       setIsListening(false);
-      setText('');
+      // setText('');
     };
 
     if (isListening) {
