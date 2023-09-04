@@ -29,9 +29,9 @@ class PluginsClient extends OpenAIClient {
     super.setOptions(options);
     this.isGpt3 = this.modelOptions.model.startsWith('gpt-3');
 
-    if (this.options.reverseProxyUrl) {
-      this.langchainProxy = this.options.reverseProxyUrl.match(/.*v1/)[0];
-    }
+    // if (this.options.reverseProxyUrl) {
+    //   this.langchainProxy = this.options.reverseProxyUrl.match(/.*v1/)[0];
+    // }
   }
 
   getSaveOptions() {
