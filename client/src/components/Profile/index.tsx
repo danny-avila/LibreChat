@@ -12,8 +12,9 @@ import { localize } from '~/localization/Translation';
 import PublicConversations from './PublicConversations';
 import { Spinner } from '../svg';
 import UserIcon from '../svg/UserIcon';
+import Checkmark from '../svg/Checkmark';
 import { log } from 'console';
-import  EditIcon from '../svg/EditIcon';
+import EditIcon from '../svg/EditIcon';
 
 function ProfileContent() {
   let initialBio = '来个大开脑洞，自爆一下你的人生经验，让大家开开眼界！';
@@ -21,6 +22,7 @@ function ProfileContent() {
   const [tabValue, setTabValue] = useState<string>('');
   const [profileUser, setProfileUser] = useState<TUser | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
+  const [newUsername, setNewUsername] = useState<string>('');
   const [isFollower, setIsFollower] = useState<boolean>(false);
   const [numOfFollowers, setNumOfFollowers] = useState<number>(0);
   const [numOfFollowing, setNumOfFollowing] = useState<number>(0);
@@ -176,9 +178,49 @@ function ProfileContent() {
     }
   };
 
+  const handleUsernameChange = (e) => {
+    // Update the newUsername state as the user types
+    setNewUsername(e.target.value);
+  };
+
+  // submit username
+  const handleChangeUsername = async (e) => {
+    e.preventDefault();
+    console.log('newUsername', newUsername);
+    const requestBody = {
+      username: newUsername
+    };
+
+    try {
+      const usernameResponse = await fetch(`/api/user/${userId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(requestBody)
+      });
+      if (usernameResponse.ok) {
+        const responseData = await usernameResponse.json();
+        console.log('res data from backend', responseData);
+        if (responseData.username === '') {
+          alert('必填 required');
+          return;
+        } else {
+          setNewUsername(responseData?.username);
+        }
+      }
+    } catch (error) {
+      alert(`An error occurred: ${error}`);
+    }
+    setIsEditing(false);
+
+  };
+
   useEffect(() => {
     if (getUserByIdQuery.isSuccess) {
       setProfileUser(getUserByIdQuery.data);
+      setNewUsername(getUserByIdQuery.data?.username);
       // Set biography from fetched data or use initial value
       // Set biography from fetched data or use initial value
       if (getUserByIdQuery.data?.biography === '') {
@@ -230,10 +272,14 @@ function ProfileContent() {
     }
   }, [followUserMutation.isSuccess, followUserMutation.data]);
 
+  const [isEditing, setIsEditing] = useState(false);
+  const handleUsernameClick = () => {
+    setIsEditing(true);
+  };
+
   return (
     <div className="flex h-full flex-col justify-center md:mx-36">
       <div className="mt-6 flex flex-col flex-wrap items-start md:my-4 md:flex-row md:gap-6">
-        {/*User icon, full name, and username */}
         <div className="row flex flex items-center">
           <div
             title="User Icon"
@@ -250,9 +296,32 @@ function ProfileContent() {
           </div>
           <div className="mx-3 flex flex-col justify-center gap-4 text-xl dark:text-gray-200">
             <div>{profileUser?.name}</div>
-            <div>{profileUser?.username}</div>
+            <div onClick={handleUsernameClick}>
+              {isEditing ? (
+                <div>
+                  <form onSubmit={handleChangeUsername}>
+                    <input
+                      className='text-black pl-2'
+                      type="text"
+                      id="newUsernameInput"
+                      placeholder="Enter new username"
+                      value={newUsername}
+                      onChange={handleUsernameChange}
+                    />
+                    <button className='pl-4' type="submit">
+                      <Checkmark />
+                    </button>
+                  </form>
+                </div>
+              ) : (
+                <div>{newUsername}</div>
+              )}
+            </div>
           </div>
         </div>
+
+        {/*change username */}
+
         {/*Copy profile page URL button */}
         <div className="flex flex-row items-center gap-4 self-center px-3 py-3 text-lg">
           <button

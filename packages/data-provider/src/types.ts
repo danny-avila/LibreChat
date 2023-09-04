@@ -160,6 +160,7 @@ export type TUser = {
   numOfReferrals: number;
   createdAt: string;
   updatedAt: string;
+  biography: string;
   followers: object;
   following: object;
 };
