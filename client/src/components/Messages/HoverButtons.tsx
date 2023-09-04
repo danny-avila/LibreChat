@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { TConversation, TMessage } from 'librechat-data-provider';
+import useSpeechSynthesis from './SpeechSynthesis';
 import { Clipboard, CheckMark, EditIcon, RegenerateIcon, ContinueIcon, VolumeIcon, VolumeMuteIcon } from '~/components/svg';
 import { useGenerations } from '~/hooks';
 import { cn } from '~/utils';
@@ -27,12 +28,15 @@ export default function HoverButtons({
 }: THoverButtons) {
   const { endpoint } = conversation ?? {};
   const [isCopied, setIsCopied] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const { synthesizeSpeech } = useSpeechSynthesis();
   const { hideEditButton, regenerateEnabled, continueSupported } = useGenerations({
     isEditing,
     isSubmitting,
     message,
     endpoint: endpoint ?? '',
   });
+  
   if (!conversation) {
     return null;
   }
@@ -46,6 +50,16 @@ export default function HoverButtons({
     enterEdit();
   };
 
+  const toggleSpeech = () => {
+    if (isSpeaking) {
+      synthesizeSpeech.cancel();
+    } else {
+      // const utterance = new SpeechSynthesisUtterance(message?.text ?? ""); // Assuming 'text' is the field in message that contains the text to speak
+      synthesizeSpeech(message?.text ?? "");
+    }
+    setIsSpeaking(!isSpeaking);
+  };
+  
   return (
     <div className="visible mt-2 flex justify-center gap-3 self-end text-gray-400 md:gap-4 lg:absolute lg:right-0 lg:top-0 lg:mt-0 lg:translate-x-full lg:gap-1 lg:self-center lg:pl-2">
       <button
