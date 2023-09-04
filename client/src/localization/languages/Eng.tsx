@@ -41,6 +41,9 @@ export default {
   com_ui_all: 'all',
   com_ui_clear: 'Clear',
   com_ui_chats: 'chats',
+  com_ui_delete: 'Delete',
+  com_ui_delete_conversation: 'Delete chat?',
+  com_ui_delete_conversation_confirm: 'This will delete',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_no_account: 'Don\'t have an account?',

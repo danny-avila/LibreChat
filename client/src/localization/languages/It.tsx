@@ -42,6 +42,8 @@ export default {
   com_ui_all: 'tutti',
   com_ui_clear: 'Cancella',
   com_ui_chats: 'chat',
+  com_ui_delete_conversation: 'Elimina chat?',
+  com_ui_delete_conversation_confirm: 'Questo eliminerà',
   com_auth_error_login:
     'Impossibile accedere con le informazioni fornite. Controlla le tue credenziali e riprova.',
   com_auth_no_account: 'Non hai un account?',
