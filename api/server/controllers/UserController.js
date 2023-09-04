@@ -54,6 +54,39 @@ const postBiographyController = async (req, res) => {
   }
 };
 
+// update User name
+const usernameController = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { username } = req.body;
+
+    if (userId !== req.user.id) {
+      return res.status(403).json({ message: 'Unauthorized to update username' });
+    }
+
+    const updatedFields = {};
+    if (username !== undefined) {
+      updatedFields.username = username;
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $set: updatedFields },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    console.log('in controller', updatedUser)
+
+    res.status(200).json(updatedUser);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error updating biography' });
+  }
+};
+
 const updateUserPluginsController = async (req, res) => {
   const { user } = req;
   const { pluginKey, action, auth } = req.body;
@@ -139,5 +172,6 @@ module.exports = {
   getUserController,
   updateUserPluginsController,
   followUserController,
-  postBiographyController
+  postBiographyController,
+  usernameController
 };
