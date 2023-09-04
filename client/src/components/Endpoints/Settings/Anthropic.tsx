@@ -12,8 +12,10 @@ import {
 } from '~/components/ui';
 import OptionHover from './OptionHover';
 import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
+import { useLocalize } from '~/hooks';
 
 export default function Settings({ conversation, setOption, models, readonly }: TModelSelectProps) {
+  const localize = useLocalize();
   if (!conversation) {
     return null;
   }
@@ -43,14 +45,15 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         </div>
         <div className="grid w-full items-center gap-2">
           <Label htmlFor="modelLabel" className="text-left text-sm font-medium">
-            Custom Name <small className="opacity-40">(default: blank)</small>
+            {localize('com_endpoint_custom_name')}{' '}
+            <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
           </Label>
           <Input
             id="modelLabel"
             disabled={readonly}
             value={modelLabel || ''}
             onChange={(e) => setModelLabel(e.target.value ?? null)}
-            placeholder="Set a custom name for Claude"
+            placeholder={localize('com_endpoint_anthropic_custom_name_placeholder')}
             className={cn(
               defaultTextProps,
               'flex h-10 max-h-10 w-full resize-none px-3 py-2',
@@ -60,14 +63,15 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         </div>
         <div className="grid w-full items-center gap-2">
           <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
-            Prompt Prefix <small className="opacity-40">(default: blank)</small>
+            {localize('com_endpoint_prompt_prefix')}{' '}
+            <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
           </Label>
           <TextareaAutosize
             id="promptPrefix"
             disabled={readonly}
             value={promptPrefix || ''}
             onChange={(e) => setPromptPrefix(e.target.value ?? null)}
-            placeholder="Set custom instructions or context. Ignored if empty."
+            placeholder={localize('com_endpoint_prompt_prefix_placeholder')}
             className={cn(
               defaultTextProps,
               'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 ',
@@ -80,7 +84,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">
               <Label htmlFor="temp-int" className="text-left text-sm font-medium">
-                Temperature <small className="opacity-40">(default: 1)</small>
+                {localize('com_endpoint_temperature')}{' '}
+                <small className="opacity-40">({localize('com_endpoint_default')}: 0.2)</small>
               </Label>
               <InputNumber
                 id="temp-int"
@@ -116,9 +121,10 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">
-              <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
-                Top P <small className="opacity-40">(default: 0.7)</small>
-              </Label>
+              {localize('com_endpoint_top_p')}{' '}
+              <small className="opacity-40">
+                ({localize('com_endpoint_default_with_num', '0.7')})
+              </small>
               <InputNumber
                 id="top-p-int"
                 disabled={readonly}
@@ -155,7 +161,10 @@ export default function Settings({ conversation, setOption, models, readonly }: 
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">
               <Label htmlFor="top-k-int" className="text-left text-sm font-medium">
-                Top K <small className="opacity-40">(default: 5)</small>
+                {localize('com_endpoint_top_k')}{' '}
+                <small className="opacity-40">
+                  ({localize('com_endpoint_default_with_num', '5')})
+                </small>
               </Label>
               <InputNumber
                 id="top-k-int"
@@ -191,9 +200,10 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">
-              <Label htmlFor="max-tokens-int" className="text-left text-sm font-medium">
-                Max Output Tokens <small className="opacity-40">(default: 1024)</small>
-              </Label>
+              {localize('com_endpoint_max_output_tokens')}{' '}
+              <small className="opacity-40">
+                ({localize('com_endpoint_default_with_num', '1024')})
+              </small>
               <InputNumber
                 id="max-tokens-int"
                 disabled={readonly}
