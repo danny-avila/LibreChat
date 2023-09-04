@@ -54,7 +54,6 @@ export default function HoverButtons({
     if (isSpeaking) {
       cancelSpeech();
     } else {
-      // const utterance = new SpeechSynthesisUtterance(message?.text ?? ""); // Assuming 'text' is the field in message that contains the text to speak
       synthesizeSpeech(message?.text ?? "");
     }
     setIsSpeaking(!isSpeaking);
