@@ -13,6 +13,11 @@ function useSpeechSynthesis() {
     console.log('Toggle Text-To-Speech', !isSpeechEnabled);
   };
 
+  const cancelSpeech = () => {
+    const synth = window.speechSynthesis;
+    synth.cancel();
+  };
+  
   const handleKeyDown = (event) => {
     if (event.shiftKey && event.altKey && event.key === 'P') {
       toggleSpeechSynthesis();
@@ -31,11 +36,12 @@ function useSpeechSynthesis() {
     if (!isSpeechEnabled || !textToSpeak) return;
 
     const synth = window.speechSynthesis;
+    synth.cancel();
     const utterance = new SpeechSynthesisUtterance(textToSpeak);
     synth.speak(utterance);
   }, [textToSpeak, isSpeechEnabled]);
 
-  return { synthesizeSpeech, toggleSpeechSynthesis, isSpeechEnabled };
+  return { synthesizeSpeech, toggleSpeechSynthesis, cancelSpeech, isSpeechEnabled };
 }
 
 export default useSpeechSynthesis;
