@@ -12,7 +12,7 @@ import { localize } from '~/localization/Translation';
 import PublicConversations from './PublicConversations';
 import { Spinner } from '../svg';
 import UserIcon from '../svg/UserIcon';
-import Checkmark from '../svg/Checkmark';
+import CheckMark from '../svg/CheckMark';
 import { log } from 'console';
 import EditIcon from '../svg/EditIcon';
 
@@ -309,7 +309,7 @@ function ProfileContent() {
                       onChange={handleUsernameChange}
                     />
                     <button className='pl-4' type="submit">
-                      <Checkmark />
+                      <CheckMark />
                     </button>
                   </form>
                 </div>
