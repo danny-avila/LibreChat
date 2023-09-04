@@ -1,4 +1,3 @@
-const throttle = require('lodash/throttle');
 const { saveConvo } = require('../../../../models');
 
 const addTitle = async (req, { text, response, client }) => {
@@ -9,6 +8,4 @@ const addTitle = async (req, { text, response, client }) => {
   });
 };
 
-const throttledFunction = throttle(addTitle, 1000);
-
-module.exports = throttledFunction;
+module.exports = addTitle;
