@@ -152,7 +152,6 @@ function General() {
   const changeLang = useCallback(
     (value: string) => {
       setLangcode(value);
-      window.localStorage.setItem('lang', value);
     },
     [setLangcode],
   );
