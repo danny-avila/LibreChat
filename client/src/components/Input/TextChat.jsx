@@ -31,6 +31,7 @@ export default function TextChat({ isSearchView = false }) {
     if (isListening && speechText) {
       setText(speechText);
     } else {
+      //  Enable below for auto submit
       // setText('');
     }
   }, [speechText, isListening, setText]);
