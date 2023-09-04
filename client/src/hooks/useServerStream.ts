@@ -3,7 +3,6 @@ import { useResetRecoilState, useSetRecoilState } from 'recoil';
 import { SSE, createPayload, tMessageSchema, tConversationSchema } from 'librechat-data-provider';
 import type { TResPlugin, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
-import useSpeechSynthesis from '../components/Messages/SpeechSynthesis';
 import store from '~/store';
 
 type TResData = {
@@ -21,8 +20,7 @@ export default function useServerStream(submission: TSubmission | null) {
   const setConversation = useSetRecoilState(store.conversation);
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
   const { token } = useAuthContext();
-  const { synthesizeSpeech } = useSpeechSynthesis();
-
+  
   const { refreshConversations } = store.useConversations();
 
   const messageHandler = (data: string, submission: TSubmission) => {
@@ -228,9 +226,6 @@ export default function useServerStream(submission: TSubmission | null) {
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins, message });
         console.log('final', data);
-        if (data.responseMessage.text) {
-          synthesizeSpeech(data.responseMessage.text);
-        }
       }
       if (data.created) {
         message = {
