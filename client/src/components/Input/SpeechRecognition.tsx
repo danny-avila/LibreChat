@@ -43,7 +43,7 @@ const useSpeechRecognition = (ask) => {
 
     recognition.onend = () => {
       setIsListening(false);
-      // setText('');
+      setText('');
     };
 
     if (isListening) {
