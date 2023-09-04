@@ -59,7 +59,9 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditP
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title={`${title || localize('com_endpoint_edit_preset')} - ${preset?.title}`}
+        title={`${title || localize('com_ui_edit') + ' ' + localize('com_endpoint_preset')} - ${
+          preset?.title
+        }`}
         className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[720px] md:w-[750px] md:overflow-y-hidden lg:w-[950px] xl:h-[720px]"
         main={
           <div className="flex w-full flex-col items-center gap-2 md:h-[530px]">

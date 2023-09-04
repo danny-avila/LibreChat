@@ -140,7 +140,6 @@ export default {
   com_endpoint_export: '导出',
   com_endpoint_save_as_preset: '保存为预设',
   com_endpoint_not_implemented: '未实现功能',
-  com_endpoint_edit_preset: '预设编辑',
   com_endpoint_view_options: '查看选项',
   com_endpoint_my_preset: '我的预设',
   com_endpoint_agent_model: '代理模型 (推荐: GPT-3.5)',

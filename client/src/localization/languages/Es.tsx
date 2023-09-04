@@ -17,7 +17,8 @@ export default {
     'Puede producir ocasionalmente instrucciones perjudiciales o contenido sesgado',
   com_ui_limitation_limited_2021:
     'Conocimiento limitado sobre el mundo y eventos posteriores a 2021',
-  com_ui_pay_per_call: 'Todas las conversaciones de IA en un solo lugar. Pague por llamada y no por mes.',
+  com_ui_pay_per_call:
+    'Todas las conversaciones de IA en un solo lugar. Pague por llamada y no por mes.',
   com_ui_input: 'Entrada',
   com_ui_close: 'Cerrar',
   com_ui_model: 'Modelo',
@@ -151,7 +152,6 @@ export default {
   com_endpoint_export: 'Exportar',
   com_endpoint_save_as_preset: 'Guardar como Configuración',
   com_endpoint_not_implemented: 'No implementado',
-  com_endpoint_edit_preset: 'Editar Configuración',
   com_endpoint_view_options: 'Ver Opciones',
   com_endpoint_my_preset: 'Mi Configuración',
   com_endpoint_agent_model: 'Modelo del Agente (Recomendado: GPT-3.5)',

@@ -159,7 +159,6 @@ export default {
   com_endpoint_export: 'Exportieren',
   com_endpoint_save_as_preset: 'Als Preset speichern',
   com_endpoint_not_implemented: 'Nicht implementiert',
-  com_endpoint_edit_preset: 'Bearbeite Preset',
   com_endpoint_view_options: 'Optionen',
   com_endpoint_save_convo_as_preset: 'Speichere Chat als Preset',
   com_endpoint_my_preset: 'Meine Presets',

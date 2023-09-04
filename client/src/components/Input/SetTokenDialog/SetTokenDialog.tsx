@@ -7,8 +7,10 @@ import { Dialog } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { alternateName } from '~/utils';
 import store from '~/store';
+import { useLocalize } from '~/hooks';
 
 const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
+  const localize = useLocalize();
   const [token, setToken] = useState('');
   const { saveToken } = store.useToken(endpoint);
 
@@ -30,21 +32,21 @@ const SetTokenDialog = ({ open, onOpenChange, endpoint }) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title={`Set Token for ${alternateName[endpoint] ?? endpoint}`}
+        title={`${localize('com_endpoint_config_token_for')} ${
+          alternateName[endpoint] ?? endpoint
+        }`}
         className="w-full max-w-[650px] sm:w-3/4 md:w-3/4 lg:w-3/4"
         main={
           <div className="grid w-full items-center gap-2">
             <EndpointComponent token={token} setToken={setToken} endpoint={endpoint} />
-            <small className="text-red-600">
-              Your token will be sent to the server, but not saved.
-            </small>
+            <small className="text-red-600">{localize('com_endpoint_config_token_server')}</small>
             <HelpText endpoint={endpoint} />
           </div>
         }
         selection={{
           selectHandler: submit,
           selectClasses: 'bg-green-600 hover:bg-green-700 dark:hover:bg-green-800 text-white',
-          selectText: 'Submit',
+          selectText: localize('com_ui_submit'),
         }}
       />
     </Dialog>

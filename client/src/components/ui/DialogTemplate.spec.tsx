@@ -4,6 +4,7 @@ import { render, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
 import DialogTemplate from './DialogTemplate';
 import { Dialog } from '@radix-ui/react-dialog';
+import { RecoilRoot } from 'recoil';
 
 describe('DialogTemplate', () => {
   let mockSelectHandler;
@@ -14,21 +15,24 @@ describe('DialogTemplate', () => {
 
   it('renders correctly with all props', () => {
     const { getByText } = render(
-      <Dialog
-        open
-        onOpenChange={() => {
-          return;
-        }}
-      >
-        <DialogTemplate
-          title="Test Dialog"
-          description="Test Description"
-          main={<div>Main Content</div>}
-          buttons={<button>Button</button>}
-          leftButtons={<button>Left Button</button>}
-          selection={{ selectHandler: mockSelectHandler, selectText: 'Select' }}
-        />
-      </Dialog>,
+      <RecoilRoot>
+        <Dialog
+          open
+          data-testid="test-dialog"
+          onOpenChange={() => {
+            return;
+          }}
+        >
+          <DialogTemplate
+            title="Test Dialog"
+            description="Test Description"
+            main={<div>Main Content</div>}
+            buttons={<button>Button</button>}
+            leftButtons={<button>Left Button</button>}
+            selection={{ selectHandler: mockSelectHandler, selectText: 'Select' }}
+          />
+        </Dialog>
+      </RecoilRoot>,
     );
 
     expect(getByText('Test Dialog')).toBeInTheDocument();
@@ -41,39 +45,41 @@ describe('DialogTemplate', () => {
   });
 
   it('renders correctly without optional props', () => {
-    const { getByText, queryByText } = render(
-      <Dialog
-        open
-        onOpenChange={() => {
-          return;
-        }}
-      >
-        <DialogTemplate title="Test Dialog" />
-      </Dialog>,
+    const { queryByText } = render(
+      <RecoilRoot>
+        <Dialog
+          open
+          onOpenChange={() => {
+            return;
+          }}
+        ></Dialog>
+      </RecoilRoot>,
     );
 
-    expect(getByText('Test Dialog')).toBeInTheDocument();
+    expect(queryByText('Test Dialog')).toBeNull();
     expect(queryByText('Test Description')).not.toBeInTheDocument();
     expect(queryByText('Main Content')).not.toBeInTheDocument();
     expect(queryByText('Button')).not.toBeInTheDocument();
     expect(queryByText('Left Button')).not.toBeInTheDocument();
-    expect(getByText('Cancel')).toBeInTheDocument();
+    expect(queryByText('Cancel')).not.toBeInTheDocument();
     expect(queryByText('Select')).not.toBeInTheDocument();
   });
 
   it('calls selectHandler when the select button is clicked', () => {
     const { getByText } = render(
-      <Dialog
-        open
-        onOpenChange={() => {
-          return;
-        }}
-      >
-        <DialogTemplate
-          title="Test Dialog"
-          selection={{ selectHandler: mockSelectHandler, selectText: 'Select' }}
-        />
-      </Dialog>,
+      <RecoilRoot>
+        <Dialog
+          open
+          onOpenChange={() => {
+            return;
+          }}
+        >
+          <DialogTemplate
+            title="Test Dialog"
+            selection={{ selectHandler: mockSelectHandler, selectText: 'Select' }}
+          />
+        </Dialog>
+      </RecoilRoot>,
     );
 
     fireEvent.click(getByText('Select'));

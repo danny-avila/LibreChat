@@ -75,7 +75,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 disabled={readonly}
                 value={promptPrefix || ''}
                 onChange={(e) => setPromptPrefix(e.target.value ?? null)}
-                placeholder={localize('com_endpoint_google_prompt_prefix_placeholder')}
+                placeholder={localize('com_endpoint_prompt_prefix_placeholder')}
                 className={cn(
                   defaultTextProps,
                   'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 ',
