@@ -20,7 +20,7 @@ export default function useServerStream(submission: TSubmission | null) {
   const setConversation = useSetRecoilState(store.conversation);
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
   const { token } = useAuthContext();
-  
+
   const { refreshConversations } = store.useConversations();
 
   const messageHandler = (data: string, submission: TSubmission) => {
