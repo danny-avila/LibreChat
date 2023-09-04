@@ -3,7 +3,7 @@ import { useResetRecoilState, useSetRecoilState } from 'recoil';
 import { SSE, createPayload, tMessageSchema, tConversationSchema } from 'librechat-data-provider';
 import type { TResPlugin, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
-import useSpeechSynthesis from '../Messages/SpeechSynthesis';
+import useSpeechSynthesis from '../components/Messages/SpeechSynthesis';
 import store from '~/store';
 
 type TResData = {
