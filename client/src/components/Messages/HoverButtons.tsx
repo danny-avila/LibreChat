@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { TConversation, TMessage } from 'librechat-data-provider';
-import { Clipboard, CheckMark, EditIcon, RegenerateIcon, ContinueIcon } from '~/components/svg';
+import { Clipboard, CheckMark, EditIcon, RegenerateIcon, ContinueIcon, VolumeIcon, VolumeMuteIcon } from '~/components/svg';
 import { useGenerations } from '~/hooks';
 import { cn } from '~/utils';
 
