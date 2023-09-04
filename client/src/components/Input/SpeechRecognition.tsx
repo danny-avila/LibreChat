@@ -71,6 +71,7 @@ const useSpeechRecognition = (ask) => {
     console.log('Setting up hotkeys');
     hotkeys('shift+alt+l', (event, handler) => {
       console.log('Hotkey triggered');
+      event.preventDefault();
       if (isSpeechSupported) {
         toggleListening();
       }
