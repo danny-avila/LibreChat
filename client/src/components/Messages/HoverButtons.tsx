@@ -29,7 +29,7 @@ export default function HoverButtons({
   const { endpoint } = conversation ?? {};
   const [isCopied, setIsCopied] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const { synthesizeSpeech } = useSpeechSynthesis();
+  const { synthesizeSpeech, cancelSpeech } = useSpeechSynthesis();
   const { hideEditButton, regenerateEnabled, continueSupported } = useGenerations({
     isEditing,
     isSubmitting,
@@ -52,7 +52,7 @@ export default function HoverButtons({
 
   const toggleSpeech = () => {
     if (isSpeaking) {
-      synthesizeSpeech.cancel();
+      cancelSpeech();
     } else {
       // const utterance = new SpeechSynthesisUtterance(message?.text ?? ""); // Assuming 'text' is the field in message that contains the text to speak
       synthesizeSpeech(message?.text ?? "");
