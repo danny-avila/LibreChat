@@ -174,7 +174,7 @@ export default function TextChat({ isSearchView = false }) {
                   handleStopGenerating={handleStopGenerating}
                   disabled={disabled || isNotAppendable}
                   isSubmitting={isSubmitting}
-                  userProvideKey={endpointsConfig?.[conversation.endpoint]?.userProvide}
+                  userProvidesKey={endpointsConfig?.[conversation.endpoint]?.userProvide}
                 />
               </div>
             </div>

@@ -5,7 +5,7 @@ const { getUserKey, checkUserKeyExpiry } = require('../../../services/UserServic
 const initializeClient = async (req, endpointOption) => {
   const { PROXY, OPENAI_API_KEY, AZURE_API_KEY, PLUGINS_USE_AZURE, OPENAI_REVERSE_PROXY } =
     process.env;
-  const { key: expiresAt, endpoint } = req.body;
+  const { key: expiresAt } = req.body;
   const clientOptions = {
     debug: true,
     reverseProxyUrl: OPENAI_REVERSE_PROXY ?? null,
@@ -13,8 +13,9 @@ const initializeClient = async (req, endpointOption) => {
     ...endpointOption,
   };
 
-  const isUserProvided =
-    endpoint === 'openAI' ? OPENAI_API_KEY === 'user_provided' : AZURE_API_KEY === 'user_provided';
+  const isUserProvided = PLUGINS_USE_AZURE
+    ? AZURE_API_KEY === 'user_provided'
+    : OPENAI_API_KEY === 'user_provided';
 
   let key = null;
   if (expiresAt && isUserProvided) {
@@ -22,13 +23,16 @@ const initializeClient = async (req, endpointOption) => {
       expiresAt,
       'Your OpenAI API key has expired. Please provide your API key again.',
     );
-    key = await getUserKey({ userId: req.user.id, name: endpoint });
+    key = await getUserKey({
+      userId: req.user.id,
+      name: PLUGINS_USE_AZURE ? 'azureOpenAI' : 'openAI',
+    });
   }
 
   let openAIApiKey = isUserProvided ? key : OPENAI_API_KEY;
 
   if (PLUGINS_USE_AZURE) {
-    clientOptions.azure = getAzureCredentials();
+    clientOptions.azure = isUserProvided ? JSON.parse(key) : getAzureCredentials();
     openAIApiKey = clientOptions.azure.azureOpenAIApiKey;
   }
 

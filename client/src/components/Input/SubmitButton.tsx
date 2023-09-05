@@ -10,22 +10,22 @@ export default function SubmitButton({
   handleStopGenerating,
   disabled,
   isSubmitting,
-  userProvideKey,
+  userProvidesKey,
 }) {
   const { endpoint } = conversation;
   const [isDialogOpen, setDialogOpen] = useState(false);
   const { checkExpiry } = useUserKey(endpoint);
-  const [isKeyProvided, setKeyProvided] = useState(userProvideKey ? checkExpiry() : true);
+  const [isKeyProvided, setKeyProvided] = useState(userProvidesKey ? checkExpiry() : true);
   const isKeyActive = checkExpiry();
   const localize = useLocalize();
 
   useEffect(() => {
-    if (userProvideKey) {
+    if (userProvidesKey) {
       setKeyProvided(isKeyActive);
     } else {
       setKeyProvided(true);
     }
-  }, [checkExpiry, endpoint, userProvideKey, isKeyActive]);
+  }, [checkExpiry, endpoint, userProvidesKey, isKeyActive]);
 
   const clickHandler = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -66,7 +66,7 @@ export default function SubmitButton({
             </div>
           </div>
         </button>
-        {userProvideKey && (
+        {userProvidesKey && endpoint !== 'gptPlugins' && (
           <SetKeyDialog open={isDialogOpen} onOpenChange={setDialogOpen} endpoint={endpoint} />
         )}
       </>
