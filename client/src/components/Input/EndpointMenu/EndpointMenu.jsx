@@ -21,7 +21,6 @@ import {
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { cn, cleanupPreset, getDefaultConversation } from '~/utils';
 import { useLocalize } from '~/hooks';
-
 import store from '~/store';
 
 export default function NewConversationMenu() {
@@ -155,24 +154,28 @@ export default function NewConversationMenu() {
   return (
     <Dialog className="z-[100]">
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-        <DropdownMenuTrigger asChild>
-          <Button
-            id="new-conversation-menu"
-            data-testid="new-conversation-menu"
-            variant="outline"
-            className={
-              'group relative mb-[-12px] ml-1 mt-[-8px] items-center rounded-md border-0 p-1 outline-none focus:ring-0 focus:ring-offset-0 dark:data-[state=open]:bg-opacity-50 md:left-1 md:ml-0 md:ml-[-12px] md:pl-1'
-            }
+        <Button
+          id="new-conversation-menu"
+          data-testid="new-conversation-menu"
+          variant="outline"
+          className={
+            'group relative mb-[-12px] ml-1 mt-[-8px] items-center rounded-md border-0 p-1 outline-none focus:ring-0 focus:ring-offset-0 dark:data-[state=open]:bg-opacity-50 md:left-1 md:ml-0 md:ml-[-12px] md:pl-1'
+          }
+        >
+          <DropdownMenuTrigger asChild>{icon}</DropdownMenuTrigger>
+          <span
+            className={cn(
+              'max-w-0 overflow-hidden whitespace-nowrap px-0 text-slate-600 transition-all',
+              menuOpen ? 'max-w-[80px] px-2 dark:text-slate-300' : '',
+            )}
           >
-            {icon}
-            <span className="max-w-0 overflow-hidden whitespace-nowrap px-0 text-slate-600 transition-all group-data-[state=open]:max-w-[80px] group-data-[state=open]:px-2 dark:text-slate-300">
-              {localize('com_endpoint_new_topic')}
-            </span>
-          </Button>
-        </DropdownMenuTrigger>
+            {localize('com_endpoint_new_topic')}
+          </span>
+        </Button>
         <DropdownMenuContent
           className="z-[100] w-[375px] dark:bg-gray-900 md:w-96"
           onCloseAutoFocus={(event) => event.preventDefault()}
+          side="top"
         >
           <DropdownMenuLabel
             className="cursor-pointer dark:text-gray-300"
