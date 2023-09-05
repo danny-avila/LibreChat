@@ -152,14 +152,6 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       responseMessage: response,
     });
     res.end();
-
-    // if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
-    //   const title = await titleConvo({ text, response });
-    //   await saveConvo(req.user.id, {
-    //     conversationId,
-    //     title,
-    //   });
-    // }
   } catch (error) {
     console.error(error);
     const errorMessage = {
