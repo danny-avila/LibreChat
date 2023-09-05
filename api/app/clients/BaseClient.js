@@ -3,9 +3,9 @@ const TextStream = require('./TextStream');
 const { RecursiveCharacterTextSplitter } = require('langchain/text_splitter');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { loadSummarizationChain } = require('langchain/chains');
-const { refinePrompt } = require('./prompts/refinePrompt');
 const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('../../models');
 const { addSpaceIfNeeded } = require('../../server/utils');
+const { refinePrompt } = require('./prompts');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
