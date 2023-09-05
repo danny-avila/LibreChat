@@ -142,7 +142,7 @@ export type TDangerButtonProps = {
   ref?: React.RefObject<HTMLButtonElement>;
 };
 
-export type TSettingsDialogProps = {
+export type TDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };

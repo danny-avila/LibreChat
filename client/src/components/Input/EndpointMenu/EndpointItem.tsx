@@ -68,7 +68,7 @@ export default function ModelItem({
           </button>
         ) : null}
       </DropdownMenuRadioItem>
-      {userProvidesKey && endpoint !== 'gptPlugins' && (
+      {userProvidesKey && (
         <SetKeyDialog open={isDialogOpen} onOpenChange={setDialogOpen} endpoint={endpoint} />
       )}
     </>

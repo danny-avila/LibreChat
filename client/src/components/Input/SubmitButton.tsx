@@ -66,7 +66,7 @@ export default function SubmitButton({
             </div>
           </div>
         </button>
-        {userProvidesKey && endpoint !== 'gptPlugins' && (
+        {userProvidesKey && (
           <SetKeyDialog open={isDialogOpen} onOpenChange={setDialogOpen} endpoint={endpoint} />
         )}
       </>

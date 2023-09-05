@@ -2,11 +2,11 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
 import { CogIcon, DataIcon } from '~/components/svg';
 import { useMediaQuery, useLocalize } from '~/hooks';
-import type { TSettingsDialogProps } from '~/common';
+import type { TDialogProps } from '~/common';
 import { General, Data } from './SettingsTabs';
 import { cn } from '~/utils';
 
-export default function Settings({ open, onOpenChange }: TSettingsDialogProps) {
+export default function Settings({ open, onOpenChange }: TDialogProps) {
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const localize = useLocalize();
 
