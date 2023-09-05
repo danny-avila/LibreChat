@@ -1,5 +1,5 @@
-const runTitleConvoChain = require('./runTitleConvoChain');
+const runTitleChain = require('./runTitleChain');
 
 module.exports = {
-  runTitleConvoChain,
+  runTitleChain,
 };
