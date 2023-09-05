@@ -30,6 +30,8 @@ export default {
   com_ui_pay_per_call: 'All AI conversations in one place. Pay per call and not per month',
   com_ui_enter: 'Enter',
   com_ui_submit: 'Submit',
+  com_ui_upload_success: 'Successfully uploaded file',
+  com_ui_upload_invalid: 'Invalid file for upload',
   com_ui_cancel: 'Cancel',
   com_ui_save: 'Save',
   com_ui_copy_to_clipboard: 'Copy to clipboard',
@@ -201,7 +203,7 @@ export default {
   com_endpoint_config_key_encryption: 'Your key will be encrypted and deleted at',
   com_endpoint_config_key_expiry: 'the expiry time',
   com_endpoint_config_key_import_json_key: 'Import Service Account JSON Key.',
-  com_endpoint_config_key_import_json_key_succesful: 'Import Service Account JSON Key.',
+  com_endpoint_config_key_import_json_key_success: 'Successfully Imported Service Account JSON Key',
   com_endpoint_config_key_import_json_key_invalid:
     'Invalid Service Account JSON Key, Did you import the correct file?',
   com_endpoint_config_key_get_edge_key: 'To get your Access token for Bing, login to',
