@@ -7,7 +7,7 @@ const initializeClient = async (req, endpointOption) => {
     process.env;
   const { key: expiresAt } = req.body;
   const clientOptions = {
-    debug: true,
+    // debug: true,
     reverseProxyUrl: OPENAI_REVERSE_PROXY ?? null,
     proxy: PROXY ?? null,
     ...endpointOption,

@@ -119,7 +119,7 @@ class OpenAIClient extends BaseClient {
     }
 
     if (this.azureEndpoint && this.options.debug) {
-      console.debug(`Using Azure endpoint: ${this.azureEndpoint}`, this.azure);
+      console.debug('Using Azure endpoint');
     }
 
     return this;
@@ -409,7 +409,7 @@ class OpenAIClient extends BaseClient {
 
       title = await runTitleChain({ llm, text, convo });
     } catch (e) {
-      console.error(e);
+      console.error(e.message);
       console.log('There was an issue generating title with LangChain, trying the old method...');
       modelOptions.model = 'gpt-3.5-turbo';
       const instructionsPayload = [
