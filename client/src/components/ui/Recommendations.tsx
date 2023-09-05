@@ -22,7 +22,9 @@ import { useNavigate } from 'react-router-dom';
 import { alternateName } from '~/utils';
 
 export default function Recommendations() {
-  const [tabValue, setTabValue] = useState<string>('recent');
+  const [tabValue, setTabValue] = useState<string>(
+    window.sessionStorage.getItem('tab') || 'recent'
+  );
 
   // UI states
   const [convoIdx, setConvoIdx] = useState<number>(0);
@@ -59,9 +61,14 @@ export default function Recommendations() {
 
   // Save cached users and messages to localStorage
   const saveCache = () => {
-    const cachePackage = { cache: cache, cacheIdx: cacheIdx, convoIdx: convoIdx };
-    window.sessionStorage.setItem(`${tabValue}Cache`, JSON.stringify(cachePackage));
+    window.sessionStorage.setItem(`${tabValue}Cache`, JSON.stringify(cache));
   };
+
+  // Save browse location
+  const saveIdx = () => {
+    const idxPackage = { cacheIdx: cacheIdx, convoIdx: convoIdx };
+    window.sessionStorage.setItem(`${tabValue}Idx`, JSON.stringify(idxPackage));
+  }
 
   const plugins = (
     <>
@@ -145,15 +152,17 @@ export default function Recommendations() {
   async function getRecommendations() {
     const conversations = window.sessionStorage.getItem(`${tabValue}Conversations`);
     const cacheLS = window.sessionStorage.getItem(`${tabValue}Cache`);
+    const idxLS = window.sessionStorage.getItem(`${tabValue}Idx`);
 
-    if (conversations && cacheLS) {
+    if (conversations && cacheLS && idxLS) {
       setConvoData(null);
       setConvoUser(null);
       const convoObject = JSON.parse(conversations);
       setConvoData(convoObject);
       setConvoDataLength(convoObject.length);
 
-      const { cache, cacheIdx, convoIdx } = JSON.parse(cacheLS);
+      const cache = JSON.parse(cacheLS);
+      const { cacheIdx, convoIdx } = JSON.parse(idxLS);
       setCache(cache);
       setCacheIdx(cacheIdx);
       setConvoIdx(convoIdx);
@@ -203,6 +212,9 @@ export default function Recommendations() {
           cache.pop();
         }
       }
+
+      saveCache();
+      saveIdx();
 
       setMsgTree(buildTree(messagesResponseObject));
       setConvoUser(userResponseObject);
@@ -267,8 +279,6 @@ export default function Recommendations() {
     if (tabValue === value) {
       fetchRecommendations();
     } else {
-      // Store the cache and browse location in localStorage before switching tabs
-      saveCache();
       setTabValue(value);
     }
   };
@@ -276,6 +286,7 @@ export default function Recommendations() {
   // Get recommendations on mount and on tab switch
   useEffect(() => {
     getRecommendations();
+    window.sessionStorage.setItem('tab', tabValue);
   }, [user, tabValue]);
 
   // Set current conversation
@@ -313,6 +324,8 @@ export default function Recommendations() {
       } else {
         setLiked(false);
       }
+
+      saveIdx();
     }
   }, [convoData, convoIdx, user]);
 
