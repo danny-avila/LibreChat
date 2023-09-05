@@ -278,275 +278,298 @@ function ProfileContent() {
   };
 
   return (
-    <div className="flex h-full flex-col justify-center md:mx-36">
-      <div className="mt-6 flex flex-col flex-wrap items-start md:my-4 md:flex-row md:gap-6">
-        <div className="row flex flex items-center">
-          <div
-            title="User Icon"
-            className="relative mx-4 my-1 flex items-center justify-center md:my-3 md:ml-12"
-          >
-            <img
-              className="rounded-md"
-              src={
-                profileUser?.avatar ||
-                `https://api.dicebear.com/6.x/initials/svg?seed=${profileUser?.name}&fontFamily=Verdana&fontSize=36&size=96`
-              }
-              alt="avatar"
-            />
-          </div>
-          <div className="mx-3 flex flex-col justify-center gap-4 text-xl dark:text-gray-200">
-            <div>{profileUser?.name}</div>
-            <div onClick={handleUsernameClick}>
-              {isEditing ? (
-                <div>
-                  <form onSubmit={handleChangeUsername}>
-                    <input
-                      className='text-black pl-2'
-                      type="text"
-                      id="newUsernameInput"
-                      placeholder="Enter new username"
-                      value={newUsername}
-                      onChange={handleUsernameChange}
-                    />
-                    <button className='pl-4' type="submit">
-                      <CheckMark />
-                    </button>
-                  </form>
-                </div>
-              ) : (
-                <div>{newUsername}</div>
-              )}
+    <>
+      <button
+        className='absolute flex flex-row w-fit top-12 right-0 mx-2 my-1 py-2 px-3 items-center rounded-md text-gray-800 md:top-1 md:left-12 hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600'
+        onClick={() => {history.back()}}
+      >
+        <svg
+          stroke="currentColor"
+          fill="none"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="h-4 w-4"
+          height="1em"
+          width="1em"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <line x1="1" y1="12" x2="19" y2="12" />
+          <polyline points="8 19 1 12 8 5" />
+        </svg>
+        {localize(lang, 'com_ui_back')}
+      </button>
+      <div className="flex h-full flex-col justify-center md:mx-36">
+        <div className="mt-6 flex flex-col flex-wrap items-start md:my-4 md:flex-row md:gap-6">
+          <div className="row flex flex items-center">
+            <div
+              title="User Icon"
+              className="relative mx-4 my-1 flex items-center justify-center md:my-3 md:ml-12"
+            >
+              <img
+                className="rounded-md"
+                src={
+                  profileUser?.avatar ||
+                  `https://api.dicebear.com/6.x/initials/svg?seed=${profileUser?.name}&fontFamily=Verdana&fontSize=36&size=96`
+                }
+                alt="avatar"
+              />
             </div>
-          </div>
-        </div>
-
-        {/*change username */}
-
-        {/*Copy profile page URL button */}
-        <div className="flex flex-row items-center gap-4 self-center px-3 py-3 text-lg">
-          <button
-            className="w-32 text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200"
-            onClick={() => {
-              if (copied) return;
-              setCopied(true);
-              window.navigator.clipboard.writeText(window.location.href);
-              setTimeout(() => setCopied(false), 2000);
-            }}
-          >
-            <div className="flex flex-col items-center">
-              {copied ? (
-                <>
-                  <svg
-                    stroke="currentColor"
-                    fill="none"
-                    strokeWidth="2"
-                    viewBox="0 0 24 24"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="h-5 w-5"
-                    height="1em"
-                    width="1em"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                  {localize(lang, 'com_ui_copy_success')}
-                </>
-              ) : (
-                <>
-                  <svg
-                    className="h-5 w-5"
-                    width="1em"
-                    height="1em"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <g id="Communication / Share_iOS_Export">
-                      <path
-                        id="Vector"
-                        d="M9 6L12 3M12 3L15 6M12 3V13M7.00023 10C6.06835 10 5.60241 10 5.23486 10.1522C4.74481 10.3552 4.35523 10.7448 4.15224 11.2349C4 11.6024 4 12.0681 4 13V17.8C4 18.9201 4 19.4798 4.21799 19.9076C4.40973 20.2839 4.71547 20.5905 5.0918 20.7822C5.5192 21 6.07899 21 7.19691 21H16.8036C17.9215 21 18.4805 21 18.9079 20.7822C19.2842 20.5905 19.5905 20.2839 19.7822 19.9076C20 19.4802 20 18.921 20 17.8031V13C20 12.0681 19.9999 11.6024 19.8477 11.2349C19.6447 10.7448 19.2554 10.3552 18.7654 10.1522C18.3978 10 17.9319 10 17 10"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </g>
-                  </svg>
-                  {localize(lang, 'com_ui_share_profile')}
-                </>
-              )}
-            </div>
-          </button>
-          {/*Number of followers */}
-          <button
-            className="flex w-24 flex-col items-center leading-[22px] text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200"
-            onClick={() => {
-              setTabValue('followers');
-            }}
-          >
-            {numOfFollowers}
-            <br />
-            {localize(lang, 'com_ui_followers')}
-          </button>
-          {/*Number of following */}
-          <button
-            className="flex w-24 flex-col items-center leading-[22px] text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200"
-            onClick={() => {
-              setTabValue('following');
-            }}
-          >
-            {numOfFollowing}
-            <br />
-            {localize(lang, 'com_ui_following')}
-          </button>
-        </div>
-        {/*Follow user button */}
-        {userId !== user?.id && profileUser && user && (
-          <button
-            className="w-24 self-center rounded-md bg-gray-200 px-3 py-1 text-center text-lg font-bold text-gray-800 hover:text-black dark:bg-gray-600 dark:text-gray-400 dark:hover:text-gray-200"
-            onClick={followUserController}
-          >
-            {isFollower ? localize(lang, 'com_ui_unfollow') : localize(lang, 'com_ui_follow')}
-          </button>
-        )}
-      </div>
-
-      {/* User bio */}
-      {userId === user?.id ? (
-        // Current user's profile view
-        <div className="w-full rounded-lg p-6 dark:text-gray-200">
-          {editMode ? (
-            // Edit mode
-            <form className="flex flex-col space-y-4" onSubmit={handleSubmit}>
-              <div className="flex items-center">
-                <label htmlFor="bio" className="flex items-center justify-center pl-5 pr-5">
-                  <span className="text-lg">{localize(lang, 'com_ui_about_yourself')}</span>
-                </label>
-                <textarea
-                  id="bio"
-                  value={bio}
-                  placeholder="分享一下你的兴趣、技能和人生态度..."
-                  onChange={(e) => setBio(e.target.value)}
-                  className="flex-1 border border-gray-300 bg-transparent p-2"
-                ></textarea>
-              </div>
-
-              <div className="flex justify-end space-x-4">
-                <button
-                  type="button"
-                  onClick={handleEditProfile}
-                  className="rounded px-4 py-1 hover:bg-gray-500"
-                >
-                  {localize(lang, 'com_ui_back')}
-                </button>
-                <button
-                  type="submit"
-                  className="rounded bg-green-500 px-4 py-1 text-white hover:bg-green-600"
-                  onClick={handleSubmit}
-                >
-                  {localize(lang, 'com_ui_save')}
-                </button>
-              </div>
-            </form>
-          ) : (
-            // Profile view mode
-            <>
-              <div className="pl-1">
-                {expanded ? (
+            <div className="mx-3 flex flex-col justify-center gap-4 text-xl dark:text-gray-200">
+              <div>{profileUser?.name}</div>
+              <div onClick={handleUsernameClick}>
+                {isEditing ? (
                   <div>
-                    <div className="pl-1">{bio}</div>
-                    <button className="ml-2 text-green-500 hover:text-green-300" onClick={toggleExpand}>
-           Show Less
-                    </button>
+                    <form onSubmit={handleChangeUsername}>
+                      <input
+                        className='text-black pl-2'
+                        type="text"
+                        id="newUsernameInput"
+                        placeholder="Enter new username"
+                        value={newUsername}
+                        onChange={handleUsernameChange}
+                      />
+                      <button className='pl-4' type="submit">
+                        <CheckMark />
+                      </button>
+                    </form>
                   </div>
                 ) : (
-                  <div className="pl-1">
-                    {bio.length > 100 ? `${bio.slice(0, 100)}...` : bio}
-                    {bio.length > 100 && (
-                      <button className="ml-2 text-green-500 hover:text-green-300" onClick={toggleExpand}>
-                        {expanded ? 'Show Less' : 'Show More'}
-                      </button>
-                    )}
-                  </div>
+                  <div>{newUsername}</div>
                 )}
               </div>
-              <div className="flex flex-col md:flex-row md:items-start md:space-x-4">
-                <div className="ml-auto md:flex-none">
-                  <p className="mt-4">
-                    <button
-                      className="flex w-24 flex-col items-center leading-[22px] text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200"
-                      onClick={handleEditProfile}
+            </div>
+          </div>
+
+          {/*change username */}
+
+          {/*Copy profile page URL button */}
+          <div className="flex flex-row items-center gap-4 self-center px-3 py-3 text-lg">
+            <button
+              className="w-32 text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200"
+              onClick={() => {
+                if (copied) return;
+                setCopied(true);
+                window.navigator.clipboard.writeText(window.location.href);
+                setTimeout(() => setCopied(false), 2000);
+              }}
+            >
+              <div className="flex flex-col items-center">
+                {copied ? (
+                  <>
+                    <svg
+                      stroke="currentColor"
+                      fill="none"
+                      strokeWidth="2"
+                      viewBox="0 0 24 24"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-5 w-5"
+                      height="1em"
+                      width="1em"
+                      xmlns="http://www.w3.org/2000/svg"
                     >
-                      <EditIcon />
-                    </button>
-                  </p>
-                </div>
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    {localize(lang, 'com_ui_copy_success')}
+                  </>
+                ) : (
+                  <>
+                    <svg
+                      className="h-5 w-5"
+                      width="1em"
+                      height="1em"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <g id="Communication / Share_iOS_Export">
+                        <path
+                          id="Vector"
+                          d="M9 6L12 3M12 3L15 6M12 3V13M7.00023 10C6.06835 10 5.60241 10 5.23486 10.1522C4.74481 10.3552 4.35523 10.7448 4.15224 11.2349C4 11.6024 4 12.0681 4 13V17.8C4 18.9201 4 19.4798 4.21799 19.9076C4.40973 20.2839 4.71547 20.5905 5.0918 20.7822C5.5192 21 6.07899 21 7.19691 21H16.8036C17.9215 21 18.4805 21 18.9079 20.7822C19.2842 20.5905 19.5905 20.2839 19.7822 19.9076C20 19.4802 20 18.921 20 17.8031V13C20 12.0681 19.9999 11.6024 19.8477 11.2349C19.6447 10.7448 19.2554 10.3552 18.7654 10.1522C18.3978 10 17.9319 10 17 10"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </g>
+                    </svg>
+                    {localize(lang, 'com_ui_share_profile')}
+                  </>
+                )}
               </div>
-            </>
+            </button>
+            {/*Number of followers */}
+            <button
+              className="flex w-24 flex-col items-center leading-[22px] text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200"
+              onClick={() => {
+                setTabValue('followers');
+              }}
+            >
+              {numOfFollowers}
+              <br />
+              {localize(lang, 'com_ui_followers')}
+            </button>
+            {/*Number of following */}
+            <button
+              className="flex w-24 flex-col items-center leading-[22px] text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200"
+              onClick={() => {
+                setTabValue('following');
+              }}
+            >
+              {numOfFollowing}
+              <br />
+              {localize(lang, 'com_ui_following')}
+            </button>
+          </div>
+          {/*Follow user button */}
+          {userId !== user?.id && profileUser && user && (
+            <button
+              className="w-24 self-center rounded-md bg-gray-200 px-3 py-1 text-center text-lg font-bold text-gray-800 hover:text-black dark:bg-gray-600 dark:text-gray-400 dark:hover:text-gray-200"
+              onClick={followUserController}
+            >
+              {isFollower ? localize(lang, 'com_ui_unfollow') : localize(lang, 'com_ui_follow')}
+            </button>
           )}
         </div>
-      ) : (
-        // Other user's profile view
-        <div className="w-full rounded-lg p-6 dark:text-gray-200">
-          <div className="pl-7">{bio}</div>
+
+        {/* User bio */}
+        {userId === user?.id ? (
+          // Current user's profile view
+          <div className="w-full rounded-lg p-6 dark:text-gray-200">
+            {editMode ? (
+              // Edit mode
+              <form className="flex flex-col space-y-4" onSubmit={handleSubmit}>
+                <div className="flex items-center">
+                  <label htmlFor="bio" className="flex items-center justify-center pl-5 pr-5">
+                    <span className="text-lg">{localize(lang, 'com_ui_about_yourself')}</span>
+                  </label>
+                  <textarea
+                    id="bio"
+                    value={bio}
+                    placeholder="分享一下你的兴趣、技能和人生态度..."
+                    onChange={(e) => setBio(e.target.value)}
+                    className="flex-1 border border-gray-300 bg-transparent p-2"
+                  ></textarea>
+                </div>
+
+                <div className="flex justify-end space-x-4">
+                  <button
+                    type="button"
+                    onClick={handleEditProfile}
+                    className="rounded px-4 py-1 hover:bg-gray-500"
+                  >
+                    {localize(lang, 'com_ui_back')}
+                  </button>
+                  <button
+                    type="submit"
+                    className="rounded bg-green-500 px-4 py-1 text-white hover:bg-green-600"
+                    onClick={handleSubmit}
+                  >
+                    {localize(lang, 'com_ui_save')}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              // Profile view mode
+              <>
+                <div className="pl-1">
+                  {expanded ? (
+                    <div>
+                      <div className="pl-1">{bio}</div>
+                      <button className="ml-2 text-green-500 hover:text-green-300" onClick={toggleExpand}>
+                        Show Less
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="pl-1">
+                      {bio.length > 100 ? `${bio.slice(0, 100)}...` : bio}
+                      {bio.length > 100 && (
+                        <button className="ml-2 text-green-500 hover:text-green-300" onClick={toggleExpand}>
+                          {expanded ? 'Show Less' : 'Show More'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col md:flex-row md:items-start md:space-x-4">
+                  <div className="ml-auto md:flex-none">
+                    <p className="mt-4">
+                      <button
+                        className="flex w-24 flex-col items-center leading-[22px] text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200"
+                        onClick={handleEditProfile}
+                      >
+                        <EditIcon />
+                      </button>
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          // Other user's profile view
+          <div className="w-full rounded-lg p-6 dark:text-gray-200">
+            <div className="pl-7">{bio}</div>
+          </div>
+        )}
+
+        {/*Tabs and tab content */}
+        <div className="flex flex-col items-center">
+          <Tabs
+            value={tabValue}
+            onValueChange={(value: string) => setTabValue(value)}
+            className={defaultClasses}
+          >
+            <TabsList className="bg-white">
+              {userId === user?.id && (
+                <TabsTrigger value="likes" className="text-gray-500 dark:text-gray-200">
+                  {localize(lang, 'com_ui_my_likes')}
+                </TabsTrigger>
+              )}
+              {userId != user?.id && (
+                <TabsTrigger value="conversations" className="text-gray-500 dark:text-gray-200">
+                  {localize(lang, 'com_ui_conversations')}
+                </TabsTrigger>
+              )}
+              <TabsTrigger value="followers" className="text-gray-500 dark:text-gray-200">
+                {localize(lang, 'com_ui_followers')}
+              </TabsTrigger>
+              <TabsTrigger value="following" className="text-gray-500 dark:text-gray-200">
+                {localize(lang, 'com_ui_following')}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
-      )}
+        <div className="flex h-full flex-col overflow-y-auto border-t-2">
+          {tabValue === 'likes' && <LikedConversations key={userId} />}
+          {tabValue === 'conversations' && <PublicConversations key={userId} />}
 
-      {/*Tabs and tab content */}
-      <div className="flex flex-col items-center">
-        <Tabs
-          value={tabValue}
-          onValueChange={(value: string) => setTabValue(value)}
-          className={defaultClasses}
-        >
-          <TabsList className="bg-white">
-            {userId === user?.id && (
-              <TabsTrigger value="likes" className="text-gray-500 dark:text-gray-200">
-                {localize(lang, 'com_ui_my_likes')}
-              </TabsTrigger>
-            )}
-            {userId != user?.id && (
-              <TabsTrigger value="conversations" className="text-gray-500 dark:text-gray-200">
-                {localize(lang, 'com_ui_conversations')}
-              </TabsTrigger>
-            )}
-            <TabsTrigger value="followers" className="text-gray-500 dark:text-gray-200">
-              {localize(lang, 'com_ui_followers')}
-            </TabsTrigger>
-            <TabsTrigger value="following" className="text-gray-500 dark:text-gray-200">
-              {localize(lang, 'com_ui_following')}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+          {/*New followers and follwings are added at the end of the object in MongoDB. */}
+          {/*We reverse the array to dsiplay the most recent follwers and followings at the top. */}
+          {tabValue === 'followers' && (
+            <div>
+              {Object.entries(profileUser ? profileUser.followers : {})
+                .reverse()
+                .map(([id, info]) => (
+                  <ListItem key={id} id={id} info={info} />
+                ))}
+            </div>
+          )}
+          {tabValue === 'following' && (
+            <div>
+              {Object.entries(profileUser ? profileUser.following : {})
+                .reverse()
+                .map(([id, info]) => (
+                  <ListItem key={id} id={id} info={info} />
+                ))}
+            </div>
+          )}
+          {tabValue === '' && <Spinner />}
+        </div>
       </div>
-      <div className="flex h-full flex-col overflow-y-auto border-t-2">
-        {tabValue === 'likes' && <LikedConversations key={userId} />}
-        {tabValue === 'conversations' && <PublicConversations key={userId} />}
-
-        {/*New followers and follwings are added at the end of the object in MongoDB. */}
-        {/*We reverse the array to dsiplay the most recent follwers and followings at the top. */}
-        {tabValue === 'followers' && (
-          <div>
-            {Object.entries(profileUser ? profileUser.followers : {})
-              .reverse()
-              .map(([id, info]) => (
-                <ListItem key={id} id={id} info={info} />
-              ))}
-          </div>
-        )}
-        {tabValue === 'following' && (
-          <div>
-            {Object.entries(profileUser ? profileUser.following : {})
-              .reverse()
-              .map(([id, info]) => (
-                <ListItem key={id} id={id} info={info} />
-              ))}
-          </div>
-        )}
-        {tabValue === '' && <Spinner />}
-      </div>
-    </div>
+    </>
   );
 }
 
