@@ -18,7 +18,6 @@ import { localize } from '~/localization/Translation';
 import { useRecoilValue } from 'recoil';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { Spinner } from '../svg';
-import { Plugin } from '~/components/svg';
 import { useNavigate } from 'react-router-dom';
 import { alternateName } from '~/utils';
 
@@ -61,7 +60,7 @@ export default function Recommendations() {
   // Save cached users and messages to localStorage
   const saveCache = () => {
     const cachePackage = { cache: cache, cacheIdx: cacheIdx, convoIdx: convoIdx };
-    window.localStorage.setItem(`${tabValue}Cache`, JSON.stringify(cachePackage));
+    window.sessionStorage.setItem(`${tabValue}Cache`, JSON.stringify(cachePackage));
   };
 
   const plugins = (
@@ -131,7 +130,7 @@ export default function Recommendations() {
       const responseObject = await response.json();
 
       // Cache the conversations in localStorage
-      window.localStorage.setItem(`${tabValue}Conversations`, JSON.stringify(responseObject));
+      window.sessionStorage.setItem(`${tabValue}Conversations`, JSON.stringify(responseObject));
 
       // Update UI states
       setConvoData(responseObject);
@@ -144,8 +143,8 @@ export default function Recommendations() {
   // Try to get recommendations from localStorage
   // Fetch from server if localStorage is empty
   async function getRecommendations() {
-    const conversations = window.localStorage.getItem(`${tabValue}Conversations`);
-    const cacheLS = window.localStorage.getItem(`${tabValue}Cache`);
+    const conversations = window.sessionStorage.getItem(`${tabValue}Conversations`);
+    const cacheLS = window.sessionStorage.getItem(`${tabValue}Cache`);
 
     if (conversations && cacheLS) {
       setConvoData(null);
@@ -273,13 +272,6 @@ export default function Recommendations() {
       setTabValue(value);
     }
   };
-
-  // Clear all cache before unload
-  useEffect(() => {
-    window.addEventListener('unload', () => window.localStorage.clear());
-
-    return () => window.removeEventListener('unload', () => window.localStorage.clear());
-  }, []);
 
   // Get recommendations on mount and on tab switch
   useEffect(() => {
