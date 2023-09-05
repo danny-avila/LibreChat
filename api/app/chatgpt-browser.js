@@ -48,8 +48,6 @@ const browserClient = async ({
     options = { ...options, parentMessageId, conversationId };
   }
 
-  console.log('gptBrowser clientOptions', clientOptions);
-
   if (parentMessageId === '00000000-0000-0000-0000-000000000000') {
     delete options.conversationId;
   }
