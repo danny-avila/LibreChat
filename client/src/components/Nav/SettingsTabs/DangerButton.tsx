@@ -1,3 +1,5 @@
+import { forwardRef } from 'react';
+import type { ForwardedRef } from 'react';
 import { CheckIcon } from 'lucide-react';
 import { DialogButton } from '~/components/ui';
 import { Spinner } from '~/components/svg';
@@ -5,21 +7,21 @@ import type { TDangerButtonProps } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-const DangerButton = ({
-  id,
-  ref,
-  onClick,
-  mutation,
-  disabled,
-  confirmClear,
-  infoTextCode,
-  actionTextCode,
-  className = '',
-  showText = true,
-  dataTestIdInitial,
-  dataTestIdConfirm,
-  confirmActionTextCode = 'com_ui_confirm_action',
-}: TDangerButtonProps) => {
+const DangerButton = (props: TDangerButtonProps, ref: ForwardedRef<HTMLButtonElement>) => {
+  const {
+    id,
+    onClick,
+    mutation,
+    disabled,
+    confirmClear,
+    infoTextCode,
+    actionTextCode,
+    className = '',
+    showText = true,
+    dataTestIdInitial,
+    dataTestIdConfirm,
+    confirmActionTextCode = 'com_ui_confirm_action',
+  } = props;
   const localize = useLocalize();
 
   const renderMutation = (node: React.ReactNode | string) => {
@@ -65,4 +67,4 @@ const DangerButton = ({
   );
 };
 
-export default DangerButton;
+export default forwardRef(DangerButton);

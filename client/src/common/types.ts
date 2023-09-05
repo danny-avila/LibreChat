@@ -139,7 +139,6 @@ export type TDangerButtonProps = {
   dataTestIdInitial: string;
   dataTestIdConfirm: string;
   confirmActionTextCode?: string;
-  ref?: React.RefObject<HTMLButtonElement>;
 };
 
 export type TDialogProps = {
