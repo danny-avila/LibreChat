@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { titleConvo, GoogleClient } = require('../../../app');
+const { GoogleClient } = require('../../../app');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress } = require('../../utils');
 const { getUserKey, checkUserKeyExpiry } = require('../../services/UserService');
@@ -98,7 +98,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
         'Your GOOGLE_TOKEN has expired. Please provide your token again.',
       );
       key = await getUserKey({ userId: req.user.id, name: 'google' });
-      key = JSON.parse(endpointOption.key);
+      key = JSON.parse(key);
       delete endpointOption.key;
       console.log('Using service account key provided by User for PaLM models');
     }
@@ -153,13 +153,13 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     });
     res.end();
 
-    if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
-      const title = await titleConvo({ text, response });
-      await saveConvo(req.user.id, {
-        conversationId,
-        title,
-      });
-    }
+    // if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
+    //   const title = await titleConvo({ text, response });
+    //   await saveConvo(req.user.id, {
+    //     conversationId,
+    //     title,
+    //   });
+    // }
   } catch (error) {
     console.error(error);
     const errorMessage = {
