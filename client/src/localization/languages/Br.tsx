@@ -95,8 +95,6 @@ export default {
     'Um e-mail foi enviado para você com mais instruções para redefinir sua senha',
   com_auth_error_reset_password:
     'Ocorreu um problema ao redefinir sua senha. Não foi encontrado nenhum usuário com o endereço de e-mail fornecido. Por favor, tente novamente.',
-  com_auth_error_reset_password:
-    'Houve um problema ao redefinir sua senha. Nenhum usuário foi encontrado com o endereço de email fornecido. Por favor, tente novamente.',
   com_auth_reset_password_success: 'Redefinição de Senha Concluída',
   com_auth_login_with_new_password: 'Agora você pode fazer login com sua nova senha.',
   com_auth_error_invalid_reset_token: 'Este token para redefinição de senha não é mais válido.',
