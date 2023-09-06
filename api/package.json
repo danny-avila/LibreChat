@@ -63,7 +63,8 @@
     "passport-local": "^1.0.0",
     "pino": "^8.12.1",
     "sanitize": "^2.1.2",
-    "sharp": "^0.32.1"
+    "sharp": "^0.32.1",
+    "zod": "^3.22.2"
   },
   "devDependencies": {
     "jest": "^29.5.0",
