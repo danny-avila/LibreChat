@@ -3,96 +3,12 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Joi = require('joi');
 const DebugControl = require('../utils/debug.js');
+const userSchema = require('./schema/userSchema.js');
 
 function log({ title, parameters }) {
   DebugControl.log.functionName(title);
   DebugControl.log.parameters(parameters);
 }
-
-const Session = mongoose.Schema({
-  refreshToken: {
-    type: String,
-    default: '',
-  },
-});
-
-const userSchema = mongoose.Schema(
-  {
-    name: {
-      type: String,
-    },
-    username: {
-      type: String,
-      lowercase: true,
-      default: '',
-    },
-    email: {
-      type: String,
-      required: [true, 'can\'t be blank'],
-      lowercase: true,
-      unique: true,
-      match: [/\S+@\S+\.\S+/, 'is invalid'],
-      index: true,
-    },
-    emailVerified: {
-      type: Boolean,
-      required: true,
-      default: false,
-    },
-    password: {
-      type: String,
-      trim: true,
-      minlength: 8,
-      maxlength: 128,
-    },
-    avatar: {
-      type: String,
-      required: false,
-    },
-    provider: {
-      type: String,
-      required: true,
-      default: 'local',
-    },
-    role: {
-      type: String,
-      default: 'USER',
-    },
-    googleId: {
-      type: String,
-      unique: true,
-      sparse: true,
-    },
-    facebookId: {
-      type: String,
-      unique: true,
-      sparse: true,
-    },
-    openidId: {
-      type: String,
-      unique: true,
-      sparse: true,
-    },
-    githubId: {
-      type: String,
-      unique: true,
-      sparse: true,
-    },
-    discordId: {
-      type: String,
-      unique: true,
-      sparse: true,
-    },
-    plugins: {
-      type: Array,
-      default: [],
-    },
-    refreshToken: {
-      type: [Session],
-    },
-  },
-  { timestamps: true },
-);
 
 //Remove refreshToken from the response
 userSchema.set('toJSON', {

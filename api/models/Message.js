@@ -21,6 +21,9 @@ module.exports = {
     model = null,
   }) {
     try {
+      if (!conversationId) {
+        return console.log('Message not saved: no conversationId');
+      }
       // may also need to update the conversation here
       await Message.findOneAndUpdate(
         { messageId },

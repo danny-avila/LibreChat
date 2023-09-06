@@ -1,6 +1,7 @@
 const passport = require('passport');
 const express = require('express');
 const router = express.Router();
+const { loginLimiter } = require('../middleware');
 const config = require('../../../config/loader');
 const domains = config.domains;
 const isProduction = config.isProduction;
@@ -10,6 +11,7 @@ const isProduction = config.isProduction;
  */
 router.get(
   '/google',
+  loginLimiter,
   passport.authenticate('google', {
     scope: ['openid', 'profile', 'email'],
     session: false,
@@ -37,6 +39,7 @@ router.get(
 
 router.get(
   '/facebook',
+  loginLimiter,
   passport.authenticate('facebook', {
     scope: ['public_profile'],
     profileFields: ['id', 'email', 'name'],
@@ -66,6 +69,7 @@ router.get(
 
 router.get(
   '/openid',
+  loginLimiter,
   passport.authenticate('openid', {
     session: false,
   }),
@@ -91,6 +95,7 @@ router.get(
 
 router.get(
   '/github',
+  loginLimiter,
   passport.authenticate('github', {
     scope: ['user:email', 'read:user'],
     session: false,
@@ -118,6 +123,7 @@ router.get(
 
 router.get(
   '/discord',
+  loginLimiter,
   passport.authenticate('discord', {
     scope: ['identify', 'email'],
     session: false,

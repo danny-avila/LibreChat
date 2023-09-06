@@ -8,9 +8,9 @@ const { addOpenAPISpecs } = require('../../app/clients/tools/util/addOpenAPISpec
 const openAIApiKey = process.env.OPENAI_API_KEY;
 const azureOpenAIApiKey = process.env.AZURE_API_KEY;
 const useAzurePlugins = !!process.env.PLUGINS_USE_AZURE;
-const userProvidedOpenAI = openAIApiKey
-  ? openAIApiKey === 'user_provided'
-  : azureOpenAIApiKey === 'user_provided';
+const userProvidedOpenAI = useAzurePlugins
+  ? azureOpenAIApiKey === 'user_provided'
+  : openAIApiKey === 'user_provided';
 
 const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _models = []) => {
   let models = _models.slice() ?? [];
@@ -81,9 +81,6 @@ const getOpenAIModels = async (opts = { azure: false, plugins: false }) => {
   }
 
   if (userProvidedOpenAI) {
-    console.warn(
-      `When setting OPENAI_API_KEY to 'user_provided', ${key} must be set manually or default values will be used`,
-    );
     return models;
   }
 
@@ -161,6 +158,7 @@ router.get('/', async function (req, res) {
         plugins,
         availableAgents: ['classic', 'functions'],
         userProvide: userProvidedOpenAI,
+        azure: useAzurePlugins,
       }
       : false;
   const bingAI = process.env.BINGAI_TOKEN

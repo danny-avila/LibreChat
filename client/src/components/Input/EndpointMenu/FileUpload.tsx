@@ -51,6 +51,15 @@ const FileUpload: React.FC<FileUploadProps> = ({
     reader.readAsText(file);
   };
 
+  let statusText: string;
+  if (!status) {
+    statusText = text ?? localize('com_endpoint_import');
+  } else if (status === 'success') {
+    statusText = successText ?? localize('com_ui_upload_success');
+  } else {
+    statusText = invalidText ?? localize('com_ui_upload_invalid');
+  }
+
   return (
     <label
       htmlFor={`file-upload-${id}`}
@@ -60,13 +69,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
       )}
     >
       <FileUp className="mr-1 flex w-[22px] items-center stroke-1" />
-      <span className="flex text-xs ">
-        {!status
-          ? text || localize('com_endpoint_import')
-          : status === localize('com_ui_succes')
-            ? successText
-            : invalidText}
-      </span>
+      <span className="flex text-xs ">{statusText}</span>
       <input
         id={`file-upload-${id}`}
         value=""
