@@ -29,15 +29,15 @@ Some users have reported an error after updating their docker containers.
 
 - To fix this error, you need to:
   - Delete the LibreChat image in docker 🗑️
-    
-    **(leave mongo intact to preserve your profiles and history)** 
+
+    **(leave mongo intact to preserve your profiles and history)**
     ![image](https://github.com/fuegovic/LibreChat/assets/32828263/acf15682-435e-44bd-8873-a5dceb3121cc)
   - Repeat the docker update process: 🚀
     - `docker-compose build`
     - `docker-compose up -d`
 
 ## v0.5.4
-Some changes were made in the .env file  
+Some changes were made in the .env file
 **Look at the .env.example for reference.**
 
 - If you previously used social login, you need to:
@@ -62,7 +62,7 @@ ALLOW_SOCIAL_LOGIN=false
 
 ```env
 ##########################
-# Anthropic Endpoint: 
+# Anthropic Endpoint:
 ##########################
 # Access key from https://console.anthropic.com/
 # Leave it blank to disable this feature.
@@ -107,7 +107,7 @@ I had to change the environment variable from AZURE_OPENAI_API_KEY to AZURE_API_
 ---
 
 ### Docker
-- The docker-compose file had some change. Review the [new docker instructions](../install/docker_install.md) to make sure you are setup properly. This is still the simplest and most effective method.
+- The docker-compose file had some change. Review the [new docker instructions](../install/docker_compose_install.md) to make sure you are setup properly. This is still the simplest and most effective method.
 
 ---
 
