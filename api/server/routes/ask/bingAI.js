@@ -45,7 +45,7 @@ router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
       systemMessage: req.body?.systemMessage ?? null,
       context: req.body?.context ?? null,
       toneStyle: req.body?.toneStyle ?? 'creative',
-      token: req.body?.token ?? null,
+      key: req.body?.key ?? null,
     };
   } else {
     endpointOption = {
@@ -56,7 +56,7 @@ router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
       clientId: req.body?.clientId ?? null,
       invocationId: req.body?.invocationId ?? null,
       toneStyle: req.body?.toneStyle ?? 'creative',
-      token: req.body?.token ?? null,
+      key: req.body?.key ?? null,
     };
   }
 
@@ -139,6 +139,7 @@ const ask = async ({
   try {
     let response = await askBing({
       text,
+      userId: req.user.id,
       parentMessageId: userParentMessageId,
       conversationId: bingConversationId ?? conversationId,
       ...endpointOption,

@@ -1,4 +1,4 @@
-import { TConversation, TMessage, TPreset } from 'librechat-data-provider';
+import type { TConversation, TMessage, TPreset, TMutation } from 'librechat-data-provider';
 
 export type TSetOption = (param: number | string) => (newValue: number | string | boolean) => void;
 export type TSetExample = (
@@ -120,3 +120,29 @@ export type TDisplayProps = TText &
   Pick<TAdditionalProps, 'isCreatedByUser' | 'message'> & {
     showCursor?: boolean;
   };
+
+export type TConfigProps = {
+  userKey: string;
+  setUserKey: React.Dispatch<React.SetStateAction<string>>;
+  endpoint: string;
+};
+
+export type TDangerButtonProps = {
+  id: string;
+  confirmClear: boolean;
+  className?: string;
+  disabled?: boolean;
+  showText?: boolean;
+  mutation?: TMutation;
+  onClick: () => void;
+  infoTextCode: string;
+  actionTextCode: string;
+  dataTestIdInitial: string;
+  dataTestIdConfirm: string;
+  confirmActionTextCode?: string;
+};
+
+export type TDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+};

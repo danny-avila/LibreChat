@@ -21,9 +21,10 @@ const InputWithLabel: FC<InputWithLabelProps> = ({ value, onChange, label, id })
 
       <Input
         id={id}
-        value={value || ''}
+        data-testid={`input-${id}`}
+        value={value ?? ''}
         onChange={onChange}
-        placeholder={`${localize('com_ui_enter')} ${label}`}
+        placeholder={`${localize('com_endpoint_config_value')} ${label}`}
         className={cn(
           defaultTextPropsLabel,
           'flex h-10 max-h-10 w-full resize-none px-3 py-2',

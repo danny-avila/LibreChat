@@ -1,10 +1,11 @@
 const OpenAIClient = require('./OpenAIClient');
 const { CallbackManager } = require('langchain/callbacks');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
-const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents/');
-const { addImages, createLLM, buildErrorInput, buildPromptPrefix } = require('./agents/methods/');
-const { SelfReflectionTool } = require('./tools/');
+const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents');
+const { addImages, buildErrorInput, buildPromptPrefix } = require('./output_parsers');
+const { SelfReflectionTool } = require('./tools');
 const { loadTools } = require('./tools/util');
+const { createLLM } = require('./llm');
 
 class PluginsClient extends OpenAIClient {
   constructor(apiKey, options = {}) {
@@ -28,9 +29,9 @@ class PluginsClient extends OpenAIClient {
     super.setOptions(options);
     this.isGpt3 = this.modelOptions.model.startsWith('gpt-3');
 
-    if (this.options.reverseProxyUrl) {
-      this.langchainProxy = this.options.reverseProxyUrl.match(/.*v1/)[0];
-    }
+    // if (this.options.reverseProxyUrl) {
+    //   this.langchainProxy = this.options.reverseProxyUrl.match(/.*v1/)[0];
+    // }
   }
 
   getSaveOptions() {

@@ -6,7 +6,6 @@ import text from './text';
 import submission from './submission';
 import search from './search';
 import preset from './preset';
-import token from './token';
 import lang from './language';
 import optionSettings from './optionSettings';
 
@@ -19,7 +18,6 @@ export default {
   ...submission,
   ...search,
   ...preset,
-  ...token,
   ...lang,
   ...optionSettings,
 };

@@ -5,6 +5,8 @@ const {
   get_encoding: getEncoding,
 } = require('@dqbd/tiktoken');
 const { maxTokensMap, genAzureChatCompletion } = require('../../utils');
+const { runTitleChain } = require('./chains');
+const { createLLM } = require('./llm');
 
 // Cache to store Tiktoken instances
 const tokenizersCache = {};
@@ -105,6 +107,7 @@ class OpenAIClient extends BaseClient {
 
     if (this.options.reverseProxyUrl) {
       this.completionsUrl = this.options.reverseProxyUrl;
+      this.langchainProxy = this.options.reverseProxyUrl.match(/.*v1/)[0];
     } else if (isChatGptModel) {
       this.completionsUrl = 'https://api.openai.com/v1/chat/completions';
     } else {
@@ -116,7 +119,7 @@ class OpenAIClient extends BaseClient {
     }
 
     if (this.azureEndpoint && this.options.debug) {
-      console.debug(`Using Azure endpoint: ${this.azureEndpoint}`, this.azure);
+      console.debug('Using Azure endpoint');
     }
 
     return this;
@@ -315,6 +318,7 @@ class OpenAIClient extends BaseClient {
     let reply = '';
     let result = null;
     let streamResult = null;
+    this.modelOptions.user = this.user;
     if (typeof opts.onProgress === 'function') {
       await this.getCompletion(
         payload,
@@ -372,6 +376,64 @@ class OpenAIClient extends BaseClient {
       role: 'assistant',
       content: response.text,
     });
+  }
+
+  async titleConvo({ text, responseText = '' }) {
+    let title = 'New Chat';
+    const convo = `||>User:
+"${text}"
+||>Response:
+"${JSON.stringify(responseText)}"`;
+
+    const modelOptions = {
+      model: 'gpt-3.5-turbo-0613',
+      temperature: 0.2,
+      presence_penalty: 0,
+      frequency_penalty: 0,
+      max_tokens: 16,
+    };
+
+    const configOptions = {};
+
+    if (this.langchainProxy) {
+      configOptions.basePath = this.langchainProxy;
+    }
+
+    try {
+      const llm = createLLM({
+        modelOptions,
+        configOptions,
+        openAIApiKey: this.apiKey,
+        azure: this.azure,
+      });
+
+      title = await runTitleChain({ llm, text, convo });
+    } catch (e) {
+      console.error(e.message);
+      console.log('There was an issue generating title with LangChain, trying the old method...');
+      modelOptions.model = 'gpt-3.5-turbo';
+      const instructionsPayload = [
+        {
+          role: 'system',
+          content: `Detect user language and write in the same language an extremely concise title for this conversation, which you must accurately detect.
+Write in the detected language. Title in 5 Words or Less. No Punctuation or Quotation. Do not mention the language. All first letters of every word should be capitalized and write the title in User Language only.
+
+${convo}
+
+||>Title:`,
+        },
+      ];
+
+      try {
+        title = (await this.sendPayload(instructionsPayload, { modelOptions })).replaceAll('"', '');
+      } catch (e) {
+        console.error(e);
+        console.log('There was another issue generating the title, see error above.');
+      }
+    }
+
+    console.log('CONVERSATION TITLE', title);
+    return title;
   }
 }
 

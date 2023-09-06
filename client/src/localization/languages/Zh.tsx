@@ -74,6 +74,7 @@ export default {
   com_auth_to_try_again: '再试一次.',
   com_auth_submit_registration: '注册提交',
   com_auth_welcome_back: '欢迎',
+  com_endpoint_open_menu: '打开菜单',
   com_endpoint_bing_enable_sydney: '启用 Sydney',
   com_endpoint_bing_to_enable_sydney: '启用 Sydney',
   com_endpoint_bing_jailbreak: '破解',

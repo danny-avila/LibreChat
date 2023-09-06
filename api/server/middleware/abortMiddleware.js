@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { saveMessage, getConvo, getConvoTitle } = require('../../models');
 const { sendMessage, handleError } = require('../utils');
 const abortControllers = require('./abortControllers');
@@ -73,12 +74,13 @@ const handleAbortError = async (res, req, error, data) => {
   const respondWithError = async () => {
     const errorMessage = {
       sender,
-      messageId,
+      messageId: messageId ?? crypto.randomUUID(),
       conversationId,
       parentMessageId,
       unfinished: false,
       cancelled: false,
       error: true,
+      final: true,
       text: error.message,
       isCreatedByUser: false,
     };

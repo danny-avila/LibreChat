@@ -399,7 +399,7 @@ export type TEndpointOption = {
   chatGptLabel?: string | null;
   modelLabel?: string | null;
   jailbreak?: boolean;
-  token?: string | null;
+  key?: string | null;
 };
 
 export const getResponseSender = (endpointOption: TEndpointOption): string => {

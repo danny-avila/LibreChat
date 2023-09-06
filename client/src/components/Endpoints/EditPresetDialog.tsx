@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import filenamify from 'filenamify';
 import exportFromJSON from 'export-from-json';
 import { useSetRecoilState, useRecoilState, useRecoilValue } from 'recoil';
-import { TEditPresetProps } from '~/common';
+import type { TEditPresetProps } from '~/common';
 import { useSetOptions, useLocalize } from '~/hooks';
 import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components/';
 import DialogTemplate from '~/components/ui/DialogTemplate';

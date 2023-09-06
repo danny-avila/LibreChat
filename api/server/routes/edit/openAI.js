@@ -90,7 +90,7 @@ router.post(
     );
 
     try {
-      const { client } = initializeClient(req, endpointOption);
+      const { client } = await initializeClient(req, endpointOption);
 
       let response = await client.sendMessage(text, {
         user: req.user.id,
@@ -138,7 +138,7 @@ router.post(
         conversationId,
         sender: getResponseSender(endpointOption),
         messageId: responseMessageId,
-        parentMessageId: userMessageId,
+        parentMessageId: userMessageId ?? parentMessageId,
       });
     }
   },
