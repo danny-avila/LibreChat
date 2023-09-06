@@ -80,6 +80,7 @@ const handleAbortError = async (res, req, error, data) => {
       unfinished: false,
       cancelled: false,
       error: true,
+      final: true,
       text: error.message,
       isCreatedByUser: false,
     };
