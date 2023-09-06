@@ -174,7 +174,7 @@ export default function NewConversationMenu() {
               </DropdownMenuTrigger>
             </TooltipTrigger>
             <TooltipContent forceMount={newUser} sideOffset={5}>
-              {localize('com_endpoint_select')}
+              {localize('com_endpoint_open_menu')}
             </TooltipContent>
             <DropdownMenuContent
               className="z-[100] w-[375px] dark:bg-gray-900 md:w-96"

@@ -96,6 +96,7 @@ export default {
   com_auth_to_try_again: 'per riprovare.',
   com_auth_submit_registration: 'Invia registrazione',
   com_auth_welcome_back: 'Bentornato',
+  com_endpoint_open_menu: 'Apri menu',
   com_endpoint_bing_enable_sydney: 'Abilita Sydney',
   com_endpoint_bing_to_enable_sydney: 'Per abilitare Sydney',
   com_endpoint_bing_jailbreak: 'Jailbreak',

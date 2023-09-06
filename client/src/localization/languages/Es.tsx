@@ -29,7 +29,8 @@ export default {
   com_ui_showing: 'Mostrando',
   com_ui_of: 'de',
   com_ui_entries: 'Entradas',
-  com_ui_pay_per_call: 'Todas las conversaciones de IA en un solo lugar. Pague por llamada y no por mes.',
+  com_ui_pay_per_call:
+    'Todas las conversaciones de IA en un solo lugar. Pague por llamada y no por mes.',
   com_ui_delete: 'Eliminar',
   com_ui_delete_conversation: '¿Eliminar conversación?',
   com_ui_delete_conversation_confirm: 'Esto eliminará',
@@ -84,6 +85,7 @@ export default {
   com_auth_to_try_again: 'para intentar nuevamente.',
   com_auth_submit_registration: 'Enviar registro',
   com_auth_welcome_back: 'Bienvenido(a) de vuelta',
+  com_endpoint_open_menu: 'Abrir Menú',
   com_endpoint_bing_enable_sydney: 'Habilitar Sydney',
   com_endpoint_bing_to_enable_sydney: 'Para habilitar Sydney',
   com_endpoint_bing_jailbreak: 'Jailbreak',
