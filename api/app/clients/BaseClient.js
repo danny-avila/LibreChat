@@ -3,9 +3,9 @@ const TextStream = require('./TextStream');
 const { RecursiveCharacterTextSplitter } = require('langchain/text_splitter');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { loadSummarizationChain } = require('langchain/chains');
-const { refinePrompt } = require('./prompts/refinePrompt');
 const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('../../models');
 const { addSpaceIfNeeded } = require('../../server/utils');
+const { refinePrompt } = require('./prompts');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -55,6 +55,7 @@ class BaseClient {
 
     const { isEdited, isContinued } = opts;
     const user = opts.user ?? null;
+    this.user = user;
     const saveOptions = this.getSaveOptions();
     this.abortController = opts.abortController ?? new AbortController();
     const conversationId = opts.conversationId ?? crypto.randomUUID();
@@ -407,7 +408,6 @@ class BaseClient {
 
     const { generation = '' } = opts;
 
-    this.user = user;
     // It's not necessary to push to currentMessages
     // depending on subclass implementation of handling messages
     // When this is an edit, all messages are already in currentMessages, both user and response
@@ -599,6 +599,14 @@ class BaseClient {
 
     // Sum the number of tokens in all properties and add `tokensPerMessage` for metadata
     return propertyTokenCounts.reduce((a, b) => a + b, tokensPerMessage);
+  }
+
+  async sendPayload(payload, opts = {}) {
+    if (opts && typeof opts === 'object') {
+      this.setOptions(opts);
+    }
+
+    return await this.sendCompletion(payload, opts);
   }
 }
 

@@ -18,10 +18,10 @@ const getError = (text: string) => {
     } else if (json.type === 'insufficient_quota') {
       return 'We apologize for any inconvenience caused. The default API key has reached its limit. To continue using this service, please set up your own API key. You can do this by clicking on the model logo in the left corner of the textbox and selecting "Set Token" for the current selected endpoint. Thank you for your understanding.';
     } else {
-      return `Oops! Something went wrong. Please try again in a few moments. Here's the specific error message we encountered: ${errorMessage}`;
+      return `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
     }
   } else {
-    return `Oops! Something went wrong. Please try again in a few moments. Here's the specific error message we encountered: ${errorMessage}`;
+    return `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
   }
 };
 

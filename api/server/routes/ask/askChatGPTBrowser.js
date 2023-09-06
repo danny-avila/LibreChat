@@ -38,7 +38,7 @@ router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
   // build endpoint option
   const endpointOption = {
     model: req.body?.model ?? 'text-davinci-002-render-sha',
-    token: req.body?.token ?? null,
+    key: req.body?.key ?? null,
   };
 
   // const availableModels = getChatGPTBrowserModels();

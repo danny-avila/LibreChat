@@ -7,8 +7,13 @@ const {
 } = require('./Message');
 const { getConvoTitle, getConvo, saveConvo } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
+const User = require('./User');
+const Key = require('./schema/keySchema');
 
 module.exports = {
+  User,
+  Key,
+
   getMessages,
   saveMessage,
   updateMessage,

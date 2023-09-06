@@ -80,6 +80,7 @@ export default {
   com_auth_to_try_again: 'aby spróbować ponownie.',
   com_auth_submit_registration: 'Zarejestruj się',
   com_auth_welcome_back: 'Witamy z powrotem',
+  com_endpoint_open_menu: 'Otwórz menu',
   com_endpoint_bing_enable_sydney: 'Aktywuj Sydney',
   com_endpoint_bing_to_enable_sydney: 'Aby aktywować Sydney',
   com_endpoint_bing_jailbreak: 'Odblokuj',

@@ -94,7 +94,7 @@ router.post(
     );
 
     try {
-      const { client, openAIApiKey } = initializeClient(req, endpointOption);
+      const { client } = await initializeClient(req, endpointOption);
 
       let response = await client.sendMessage(text, {
         user,
@@ -136,14 +136,13 @@ router.post(
       });
       res.end();
 
-      addTitle(req, {
-        text,
-        newConvo,
-        response,
-        openAIApiKey,
-        parentMessageId,
-        azure: endpointOption.endpoint === 'azureOpenAI',
-      });
+      if (parentMessageId == '00000000-0000-0000-0000-000000000000' && newConvo) {
+        addTitle(req, {
+          text,
+          response,
+          client,
+        });
+      }
     } catch (error) {
       const partialText = getPartialText();
       handleAbortError(res, req, error, {
@@ -151,7 +150,7 @@ router.post(
         conversationId,
         sender: getResponseSender(endpointOption),
         messageId: responseMessageId,
-        parentMessageId: userMessageId,
+        parentMessageId: userMessageId ?? parentMessageId,
       });
     }
   },

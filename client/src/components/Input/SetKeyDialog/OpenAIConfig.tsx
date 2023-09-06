@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 // import * as Checkbox from '@radix-ui/react-checkbox';
 // import { CheckIcon } from '@radix-ui/react-icons';
 import InputWithLabel from './InputWithLabel';
-import store from '~/store';
+import type { TConfigProps } from '~/common';
 
 function isJson(str: string) {
   try {
@@ -15,56 +15,48 @@ function isJson(str: string) {
   return true;
 }
 
-type OpenAIConfigProps = {
-  token: string;
-  setToken: React.Dispatch<React.SetStateAction<string>>;
-  endpoint: string;
-};
-
-const OpenAIConfig = ({ token, setToken, endpoint }: OpenAIConfigProps) => {
+const OpenAIConfig = ({ userKey, setUserKey, endpoint }: TConfigProps) => {
   const [showPanel, setShowPanel] = useState(endpoint === 'azureOpenAI');
-  const { getToken } = store.useToken(endpoint);
 
   useEffect(() => {
-    const oldToken = getToken();
-    if (isJson(token)) {
+    if (isJson(userKey)) {
       setShowPanel(true);
     }
-    setToken(oldToken ?? '');
+    setUserKey('');
   }, []);
 
   useEffect(() => {
-    if (!showPanel && isJson(token)) {
-      setToken('');
+    if (!showPanel && isJson(userKey)) {
+      setUserKey('');
     }
   }, [showPanel]);
 
   function getAzure(name: string) {
-    if (isJson(token)) {
-      const newToken = JSON.parse(token);
-      return newToken[name];
+    if (isJson(userKey)) {
+      const newKey = JSON.parse(userKey);
+      return newKey[name];
     } else {
       return '';
     }
   }
 
   function setAzure(name: string, value: number | string | boolean) {
-    let newToken = {};
-    if (isJson(token)) {
-      newToken = JSON.parse(token);
+    let newKey = {};
+    if (isJson(userKey)) {
+      newKey = JSON.parse(userKey);
     }
-    newToken[name] = value;
+    newKey[name] = value;
 
-    setToken(JSON.stringify(newToken));
+    setUserKey(JSON.stringify(newKey));
   }
   return (
     <>
       {!showPanel ? (
         <>
           <InputWithLabel
-            id={'chatGPTLabel'}
-            value={token || ''}
-            onChange={(e: { target: { value: string } }) => setToken(e.target.value || '')}
+            id={endpoint}
+            value={userKey ?? ''}
+            onChange={(e: { target: { value: string } }) => setUserKey(e.target.value ?? '')}
             label={'OpenAI API Key'}
           />
         </>
@@ -72,36 +64,36 @@ const OpenAIConfig = ({ token, setToken, endpoint }: OpenAIConfigProps) => {
         <>
           <InputWithLabel
             id={'instanceNameLabel'}
-            value={getAzure('azureOpenAIApiInstanceName') || ''}
+            value={getAzure('azureOpenAIApiInstanceName') ?? ''}
             onChange={(e: { target: { value: string } }) =>
-              setAzure('azureOpenAIApiInstanceName', e.target.value || '')
+              setAzure('azureOpenAIApiInstanceName', e.target.value ?? '')
             }
             label={'Azure OpenAI Instance Name'}
           />
 
           <InputWithLabel
             id={'deploymentNameLabel'}
-            value={getAzure('azureOpenAIApiDeploymentName') || ''}
+            value={getAzure('azureOpenAIApiDeploymentName') ?? ''}
             onChange={(e: { target: { value: string } }) =>
-              setAzure('azureOpenAIApiDeploymentName', e.target.value || '')
+              setAzure('azureOpenAIApiDeploymentName', e.target.value ?? '')
             }
             label={'Azure OpenAI Deployment Name'}
           />
 
           <InputWithLabel
             id={'versionLabel'}
-            value={getAzure('azureOpenAIApiVersion') || ''}
+            value={getAzure('azureOpenAIApiVersion') ?? ''}
             onChange={(e: { target: { value: string } }) =>
-              setAzure('azureOpenAIApiVersion', e.target.value || '')
+              setAzure('azureOpenAIApiVersion', e.target.value ?? '')
             }
             label={'Azure OpenAI API Version'}
           />
 
           <InputWithLabel
             id={'apiKeyLabel'}
-            value={getAzure('azureOpenAIApiKey') || ''}
+            value={getAzure('azureOpenAIApiKey') ?? ''}
             onChange={(e: { target: { value: string } }) =>
-              setAzure('azureOpenAIApiKey', e.target.value || '')
+              setAzure('azureOpenAIApiKey', e.target.value ?? '')
             }
             label={'Azure OpenAI API Key'}
           />

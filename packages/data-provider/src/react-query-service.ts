@@ -16,6 +16,7 @@ export enum QueryKeys {
   conversation = 'conversation',
   searchEnabled = 'searchEnabled',
   user = 'user',
+  name = 'name', // user key name
   endpoints = 'endpoints',
   presets = 'presets',
   searchResults = 'searchResults',
@@ -121,6 +122,20 @@ export const useUpdateMessageMutation = (
   });
 };
 
+export const useUpdateUserKeysMutation = (): UseMutationResult<
+  t.TUser,
+  unknown,
+  t.TUpdateUserKeyRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: t.TUpdateUserKeyRequest) => dataService.updateUserKey(payload), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.name]);
+    },
+  });
+};
+
 export const useDeleteConversationMutation = (
   id?: string,
 ): UseMutationResult<
@@ -146,6 +161,24 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
   return useMutation(() => dataService.clearAllConversations(), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.allConversations]);
+    },
+  });
+};
+
+export const useRevokeUserKeyMutation = (name: string): UseMutationResult<unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.revokeUserKey(name), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.name]);
+    },
+  });
+};
+
+export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.revokeAllUserKeys(), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.name]);
     },
   });
 };
@@ -313,6 +346,28 @@ export const useRefreshTokenMutation = (): UseMutationResult<
   unknown
 > => {
   return useMutation(() => dataService.refreshToken(), {});
+};
+
+export const useUserKeyQuery = (
+  name: string,
+  config?: UseQueryOptions<t.TCheckUserKeyResponse>,
+): QueryObserverResult<t.TCheckUserKeyResponse> => {
+  return useQuery<t.TCheckUserKeyResponse>(
+    [QueryKeys.name, name],
+    () => {
+      if (!name) {
+        return Promise.resolve({ expiresAt: '' });
+      }
+      return dataService.userKeyQuery(name);
+    },
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+    },
+  );
 };
 
 export const useRequestPasswordResetMutation = (): UseMutationResult<

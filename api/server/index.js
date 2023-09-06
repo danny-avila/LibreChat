@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoSanitize = require('express-mongo-sanitize');
 const connectDb = require('../lib/db/connectDb');
 const indexSync = require('../lib/db/indexSync');
 const path = require('path');
@@ -23,6 +24,7 @@ const startServer = async () => {
   // Middleware
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
+  app.use(mongoSanitize());
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(express.static(path.join(projectPath, 'dist')));
   app.use(express.static(path.join(projectPath, 'public')));
@@ -38,7 +40,7 @@ const startServer = async () => {
   // OAUTH
   app.use(passport.initialize());
   passport.use(await jwtLogin());
-  passport.use(await passportLogin());
+  passport.use(passportLogin());
 
   if (process.env.ALLOW_SOCIAL_LOGIN === 'true') {
     configureSocialLogins(app);
@@ -47,6 +49,7 @@ const startServer = async () => {
   app.use('/oauth', routes.oauth);
   // API Endpoints
   app.use('/api/auth', routes.auth);
+  app.use('/api/keys', routes.keys);
   app.use('/api/user', routes.user);
   app.use('/api/search', routes.search);
   app.use('/api/ask', routes.ask);

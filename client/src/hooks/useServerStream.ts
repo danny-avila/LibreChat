@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useResetRecoilState, useSetRecoilState } from 'recoil';
+/* @ts-ignore */
 import { SSE, createPayload, tMessageSchema, tConversationSchema } from 'librechat-data-provider';
 import type { TResPlugin, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';

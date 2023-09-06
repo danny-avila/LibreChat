@@ -22,7 +22,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
     <div
       className={cn(
         'markdown prose dark:prose-invert light w-full break-words',
-        isCreatedByUser ? 'whitespace-pre-wrap' : '',
+        isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-70',
       )}
     >
       {!isCreatedByUser ? (

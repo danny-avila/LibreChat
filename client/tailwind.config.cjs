@@ -30,7 +30,9 @@ module.exports = {
       },
       colors: {
         gray: {
+          '20': '#ececf1',
           '50': '#f7f7f8',
+          '70': '#d1d5db',
           '100': '#d9d9e3',
           '200': '#d9d9e3', // Replacing .bg-gray-200
           '300': '#c5c5d2',

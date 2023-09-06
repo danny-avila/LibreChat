@@ -29,7 +29,8 @@ class GoogleClient extends BaseClient {
 
     jwtClient.authorize((err) => {
       if (err) {
-        console.log(err);
+        console.error('Error: jwtClient failed to authorize');
+        console.error(err.message);
         throw err;
       }
     });
@@ -247,7 +248,8 @@ class GoogleClient extends BaseClient {
         console.debug(result);
       }
     } catch (err) {
-      console.error(err);
+      console.error('Error: failed to send completion to Google');
+      console.error(err.message);
     }
 
     if (!blocked) {

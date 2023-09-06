@@ -1,13 +1,11 @@
-import * as Tabs from '@radix-ui/react-tabs';
-import { CheckIcon } from 'lucide-react';
-import { DialogButton } from '~/components/ui';
-import React, { useState, useContext, useEffect, useCallback } from 'react';
-import { useClearConversationsMutation } from 'librechat-data-provider';
 import { useRecoilState } from 'recoil';
+import * as Tabs from '@radix-ui/react-tabs';
+import React, { useState, useContext, useEffect, useCallback, useRef } from 'react';
+import { useClearConversationsMutation } from 'librechat-data-provider';
+import { ThemeContext, useLocalize, useOnClickOutside } from '~/hooks';
+import type { TDangerButtonProps } from '~/common';
+import DangerButton from './DangerButton';
 import store from '~/store';
-import { ThemeContext } from '~/hooks';
-import { cn } from '~/utils';
-import { useLocalize } from '~/hooks';
 
 export const ThemeSelector = ({
   theme,
@@ -38,53 +36,26 @@ export const ClearChatsButton = ({
   confirmClear,
   className = '',
   showText = true,
+  mutation,
   onClick,
-}: {
-  confirmClear: boolean;
-  className?: string;
-  showText: boolean;
-  onClick: () => void;
-}) => {
-  const localize = useLocalize();
-
+}: Pick<
+  TDangerButtonProps,
+  'confirmClear' | 'mutation' | 'className' | 'showText' | 'onClick'
+>) => {
   return (
-    <div className="flex items-center justify-between">
-      {showText && <div>{localize('com_nav_clear_all_chats')}</div>}
-      <DialogButton
-        id="clearConvosBtn"
-        onClick={onClick}
-        className={cn(
-          ' btn btn-danger relative border-none bg-red-700 text-white hover:bg-red-800 dark:hover:bg-red-800',
-          className,
-        )}
-      >
-        {/* <button
-        className="btn mt-2 inline-flex h-10 items-center justify-center rounded-md relative bg-red-600 text-white hover:bg-red-800"
-        type="button"
-        id="clearConvosBtn"
-        onClick={onClick}
-      > */}
-        {confirmClear ? (
-          <div
-            className="flex w-full items-center justify-center gap-2"
-            id="clearConvosTxt"
-            data-testid="clear-convos-confirm"
-          >
-            <CheckIcon className="h-5 w-5" /> {localize('com_nav_confirm_clear')}
-          </div>
-        ) : (
-          <div
-            className="flex w-full items-center justify-center gap-2"
-            id="clearConvosTxt"
-            data-testid="clear-convos-initial"
-          >
-            {localize('com_ui_clear')}
-          </div>
-        )}
-
-        {/* </button> */}
-      </DialogButton>
-    </div>
+    <DangerButton
+      id="clearConvosBtn"
+      mutation={mutation}
+      confirmClear={confirmClear}
+      className={className}
+      showText={showText}
+      infoTextCode="com_nav_clear_all_chats"
+      actionTextCode="com_ui_clear"
+      confirmActionTextCode="com_nav_confirm_clear"
+      dataTestIdInitial="clear-convos-initial"
+      dataTestIdConfirm="clear-convos-confirm"
+      onClick={onClick}
+    />
   );
 };
 
@@ -127,6 +98,9 @@ function General() {
   const { newConversation } = store.useConversation();
   const { refreshConversations } = store.useConversations();
 
+  const contentRef = useRef(null);
+  useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
+
   useEffect(() => {
     if (clearConvosMutation.isSuccess) {
       newConversation();
@@ -159,7 +133,12 @@ function General() {
   );
 
   return (
-    <Tabs.Content value="general" role="tabpanel" className="w-full md:min-h-[300px]">
+    <Tabs.Content
+      value="general"
+      role="tabpanel"
+      className="w-full md:min-h-[300px]"
+      ref={contentRef}
+    >
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-300">
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <ThemeSelector theme={theme} onChange={changeTheme} />
@@ -168,7 +147,12 @@ function General() {
           <LangSelector langcode={langcode} onChange={changeLang} />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <ClearChatsButton confirmClear={confirmClear} onClick={clearConvos} showText={true} />
+          <ClearChatsButton
+            confirmClear={confirmClear}
+            onClick={clearConvos}
+            showText={true}
+            mutation={clearConvosMutation}
+          />
         </div>
       </div>
     </Tabs.Content>
