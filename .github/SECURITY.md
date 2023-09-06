@@ -60,4 +60,4 @@ We currently do not have a bug bounty program in place. However, we welcome and 
 
 ---
 
-## [Go Back to ReadMe](README.md)
+## [Go Back to ReadMe](../README.md)
