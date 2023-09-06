@@ -103,6 +103,7 @@ export default {
   com_auth_to_try_again: 'to try again.',
   com_auth_submit_registration: 'Submit registration',
   com_auth_welcome_back: 'Welcome back',
+  com_endpoint_select: 'Select an Endpoint',
   com_endpoint_bing_enable_sydney: 'Enable Sydney',
   com_endpoint_bing_to_enable_sydney: 'To enable Sydney',
   com_endpoint_bing_jailbreak: 'Jailbreak',

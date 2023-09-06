@@ -17,10 +17,14 @@ import {
   DropdownMenuTrigger,
   Dialog,
   DialogTrigger,
+  TooltipProvider,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
 } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { cn, cleanupPreset, getDefaultConversation } from '~/utils';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useLocalStorage } from '~/hooks';
 import store from '~/store';
 
 export default function NewConversationMenu() {
@@ -29,7 +33,7 @@ export default function NewConversationMenu() {
   const [showEndpoints, setShowEndpoints] = useState(true);
   const [presetModelVisible, setPresetModelVisible] = useState(false);
   const [preset, setPreset] = useState(false);
-  const [conversation, setConversation] = useRecoilState(store.conversation) || {};
+  const [conversation, setConversation] = useRecoilState(store.conversation) ?? {};
   const [messages, setMessages] = useRecoilState(store.messages);
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
@@ -71,23 +75,18 @@ export default function NewConversationMenu() {
   }, [availableEndpoints]);
 
   // save selected model to localStorage
+  const [newUser, setNewUser] = useLocalStorage('newUser', true);
+  const [lastModel, setLastModel] = useLocalStorage('lastSelectedModel', {});
+  const setLastConvo = useLocalStorage('lastConversationSetup', {})[1];
+  const [lastBingSettings, setLastBingSettings] = useLocalStorage('lastBingSettings', {});
   useEffect(() => {
-    if (endpoint) {
-      const lastSelectedModel = JSON.parse(localStorage.getItem('lastSelectedModel')) || {};
-      localStorage.setItem(
-        'lastSelectedModel',
-        JSON.stringify({ ...lastSelectedModel, [endpoint]: conversation.model }),
-      );
-      localStorage.setItem('lastConversationSetup', JSON.stringify(conversation));
+    if (endpoint && endpoint !== 'bingAI') {
+      setLastModel({ ...lastModel, [endpoint]: conversation?.model }), setLastConvo(conversation);
     }
 
     if (endpoint === 'bingAI') {
-      const lastBingSettings = JSON.parse(localStorage.getItem('lastBingSettings')) || {};
       const { jailbreak, toneStyle } = conversation;
-      localStorage.setItem(
-        'lastBingSettings',
-        JSON.stringify({ ...lastBingSettings, jailbreak, toneStyle }),
-      );
+      setLastBingSettings({ ...lastBingSettings, jailbreak, toneStyle });
     }
   }, [conversation]);
 
@@ -151,126 +150,131 @@ export default function NewConversationMenu() {
 
   const localize = useLocalize();
 
+  const onOpenChange = (open) => {
+    setMenuOpen(open);
+    if (newUser) {
+      setNewUser(false);
+    }
+  };
+
   return (
-    <Dialog className="z-[100]">
-      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-        <Button
-          id="new-conversation-menu"
-          data-testid="new-conversation-menu"
-          variant="outline"
-          className={
-            'group relative mb-[-12px] ml-1 mt-[-8px] items-center rounded-md border-0 p-1 outline-none focus:ring-0 focus:ring-offset-0 dark:data-[state=open]:bg-opacity-50 md:left-1 md:ml-0 md:ml-[-12px] md:pl-1'
-          }
-        >
-          <DropdownMenuTrigger asChild>{icon}</DropdownMenuTrigger>
-          <span
-            className={cn(
-              'max-w-0 overflow-hidden whitespace-nowrap px-0 text-slate-600 transition-all',
-              menuOpen ? 'max-w-[80px] px-2 dark:text-slate-300' : '',
-            )}
-          >
-            {localize('com_endpoint_new_topic')}
-          </span>
-        </Button>
-        <DropdownMenuContent
-          className="z-[100] w-[375px] dark:bg-gray-900 md:w-96"
-          onCloseAutoFocus={(event) => event.preventDefault()}
-          side="top"
-        >
-          <DropdownMenuLabel
-            className="cursor-pointer dark:text-gray-300"
-            onClick={() => setShowEndpoints((prev) => !prev)}
-          >
-            {showEndpoints ? localize('com_endpoint_hide') : localize('com_endpoint_show')}{' '}
-            {localize('com_endpoint')}
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuRadioGroup
-            value={endpoint}
-            onValueChange={onSelectEndpoint}
-            className="flex flex-col gap-1 overflow-y-auto"
-          >
-            {showEndpoints &&
-              (availableEndpoints.length ? (
-                <EndpointItems
-                  selectedEndpoint={endpoint}
-                  endpoints={availableEndpoints}
-                  onSelect={onSelectEndpoint}
-                />
-              ) : (
-                <DropdownMenuLabel className="dark:text-gray-300">
-                  {localize('com_endpoint_not_available')}
-                </DropdownMenuLabel>
-              ))}
-          </DropdownMenuRadioGroup>
-
-          <div className="mt-2 w-full" />
-
-          <DropdownMenuLabel className="flex items-center dark:text-gray-300">
-            <span
-              className="mr-auto cursor-pointer "
-              onClick={() => setShowPresets((prev) => !prev)}
-            >
-              {showPresets ? localize('com_endpoint_hide') : localize('com_endpoint_show')}{' '}
-              {localize('com_endpoint_presets')}
-            </span>
-            <FileUpload onFileSelected={onFileSelected} />
-            <Dialog>
-              <DialogTrigger asChild>
-                <label
-                  htmlFor="file-upload"
-                  className="mr-1 flex h-[32px] h-auto cursor-pointer  items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal text-gray-600 transition-colors hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-green-500"
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <Dialog className="z-[100]">
+          <DropdownMenu open={menuOpen} onOpenChange={onOpenChange}>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  id="new-conversation-menu"
+                  data-testid="new-conversation-menu"
+                  variant="outline"
+                  className={
+                    'group relative mb-[-12px] ml-1 mt-[-8px] items-center rounded-md border-0 p-1 outline-none focus:ring-0 focus:ring-offset-0 dark:data-[state=open]:bg-opacity-50 md:left-1 md:ml-0 md:ml-[-12px] md:pl-1'
+                  }
                 >
-                  {/* <Button
-                  type="button"
-                  className="h-auto bg-transparent px-2 py-1 text-xs font-medium font-normal text-red-700 hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-gray-800 dark:hover:text-red-400"
-                > */}
-                  <Trash2 className="mr-1 flex w-[22px] items-center stroke-1" />
-                  {localize('com_ui_clear')} {localize('com_ui_all')}
-                  {/* </Button> */}
-                </label>
-              </DialogTrigger>
-              <DialogTemplate
-                title={`${localize('com_ui_clear')} ${localize('com_endpoint_presets')}`}
-                description={localize('com_endpoint_presets_clear_warning')}
-                selection={{
-                  selectHandler: clearAllPresets,
-                  selectClasses: 'bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
-                  selectText: localize('com_ui_clear'),
-                }}
-                className="max-w-[500px]"
-              />
-            </Dialog>
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuRadioGroup
-            onValueChange={onSelectPreset}
-            className={cn(
-              'overflow-y-auto overflow-x-hidden',
-              showEndpoints ? 'max-h-[210px]' : 'max-h-[315px]',
-            )}
-          >
-            {showPresets &&
-              (presets.length ? (
-                <PresetItems
-                  presets={presets}
-                  onSelect={onSelectPreset}
-                  onChangePreset={onChangePreset}
-                  onDeletePreset={onDeletePreset}
-                />
-              ) : (
-                <DropdownMenuLabel className="dark:text-gray-300">
-                  {localize('com_endpoint_no_presets')}
-                </DropdownMenuLabel>
-              ))}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <EditPresetDialog
-        open={presetModelVisible}
-        onOpenChange={setPresetModelVisible}
-        preset={preset}
-      />
-    </Dialog>
+                  {icon}
+                </Button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent forceMount={newUser} sideOffset={5}>
+              {localize('com_endpoint_select')}
+            </TooltipContent>
+            <DropdownMenuContent
+              className="z-[100] w-[375px] dark:bg-gray-900 md:w-96"
+              onCloseAutoFocus={(event) => event.preventDefault()}
+              side="top"
+            >
+              <DropdownMenuLabel
+                className="cursor-pointer dark:text-gray-300"
+                onClick={() => setShowEndpoints((prev) => !prev)}
+              >
+                {showEndpoints ? localize('com_endpoint_hide') : localize('com_endpoint_show')}{' '}
+                {localize('com_endpoint')}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup
+                value={endpoint}
+                onValueChange={onSelectEndpoint}
+                className="flex flex-col gap-1 overflow-y-auto"
+              >
+                {showEndpoints &&
+                  (availableEndpoints.length ? (
+                    <EndpointItems
+                      selectedEndpoint={endpoint}
+                      endpoints={availableEndpoints}
+                      onSelect={onSelectEndpoint}
+                    />
+                  ) : (
+                    <DropdownMenuLabel className="dark:text-gray-300">
+                      {localize('com_endpoint_not_available')}
+                    </DropdownMenuLabel>
+                  ))}
+              </DropdownMenuRadioGroup>
+
+              <div className="mt-2 w-full" />
+
+              <DropdownMenuLabel className="flex items-center dark:text-gray-300">
+                <span
+                  className="mr-auto cursor-pointer "
+                  onClick={() => setShowPresets((prev) => !prev)}
+                >
+                  {showPresets ? localize('com_endpoint_hide') : localize('com_endpoint_show')}{' '}
+                  {localize('com_endpoint_presets')}
+                </span>
+                <FileUpload onFileSelected={onFileSelected} />
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <label
+                      htmlFor="file-upload"
+                      className="mr-1 flex h-[32px] h-auto cursor-pointer  items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal text-gray-600 transition-colors hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-green-500"
+                    >
+                      <Trash2 className="mr-1 flex w-[22px] items-center stroke-1" />
+                      {localize('com_ui_clear')} {localize('com_ui_all')}
+                    </label>
+                  </DialogTrigger>
+                  <DialogTemplate
+                    title={`${localize('com_ui_clear')} ${localize('com_endpoint_presets')}`}
+                    description={localize('com_endpoint_presets_clear_warning')}
+                    selection={{
+                      selectHandler: clearAllPresets,
+                      selectClasses: 'bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
+                      selectText: localize('com_ui_clear'),
+                    }}
+                    className="max-w-[500px]"
+                  />
+                </Dialog>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup
+                onValueChange={onSelectPreset}
+                className={cn(
+                  'overflow-y-auto overflow-x-hidden',
+                  showEndpoints ? 'max-h-[210px]' : 'max-h-[315px]',
+                )}
+              >
+                {showPresets &&
+                  (presets.length ? (
+                    <PresetItems
+                      presets={presets}
+                      onSelect={onSelectPreset}
+                      onChangePreset={onChangePreset}
+                      onDeletePreset={onDeletePreset}
+                    />
+                  ) : (
+                    <DropdownMenuLabel className="dark:text-gray-300">
+                      {localize('com_endpoint_no_presets')}
+                    </DropdownMenuLabel>
+                  ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <EditPresetDialog
+            open={presetModelVisible}
+            onOpenChange={setPresetModelVisible}
+            preset={preset}
+          />
+        </Dialog>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
