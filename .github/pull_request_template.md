@@ -1,20 +1,7 @@
 # Pull Request Template
 
 
-### ⚠️ Pre-Submission Steps:
-
-1. Before starting work, make sure your main branch has the latest commits with `npm run update`
-2. Run linting command to find errors: `npm run lint`. Alternatively, ensure husky pre-commit checks are functioning.
-3. After your changes, reinstall packages in your current branch using `npm run reinstall` and ensure everything still works. 
-    - Restart the ESLint server ("ESLint: Restart ESLint Server" in VS Code command bar) and your IDE after reinstalling or updating.
-4. Clear web app localStorage and cookies before and after changes.
-5. For frontend changes:
-    - Install typescript globally: `npm i -g typescript`.
-    - Compile typescript before and after changes to check for introduced errors: `tsc --noEmit`.
-6. Run tests locally:
-    - Backend unit tests: `npm run test:api`
-    - Frontend unit tests: `npm run test:client`
-    - Integration tests: `npm run e2e` (requires playwright installed, `npx install playwright`)
+### ⚠️ Before Submitting a PR, read the [Contributing Docs](./CONTRIBUTING.md) in full!
 
 ## Summary
 
