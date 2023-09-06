@@ -32,6 +32,8 @@ export default {
     'Tutte le conversazioni AI in un unico posto. Paga per chiamata e non al mese',
   com_ui_enter: 'Inserisci',
   com_ui_submit: 'Invia',
+  com_ui_upload_success: 'Caricamento del file riuscito',
+  com_ui_upload_invalid: 'File invalido per il caricamento',
   com_ui_cancel: 'Annulla',
   com_ui_save: 'Salva',
   com_ui_copy_to_clipboard: 'Copia negli appunti',
@@ -41,11 +43,16 @@ export default {
   com_ui_success: 'Successo',
   com_ui_all: 'tutti',
   com_ui_clear: 'Cancella',
+  com_ui_revoke: 'Revoca',
+  com_ui_revoke_info: 'Revoca tutte le credenziali dell\'utente',
+  com_ui_confirm_action: 'Conferma azione',
   com_ui_chats: 'chat',
   com_ui_delete_conversation: 'Elimina chat?',
   com_ui_delete_conversation_confirm: 'Questo eliminerà',
   com_auth_error_login:
     'Impossibile accedere con le informazioni fornite. Controlla le tue credenziali e riprova.',
+  com_auth_error_login_rl:
+    'Troppi tentativi di accesso da questo IP in un breve lasso di tempo. Per favore riprova più tardi.',
   com_auth_no_account: 'Non hai un account?',
   com_auth_sign_up: 'Registrati',
   com_auth_sign_in: 'Accedi',
@@ -192,29 +199,32 @@ export default {
   com_endpoint_func_hover: 'Abilitare l\'uso dei Plugin come funzioni OpenAI',
   com_endpoint_skip_hover:
     'Abilita la possibilità di saltare la fase di completamento, che rivede la risposta finale e le fasi generate',
-  com_endpoint_config_token: 'Imposta Token',
-  com_endpoint_config_token_for: 'Token per',
-  com_endpoint_config_token_name: 'nome del token',
-  com_endpoint_config_token_name_placeholder: 'Prima imposta il token',
-  com_endpoint_config_token_server: 'Il tuo token verrà inviato al server, ma non verrà salvato.',
-  com_endpoint_config_token_import_json_key: 'Importa Chiave JSON del Service Account.',
-  com_endpoint_config_token_import_json_key_succesful: 'Importa Chiave JSON del Service Account.',
-  com_endpoint_config_token_import_json_key_invalid:
+  com_endpoint_config_key: 'Imposta Chiave API',
+  com_endpoint_config_key_for: 'Imposta Chiave API per',
+  com_endpoint_config_key_name: 'Chiave',
+  com_endpoint_config_value: 'Inserisci valore per',
+  com_endpoint_config_key_name_placeholder: 'Prima imposta una chiave API',
+  com_endpoint_config_key_encryption: 'La tua chiave verrà crittografata ed eliminata al',
+  com_endpoint_config_key_expiry: 'il tempo di scadenza',
+  com_endpoint_config_key_import_json_key: 'Importa la chiave JSON dell\'account di servizio',
+  com_endpoint_config_key_import_json_key_success:
+    'Chiave JSON dell\'account di servizio importata correttamente',
+  com_endpoint_config_key_import_json_key_invalid:
     'Chiave JSON del Service Account non valida, hai importato il file corretto?',
-  com_endpoint_config_token_get_edge_key: 'Per ottenere il tuo token di accesso per Bing, accedi a',
-  com_endpoint_config_token_get_edge_key_dev_tool:
+  com_endpoint_config_key_get_edge_key: 'Per ottenere il token di accesso per Bing, accedi a',
+  com_endpoint_config_key_get_edge_key_dev_tool:
     'Usa gli strumenti di sviluppo o un\'estensione mentre sei loggato nel sito per copiare il contenuto del cookie _U. Se ciò fallisce, segui queste',
-  com_endpoint_config_token_edge_instructions: 'istruzioni',
-  com_endpoint_config_token_edge_full_token_string: 'per fornire le stringhe dei cookie complete.',
-  com_endpoint_config_token_chatgpt:
-    'Per ottenere il tuo token di accesso per ChatGPT \'Versione Gratuita\', accedi a',
-  com_endpoint_config_token_chatgpt_then_visit: 'poi visita',
-  com_endpoint_config_token_chatgpt_copy_token: 'Copia token di accesso.',
-  com_endpoint_config_token_google_need_to: 'Hai bisogno di',
-  com_endpoint_config_token_google_vertex_ai: 'Abilitare Vertex AI',
-  com_endpoint_config_token_google_vertex_api: 'API su Google Cloud, poi',
-  com_endpoint_config_token_google_service_account: 'Crea un Service Account',
-  com_endpoint_config_token_google_vertex_api_role:
+  com_endpoint_config_key_edge_instructions: 'Istruzioni',
+  com_endpoint_config_key_edge_full_key_string: 'per fornire la stringa di cookie complete.',
+  com_endpoint_config_key_chatgpt:
+    'Per ottenere il tuo token di accesso per ChatGPT \'Versione gratuita\', accedi a',
+  com_endpoint_config_key_chatgpt_then_visit: 'poi visita',
+  com_endpoint_config_key_chatgpt_copy_token: 'Copia token di accesso.',
+  com_endpoint_config_key_google_need_to: 'Devi',
+  com_endpoint_config_key_google_vertex_ai: 'Abilitare Vertex AI',
+  com_endpoint_config_key_google_vertex_api: 'API su Google Cloud, poi',
+  com_endpoint_config_key_google_service_account: 'Crea un account di servizio',
+  com_endpoint_config_key_google_vertex_api_role:
     'Assicurati di fare clic su \'Crea e continua\' per dare almeno il ruolo \'Utente Vertex AI\'. Infine, crea una chiave JSON da importare qui.',
   com_nav_export_filename: 'Nome del file',
   com_nav_export_filename_placeholder: 'Imposta il nome del file',
@@ -244,4 +254,5 @@ export default {
   com_nav_settings: 'Impostazioni',
   com_nav_search_placeholder: 'Cerca messaggi',
   com_nav_setting_general: 'Generale',
+  com_nav_setting_data: 'Controllo dati',
 };
