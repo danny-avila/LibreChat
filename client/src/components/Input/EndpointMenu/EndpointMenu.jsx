@@ -28,6 +28,7 @@ import { useLocalize, useLocalStorage } from '~/hooks';
 import store from '~/store';
 
 export default function NewConversationMenu() {
+  const localize = useLocalize();
   const [menuOpen, setMenuOpen] = useState(false);
   const [showPresets, setShowPresets] = useState(true);
   const [showEndpoints, setShowEndpoints] = useState(true);
@@ -74,7 +75,7 @@ export default function NewConversationMenu() {
     }
   }, [availableEndpoints]);
 
-  // save selected model to localStorage
+  // save states to localStorage
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const [lastModel, setLastModel] = useLocalStorage('lastSelectedModel', {});
   const setLastConvo = useLocalStorage('lastConversationSetup', {})[1];
@@ -82,9 +83,7 @@ export default function NewConversationMenu() {
   useEffect(() => {
     if (endpoint && endpoint !== 'bingAI') {
       setLastModel({ ...lastModel, [endpoint]: conversation?.model }), setLastConvo(conversation);
-    }
-
-    if (endpoint === 'bingAI') {
+    } else if (endpoint === 'bingAI') {
       const { jailbreak, toneStyle } = conversation;
       setLastBingSettings({ ...lastBingSettings, jailbreak, toneStyle });
     }
@@ -147,8 +146,6 @@ export default function NewConversationMenu() {
     error: false,
     button: true,
   });
-
-  const localize = useLocalize();
 
   const onOpenChange = (open) => {
     setMenuOpen(open);
