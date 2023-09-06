@@ -10,7 +10,7 @@ import supersub from 'remark-supersub';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import CodeBlock from './CodeBlock';
-import { langSubset } from '~/utils';
+import { langSubset, validateIframe } from '~/utils';
 import store from '~/store';
 
 type TCodeProps = {
@@ -47,7 +47,7 @@ const Markdown = React.memo(({ content, message, showCursor }: TContentProps) =>
   const isInitializing = content === '<span className="result-streaming">█</span>';
   const isLatestMessage = message?.messageId === latestMessage?.messageId;
   const currentContent = content?.replace('z-index: 1;', '') ?? '';
-  const isIFrame = currentContent.includes('<iframe');
+  const isValidIFrame = validateIframe(currentContent);
 
   useEffect(() => {
     let timer1: NodeJS.Timeout, timer2: NodeJS.Timeout;
@@ -88,7 +88,7 @@ const Markdown = React.memo(({ content, message, showCursor }: TContentProps) =>
     [rehypeRaw],
   ];
 
-  if ((!isInitializing || !isLatestMessage) && !isIFrame) {
+  if ((!isInitializing || !isLatestMessage) && !isValidIFrame) {
     rehypePlugins.pop();
   }
 
