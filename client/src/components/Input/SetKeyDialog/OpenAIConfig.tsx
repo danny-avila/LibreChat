@@ -15,11 +15,7 @@ function isJson(str: string) {
   return true;
 }
 
-type TOpenAIConfigProps = TConfigProps & {
-  endpoint: string;
-};
-
-const OpenAIConfig = ({ userKey, setUserKey, endpoint }: TOpenAIConfigProps) => {
+const OpenAIConfig = ({ userKey, setUserKey, endpoint }: TConfigProps) => {
   const [showPanel, setShowPanel] = useState(endpoint === 'azureOpenAI');
 
   useEffect(() => {
@@ -58,7 +54,7 @@ const OpenAIConfig = ({ userKey, setUserKey, endpoint }: TOpenAIConfigProps) => 
       {!showPanel ? (
         <>
           <InputWithLabel
-            id={'chatGPTLabel'}
+            id={endpoint}
             value={userKey ?? ''}
             onChange={(e: { target: { value: string } }) => setUserKey(e.target.value ?? '')}
             label={'OpenAI API Key'}

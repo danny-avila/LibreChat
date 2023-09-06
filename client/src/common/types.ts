@@ -124,6 +124,7 @@ export type TDisplayProps = TText &
 export type TConfigProps = {
   userKey: string;
   setUserKey: React.Dispatch<React.SetStateAction<string>>;
+  endpoint: string;
 };
 
 export type TDangerButtonProps = {
