@@ -12,47 +12,6 @@ const EModelEndpoint = {
 
 const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
-/*
-const tMessageSchema = z.object({
-  messageId: z.string(),
-  clientId: z.string().nullable().optional(),
-  conversationId: z.string().nullable(),
-  parentMessageId: z.string().nullable(),
-  sender: z.string(),
-  text: z.string(),
-  isCreatedByUser: z.boolean(),
-  error: z.boolean(),
-  createdAt: z
-    .string()
-    .optional()
-    .default(() => new Date().toISOString()),
-  updatedAt: z
-    .string()
-    .optional()
-    .default(() => new Date().toISOString()),
-  current: z.boolean().optional(),
-  unfinished: z.boolean().optional(),
-  submitting: z.boolean().optional(),
-  searchResult: z.boolean().optional(),
-  finish_reason: z.string().optional(),
-});
-
-const tPresetSchema = tConversationSchema
-  .omit({
-    conversationId: true,
-    createdAt: true,
-    updatedAt: true,
-    title: true,
-  })
-  .merge(
-    z.object({
-      conversationId: z.string().optional(),
-      presetId: z.string().nullable().optional(),
-      title: z.string().nullable().optional(),
-    }),
-  );
-*/
-
 const tPluginAuthConfigSchema = z.object({
   authField: z.string(),
   label: z.string(),
