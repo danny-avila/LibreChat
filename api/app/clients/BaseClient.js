@@ -473,6 +473,7 @@ class BaseClient {
       conversationId,
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
+      isEdited,
       model: this.modelOptions.model,
       sender: this.sender,
       text: addSpaceIfNeeded(generation) + (await this.sendCompletion(payload, opts)),
