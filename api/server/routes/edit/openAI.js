@@ -63,6 +63,7 @@ router.post(
             model: endpointOption.modelOptions.model,
             unfinished: true,
             cancelled: false,
+            isEdited: true,
             error: false,
           });
         }

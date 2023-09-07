@@ -242,6 +242,7 @@ class PluginsClient extends OpenAIClient {
     }
     const {
       user,
+      isEdited,
       conversationId,
       responseMessageId,
       saveOptions,
@@ -293,6 +294,7 @@ class PluginsClient extends OpenAIClient {
       conversationId,
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
+      isEdited,
       model: this.modelOptions.model,
       sender: this.sender,
       promptTokens,

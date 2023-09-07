@@ -61,6 +61,7 @@ router.post(
             text: partialText,
             unfinished: true,
             cancelled: false,
+            isEdited: true,
             error: false,
           });
         }

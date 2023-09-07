@@ -69,6 +69,7 @@ const EditMessage = ({
           ? {
             ...msg,
             text,
+            isEdited: true,
           }
           : msg,
       ),
