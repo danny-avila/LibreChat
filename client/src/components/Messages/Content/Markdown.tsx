@@ -45,9 +45,10 @@ const Markdown = React.memo(({ content, message, showCursor }: TContentProps) =>
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const latestMessage = useRecoilValue(store.latestMessage);
   const isInitializing = content === '<span className="result-streaming">█</span>';
-  const isLatestMessage = message?.messageId === latestMessage?.messageId;
+
+  const { isEdited, messageId } = message ?? {};
+  const isLatestMessage = messageId === latestMessage?.messageId;
   const currentContent = content?.replace('z-index: 1;', '') ?? '';
-  const isValidIFrame = validateIframe(currentContent);
 
   useEffect(() => {
     let timer1: NodeJS.Timeout, timer2: NodeJS.Timeout;
@@ -88,7 +89,12 @@ const Markdown = React.memo(({ content, message, showCursor }: TContentProps) =>
     [rehypeRaw],
   ];
 
-  if ((!isInitializing || !isLatestMessage) && !isValidIFrame) {
+  let isValidIframe: string | boolean | null = false;
+  if (!isEdited) {
+    isValidIframe = validateIframe(currentContent);
+  }
+
+  if (isEdited || ((!isInitializing || !isLatestMessage) && !isValidIframe)) {
     rehypePlugins.pop();
   }
 
