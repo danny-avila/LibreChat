@@ -101,7 +101,7 @@ export default function Landing() {
           <WarningIcon />
           <h4
             id='reminder'
-            className='text-center'
+            className='text-center text-red-500 border border-red-500 p-2 inline-block font-bold'
           >
             {localize(lang, 'com_ui_convo_public_reminder')}
           </h4>
