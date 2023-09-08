@@ -28,7 +28,7 @@ const sendMessage = (res, message, event = 'message') => {
  * Processes an error with provided options, saves the error message and sends a corresponding SSE response
  * @async
  * @param {object} res - The server response.
- * @param {object} options - The options for handling the error containing sender, conversationId, messageId, parentMessageId and text properties.
+ * @param {object} options - The options for handling the error containing message properties.
  * @param {function} callback - [Optional] The callback function to be executed.
  */
 const sendError = async (res, options, callback) => {
