@@ -6,12 +6,13 @@ const bingAI = require('./bingAI');
 const gptPlugins = require('./gptPlugins');
 const askChatGPTBrowser = require('./askChatGPTBrowser');
 const anthropic = require('./anthropic');
+const { questionLimiter } = require('../../middleware');
 
-router.use(['/azureOpenAI', '/openAI'], openAI);
-router.use('/google', google);
-router.use('/bingAI', bingAI);
-router.use('/chatGPTBrowser', askChatGPTBrowser);
-router.use('/gptPlugins', gptPlugins);
-router.use('/anthropic', anthropic);
+router.use(['/azureOpenAI', '/openAI'], questionLimiter, openAI);
+router.use('/google', questionLimiter, google);
+router.use('/bingAI', questionLimiter, bingAI);
+router.use('/chatGPTBrowser', questionLimiter, askChatGPTBrowser);
+router.use('/gptPlugins', questionLimiter, gptPlugins);
+router.use('/anthropic', questionLimiter, anthropic);
 
 module.exports = router;

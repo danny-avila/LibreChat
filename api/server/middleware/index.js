@@ -3,6 +3,7 @@ const setHeaders = require('./setHeaders');
 const loginLimiter = require('./loginLimiter');
 const requireJwtAuth = require('./requireJwtAuth');
 const registerLimiter = require('./registerLimiter');
+const questionLimiter = require('./questionLimiter');
 const requireLocalAuth = require('./requireLocalAuth');
 const validateEndpoint = require('./validateEndpoint');
 const validateMessageReq = require('./validateMessageReq');
@@ -15,6 +16,7 @@ module.exports = {
   loginLimiter,
   requireJwtAuth,
   registerLimiter,
+  questionLimiter,
   requireLocalAuth,
   validateEndpoint,
   validateMessageReq,
