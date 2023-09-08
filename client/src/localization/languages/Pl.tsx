@@ -199,4 +199,5 @@ export default {
   com_nav_settings: 'Ustawienia',
   com_nav_search_placeholder: 'Szukaj wiadomości',
   com_nav_setting_general: 'Ogólne',
+  com_nav_lang_hungarian: 'Magyar',
 };

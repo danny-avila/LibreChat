@@ -174,4 +174,5 @@ export default {
   com_nav_settings: '设置',
   com_nav_search_placeholder: '文本搜索',
   com_nav_setting_general: '通用',
+  com_nav_lang_hungarian: 'Magyar',
 };

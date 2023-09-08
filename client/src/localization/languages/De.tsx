@@ -198,4 +198,5 @@ export default {
   com_nav_setting_general: 'Generell',
   com_nav_language: 'Sprache',
   com_nav_lang_german: 'Deutsch',
+  com_nav_lang_hungarian: 'Magyar',
 };
