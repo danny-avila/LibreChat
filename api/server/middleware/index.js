@@ -5,6 +5,7 @@ const requireJwtAuth = require('./requireJwtAuth');
 const registerLimiter = require('./registerLimiter');
 const requireLocalAuth = require('./requireLocalAuth');
 const validateEndpoint = require('./validateEndpoint');
+const concurrentLimiter = require('./concurrentLimiter');
 const validateMessageReq = require('./validateMessageReq');
 const buildEndpointOption = require('./buildEndpointOption');
 const validateRegistration = require('./validateRegistration');
@@ -17,6 +18,7 @@ module.exports = {
   registerLimiter,
   requireLocalAuth,
   validateEndpoint,
+  concurrentLimiter,
   validateMessageReq,
   buildEndpointOption,
   validateRegistration,
