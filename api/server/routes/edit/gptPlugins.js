@@ -113,12 +113,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     plugin: { ...plugin, loading: false },
     userMessage,
   });
-  const { abortController, onStart } = createAbortController(
-    res,
-    req,
-    endpointOption,
-    getAbortData,
-  );
+  const { abortController, onStart } = createAbortController(req, res, getAbortData);
 
   try {
     endpointOption.tools = await validateTools(user, endpointOption.tools);

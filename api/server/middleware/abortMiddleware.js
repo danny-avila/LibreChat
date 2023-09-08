@@ -26,8 +26,9 @@ const handleAbort = () => {
   };
 };
 
-const createAbortController = (res, req, endpointOption, getAbortData) => {
+const createAbortController = (req, res, getAbortData) => {
   const abortController = new AbortController();
+  const { endpointOption } = req.body;
   const onStart = (userMessage) => {
     sendMessage(res, { message: userMessage, created: true });
     const abortKey = userMessage?.conversationId ?? req.user.id;
