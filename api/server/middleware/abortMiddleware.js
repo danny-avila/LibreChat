@@ -73,12 +73,13 @@ const handleAbortError = async (res, req, error, data) => {
   const { sender, conversationId, messageId, parentMessageId, partialText } = data;
 
   const respondWithError = async () => {
-    const errorMessage = {
+    const options = {
       sender,
       messageId,
       conversationId,
       parentMessageId,
       text: error.message,
+      shouldSaveMessage: true,
     };
     const callback = async () => {
       if (abortControllers.has(conversationId)) {
@@ -88,7 +89,7 @@ const handleAbortError = async (res, req, error, data) => {
       }
     };
 
-    await sendError(res, errorMessage, callback);
+    await sendError(res, options, callback);
   };
 
   if (partialText && partialText.length > 5) {

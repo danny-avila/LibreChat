@@ -51,8 +51,8 @@ const concurrentLimiter = async (req, res, next) => {
     });
 
     const { messageId, conversationId: _convoId, parentMessageId, text } = req.body;
-    const conversationId = _convoId ?? 'hit-concurrent-limit-' + pendingRequests;
-    const sender = getResponseSender(req.body);
+    const conversationId = _convoId ?? crypto.randomUUID();
+
     const userMessage = {
       sender: 'User',
       messageId: messageId ?? crypto.randomUUID(),
@@ -62,14 +62,21 @@ const concurrentLimiter = async (req, res, next) => {
       text,
     };
     sendMessage(res, { message: userMessage, created: true });
-    saveMessage(userMessage);
+
+    const shouldSaveMessage =
+      _convoId && parentMessageId && parentMessageId !== '00000000-0000-0000-0000-000000000000';
+
+    if (shouldSaveMessage) {
+      await saveMessage(userMessage);
+    }
 
     return await sendError(res, {
-      sender,
+      sender: getResponseSender(req.body),
       messageId: crypto.randomUUID(),
       conversationId,
-      parentMessageId,
+      parentMessageId: userMessage.messageId,
       text: `Only ${limit} message at a time. Please allow any other responses to complete before sending another message, or wait one minute.`,
+      shouldSaveMessage,
     });
   } else {
     await pendingReqCache.set(userId, pendingRequests + 1);
