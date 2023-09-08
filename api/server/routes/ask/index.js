@@ -6,6 +6,9 @@ const bingAI = require('./bingAI');
 const gptPlugins = require('./gptPlugins');
 const askChatGPTBrowser = require('./askChatGPTBrowser');
 const anthropic = require('./anthropic');
+const { requireJwtAuth } = require('../../middleware');
+
+router.use(requireJwtAuth);
 
 router.use(['/azureOpenAI', '/openAI'], openAI);
 router.use('/google', google);
