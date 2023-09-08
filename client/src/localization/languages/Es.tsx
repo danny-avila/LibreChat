@@ -96,8 +96,6 @@ export default {
   com_auth_reset_password_email_sent:
     'Se ha enviado un correo electrónico con más instrucciones para restablecer su contraseña',
   com_auth_error_reset_password:
-    'Se produjo un problema al restablecer su contraseña. No se encontró ningún usuario con la dirección de correo electrónico proporcionada. Por favor, inténtelo de nuevo.',
-  com_auth_error_reset_password:
     'Hubo un problema al restablecer tu contraseña. No se encontró ningún usuario con la dirección de email proporcionada. Por favor, intenta nuevamente.',
   com_auth_reset_password_success: 'Restablecimiento de Contraseña Completado',
   com_auth_login_with_new_password: 'Ahora puedes iniciar sesión con tu nueva contraseña.',
