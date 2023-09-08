@@ -1,10 +1,15 @@
 const Keyv = require('keyv');
-const { handleError } = require('../utils');
+const crypto = require('crypto');
+
 const { keyvMongo } = require('../../lib/db');
+const { sendMessage, sendError } = require('../utils');
+const { getResponseSender } = require('../routes/endpoints/schemas');
+const { saveMessage } = require('../../models');
+
 const { CONCURRENT_MESSAGE_MAX } = process.env ?? {};
 const limit = Math.max(CONCURRENT_MESSAGE_MAX ?? 1, 1);
 
-const pendingRequests = new Keyv({ store: keyvMongo, namespace: 'pendingRequests' });
+const pendingReqCache = new Keyv({ store: keyvMongo, namespace: 'pendingRequests' });
 const violations = new Keyv({ store: keyvMongo, namespace: 'violations' });
 
 /**
@@ -13,7 +18,7 @@ const violations = new Keyv({ store: keyvMongo, namespace: 'violations' });
  * This middleware checks if a user has exceeded a specified concurrent request limit.
  * If the user exceeds the limit, an error is returned. If the user is within the limit,
  * their request count is incremented. After the request is processed, the count is decremented.
- * If the `pendingRequests` store is not available, the middleware will skip its logic.
+ * If the `pendingReqCache` store is not available, the middleware will skip its logic.
  *
  * @function
  * @param {Object} req - Express request object containing user information.
@@ -26,7 +31,7 @@ const concurrentLimiter = async (req, res, next) => {
     return next();
   }
 
-  if (!pendingRequests) {
+  if (!pendingReqCache) {
     return next();
   }
 
@@ -35,42 +40,67 @@ const concurrentLimiter = async (req, res, next) => {
   }
 
   const userId = req.user.id;
-  const pendingRequest = await pendingRequests.get(userId);
+  const pendingRequests = (await pendingReqCache.get(userId)) ?? 0;
 
-  if (pendingRequest && pendingRequest >= limit) {
-    // User already has a pending request
-    await violations.set(
-      `${userId}-${new Date().toLocaleString().replace(/ |, /g, ':')}`,
-      `Exceeded concurrent message limit, ${pendingRequest} pending requests`,
-    );
-    await pendingRequests.set(userId, pendingRequest + 1);
-    return handleError(res, `Only ${limit} request(s) allowed at a time.`);
-  } else if (pendingRequest) {
-    // User has a pending request, increment the count
-    await pendingRequests.set(userId, pendingRequest + 1);
+  if (pendingRequests >= limit) {
+    // User has pending requests over the limit
+    await violations.set(`${userId}-${new Date().toLocaleString().replace(/ |, /g, ':')}`, {
+      type: 'concurrent',
+      limit,
+      pendingRequests,
+    });
+
+    const { messageId, conversationId: _convoId, parentMessageId, text } = req.body;
+    const conversationId = _convoId ?? 'hit-concurrent-limit-' + pendingRequests;
+    const sender = getResponseSender(req.body);
+    const userMessage = {
+      sender: 'User',
+      messageId: messageId ?? crypto.randomUUID(),
+      parentMessageId,
+      conversationId,
+      isCreatedByUser: true,
+      text,
+    };
+    sendMessage(res, { message: userMessage, created: true });
+    saveMessage(userMessage);
+
+    return await sendError(res, {
+      sender,
+      messageId: crypto.randomUUID(),
+      conversationId,
+      parentMessageId,
+      text: `Only ${limit} message at a time. Please allow any other responses to complete before sending another message, or wait one minute.`,
+    });
   } else {
-    // User has no pending requests, set the count to 1
-    await pendingRequests.set(userId, 1);
+    await pendingReqCache.set(userId, pendingRequests + 1);
   }
 
-  // Ensure the user is removed from the store once the request is done
+  // Ensure the requests are removed from the store once the request is done
   const cleanUp = async () => {
-    if (!pendingRequests) {
+    if (!pendingReqCache) {
       return;
     }
 
-    await pendingRequests.delete(userId);
+    const currentRequests = await pendingReqCache.get(userId);
+
+    if (currentRequests && currentRequests >= 1) {
+      await pendingReqCache.set(userId, currentRequests - 1);
+    } else {
+      await pendingReqCache.delete(userId);
+    }
   };
 
-  res.on('finish', cleanUp);
-  res.on('close', cleanUp);
+  if (pendingRequests < limit) {
+    res.on('finish', cleanUp);
+    res.on('close', cleanUp);
+  }
 
   next();
 };
 
 process.on('exit', async () => {
   console.log('Clearing all pending requests before exiting...');
-  await pendingRequests.clear();
+  await pendingReqCache.clear();
 });
 
 module.exports = concurrentLimiter;
