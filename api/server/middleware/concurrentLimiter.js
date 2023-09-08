@@ -1,7 +1,7 @@
 const Keyv = require('keyv');
 const crypto = require('crypto');
 
-const { keyvMongo } = require('../../lib/db');
+const { keyvFile: cache } = require('../../lib/db');
 const { sendMessage, sendError } = require('../utils');
 const { getResponseSender } = require('../routes/endpoints/schemas');
 const { saveMessage } = require('../../models');
@@ -9,8 +9,8 @@ const { saveMessage } = require('../../models');
 const { CONCURRENT_MESSAGE_MAX } = process.env ?? {};
 const limit = Math.max(CONCURRENT_MESSAGE_MAX ?? 1, 1);
 
-const pendingReqCache = new Keyv({ store: keyvMongo, namespace: 'pendingRequests' });
-const violations = new Keyv({ store: keyvMongo, namespace: 'violations' });
+const pendingReqCache = new Keyv({ store: cache, namespace: 'pendingRequests' });
+const violations = new Keyv({ store: cache, namespace: 'violations' });
 
 /**
  * Middleware to limit concurrent requests for a user.
@@ -27,7 +27,7 @@ const violations = new Keyv({ store: keyvMongo, namespace: 'violations' });
  * @throws {Error} Throws an error if the user exceeds the concurrent request limit.
  */
 const concurrentLimiter = async (req, res, next) => {
-  if (!keyvMongo) {
+  if (!cache) {
     return next();
   }
 
