@@ -1,10 +1,6 @@
 const Keyv = require('keyv');
-const crypto = require('crypto');
-
 const { keyvFile: cache } = require('../../lib/db');
-const { sendMessage, sendError } = require('../utils');
-const { getResponseSender } = require('../routes/endpoints/schemas');
-const { saveMessage } = require('../../models');
+const denyRequest = require('./denyRequest');
 
 const { CONCURRENT_MESSAGE_MAX } = process.env ?? {};
 const limit = Math.max(CONCURRENT_MESSAGE_MAX ?? 1, 1);
@@ -50,34 +46,8 @@ const concurrentLimiter = async (req, res, next) => {
       pendingRequests,
     });
 
-    const { messageId, conversationId: _convoId, parentMessageId, text } = req.body;
-    const conversationId = _convoId ?? crypto.randomUUID();
-
-    const userMessage = {
-      sender: 'User',
-      messageId: messageId ?? crypto.randomUUID(),
-      parentMessageId,
-      conversationId,
-      isCreatedByUser: true,
-      text,
-    };
-    sendMessage(res, { message: userMessage, created: true });
-
-    const shouldSaveMessage =
-      _convoId && parentMessageId && parentMessageId !== '00000000-0000-0000-0000-000000000000';
-
-    if (shouldSaveMessage) {
-      await saveMessage(userMessage);
-    }
-
-    return await sendError(res, {
-      sender: getResponseSender(req.body),
-      messageId: crypto.randomUUID(),
-      conversationId,
-      parentMessageId: userMessage.messageId,
-      text: `Only ${limit} message at a time. Please allow any other responses to complete before sending another message, or wait one minute.`,
-      shouldSaveMessage,
-    });
+    const errorMessage = `Only ${limit} message at a time. Please allow any other responses to complete before sending another message, or wait one minute.`;
+    return await denyRequest(req, res, errorMessage);
   } else {
     await pendingReqCache.set(userId, pendingRequests + 1);
   }
