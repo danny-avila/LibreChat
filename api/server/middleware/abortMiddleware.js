@@ -1,6 +1,5 @@
-const crypto = require('crypto');
 const { saveMessage, getConvo, getConvoTitle } = require('../../models');
-const { sendMessage, handleError } = require('../utils');
+const { sendMessage, sendError } = require('../utils');
 const abortControllers = require('./abortControllers');
 
 async function abortMessage(req, res) {
@@ -75,23 +74,20 @@ const handleAbortError = async (res, req, error, data) => {
   const respondWithError = async () => {
     const errorMessage = {
       sender,
-      messageId: messageId ?? crypto.randomUUID(),
+      messageId,
       conversationId,
       parentMessageId,
-      unfinished: false,
-      cancelled: false,
-      error: true,
-      final: true,
       text: error.message,
-      isCreatedByUser: false,
     };
-    if (abortControllers.has(conversationId)) {
-      const { abortController } = abortControllers.get(conversationId);
-      abortController.abort();
-      abortControllers.delete(conversationId);
-    }
-    await saveMessage(errorMessage);
-    handleError(res, errorMessage);
+    const callback = async () => {
+      if (abortControllers.has(conversationId)) {
+        const { abortController } = abortControllers.get(conversationId);
+        abortController.abort();
+        abortControllers.delete(conversationId);
+      }
+    };
+
+    await sendError(res, errorMessage, callback);
   };
 
   if (partialText && partialText.length > 5) {

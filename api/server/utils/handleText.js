@@ -1,21 +1,10 @@
 const partialRight = require('lodash/partialRight');
-const citationRegex = /\[\^\d+?\^]/g;
 const { getCitations, citeText } = require('./citations');
+const { sendMessage } = require('./streamResponse');
 const cursor = '<span className="result-streaming">█</span>';
+const citationRegex = /\[\^\d+?\^]/g;
 
 const addSpaceIfNeeded = (text) => (text.length > 0 && !text.endsWith(' ') ? text + ' ' : text);
-
-const handleError = (res, message) => {
-  res.write(`event: error\ndata: ${JSON.stringify(message)}\n\n`);
-  res.end();
-};
-
-const sendMessage = (res, message, event = 'message') => {
-  if (message.length === 0) {
-    return;
-  }
-  res.write(`event: ${event}\ndata: ${JSON.stringify(message)}\n\n`);
-};
 
 const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
   let i = 0;
@@ -149,8 +138,6 @@ function formatAction(action) {
 }
 
 module.exports = {
-  handleError,
-  sendMessage,
   createOnProgress,
   handleText,
   formatSteps,
