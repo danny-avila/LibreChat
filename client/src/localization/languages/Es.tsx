@@ -119,7 +119,7 @@ export default {
   com_endpoint_default_empty: 'predeterminado: vacío',
   com_endpoint_default_with_num: 'predeterminado: {0}',
   com_endpoint_context: 'Contexto',
-  com_endpoint_tone_style: 'Estilo de Tono',
+  com_endpoint_tone_style: 'Personality',
   com_endpoint_token_count: 'Conteo de Tokens',
   com_endpoint_output: 'Salida',
   com_endpoint_google_temp:
