@@ -255,4 +255,5 @@ export default {
   com_nav_search_placeholder: 'Cerca messaggi',
   com_nav_setting_general: 'Generale',
   com_nav_setting_data: 'Controllo dati',
+  com_nav_lang_hungarian: 'Magyar',
 };

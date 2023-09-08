@@ -7,6 +7,7 @@ import Portuguese from './languages/Br';
 import Spanish from './languages/Es';
 import French from './languages/Fr';
 import Russian from './languages/Ru';
+import Hungarian from './languages/Hu';
 // === import additional language files here === //
 
 // New method on String allow using "{\d}" placeholder for
@@ -55,9 +56,12 @@ export const getTranslations = (langCode: string) => {
   if (langCode === 'ru') {
     return Russian;
   }
+  if (langCode === 'hu') {
+    return Hungarian;
+  }
 
   // === add conditionals here for additional languages here === //
-  return English; // default to English
+  return Hungarian; // default to English
 };
 
 // input: language code in string & phrase key in string

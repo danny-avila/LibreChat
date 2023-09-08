@@ -198,4 +198,5 @@ export default {
   com_nav_settings: 'Paramètres',
   com_nav_search_placeholder: 'Rechercher des messages',
   com_nav_setting_general: 'Général',
+  com_nav_lang_hungarian: 'Magyar',
 };
