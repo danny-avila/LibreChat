@@ -27,7 +27,7 @@ module.exports = {
     try {
       const validConvoId = idSchema.safeParse(conversationId);
       if (!validConvoId.success) {
-        return console.log('Message not saved: invalid conversationId');
+        return;
       }
       // may also need to update the conversation here
       await Message.findOneAndUpdate(

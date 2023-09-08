@@ -45,7 +45,7 @@
     "joi": "^17.9.2",
     "js-yaml": "^4.1.0",
     "jsonwebtoken": "^9.0.0",
-    "keyv": "^4.5.2",
+    "keyv": "^4.5.3",
     "keyv-file": "^0.2.0",
     "langchain": "^0.0.144",
     "lodash": "^4.17.21",
