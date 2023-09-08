@@ -12,7 +12,7 @@ const windowInMinutes = windowMs / 60000;
 /**
  * Respond with an error message and save it.
  */
-const respondWithError = async (sender, conversationId, parentMessageId, error, res) => {
+const respondWithError = async (sender, conversationId, parentMessageId, res) => {
   const errorMessage = {
     sender,
     messageId: crypto.randomUUID(),
@@ -22,7 +22,10 @@ const respondWithError = async (sender, conversationId, parentMessageId, error, 
     cancelled: false,
     error: true,
     final: true,
-    text: error.message,
+    text: JSON.stringify({
+      type: 'too_many_requests',
+      windowInMinutes,
+    }),
     isCreatedByUser: false,
   };
 
@@ -37,15 +40,9 @@ function handler(req, res) {
   buildEndpointOption(req, res, () => {});
 
   const { endpointOption, conversationId, parentMessageId = null } = req.body;
-  const errorText = `You've asked too many questions in a short time. Please wait for ${windowInMinutes} minutes before asking another question.`;
+  console.log(conversationId, parentMessageId);
 
-  return respondWithError(
-    getResponseSender(endpointOption),
-    conversationId,
-    parentMessageId,
-    new Error(errorText),
-    res,
-  );
+  return respondWithError(getResponseSender(endpointOption), conversationId, parentMessageId, res);
 }
 
 const questionLimiter = rateLimit({

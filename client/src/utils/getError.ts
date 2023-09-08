@@ -17,6 +17,8 @@ const getError = (text: string) => {
       return 'Invalid API key. Please check your API key and try again. You can do this by clicking on the model logo in the left corner of the textbox and selecting "Set Token" for the current selected endpoint. Thank you for your understanding.';
     } else if (json.type === 'insufficient_quota') {
       return 'We apologize for any inconvenience caused. The default API key has reached its limit. To continue using this service, please set up your own API key. You can do this by clicking on the model logo in the left corner of the textbox and selecting "Set Token" for the current selected endpoint. Thank you for your understanding.';
+    } else if (json.type === 'too_many_requests') {
+      return `You've asked too many questions in a short time. Please wait for ${json.windowInMinutes} minutes before asking another question.`;
     } else {
       return `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
     }
