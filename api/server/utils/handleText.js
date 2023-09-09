@@ -145,19 +145,19 @@ function formatAction(action) {
  * @returns {boolean} Returns `true` if the value is a case-insensitive match for the string 'true', otherwise returns `false`.
  * @example
  *
- * isStringTruthy("True");  // returns true
- * isStringTruthy("TRUE");  // returns true
- * isStringTruthy("false"); // returns false
- * isStringTruthy(null);    // returns false
- * isStringTruthy();        // returns false
+ * isTrue("True");  // returns true
+ * isTrue("TRUE");  // returns true
+ * isTrue("false"); // returns false
+ * isTrue(null);    // returns false
+ * isTrue();        // returns false
  */
-function isStringTruthy(value) {
+function isTrue(value) {
   return value?.toLowerCase()?.trim() === 'true';
 }
 
 module.exports = {
   createOnProgress,
-  isStringTruthy,
+  isTrue,
   handleText,
   formatSteps,
   formatAction,
