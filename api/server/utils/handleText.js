@@ -137,8 +137,27 @@ function formatAction(action) {
   return formattedAction;
 }
 
+/**
+ * Checks if the given string value is truthy by comparing it to the string 'true' (case-insensitive).
+ *
+ * @function
+ * @param {string|null|undefined} value - The string value to check.
+ * @returns {boolean} Returns `true` if the value is a case-insensitive match for the string 'true', otherwise returns `false`.
+ * @example
+ *
+ * isStringTruthy("True");  // returns true
+ * isStringTruthy("TRUE");  // returns true
+ * isStringTruthy("false"); // returns false
+ * isStringTruthy(null);    // returns false
+ * isStringTruthy();        // returns false
+ */
+function isStringTruthy(value) {
+  return value?.toLowerCase()?.trim() === 'true';
+}
+
 module.exports = {
   createOnProgress,
+  isStringTruthy,
   handleText,
   formatSteps,
   formatAction,
