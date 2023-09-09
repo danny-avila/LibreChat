@@ -7,13 +7,13 @@ const isJson = (str: string) => {
   return true;
 };
 
+type TConcurrent = {
+  limit: number;
+};
+
 type TMessageLimit = {
   max: number;
   windowInMinutes: number;
-};
-
-type TConcurrent = {
-  limit: number;
 };
 
 const errorMessages = {
@@ -21,12 +21,18 @@ const errorMessages = {
     'Invalid API key. Please check your API key and try again. You can do this by clicking on the model logo in the left corner of the textbox and selecting "Set Token" for the current selected endpoint. Thank you for your understanding.',
   insufficient_quota:
     'We apologize for any inconvenience caused. The default API key has reached its limit. To continue using this service, please set up your own API key. You can do this by clicking on the model logo in the left corner of the textbox and selecting "Set Token" for the current selected endpoint. Thank you for your understanding.',
-  concurrent: (json: TConcurrent) =>
-    `Only ${json.limit} message(s) at a time. Please allow any other responses to complete before sending another message, or wait one minute.`,
-  message_limit: (json: TMessageLimit) =>
-    `You hit the message limit. You have a cap of ${json.max} messages per ${
-      json.windowInMinutes > 1 ? `${json.windowInMinutes} minutes` : 'minute'
-    }.`,
+  concurrent: (json: TConcurrent) => {
+    const { limit } = json;
+    const plural = limit > 1 ? 's' : '';
+    return `Only ${limit} message${plural} at a time. Please allow any other responses to complete before sending another message, or wait one minute.`;
+  },
+  message_limit: (json: TMessageLimit) => {
+    const { max, windowInMinutes } = json;
+    const plural = max > 1 ? 's' : '';
+    return `You hit the message limit. You have a cap of ${max} message${plural} per ${
+      windowInMinutes > 1 ? `${windowInMinutes} minutes` : 'minute'
+    }.`;
+  },
 };
 
 const getError = (text: string) => {
