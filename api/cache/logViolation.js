@@ -12,7 +12,10 @@ const logViolation = async (type, userId, errorMessage) => {
   const userViolations = (await violationLogs.get(userId)) ?? 0;
   await violationLogs.set(userId, userViolations + 1);
   errorMessage.violationCount = userViolations + 1;
-  await logs.set(`${userId}-${new Date().toISOString()}`, errorMessage);
+  errorMessage.date = new Date().toISOString();
+  const userLogs = (await logs.get(userId)) ?? [];
+  userLogs.push(errorMessage);
+  await logs.set(userId, userLogs);
 };
 
 module.exports = logViolation;
