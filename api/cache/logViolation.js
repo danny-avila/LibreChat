@@ -9,8 +9,8 @@ const getLogStores = require('./getLogStores');
  */
 const logViolation = async (type, userId, errorMessage) => {
   const { violationLogs, logs } = getLogStores(type);
-  const userViolations = (await violationLogs.get(`${type}-${userId}`)) ?? 0;
-  await violationLogs.set(`${type}-${userId}`, userViolations + 1);
+  const userViolations = (await violationLogs.get(userId)) ?? 0;
+  await violationLogs.set(userId, userViolations + 1);
   errorMessage.violationCount = userViolations + 1;
   await logs.set(`${userId}-${new Date().toISOString()}`, errorMessage);
 };
