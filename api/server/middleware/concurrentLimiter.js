@@ -1,17 +1,14 @@
 const Keyv = require('keyv');
-const { logFile, violationFile } = require('../../lib/db');
+const { logViolation } = require('../../cache');
 
 const denyRequest = require('./denyRequest');
 
 const { CONCURRENT_MESSAGE_MAX } = process.env ?? {};
 const limit = Math.max(CONCURRENT_MESSAGE_MAX ?? 1, 1);
+const type = 'concurrent';
 
 // Serve cache from memory so no need to clear it on startup/exit
 const pendingReqCache = new Keyv({ namespace: 'pendingRequests' });
-// log to files
-const type = 'concurrent';
-const violationLogs = new Keyv({ store: violationFile, namespace: type });
-const logs = new Keyv({ store: logFile, namespace: 'violations' });
 
 /**
  * Middleware to limit concurrent requests for a user.
@@ -40,17 +37,13 @@ const concurrentLimiter = async (req, res, next) => {
   const pendingRequests = (await pendingReqCache.get(userId)) ?? 0;
 
   if (pendingRequests >= limit) {
-    const userViolations = (await violationLogs.get(userId)) ?? 0;
-    await violationLogs.set(userId, userViolations + 1);
-
     const errorMessage = {
       type,
       limit,
       pendingRequests,
-      violationCount: userViolations + 1,
     };
 
-    await logs.set(`${userId}-${new Date().toISOString()}`, errorMessage);
+    await logViolation(type, userId, errorMessage);
     return await denyRequest(req, res, errorMessage);
   } else {
     await pendingReqCache.set(userId, pendingRequests + 1);

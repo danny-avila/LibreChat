@@ -1,6 +1,5 @@
-const Keyv = require('keyv');
 const rateLimit = require('express-rate-limit');
-const { logFile, violationFile } = require('../../lib/db');
+const { logViolation } = require('../../cache');
 const denyRequest = require('./denyRequest');
 
 const { MESSAGE_IP_MAX, MESSAGE_IP_WINDOW, MESSAGE_USER_MAX, MESSAGE_USER_WINDOW } =
@@ -15,8 +14,6 @@ const userMax = MESSAGE_USER_MAX ?? 40; // default: limit each user to 40 reques
 const userWindowInMinutes = userWindowMs / 60000;
 
 const type = 'message_limit';
-const violationLogs = new Keyv({ store: violationFile, namespace: type });
-const logs = new Keyv({ store: logFile, namespace: 'violations' });
 
 /**
  * Creates either an IP/User message request rate limiter for excessive requests
@@ -29,19 +26,16 @@ const logs = new Keyv({ store: logFile, namespace: 'violations' });
 const createHandler = (ip = true) => {
   return async (req, res) => {
     const userId = req.user.id;
-    const userViolations = (await violationLogs.get(userId)) ?? 0;
-    await violationLogs.set(userId, userViolations + 1);
 
     const errorMessage = {
       type,
       max: ip ? ipMax : userMax,
       limiter: ip ? 'ip' : 'user',
       windowInMinutes: ip ? ipWindowInMinutes : userWindowInMinutes,
-      violationCount: userViolations + 1,
     };
 
-    await logs.set(`${userId}-${new Date().toISOString()}`, errorMessage);
-    return denyRequest(req, res, errorMessage);
+    await logViolation(type, userId, errorMessage);
+    return await denyRequest(req, res, errorMessage);
   };
 };
 
