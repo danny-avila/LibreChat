@@ -17,6 +17,7 @@ const { isStringTruthy } = require('../../utils');
 const { LIMIT_CONCURRENT_MESSAGES, LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 
 router.use(requireJwtAuth);
+
 if (isStringTruthy(LIMIT_CONCURRENT_MESSAGES)) {
   router.use(concurrentLimiter);
 }
