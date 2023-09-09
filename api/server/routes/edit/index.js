@@ -4,6 +4,7 @@ const openAI = require('./openAI');
 const gptPlugins = require('./gptPlugins');
 const anthropic = require('./anthropic');
 const {
+  uaParser,
   requireJwtAuth,
   concurrentLimiter,
   messageIpLimiter,
@@ -14,6 +15,7 @@ const { isEnabled } = require('../../utils');
 const { LIMIT_CONCURRENT_MESSAGES, LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 
 router.use(requireJwtAuth);
+router.use(uaParser);
 
 if (isEnabled(LIMIT_CONCURRENT_MESSAGES)) {
   router.use(concurrentLimiter);

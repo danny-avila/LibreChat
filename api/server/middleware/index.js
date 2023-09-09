@@ -1,4 +1,5 @@
 const abortMiddleware = require('./abortMiddleware');
+const uaParser = require('./uaParser');
 const setHeaders = require('./setHeaders');
 const loginLimiter = require('./loginLimiter');
 const requireJwtAuth = require('./requireJwtAuth');
@@ -14,6 +15,7 @@ const validateRegistration = require('./validateRegistration');
 module.exports = {
   ...abortMiddleware,
   ...messageLimiters,
+  uaParser,
   setHeaders,
   loginLimiter,
   requireJwtAuth,

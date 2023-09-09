@@ -3,6 +3,7 @@ const { logFile, violationFile } = require('./keyvFiles');
 const logs = new Keyv({ store: logFile, namespace: 'violations' });
 const namespaces = {
   concurrent: new Keyv({ store: violationFile, namespace: 'concurrent' }),
+  non_browser: new Keyv({ store: violationFile, namespace: 'non_browser' }),
   message_limit: new Keyv({ store: violationFile, namespace: 'message_limit' }),
   registrations: new Keyv({ store: violationFile, namespace: 'registrations' }),
   logins: new Keyv({ store: violationFile, namespace: 'logins' }),
