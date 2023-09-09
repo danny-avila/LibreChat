@@ -18,7 +18,8 @@ const userWindowInMinutes = userWindowMs / 60000;
 const createHandler = (ip = true) => {
   return (req, res) => {
     const errorMessage = JSON.stringify({
-      type: 'too_many_requests',
+      type: 'message_limit',
+      max: ip ? ipMax : userMax,
       windowInMinutes: ip ? ipWindowInMinutes : userWindowInMinutes,
     });
     return denyRequest(req, res, errorMessage);
