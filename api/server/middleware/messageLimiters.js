@@ -25,8 +25,6 @@ const type = 'message_limit';
  */
 const createHandler = (ip = true) => {
   return async (req, res) => {
-    const userId = req.user.id;
-
     const errorMessage = {
       type,
       max: ip ? ipMax : userMax,
@@ -34,7 +32,7 @@ const createHandler = (ip = true) => {
       windowInMinutes: ip ? ipWindowInMinutes : userWindowInMinutes,
     };
 
-    await logViolation(type, userId, errorMessage);
+    await logViolation(req, type, errorMessage);
     return await denyRequest(req, res, errorMessage);
   };
 };

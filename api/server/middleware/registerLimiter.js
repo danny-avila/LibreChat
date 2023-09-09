@@ -8,15 +8,13 @@ const max = process.env?.REGISTER_MAX ?? 5; // default: limit each IP to 5 regis
 const windowInMinutes = windowMs / 60000;
 
 const handler = async (req) => {
-  const userId = req.user.id;
-
   const errorMessage = {
     type,
     max,
     windowInMinutes,
   };
 
-  await logViolation(type, userId, errorMessage);
+  await logViolation(req, type, errorMessage);
 };
 
 const registerLimiter = rateLimit({

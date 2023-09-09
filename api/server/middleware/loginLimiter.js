@@ -8,15 +8,13 @@ const max = process.env?.LOGIN_MAX ?? 7; // default: limit each IP to 7 requests
 const windowInMinutes = windowMs / 60000;
 
 const handler = async (req) => {
-  const userId = req.user.id;
-
   const errorMessage = {
     type,
     max,
     windowInMinutes,
   };
 
-  await logViolation(type, userId, errorMessage);
+  await logViolation(req, type, errorMessage);
 };
 
 const loginLimiter = rateLimit({
