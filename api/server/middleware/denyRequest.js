@@ -20,6 +20,11 @@ const { saveMessage } = require('../../models');
  * @throws {Error} Throws an error if there's an issue saving the message or sending the error.
  */
 const denyRequest = async (req, res, errorMessage) => {
+  let responseText = errorMessage;
+  if (typeof errorMessage === 'object') {
+    responseText = JSON.stringify(errorMessage);
+  }
+
   const { messageId, conversationId: _convoId, parentMessageId, text } = req.body;
   const conversationId = _convoId ?? crypto.randomUUID();
 
@@ -45,7 +50,7 @@ const denyRequest = async (req, res, errorMessage) => {
     messageId: crypto.randomUUID(),
     conversationId,
     parentMessageId: userMessage.messageId,
-    text: errorMessage,
+    text: responseText,
     shouldSaveMessage,
   });
 };
