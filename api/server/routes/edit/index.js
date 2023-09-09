@@ -9,21 +9,21 @@ const {
   messageIpLimiter,
   messageUserLimiter,
 } = require('../../middleware');
-const { isTrue } = require('../../utils');
+const { isEnabled } = require('../../utils');
 
 const { LIMIT_CONCURRENT_MESSAGES, LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 
 router.use(requireJwtAuth);
 
-if (isTrue(LIMIT_CONCURRENT_MESSAGES)) {
+if (isEnabled(LIMIT_CONCURRENT_MESSAGES)) {
   router.use(concurrentLimiter);
 }
 
-if (isTrue(LIMIT_MESSAGE_IP)) {
+if (isEnabled(LIMIT_MESSAGE_IP)) {
   router.use(messageIpLimiter);
 }
 
-if (isTrue(LIMIT_MESSAGE_USER)) {
+if (isEnabled(LIMIT_MESSAGE_USER)) {
   router.use(messageUserLimiter);
 }
 
