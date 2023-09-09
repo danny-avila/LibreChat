@@ -1,12 +1,16 @@
 const Keyv = require('keyv');
-const { keyvFile: cache } = require('../../lib/db');
+const { logFile, violationFile } = require('../../lib/db');
+
 const denyRequest = require('./denyRequest');
 
 const { CONCURRENT_MESSAGE_MAX } = process.env ?? {};
 const limit = Math.max(CONCURRENT_MESSAGE_MAX ?? 1, 1);
 
-const pendingReqCache = new Keyv({ store: cache, namespace: 'pendingRequests' });
-const violations = new Keyv({ store: cache, namespace: 'violations' });
+// Serve cache from memory so no need to clear it on startup/exit
+const pendingReqCache = new Keyv({ namespace: 'pendingRequests' });
+// log to files
+const violationLogs = new Keyv({ store: violationFile, namespace: 'pendingRequests' });
+const logs = new Keyv({ store: logFile, namespace: 'violations' });
 
 /**
  * Middleware to limit concurrent requests for a user.
@@ -23,10 +27,6 @@ const violations = new Keyv({ store: cache, namespace: 'violations' });
  * @throws {Error} Throws an error if the user exceeds the concurrent request limit.
  */
 const concurrentLimiter = async (req, res, next) => {
-  if (!cache) {
-    return next();
-  }
-
   if (!pendingReqCache) {
     return next();
   }
@@ -39,15 +39,17 @@ const concurrentLimiter = async (req, res, next) => {
   const pendingRequests = (await pendingReqCache.get(userId)) ?? 0;
 
   if (pendingRequests >= limit) {
-    // User has pending requests over the limit
-    await violations.set(`${userId}-${new Date().toLocaleString().replace(/ |, /g, ':')}`, {
+    const userViolations = (await violationLogs.get(userId)) ?? 0;
+    await violationLogs.set(userId, userViolations + 1);
+
+    const errorMessage = {
       type: 'concurrent',
       limit,
       pendingRequests,
-    });
+    };
+    await logs.set(`${userId}-${new Date().toISOString()}`, errorMessage);
 
-    const errorMessage = `Only ${limit} message at a time. Please allow any other responses to complete before sending another message, or wait one minute.`;
-    return await denyRequest(req, res, errorMessage);
+    return await denyRequest(req, res, JSON.stringify(errorMessage));
   } else {
     await pendingReqCache.set(userId, pendingRequests + 1);
   }
@@ -75,9 +77,10 @@ const concurrentLimiter = async (req, res, next) => {
   next();
 };
 
-process.on('exit', async () => {
-  console.log('Clearing all pending requests before exiting...');
-  await pendingReqCache.clear();
-});
+// if cache is not served from memory, clear it on exit
+// process.on('exit', async () => {
+//   console.log('Clearing all pending requests before exiting...');
+//   await pendingReqCache.clear();
+// });
 
 module.exports = concurrentLimiter;
