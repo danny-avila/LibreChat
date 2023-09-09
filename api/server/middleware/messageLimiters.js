@@ -14,7 +14,8 @@ const userWindowMs = (MESSAGE_USER_WINDOW ?? 1) * 60 * 1000; // default: 1 minut
 const userMax = MESSAGE_USER_MAX ?? 40; // default: limit each user to 40 requests per userWindowMs
 const userWindowInMinutes = userWindowMs / 60000;
 
-const violationLogs = new Keyv({ store: violationFile, namespace: 'excessiveRequests' });
+const type = 'message_limit';
+const violationLogs = new Keyv({ store: violationFile, namespace: type });
 const logs = new Keyv({ store: logFile, namespace: 'violations' });
 
 /**
@@ -32,10 +33,11 @@ const createHandler = (ip = true) => {
     await violationLogs.set(userId, userViolations + 1);
 
     const errorMessage = {
-      type: 'message_limit',
+      type,
       max: ip ? ipMax : userMax,
       limiter: ip ? 'ip' : 'user',
       windowInMinutes: ip ? ipWindowInMinutes : userWindowInMinutes,
+      violationCount: userViolations + 1,
     };
 
     await logs.set(`${userId}-${new Date().toISOString()}`, errorMessage);

@@ -9,7 +9,8 @@ const limit = Math.max(CONCURRENT_MESSAGE_MAX ?? 1, 1);
 // Serve cache from memory so no need to clear it on startup/exit
 const pendingReqCache = new Keyv({ namespace: 'pendingRequests' });
 // log to files
-const violationLogs = new Keyv({ store: violationFile, namespace: 'pendingRequests' });
+const type = 'concurrent';
+const violationLogs = new Keyv({ store: violationFile, namespace: type });
 const logs = new Keyv({ store: logFile, namespace: 'violations' });
 
 /**
@@ -43,9 +44,10 @@ const concurrentLimiter = async (req, res, next) => {
     await violationLogs.set(userId, userViolations + 1);
 
     const errorMessage = {
-      type: 'concurrent',
+      type,
       limit,
       pendingRequests,
+      violationCount: userViolations + 1,
     };
 
     await logs.set(`${userId}-${new Date().toISOString()}`, errorMessage);
