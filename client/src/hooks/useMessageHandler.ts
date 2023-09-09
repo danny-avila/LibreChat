@@ -101,6 +101,7 @@ const useMessageHandler = () => {
       unfinished: false,
       submitting: true,
       isCreatedByUser: false,
+      isEdited: isEditOrContinue,
       error: false,
     };
 
