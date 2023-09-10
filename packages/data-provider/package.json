@@ -11,7 +11,9 @@
     "build:watch": "rollup -c -w",
     "test": "jest --coverage --watch",
     "test:ci": "jest --coverage --ci",
-    "verify": "npm run test:ci"
+    "verify": "npm run test:ci",
+    "b:clean": "bun run rimraf dist",
+    "b:build": "bun run b:clean && bun run rollup -c --silent --bundleConfigAsCjs"
   },
   "repository": {
     "type": "git",

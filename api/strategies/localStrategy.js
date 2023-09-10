@@ -50,9 +50,10 @@ async function passportLogin(req, email, password, done) {
 }
 
 function logError(title, parameters) {
+  const entries = Object.entries(parameters).map(([name, value]) => ({ name, value }));
   DebugControl.log.functionName(title);
-  if (parameters) {
-    DebugControl.log.parameters(parameters);
+  if (entries) {
+    DebugControl.log.parameters(entries);
   }
 }
 

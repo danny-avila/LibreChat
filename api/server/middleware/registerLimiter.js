@@ -7,6 +7,10 @@ const registerLimiter = rateLimit({
   windowMs,
   max,
   message: `Too many accounts created from this IP, please try again after ${windowInMinutes} minutes`,
+  keyGenerator: function (req) {
+    // Strip out the port number from the IP address
+    return req.ip.replace(/:\d+[^:]*$/, '');
+  },
 });
 
 module.exports = registerLimiter;

@@ -9,7 +9,7 @@ const errorController = require('./controllers/ErrorController');
 const passport = require('passport');
 const configureSocialLogins = require('./socialLogins');
 
-const port = process.env.PORT || 3080;
+const port = Number(process.env.PORT) || 3080;
 const host = process.env.HOST || 'localhost';
 const projectPath = path.join(__dirname, '..', '..', 'client');
 const { jwtLogin, passportLogin } = require('../strategies');
