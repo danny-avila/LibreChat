@@ -145,7 +145,6 @@ export default function NewConversationMenu() {
   const icon = getIcon({
     size: 32,
     ...conversation,
-    isCreatedByUser: false,
     error: false,
     button: true,
   });

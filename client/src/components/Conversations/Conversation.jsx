@@ -3,7 +3,7 @@ import { useRecoilState, useSetRecoilState } from 'recoil';
 import { useUpdateConversationMutation } from 'librechat-data-provider';
 import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
-import { getIcon } from '~/components/Endpoints';
+import { getMinimalIcon } from '~/components/Endpoints';
 
 import store from '~/store';
 
@@ -66,7 +66,7 @@ export default function Conversation({ conversation, retainView }) {
     updateConvoMutation.mutate({ conversationId, title: titleInput });
   };
 
-  const icon = getIcon({
+  const icon = getMinimalIcon({
     size: 20,
     endpoint: conversation.endpoint,
     model: conversation.model,

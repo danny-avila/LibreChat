@@ -1,9 +1,33 @@
-import { Plugin, GPTIcon, AnthropicIcon } from '~/components/svg';
+import React from 'react'; // Import React
+import {
+  AzureMinimalistIcon,
+  OpenAIMinimalistIcon,
+  ChatGPTMinimalistIcon,
+  PluginMinimalistIcon,
+  BingAIMinimalIcon,
+  PaLMinimalistIcon,
+  AnthropicMinimalistIcon,
+} from '~/components/svg';
 import { useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
 
-const getIcon = (props) => {
-  const { size = 30, isCreatedByUser, button, model, message = true } = props;
+// Define the Props interface
+interface IconProps {
+  size?: number;
+  isCreatedByUser: boolean;
+  button?: boolean;
+  model?: string;
+  message?: boolean;
+  className?: string;
+  endpoint?: string | null;
+  chatGptLabel?: string;
+  modelLabel?: string;
+  jailbreak?: boolean;
+  error?: boolean;
+}
+
+const getMinimalIcon: React.FC<IconProps> = (props) => {
+  const { size = 30, isCreatedByUser, message = true } = props;
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const { user } = useAuthContext();
 
@@ -32,58 +56,37 @@ const getIcon = (props) => {
   } else if (!isCreatedByUser) {
     const { endpoint, error } = props;
 
-    let icon, bg, name;
+    let icon, name;
     if (endpoint === 'azureOpenAI') {
       const { chatGptLabel } = props;
-      icon = <GPTIcon size={size * 0.7} />;
-      bg = 'linear-gradient(0.375turn, #61bde2, #4389d0)';
+      icon = <AzureMinimalistIcon />;
       name = chatGptLabel || 'ChatGPT';
-    } else if (endpoint === 'openAI' || (endpoint === 'gptPlugins' && message)) {
+    } else if (endpoint === 'openAI') {
       const { chatGptLabel } = props;
-      icon = <GPTIcon size={size * 0.7} />;
-      bg =
-        model && model.toLowerCase().startsWith('gpt-4')
-          ? '#AB68FF'
-          : chatGptLabel
-            ? `rgba(16, 163, 127, ${button ? 0.75 : 1})`
-            : `rgba(16, 163, 127, ${button ? 0.75 : 1})`;
+      icon = <OpenAIMinimalistIcon />;
       name = chatGptLabel || 'ChatGPT';
-    } else if (endpoint === 'gptPlugins' && !message) {
-      icon = <Plugin size={size * 0.7} />;
-      bg = `rgba(69, 89, 164, ${button ? 0.75 : 1})`;
+    } else if (endpoint === 'gptPlugins' && message) {
+      icon = <PluginMinimalistIcon />;
       name = 'Plugins';
     } else if (endpoint === 'google') {
       const { modelLabel } = props;
-      icon = <img src="/assets/google-palm.svg" alt="Palm Icon" />;
+      icon = <PaLMinimalistIcon />;
       name = modelLabel || 'PaLM2';
     } else if (endpoint === 'anthropic') {
       const { modelLabel } = props;
-      icon = <AnthropicIcon size={size * 0.7} />;
-      bg = '#d09a74';
+      icon = <AnthropicMinimalistIcon />;
       name = modelLabel || 'Claude';
     } else if (endpoint === 'bingAI') {
-      const { jailbreak } = props;
-      if (jailbreak) {
-        icon = <img src="/assets/bingai-jb.png" alt="Bing Icon" />;
-        name = 'Sydney';
-      } else {
-        icon = <img src="/assets/bingai.png" alt="Sydney Icon" />;
-        name = 'BingAI';
-      }
+      icon = <BingAIMinimalIcon />;
+      name = 'BingAI';
     } else if (endpoint === 'chatGPTBrowser') {
-      icon = <GPTIcon size={size * 0.7} />;
-      bg =
-        model && model.toLowerCase().startsWith('gpt-4')
-          ? '#AB68FF'
-          : `rgba(0, 163, 255, ${button ? 0.75 : 1})`;
+      icon = <ChatGPTMinimalistIcon />;
       name = 'ChatGPT';
     } else if (endpoint === null) {
-      icon = <GPTIcon size={size * 0.7} />;
-      bg = 'grey';
+      icon = <OpenAIMinimalistIcon />;
       name = 'N/A';
     } else {
-      icon = <GPTIcon size={size * 0.7} />;
-      bg = 'grey';
+      icon = <OpenAIMinimalistIcon />;
       name = 'UNKNOWN';
     }
 
@@ -91,7 +94,6 @@ const getIcon = (props) => {
       <div
         title={name}
         style={{
-          background: bg || 'transparent',
           width: size,
           height: size,
         }}
@@ -111,4 +113,4 @@ const getIcon = (props) => {
   }
 };
 
-export default getIcon;
+export default getMinimalIcon;
