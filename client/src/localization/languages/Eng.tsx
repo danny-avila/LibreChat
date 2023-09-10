@@ -260,4 +260,5 @@ export default {
   com_nav_lang_polish: 'Polski',
   com_nav_lang_brazilian_portuguese: 'Português Brasileiro',
   com_nav_lang_russian: 'Русский',
+  com_nav_lang_japanese: '日本語',
 };
