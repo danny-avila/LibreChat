@@ -1,5 +1,5 @@
 // Spanish phrases
-  
+
 export default {
   com_ui_examples: 'Ejemplos',
   com_ui_new_chat: 'Nuevo Chat',
@@ -153,7 +153,7 @@ export default {
   com_endpoint_openai_custom_name_placeholder: 'Establece un nombre personalizado para ChatGPT',
   com_endpoint_openai_prompt_prefix_placeholder:
     'Establece instrucciones personalizadas para incluir en el Mensaje del Sistema. Predeterminado: ninguno',
-    com_endpoint_anthropic_temp:
+  com_endpoint_anthropic_temp:
     'Varía de 0 a 1. Use una temperatura más cercana a 0 para tareas analíticas o de opción múltiple y más cercana a 1 para tareas creativas y generativas. Recomendamos cambiar esto o el Top P, pero no ambos.',
   com_endpoint_anthropic_topp:
     'Top-p altera la forma en que el modelo selecciona los tokens para la salida. Los tokens se seleccionan desde los más probables hasta los menos probables hasta que la suma de sus probabilidades sea igual al valor de top-p.',
@@ -161,7 +161,8 @@ export default {
     'Top-k altera la forma en que el modelo selecciona los tokens de salida. Un top-k de 1 significa que el token seleccionado es el más probable entre todos los tokens en el vocabulario del modelo (también conocido como decodificación codiciosa), mientras que un top-k de 3 significa que el siguiente token se selecciona entre los 3 tokens más probables (usando temperatura).',
   com_endpoint_anthropic_maxoutputtokens:
     'Número máximo de tokens que pueden generarse en la respuesta. Especifique un valor más bajo para respuestas más cortas y un valor más alto para respuestas más largas.',
-  com_endpoint_anthropic_custom_name_placeholder: 'Establezca un nombre personalizado para Anthropic',
+  com_endpoint_anthropic_custom_name_placeholder:
+    'Establezca un nombre personalizado para Anthropic',
   com_endpoint_frequency_penalty: 'Penalización de Frecuencia',
   com_endpoint_presence_penalty: 'Penalización de Presencia',
   com_endpoint_plug_use_functions: 'Usar Funciones',
@@ -193,7 +194,6 @@ export default {
   com_endpoint_no_presets: 'Sin configuración preestablecida aún',
   com_endpoint_not_available: 'Ningún endpoint disponible',
   com_endpoint_view_options: 'Ver Opciones',
-  com_endpoint_my_preset: 'Mi Configuración',
   com_endpoint_save_convo_as_preset: 'Guardar conversación como preconfiguración',
   com_endpoint_my_preset: 'Mi preconfiguración',
   com_endpoint_agent_model: 'Modelo del Agente (Recomendado: GPT-3.5)',
@@ -209,20 +209,27 @@ export default {
   com_endpoint_config_key_encryption: 'Su clave será cifrada y eliminada en',
   com_endpoint_config_key_expiry: 'Tiempo de expiración',
   com_endpoint_config_key_import_json_key: 'Importar Clave JSON de Cuenta de Servicio.',
-  com_endpoint_config_key_import_json_key_success: 'Clave JSON de Cuenta de Servicio importada con éxito',
-  com_endpoint_config_key_import_json_key_invalid: 'Clave JSON de Cuenta de Servicio no válida. ¿Importó el archivo correcto?',
-  com_endpoint_config_key_get_edge_key: 'Para obtener su token de acceso para Bing, inicie sesión en',
-  com_endpoint_config_key_get_edge_key_dev_tool: 'Use herramientas de desarrollo o una extensión mientras esté conectado al sitio para copiar el contenido de la cookie _U. Si esto falla, siga estas',
+  com_endpoint_config_key_import_json_key_success:
+    'Clave JSON de Cuenta de Servicio importada con éxito',
+  com_endpoint_config_key_import_json_key_invalid:
+    'Clave JSON de Cuenta de Servicio no válida. ¿Importó el archivo correcto?',
+  com_endpoint_config_key_get_edge_key:
+    'Para obtener su token de acceso para Bing, inicie sesión en',
+  com_endpoint_config_key_get_edge_key_dev_tool:
+    'Use herramientas de desarrollo o una extensión mientras esté conectado al sitio para copiar el contenido de la cookie _U. Si esto falla, siga estas',
   com_endpoint_config_key_edge_instructions: 'instrucciones',
-  com_endpoint_config_key_edge_full_key_string: 'para proporcionar las secuencias completas de cookies.',
-  com_endpoint_config_key_chatgpt: 'Para obtener su token de acceso para ChatGPT \'Versión Gratuita\', inicie sesión en',
+  com_endpoint_config_key_edge_full_key_string:
+    'para proporcionar las secuencias completas de cookies.',
+  com_endpoint_config_key_chatgpt:
+    'Para obtener su token de acceso para ChatGPT \'Versión Gratuita\', inicie sesión en',
   com_endpoint_config_key_chatgpt_then_visit: 'luego visite',
   com_endpoint_config_key_chatgpt_copy_token: 'Copie el token de acceso.',
   com_endpoint_config_key_google_need_to: 'Necesita',
   com_endpoint_config_key_google_vertex_ai: 'Activar Vertex AI',
   com_endpoint_config_key_google_vertex_api: 'API en Google Cloud, luego',
   com_endpoint_config_key_google_service_account: 'Crear una Cuenta de Servicio',
-  com_endpoint_config_key_google_vertex_api_role: 'Asegúrese de hacer clic en \'Crear y Continuar\' para asignar al menos la función de \'Usuario de Vertex AI\'. Finalmente, cree una clave JSON para importar aquí.',
+  com_endpoint_config_key_google_vertex_api_role:
+    'Asegúrese de hacer clic en \'Crear y Continuar\' para asignar al menos la función de \'Usuario de Vertex AI\'. Finalmente, cree una clave JSON para importar aquí.',
   com_nav_export_filename: 'Nombre del Archivo',
   com_nav_export_filename_placeholder: 'Establece el nombre del archivo',
   com_nav_export_type: 'Tipo',
