@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
+const expires = eval(REFRESH_TOKEN_EXPIRY) ?? 1000 * 60 * 60 * 24 * 7;
 
 const sessionSchema = mongoose.Schema({
   refreshTokenHash: {
@@ -10,12 +12,13 @@ const sessionSchema = mongoose.Schema({
   expiration: {
     type: Date,
     required: true,
+    expires: 0,
   },
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
-  }
+    required: true,
+  },
 });
 
 sessionSchema.methods.generateRefreshToken = async function () {
@@ -24,7 +27,7 @@ sessionSchema.methods.generateRefreshToken = async function () {
     if (this.expiration) {
       expiresIn = this.expiration.getTime();
     } else {
-      expiresIn = Date.now() + eval(process.env.REFRESH_TOKEN_EXPIRY);
+      expiresIn = Date.now() + expires;
       this.expiration = new Date(expiresIn);
     }
 
@@ -33,7 +36,7 @@ sessionSchema.methods.generateRefreshToken = async function () {
         id: this.user,
       },
       process.env.JWT_REFRESH_SECRET,
-      { expiresIn:  Math.floor((expiresIn - Date.now()) / 1000) }
+      { expiresIn: Math.floor((expiresIn - Date.now()) / 1000) },
     );
 
     const hash = crypto.createHash('sha256');

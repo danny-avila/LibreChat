@@ -23,11 +23,11 @@ const logoutUser = async (userId, refreshToken) => {
     // Find the session with the matching user and refreshTokenHash
     const session = await Session.findOne({ user: userId, refreshTokenHash: hash });
     if (session) {
-       try {
+      try {
         await Session.deleteOne({ _id: session._id });
-       } catch (deleteErr) {
-         console.error(deleteErr);
-         return { status: 500, message: 'Failed to delete session.' };
+      } catch (deleteErr) {
+        console.error(deleteErr);
+        return { status: 500, message: 'Failed to delete session.' };
       }
     }
 
