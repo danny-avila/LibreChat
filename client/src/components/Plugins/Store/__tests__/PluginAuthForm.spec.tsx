@@ -1,4 +1,4 @@
-import { render, screen } from 'layout-test-utils';
+import { render, screen, waitFor } from 'layout-test-utils'; // Import waitFor from testing library
 import userEvent from '@testing-library/user-event';
 import PluginAuthForm from '../PluginAuthForm';
 
@@ -19,6 +19,11 @@ describe('PluginAuthForm', () => {
 
   const onSubmit = jest.fn();
 
+  // Reset the mock before each test
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('renders the form with the correct fields', () => {
     //@ts-ignore - dont need all props of plugin
     render(<PluginAuthForm plugin={plugin} onSubmit={onSubmit} />);
@@ -36,13 +41,16 @@ describe('PluginAuthForm', () => {
     const saveButton = await screen.findByRole('button', { name: 'Save' });
     userEvent.click(saveButton);
 
-    expect(onSubmit).toHaveBeenCalledWith({
-      pluginKey: 'test-plugin',
-      action: 'install',
-      auth: {
-        key: '1234567890',
-        secret: '1234567890',
-      },
+    // Wait for the onSubmit function to be called
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith({
+        pluginKey: 'test-plugin',
+        action: 'install',
+        auth: {
+          key: '1234567890',
+          secret: '1234567890',
+        },
+      });
     });
   });
 });
