@@ -37,6 +37,10 @@ function CodingAssistant() {
       setText(`用${lang}优化下面这段代码：\n${topic}`);
     } else if (type === '错误信息') {
       setText(`分析${lang}错误信息原因：${topic}`);
+    } else if (type === '代码注释') {
+      setText(`为下面的${lang}代码生成注释：\n${topic}`);
+    } else if (type === '生成文档字符串') {
+      setText(`为下面的${lang}代码生成文档字符串：\n${topic}`);
     }
   };
   const showExampleHandler = () => {
@@ -82,7 +86,7 @@ function CodingAssistant() {
                 title={'类型'}
                 value={type}
                 setValue={(value: string) => setType(value)}
-                availableValues={['代码生成', '代码优化', '错误信息']}
+                availableValues={['代码生成', '代码优化', '错误信息', '代码注释', '生成文档字符串']}
                 disabled={false}
                 className={cn(
                   defaultTextProps,
@@ -123,6 +127,10 @@ function CodingAssistant() {
       setInputTitle('原代码');
     } else if (type === '错误信息') {
       setInputTitle('错误信息');
+    } else if (type === '代码注释') {
+      setInputTitle('原代码');
+    } else if (type === '生成文档字符串') {
+      setInputTitle('原代码');
     }
   }, [type]);
 
