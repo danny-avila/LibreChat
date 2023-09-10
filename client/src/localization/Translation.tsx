@@ -7,6 +7,7 @@ import Portuguese from './languages/Br';
 import Spanish from './languages/Es';
 import French from './languages/Fr';
 import Russian from './languages/Ru';
+import Japanese from './languages/Jp';
 // === import additional language files here === //
 
 // New method on String allow using "{\d}" placeholder for
@@ -54,6 +55,9 @@ export const getTranslations = (langCode: string) => {
   }
   if (langCode === 'ru') {
     return Russian;
+  }
+  if (langCode === 'jp') {
+    return Japanese;
   }
 
   // === add conditionals here for additional languages here === //
