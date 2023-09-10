@@ -41,7 +41,14 @@
     "prepare": "node config/prepare.js",
     "lint:fix": "eslint --fix \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\"",
     "lint": "eslint \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\"",
-    "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\""
+    "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\"",
+    "b:api": "NODE_ENV=production bun run api/server/index.js",
+    "b:api:dev": "NODE_ENV=development bun run --watch api/server/index.js",
+    "b:data-provider": "cd packages/data-provider && bun run b:build",
+    "b:client": "bun run b:data-provider && cd client && bun run b:build",
+    "b:client:dev": "cd client && bun run b:dev",
+    "b:test:client": "cd client && bun run test",
+    "b:test:api": "cd api && bun run test"
   },
   "repository": {
     "type": "git",
