@@ -1,9 +1,9 @@
 const addImages = require('./addImages');
-const createLLM = require('./createLLM');
+const handleInputs = require('./handleInputs');
 const handleOutputs = require('./handleOutputs');
 
 module.exports = {
   addImages,
-  createLLM,
+  ...handleInputs,
   ...handleOutputs,
 };

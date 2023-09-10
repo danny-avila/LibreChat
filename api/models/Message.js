@@ -14,6 +14,7 @@ module.exports = {
     error,
     unfinished,
     cancelled,
+    isEdited = false,
     finish_reason = null,
     tokenCount = null,
     plugin = null,
@@ -21,6 +22,9 @@ module.exports = {
     model = null,
   }) {
     try {
+      if (!conversationId) {
+        return console.log('Message not saved: no conversationId');
+      }
       // may also need to update the conversation here
       await Message.findOneAndUpdate(
         { messageId },
@@ -31,6 +35,7 @@ module.exports = {
           sender,
           text,
           isCreatedByUser,
+          isEdited,
           finish_reason,
           error,
           unfinished,
@@ -60,6 +65,7 @@ module.exports = {
   async updateMessage(message) {
     try {
       const { messageId, ...update } = message;
+      update.isEdited = true;
       const updatedMessage = await Message.findOneAndUpdate({ messageId }, update, { new: true });
 
       if (!updatedMessage) {
@@ -74,6 +80,7 @@ module.exports = {
         text: updatedMessage.text,
         isCreatedByUser: updatedMessage.isCreatedByUser,
         tokenCount: updatedMessage.tokenCount,
+        isEdited: true,
       };
     } catch (err) {
       console.error(`Error updating message: ${err}`);

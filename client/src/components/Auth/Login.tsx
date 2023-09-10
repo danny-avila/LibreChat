@@ -30,7 +30,9 @@ function Login() {
             className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
             role="alert"
           >
-            {localize('com_auth_error_login')}
+            {error?.includes('429')
+              ? localize('com_auth_error_login_rl')
+              : localize('com_auth_error_login')}
           </div>
         )}
         <LoginForm onSubmit={login} />

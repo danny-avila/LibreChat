@@ -43,11 +43,11 @@ jobs:
       - name: Install global dependencies
         run: npm ci
 
-      - name: Remove sharp dependency
-        run: rm -rf node_modules/sharp
+      # - name: Remove sharp dependency
+      #   run: rm -rf node_modules/sharp
 
-      - name: Install sharp with linux dependencies
-        run: cd api && SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install --arch=x64 --platform=linux --libc=glibc sharp
+      # - name: Install sharp with linux dependencies
+      #   run: cd api && SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install --arch=x64 --platform=linux --libc=glibc sharp
 
       - name: Build Client
         run: npm run frontend

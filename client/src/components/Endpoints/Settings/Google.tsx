@@ -1,6 +1,7 @@
 import React from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { ESide, TModelSelectProps } from '~/common';
+import type { TModelSelectProps } from '~/common';
+import { ESide } from '~/common';
 import {
   SelectDropDown,
   Input,

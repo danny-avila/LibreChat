@@ -80,6 +80,7 @@ router.post(
             model: endpointOption.modelOptions.model,
             unfinished: true,
             cancelled: false,
+            isEdited: true,
             error: false,
           });
         }
@@ -128,7 +129,7 @@ router.post(
 
     try {
       endpointOption.tools = await validateTools(user, endpointOption.tools);
-      const { client } = initializeClient(req, endpointOption);
+      const { client } = await initializeClient(req, endpointOption);
 
       let response = await client.sendMessage(text, {
         user,
@@ -182,7 +183,7 @@ router.post(
         conversationId,
         sender: getResponseSender(endpointOption),
         messageId: responseMessageId,
-        parentMessageId: userMessageId,
+        parentMessageId: userMessageId ?? parentMessageId,
       });
     }
   },

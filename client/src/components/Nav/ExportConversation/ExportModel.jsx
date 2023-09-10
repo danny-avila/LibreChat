@@ -119,7 +119,13 @@ export default function ExportModel({ open, onOpenChange }) {
   };
 
   const exportScreenshot = async () => {
-    const data = await captureScreenshot();
+    let data;
+    try {
+      data = await captureScreenshot();
+    } catch (err) {
+      console.error('Failed to capture screenshot');
+      return console.error(err);
+    }
     download(data, `${filename}.png`, 'image/png');
   };
 

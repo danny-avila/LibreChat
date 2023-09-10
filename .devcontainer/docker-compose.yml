@@ -3,7 +3,7 @@ version: '3.4'
 services:
   app:
     # container_name: LibreChat_dev
-    image: node:19-alpine
+    image: node:19-bullseye
     # Using a Dockerfile is optional, but included for completeness.
     # build: 
     #   context: .
@@ -11,7 +11,10 @@ services:
     #   # [Optional] You can use build args to set options. e.g. 'VARIANT' below affects the image in the Dockerfile
     #   args: 
     #     VARIANT: buster
-    network_mode: "host"
+    # network_mode: "host"
+    links:
+      - mongodb
+      - meilisearch
     # ports:
     #   - 3080:3080               # Change it to 9000:3080 to use nginx
     extra_hosts: # if you are running APIs on docker you need access to, you will need to uncomment this line and next
@@ -50,7 +53,9 @@ services:
 
   mongodb:
     container_name: chat-mongodb
-    network_mode: "host"
+    # network_mode: "host"
+    expose:
+      - 27017
     # ports:
     #   - 27018:27017
     image: mongo
@@ -61,7 +66,9 @@ services:
   meilisearch:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.0
-    network_mode: "host"
+    # network_mode: "host"
+    expose:
+      - 7700
     # ports:
     #   - 7700:7700
     # env_file:

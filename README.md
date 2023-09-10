@@ -78,7 +78,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 <details>
   <summary><strong>General Information</strong></summary>
 
-  * [Code of Conduct](CODE_OF_CONDUCT.md)
+  * [Code of Conduct](.github/CODE_OF_CONDUCT.md)
   * [Project Origin](docs/general_info/project_origin.md)
   * [Multilingual Information](docs/general_info/multilingual_information.md)
   * [Tech Stack](docs/general_info/tech_stack.md)   
@@ -118,13 +118,13 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 <details>
   <summary><strong>Contributions</strong></summary>
   
-  * [Contributor Guidelines](CONTRIBUTING.md)
+  * [Contributor Guidelines](.github/CONTRIBUTING.md)
   * [Documentation Guidelines](docs/contributions/documentation_guidelines.md)
   * [Contribute a Translation](docs/contributions/translation_contribution.md)
   * [Code Standards and Conventions](docs/contributions/coding_conventions.md)
   * [Testing](docs/contributions/testing.md)
-  * [Security](SECURITY.md)
-  * [Trello Board](https://trello.com/b/17z094kq/LibreChate)
+  * [Security](.github/SECURITY.md)
+  * [Project Roadmap](https://github.com/users/danny-avila/projects/2)
 </details>
 
 

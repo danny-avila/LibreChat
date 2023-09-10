@@ -77,6 +77,7 @@ export const tMessageSchema = z.object({
   sender: z.string(),
   text: z.string(),
   generation: z.string().nullable().optional(),
+  isEdited: z.boolean().optional(),
   isCreatedByUser: z.boolean(),
   error: z.boolean(),
   createdAt: z
@@ -399,7 +400,7 @@ export type TEndpointOption = {
   chatGptLabel?: string | null;
   modelLabel?: string | null;
   jailbreak?: boolean;
-  token?: string | null;
+  key?: string | null;
 };
 
 export const getResponseSender = (endpointOption: TEndpointOption): string => {

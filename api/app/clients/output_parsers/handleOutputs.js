@@ -1,8 +1,4 @@
-const {
-  instructions,
-  imageInstructions,
-  errorInstructions,
-} = require('../../prompts/instructions');
+const { instructions, imageInstructions, errorInstructions } = require('../prompts');
 
 function getActions(actions = [], functionsAgent = false) {
   let output = 'Internal thoughts & actions taken:\n"';
