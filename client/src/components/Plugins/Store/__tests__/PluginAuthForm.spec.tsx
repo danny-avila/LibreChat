@@ -33,7 +33,9 @@ describe('PluginAuthForm', () => {
 
     await userEvent.type(screen.getByLabelText('Key'), '1234567890');
     await userEvent.type(screen.getByLabelText('Secret'), '1234567890');
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const saveButton = await screen.findByRole('button', { name: 'Save' });
+    userEvent.click(saveButton);
+
     expect(onSubmit).toHaveBeenCalledWith({
       pluginKey: 'test-plugin',
       action: 'install',
