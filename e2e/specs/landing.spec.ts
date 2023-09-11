@@ -1,15 +1,14 @@
-/* eslint-disable no-undef */
 import { expect, test } from '@playwright/test';
 
 test.describe('Landing suite', () => {
   test('Landing title', async ({ page }) => {
-    await page.goto('http://localhost:3080/');
+    await page.goto('http://localhost:3080/', { timeout: 5000 });
     const pageTitle = await page.textContent('#landing-title');
     expect(pageTitle?.length).toBeGreaterThan(0);
   });
 
   test('Create Conversation', async ({ page }) => {
-    await page.goto('http://localhost:3080/');
+    await page.goto('http://localhost:3080/', { timeout: 5000 });
 
     async function getItems() {
       const navDiv = await page.waitForSelector('nav > div');

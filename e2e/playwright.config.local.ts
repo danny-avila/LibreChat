@@ -13,8 +13,10 @@ const config: PlaywrightTestConfig = {
     ...mainConfig.webServer,
     command: `node ${absolutePath}`,
     env: {
-      NODE_ENV: 'production',
       ...process.env,
+      NODE_ENV: 'development',
+      SESSION_EXPIRY: '60000',
+      REFRESH_TOKEN_EXPIRY: '300000',
     },
   },
   fullyParallel: false, // if you are on Windows, keep this as `false`. On a Mac, `true` could make tests faster (maybe on some Windows too, just try)

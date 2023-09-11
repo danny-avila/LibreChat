@@ -10,8 +10,8 @@
     "preview-prod": "cross-env NODE_ENV=development dotenv -e ../.env -- vite preview",
     "test": "cross-env NODE_ENV=test jest --watch",
     "test:ci": "cross-env NODE_ENV=test jest --ci",
-    "b:build": "NODE_ENV=production bunx --bun vite build",
-    "b:dev": "NODE_ENV=development bunx --bun vite"
+    "b:build": "NODE_ENV=production bun vite build",
+    "b:dev": "NODE_ENV=development bun vite"
   },
   "repository": {
     "type": "git",
