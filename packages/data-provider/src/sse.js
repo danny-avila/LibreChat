@@ -4,8 +4,8 @@
  * All rights reserved.
  */
 
-const { refreshToken } = require('./data-service');
-const { setTokenHeader } = require('./headers-helpers');
+import { refreshToken } from './data-service';
+import { setTokenHeader } from './headers-helpers';
 
 var SSE = function (url, options) {
   if (!(this instanceof SSE)) {
