@@ -52,7 +52,7 @@
     "cross-env": "^7.0.3",
     "crypto-browserify": "^3.12.0",
     "downloadjs": "^1.4.7",
-    "esbuild": "0.17.19",
+    "esbuild": "0.19.2",
     "export-from-json": "^1.7.2",
     "filenamify": "^6.0.0",
     "html-to-image": "^1.11.11",
