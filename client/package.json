@@ -47,7 +47,7 @@
     "@zattoo/use-double-click": "1.2.0",
     "axios": "^1.3.4",
     "class-variance-authority": "^0.6.0",
-    "clsx": "^1.2.1",
+    "clsx": "^2.0.0",
     "copy-to-clipboard": "^3.3.3",
     "cross-env": "^7.0.3",
     "crypto-browserify": "^3.12.0",
