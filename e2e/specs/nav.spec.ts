@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test.describe('Navigation suite', () => {
   test('Navigation bar', async ({ page }) => {
-    await page.goto('http://localhost:3080/');
+    await page.goto('http://localhost:3080/', { timeout: 5000 });
 
     await page.locator('[id="headlessui-menu-button-\\:r0\\:"]').click();
     const navBar = await page.locator('[id="headlessui-menu-button-\\:r0\\:"]').isVisible();
@@ -10,7 +10,7 @@ test.describe('Navigation suite', () => {
   });
 
   test('Settings modal', async ({ page }) => {
-    await page.goto('http://localhost:3080/');
+    await page.goto('http://localhost:3080/', { timeout: 5000 });
     await page.locator('[id="headlessui-menu-button-\\:r0\\:"]').click();
     await page.getByText('Settings').click();
 
