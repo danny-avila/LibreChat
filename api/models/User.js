@@ -102,6 +102,14 @@ const userSchema = mongoose.Schema(
       type: Object,
       default: {}
     },
+    biography: {
+      type: String,
+      default: ''
+    }
+    // profession: {
+    //   type: String,
+    //   default: ''
+    // }
   },
   { timestamps: true }
 );
@@ -128,7 +136,8 @@ userSchema.methods.toJSON = function () {
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
     followers: this.followers,
-    following: this.following
+    following: this.following,
+    biography: this.biography
   };
 };
 

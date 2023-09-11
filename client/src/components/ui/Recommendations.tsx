@@ -10,7 +10,7 @@ import {
   TConversation,
   TMessage,
   TUser,
-  useLikeConversationMutation,
+  useLikeConversationMutation
 } from '@librechat/data-provider';
 import SwitchPage from './SwitchPage';
 import store from '~/store';
@@ -18,12 +18,13 @@ import { localize } from '~/localization/Translation';
 import { useRecoilValue } from 'recoil';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { Spinner } from '../svg';
-import { Plugin } from '~/components/svg';
 import { useNavigate } from 'react-router-dom';
 import { alternateName } from '~/utils';
 
 export default function Recommendations() {
-  const [tabValue, setTabValue] = useState<string>('recent');
+  const [tabValue, setTabValue] = useState<string>(
+    window.sessionStorage.getItem('tab') || 'recent'
+  );
 
   // UI states
   const [convoIdx, setConvoIdx] = useState<number>(0);
@@ -37,7 +38,7 @@ export default function Recommendations() {
   const [numOfLikes, setNumOfLikes] = useState<number>(0);
 
   // Message and user cache
-  const [cache, setCache] = useState<{ user: TUser, messages: TMessage[] }[]>([]);
+  const [cache, setCache] = useState<{ user: TUser; messages: TMessage[] }[]>([]);
   const [cacheIdx, setCacheIdx] = useState<number>(0);
 
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
@@ -46,38 +47,43 @@ export default function Recommendations() {
   const title = localize(lang, 'com_ui_recommendation');
   const navigate = useNavigate();
 
+  // createdDate
+  const [ConvoCreatedDate, setConvoCreatedDate] = useState<string>('time');
   // Data provider
   const likeConvoMutation = useLikeConversationMutation(
     convoData && convoData.length > 0 ? convoData[convoIdx].conversationId : ''
   );
-
+  console.log(convoData);
   // Allows navigation to user's profile page
   const navigateToProfile = () => {
     navigate(`/profile/${convoUser?.id}`);
-  }
+  };
 
   // Save cached users and messages to localStorage
   const saveCache = () => {
-    const cachePackage = { cache: cache, cacheIdx: cacheIdx, convoIdx: convoIdx };
-    window.localStorage.setItem(`${tabValue}Cache`, JSON.stringify(cachePackage));
+    window.sessionStorage.setItem(`${tabValue}Cache`, JSON.stringify(cache));
+  };
+
+  // Save browse location
+  const saveIdx = () => {
+    const idxPackage = { cacheIdx: cacheIdx, convoIdx: convoIdx };
+    window.sessionStorage.setItem(`${tabValue}Idx`, JSON.stringify(idxPackage));
   }
 
   const plugins = (
     <>
-      <Plugin className='' />{' '}
-      <span className="px-1">•</span>
       <span className="py-0.25 ml-1 rounded bg-blue-200 px-1 text-[10px] font-semibold uppercase text-[#4559A4]">
         beta
       </span>
       <span className="px-1">•</span>
-      Model: {convoData && convoData.length > 0 ? convoData[convoIdx].model : 'No Model'}
+      {convoData && convoData.length > 0 ? convoData[convoIdx].model : 'No Model'}
     </>
   );
 
   const getConversationTitle = () => {
     if (!convoData || convoData.length < 1) return '';
     const conversation = convoData[convoIdx];
-    const { endpoint, model } = conversation
+    const { endpoint, model } = conversation;
     let _title = `${alternateName[endpoint] ?? endpoint}`;
 
     if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
@@ -101,6 +107,11 @@ export default function Recommendations() {
       null;
     } else {
       null;
+    }
+    // Check if the _title length exceeds 15 characters
+    if (_title.length > 16) {
+      // Truncate _title to 15 characters and add '...'
+      _title = _title.slice(0, 16) + '...';
     }
     return _title;
   };
@@ -126,7 +137,7 @@ export default function Recommendations() {
       const responseObject = await response.json();
 
       // Cache the conversations in localStorage
-      window.localStorage.setItem(`${tabValue}Conversations`, JSON.stringify(responseObject));
+      window.sessionStorage.setItem(`${tabValue}Conversations`, JSON.stringify(responseObject));
 
       // Update UI states
       setConvoData(responseObject);
@@ -135,21 +146,23 @@ export default function Recommendations() {
       console.log(error);
     }
   }
-
+  // for new commit
   // Try to get recommendations from localStorage
   // Fetch from server if localStorage is empty
   async function getRecommendations() {
-    const conversations = window.localStorage.getItem(`${tabValue}Conversations`);
-    const cacheLS = window.localStorage.getItem(`${tabValue}Cache`);
+    const conversations = window.sessionStorage.getItem(`${tabValue}Conversations`);
+    const cacheLS = window.sessionStorage.getItem(`${tabValue}Cache`);
+    const idxLS = window.sessionStorage.getItem(`${tabValue}Idx`);
 
-    if (conversations && cacheLS) {
+    if (conversations && cacheLS && idxLS) {
       setConvoData(null);
       setConvoUser(null);
       const convoObject = JSON.parse(conversations);
       setConvoData(convoObject);
       setConvoDataLength(convoObject.length);
 
-      const { cache, cacheIdx, convoIdx } = JSON.parse(cacheLS);
+      const cache = JSON.parse(cacheLS);
+      const { cacheIdx, convoIdx } = JSON.parse(idxLS);
       setCache(cache);
       setCacheIdx(cacheIdx);
       setConvoIdx(convoIdx);
@@ -181,7 +194,7 @@ export default function Recommendations() {
 
       const messagesResponseObject = await messagesResponse.json();
       const userResponseObject = await userResponse.json();
-      const cacheObject = { user: userResponseObject, messages: messagesResponseObject }
+      const cacheObject = { user: userResponseObject, messages: messagesResponseObject };
 
       // Cache the newly fetched user and messages and maintain the cache size to 5
       if (cacheIdx > cache.length - 1) {
@@ -199,6 +212,9 @@ export default function Recommendations() {
           cache.pop();
         }
       }
+
+      saveCache();
+      saveIdx();
 
       setMsgTree(buildTree(messagesResponseObject));
       setConvoUser(userResponseObject);
@@ -240,13 +256,13 @@ export default function Recommendations() {
   const nextConvo = () => {
     convoIdx === convoDataLength - 1 ? setConvoIdx(0) : setConvoIdx(convoIdx + 1);
     setCacheIdx(cacheIdx + 1);
-  }
+  };
 
   // Browse previous conversation
   const prevConvo = () => {
     convoIdx === 0 ? setConvoIdx(convoDataLength - 1) : setConvoIdx(convoIdx - 1);
     setCacheIdx(cacheIdx - 1);
-  }
+  };
 
   // Copies conversations share link
   const copyShareLinkHandler = () => {
@@ -254,30 +270,23 @@ export default function Recommendations() {
     navigator.clipboard.writeText(shareLink);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }
+  };
 
+  // new commit
   // Manually refetch recommendations from server when clicking on the same tab we are currently on
   // Write the cache to localStorage and set the new tab value otherwise
   const tabClickHandler = (value: string) => () => {
     if (tabValue === value) {
       fetchRecommendations();
     } else {
-      // Store the cache and browse location in localStorage before switching tabs
-      saveCache();
       setTabValue(value);
     }
-  }
-
-  // Clear all cache before unload
-  useEffect(() => {
-    window.addEventListener('unload', () => window.localStorage.clear());
-
-    return () => window.removeEventListener('unload', () => window.localStorage.clear());
-  }, []);
+  };
 
   // Get recommendations on mount and on tab switch
   useEffect(() => {
     getRecommendations();
+    window.sessionStorage.setItem('tab', tabValue);
   }, [user, tabValue]);
 
   // Set current conversation
@@ -289,11 +298,25 @@ export default function Recommendations() {
         setMsgTree(buildTree(messages));
         setConvoUser(user);
       } else {
-        fetchConvoMessagesAndUser(convoData[convoIdx].conversationId, convoData[convoIdx].user || '');
+        fetchConvoMessagesAndUser(
+          convoData[convoIdx].conversationId,
+          convoData[convoIdx].user || ''
+        );
       }
 
-      setShareLink(window.location.host +  `/chat/share/${convoData[convoIdx].conversationId}`);
+      setShareLink(window.location.host + `/chat/share/${convoData[convoIdx].conversationId}`);
       setNumOfLikes(convoData[convoIdx].likes);
+
+      // set convo created data
+      const isoTimeString = convoData[convoIdx].createdAt;
+      const isoDate = new Date(isoTimeString);
+      const year = isoDate.getFullYear(); // Get the full year (e.g., 2023)
+      const month = isoDate.getMonth() + 1; // Get the month (0-11), so add 1 to get (1-12)
+      const day = isoDate.getDate(); // Get the day of the month (1-31)
+
+      // You can format these numeric components as needed, e.g., as a string
+      const formattedDate = `${year}-${month}-${day}`;
+      setConvoCreatedDate(formattedDate)
 
       const likedBy = convoData[convoIdx].likedBy;
       if (likedBy) {
@@ -301,6 +324,8 @@ export default function Recommendations() {
       } else {
         setLiked(false);
       }
+
+      saveIdx();
     }
   }, [convoData, convoIdx, user]);
 
@@ -317,12 +342,8 @@ export default function Recommendations() {
   const selectedTab = (val: string) => val + '-tab ' + defaultSelected;
 
   return (
-    <div className='flex flex-col overflow-y-auto gap-2'>
-      <div
-        className={
-          'flex w-full z-0 flex-wrap items-center justify-center gap-2'
-        }
-      >
+    <div className="flex flex-col gap-2 overflow-y-auto">
+      <div className={'z-0 flex w-full flex-wrap items-center justify-center gap-2'}>
         <Tabs
           value={tabValue}
           className={
@@ -332,23 +353,23 @@ export default function Recommendations() {
         >
           <TabsList className="bg-white/[.60] dark:bg-gray-700">
             <TabsTrigger
-              value='recent'
+              value="recent"
               className={`${tabValue === 'recent' ? selectedTab('creative') : defaultClasses}`}
-              onClick={ tabClickHandler('recent') }
+              onClick={tabClickHandler('recent')}
             >
               {localize(lang, 'com_ui_recent')}
             </TabsTrigger>
             <TabsTrigger
-              value='hottest'
+              value="hottest"
               className={`${tabValue === 'hottest' ? selectedTab('balanced') : defaultClasses}`}
-              onClick={ tabClickHandler('hottest') }
+              onClick={tabClickHandler('hottest')}
             >
               {localize(lang, 'com_ui_hottest')}
             </TabsTrigger>
             <TabsTrigger
-              value='following'
+              value="following"
               className={`${tabValue === 'following' ? selectedTab('fast') : defaultClasses}`}
-              onClick={ tabClickHandler('following') }
+              onClick={tabClickHandler('following')}
             >
               {localize(lang, 'com_ui_my_following')}
             </TabsTrigger>
@@ -356,106 +377,125 @@ export default function Recommendations() {
         </Tabs>
       </div>
       <div className="flex h-full flex-col items-center overflow-y-auto pt-0 text-sm dark:bg-gray-800">
-        <div className="flex flex-col items-center w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-5xl">
+        <div className="flex w-full flex-col items-center px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-5xl">
           <>
-            <div className='grid grid-row gap-1 w-full sticky bg-white top-0 z-30 items-center md:gap-0 dark:bg-gray-800'>
+            <div className="grid-row sticky top-0 z-30 grid w-full items-center gap-1 bg-white dark:bg-gray-800 md:gap-0">
               <h1
                 id="landing-title"
                 className="ml-auto mr-auto mt-0.5 flex gap-2 text-center text-2xl font-semibold"
               >
                 {convoData && convoData.length > 0 ? convoData[convoIdx].title : ''}
               </h1>
-              {convoUser && (<div className='my-2 flex flex-row flex-wrap justify-center items-center justify-self-center text-base'>
-                {/*Conversation author*/}
-                <button
-                  onClick={ navigateToProfile }
-                  className='flex flex-row gap-1 py-1 px-2 mx-2 items-center hover:bg-gray-200 dark:hover:bg-gray-600'
-                >
-                  <div
-                    title={convoUser?.username}
-                    style={{
-                      width: 25,
-                      height: 25
-                    }}
-                    className={'justify-self-center relative flex items-center justify-center'}
+              {convoUser && (
+                <div className="my-2 flex flex-row flex-wrap items-center justify-center justify-self-center text-base">
+                  {/*Conversation author*/}
+                  <button
+                    onClick={navigateToProfile}
+                    className="mx-2 flex flex-row items-center gap-1 px-2 py-1 hover:bg-gray-200 dark:hover:bg-gray-600"
                   >
-                    <img
-                      className="rounded-sm"
-                      src={
-                        convoUser?.avatar ||
-                        `https://api.dicebear.com/6.x/initials/svg?seed=${convoUser?.name}&fontFamily=Verdana&fontSize=36`
-                      }
-                      alt="avatar"
-                    />
-                  </div>
-                  <div>
-                    {convoUser?.username}
-                  </div>
-                </button>
-
-                {/*Model and endpoint*/}
-                <div className='px-3 py-1 border-x-2'>
-                  {getConversationTitle()}
-                </div>
-
-                <div className='flex flex-row px-2 items-center gap-1'>
-                  {/*Share button*/}
-                  <button className='flex flex-row items-center gap-1 p-1 hover:bg-gray-200 dark:hover:bg-gray-600' onClick={ copyShareLinkHandler }>
-                    <svg className="h-5 w-5" width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <g id="Communication / Share_iOS_Export">
-                        <path id="Vector" d="M9 6L12 3M12 3L15 6M12 3V13M7.00023 10C6.06835 10 5.60241 10 5.23486 10.1522C4.74481 10.3552 4.35523 10.7448 4.15224 11.2349C4 11.6024 4 12.0681 4 13V17.8C4 18.9201 4 19.4798 4.21799 19.9076C4.40973 20.2839 4.71547 20.5905 5.0918 20.7822C5.5192 21 6.07899 21 7.19691 21H16.8036C17.9215 21 18.4805 21 18.9079 20.7822C19.2842 20.5905 19.5905 20.2839 19.7822 19.9076C20 19.4802 20 18.921 20 17.8031V13C20 12.0681 19.9999 11.6024 19.8477 11.2349C19.6447 10.7448 19.2554 10.3552 18.7654 10.1522C18.3978 10 17.9319 10 17 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      </g>
-                    </svg>
-                    {localize(lang, 'com_ui_share')}
+                    <div
+                      title={convoUser?.username}
+                      style={{
+                        width: 25,
+                        height: 25
+                      }}
+                      className={'relative flex items-center justify-center justify-self-center'}
+                    >
+                      <img
+                        className="rounded-sm"
+                        src={
+                          convoUser?.avatar ||
+                          `https://api.dicebear.com/6.x/initials/svg?seed=${convoUser?.name}&fontFamily=Verdana&fontSize=36`
+                        }
+                        alt="avatar"
+                      />
+                    </div>
+                    <div>{convoUser?.username}</div>
                   </button>
 
-                  {/*Like button*/}
-                  <button className='flex flex-row items-center gap-1 p-1 ml-0.5 hover:bg-gray-200 dark:hover:bg-gray-600' onClick={ likeConversation }>
-                    <div>
+                  {/*Model and endpoint*/}
+                  <div className="border-x-2 px-3 py-1">{getConversationTitle()}</div>
+
+                  <div className="flex flex-row items-center gap-1 px-2">
+                    {/*Share button*/}
+                    <button
+                      className="flex flex-row items-center gap-1 p-1 hover:bg-gray-200 dark:hover:bg-gray-600"
+                      onClick={copyShareLinkHandler}
+                    >
                       <svg
-                        stroke="currentColor"
-                        fill={liked ? 'currentColor' : 'none'}
-                        strokeWidth="2"
-                        viewBox="0 0 24 24"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
                         className="h-5 w-5"
-                        height="1em"
                         width="1em"
+                        height="1em"
+                        viewBox="0 0 24 24"
+                        fill="none"
                         xmlns="http://www.w3.org/2000/svg"
                       >
-                        <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
+                        <g id="Communication / Share_iOS_Export">
+                          <path
+                            id="Vector"
+                            d="M9 6L12 3M12 3L15 6M12 3V13M7.00023 10C6.06835 10 5.60241 10 5.23486 10.1522C4.74481 10.3552 4.35523 10.7448 4.15224 11.2349C4 11.6024 4 12.0681 4 13V17.8C4 18.9201 4 19.4798 4.21799 19.9076C4.40973 20.2839 4.71547 20.5905 5.0918 20.7822C5.5192 21 6.07899 21 7.19691 21H16.8036C17.9215 21 18.4805 21 18.9079 20.7822C19.2842 20.5905 19.5905 20.2839 19.7822 19.9076C20 19.4802 20 18.921 20 17.8031V13C20 12.0681 19.9999 11.6024 19.8477 11.2349C19.6447 10.7448 19.2554 10.3552 18.7654 10.1522C18.3978 10 17.9319 10 17 10"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </g>
                       </svg>
-                    </div>
-                    <div>
-                      {localize(lang, 'com_ui_number_of_likes', numOfLikes.toString())}
-                    </div>
-                  </button>
+                      {localize(lang, 'com_ui_share')}
+                    </button>
+
+                    {/*Like button*/}
+                    <button
+                      className="ml-0.5 flex flex-row items-center gap-1 p-1 hover:bg-gray-200 dark:hover:bg-gray-600"
+                      onClick={likeConversation}
+                    >
+                      <div>
+                        <svg
+                          stroke="currentColor"
+                          fill={liked ? 'currentColor' : 'none'}
+                          strokeWidth="2"
+                          viewBox="0 0 24 24"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-5 w-5"
+                          height="1em"
+                          width="1em"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
+                        </svg>
+                      </div>
+                      <div>{localize(lang, 'com_ui_number_of_likes', numOfLikes.toString())}</div>
+                    </button>
+                  </div>
                 </div>
-              </div>
               )}
             </div>
-
+            <div>{ConvoCreatedDate}</div>
             {/*Conversation messages*/}
-            <div className="dark:gpt-dark-gray mb-32 h-auto w-full md:mb-48" ref={screenshotTargetRef}>
+            <div
+              className="dark:gpt-dark-gray mb-32 h-auto w-full md:mb-48"
+              ref={screenshotTargetRef}
+            >
               <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
                 {convoData?.length === 0 ? ( // Server returned an empty array...
                   <>
                     {tabValue === 'following' ? (
                       <>
                         {Object.keys(user?.following || {}).length === 0 ? ( // The user might not be following anyone...
-                          <div className='ml-2 mt-2'>
-                            {localize(lang, 'com_ui_no_following')}
-                          </div>
-                        ) : ( // The users whom the current user is following does not have any public conversations
-                          <div>
-                            {localize(lang, 'com_ui_following_no_convo')}
-                          </div>
+                          <>
+                            <div className="ml-2 mt-2">{localize(lang, 'com_ui_no_following')}</div>
+                          </>
+                        ) : (
+                          // The users whom the current user is following does not have any public conversations
+                          <div>{localize(lang, 'com_ui_following_no_convo')}</div>
                         )}
                       </>
-                    ) : ( // Fresh database
-                      <div className='ml-2 mt-2'>
-                        API server did not return any documents. Check if you have an empty database.
+                    ) : (
+                      // Fresh database
+                      <div className="ml-2 mt-2">
+                        API server did not return any documents. Check if you have an empty
+                        database.
                       </div>
                     )}
                   </>
@@ -475,14 +515,14 @@ export default function Recommendations() {
                         userId={convoUser?.id}
                       />
                     ) : (
-                      <div className="flex w-full h-[25vh] flex-row items-end justify-end">
+                      <div className="flex h-[25vh] w-full flex-row items-end justify-end">
                         <Spinner />
                       </div>
                     )}
                   </>
                 )}
-                <SwitchPage key={ 'left_switch' } switchHandler={ prevConvo } direction={ 'left' } />
-                <SwitchPage key={ 'right_switch' } switchHandler={ nextConvo } direction={ 'right' } />
+                <SwitchPage key={'left_switch'} switchHandler={prevConvo} direction={'left'} />
+                <SwitchPage key={'right_switch'} switchHandler={nextConvo} direction={'right'} />
               </div>
             </div>
             <CSSTransition
@@ -491,7 +531,7 @@ export default function Recommendations() {
               classNames="copied-toast"
               unmountOnExit={false}
             >
-              <div className='opacity-0 invisible absolute bottom-20 text-black text-md bg-gray-200 py-1 px-3 rounded-full'>
+              <div className="text-md invisible absolute bottom-20 rounded-full bg-gray-200 px-3 py-1 text-black opacity-0">
                 {localize(lang, 'com_ui_copied')}
               </div>
             </CSSTransition>
