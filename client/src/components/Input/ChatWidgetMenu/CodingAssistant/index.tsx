@@ -38,9 +38,9 @@ function CodingAssistant() {
     } else if (type === '错误信息') {
       setText(`分析${lang}错误信息原因：${topic}`);
     } else if (type === '代码注释') {
-      setText(`为下面的${lang}代码生成注释：\n${topic}`);
+      setText(`以Markdown的形式为下面的${lang}代码的每一样生成注释：\n${topic}`);
     } else if (type === '生成文档字符串') {
-      setText(`为下面的${lang}代码生成文档字符串：\n${topic}`);
+      setText(`以Markdown的形式为下面的${lang}代码生成文档字符串：\n${topic}`);
     }
   };
   const showExampleHandler = () => {
