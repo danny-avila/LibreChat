@@ -4,19 +4,13 @@ const jwt = require('jsonwebtoken');
 const Joi = require('joi');
 const DebugControl = require('../utils/debug.js');
 const userSchema = require('./schema/userSchema.js');
+const { SESSION_EXPIRY } = process.env ?? {};
+const expires = eval(SESSION_EXPIRY) ?? 1000 * 60 * 15;
 
 function log({ title, parameters }) {
   DebugControl.log.functionName(title);
   DebugControl.log.parameters(parameters);
 }
-
-//Remove refreshToken from the response
-userSchema.set('toJSON', {
-  transform: function (_doc, ret) {
-    delete ret.refreshToken;
-    return ret;
-  },
-});
 
 userSchema.methods.toJSON = function () {
   return {
@@ -43,23 +37,9 @@ userSchema.methods.generateToken = function () {
       email: this.email,
     },
     process.env.JWT_SECRET,
-    { expiresIn: eval(process.env.SESSION_EXPIRY) },
+    { expiresIn: expires / 1000 },
   );
   return token;
-};
-
-userSchema.methods.generateRefreshToken = function () {
-  const refreshToken = jwt.sign(
-    {
-      id: this._id,
-      username: this.username,
-      provider: this.provider,
-      email: this.email,
-    },
-    process.env.JWT_REFRESH_SECRET,
-    { expiresIn: eval(process.env.REFRESH_TOKEN_EXPIRY) },
-  );
-  return refreshToken;
 };
 
 userSchema.methods.comparePassword = function (candidatePassword, callback) {
