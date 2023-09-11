@@ -92,7 +92,7 @@
   "nodemonConfig": {
     "ignore": [
       "api/data/",
-      "data",
+      "data/",
       "client/",
       "admin/",
       "packages/"
