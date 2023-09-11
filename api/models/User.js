@@ -4,6 +4,8 @@ const jwt = require('jsonwebtoken');
 const Joi = require('joi');
 const DebugControl = require('../utils/debug.js');
 const userSchema = require('./schema/userSchema.js');
+const { SESSION_EXPIRY } = process.env ?? {};
+const expires = eval(SESSION_EXPIRY) ?? 1000 * 60 * 15;
 
 function log({ title, parameters }) {
   DebugControl.log.functionName(title);
@@ -35,7 +37,7 @@ userSchema.methods.generateToken = function () {
       email: this.email,
     },
     process.env.JWT_SECRET,
-    { expiresIn: eval(process.env.SESSION_EXPIRY) / 1000 },
+    { expiresIn: expires },
   );
   return token;
 };
