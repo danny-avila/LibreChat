@@ -20,7 +20,7 @@ export default {
   com_ui_public: 'Public',
   com_ui_private: 'Private',
   com_ui_homepage: 'My Profile',
-  com_ui_others_homepage: '{0}\' s Profile',
+  com_ui_others_homepage: '{0}\'s Profile',
   com_ui_register_before_like: 'Let\'s make yourself an account',
   com_ui_number_of_likes: '{0} Likes',
   com_ui_register_here: 'Don\'t have an account yet? Click here to register.',
@@ -28,7 +28,8 @@ export default {
   com_ui_private_conversation: 'The conversation you are trying to view is a private conversation',
   com_ui_recommendation: 'Browse Conversations',
   com_ui_leaderboard: 'Leaderboard',
-  com_ui_convo_public_reminder: 'New conversations default to the public. You can select a conversation from the left menu, and then set the conversation as private.',
+  com_ui_convo_public_reminder:
+    'New conversations default to the public. You can select a conversation from the left menu, and then set the conversation as private.',
   com_ui_examples: 'Examples',
   com_ui_new_chat: 'New Chat',
   com_ui_example_quantum_computing: 'Explain quantum computing in simple terms',
@@ -108,7 +109,7 @@ export default {
   com_auth_click: 'Click',
   com_auth_here: 'HERE',
   com_auth_to_reset_your_password: 'to reset your password.',
-  com_auth_reset_password_link_sent: 'Email Sent',
+  com_auth_reset_password_link_sent: 'Link to reset sent password',
   com_auth_reset_password_email_sent:
     'An email has been sent to {0} with instructions on how to reset your password.Please check your spam/junk folder if you don\'t see this email shortly.',
   com_auth_error_reset_password:
@@ -177,7 +178,7 @@ export default {
   com_endpoint_anthropic_topk:
     'Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model\'s vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).',
   com_endpoint_anthropic_maxoutputtokens:
-    'Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses.',
+    'The maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses.',
   com_endpoint_frequency_penalty: 'Frequency Penalty',
   com_endpoint_presence_penalty: 'Presence Penalty',
   com_endpoint_plug_use_functions: 'Use Functions',
