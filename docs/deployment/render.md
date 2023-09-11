@@ -78,7 +78,7 @@ Also:
 
 The last thing you need is to create a MongoDB Atlas Database and get your connection string.
 
-Follow the instructions in this document: [Online MongoDB Database](..\install\mongodb.md)
+Follow the instructions in this document: [Online MongoDB Database](../install/mongodb.md)
 
 ## Complete the Environment Variables configuration 
 
