@@ -46,7 +46,10 @@ sessionSchema.methods.generateRefreshToken = async function () {
 
     return refreshToken;
   } catch (error) {
-    console.error('Error generating refresh token: ', error);
+    console.error(
+      'Error generating refresh token. Have you set a JWT_REFRESH_SECRET in the .env file?\n\n',
+      error,
+    );
     throw error;
   }
 };
