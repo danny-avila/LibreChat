@@ -10,14 +10,6 @@ function log({ title, parameters }) {
   DebugControl.log.parameters(parameters);
 }
 
-//Remove refreshToken from the response
-userSchema.set('toJSON', {
-  transform: function (_doc, ret) {
-    delete ret.refreshToken;
-    return ret;
-  },
-});
-
 userSchema.methods.toJSON = function () {
   return {
     id: this._id,
@@ -43,23 +35,9 @@ userSchema.methods.generateToken = function () {
       email: this.email,
     },
     process.env.JWT_SECRET,
-    { expiresIn: eval(process.env.SESSION_EXPIRY) },
+    { expiresIn: eval(process.env.SESSION_EXPIRY) / 1000 },
   );
   return token;
-};
-
-userSchema.methods.generateRefreshToken = function () {
-  const refreshToken = jwt.sign(
-    {
-      id: this._id,
-      username: this.username,
-      provider: this.provider,
-      email: this.email,
-    },
-    process.env.JWT_REFRESH_SECRET,
-    { expiresIn: eval(process.env.REFRESH_TOKEN_EXPIRY) },
-  );
-  return refreshToken;
 };
 
 userSchema.methods.comparePassword = function (candidatePassword, callback) {
