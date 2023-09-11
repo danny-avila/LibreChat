@@ -37,7 +37,7 @@ userSchema.methods.generateToken = function () {
       email: this.email,
     },
     process.env.JWT_SECRET,
-    { expiresIn: expires },
+    { expiresIn: expires / 1000 },
   );
   return token;
 };

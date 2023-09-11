@@ -83,6 +83,12 @@ const refreshController = async (req, res) => {
       return res.status(401).send('User not found');
     }
 
+    if (process.env.NODE_ENV === 'development') {
+      const token = await setAuthTokens(userId, res);
+      const userObj = user.toJSON();
+      return res.status(200).send({ token, user: userObj });
+    }
+
     // Hash the refresh token
     const hash = crypto.createHash('sha256');
     const hashedToken = hash.update(refreshToken).digest('hex');

@@ -11,7 +11,7 @@ export default defineConfig({
   /* Run tests in files in parallel.
   NOTE: This sometimes causes issues on Windows.
   Set to false if you experience issues running on a Windows machine. */
-  fullyParallel: true,
+  fullyParallel: false,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */
@@ -62,7 +62,8 @@ export default defineConfig({
     env: {
       ...process.env,
       NODE_ENV: 'development',
-      SESSION_EXPIRY: '86400000',
+      SESSION_EXPIRY: '60000',
+      REFRESH_TOKEN_EXPIRY: '300000',
     },
   },
 });
