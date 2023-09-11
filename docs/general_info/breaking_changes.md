@@ -5,7 +5,11 @@
 Certain changes in the updates may impact cookies, leading to unexpected behaviors if not cleared properly.
 
 ## v0.5.8
-**If you have issues after updating, please try to clear your browser cache and cookies!**
+
+- It's now required to set a JWT_REFRESH_SECRET in your .env file as of [#927](https://github.com/danny-avila/LibreChat/pull/927)
+  - It's also recommended you set REFRESH_TOKEN_EXPIRY or the default value will be used.
+
+## v0.5.8
 
 - It's now required to name manifest JSON files (for [ChatGPT Plugins](..\features\plugins\chatgpt_plugins_openapi.md)) in the `api\app\clients\tools\.well-known` directory after their `name_for_model` property should you add one yourself.
     - This was a recommended convention before, but is now required.

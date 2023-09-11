@@ -22,13 +22,8 @@ async function authenticate(config: FullConfig, user: User) {
   if (!baseURL) {
     throw new Error('🤖: baseURL is not defined');
   }
-  await page.goto(baseURL);
+  await page.goto(baseURL, { timeout: 5000 });
   await login(page, user);
-  // const loginPromise = page.getByTestId('landing-title').waitFor({ timeout: 25000 }); // due to GH Actions load time
-  // if (process.env.NODE_ENV === 'ci') {
-  //   await page.screenshot({ path: 'login-screenshot.png' });
-  // }
-  // await loginPromise;
   await page.waitForURL(`${baseURL}/chat/new`);
   console.log('🤖: ✔️  user successfully authenticated');
   // Set localStorage before navigating to the page
