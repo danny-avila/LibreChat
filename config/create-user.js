@@ -1,6 +1,5 @@
 const connectDb = require('@librechat/backend/lib/db/connectDb');
-const migrateDb = require('@librechat/backend/lib/db/migrateDb');
-const { registerUser } = require('@librechat/backend/server/services/auth.service');
+const { registerUser } = require('@librechat/backend/server/services/AuthService');
 const { askQuestion, silentExit } = require('./helpers');
 const User = require('@librechat/backend/models/User');
 
@@ -26,7 +25,6 @@ const User = require('@librechat/backend/models/User');
     console.orange('Warming up the engines...');
     await connectDb();
     clearTimeout(timeout);
-    await migrateDb();
   } catch (e) {
     console.error(e);
     silentExit(1);
