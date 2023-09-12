@@ -8,6 +8,7 @@ const askChatGPTBrowser = require('./askChatGPTBrowser');
 const anthropic = require('./anthropic');
 const {
   uaParser,
+  checkBan,
   requireJwtAuth,
   concurrentLimiter,
   messageIpLimiter,
@@ -18,6 +19,7 @@ const { isEnabled } = require('../../utils');
 const { LIMIT_CONCURRENT_MESSAGES, LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 
 router.use(requireJwtAuth);
+router.use(checkBan);
 router.use(uaParser);
 
 if (isEnabled(LIMIT_CONCURRENT_MESSAGES)) {
