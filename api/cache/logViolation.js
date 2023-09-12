@@ -12,7 +12,9 @@ const banViolation = require('./banViolation');
  */
 const logViolation = async (req, res, type, errorMessage, score = 1) => {
   const userId = req.user.id;
-  const { violationLogs, logs } = getLogStores(type);
+  const logs = getLogStores('general');
+  const violationLogs = getLogStores(type);
+
   const userViolations = (await violationLogs.get(userId)) ?? 0;
   const violationCount = userViolations + score;
   await violationLogs.set(userId, violationCount);

@@ -1,7 +1,8 @@
-const Keyv = require('keyv');
-const keyvMongo = require('./keyvMongo');
 const Session = require('../models/Session');
+const { getLogStores } = require('../cache');
 const { isEnabled, math, removePorts } = require('../server/utils');
+const { BAN_VIOLATIONS, BAN_INTERVAL } = process.env ?? {};
+const interval = math(BAN_INTERVAL, 20);
 
 /**
  * Bans a user based on violation criteria.
@@ -23,8 +24,6 @@ const { isEnabled, math, removePorts } = require('../server/utils');
  *
  */
 const banViolation = async (req, res, errorMessage) => {
-  const { BAN_VIOLATIONS, BAN_DURATION, BAN_INTERVAL } = process.env ?? {};
-
   if (!isEnabled(BAN_VIOLATIONS)) {
     return;
   }
@@ -35,13 +34,6 @@ const banViolation = async (req, res, errorMessage) => {
 
   const { type, user_id, prev_count, violation_count } = errorMessage;
 
-  let interval, duration;
-  try {
-    interval = math(BAN_INTERVAL);
-  } catch {
-    interval = 20;
-  }
-
   const prevThreshold = Math.floor(prev_count / interval);
   const currentThreshold = Math.floor(violation_count / interval);
 
@@ -49,11 +41,13 @@ const banViolation = async (req, res, errorMessage) => {
     return;
   }
 
-  try {
-    duration = math(BAN_DURATION);
-  } catch {
-    duration = 0;
-  }
+  await Session.deleteAllUserSessions(user_id);
+  res.clearCookie('refreshToken');
+
+  const banLogs = getLogStores('ban');
+  const duration = banLogs.opts.ttl;
+
+  console.log(`[BAN] BAN_DURATION: ${duration}`);
 
   if (duration <= 0) {
     return;
@@ -62,13 +56,8 @@ const banViolation = async (req, res, errorMessage) => {
   req.ip = removePorts(req);
   console.log(`[BAN] Banning user ${user_id} @ ${req.ip} for ${duration / 1000 / 60} minutes`);
   const expiresAt = Date.now() + duration;
-  const banLogs = new Keyv({ store: keyvMongo, ttl: duration, namespace: 'bans' });
   await banLogs.set(user_id, { type, violation_count, duration, expiresAt });
   await banLogs.set(req.ip, { type, user_id, violation_count, duration, expiresAt });
-
-  await Session.deleteAllUserSessions(user_id);
-
-  res.clearCookie('refreshToken');
 
   errorMessage.ban = true;
   errorMessage.ban_duration = duration;

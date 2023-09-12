@@ -1,7 +1,14 @@
 const Keyv = require('keyv');
+const keyvMongo = require('./keyvMongo');
+const { math } = require('../server/utils');
 const { logFile, violationFile } = require('./keyvFiles');
-const logs = new Keyv({ store: logFile, namespace: 'violations' });
+const { BAN_DURATION } = process.env ?? {};
+
+const duration = math(BAN_DURATION, 0);
+
 const namespaces = {
+  ban: new Keyv({ store: keyvMongo, ttl: duration, namespace: 'bans' }),
+  general: new Keyv({ store: logFile, namespace: 'violations' }),
   concurrent: new Keyv({ store: violationFile, namespace: 'concurrent' }),
   non_browser: new Keyv({ store: violationFile, namespace: 'non_browser' }),
   message_limit: new Keyv({ store: violationFile, namespace: 'message_limit' }),
@@ -19,19 +26,15 @@ const namespaces = {
  * @requires keyvFiles - a module that includes the logFile and violationFile.
  *
  * @param {string} type - The type of violation, which can be 'concurrent', 'message_limit', 'registrations' or 'logins'.
- * @returns {typeof Keyv} - If a valid type is passed, returns an object containing the logs for violations of the specified type and the general logs.
- *                     If no type is passed, returns an object containing the general logs.
+ * @returns {Keyv} - If a valid type is passed, returns an object containing the logs for violations of the specified type.
  * @throws Will throw an error if an invalid violation type is passed.
  */
 const getLogStores = (type) => {
   if (!type) {
-    return { logs };
+    throw new Error(`Invalid store type: ${type}`);
   }
-  const violationLogs = namespaces[type];
-  if (!violationLogs) {
-    throw new Error(`Invalid violation type: ${type}`);
-  }
-  return { violationLogs, logs };
+  const logs = namespaces[type];
+  return logs;
 };
 
 module.exports = getLogStores;

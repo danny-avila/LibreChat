@@ -1,8 +1,8 @@
 const Keyv = require('keyv');
 const uap = require('ua-parser-js');
-const keyvMongo = require('../../cache/keyvMongo');
+const { getLogStores } = require('../../cache');
 const denyRequest = require('./denyRequest');
-const { isEnabled, math, removePorts } = require('../utils');
+const { isEnabled, removePorts } = require('../utils');
 
 const banCache = new Keyv({ namespace: 'bans', ttl: 0 });
 const message = 'Your account has been temporarily banned due to violations of our service.';
@@ -42,7 +42,7 @@ const banResponse = async (req, res) => {
  * @returns {Promise<function|Object>} - Returns a Promise which when resolved calls next middleware if user or source IP is not banned. Otherwise calls `banResponse()` and sets ban details in `banCache`.
  */
 const checkBan = async (req, res, next = () => {}) => {
-  const { BAN_VIOLATIONS, BAN_DURATION } = process.env ?? {};
+  const { BAN_VIOLATIONS } = process.env ?? {};
 
   if (!isEnabled(BAN_VIOLATIONS)) {
     return next();
@@ -60,18 +60,13 @@ const checkBan = async (req, res, next = () => {}) => {
     return await banResponse(req, res);
   }
 
-  let duration;
-  try {
-    duration = math(BAN_DURATION);
-  } catch {
-    duration = 0;
-  }
+  const banLogs = getLogStores('ban');
+  const duration = banLogs.opts.ttl;
 
   if (duration <= 0) {
     return next();
   }
 
-  const banLogs = new Keyv({ store: keyvMongo, ttl: duration, namespace: 'bans' });
   const ipBan = await banLogs.get(req.ip);
   const userBan = await banLogs.get(userId);
   const isBanned = ipBan || userBan;
