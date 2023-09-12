@@ -3,10 +3,6 @@ const { logViolation } = require('../../cache');
 
 const denyRequest = require('./denyRequest');
 
-const { CONCURRENT_MESSAGE_MAX } = process.env ?? {};
-const limit = Math.max(CONCURRENT_MESSAGE_MAX ?? 1, 1);
-const type = 'concurrent';
-
 // Serve cache from memory so no need to clear it on startup/exit
 const pendingReqCache = new Keyv({ namespace: 'pendingRequests' });
 
@@ -33,6 +29,10 @@ const concurrentLimiter = async (req, res, next) => {
     return next();
   }
 
+  const { CONCURRENT_MESSAGE_MAX = 1, CONCURRENT_VIOLATION_SCORE: score } = process.env;
+  const limit = Math.max(CONCURRENT_MESSAGE_MAX, 1);
+  const type = 'concurrent';
+
   const userId = req.user.id;
   const pendingRequests = (await pendingReqCache.get(userId)) ?? 0;
 
@@ -43,7 +43,7 @@ const concurrentLimiter = async (req, res, next) => {
       pendingRequests,
     };
 
-    await logViolation(req, res, type, errorMessage);
+    await logViolation(req, res, type, errorMessage, score);
     return await denyRequest(req, res, errorMessage);
   } else {
     await pendingReqCache.set(userId, pendingRequests + 1);

@@ -2,18 +2,20 @@ const rateLimit = require('express-rate-limit');
 const { logViolation } = require('../../cache');
 const denyRequest = require('./denyRequest');
 
-const { MESSAGE_IP_MAX, MESSAGE_IP_WINDOW, MESSAGE_USER_MAX, MESSAGE_USER_WINDOW } =
-  process.env ?? {};
+const {
+  MESSAGE_IP_MAX = 40,
+  MESSAGE_IP_WINDOW = 1,
+  MESSAGE_USER_MAX = 40,
+  MESSAGE_USER_WINDOW = 1,
+} = process.env;
 
-const ipWindowMs = (MESSAGE_IP_WINDOW ?? 1) * 60 * 1000; // default: 1 minute
-const ipMax = MESSAGE_IP_MAX ?? 40; // default: limit each IP to 40 requests per ipWindowMs
+const ipWindowMs = MESSAGE_IP_WINDOW * 60 * 1000;
+const ipMax = MESSAGE_IP_MAX;
 const ipWindowInMinutes = ipWindowMs / 60000;
 
-const userWindowMs = (MESSAGE_USER_WINDOW ?? 1) * 60 * 1000; // default: 1 minute
-const userMax = MESSAGE_USER_MAX ?? 40; // default: limit each user to 40 requests per userWindowMs
+const userWindowMs = MESSAGE_USER_WINDOW * 60 * 1000;
+const userMax = MESSAGE_USER_MAX;
 const userWindowInMinutes = userWindowMs / 60000;
-
-const type = 'message_limit';
 
 /**
  * Creates either an IP/User message request rate limiter for excessive requests
@@ -25,6 +27,7 @@ const type = 'message_limit';
  */
 const createHandler = (ip = true) => {
   return async (req, res) => {
+    const type = 'message_limit';
     const errorMessage = {
       type,
       max: ip ? ipMax : userMax,
