@@ -53,6 +53,8 @@ export default {
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:
     'Too many login attempts from this IP in a short amount of time. Please try again later.',
+  com_auth_error_login_ban:
+    'Your account has been temporarily banned due to violations of our service.',
   com_auth_no_account: 'Don\'t have an account?',
   com_auth_sign_up: 'Sign up',
   com_auth_sign_in: 'Sign in',

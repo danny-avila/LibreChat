@@ -17,6 +17,7 @@ type TMessageLimit = {
 };
 
 const errorMessages = {
+  ban: 'Your account has been temporarily banned due to violations of our service.',
   invalid_api_key:
     'Invalid API key. Please check your API key and try again. You can do this by clicking on the model logo in the left corner of the textbox and selecting "Set Token" for the current selected endpoint. Thank you for your understanding.',
   insufficient_quota:
