@@ -1,7 +1,7 @@
 const Keyv = require('keyv');
 const keyvMongo = require('./keyvMongo');
 const Session = require('../models/Session');
-const { isEnabled, math } = require('../server/utils');
+const { isEnabled, math, removePorts } = require('../server/utils');
 
 /**
  * Bans a user based on violation criteria.
@@ -53,11 +53,13 @@ const banViolation = async (req, res, errorMessage) => {
   }
 
   if (duration > 0) {
+    req.ip = removePorts(req);
     console.log('Banning user', user_id, 'for', duration, 'ms');
     console.log('Banned user IP:', req.ip);
     const expiresAt = Date.now() + duration;
     const banLogs = new Keyv({ store: keyvMongo, ttl: duration, namespace: 'bans' });
     await banLogs.set(user_id, { type, violation_count, duration, expiresAt });
+    await banLogs.set(req.ip, { type, user_id, violation_count, duration, expiresAt });
   }
 
   await Session.deleteAllUserSessions(user_id);
