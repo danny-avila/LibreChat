@@ -1,5 +1,6 @@
 const rateLimit = require('express-rate-limit');
 const { logViolation } = require('../../cache');
+const { removePorts } = require('../utils');
 
 const type = 'logins';
 
@@ -22,10 +23,7 @@ const loginLimiter = rateLimit({
   max,
   message: `Too many login attempts from this IP, please try again after ${windowInMinutes} minutes.`,
   handler,
-  keyGenerator: function (req) {
-    // Strip out the port number from the IP address
-    return req.ip.replace(/:\d+[^:]*$/, '');
-  },
+  keyGenerator: removePorts,
 });
 
 module.exports = loginLimiter;
