@@ -33,7 +33,7 @@ const banViolation = async (req, res, errorMessage) => {
     return;
   }
 
-  const { type, user_id, violation_count } = errorMessage;
+  const { type, user_id, prev_count, violation_count } = errorMessage;
 
   let interval, duration;
   try {
@@ -42,7 +42,10 @@ const banViolation = async (req, res, errorMessage) => {
     interval = 20;
   }
 
-  if (violation_count % interval !== 0) {
+  const prevThreshold = Math.floor(prev_count / interval);
+  const currentThreshold = Math.floor(violation_count / interval);
+
+  if (prevThreshold >= currentThreshold) {
     return;
   }
 
@@ -52,15 +55,17 @@ const banViolation = async (req, res, errorMessage) => {
     duration = 0;
   }
 
-  if (duration > 0) {
-    req.ip = removePorts(req);
-    console.log('Banning user', user_id, 'for', duration, 'ms');
-    console.log('Banned user IP:', req.ip);
-    const expiresAt = Date.now() + duration;
-    const banLogs = new Keyv({ store: keyvMongo, ttl: duration, namespace: 'bans' });
-    await banLogs.set(user_id, { type, violation_count, duration, expiresAt });
-    await banLogs.set(req.ip, { type, user_id, violation_count, duration, expiresAt });
+  if (duration <= 0) {
+    return;
   }
+
+  req.ip = removePorts(req);
+  console.log('Banning user', user_id, 'for', duration, 'ms');
+  console.log('Banned user IP:', req.ip);
+  const expiresAt = Date.now() + duration;
+  const banLogs = new Keyv({ store: keyvMongo, ttl: duration, namespace: 'bans' });
+  await banLogs.set(user_id, { type, violation_count, duration, expiresAt });
+  await banLogs.set(req.ip, { type, user_id, violation_count, duration, expiresAt });
 
   await Session.deleteAllUserSessions(user_id);
 
