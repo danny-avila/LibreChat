@@ -27,6 +27,6 @@ export { default as AzureMinimalistIcon } from './AzureMinimalistIcon';
 export { default as OpenAIMinimalistIcon } from './OpenAIMinimalistIcon';
 export { default as ChatGPTMinimalistIcon } from './ChatGPTMinimalistIcon';
 export { default as PluginMinimalistIcon } from './PluginMinimalistIcon';
-export { default as BingAIMinimalIcon } from './BingAIMinimalIcon';
+export { default as BingAIMinimalistIcon } from './BingAIMinimalistIcon';
 export { default as PaLMinimalistIcon } from './PaLMinimalistIcon';
 export { default as AnthropicMinimalistIcon } from './AnthropicMinimalistIcon';

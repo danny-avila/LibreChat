@@ -1,10 +1,10 @@
-import React from 'react'; // Import React
+import React from 'react';
 import {
   AzureMinimalistIcon,
   OpenAIMinimalistIcon,
   ChatGPTMinimalistIcon,
   PluginMinimalistIcon,
-  BingAIMinimalIcon,
+  BingAIMinimalistIcon,
   PaLMinimalistIcon,
   AnthropicMinimalistIcon,
 } from '~/components/svg';
@@ -77,7 +77,7 @@ const getMinimalIcon: React.FC<IconProps> = (props) => {
       icon = <AnthropicMinimalistIcon />;
       name = modelLabel || 'Claude';
     } else if (endpoint === 'bingAI') {
-      icon = <BingAIMinimalIcon />;
+      icon = <BingAIMinimalistIcon />;
       name = 'BingAI';
     } else if (endpoint === 'chatGPTBrowser') {
       icon = <ChatGPTMinimalistIcon />;
