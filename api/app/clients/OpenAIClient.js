@@ -343,6 +343,11 @@ class OpenAIClient extends BaseClient {
             // console.debug('progressMessage');
             // console.dir(progressMessage, { depth: null });
           }
+
+          if (progressMessage.choices) {
+            streamResult = progressMessage;
+          }
+
           let token = null;
           if (this.isChatCompletion) {
             token =
