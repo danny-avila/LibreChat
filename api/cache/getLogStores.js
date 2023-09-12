@@ -19,7 +19,7 @@ const namespaces = {
  * @requires keyvFiles - a module that includes the logFile and violationFile.
  *
  * @param {string} type - The type of violation, which can be 'concurrent', 'message_limit', 'registrations' or 'logins'.
- * @returns {Object} - If a valid type is passed, returns an object containing the logs for violations of the specified type and the general logs.
+ * @returns {typeof Keyv} - If a valid type is passed, returns an object containing the logs for violations of the specified type and the general logs.
  *                     If no type is passed, returns an object containing the general logs.
  * @throws Will throw an error if an invalid violation type is passed.
  */
