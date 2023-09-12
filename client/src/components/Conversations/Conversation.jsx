@@ -71,7 +71,7 @@ export default function Conversation({ conversation, retainView }) {
     endpoint: conversation.endpoint,
     model: conversation.model,
     error: false,
-    className: 'mr-2',
+    className: 'mr-0',
   });
 
   useEffect(() => {
