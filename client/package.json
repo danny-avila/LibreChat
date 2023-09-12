@@ -9,6 +9,7 @@
     "dev": "cross-env NODE_ENV=development dotenv -e ../.env -- vite",
     "preview-prod": "cross-env NODE_ENV=development dotenv -e ../.env -- vite preview",
     "test": "cross-env NODE_ENV=test jest --watch",
+    "b:test": "NODE_ENV=test bun jest --watch",
     "test:ci": "cross-env NODE_ENV=test jest --ci",
     "b:build": "NODE_ENV=production bun vite build",
     "b:dev": "NODE_ENV=development bun vite"
