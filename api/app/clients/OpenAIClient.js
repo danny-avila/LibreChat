@@ -67,7 +67,8 @@ class OpenAIClient extends BaseClient {
       this.useOpenRouter = true;
     }
 
-    this.isChatCompletion = this.useOpenRouter ||
+    this.isChatCompletion =
+      this.useOpenRouter ||
       this.options.reverseProxyUrl ||
       this.options.localAI ||
       this.modelOptions.model.startsWith('gpt-');
@@ -337,11 +338,15 @@ class OpenAIClient extends BaseClient {
           if (progressMessage === '[DONE]') {
             return;
           }
-          console.log('progressMessage');
-          console.dir(progressMessage, { depth: null });
+
+          if (this.options.debug) {
+            // console.debug('progressMessage');
+            // console.dir(progressMessage, { depth: null });
+          }
           let token = null;
           if (this.isChatCompletion) {
-            token = progressMessage.choices?.[0]?.delta?.content ?? progressMessage.choices?.[0]?.text;
+            token =
+              progressMessage.choices?.[0]?.delta?.content ?? progressMessage.choices?.[0]?.text;
           }
 
           if (!token && this.useOpenRouter) {
