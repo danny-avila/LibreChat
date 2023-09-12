@@ -3,6 +3,7 @@ const handleText = require('./handleText');
 const cryptoUtils = require('./crypto');
 const citations = require('./citations');
 const sendEmail = require('./sendEmail');
+const math = require('./math');
 
 module.exports = {
   ...streamResponse,
@@ -10,4 +11,5 @@ module.exports = {
   ...handleText,
   ...citations,
   sendEmail,
+  math,
 };
