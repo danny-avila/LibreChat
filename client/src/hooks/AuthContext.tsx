@@ -89,9 +89,9 @@ const AuthContextProvider = ({
     [navigate],
   );
 
-  const getCookieValue = (key: string) => {
-    const keyValue = document.cookie.match('(^|;) ?' + key + '=([^;]*)(;|$)');
-    return keyValue ? keyValue[2] : null;
+  type TResError = {
+    response: { data: { message: string } };
+    message: string;
   };
 
   const login = (data: TLoginUser) => {
@@ -100,8 +100,9 @@ const AuthContextProvider = ({
         const { user, token } = data;
         setUserContext({ token, isAuthenticated: true, user, redirect: '/chat/new' });
       },
-      onError: (error) => {
-        doSetError((error as Error).message);
+      onError: (error: TResError | unknown) => {
+        const resError = error as TResError;
+        doSetError(resError.message);
         navigate('/login', { replace: true });
       },
     });
