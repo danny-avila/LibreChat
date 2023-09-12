@@ -7,14 +7,14 @@ const windowMs = (process.env?.REGISTER_WINDOW ?? 60) * 60 * 1000; // default: 1
 const max = process.env?.REGISTER_MAX ?? 5; // default: limit each IP to 5 registrations per windowMs
 const windowInMinutes = windowMs / 60000;
 
-const handler = async (req) => {
+const handler = async (req, res) => {
   const errorMessage = {
     type,
     max,
     windowInMinutes,
   };
 
-  await logViolation(req, type, errorMessage);
+  await logViolation(req, res, type, errorMessage);
 };
 
 const registerLimiter = rateLimit({

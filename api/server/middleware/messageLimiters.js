@@ -32,7 +32,7 @@ const createHandler = (ip = true) => {
       windowInMinutes: ip ? ipWindowInMinutes : userWindowInMinutes,
     };
 
-    await logViolation(req, type, errorMessage);
+    await logViolation(req, res, type, errorMessage);
     return await denyRequest(req, res, errorMessage);
   };
 };

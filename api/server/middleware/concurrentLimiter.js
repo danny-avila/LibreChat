@@ -43,7 +43,7 @@ const concurrentLimiter = async (req, res, next) => {
       pendingRequests,
     };
 
-    await logViolation(req, type, errorMessage);
+    await logViolation(req, res, type, errorMessage);
     return await denyRequest(req, res, errorMessage);
   } else {
     await pendingReqCache.set(userId, pendingRequests + 1);

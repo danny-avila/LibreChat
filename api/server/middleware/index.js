@@ -1,4 +1,5 @@
 const abortMiddleware = require('./abortMiddleware');
+const checkBan = require('./checkBan');
 const uaParser = require('./uaParser');
 const setHeaders = require('./setHeaders');
 const loginLimiter = require('./loginLimiter');
@@ -15,6 +16,7 @@ const validateRegistration = require('./validateRegistration');
 module.exports = {
   ...abortMiddleware,
   ...messageLimiters,
+  checkBan,
   uaParser,
   setHeaders,
   loginLimiter,

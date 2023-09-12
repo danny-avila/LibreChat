@@ -7,7 +7,7 @@ async function uaParser(req, res, next) {
 
   if (!ua.browser.name) {
     const type = 'non_browser';
-    await logViolation(req, type, { type }, 20);
+    await logViolation(req, res, type, { type }, 20);
     return handleError(res, { message: 'Illegal request' });
   }
   next();
