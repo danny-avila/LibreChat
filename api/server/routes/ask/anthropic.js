@@ -91,7 +91,7 @@ router.post(
 
       let response = await client.sendMessage(text, {
         getIds,
-        debug: false,
+        // debug: true,
         user: req.user.id,
         conversationId,
         parentMessageId,
