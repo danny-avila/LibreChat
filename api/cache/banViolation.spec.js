@@ -2,6 +2,42 @@ const banViolation = require('./banViolation');
 
 jest.mock('keyv');
 jest.mock('../models/Session');
+// Mocking the getLogStores function
+jest.mock('./getLogStores', () => {
+  return jest.fn().mockImplementation(() => {
+    const EventEmitter = require('events');
+    const math = require('../server/utils/math');
+    const mockGet = jest.fn();
+    const mockSet = jest.fn();
+    class KeyvMongo extends EventEmitter {
+      constructor(url = 'mongodb://127.0.0.1:27017', options) {
+        super();
+        this.ttlSupport = false;
+        url = url ?? {};
+        if (typeof url === 'string') {
+          url = { url };
+        }
+        if (url.uri) {
+          url = { url: url.uri, ...url };
+        }
+        this.opts = {
+          url,
+          collection: 'keyv',
+          ...url,
+          ...options,
+        };
+      }
+
+      get = mockGet;
+      set = mockSet;
+    }
+
+    return new KeyvMongo('', {
+      namespace: 'bans',
+      ttl: math(process.env.BAN_DURATION, 0),
+    });
+  });
+});
 
 describe('banViolation', () => {
   let req, res, errorMessage;

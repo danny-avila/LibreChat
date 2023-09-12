@@ -1,5 +1,5 @@
 const Session = require('../models/Session');
-const { getLogStores } = require('../cache');
+const getLogStores = require('./getLogStores');
 const { isEnabled, math, removePorts } = require('../server/utils');
 const { BAN_VIOLATIONS, BAN_INTERVAL } = process.env ?? {};
 const interval = math(BAN_INTERVAL, 20);
@@ -46,8 +46,6 @@ const banViolation = async (req, res, errorMessage) => {
 
   const banLogs = getLogStores('ban');
   const duration = banLogs.opts.ttl;
-
-  console.log(`[BAN] BAN_DURATION: ${duration}`);
 
   if (duration <= 0) {
     return;
