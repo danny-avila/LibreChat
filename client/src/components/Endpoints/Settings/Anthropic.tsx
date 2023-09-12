@@ -203,14 +203,14 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <div className="flex justify-between">
               {localize('com_endpoint_max_output_tokens')}{' '}
               <small className="opacity-40">
-                ({localize('com_endpoint_default_with_num', '1024')})
+                ({localize('com_endpoint_default_with_num', '4000')})
               </small>
               <InputNumber
                 id="max-tokens-int"
                 disabled={readonly}
                 value={maxOutputTokens}
                 onChange={(value) => setMaxOutputTokens(Number(value))}
-                max={1024}
+                max={4000}
                 min={1}
                 step={1}
                 controls={false}
@@ -225,10 +225,10 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[maxOutputTokens ?? 1024]}
+              value={[maxOutputTokens ?? 4000]}
               onValueChange={(value) => setMaxOutputTokens(value[0])}
               doubleClickHandler={() => setMaxOutputTokens(0)}
-              max={1024}
+              max={4000}
               min={1}
               step={1}
               className="flex h-4 w-full"

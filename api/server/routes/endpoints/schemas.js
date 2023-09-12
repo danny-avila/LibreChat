@@ -191,7 +191,7 @@ const anthropicSchema = tConversationSchema
     modelLabel: obj.modelLabel ?? null,
     promptPrefix: obj.promptPrefix ?? null,
     temperature: obj.temperature ?? 1,
-    maxOutputTokens: obj.maxOutputTokens ?? 1024,
+    maxOutputTokens: obj.maxOutputTokens ?? 4000,
     topP: obj.topP ?? 0.7,
     topK: obj.topK ?? 5,
   }))
@@ -200,7 +200,7 @@ const anthropicSchema = tConversationSchema
     modelLabel: null,
     promptPrefix: null,
     temperature: 1,
-    maxOutputTokens: 1024,
+    maxOutputTokens: 4000,
     topP: 0.7,
     topK: 5,
   }));
