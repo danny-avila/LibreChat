@@ -130,10 +130,6 @@ class OpenAIClient extends BaseClient {
       this.completionsUrl = 'https://openrouter.ai/api/v1/chat/completions';
     }
 
-    if (this.useOpenRouter) {
-      this.completionsUrl = 'https://openrouter.ai/api/v1/chat/completions';
-    }
-
     return this;
   }
 
