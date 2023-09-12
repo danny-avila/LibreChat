@@ -35,7 +35,7 @@ const errorMessages = {
   },
 };
 
-const getError = (text: string) => {
+const getMessageError = (text: string) => {
   const errorMessage = text.length > 512 ? text.slice(0, 512) + '...' : text;
   const match = text.match(/\{[^{}]*\}/);
   const jsonString = match ? match[0] : '';
@@ -58,4 +58,4 @@ const getError = (text: string) => {
   }
 };
 
-export default getError;
+export default getMessageError;

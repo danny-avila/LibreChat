@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import type { TResPlugin } from 'librechat-data-provider';
 import type { TMessageContent, TText, TDisplayProps } from '~/common';
-import { cn, getError } from '~/utils';
+import { cn, getMessageError } from '~/utils';
 import EditMessage from './EditMessage';
 import Container from './Container';
 import Markdown from './Markdown';
@@ -11,7 +11,7 @@ import Plugin from './Plugin';
 const ErrorMessage = ({ text }: TText) => (
   <Container>
     <div className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-100">
-      {getError(text)}
+      {getMessageError(text)}
     </div>
   </Container>
 );
