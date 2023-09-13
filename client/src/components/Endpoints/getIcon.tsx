@@ -2,20 +2,7 @@ import React from 'react';
 import { Plugin, GPTIcon, AnthropicIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
-
-interface IconProps {
-  size?: number;
-  isCreatedByUser?: boolean;
-  button?: boolean;
-  model?: string;
-  message?: boolean;
-  className?: string;
-  endpoint?: string | null;
-  error?: boolean;
-  chatGptLabel?: string;
-  modelLabel?: string;
-  jailbreak?: boolean;
-}
+import { IconProps } from '~/common';
 
 const getIcon: React.FC<IconProps> = (props) => {
   const { size = 30, isCreatedByUser, button, model = true } = props;

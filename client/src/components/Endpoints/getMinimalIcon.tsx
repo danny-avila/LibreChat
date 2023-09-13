@@ -10,20 +10,7 @@ import {
 } from '~/components/svg';
 import { useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
-
-interface IconProps {
-  size?: number;
-  isCreatedByUser: boolean;
-  button?: boolean;
-  model?: string;
-  message?: boolean;
-  className?: string;
-  endpoint?: string | null;
-  chatGptLabel?: string;
-  modelLabel?: string;
-  jailbreak?: boolean;
-  error?: boolean;
-}
+import { IconProps } from '~/common';
 
 const getMinimalIcon: React.FC<IconProps> = (props) => {
   const { size = 30, isCreatedByUser, message = true } = props;
