@@ -6,6 +6,7 @@ const { LOGIN_WINDOW = 5, LOGIN_MAX = 7, LOGIN_VIOLATION_SCORE: score } = proces
 const windowMs = LOGIN_WINDOW * 60 * 1000;
 const max = LOGIN_MAX;
 const windowInMinutes = windowMs / 60000;
+const message = `Too many login attempts, please try again after ${windowInMinutes} minutes.`;
 
 const handler = async (req, res) => {
   const type = 'logins';
@@ -16,12 +17,12 @@ const handler = async (req, res) => {
   };
 
   await logViolation(req, res, type, errorMessage, score);
+  return res.status(429).json({ message });
 };
 
 const loginLimiter = rateLimit({
   windowMs,
   max,
-  message: `Too many login attempts from this IP, please try again after ${windowInMinutes} minutes.`,
   handler,
   keyGenerator: removePorts,
 });

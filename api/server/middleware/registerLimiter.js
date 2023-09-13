@@ -6,6 +6,7 @@ const { REGISTER_WINDOW = 60, REGISTER_MAX = 5, REGISTRATION_VIOLATION_SCORE: sc
 const windowMs = REGISTER_WINDOW * 60 * 1000;
 const max = REGISTER_MAX;
 const windowInMinutes = windowMs / 60000;
+const message = `Too many accounts created, please try again after ${windowInMinutes} minutes`;
 
 const handler = async (req, res) => {
   const type = 'registrations';
@@ -16,12 +17,12 @@ const handler = async (req, res) => {
   };
 
   await logViolation(req, res, type, errorMessage, score);
+  return res.status(429).json({ message });
 };
 
 const registerLimiter = rateLimit({
   windowMs,
   max,
-  message: `Too many accounts created from this IP, please try again after ${windowInMinutes} minutes`,
   handler,
   keyGenerator: removePorts,
 });
