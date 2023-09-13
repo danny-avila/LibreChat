@@ -4,9 +4,8 @@ const getLoginError = (errorText: string) => {
     return defaultError;
   }
 
-  console.log('errorText', errorText);
   if (errorText?.includes('429')) {
-    return 'com_auth_error_rate_limit';
+    return 'com_auth_error_login_rl';
   } else if (errorText?.includes('403')) {
     return 'com_auth_error_login_ban';
   } else if (errorText?.includes('500')) {
