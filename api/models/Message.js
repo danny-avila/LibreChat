@@ -1,4 +1,7 @@
+const { z } = require('zod');
 const Message = require('./schema/messageSchema');
+
+const idSchema = z.string().uuid();
 
 module.exports = {
   Message,
@@ -22,8 +25,9 @@ module.exports = {
     model = null,
   }) {
     try {
-      if (!conversationId) {
-        return console.log('Message not saved: no conversationId');
+      const validConvoId = idSchema.safeParse(conversationId);
+      if (!validConvoId.success) {
+        return;
       }
       // may also need to update the conversation here
       await Message.findOneAndUpdate(
