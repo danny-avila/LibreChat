@@ -1,4 +1,11 @@
-import type { TConversation, TMessage, TPreset, TMutation } from 'librechat-data-provider';
+import type {
+  TConversation,
+  TMessage,
+  TPreset,
+  TMutation,
+  TLoginUser,
+  TUser,
+} from 'librechat-data-provider';
 
 export type TSetOption = (param: number | string) => (newValue: number | string | boolean) => void;
 export type TSetExample = (
@@ -145,4 +152,29 @@ export type TDangerButtonProps = {
 export type TDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+};
+
+export type TResError = {
+  response: { data: { message: string } };
+  message: string;
+};
+
+export type TAuthContext = {
+  user: TUser | undefined;
+  token: string | undefined;
+  isAuthenticated: boolean;
+  error: string | undefined;
+  login: (data: TLoginUser) => void;
+  logout: () => void;
+};
+
+export type TUserContext = {
+  user?: TUser | undefined;
+  token: string | undefined;
+  isAuthenticated: boolean;
+  redirect?: string;
+};
+
+export type TAuthConfig = {
+  loginRedirect: string;
 };

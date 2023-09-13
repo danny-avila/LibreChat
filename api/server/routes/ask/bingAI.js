@@ -4,9 +4,9 @@ const router = express.Router();
 const { titleConvoBing, askBing } = require('../../../app');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('../../utils');
-const { requireJwtAuth, setHeaders } = require('../../middleware');
+const { setHeaders } = require('../../middleware');
 
-router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
+router.post('/', setHeaders, async (req, res) => {
   const {
     endpoint,
     text,

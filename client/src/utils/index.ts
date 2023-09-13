@@ -2,10 +2,11 @@ import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 export * from './languages';
-export { default as getError } from './getError';
 export { default as buildTree } from './buildTree';
+export { default as getLoginError } from './getLoginError';
 export { default as cleanupPreset } from './cleanupPreset';
 export { default as validateIframe } from './validateIframe';
+export { default as getMessageError } from './getMessageError';
 export { default as getLocalStorageItems } from './getLocalStorageItems';
 export { default as getDefaultConversation } from './getDefaultConversation';
 
