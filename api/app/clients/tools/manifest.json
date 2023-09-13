@@ -164,5 +164,12 @@
         "description": "Gets Code from Open AI API"
       }
     ]
+  },
+  {
+    "name": "CodeBrew",
+    "pluginKey": "CodeBrew",
+    "description": "Use 'CodeBrew' to virtually interpret Python, Node, C, C++, Java, C#, PHP, MySQL, Rust or Go code.",
+    "icon": "https://imgur.com/iLE5ceA.png",
+    "authConfig": []
   }
 ]
