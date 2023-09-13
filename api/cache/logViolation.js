@@ -11,7 +11,10 @@ const banViolation = require('./banViolation');
  * @param {number} [score=1] - The severity of the violation. Defaults to 1
  */
 const logViolation = async (req, res, type, errorMessage, score = 1) => {
-  const userId = req.user?.id ?? req.user?._id ?? 'n/a';
+  const userId = req.user?.id ?? req.user?._id;
+  if (!userId) {
+    return;
+  }
   const logs = getLogStores('general');
   const violationLogs = getLogStores(type);
 

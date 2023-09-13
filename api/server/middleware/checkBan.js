@@ -49,7 +49,7 @@ const checkBan = async (req, res, next = () => {}) => {
   }
 
   req.ip = removePorts(req);
-  const userId = req.user?.id ?? req.user?._id ?? 'n/a';
+  const userId = req.user?.id ?? req.user?._id ?? null;
 
   const cachedIPBan = await banCache.get(req.ip);
   const cachedUserBan = await banCache.get(userId);

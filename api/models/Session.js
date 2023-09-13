@@ -56,6 +56,9 @@ sessionSchema.methods.generateRefreshToken = async function () {
 
 sessionSchema.statics.deleteAllUserSessions = async function (userId) {
   try {
+    if (!userId) {
+      return;
+    }
     const result = await this.deleteMany({ user: userId });
     if (result && result?.deletedCount > 0) {
       console.log(`Deleted ${result.deletedCount} sessions for user ${userId}.`);
