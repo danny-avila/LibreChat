@@ -11,7 +11,6 @@ import {
 import { useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
 
-// Define the Props interface
 interface IconProps {
   size?: number;
   isCreatedByUser: boolean;
@@ -32,62 +31,91 @@ const getMinimalIcon: React.FC<IconProps> = (props) => {
   const { user } = useAuthContext();
 
   if (isCreatedByUser) {
+    const username = user?.name || 'User';
+
     return (
       <div
-        title={user?.name || 'User'}
+        title={username}
         style={{
           width: size,
           height: size,
         }}
-        className={'relative flex items-center justify-center' + props?.className}
+        className={`relative flex items-center justify-center ${props.className || ''}`}
       >
         <img
           className="rounded-sm"
           src={
             user?.avatar ||
-            `https://api.dicebear.com/6.x/initials/svg?seed=${
-              user?.name || 'User'
-            }&fontFamily=Verdana&fontSize=36`
+            `https://api.dicebear.com/6.x/initials/svg?seed=${username}&fontFamily=Verdana&fontSize=36`
           }
           alt="avatar"
         />
       </div>
     );
-  } else if (!isCreatedByUser) {
+  } else {
     const { endpoint, error } = props;
-
     let icon, name;
-    if (endpoint === 'azureOpenAI') {
-      const { chatGptLabel } = props;
-      icon = <AzureMinimalistIcon />;
-      name = chatGptLabel || 'ChatGPT';
-    } else if (endpoint === 'openAI') {
-      const { chatGptLabel } = props;
-      icon = <OpenAIMinimalistIcon />;
-      name = chatGptLabel || 'ChatGPT';
-    } else if (endpoint === 'gptPlugins' && message) {
-      icon = <PluginMinimalistIcon />;
-      name = 'Plugins';
-    } else if (endpoint === 'google') {
-      const { modelLabel } = props;
-      icon = <PaLMinimalistIcon />;
-      name = modelLabel || 'PaLM2';
-    } else if (endpoint === 'anthropic') {
-      const { modelLabel } = props;
-      icon = <AnthropicMinimalistIcon />;
-      name = modelLabel || 'Claude';
-    } else if (endpoint === 'bingAI') {
-      icon = <BingAIMinimalistIcon />;
-      name = 'BingAI';
-    } else if (endpoint === 'chatGPTBrowser') {
-      icon = <ChatGPTMinimalistIcon />;
-      name = 'ChatGPT';
-    } else if (endpoint === null) {
-      icon = <OpenAIMinimalistIcon />;
-      name = 'N/A';
-    } else {
-      icon = <OpenAIMinimalistIcon />;
-      name = 'UNKNOWN';
+
+    switch (endpoint) {
+      case 'azureOpenAI': {
+        const { chatGptLabel } = props;
+        icon = <AzureMinimalistIcon />;
+        name = chatGptLabel || 'ChatGPT';
+        break;
+      }
+
+      case 'openAI': {
+        const { chatGptLabel } = props;
+        icon = <OpenAIMinimalistIcon />;
+        name = chatGptLabel || 'ChatGPT';
+        break;
+      }
+
+      case 'gptPlugins': {
+        if (message) {
+          icon = <PluginMinimalistIcon />;
+          name = 'Plugins';
+        }
+        break;
+      }
+
+      case 'google': {
+        const { modelLabel } = props;
+        icon = <PaLMinimalistIcon />;
+        name = modelLabel || 'PaLM2';
+        break;
+      }
+
+      case 'anthropic': {
+        const { modelLabel } = props;
+        icon = <AnthropicMinimalistIcon />;
+        name = modelLabel || 'Claude';
+        break;
+      }
+
+      case 'bingAI': {
+        icon = <BingAIMinimalistIcon />;
+        name = 'BingAI';
+        break;
+      }
+
+      case 'chatGPTBrowser': {
+        icon = <ChatGPTMinimalistIcon />;
+        name = 'ChatGPT';
+        break;
+      }
+
+      case null: {
+        icon = <OpenAIMinimalistIcon />;
+        name = 'N/A';
+        break;
+      }
+
+      default: {
+        icon = <OpenAIMinimalistIcon />;
+        name = 'UNKNOWN';
+        break;
+      }
     }
 
     return (
@@ -99,7 +127,7 @@ const getMinimalIcon: React.FC<IconProps> = (props) => {
         }}
         className={cn(
           'relative flex items-center justify-center rounded-sm text-white ',
-          props?.className ?? '',
+          props.className || '',
         )}
       >
         {icon}
