@@ -1,9 +1,8 @@
-import { TPlugin, TPluginAuthConfig } from '@librechat/data-provider';
+import { TPlugin, TPluginAuthConfig, TPluginAction } from 'librechat-data-provider';
 import { Save } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { TPluginAction } from './PluginStoreDialog';
 import { HoverCard, HoverCardTrigger } from '~/components/ui';
-import { PluginTooltip } from '.';
+import PluginTooltip from './PluginTooltip';
 
 type TPluginAuthFormProps = {
   plugin: TPlugin | undefined;
@@ -24,10 +23,10 @@ function PluginAuthForm({ plugin, onSubmit }: TPluginAuthFormProps) {
           className="col-span-1 flex w-full flex-col items-start justify-start gap-2"
           method="POST"
           onSubmit={handleSubmit((auth) =>
-            onSubmit({ pluginKey: plugin!.pluginKey, action: 'install', auth }),
+            onSubmit({ pluginKey: plugin?.pluginKey ?? '', action: 'install', auth }),
           )}
         >
-          {plugin!.authConfig?.map((config: TPluginAuthConfig, i: number) => (
+          {plugin?.authConfig?.map((config: TPluginAuthConfig, i: number) => (
             <div key={`${config.authField}-${i}`} className="flex w-full flex-col gap-1">
               <label
                 htmlFor={config.authField}

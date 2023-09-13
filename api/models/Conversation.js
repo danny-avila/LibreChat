@@ -54,8 +54,6 @@ module.exports = {
       const cache = {};
       const convoMap = {};
       const promises = [];
-      // will handle a syncing solution soon
-      const deletedConvoIds = [];
 
       convoIds.forEach((convo) =>
         promises.push(
@@ -66,23 +64,17 @@ module.exports = {
         ),
       );
 
-      const results = (await Promise.all(promises)).filter((convo, i) => {
-        if (!convo) {
-          deletedConvoIds.push(convoIds[i].conversationId);
-          return false;
-        } else {
-          const page = Math.floor(i / pageSize) + 1;
-          if (!cache[page]) {
-            cache[page] = [];
-          }
-          cache[page].push(convo);
-          convoMap[convo.conversationId] = convo;
-          return true;
+      const results = (await Promise.all(promises)).filter(Boolean);
+
+      results.forEach((convo, i) => {
+        const page = Math.floor(i / pageSize) + 1;
+        if (!cache[page]) {
+          cache[page] = [];
         }
+        cache[page].push(convo);
+        convoMap[convo.conversationId] = convo;
       });
 
-      // const startIndex = (pageNumber - 1) * pageSize;
-      // const convos = results.slice(startIndex, startIndex + pageSize);
       const totalPages = Math.ceil(results.length / pageSize);
       cache.pages = totalPages;
       cache.pageSize = pageSize;
@@ -92,8 +84,6 @@ module.exports = {
         pages: totalPages || 1,
         pageNumber,
         pageSize,
-        // will handle a syncing solution soon
-        filter: new Set(deletedConvoIds),
         convoMap,
       };
     } catch (error) {

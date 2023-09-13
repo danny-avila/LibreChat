@@ -1,8 +1,9 @@
-import type { TConversation, TSubmission, EModelEndpoint } from './types';
+import { tConversationSchema } from './schemas';
+import { TSubmission, EModelEndpoint } from './types';
 
 export default function createPayload(submission: TSubmission) {
-  const { conversation, message, endpointOption } = submission;
-  const { conversationId } = conversation as TConversation;
+  const { conversation, message, endpointOption, isEdited, isContinued } = submission;
+  const { conversationId } = tConversationSchema.parse(conversation);
   const { endpoint } = endpointOption as { endpoint: EModelEndpoint };
 
   const endpointUrlMap = {
@@ -16,11 +17,16 @@ export default function createPayload(submission: TSubmission) {
     anthropic: '/api/ask/anthropic',
   };
 
-  const server = endpointUrlMap[endpoint];
+  let server = endpointUrlMap[endpoint];
+
+  if (isEdited) {
+    server = server.replace('/ask/', '/edit/');
+  }
 
   const payload = {
     ...message,
     ...endpointOption,
+    isContinued: isEdited && isContinued,
     conversationId,
   };
 

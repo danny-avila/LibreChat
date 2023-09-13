@@ -1,5 +1,5 @@
 const PluginAuth = require('../../models/schema/pluginAuthSchema');
-const { encrypt, decrypt } = require('../../utils/');
+const { encrypt, decrypt } = require('../utils/');
 
 const getUserPluginAuthValue = async (user, authField) => {
   try {
@@ -7,6 +7,7 @@ const getUserPluginAuthValue = async (user, authField) => {
     if (!pluginAuth) {
       return null;
     }
+
     const decryptedValue = decrypt(pluginAuth.value);
     return decryptedValue;
   } catch (err) {

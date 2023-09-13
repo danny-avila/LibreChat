@@ -1,13 +1,12 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-// const { getChatGPTBrowserModels } = require('../endpoints');
 const { browserClient } = require('../../../app/');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress, handleText } = require('./handlers');
-const requireJwtAuth = require('../../../middleware/requireJwtAuth');
+const { handleError, sendMessage, createOnProgress, handleText } = require('../../utils');
+const { requireJwtAuth, setHeaders } = require('../../middleware');
 
-router.post('/', requireJwtAuth, async (req, res) => {
+router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
   const {
     endpoint,
     text,
@@ -39,7 +38,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
   // build endpoint option
   const endpointOption = {
     model: req.body?.model ?? 'text-davinci-002-render-sha',
-    token: req.body?.token ?? null,
+    key: req.body?.key ?? null,
   };
 
   // const availableModels = getChatGPTBrowserModels();
@@ -86,15 +85,6 @@ const ask = async ({
 }) => {
   let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
   const userId = req.user.id;
-
-  res.writeHead(200, {
-    Connection: 'keep-alive',
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    'Access-Control-Allow-Origin': '*',
-    'X-Accel-Buffering': 'no',
-  });
-
   let responseMessageId = crypto.randomUUID();
   let getPartialMessage = null;
   try {
@@ -113,6 +103,7 @@ const ask = async ({
             unfinished: true,
             cancelled: false,
             error: false,
+            isCreatedByUser: false,
           });
         }
       },
@@ -120,6 +111,7 @@ const ask = async ({
 
     getPartialMessage = getPartialText;
     const abortController = new AbortController();
+    let i = 0;
     let response = await browserClient({
       text,
       parentMessageId: userParentMessageId,
@@ -138,8 +130,12 @@ const ask = async ({
 
         sendMessage(res, {
           message: { ...userMessage, conversationId: data.conversation_id },
-          created: true,
+          created: i === 0,
         });
+
+        if (i === 0) {
+          i++;
+        }
       },
     });
 
@@ -162,6 +158,7 @@ const ask = async ({
       unfinished: false,
       cancelled: false,
       error: false,
+      isCreatedByUser: false,
     };
 
     await saveMessage(responseMessage);
@@ -230,7 +227,8 @@ const ask = async ({
       parentMessageId: overrideParentMessageId || userMessageId,
       unfinished: false,
       cancelled: false,
-      // error: true,
+      error: true,
+      isCreatedByUser: false,
       text: `${getPartialMessage() ?? ''}\n\nError message: "${error.message}"`,
     };
     await saveMessage(errorMessage);

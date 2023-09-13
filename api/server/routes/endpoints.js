@@ -3,37 +3,45 @@ const express = require('express');
 const router = express.Router();
 const { availableTools } = require('../../app/clients/tools');
 const { addOpenAPISpecs } = require('../../app/clients/tools/util/addOpenAPISpecs');
+// const { getAzureCredentials, genAzureChatCompletion } = require('../../utils/');
 
 const openAIApiKey = process.env.OPENAI_API_KEY;
 const azureOpenAIApiKey = process.env.AZURE_API_KEY;
-const userProvidedOpenAI = openAIApiKey
-  ? openAIApiKey === 'user_provided'
-  : azureOpenAIApiKey === 'user_provided';
+const useAzurePlugins = !!process.env.PLUGINS_USE_AZURE;
+const userProvidedOpenAI = useAzurePlugins
+  ? azureOpenAIApiKey === 'user_provided'
+  : openAIApiKey === 'user_provided';
 
 const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _models = []) => {
   let models = _models.slice() ?? [];
+  let apiKey = openAIApiKey;
+  let basePath = 'https://api.openai.com/v1';
   if (opts.azure) {
-    /* TODO: Add Azure models from api/models */
     return models;
+    // const azure = getAzureCredentials();
+    // basePath = (genAzureChatCompletion(azure))
+    //   .split('/deployments')[0]
+    //   .concat(`/models?api-version=${azure.azureOpenAIApiVersion}`);
+    // apiKey = azureOpenAIApiKey;
   }
 
-  let basePath = 'https://api.openai.com/v1/';
   const reverseProxyUrl = process.env.OPENAI_REVERSE_PROXY;
   if (reverseProxyUrl) {
     basePath = reverseProxyUrl.match(/.*v1/)[0];
   }
 
-  if (basePath.includes('v1')) {
+  if (basePath.includes('v1') || opts.azure) {
     try {
-      const res = await axios.get(`${basePath}/models`, {
+      const res = await axios.get(`${basePath}${opts.azure ? '' : '/models'}`, {
         headers: {
-          Authorization: `Bearer ${openAIApiKey}`,
+          Authorization: `Bearer ${apiKey}`,
         },
       });
 
       models = res.data.data.map((item) => item.id);
+      // console.log(`Fetched ${models.length} models from ${opts.azure ? 'Azure ' : ''}OpenAI API`);
     } catch (err) {
-      console.error(err);
+      console.log(`Failed to fetch models from ${opts.azure ? 'Azure ' : ''}OpenAI API`);
     }
   }
 
@@ -73,9 +81,6 @@ const getOpenAIModels = async (opts = { azure: false, plugins: false }) => {
   }
 
   if (userProvidedOpenAI) {
-    console.warn(
-      `When setting OPENAI_API_KEY to 'user_provided', ${key} must be set manually or default values will be used`,
-    );
     return models;
   }
 
@@ -113,7 +118,6 @@ router.get('/', async function (req, res) {
     key = require('../../data/auth.json');
   } catch (e) {
     if (i === 0) {
-      console.log('No \'auth.json\' file (service account key) found in /api/data/ for PaLM models');
       i++;
     }
   }
@@ -121,7 +125,6 @@ router.get('/', async function (req, res) {
   if (process.env.PALM_KEY === 'user_provided') {
     palmUser = true;
     if (i <= 1) {
-      console.log('User will provide key for PaLM models');
       i++;
     }
   }
@@ -151,14 +154,18 @@ router.get('/', async function (req, res) {
   const gptPlugins =
     openAIApiKey || azureOpenAIApiKey
       ? {
-        availableModels: await getOpenAIModels({ plugins: true }),
+        availableModels: await getOpenAIModels({ azure: useAzurePlugins, plugins: true }),
         plugins,
         availableAgents: ['classic', 'functions'],
         userProvide: userProvidedOpenAI,
+        azure: useAzurePlugins,
       }
       : false;
   const bingAI = process.env.BINGAI_TOKEN
-    ? { userProvide: process.env.BINGAI_TOKEN == 'user_provided' }
+    ? {
+      availableModels: ['BingAI', 'Sydney'],
+      userProvide: process.env.BINGAI_TOKEN == 'user_provided',
+    }
     : false;
   const chatGPTBrowser = process.env.CHATGPT_TOKEN
     ? {

@@ -1,19 +1,25 @@
 import English from './languages/Eng';
 import Chinese from './languages/Zh';
-import Italy from './languages/It';
+import German from './languages/De';
+import Italian from './languages/It';
+import Polish from './languages/Pl';
 import Portuguese from './languages/Br';
 import Spanish from './languages/Es';
+import French from './languages/Fr';
+import Russian from './languages/Ru';
+import Japanese from './languages/Jp';
 // === import additional language files here === //
 
 // New method on String allow using "{\d}" placeholder for
 // loading value dynamically.
-interface String {
-  format(...replacements: string[]): string;
+declare global {
+  interface String {
+    format(...replacements: string[]): string;
+  }
 }
 
 if (!String.prototype.format) {
-  String.prototype.format = function () {
-    var args = arguments;
+  String.prototype.format = function (...args: string[]) {
     return this.replace(/{(\d+)}/g, function (match, number) {
       return typeof args[number] != 'undefined' ? args[number] : match;
     });
@@ -29,15 +35,31 @@ export const getTranslations = (langCode: string) => {
   if (langCode === 'cn') {
     return Chinese;
   }
-  if (langCode === 'it') {
-    return Italy;
+  if (langCode === 'fr') {
+    return French;
   }
-  if (langCode === 'Br') {
+  if (langCode === 'de') {
+    return German;
+  }
+  if (langCode === 'it') {
+    return Italian;
+  }
+  if (langCode === 'pl') {
+    return Polish;
+  }
+  if (langCode === 'br') {
     return Portuguese;
   }
-  if (langCode === 'Es') {
+  if (langCode === 'es') {
     return Spanish;
   }
+  if (langCode === 'ru') {
+    return Russian;
+  }
+  if (langCode === 'jp') {
+    return Japanese;
+  }
+
   // === add conditionals here for additional languages here === //
   return English; // default to English
 };

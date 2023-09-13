@@ -2,12 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+@media (max-width: 640px) {
+  .no-gradient-sm {
+    background: none !important;
+  }
+}
+
 @font-face {
   font-display: swap;
   font-family: Signifier;
   font-style: normal;
   font-weight: 400;
-  src: url("../fonts/signifier-light.woff2") format("woff2")
+  src: url("$fonts/signifier-light.woff2") format("woff2")
 }
 
 @font-face {
@@ -15,7 +21,7 @@
   font-family: Signifier;
   font-style: italic;
   font-weight: 400;
-  src: url("../fonts/signifier-light-italic.woff2") format("woff2")
+  src: url("$fonts/signifier-light-italic.woff2") format("woff2")
 }
 
 @font-face {
@@ -23,7 +29,7 @@
   font-family: Signifier;
   font-style: normal;
   font-weight: 700;
-  src: url("../fonts/signifier-bold.woff2") format("woff2")
+  src: url("$fonts/signifier-bold.woff2") format("woff2")
 }
 
 @font-face {
@@ -31,7 +37,7 @@
   font-family: Signifier;
   font-style: italic;
   font-weight: 700;
-  src: url("../fonts/signifier-bold-italic.woff2") format("woff2")
+  src: url("$fonts/signifier-bold-italic.woff2") format("woff2")
 }
 
 @font-face {
@@ -39,7 +45,7 @@
   font-family: Söhne;
   font-style: normal;
   font-weight: 400;
-  src: url("../fonts/soehne-buch.woff2") format("woff2")
+  src: url("$fonts/soehne-buch.woff2") format("woff2")
 }
 
 @font-face {
@@ -47,7 +53,7 @@
   font-family: Söhne;
   font-style: italic;
   font-weight: 400;
-  src: url("../fonts/soehne-buch-kursiv.woff2") format("woff2")
+  src: url("$fonts/soehne-buch-kursiv.woff2") format("woff2")
 }
 
 @font-face {
@@ -55,7 +61,7 @@
   font-family: Söhne;
   font-style: normal;
   font-weight: 500;
-  src: url("../fonts/soehne-kraftig.woff2") format("woff2")
+  src: url("$fonts/soehne-kraftig.woff2") format("woff2")
 }
 
 @font-face {
@@ -63,7 +69,7 @@
   font-family: Söhne;
   font-style: italic;
   font-weight: 500;
-  src: url("../fonts/soehne-kraftig-kursiv.woff2") format("woff2")
+  src: url("$fonts/soehne-kraftig-kursiv.woff2") format("woff2")
 }
 
 @font-face {
@@ -71,7 +77,7 @@
   font-family: Söhne;
   font-style: normal;
   font-weight: 600;
-  src: url("../fonts/soehne-halbfett.woff2") format("woff2")
+  src: url("$fonts/soehne-halbfett.woff2") format("woff2")
 }
 
 @font-face {
@@ -79,7 +85,7 @@
   font-family: Söhne;
   font-style: italic;
   font-weight: 600;
-  src: url("../fonts/soehne-halbfett-kursiv.woff2") format("woff2")
+  src: url("$fonts/soehne-halbfett-kursiv.woff2") format("woff2")
 }
 
 @font-face {
@@ -87,7 +93,7 @@
   font-family: Söhne Mono;
   font-style: normal;
   font-weight: 400;
-  src: url("../fonts/soehne-mono-buch.woff2") format("woff2")
+  src: url("$fonts/soehne-mono-buch.woff2") format("woff2")
 }
 
 @font-face {
@@ -95,7 +101,7 @@
   font-family: Söhne Mono;
   font-style: normal;
   font-weight: 700;
-  src: url("../fonts/soehne-mono-halbfett.woff2") format("woff2")
+  src: url("$fonts/soehne-mono-halbfett.woff2") format("woff2")
 }
 
 @font-face {
@@ -103,7 +109,7 @@
   font-family: Söhne Mono;
   font-style: italic;
   font-weight: 400;
-  src: url("../fonts/soehne-mono-buch-kursiv.woff2") format("woff2")
+  src: url("$fonts/soehne-mono-buch-kursiv.woff2") format("woff2")
 }
 
 /* * {
@@ -168,29 +174,34 @@ select {
   text-align: right;
 }
 
-.openAIOptions-simple-container {
+.option-buttons {
   pointer-events: none;
   opacity: 0;
-  transition: all 0.5s ease-in-out;
+  transition: all 0.25s ease-in-out;
 }
 
-.openAIOptions-simple-container.show {
+.option-buttons.full-opacity {
   pointer-events: fill;
   opacity: 1;
 }
 
-.pluginOptions {
-  pointer-events: none;
-  opacity: 0;
-  transition: all 0.5s ease-in-out;
-}
-
-.pluginOptions.full-opacity {
+.option-buttons.show {
   pointer-events: fill;
   opacity: 1;
 }
 
-.pluginOptions.show {
+.options-bar {
+  pointer-events: none;
+  opacity: 0;
+  transition: all 0.25s ease-in-out;
+}
+
+.options-bar.full-opacity {
+  pointer-events: fill;
+  opacity: 1;
+}
+
+.options-bar.show {
   pointer-events: fill;
   opacity: 0.3;
 }
@@ -898,6 +909,16 @@ button {
   padding: 0.5rem 0.75rem;
   pointer-events: auto;
 }
+.custom-btn {
+  align-items: center;
+  border-color: transparent;
+  border-radius: 0.25rem;
+  border-width: 1px;
+  display: inline-flex;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  padding: 0.5rem 0.75rem;
+}
 .btn:focus {
   outline: 2px solid transparent;
   outline-offset: 2px;
@@ -1221,13 +1242,6 @@ html {
 .text-ellipsis,
 .truncate {
   text-overflow: ellipsis;
-}
-
-.shadow-\[0_0_10px_rgba\(0\2c 0\2c 0\2c 0\.10\)\],
-.shadow-lg {
-  box-shadow: 0 0 transparent, 0 0 transparent, var(--tw-shadow);
-  box-shadow: var(--tw-ring-offset-shadow, 0 0 transparent),
-    var(--tw-ring-shadow, 0 0 transparent), var(--tw-shadow);
 }
 
 .group:hover .group-hover\:visible {

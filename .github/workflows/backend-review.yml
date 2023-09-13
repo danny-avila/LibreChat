@@ -1,0 +1,42 @@
+name: Backend Unit Tests
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+      - release/*
+    paths:
+      - 'api/**'
+jobs:
+  tests_Backend:
+    name: Run Backend unit tests
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    env:
+      MONGO_URI: ${{ secrets.MONGO_URI }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      CREDS_KEY: ${{ secrets.CREDS_KEY }}
+      CREDS_IV: ${{ secrets.CREDS_IV }}
+      NODE_ENV: ci
+    steps:
+      - uses: actions/checkout@v2
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Data Provider
+        run: npm run build:data-provider
+
+      - name: Run unit tests
+        run: cd api && npm run test:ci
+
+      - name: Run linters
+        uses: wearerequired/lint-action@v2
+        with:
+          eslint: true

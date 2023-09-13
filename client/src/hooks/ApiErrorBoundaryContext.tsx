@@ -1,22 +1,22 @@
 import React, { useState } from 'react';
+import { TError } from 'librechat-data-provider';
 
-export type ApiError = {
-  error: any;
-  setError: (error: any) => void;
+type ProviderValue = {
+  error: TError;
+  setError: React.Dispatch<React.SetStateAction<boolean>>;
 };
-
-const ApiErrorBoundaryContext = React.createContext<ApiError | undefined>(undefined);
+const ApiErrorBoundaryContext = React.createContext<ProviderValue | undefined>(undefined);
 
 export const ApiErrorBoundaryProvider = ({
   value,
   children,
 }: {
-  value?: ApiError;
+  value: ProviderValue;
   children: React.ReactNode;
 }) => {
   const [error, setError] = useState(false);
   return (
-    <ApiErrorBoundaryContext.Provider value={value ? value : { error, setError }}>
+    <ApiErrorBoundaryContext.Provider value={value ?? { error, setError }}>
       {children}
     </ApiErrorBoundaryContext.Provider>
   );

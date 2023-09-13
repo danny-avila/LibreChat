@@ -1,4 +1,4 @@
-import { render, screen } from 'layout-test-utils';
+import { render, screen } from 'test/layout-test-utils';
 import userEvent from '@testing-library/user-event';
 import PluginAuthForm from '../PluginAuthForm';
 

@@ -3,7 +3,15 @@ import CheckMark from '../svg/CheckMark';
 import { Listbox } from '@headlessui/react';
 import { cn } from '~/utils/';
 
-function Dropdown({ value, onChange, options, className, containerClassName }) {
+function Dropdown({
+  value,
+  label = '',
+  onChange,
+  options,
+  className,
+  containerClassName,
+  optionsClassName = '',
+}) {
   const currentOption =
     options.find((element) => element === value || element?.value === value) ?? value;
   return (
@@ -12,13 +20,13 @@ function Dropdown({ value, onChange, options, className, containerClassName }) {
         <Listbox value={value} onChange={onChange}>
           <Listbox.Button
             className={cn(
-              'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:border-green-600 focus:outline-none focus:ring-1 focus:ring-green-600 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
+              'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-1 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
               className || '',
             )}
           >
             <span className="inline-flex w-full truncate">
               <span className="flex h-6 items-center gap-1 truncate text-sm text-black dark:text-white">
-                {currentOption?.display ?? value}
+                {`${label}${currentOption?.display ?? value}`}
               </span>
             </span>
             <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
@@ -38,12 +46,17 @@ function Dropdown({ value, onChange, options, className, containerClassName }) {
               </svg>
             </span>
           </Listbox.Button>
-          <Listbox.Options className="absolute z-50 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%] ">
+          <Listbox.Options
+            className={cn(
+              'absolute z-50 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%] ',
+              optionsClassName,
+            )}
+          >
             {options.map((item, i) => (
               <Listbox.Option
                 key={i}
                 value={item?.value ?? item}
-                className="group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-900 last:border-0 hover:bg-[#ECECF1] dark:border-white/20 dark:text-white dark:hover:bg-gray-700"
+                className="group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-900 last:border-0 hover:bg-gray-20 dark:border-white/20 dark:text-white dark:hover:bg-gray-700"
               >
                 <span className="flex items-center gap-1.5 truncate">
                   <span

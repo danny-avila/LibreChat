@@ -83,7 +83,7 @@ async function setupOpenId() {
           } else {
             user.provider = 'openid';
             user.openidId = userinfo.sub;
-            user.username = userinfo.given_name || '';
+            user.username = userinfo.username || userinfo.given_name || '';
             user.name = fullName;
           }
 

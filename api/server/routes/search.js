@@ -5,7 +5,7 @@ const { Message } = require('../../models/Message');
 const { Conversation, getConvosQueried } = require('../../models/Conversation');
 const { reduceHits } = require('../../lib/utils/reduceHits');
 const { cleanUpPrimaryKeyValue } = require('../../lib/utils/misc');
-const requireJwtAuth = require('../../middleware/requireJwtAuth');
+const requireJwtAuth = require('../middleware/requireJwtAuth');
 
 const cache = new Map();
 
@@ -88,11 +88,6 @@ router.get('/', requireJwtAuth, async function (req, res) {
     console.log(error);
     res.status(500).send({ message: 'Error searching' });
   }
-});
-
-router.get('/clear', async function (req, res) {
-  await Message.resetIndex();
-  res.send('cleared');
 });
 
 router.get('/test', async function (req, res) {

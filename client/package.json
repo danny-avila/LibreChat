@@ -1,15 +1,17 @@
 {
   "name": "@librechat/frontend",
-  "version": "0.5.5",
+  "version": "0.5.8",
   "description": "",
   "scripts": {
     "data-provider": "cd .. && npm run build:data-provider",
     "build": "cross-env NODE_ENV=production dotenv -e ../.env -- vite build",
-    "build:ci": "cross-env NODE_ENV=dev vite build --mode ci",
-    "dev": "cross-env NODE_ENV=dev dotenv -e ../.env -- vite",
-    "preview-prod": "cross-env NODE_ENV=dev dotenv -e ../.env -- vite preview",
+    "build:ci": "cross-env NODE_ENV=development vite build --mode ci",
+    "dev": "cross-env NODE_ENV=development dotenv -e ../.env -- vite",
+    "preview-prod": "cross-env NODE_ENV=development dotenv -e ../.env -- vite preview",
     "test": "cross-env NODE_ENV=test jest --watch",
-    "test:ci": "cross-env NODE_ENV=test jest --ci"
+    "test:ci": "cross-env NODE_ENV=test jest --ci",
+    "b:build": "NODE_ENV=production bun vite build",
+    "b:dev": "NODE_ENV=development bun vite"
   },
   "repository": {
     "type": "git",
@@ -39,6 +41,7 @@
     "@radix-ui/react-slider": "^1.1.1",
     "@radix-ui/react-switch": "^1.0.3",
     "@radix-ui/react-tabs": "^1.0.3",
+    "@radix-ui/react-tooltip": "^1.0.6",
     "@tailwindcss/forms": "^0.5.3",
     "@tanstack/react-query": "^4.28.0",
     "@zattoo/use-double-click": "1.2.0",
@@ -52,7 +55,8 @@
     "esbuild": "0.17.19",
     "export-from-json": "^1.7.2",
     "filenamify": "^6.0.0",
-    "html2canvas": "^1.4.1",
+    "html-to-image": "^1.11.11",
+    "librechat-data-provider": "*",
     "lodash": "^4.17.21",
     "lucide-react": "^0.220.0",
     "pino": "^8.12.1",
@@ -77,7 +81,7 @@
     "tailwindcss-animate": "^1.0.5",
     "tailwindcss-radix": "^2.8.0",
     "url": "^0.11.0",
-    "@librechat/data-provider": "*"
+    "zod": "^3.22.2"
   },
   "devDependencies": {
     "@babel/cli": "^7.20.7",
@@ -97,7 +101,7 @@
     "@types/node": "^20.3.0",
     "@types/react": "^18.2.11",
     "@types/react-dom": "^18.2.4",
-    "@vitejs/plugin-react": "^4.0.0",
+    "@vitejs/plugin-react": "^4.0.4",
     "autoprefixer": "^10.4.13",
     "babel-jest": "^29.5.0",
     "babel-loader": "^9.1.2",
@@ -125,7 +129,7 @@
     "ts-jest": "^29.1.0",
     "ts-loader": "^9.4.2",
     "typescript": "^5.0.4",
-    "vite": "^4.3.9",
+    "vite": "^4.4.9",
     "vite-plugin-html": "^3.2.0"
   }
 }

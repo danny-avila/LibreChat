@@ -3,23 +3,22 @@ import { Dialog } from '@headlessui/react';
 import { useRecoilState } from 'recoil';
 import { X } from 'lucide-react';
 import store from '~/store';
-import { PluginStoreItem, PluginPagination, PluginAuthForm } from '.';
+import PluginStoreItem from './PluginStoreItem';
+import PluginPagination from './PluginPagination';
+import PluginAuthForm from './PluginAuthForm';
 import {
   useAvailablePluginsQuery,
   useUpdateUserPluginsMutation,
   TPlugin,
-} from '@librechat/data-provider';
+  TPluginAction,
+  tConversationSchema,
+  TError,
+} from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 type TPluginStoreDialogProps = {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
-};
-
-export type TPluginAction = {
-  pluginKey: string;
-  action: 'install' | 'uninstall';
-  auth?: unknown;
 };
 
 function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
@@ -36,7 +35,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const [error, setError] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-  const handleInstallError = (error: any) => {
+  const handleInstallError = (error: TError) => {
     setError(true);
     if (error.response?.data?.message) {
       setErrorMessage(error.response?.data?.message);
@@ -49,8 +48,8 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
 
   const handleInstall = (pluginAction: TPluginAction) => {
     updateUserPlugins.mutate(pluginAction, {
-      onError: (error) => {
-        handleInstallError(error);
+      onError: (error: unknown) => {
+        handleInstallError(error as TError);
       },
     });
     setShowPluginAuthForm(false);
@@ -60,8 +59,8 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     updateUserPlugins.mutate(
       { pluginKey: plugin, action: 'uninstall', auth: null },
       {
-        onError: (error: any) => {
-          handleInstallError(error);
+        onError: (error: unknown) => {
+          handleInstallError(error as TError);
         },
         onSuccess: () => {
           //@ts-ignore - can't set a default convo or it will break routing
@@ -70,10 +69,12 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
             return t.pluginKey !== plugin;
           });
           localStorage.setItem('lastSelectedTools', JSON.stringify(tools));
-          setConversation((prevState: any) => ({
-            ...prevState,
-            tools,
-          }));
+          setConversation((prevState) =>
+            tConversationSchema.parse({
+              ...prevState,
+              tools,
+            }),
+          );
         },
       },
     );
@@ -83,10 +84,9 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     const getAvailablePluginFromKey = availablePlugins?.find((p) => p.pluginKey === pluginKey);
     setSelectedPlugin(getAvailablePluginFromKey);
 
-    if (
-      getAvailablePluginFromKey!.authConfig.length > 0 &&
-      !getAvailablePluginFromKey?.authenticated
-    ) {
+    const { authConfig, authenticated } = getAvailablePluginFromKey ?? {};
+
+    if (authConfig && authConfig.length > 0 && !authenticated) {
       setShowPluginAuthForm(true);
     } else {
       handleInstall({ pluginKey, action: 'install', auth: null });

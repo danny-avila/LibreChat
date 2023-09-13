@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { titleConvo, GoogleClient } = require('../../../app');
-// const GoogleClient = require('../../../app/google/GoogleClient');
+const { GoogleClient } = require('../../../app');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress } = require('./handlers');
-const requireJwtAuth = require('../../../middleware/requireJwtAuth');
+const { handleError, sendMessage, createOnProgress } = require('../../utils');
+const { getUserKey, checkUserKeyExpiry } = require('../../services/UserService');
+const { requireJwtAuth, setHeaders } = require('../../middleware');
 
-router.post('/', requireJwtAuth, async (req, res) => {
+router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId: oldConversationId } = req.body;
   if (text.length === 0) {
     return handleError(res, { text: 'Prompt empty or too short' });
@@ -20,7 +20,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
   const endpointOption = {
     examples: req.body?.examples ?? [{ input: { content: '' }, output: { content: '' } }],
     promptPrefix: req.body?.promptPrefix ?? null,
-    token: req.body?.token ?? null,
+    key: req.body?.key ?? null,
     modelOptions: {
       model: req.body?.model ?? 'chat-bison',
       modelLabel: req.body?.modelLabel ?? null,
@@ -50,13 +50,6 @@ router.post('/', requireJwtAuth, async (req, res) => {
 });
 
 const ask = async ({ text, endpointOption, parentMessageId = null, conversationId, req, res }) => {
-  res.writeHead(200, {
-    Connection: 'keep-alive',
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    'Access-Control-Allow-Origin': '*',
-    'X-Accel-Buffering': 'no',
-  });
   let userMessage;
   let userMessageId;
   let responseMessageId;
@@ -96,17 +89,22 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
 
     const abortController = new AbortController();
 
+    const isUserProvided = process.env.PALM_KEY === 'user_provided';
+
     let key;
-    if (endpointOption.token) {
-      key = JSON.parse(endpointOption.token);
-      delete endpointOption.token;
+    if (endpointOption.key && isUserProvided) {
+      checkUserKeyExpiry(
+        endpointOption.key,
+        'Your GOOGLE_TOKEN has expired. Please provide your token again.',
+      );
+      key = await getUserKey({ userId: req.user.id, name: 'google' });
+      key = JSON.parse(key);
+      delete endpointOption.key;
       console.log('Using service account key provided by User for PaLM models');
     }
 
     try {
-      if (!key) {
-        key = require('../../../data/auth.json');
-      }
+      key = require('../../../data/auth.json');
     } catch (e) {
       console.log('No \'auth.json\' file (service account key) found in /api/data/ for PaLM models');
     }
@@ -154,14 +152,6 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       responseMessage: response,
     });
     res.end();
-
-    if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
-      const title = await titleConvo({ text, response });
-      await saveConvo(req.user.id, {
-        conversationId,
-        title,
-      });
-    }
   } catch (error) {
     console.error(error);
     const errorMessage = {
