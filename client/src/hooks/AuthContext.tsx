@@ -120,6 +120,12 @@ const AuthContextProvider = ({
       },
       onError: (error) => {
         doSetError((error as Error).message);
+        setUserContext({
+          token: undefined,
+          isAuthenticated: false,
+          user: undefined,
+          redirect: '/login',
+        });
       },
     });
   }, [setUserContext, logoutUser]);
