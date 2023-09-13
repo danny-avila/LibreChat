@@ -4,7 +4,7 @@ const { math } = require('../server/utils');
 const { logFile, violationFile } = require('./keyvFiles');
 const { BAN_DURATION } = process.env ?? {};
 
-const duration = math(BAN_DURATION, 0);
+const duration = math(BAN_DURATION, 7200000);
 
 const namespaces = {
   ban: new Keyv({ store: keyvMongo, ttl: duration, namespace: 'bans' }),

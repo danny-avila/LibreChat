@@ -10,7 +10,9 @@ const interval = math(BAN_INTERVAL, 20);
  * If the user's violation count is a multiple of the BAN_INTERVAL, the user will be banned.
  * The duration of the ban is determined by the BAN_DURATION environment variable.
  * If BAN_DURATION is not set or invalid, the user will not be banned.
- * If the user is banned, their sessions will be deleted and the refreshToken cookie will be cleared.
+ * Sessions will be deleted and the refreshToken cookie will be cleared even with
+ * an invalid or nill duration, which is a "soft" ban; the user can remain active until
+ * access token expiry.
  *
  * @async
  * @param {Object} req - Express request object containing user information.

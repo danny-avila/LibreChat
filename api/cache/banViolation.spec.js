@@ -34,7 +34,7 @@ jest.mock('./getLogStores', () => {
 
     return new KeyvMongo('', {
       namespace: 'bans',
-      ttl: math(process.env.BAN_DURATION, 0),
+      ttl: math(process.env.BAN_DURATION, 7200000),
     });
   });
 });
@@ -108,12 +108,20 @@ describe('banViolation', () => {
     expect(errorMessage.ban).toBeTruthy();
   });
 
-  it('should not ban if BAN_DURATION is invalid', async () => {
+  it('should ban if BAN_DURATION is invalid as default is 2 hours', async () => {
     process.env.BAN_DURATION = 'invalid';
     errorMessage.prev_count = 19;
     errorMessage.violation_count = 39;
     await banViolation(req, res, errorMessage);
-    expect(errorMessage.ban).toBeFalsy();
+    expect(errorMessage.ban).toBeTruthy();
+  });
+
+  it('should not ban if BAN_DURATION is 0 but should clear cookies', async () => {
+    process.env.BAN_DURATION = '0';
+    errorMessage.prev_count = 19;
+    errorMessage.violation_count = 39;
+    await banViolation(req, res, errorMessage);
+    expect(res.clearCookie).toHaveBeenCalledWith('refreshToken');
   });
 
   it('should not ban if violation_count does not change', async () => {
