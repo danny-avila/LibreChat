@@ -80,7 +80,7 @@ const refreshController = async (req, res) => {
     const userId = payload.id;
     const user = await User.findOne({ _id: userId });
     if (!user) {
-      return res.status(401).send('User not found');
+      return res.status(401).redirect('/login');
     }
 
     if (process.env.NODE_ENV === 'development') {
@@ -99,6 +99,8 @@ const refreshController = async (req, res) => {
       const token = await setAuthTokens(userId, res, session._id);
       const userObj = user.toJSON();
       res.status(200).send({ token, user: userObj });
+    } else if (payload.exp > Date.now() / 1000) {
+      res.status(403).redirect('/login');
     } else {
       res.status(401).send('Refresh token expired or not found for this user');
     }

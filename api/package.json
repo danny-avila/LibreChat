@@ -6,6 +6,7 @@
     "start": "echo 'please run this from the root directory'",
     "server-dev": "echo 'please run this from the root directory'",
     "test": "cross-env NODE_ENV=test jest",
+    "b:test": "NODE_ENV=test bun jest",
     "test:ci": "jest --ci"
   },
   "repository": {
@@ -45,7 +46,7 @@
     "joi": "^17.9.2",
     "js-yaml": "^4.1.0",
     "jsonwebtoken": "^9.0.0",
-    "keyv": "^4.5.2",
+    "keyv": "^4.5.3",
     "keyv-file": "^0.2.0",
     "langchain": "^0.0.144",
     "lodash": "^4.17.21",
@@ -64,6 +65,7 @@
     "pino": "^8.12.1",
     "sanitize": "^2.1.2",
     "sharp": "^0.32.5",
+    "ua-parser-js": "^1.0.36",
     "zod": "^3.22.2"
   },
   "devDependencies": {
