@@ -1,7 +1,7 @@
 import {
+  useMemo,
   useState,
   useEffect,
-  useMemo,
   ReactNode,
   useCallback,
   createContext,
@@ -17,33 +17,14 @@ import {
   useRefreshTokenMutation,
   TLoginUser,
 } from 'librechat-data-provider';
+import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import { useNavigate } from 'react-router-dom';
+import useTimeout from './useTimeout';
 
-export type TAuthContext = {
-  user: TUser | undefined;
-  token: string | undefined;
-  isAuthenticated: boolean;
-  error: string | undefined;
-  login: (data: TLoginUser) => void;
-  logout: () => void;
-};
-
-export type TUserContext = {
-  user?: TUser | undefined;
-  token: string | undefined;
-  isAuthenticated: boolean;
-  redirect?: string;
-};
-
-export type TAuthConfig = {
-  loginRedirect: string;
-};
-//@ts-ignore - index expression is not of type number
-window['errorTimeout'] = undefined;
 const AuthContext = createContext<TAuthContext | undefined>(undefined);
 
 const AuthContextProvider = ({
-  authConfig,
+  // authConfig,
   children,
 }: {
   authConfig?: TAuthConfig;
@@ -61,16 +42,7 @@ const AuthContextProvider = ({
   const userQuery = useGetUserQuery({ enabled: !!token });
   const refreshToken = useRefreshTokenMutation();
 
-  // This seems to prevent the error flashing issue
-  const doSetError = (error: string | undefined) => {
-    if (error) {
-      console.log(error);
-      // set timeout to ensure we don't get a flash of the error message
-      window['errorTimeout'] = setTimeout(() => {
-        setError(error);
-      }, 400);
-    }
-  };
+  const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
 
   const setUserContext = useCallback(
     (userContext: TUserContext) => {
@@ -88,11 +60,6 @@ const AuthContextProvider = ({
     },
     [navigate],
   );
-
-  type TResError = {
-    response: { data: { message: string } };
-    message: string;
-  };
 
   const login = (data: TLoginUser) => {
     loginUser.mutate(data, {
