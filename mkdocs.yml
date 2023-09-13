@@ -102,7 +102,8 @@ nav:
       - Azure Cognitive Search: 'features/plugins/azure_cognitive_search.md'
       - Make Your Own Plugin: 'features/plugins/make_your_own.md'
       - Using official ChatGPT Plugins: 'features/plugins/chatgpt_plugins_openapi.md'
-    - Third-Party Tools: 'features/third-party.md'  
+    - Automated Moderation: 'features/mod_system.md'
+    - Third-Party Tools: 'features/third_party.md'
     - Proxy: 'features/proxy.md'
     - Bing Jailbreak: 'features/bing_jailbreak.md'
   - Cloud Deployment:

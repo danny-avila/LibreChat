@@ -9,14 +9,28 @@ In order for the auth system to function properly, there are some environment va
 
 In /.env, you will need to set the following variables:
 ```bash
-# Change this to a secure string
+# Change the secrets to a secure, random string
 JWT_SECRET=secret
+JWT_REFRESH_SECRET=refresh_secret
+
 # Set the expiration delay for the secure cookie with the JWT token
-# Delay is in millisecond e.g. 7 days is 1000*60*60*24*7
-SESSION_EXPIRY=1000 * 60 * 60 * 24 * 7
+# Delay is in milliseconds e.g. 7 days is 1000*60*60*24*7
+
+# Recommended session expiry is 15 minutes. Make it longer if you want the user to be able to revist the page without logging in for a longer duration of time.
+
+# Recommended refresh token expiry is 7 days
+SESSION_EXPIRY=1000 * 60 * 15
+REFRESH_TOKEN_EXPIRY=(1000 * 60 * 60 * 24) * 7
+
 DOMAIN_SERVER=http://localhost:3080
 DOMAIN_CLIENT=http://localhost:3080
 ```
+
+## Automated Moderation System (optional)
+
+The Automated Moderation System uses a scoring mechanism to track user violations. As users commit actions like excessive logins, registrations, or messaging, they accumulate violation scores. Upon reaching a set threshold, the user and their IP are temporarily banned. This system ensures platform security by monitoring and penalizing rapid or suspicious activities.
+
+To set up the mod system, review [the setup guide](../features/mod_system.md).
 
 *Please Note: If you are wanting this to work in development mode, you will need to create a file called `.env.development` in the root directory and set `DOMAIN_CLIENT` to `http://localhost:3090` or whatever port  is provided by vite when runnning `npm run frontend-dev`*
 
