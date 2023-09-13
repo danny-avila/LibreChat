@@ -15,6 +15,7 @@ const CodeSherpa = require('./structured/CodeSherpa');
 const CodeSherpaTools = require('./structured/CodeSherpaTools');
 const availableTools = require('./manifest.json');
 const CodeInterpreter = require('./CodeInterpreter');
+const CodeBrew = require('./CodeBrew');
 
 module.exports = {
   availableTools,
@@ -34,4 +35,5 @@ module.exports = {
   CodeSherpa,
   CodeSherpaTools,
   CodeInterpreter,
+  CodeBrew,
 };
