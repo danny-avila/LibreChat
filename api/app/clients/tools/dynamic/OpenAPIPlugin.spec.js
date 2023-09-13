@@ -1,7 +1,14 @@
 const fs = require('fs');
 const { createOpenAPIPlugin, getSpec, readSpecFile } = require('./OpenAPIPlugin');
 
-jest.mock('node-fetch');
+global.fetch = jest.fn().mockImplementationOnce(() => {
+  return new Promise((resolve) => {
+    resolve({
+      ok: true,
+      json: () => Promise.resolve({ key: 'value' }),
+    });
+  });
+});
 jest.mock('fs', () => ({
   promises: {
     readFile: jest.fn(),

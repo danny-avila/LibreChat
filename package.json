@@ -49,8 +49,8 @@
     "b:data-provider": "cd packages/data-provider && bun run b:build",
     "b:client": "bun run b:data-provider && cd client && bun run b:build",
     "b:client:dev": "cd client && bun run b:dev",
-    "b:test:client": "cd client && bun run test",
-    "b:test:api": "cd api && bun run test"
+    "b:test:client": "cd client && bun run b:test",
+    "b:test:api": "cd api && bun run b:test"
   },
   "repository": {
     "type": "git",
@@ -92,7 +92,7 @@
   "nodemonConfig": {
     "ignore": [
       "api/data/",
-      "data",
+      "data/",
       "client/",
       "admin/",
       "packages/"
