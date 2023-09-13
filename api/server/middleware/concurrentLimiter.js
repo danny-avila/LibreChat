@@ -33,7 +33,7 @@ const concurrentLimiter = async (req, res, next) => {
   const limit = Math.max(CONCURRENT_MESSAGE_MAX, 1);
   const type = 'concurrent';
 
-  const userId = req.user.id;
+  const userId = req.user?.id ?? req.user?._id ?? 'n/a';
   const pendingRequests = (await pendingReqCache.get(userId)) ?? 0;
 
   if (pendingRequests >= limit) {
