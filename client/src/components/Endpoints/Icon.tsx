@@ -4,10 +4,9 @@ import { useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
 import { IconProps } from '~/common';
 
-const getIcon: React.FC<IconProps> = (props) => {
+const Icon: React.FC<IconProps> = (props) => {
   const { size = 30, isCreatedByUser, button, model = true, endpoint, error, jailbreak } = props;
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   const { user } = useAuthContext();
 
   if (isCreatedByUser) {
@@ -100,4 +99,4 @@ const getIcon: React.FC<IconProps> = (props) => {
   }
 };
 
-export default getIcon;
+export default Icon;

@@ -1,4 +1,4 @@
-export { default as getIcon } from './getIcon';
+export { default as Icon } from './Icon';
 export { default as getMinimalIcon } from './getMinimalIcon';
 export { default as EndpointSettings } from './EndpointSettings';
 export { default as EditPresetDialog } from './EditPresetDialog';
