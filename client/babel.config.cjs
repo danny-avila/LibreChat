@@ -1,7 +1,6 @@
 /*
 
-babel is no longer used in this project, but it is still here for reference.
-If you would like to see the full list of dependencies, please refer to PR #939
+babel is used for frontend unit testing
 
 */
 module.exports = {
