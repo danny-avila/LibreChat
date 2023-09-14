@@ -66,7 +66,6 @@
   "devDependencies": {
     "jest": "^29.5.0",
     "nodemon": "^3.0.1",
-    "path": "^0.12.7",
     "supertest": "^6.3.3"
   }
 }
