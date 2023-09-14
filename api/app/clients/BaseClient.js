@@ -588,6 +588,14 @@ class BaseClient {
 
     return numTokens;
   }
+
+  async sendPayload(payload, opts = {}) {
+    if (opts && typeof opts === 'object') {
+      this.setOptions(opts);
+    }
+
+    return await this.sendCompletion(payload, opts);
+  }
 }
 
 module.exports = BaseClient;
