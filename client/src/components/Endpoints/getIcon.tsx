@@ -5,7 +5,8 @@ import { cn } from '~/utils';
 import { IconProps } from '~/common';
 
 const getIcon: React.FC<IconProps> = (props) => {
-  const { size = 30, isCreatedByUser, button, model = true } = props;
+  const { size = 30, isCreatedByUser, button, model = true, endpoint, error, jailbreak } = props;
+
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const { user } = useAuthContext();
 
@@ -32,89 +33,48 @@ const getIcon: React.FC<IconProps> = (props) => {
       </div>
     );
   } else {
-    const { endpoint, error } = props;
-    let icon, bg, name;
-
-    switch (endpoint) {
-      case 'azureOpenAI': {
-        const { chatGptLabel } = props;
-        icon = <GPTIcon size={size * 0.7} />;
-        bg = 'linear-gradient(0.375turn, #61bde2, #4389d0)';
-        name = chatGptLabel || 'ChatGPT';
-        break;
-      }
-
-      case 'openAI': {
-        const { chatGptLabel } = props;
-        icon = <GPTIcon size={size * 0.7} />;
-        bg =
+    const endpointIcons = {
+      azureOpenAI: {
+        icon: <GPTIcon size={size * 0.7} />,
+        bg: 'linear-gradient(0.375turn, #61bde2, #4389d0)',
+        name: 'ChatGPT',
+      },
+      openAI: {
+        icon: <GPTIcon size={size * 0.7} />,
+        bg:
           typeof model === 'string' && model.toLowerCase().startsWith('gpt-4')
             ? '#AB68FF'
-            : chatGptLabel
-              ? '#19C37D'
-              : '#19C37D';
-        name = chatGptLabel || 'ChatGPT';
-        break;
-      }
-
-      case 'gptPlugins': {
-        icon = <Plugin size={size * 0.7} />;
-        bg = `rgba(69, 89, 164, ${button ? 0.75 : 1})`;
-        name = 'Plugins';
-        break;
-      }
-
-      case 'google': {
-        const { modelLabel } = props;
-        icon = <img src="/assets/google-palm.svg" alt="Palm Icon" />;
-        name = modelLabel || 'PaLM2';
-        break;
-      }
-
-      case 'anthropic': {
-        const { modelLabel } = props;
-        icon = <AnthropicIcon size={size * 0.7} />;
-        bg = '#d09a74';
-        name = modelLabel || 'Claude';
-        break;
-      }
-
-      case 'bingAI': {
-        const { jailbreak } = props;
-        if (jailbreak) {
-          icon = <img src="/assets/bingai-jb.png" alt="Bing Icon" />;
-          name = 'Sydney';
-        } else {
-          icon = <img src="/assets/bingai.png" alt="Sydney Icon" />;
-          name = 'BingAI';
-        }
-        break;
-      }
-
-      case 'chatGPTBrowser': {
-        icon = <GPTIcon size={size * 0.7} />;
-        bg =
+            : '#19C37D',
+        name: 'ChatGPT',
+      },
+      gptPlugins: {
+        icon: <Plugin size={size * 0.7} />,
+        bg: `rgba(69, 89, 164, ${button ? 0.75 : 1})`,
+        name: 'Plugins',
+      },
+      google: { icon: <img src="/assets/google-palm.svg" alt="Palm Icon" />, name: 'PaLM2' },
+      anthropic: { icon: <AnthropicIcon size={size * 0.7} />, bg: '#d09a74', name: 'Claude' },
+      bingAI: {
+        icon: jailbreak ? (
+          <img src="/assets/bingai-jb.png" alt="Bing Icon" />
+        ) : (
+          <img src="/assets/bingai.png" alt="Sydney Icon" />
+        ),
+        name: jailbreak ? 'Sydney' : 'BingAI',
+      },
+      chatGPTBrowser: {
+        icon: <GPTIcon size={size * 0.7} />,
+        bg:
           typeof model === 'string' && model.toLowerCase().startsWith('gpt-4')
             ? '#AB68FF'
-            : `rgba(0, 163, 255, ${button ? 0.75 : 1})`;
-        name = 'ChatGPT';
-        break;
-      }
+            : `rgba(0, 163, 255, ${button ? 0.75 : 1})`,
+        name: 'ChatGPT',
+      },
+      null: { icon: <GPTIcon size={size * 0.7} />, bg: 'grey', name: 'N/A' },
+      default: { icon: <GPTIcon size={size * 0.7} />, bg: 'grey', name: 'UNKNOWN' },
+    };
 
-      case null: {
-        icon = <GPTIcon size={size * 0.7} />;
-        bg = 'grey';
-        name = 'N/A';
-        break;
-      }
-
-      default: {
-        icon = <GPTIcon size={size * 0.7} />;
-        bg = 'grey';
-        name = 'UNKNOWN';
-        break;
-      }
-    }
+    const { icon, bg, name } = endpointIcons[endpoint] || endpointIcons.default;
 
     return (
       <div
