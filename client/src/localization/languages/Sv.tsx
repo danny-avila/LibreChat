@@ -222,5 +222,4 @@ export default {
     com_nav_search_placeholder: 'Sök meddelanden', // Search messages
     com_nav_setting_general: 'Allmänt', // General
     com_nav_setting_data: 'Datakontroller', // Data controls
-    com_nav_language: 'Språk', // Language
 }
