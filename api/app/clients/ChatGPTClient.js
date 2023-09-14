@@ -523,8 +523,8 @@ ${botMessage.message}
     const prompt = `${promptBody}${promptSuffix}`;
     if (isChatGptModel) {
       messagePayload.content = prompt;
-      // Add 2 tokens for metadata after all messages have been counted.
-      currentTokenCount += 2;
+      // Add 3 tokens for Assistant Label priming after all messages have been counted.
+      currentTokenCount += 3;
     }
 
     // Use up to `this.maxContextTokens` tokens (prompt + response), but try to leave `this.maxTokens` tokens for the response.
@@ -559,11 +559,8 @@ ${botMessage.message}
     // Note: gpt-3.5-turbo and gpt-4 may update over time. Use default for these as well as for unknown models
     let tokensPerMessage = 3;
     let tokensPerName = 1;
-    const { model } = this.modelOptions;
 
-    console.log('model', model);
-
-    if (model === 'gpt-3.5-turbo-0301') {
+    if (this.modelOptions.model === 'gpt-3.5-turbo-0301') {
       tokensPerMessage = 4;
       tokensPerName = -1;
     }
@@ -575,8 +572,6 @@ ${botMessage.message}
         numTokens += tokensPerName;
       }
     }
-
-    numTokens += 3; // every reply is primed with assistant
 
     return numTokens;
   }

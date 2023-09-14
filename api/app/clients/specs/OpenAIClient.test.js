@@ -256,12 +256,15 @@ describe('OpenAIClient', () => {
       { model: 'gpt-4-0314', expected: 129 },
       { model: 'gpt-4-0613', expected: 129 },
       { model: 'gpt-4', expected: 129 },
+      { model: 'unknown', expected: 129 },
     ];
 
     testCases.forEach((testCase) => {
       it(`should return ${testCase.expected} tokens for model ${testCase.model}`, () => {
         client.modelOptions.model = testCase.model;
-        let totalTokens = 0;
+        client.selectTokenizer();
+        // 3 tokens for assistant label
+        let totalTokens = 3;
         for (let message of example_messages) {
           totalTokens += client.getTokenCountForMessage(message);
         }
