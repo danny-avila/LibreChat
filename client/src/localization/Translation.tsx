@@ -29,34 +29,34 @@ if (!String.prototype.format) {
 // input: language code in string
 // returns an object of translated strings in the language
 export const getTranslations = (langCode: string) => {
-  if (langCode === 'en') {
+  if (langCode === 'en-US') {
     return English;
   }
-  if (langCode === 'cn') {
+  if (langCode === 'zh-CN') {
     return Chinese;
   }
-  if (langCode === 'fr') {
-    return French;
-  }
-  if (langCode === 'de') {
+  if (langCode === 'de-DE') {
     return German;
   }
-  if (langCode === 'it') {
-    return Italian;
-  }
-  if (langCode === 'pl') {
-    return Polish;
-  }
-  if (langCode === 'br') {
-    return Portuguese;
-  }
-  if (langCode === 'es') {
+  if (langCode === 'es-ES') {
     return Spanish;
   }
-  if (langCode === 'ru') {
+  if (langCode === 'fr-FR') {
+    return French;
+  }
+  if (langCode === 'it-IT') {
+    return Italian;
+  }
+  if (langCode === 'pl-PL') {
+    return Polish;
+  }
+  if (langCode === 'pt-BR') {
+    return Portuguese;
+  }
+  if (langCode === 'ru-RU') {
     return Russian;
   }
-  if (langCode === 'jp') {
+  if (langCode === 'ja-JP') {
     return Japanese;
   }
 

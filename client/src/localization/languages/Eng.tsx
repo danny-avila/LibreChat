@@ -255,6 +255,7 @@ export default {
   com_nav_setting_general: 'General',
   com_nav_setting_data: 'Data controls',
   com_nav_language: 'Language',
+  com_nav_lang_auto: 'Auto detect',
   com_nav_lang_english: 'English',
   com_nav_lang_chinese: '中文',
   com_nav_lang_german: 'Deutsch',
