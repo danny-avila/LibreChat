@@ -12,6 +12,7 @@
     "update": "node config/update.js",
     "rebuild:package-lock": "node config/packages",
     "reinstall": "node config/update.js -l -g",
+    "b:reinstall": "bun config/update.js -b -l -g",
     "reinstall:docker": "node config/update.js -d -g",
     "update:local": "node config/update.js -l",
     "update:docker": "node config/update.js -d",
@@ -62,15 +63,10 @@
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
-  "dependencies": {
-    "axios": "^1.4.0",
-    "passport-facebook": "^3.0.0"
-  },
   "devDependencies": {
     "@playwright/test": "^1.32.1",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",
-    "babel-eslint": "^10.1.0",
     "cross-env": "^7.0.3",
     "eslint": "^8.41.0",
     "eslint-config-airbnb-base": "^15.0.0",

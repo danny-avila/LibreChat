@@ -1,16 +1,9 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const Joi = require('joi');
-const DebugControl = require('../utils/debug.js');
 const userSchema = require('./schema/userSchema.js');
 const { SESSION_EXPIRY } = process.env ?? {};
 const expires = eval(SESSION_EXPIRY) ?? 1000 * 60 * 15;
-
-function log({ title, parameters }) {
-  DebugControl.log.functionName(title);
-  DebugControl.log.parameters(parameters);
-}
 
 userSchema.methods.toJSON = function () {
   return {
@@ -63,26 +56,6 @@ module.exports.hashPassword = async (password) => {
   });
 
   return hashedPassword;
-};
-
-module.exports.validateUser = (user) => {
-  log({
-    title: 'Validate User',
-    parameters: [{ name: 'Validate User', value: user }],
-  });
-  const schema = {
-    avatar: Joi.any(),
-    name: Joi.string().min(3).max(80).required(),
-    username: Joi.string()
-      .trim()
-      .allow('')
-      .min(2)
-      .max(80)
-      .regex(/^[a-zA-Z0-9_.-@#$%&*() ]+$/),
-    password: Joi.string().min(8).max(128).allow('').allow(null),
-  };
-
-  return schema.validate(user);
 };
 
 const User = mongoose.model('User', userSchema);
