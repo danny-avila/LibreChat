@@ -1,3 +1,9 @@
+/*
+
+babel is no longer used in this project, but it is still here for reference.
+If you would like to see the full list of dependencies, please refer to PR #939
+
+*/
 module.exports = {
   presets: [
     ['@babel/preset-env', { 'targets': { 'node': 'current' } }], //compiling ES2015+ syntax
