@@ -564,9 +564,9 @@ class BaseClient {
    * Algorithm adapted from "6. Counting tokens for chat API calls" of
    * https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
    *
-   * An additional 3 tokens need to be added for metadata after all messages have been counted.
+   * An additional 3 tokens need to be added for assistant label priming after all messages have been counted.
    *
-   * @param {*} message
+   * @param {Object} message
    */
   getTokenCountForMessage(message) {
     // Note: gpt-3.5-turbo and gpt-4 may update over time. Use default for these as well as for unknown models
