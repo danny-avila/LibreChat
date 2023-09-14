@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function DiscordIcon() {
+export default function AzureMinimalistIcon() {
   return (
     <svg
       stroke="currentColor"

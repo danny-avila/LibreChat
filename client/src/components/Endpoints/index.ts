@@ -1,5 +1,5 @@
 export { default as Icon } from './Icon';
-export { default as getMinimalIcon } from './getMinimalIcon';
+export { default as MinimalIcon } from './MinimalIcon';
 export { default as EndpointSettings } from './EndpointSettings';
 export { default as EditPresetDialog } from './EditPresetDialog';
 export { default as SaveAsPresetDialog } from './SaveAsPresetDialog';

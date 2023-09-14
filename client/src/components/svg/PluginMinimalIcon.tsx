@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function PluginMinimalistIcon() {
+export default function PluginMinimalIcon() {
   return (
     <svg
       stroke="currentColor"

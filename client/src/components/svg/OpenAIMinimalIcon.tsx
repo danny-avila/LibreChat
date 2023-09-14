@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function OpenAIMinimalistIcon() {
+export default function OpenAIMinimalIcon() {
   return (
     <svg
       stroke="currentColor"

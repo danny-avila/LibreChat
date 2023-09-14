@@ -1,17 +1,17 @@
 import React from 'react';
 import {
-  AzureMinimalistIcon,
-  OpenAIMinimalistIcon,
-  ChatGPTMinimalistIcon,
-  PluginMinimalistIcon,
-  BingAIMinimalistIcon,
-  PaLMinimalistIcon,
-  AnthropicMinimalistIcon,
+  AzureMinimalIcon,
+  OpenAIMinimalIcon,
+  ChatGPTMinimalIcon,
+  PluginMinimalIcon,
+  BingAIMinimalIcon,
+  PaLMinimalIcon,
+  AnthropicMinimalIcon,
 } from '~/components/svg';
 import { cn } from '~/utils';
 import { IconProps } from '~/common';
 
-const getMinimalIcon: React.FC<IconProps> = (props) => {
+const MinimalIcon: React.FC<IconProps> = (props) => {
   const { size = 30, error } = props;
 
   let endpoint = 'default'; // Default value for endpoint
@@ -21,14 +21,14 @@ const getMinimalIcon: React.FC<IconProps> = (props) => {
   }
 
   const endpointIcons = {
-    azureOpenAI: { icon: <AzureMinimalistIcon />, name: props.chatGptLabel || 'ChatGPT' },
-    openAI: { icon: <OpenAIMinimalistIcon />, name: props.chatGptLabel || 'ChatGPT' },
-    gptPlugins: { icon: <PluginMinimalistIcon />, name: 'Plugins' },
-    google: { icon: <PaLMinimalistIcon />, name: props.modelLabel || 'PaLM2' },
-    anthropic: { icon: <AnthropicMinimalistIcon />, name: props.modelLabel || 'Claude' },
-    bingAI: { icon: <BingAIMinimalistIcon />, name: 'BingAI' },
-    chatGPTBrowser: { icon: <ChatGPTMinimalistIcon />, name: 'ChatGPT' },
-    default: { icon: <OpenAIMinimalistIcon />, name: 'UNKNOWN' },
+    azureOpenAI: { icon: <AzureMinimalIcon />, name: props.chatGptLabel || 'ChatGPT' },
+    openAI: { icon: <OpenAIMinimalIcon />, name: props.chatGptLabel || 'ChatGPT' },
+    gptPlugins: { icon: <PluginMinimalIcon />, name: 'Plugins' },
+    google: { icon: <PaLMinimalIcon />, name: props.modelLabel || 'PaLM2' },
+    anthropic: { icon: <AnthropicMinimalIcon />, name: props.modelLabel || 'Claude' },
+    bingAI: { icon: <BingAIMinimalIcon />, name: 'BingAI' },
+    chatGPTBrowser: { icon: <ChatGPTMinimalIcon />, name: 'ChatGPT' },
+    default: { icon: <OpenAIMinimalIcon />, name: 'UNKNOWN' },
   };
 
   const { icon, name } = endpointIcons[endpoint];
@@ -55,4 +55,4 @@ const getMinimalIcon: React.FC<IconProps> = (props) => {
   );
 };
 
-export default getMinimalIcon;
+export default MinimalIcon;

@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function BingAIMinimalistIcon() {
+export default function BingAIMinimalIcon() {
   return (
     <svg
       stroke="currentColor"

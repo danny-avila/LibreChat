@@ -1,7 +1,7 @@
 /* eslint-disable indent */
 import React from 'react';
 
-export default function AzureMinimalistIcon() {
+export default function AzureMinimalIcon() {
   return (
     <svg
       stroke="currentColor"

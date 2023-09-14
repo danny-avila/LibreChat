@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function PaLMinimalistIcon() {
+export default function PaLMinimalIcon() {
   return (
     <svg
       stroke="currentColor"
