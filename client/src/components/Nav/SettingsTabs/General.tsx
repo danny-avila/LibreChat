@@ -86,6 +86,8 @@ export const LangSelector = ({
         <option value="br">{localize('com_nav_lang_brazilian_portuguese')}</option>
         <option value="ru">{localize('com_nav_lang_russian')}</option>
         <option value="jp">{localize('com_nav_lang_japanese')}</option>
+        <option value="sv">{localize('com_nav_lang_swedish')}</option>
+
       </select>
     </div>
   );
