@@ -213,4 +213,63 @@ describe('OpenAIClient', () => {
       expect(result.prompt).toEqual([]);
     });
   });
+
+  describe('getTokenCountForMessage', () => {
+    const example_messages = [
+      {
+        role: 'system',
+        content:
+          'You are a helpful, pattern-following assistant that translates corporate jargon into plain English.',
+      },
+      {
+        role: 'system',
+        name: 'example_user',
+        content: 'New synergies will help drive top-line growth.',
+      },
+      {
+        role: 'system',
+        name: 'example_assistant',
+        content: 'Things working well together will increase revenue.',
+      },
+      {
+        role: 'system',
+        name: 'example_user',
+        content:
+          'Let\'s circle back when we have more bandwidth to touch base on opportunities for increased leverage.',
+      },
+      {
+        role: 'system',
+        name: 'example_assistant',
+        content: 'Let\'s talk later when we\'re less busy about how to do better.',
+      },
+      {
+        role: 'user',
+        content:
+          'This late pivot means we don\'t have time to boil the ocean for the client deliverable.',
+      },
+    ];
+
+    const testCases = [
+      { model: 'gpt-3.5-turbo-0301', expected: 127 },
+      { model: 'gpt-3.5-turbo-0613', expected: 129 },
+      { model: 'gpt-3.5-turbo', expected: 129 },
+      { model: 'gpt-4-0314', expected: 129 },
+      { model: 'gpt-4-0613', expected: 129 },
+      { model: 'gpt-4', expected: 129 },
+      { model: 'unknown', expected: 129 },
+    ];
+
+    testCases.forEach((testCase) => {
+      it(`should return ${testCase.expected} tokens for model ${testCase.model}`, () => {
+        client.modelOptions.model = testCase.model;
+        client.selectTokenizer();
+        // 3 tokens for assistant label
+        let totalTokens = 3;
+        for (let message of example_messages) {
+          totalTokens += client.getTokenCountForMessage(message);
+        }
+        expect(totalTokens).toBe(testCase.expected);
+      });
+    });
+  });
 });
