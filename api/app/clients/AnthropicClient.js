@@ -1,9 +1,6 @@
 // const { Agent, ProxyAgent } = require('undici');
 const BaseClient = require('./BaseClient');
-const {
-  encoding_for_model: encodingForModel,
-  get_encoding: getEncoding,
-} = require('@dqbd/tiktoken');
+const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const Anthropic = require('@anthropic-ai/sdk');
 
 const HUMAN_PROMPT = '\n\nHuman:';

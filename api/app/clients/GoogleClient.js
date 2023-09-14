@@ -1,10 +1,7 @@
 const BaseClient = require('./BaseClient');
 const { google } = require('googleapis');
 const { Agent, ProxyAgent } = require('undici');
-const {
-  encoding_for_model: encodingForModel,
-  get_encoding: getEncoding,
-} = require('@dqbd/tiktoken');
+const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 
 const tokenizersCache = {};
 

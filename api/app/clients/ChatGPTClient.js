@@ -1,9 +1,6 @@
 const crypto = require('crypto');
 const Keyv = require('keyv');
-const {
-  encoding_for_model: encodingForModel,
-  get_encoding: getEncoding,
-} = require('@dqbd/tiktoken');
+const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
 const { Agent, ProxyAgent } = require('undici');
 const BaseClient = require('./BaseClient');
@@ -554,33 +551,34 @@ ${botMessage.message}
    * Algorithm adapted from "6. Counting tokens for chat API calls" of
    * https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
    *
-   * An additional 2 tokens need to be added for metadata after all messages have been counted.
+   * An additional 3 tokens need to be added for metadata after all messages have been counted.
    *
-   * @param {*} message
+   * @param {Object} message
    */
   getTokenCountForMessage(message) {
-    let tokensPerMessage;
-    let nameAdjustment;
-    if (this.modelOptions.model.startsWith('gpt-4')) {
-      tokensPerMessage = 3;
-      nameAdjustment = 1;
-    } else {
+    // Note: gpt-3.5-turbo and gpt-4 may update over time. Use default for these as well as for unknown models
+    let tokensPerMessage = 3;
+    let tokensPerName = 1;
+    const { model } = this.modelOptions;
+
+    console.log('model', model);
+
+    if (model === 'gpt-3.5-turbo-0301') {
       tokensPerMessage = 4;
-      nameAdjustment = -1;
+      tokensPerName = -1;
     }
 
-    // Map each property of the message to the number of tokens it contains
-    const propertyTokenCounts = Object.entries(message).map(([key, value]) => {
-      // Count the number of tokens in the property value
-      const numTokens = this.getTokenCount(value);
+    let numTokens = tokensPerMessage;
+    for (let [key, value] of Object.entries(message)) {
+      numTokens += this.getTokenCount(value);
+      if (key === 'name') {
+        numTokens += tokensPerName;
+      }
+    }
 
-      // Adjust by `nameAdjustment` tokens if the property key is 'name'
-      const adjustment = key === 'name' ? nameAdjustment : 0;
-      return numTokens + adjustment;
-    });
+    numTokens += 3; // every reply is primed with assistant
 
-    // Sum the number of tokens in all properties and add `tokensPerMessage` for metadata
-    return propertyTokenCounts.reduce((a, b) => a + b, tokensPerMessage);
+    return numTokens;
   }
 }
 
