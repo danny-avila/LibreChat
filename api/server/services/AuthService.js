@@ -48,7 +48,7 @@ const registerUser = async (user) => {
   if (error) {
     const errorMessage = errorsToString(error.errors);
     console.info(
-      'Route: register - Joi Validation Error',
+      'Route: register - Validation Error',
       { name: 'Request params:', value: user },
       { name: 'Validation error:', value: errorMessage },
     );
