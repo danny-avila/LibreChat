@@ -1,20 +1,9 @@
 const axios = require('axios');
 // const { getAzureCredentials, genAzureChatCompletion } = require('../../utils/');
+const { openAIApiKey, userProvidedOpenAI } = require('./EndpointService').config;
 
-const {
-  OPENAI_API_KEY: openAIApiKey,
-  AZURE_API_KEY: azureOpenAIApiKey,
-  OPENROUTER_API_KEY,
-  PLUGINS_USE_AZURE,
-  OPENAI_REVERSE_PROXY,
-  CHATGPT_MODELS,
-  ANTHROPIC_MODELS,
-} = process.env ?? {};
-
-const useAzurePlugins = !!PLUGINS_USE_AZURE;
-const userProvidedOpenAI = useAzurePlugins
-  ? azureOpenAIApiKey === 'user_provided'
-  : openAIApiKey === 'user_provided';
+const { OPENROUTER_API_KEY, OPENAI_REVERSE_PROXY, CHATGPT_MODELS, ANTHROPIC_MODELS } =
+  process.env ?? {};
 
 const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _models = []) => {
   let models = _models.slice() ?? [];
@@ -125,10 +114,4 @@ module.exports = {
   getOpenAIModels,
   getChatGPTBrowserModels,
   getAnthropicModels,
-  config: {
-    openAIApiKey,
-    azureOpenAIApiKey,
-    useAzurePlugins,
-    userProvidedOpenAI,
-  },
 };
