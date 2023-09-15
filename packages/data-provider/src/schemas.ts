@@ -369,7 +369,8 @@ function getFirstDefinedValue(possibleValues: string[]) {
 }
 
 type TPossibleValues = {
-  model: string[];
+  models: string[];
+  secondaryModels?: string[];
 };
 
 export const parseConvo = (
@@ -383,10 +384,15 @@ export const parseConvo = (
     throw new Error(`Unknown endpoint: ${endpoint}`);
   }
 
-  const convo = schema.parse(conversation);
+  const convo = schema.parse(conversation) as TConversation;
+  const { models, secondaryModels } = possibleValues ?? {};
 
-  if (possibleValues && convo) {
-    convo.model = getFirstDefinedValue(possibleValues.model) ?? convo.model;
+  if (models && convo) {
+    convo.model = getFirstDefinedValue(models) ?? convo.model;
+  }
+
+  if (secondaryModels && convo.agentOptions) {
+    convo.agentOptions.model = getFirstDefinedValue(secondaryModels) ?? convo.agentOptions.model;
   }
 
   return convo;
