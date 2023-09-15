@@ -21,7 +21,7 @@ class PluginsClient extends OpenAIClient {
   setOptions(options) {
     this.agentOptions = { ...options.agentOptions };
     this.functionsAgent = this.agentOptions?.agent === 'functions';
-    this.agentIsGpt3 = this.agentOptions?.model.startsWith('gpt-3');
+    this.agentIsGpt3 = this.agentOptions?.model?.includes('gpt-3');
 
     super.setOptions(options);
 
@@ -29,7 +29,7 @@ class PluginsClient extends OpenAIClient {
       this.agentOptions.model = this.getFunctionModelName(this.agentOptions.model);
     }
 
-    this.isGpt3 = this.modelOptions.model.includes('gpt-3');
+    this.isGpt3 = this.modelOptions?.model?.includes('gpt-3');
 
     if (this.options.reverseProxyUrl) {
       this.langchainProxy = this.options.reverseProxyUrl.match(/.*v1/)[0];
