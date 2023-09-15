@@ -118,7 +118,7 @@ export type TConfig = {
   azure?: boolean;
 };
 
-export type TModels = Record<string, string[]>;
+export type TModelsConfig = Record<string, string[]>;
 
 export type TEndpointsConfig = Record<string, TConfig | null>;
 

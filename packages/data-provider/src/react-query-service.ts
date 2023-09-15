@@ -17,6 +17,7 @@ export enum QueryKeys {
   searchEnabled = 'searchEnabled',
   user = 'user',
   name = 'name', // user key name
+  models = 'models',
   endpoints = 'endpoints',
   presets = 'presets',
   searchResults = 'searchResults',
@@ -212,6 +213,14 @@ export const useGetSearchEnabledQuery = (
 
 export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpointsConfig> => {
   return useQuery([QueryKeys.endpoints], () => dataService.getAIEndpoints(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  });
+};
+
+export const useGetModelsQuery = (): QueryObserverResult<t.TModelsConfig> => {
+  return useQuery([QueryKeys.models], () => dataService.getModels(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
