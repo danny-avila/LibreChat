@@ -38,10 +38,11 @@ export default function NewConversationMenu() {
   const [messages, setMessages] = useRecoilState(store.messages);
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
+  const modelsConfig = useRecoilValue(store.modelsConfig);
   const [presets, setPresets] = useRecoilState(store.presets);
   const modularEndpoints = new Set(['gptPlugins', 'anthropic', 'google', 'openAI']);
 
-  const { endpoint, conversationId } = conversation;
+  const { endpoint } = conversation;
   const { newConversation } = store.useConversation();
 
   const deletePresetsMutation = useDeletePresetMutation();
@@ -65,15 +66,6 @@ export default function NewConversationMenu() {
     const jsonPreset = { ...cleanupPreset({ preset: jsonData }), presetId: null };
     importPreset(jsonPreset);
   };
-
-  // update the default model when availableModels changes
-  // typically, availableModels changes => modelsFilter or customGPTModels changes
-  useEffect(() => {
-    const isInvalidConversation = !availableEndpoints.find((e) => e === endpoint);
-    if (conversationId == 'new' && isInvalidConversation) {
-      newConversation();
-    }
-  }, [availableEndpoints]);
 
   // save states to localStorage
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
@@ -116,6 +108,7 @@ export default function NewConversationMenu() {
         conversation,
         endpointsConfig,
         preset: newPreset,
+        modelsConfig,
       });
 
       setConversation(currentConvo);

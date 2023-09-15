@@ -1,5 +1,5 @@
 import { atom } from 'recoil';
-import { TModels } from 'librechat-data-provider';
+import { TModelsConfig } from 'librechat-data-provider';
 const openAIModels = [
   'gpt-3.5-turbo',
   'gpt-3.5-turbo-16k',
@@ -10,7 +10,7 @@ const openAIModels = [
   'gpt-4-0613',
 ];
 
-const models = atom<TModels>({
+const modelsConfig = atom<TModelsConfig>({
   key: 'models',
   default: {
     openAI: openAIModels,
@@ -30,5 +30,5 @@ const models = atom<TModels>({
 });
 
 export default {
-  models,
+  modelsConfig,
 };

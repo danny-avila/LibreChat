@@ -4,6 +4,7 @@ import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Outlet } from 'react-router-dom';
 import {
   useGetEndpointsQuery,
+  useGetModelsQuery,
   useGetPresetsQuery,
   useGetSearchEnabledQuery,
 } from 'librechat-data-provider';
@@ -23,11 +24,13 @@ export default function Root() {
 
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
   const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
+  const setModels = useSetRecoilState(store.modelsConfig);
   const setPresets = useSetRecoilState(store.presets);
   const { user, isAuthenticated } = useAuthContext();
 
   const searchEnabledQuery = useGetSearchEnabledQuery();
   const endpointsQuery = useGetEndpointsQuery();
+  const modelsQuery = useGetModelsQuery();
   const presetsQuery = useGetPresetsQuery({ enabled: !!user });
 
   useEffect(() => {
@@ -41,6 +44,14 @@ export default function Root() {
       console.error('Failed to get endpoints', endpointsQuery.error);
     }
   }, [endpointsQuery.data, endpointsQuery.isError]);
+
+  useEffect(() => {
+    if (modelsQuery.data) {
+      setModels(modelsQuery.data);
+    } else if (modelsQuery.isError) {
+      console.error('Failed to get models', modelsQuery.error);
+    }
+  }, [modelsQuery.data, modelsQuery.isError]);
 
   useEffect(() => {
     if (presetsQuery.data) {

@@ -1,11 +1,6 @@
 import { parseConvo } from 'librechat-data-provider';
 import getLocalStorageItems from './getLocalStorageItems';
-import type {
-  TConversation,
-  TEndpointsConfig,
-  EModelEndpoint,
-  TConfig,
-} from 'librechat-data-provider';
+import type { TConversation, EModelEndpoint, TModelsConfig } from 'librechat-data-provider';
 
 const defaultEndpoints = [
   'openAI',
@@ -20,12 +15,12 @@ const defaultEndpoints = [
 const buildDefaultConversation = ({
   conversation,
   endpoint,
-  endpointsConfig,
+  modelsConfig,
   lastConversationSetup,
 }: {
   conversation: TConversation;
   endpoint: EModelEndpoint;
-  endpointsConfig: TEndpointsConfig;
+  modelsConfig: TModelsConfig;
   lastConversationSetup: TConversation;
 }) => {
   const { lastSelectedModel, lastSelectedTools, lastBingSettings } = getLocalStorageItems();
@@ -38,7 +33,7 @@ const buildDefaultConversation = ({
     };
   }
 
-  const { availableModels = [] } = endpointsConfig[endpoint] as TConfig;
+  const availableModels = modelsConfig[endpoint];
   const possibleModels = [lastSelectedModel[endpoint], ...availableModels];
   const convo = parseConvo(endpoint, lastConversationSetup, { model: possibleModels });
   const defaultConvo = {
@@ -54,7 +49,7 @@ const buildDefaultConversation = ({
   return defaultConvo;
 };
 
-const getDefaultConversation = ({ conversation, endpointsConfig, preset }) => {
+const getDefaultConversation = ({ conversation, endpointsConfig, modelsConfig, preset }) => {
   const getEndpointFromPreset = () => {
     const { endpoint: targetEndpoint } = preset || {};
     if (targetEndpoint && endpointsConfig?.[targetEndpoint]) {
@@ -89,7 +84,7 @@ const getDefaultConversation = ({ conversation, endpointsConfig, preset }) => {
     conversation,
     endpoint,
     lastConversationSetup: preset,
-    endpointsConfig,
+    modelsConfig,
   });
 };
 

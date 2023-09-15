@@ -3,6 +3,7 @@ import {
   atom,
   selector,
   atomFamily,
+  useRecoilValue,
   useSetRecoilState,
   useResetRecoilState,
   useRecoilCallback,
@@ -15,6 +16,7 @@ import {
   TPreset,
 } from 'librechat-data-provider';
 import { buildTree, getDefaultConversation } from '~/utils';
+import _modelsConfig from './models';
 import submission from './submission';
 import endpoints from './endpoints';
 
@@ -49,6 +51,7 @@ const messagesSiblingIdxFamily = atomFamily({
 });
 
 const useConversation = () => {
+  const modelsConfig = useRecoilValue(_modelsConfig.modelsConfig);
   const setConversation = useSetRecoilState(conversation);
   const setMessages = useSetRecoilState<TMessagesAtom>(messages);
   const setSubmission = useSetRecoilState<TSubmission | null>(submission.submission);
@@ -67,6 +70,7 @@ const useConversation = () => {
       conversation = getDefaultConversation({
         conversation,
         endpointsConfig,
+        modelsConfig,
         preset,
       });
     }
