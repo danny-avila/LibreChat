@@ -419,6 +419,16 @@ class OpenAIClient extends BaseClient {
       configOptions.basePath = this.langchainProxy;
     }
 
+    if (this.useOpenRouter) {
+      configOptions.basePath = 'https://openrouter.ai/api/v1';
+      configOptions.baseOptions = {
+        headers: {
+          'HTTP-Referer': 'https://librechat.ai',
+          'X-Title': 'LibreChat',
+        },
+      };
+    }
+
     try {
       const llm = createLLM({
         modelOptions,
