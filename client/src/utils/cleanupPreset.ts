@@ -1,9 +1,8 @@
 import { parseConvo } from 'librechat-data-provider';
-import type { TEndpointsConfig, TPreset } from 'librechat-data-provider';
+import type { TPreset } from 'librechat-data-provider';
 
 type TCleanupPreset = {
   preset: Partial<TPreset>;
-  endpointsConfig: TEndpointsConfig;
 };
 
 const cleanupPreset = ({ preset: _preset }: TCleanupPreset): TPreset => {

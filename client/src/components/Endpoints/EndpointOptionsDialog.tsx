@@ -44,7 +44,7 @@ const EndpointOptionsDialog = ({
       return;
     }
     exportFromJSON({
-      data: cleanupPreset({ preset, endpointsConfig }),
+      data: cleanupPreset({ preset }),
       fileName: `${preset?.title}.json`,
       exportType: exportFromJSON.types.json,
     });

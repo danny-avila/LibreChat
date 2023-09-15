@@ -62,7 +62,7 @@ export default function NewConversationMenu() {
   };
 
   const onFileSelected = (jsonData) => {
-    const jsonPreset = { ...cleanupPreset({ preset: jsonData, endpointsConfig }), presetId: null };
+    const jsonPreset = { ...cleanupPreset({ preset: jsonData }), presetId: null };
     importPreset(jsonPreset);
   };
 
