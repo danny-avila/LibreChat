@@ -8,6 +8,8 @@ import Spanish from './languages/Es';
 import French from './languages/Fr';
 import Russian from './languages/Ru';
 import Japanese from './languages/Jp';
+import Swedish from './languages/Sv';
+// === import additional language files here === //
 
 const languageMap: { [key: string]: unknown } = {
   'en-US': English,
@@ -20,6 +22,7 @@ const languageMap: { [key: string]: unknown } = {
   'pt-BR': Portuguese,
   'ru-RU': Russian,
   'ja-JP': Japanese,
+  'sv-SE': Swedish,
   // Add additional language mappings here
 };
 

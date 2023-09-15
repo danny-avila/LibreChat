@@ -1,3 +1,8 @@
+/*
+
+babel is used for frontend unit testing
+
+*/
 module.exports = {
   presets: [
     ['@babel/preset-env', { 'targets': { 'node': 'current' } }], //compiling ES2015+ syntax
