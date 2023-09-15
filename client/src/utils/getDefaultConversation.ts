@@ -1,3 +1,12 @@
+/*
+
+This file is no longer used but kept for reference. Its logic was separated into 3 pieces:
+
+1. The default endpoint retriever logic is now found in ./getDefaultEndpoint.ts
+2. The default conversation builder is now found in ./buildDefaultConvo.ts
+3. The main function logic, which was mainly used to fill in default values for a preset
+    or new conversation, is now used as a hook in ~/hooks/useDefaultConvo.ts
+
 import { parseConvo } from 'librechat-data-provider';
 import getLocalStorageItems from './getLocalStorageItems';
 import type { TConversation, EModelEndpoint, TModelsConfig } from 'librechat-data-provider';
@@ -89,3 +98,4 @@ const getDefaultConversation = ({ conversation, endpointsConfig, modelsConfig, p
 };
 
 export default getDefaultConversation;
+*/
