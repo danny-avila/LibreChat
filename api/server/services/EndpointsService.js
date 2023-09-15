@@ -1,9 +1,17 @@
 const axios = require('axios');
 // const { getAzureCredentials, genAzureChatCompletion } = require('../../utils/');
 
-const openAIApiKey = process.env.OPENAI_API_KEY;
-const azureOpenAIApiKey = process.env.AZURE_API_KEY;
-const useAzurePlugins = !!process.env.PLUGINS_USE_AZURE;
+const {
+  OPENAI_API_KEY: openAIApiKey,
+  AZURE_API_KEY: azureOpenAIApiKey,
+  OPENROUTER_API_KEY,
+  PLUGINS_USE_AZURE,
+  OPENAI_REVERSE_PROXY,
+  CHATGPT_MODELS,
+  ANTHROPIC_MODELS,
+} = process.env ?? {};
+
+const useAzurePlugins = !!PLUGINS_USE_AZURE;
 const userProvidedOpenAI = useAzurePlugins
   ? azureOpenAIApiKey === 'user_provided'
   : openAIApiKey === 'user_provided';
@@ -21,7 +29,12 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
     // apiKey = azureOpenAIApiKey;
   }
 
-  const reverseProxyUrl = process.env.OPENAI_REVERSE_PROXY;
+  let reverseProxyUrl = OPENAI_REVERSE_PROXY;
+
+  if (OPENROUTER_API_KEY) {
+    reverseProxyUrl = 'https://openrouter.ai/api/v1';
+  }
+
   if (reverseProxyUrl) {
     basePath = reverseProxyUrl.match(/.*v1/)[0];
   }
@@ -86,8 +99,8 @@ const getOpenAIModels = async (opts = { azure: false, plugins: false }) => {
 
 const getChatGPTBrowserModels = () => {
   let models = ['text-davinci-002-render-sha', 'gpt-4'];
-  if (process.env.CHATGPT_MODELS) {
-    models = String(process.env.CHATGPT_MODELS).split(',');
+  if (CHATGPT_MODELS) {
+    models = String(CHATGPT_MODELS).split(',');
   }
 
   return models;
@@ -101,8 +114,8 @@ const getAnthropicModels = () => {
     'claude-instant-1-100k',
     'claude-2',
   ];
-  if (process.env.ANTHROPIC_MODELS) {
-    models = String(process.env.ANTHROPIC_MODELS).split(',');
+  if (ANTHROPIC_MODELS) {
+    models = String(ANTHROPIC_MODELS).split(',');
   }
 
   return models;
