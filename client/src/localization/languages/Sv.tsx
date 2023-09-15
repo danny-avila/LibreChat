@@ -101,7 +101,7 @@ export default {
     com_endpoint_bing_jailbreak: 'Jailbreak', // Jailbreak
     com_endpoint_bing_context_placeholder: 'Bing kan använda upp till 7k tokens för "kontext", som den kan referera till under konversationen. Den specifika gränsen är inte känd men kan stöta på fel om den överstiger 7k tokens', // Bing can use up to 7k tokens for 'context', which it can reference for the conversation. The specific limit is not known but may run into errors exceeding 7k tokens
     com_endpoint_bing_system_message_placeholder: 'VARNING: Otillåten användning av denna funktion kan få dig BANNAD från att använda Bing! Klicka på "Systemmeddelande" för fullständiga instruktioner och standardmeddelandet om det utelämnas, vilket är "Sydney"-förinställningen som anses vara säker.', // WARNING: Misuse of this feature can get you BANNED from using Bing! Click on 'System Message' for full instructions and the default message if omitted, which is the 'Sydney' preset that is considered safe.
-    com_endpoint_system_message: 'System meddelande', // System Message
+    com_endpoint_system_message: 'Systemmeddelande', // System Message
     com_endpoint_default_blank: 'standard: tom', // default: blank
     com_endpoint_default_false: 'standard: falsk', // default: false
     com_endpoint_default_creative: 'standard: kreativ', // default: creative
