@@ -322,6 +322,9 @@ export const useLoginUserMutation = (): UseMutationResult<
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.user]);
     },
+    onMutate: () => {
+      queryClient.invalidateQueries([QueryKeys.models]);
+    },
   });
 };
 
@@ -354,7 +357,12 @@ export const useRefreshTokenMutation = (): UseMutationResult<
   unknown,
   unknown
 > => {
-  return useMutation(() => dataService.refreshToken(), {});
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.refreshToken(), {
+    onMutate: () => {
+      queryClient.invalidateQueries([QueryKeys.models]);
+    },
+  });
 };
 
 export const useUserKeyQuery = (
