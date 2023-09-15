@@ -1,6 +1,6 @@
 import exportFromJSON from 'export-from-json';
 import { useEffect, useState } from 'react';
-import { useRecoilValue, useRecoilState } from 'recoil';
+import { useRecoilState } from 'recoil';
 import { tPresetSchema } from 'librechat-data-provider';
 import type { TSetOption, TEditPresetProps } from '~/common';
 import { Dialog, DialogButton } from '~/components/ui';
@@ -21,7 +21,6 @@ const EndpointOptionsDialog = ({
 }: TEditPresetProps) => {
   const [preset, setPreset] = useRecoilState(store.preset);
   const [saveAsDialogShow, setSaveAsDialogShow] = useState(false);
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const localize = useLocalize();
 
   const setOption: TSetOption = (param) => (newValue) => {
