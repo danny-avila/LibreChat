@@ -1,8 +1,8 @@
 export default {
     com_ui_examples: 'Exempel', // Examples
     com_ui_new_chat: 'Ny chatt', // New chat
-    com_ui_example_quantum_computing: 'Förklara kvantberäkning på enkla termer', // Explain quantum computing in simple terms
-    com_ui_example_10_year_old_b_day: 'Har du några kreativa idéer till ett 10-årings födelsedag?', // Got any creative ideas for a 10 year old's birthday?
+    com_ui_example_quantum_computing: 'Förklara kvantberäkning med enkla termer', // Explain quantum computing in simple terms
+    com_ui_example_10_year_old_b_day: 'Har du några kreativa idéer till en 10-årings födelsedag?', // Got any creative ideas for a 10 year old's birthday?
     com_ui_example_http_in_js: 'Hur gör jag en HTTP-förfrågan i Javascript?', // How do I make an HTTP request in Javascript?
     com_ui_capabilities: 'Möjligheter', // Capabilities
     com_ui_capability_remember: 'Kommer ihåg vad användaren sa tidigare i konversationen', // Remembers what user said earlier in the conversation
@@ -25,7 +25,7 @@ export default {
     com_ui_of: 'av', // of
     com_ui_entries: 'Inlägg', // Entries
     com_ui_pay_per_call: 'Alla AI-konversationer på ett ställe. Betala per anrop och inte per månad', // All AI conversations in one place. Pay per call and not per month
-    com_ui_enter: 'Ange', // Enter
+    com_ui_enter: 'Enter', // Enter
     com_ui_submit: 'Skicka', // Submit
     com_ui_upload_success: 'Uppladdningen av filen lyckades', // Successfully uploaded file
     com_ui_upload_invalid: 'Ogiltig fil för uppladdning', // Invalid file for upload
@@ -37,12 +37,12 @@ export default {
     com_ui_continue: 'Fortsätt', // Continue
     com_ui_edit: 'Redigera', // Edit
     com_ui_success: 'Lyckades', // Success
-    com_ui_all: 'alla', // all
+    com_ui_all: 'Alla', // all
     com_ui_clear: 'Rensa', // Clear
     com_ui_revoke: 'Återkalla', // Revoke
     com_ui_revoke_info: 'Återkalla alla användaruppgifter.', // Revoke all user provided credentials.
     com_ui_confirm_action: 'Bekräfta åtgärd', // Confirm Action
-    com_ui_chats: 'chattar', // chats
+    com_ui_chats: 'Chattar', // Chats
     com_ui_delete: 'Radera', // Delete
     com_ui_delete_conversation: 'Radera chatt?', // Delete chat?
     com_ui_delete_conversation_confirm: 'Detta kommer att radera', // This will delete
@@ -57,8 +57,8 @@ export default {
     com_auth_discord_login: 'Logga in med Discord', // Login with Discord
     com_auth_email: 'E-post', // Email
     com_auth_email_required: 'E-post krävs', // Email is required
-    com_auth_email_min_length: 'E-post måste vara minst 6 tecken', // Email must be at least 6 characters
-    com_auth_email_max_length: 'E-post får inte vara längre än 120 tecken', // Email should not be longer than 120 characters
+    com_auth_email_min_length: 'E-posten måste vara minst 6 tecken', // Email must be at least 6 characters
+    com_auth_email_max_length: 'E-posten får inte vara längre än 120 tecken', // Email should not be longer than 120 characters
     com_auth_email_pattern: 'Du måste ange en giltig e-postadress', // You must enter a valid email address
     com_auth_email_address: 'E-postadress', // Email address
     com_auth_password: 'Lösenord', // Password
@@ -101,7 +101,7 @@ export default {
     com_endpoint_bing_jailbreak: 'Jailbreak', // Jailbreak
     com_endpoint_bing_context_placeholder: 'Bing kan använda upp till 7k tokens för "kontext", som den kan referera till under konversationen. Den specifika gränsen är inte känd men kan stöta på fel om den överstiger 7k tokens', // Bing can use up to 7k tokens for 'context', which it can reference for the conversation. The specific limit is not known but may run into errors exceeding 7k tokens
     com_endpoint_bing_system_message_placeholder: 'VARNING: Otillåten användning av denna funktion kan få dig BANNAD från att använda Bing! Klicka på "Systemmeddelande" för fullständiga instruktioner och standardmeddelandet om det utelämnas, vilket är "Sydney"-förinställningen som anses vara säker.', // WARNING: Misuse of this feature can get you BANNED from using Bing! Click on 'System Message' for full instructions and the default message if omitted, which is the 'Sydney' preset that is considered safe.
-    com_endpoint_system_message: 'Systemmeddelande', // System Message
+    com_endpoint_system_message: 'System meddelande', // System Message
     com_endpoint_default_blank: 'standard: tom', // default: blank
     com_endpoint_default_false: 'standard: falsk', // default: false
     com_endpoint_default_creative: 'standard: kreativ', // default: creative
