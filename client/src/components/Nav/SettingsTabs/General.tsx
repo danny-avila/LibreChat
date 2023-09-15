@@ -6,6 +6,7 @@ import { ThemeContext, useLocalize, useOnClickOutside } from '~/hooks';
 import type { TDangerButtonProps } from '~/common';
 import DangerButton from './DangerButton';
 import store from '~/store';
+import useLocalStorage from '~/hooks/useLocalStorage';
 
 export const ThemeSelector = ({
   theme,
@@ -97,7 +98,7 @@ function General() {
   const clearConvosMutation = useClearConversationsMutation();
   const [confirmClear, setConfirmClear] = useState(false);
   const [langcode, setLangcode] = useRecoilState(store.lang);
-  const [selectedLang, setSelectedLang] = useState(langcode);
+  const [selectedLang, setSelectedLang] = useLocalStorage('selectedLang', langcode);
   const { newConversation } = store.useConversation();
   const { refreshConversations } = store.useConversations();
 
@@ -134,11 +135,13 @@ function General() {
       if (value === 'auto') {
         const userLang = navigator.language || navigator.languages[0];
         setLangcode(userLang);
+        localStorage.setItem('lang', userLang);
       } else {
         setLangcode(value);
+        localStorage.setItem('lang', value);
       }
     },
-    [setLangcode],
+    [setLangcode, setSelectedLang],
   );
 
   return (
