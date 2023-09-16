@@ -52,4 +52,6 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v1
+        with:
+          artifact_name: 'LibreChat Client Code' # the same as above step
        
