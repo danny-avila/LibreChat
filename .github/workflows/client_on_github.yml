@@ -48,6 +48,8 @@ jobs:
         with:
           # Upload dist repository
           path: './client/dist'
+          name: 'LibreChat Client Code'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v1
+       
