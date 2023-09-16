@@ -33,8 +33,7 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
 
   const cachedModels = await modelsCache.get(basePath);
   if (cachedModels) {
-    console.log(cachedModels.length, Array.isArray(cachedModels));
-    return [...cachedModels];
+    return cachedModels;
   }
 
   if (basePath.includes('v1') || opts.azure) {

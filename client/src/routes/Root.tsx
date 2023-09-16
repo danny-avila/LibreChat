@@ -10,11 +10,11 @@ import {
 } from 'librechat-data-provider';
 
 import { Nav, MobileNav } from '~/components/Nav';
-import { useAuthContext, useServerStream, useConversation } from '~/hooks';
+import { useAuthContext, useServerStream } from '~/hooks';
 import store from '~/store';
 
 export default function Root() {
-  const { newConversation } = useConversation();
+  const { user, isAuthenticated } = useAuthContext();
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : false;
@@ -23,11 +23,10 @@ export default function Root() {
   const submission = useRecoilValue(store.submission);
   useServerStream(submission ?? null);
 
+  const setPresets = useSetRecoilState(store.presets);
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
   const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
-  const setModels = useSetRecoilState(store.modelsConfig);
-  const setPresets = useSetRecoilState(store.presets);
-  const { user, isAuthenticated } = useAuthContext();
+  const setModelsConfig = useSetRecoilState(store.modelsConfig);
 
   const searchEnabledQuery = useGetSearchEnabledQuery();
   const endpointsQuery = useGetEndpointsQuery();
@@ -48,8 +47,7 @@ export default function Root() {
 
   useEffect(() => {
     if (modelsQuery.data) {
-      setModels(modelsQuery.data);
-      newConversation();
+      setModelsConfig(modelsQuery.data);
     } else if (modelsQuery.isError) {
       console.error('Failed to get models', modelsQuery.error);
     }
