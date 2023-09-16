@@ -1,6 +1,9 @@
+const Keyv = require('keyv');
 const axios = require('axios');
 // const { getAzureCredentials, genAzureChatCompletion } = require('../../utils/');
 const { openAIApiKey, userProvidedOpenAI } = require('./EndpointService').config;
+
+const modelsCache = new Keyv({ namespace: 'models' });
 
 const { OPENROUTER_API_KEY, OPENAI_REVERSE_PROXY, CHATGPT_MODELS, ANTHROPIC_MODELS } =
   process.env ?? {};
@@ -28,6 +31,12 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
     basePath = reverseProxyUrl.match(/.*v1/)[0];
   }
 
+  const cachedModels = await modelsCache.get(basePath);
+  if (cachedModels) {
+    console.log(cachedModels.length, Array.isArray(cachedModels));
+    return [...cachedModels];
+  }
+
   if (basePath.includes('v1') || opts.azure) {
     try {
       const res = await axios.get(`${basePath}${opts.azure ? '' : '/models'}`, {
@@ -47,6 +56,8 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
     const regex = /(text-davinci-003|gpt-)/;
     models = models.filter((model) => regex.test(model));
   }
+
+  await modelsCache.set(basePath, models);
   return models;
 };
 
