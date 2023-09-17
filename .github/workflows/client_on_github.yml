@@ -39,10 +39,10 @@ jobs:
         run: npm install
       - name: Build
         run: npm run frontend
-      - name: Setup Pages
-        uses: actions/configure-pages@v3
-        with:
-          enablement: true
+      # - name: Setup Pages
+      #   uses: actions/configure-pages@v3
+      #   with:
+      #     enablement: true
       # - name: Upload artifact
       #   uses: actions/upload-pages-artifact@v1
       #   with:
