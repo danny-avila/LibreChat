@@ -62,7 +62,6 @@ class OpenAIClient extends BaseClient {
     }
 
     if (process.env.OPENROUTER_API_KEY) {
-      console.log('<------Using OpenRouter------>');
       this.apiKey = process.env.OPENROUTER_API_KEY;
       this.useOpenRouter = true;
     }
