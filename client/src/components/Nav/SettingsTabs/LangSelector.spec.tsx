@@ -15,7 +15,7 @@ describe('LangSelector', () => {
   it('renders correctly', () => {
     const { getByText, getByDisplayValue } = render(
       <RecoilRoot>
-        <LangSelector langcode="en" onChange={mockOnChange} />
+        <LangSelector langcode="en-US" onChange={mockOnChange} />
       </RecoilRoot>,
     );
 
@@ -26,12 +26,12 @@ describe('LangSelector', () => {
   it('calls onChange when the select value changes', () => {
     const { getByDisplayValue } = render(
       <RecoilRoot>
-        <LangSelector langcode="en" onChange={mockOnChange} />
+        <LangSelector langcode="en-US" onChange={mockOnChange} />
       </RecoilRoot>,
     );
 
-    fireEvent.change(getByDisplayValue('English'), { target: { value: 'it' } });
+    fireEvent.change(getByDisplayValue('English'), { target: { value: 'it-IT' } });
 
-    expect(mockOnChange).toHaveBeenCalledWith('it');
+    expect(mockOnChange).toHaveBeenCalledWith('it-IT');
   });
 });

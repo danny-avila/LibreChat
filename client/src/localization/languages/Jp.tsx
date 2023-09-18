@@ -12,8 +12,7 @@ export default {
   com_ui_capability_decline_requests: '不適切な要求を断るように学習されています',
   com_ui_limitations: '制限事項',
   com_ui_limitation_incorrect_info: '誤った情報を生成することがあります',
-  com_ui_limitation_harmful_biased:
-    '有害な指示や偏った内容を生成する可能性があります',
+  com_ui_limitation_harmful_biased: '有害な指示や偏った内容を生成する可能性があります',
   com_ui_limitation_limited_2021: '2021年以降の世界と出来事に関しては知識が乏しいです',
   com_ui_input: '入力',
   com_ui_close: '閉じる',
@@ -75,8 +74,7 @@ export default {
   com_auth_password_not_match: 'パスワードが一致しません',
   com_auth_continue: '続ける',
   com_auth_create_account: 'アカウント登録',
-  com_auth_error_create:
-    'アカウント登録に失敗しました。もう一度試してください。',
+  com_auth_error_create: 'アカウント登録に失敗しました。もう一度試してください。',
   com_auth_full_name: '姓名',
   com_auth_name_required: '姓名は必須です',
   com_auth_name_min_length: '姓名は最低3文字は必要です',
@@ -92,8 +90,7 @@ export default {
   com_auth_here: 'こちら',
   com_auth_to_reset_your_password: 'to reset your password.',
   com_auth_reset_password_link_sent: 'メールを送信する',
-  com_auth_reset_password_email_sent:
-    'パスワードリセット方法を記載したメールを送信しました。',
+  com_auth_reset_password_email_sent: 'パスワードリセット方法を記載したメールを送信しました。',
   com_auth_error_reset_password:
     'パスワードリセット中に問題が発生しました。指定されたメールアドレスのユーザは存在しません。別のメールアドレスでもう一度お試しください。',
   com_auth_reset_password_success: 'パスワードリセットに成功しました',
@@ -130,7 +127,8 @@ export default {
   com_endpoint_google_maxoutputtokens:
     ' 	生成されるレスポンスの最大トークン数。短いレスポンスには低い値を、長いレスポンスには高い値を指定する。',
   com_endpoint_google_custom_name_placeholder: 'PaLM2用の名前を設定する',
-  com_endpoint_prompt_prefix_placeholder: 'custom instructions か context を設定する。空の場合は無視されます。',
+  com_endpoint_prompt_prefix_placeholder:
+    'custom instructions か context を設定する。空の場合は無視されます。',
   com_endpoint_custom_name: 'プリセット名',
   com_endpoint_prompt_prefix: 'プロンプトの先頭',
   com_endpoint_temperature: 'Temperature',
@@ -205,15 +203,18 @@ export default {
   com_endpoint_config_key_encryption: '鍵は暗号化されます。削除予定日:',
   com_endpoint_config_key_expiry: 'すでに有効期限切れ',
   com_endpoint_config_key_import_json_key: 'Service Account JSON Key をインポートする。',
-  com_endpoint_config_key_import_json_key_success: 'Service Account JSON Keyのインポートに成功しました。',
+  com_endpoint_config_key_import_json_key_success:
+    'Service Account JSON Keyのインポートに成功しました。',
   com_endpoint_config_key_import_json_key_invalid:
     '無効なService Account JSON Keyです。正しいファイルか確認してください。',
-  com_endpoint_config_key_get_edge_key: 'Bing用のアクセストークンを取得するためにログインをしてください: ',
+  com_endpoint_config_key_get_edge_key:
+    'Bing用のアクセストークンを取得するためにログインをしてください: ',
   com_endpoint_config_key_get_edge_key_dev_tool:
     'サイトにログインした状態で、開発ツールまたは拡張機能を使用して、_U クッキーの内容をコピーします。もし失敗する場合は次の手順に従ってください。',
   com_endpoint_config_key_edge_instructions: '手順',
   com_endpoint_config_key_edge_full_key_string: 'to provide the full cookie strings.',
-  com_endpoint_config_key_chatgpt: 'ChatGPTの「Free Version」のアクセストークンを入手するためにへログインをしてください:',
+  com_endpoint_config_key_chatgpt:
+    'ChatGPTの「Free Version」のアクセストークンを入手するためにへログインをしてください:',
   com_endpoint_config_key_chatgpt_then_visit: 'つぎに、ここへアクセスしてください:',
   com_endpoint_config_key_chatgpt_copy_token: 'トークンをコピーしてください。',
   com_endpoint_config_key_google_need_to: 'こちらを有効化する必要があります:',
@@ -250,5 +251,4 @@ export default {
   com_nav_search_placeholder: 'メッセージ検索',
   com_nav_setting_general: '一般',
   com_nav_setting_data: 'データ管理',
-  com_nav_language: '言語'
 };
