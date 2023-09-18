@@ -73,7 +73,7 @@ export const tMessageSchema = z.object({
   overrideParentMessageId: z.string().nullable().optional(),
   bg: z.string().nullable().optional(),
   model: z.string().nullable().optional(),
-  title: z.string().nullable().optional(),
+  title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   sender: z.string(),
   text: z.string(),
   generation: z.string().nullable().optional(),
@@ -103,7 +103,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
 
 export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
-  title: z.string(),
+  title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   user: z.string().optional(),
   endpoint: eModelEndpointSchema.nullable(),
   suggestions: z.array(z.string()).optional(),

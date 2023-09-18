@@ -76,6 +76,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
           cancelled: false,
           error: false,
           plugins,
+          user,
         });
       }
 
@@ -129,7 +130,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
   };
 
   const onChainEnd = () => {
-    saveMessage(userMessage);
+    saveMessage({ ...userMessage, user });
     sendIntermediateMessage(res, { plugins });
   };
 
@@ -182,12 +183,12 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     console.log('CLIENT RESPONSE');
     console.dir(response, { depth: null });
     response.plugins = plugins.map((p) => ({ ...p, loading: false }));
-    await saveMessage(response);
+    await saveMessage({ ...response, user });
 
     sendMessage(res, {
-      title: await getConvoTitle(req.user.id, conversationId),
+      title: await getConvoTitle(user, conversationId),
       final: true,
-      conversation: await getConvo(req.user.id, conversationId),
+      conversation: await getConvo(user, conversationId),
       requestMessage: userMessage,
       responseMessage: response,
     });
