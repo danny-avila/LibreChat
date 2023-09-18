@@ -108,6 +108,23 @@ module.exports = {
       return { message: 'Error getting conversation title' };
     }
   },
+  /**
+   * Asynchronously deletes conversations and associated messages for a given user and filter.
+   *
+   * @async
+   * @function
+   * @param {string|ObjectId} user - The user's ID.
+   * @param {Object} filter - Additional filter criteria for the conversations to be deleted.
+   * @returns {Promise<{ n: number, ok: number, deletedCount: number, messages: { n: number, ok: number, deletedCount: number } }>}
+   *          An object containing the count of deleted conversations and associated messages.
+   * @throws {Error} Throws an error if there's an issue with the database operations.
+   *
+   * @example
+   * const user = 'someUserId';
+   * const filter = { someField: 'someValue' };
+   * const result = await deleteConvos(user, filter);
+   * console.log(result); // { n: 5, ok: 1, deletedCount: 5, messages: { n: 10, ok: 1, deletedCount: 10 } }
+   */
   deleteConvos: async (user, filter) => {
     let toRemove = await Conversation.find({ ...filter, user }).select('conversationId');
     const ids = toRemove.map((instance) => instance.conversationId);
