@@ -33,6 +33,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
   let lastSavedTimestamp = 0;
   let saveDelay = 100;
   const userMessageId = parentMessageId;
+  const user = req.user.id;
 
   const addMetadata = (data) => (metadata = data);
   const getIds = (data) => {
@@ -56,6 +57,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
           cancelled: false,
           isEdited: true,
           error: false,
+          user,
         });
       }
 
@@ -79,7 +81,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     const { client } = await initializeClient(req, endpointOption);
 
     let response = await client.sendMessage(text, {
-      user: req.user.id,
+      user,
       generation,
       isContinued,
       isEdited: true,
@@ -107,11 +109,11 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       response.parentMessageId = overrideParentMessageId;
     }
 
-    await saveMessage(response);
+    await saveMessage({ ...response, user });
     sendMessage(res, {
-      title: await getConvoTitle(req.user.id, conversationId),
+      title: await getConvoTitle(user, conversationId),
       final: true,
-      conversation: await getConvo(req.user.id, conversationId),
+      conversation: await getConvo(user, conversationId),
       requestMessage: userMessage,
       responseMessage: response,
     });

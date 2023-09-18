@@ -42,7 +42,7 @@ const denyRequest = async (req, res, errorMessage) => {
     _convoId && parentMessageId && parentMessageId !== '00000000-0000-0000-0000-000000000000';
 
   if (shouldSaveMessage) {
-    await saveMessage(userMessage);
+    await saveMessage({ ...userMessage, user: req.user.id });
   }
 
   return await sendError(res, {
@@ -52,6 +52,7 @@ const denyRequest = async (req, res, errorMessage) => {
     parentMessageId: userMessage.messageId,
     text: responseText,
     shouldSaveMessage,
+    user: req.user.id,
   });
 };
 

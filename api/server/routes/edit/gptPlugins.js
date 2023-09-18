@@ -75,6 +75,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
           cancelled: false,
           isEdited: true,
           error: false,
+          user,
         });
       }
 
@@ -89,7 +90,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     plugin.inputs.push(formattedAction);
     plugin.latest = formattedAction.plugin;
     if (!start) {
-      saveMessage(userMessage);
+      saveMessage({ ...userMessage, user });
     }
     sendIntermediateMessage(res, { plugin });
     // console.log('PLUGIN ACTION', formattedAction);
@@ -99,7 +100,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     let { intermediateSteps: steps } = data;
     plugin.outputs = steps && steps[0].action ? formatSteps(steps) : 'An error occurred.';
     plugin.loading = false;
-    saveMessage(userMessage);
+    saveMessage({ ...userMessage, user });
     sendIntermediateMessage(res, { plugin });
     // console.log('CHAIN END', plugin.outputs);
   };
@@ -154,12 +155,12 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     console.log('CLIENT RESPONSE');
     console.dir(response, { depth: null });
     response.plugin = { ...plugin, loading: false };
-    await saveMessage(response);
+    await saveMessage({ ...response, user });
 
     sendMessage(res, {
-      title: await getConvoTitle(req.user.id, conversationId),
+      title: await getConvoTitle(user, conversationId),
       final: true,
-      conversation: await getConvo(req.user.id, conversationId),
+      conversation: await getConvo(user, conversationId),
       requestMessage: userMessage,
       responseMessage: response,
     });

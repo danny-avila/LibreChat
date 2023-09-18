@@ -67,7 +67,7 @@ router.post('/', setHeaders, async (req, res) => {
   });
 
   if (!overrideParentMessageId) {
-    await saveMessage(userMessage);
+    await saveMessage({ ...userMessage, user: req.user.id });
     await saveConvo(req.user.id, {
       ...userMessage,
       ...endpointOption,
@@ -100,6 +100,7 @@ const ask = async ({
   res,
 }) => {
   let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
+  const user = req.user.id;
 
   let responseMessageId = crypto.randomUUID();
   const model = endpointOption?.jailbreak ? 'Sydney' : 'BingAI';
@@ -125,6 +126,7 @@ const ask = async ({
           cancelled: false,
           error: false,
           isCreatedByUser: false,
+          user,
         });
       }
     },
@@ -132,14 +134,14 @@ const ask = async ({
   const abortController = new AbortController();
   let bingConversationId = null;
   if (!isNewConversation) {
-    const convo = await getConvo(req.user.id, conversationId);
+    const convo = await getConvo(user, conversationId);
     bingConversationId = convo.bingConversationId;
   }
 
   try {
     let response = await askBing({
       text,
-      userId: req.user.id,
+      userId: user,
       parentMessageId: userParentMessageId,
       conversationId: bingConversationId ?? conversationId,
       ...endpointOption,
@@ -194,7 +196,7 @@ const ask = async ({
       isCreatedByUser: false,
     };
 
-    await saveMessage(responseMessage);
+    await saveMessage({ ...responseMessage, user });
     responseMessage.messageId = newResponseMessageId;
 
     let conversationUpdate = {
@@ -213,13 +215,14 @@ const ask = async ({
       conversationUpdate.invocationId = response.invocationId;
     }
 
-    await saveConvo(req.user.id, conversationUpdate);
+    await saveConvo(user, conversationUpdate);
     userMessage.messageId = newUserMessageId;
 
     // If response has parentMessageId, the fake userMessage.messageId should be updated to the real one.
     if (!overrideParentMessageId) {
       await saveMessage({
         ...userMessage,
+        user,
         messageId: userMessageId,
         newMessageId: newUserMessageId,
       });
@@ -227,9 +230,9 @@ const ask = async ({
     userMessageId = newUserMessageId;
 
     sendMessage(res, {
-      title: await getConvoTitle(req.user.id, conversationId),
+      title: await getConvoTitle(user, conversationId),
       final: true,
-      conversation: await getConvo(req.user.id, conversationId),
+      conversation: await getConvo(user, conversationId),
       requestMessage: userMessage,
       responseMessage: responseMessage,
     });
@@ -241,7 +244,7 @@ const ask = async ({
         response: responseMessage,
       });
 
-      await saveConvo(req.user.id, {
+      await saveConvo(user, {
         conversationId: conversationId,
         title,
       });
@@ -263,12 +266,12 @@ const ask = async ({
         isCreatedByUser: false,
       };
 
-      saveMessage(responseMessage);
+      saveMessage({ ...responseMessage, user });
 
       return {
-        title: await getConvoTitle(req.user.id, conversationId),
+        title: await getConvoTitle(user, conversationId),
         final: true,
-        conversation: await getConvo(req.user.id, conversationId),
+        conversation: await getConvo(user, conversationId),
         requestMessage: userMessage,
         responseMessage: responseMessage,
       };
@@ -286,7 +289,7 @@ const ask = async ({
         model,
         isCreatedByUser: false,
       };
-      await saveMessage(errorMessage);
+      await saveMessage({ ...errorMessage, user });
       handleError(res, errorMessage);
     }
   }
