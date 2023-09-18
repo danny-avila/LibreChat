@@ -1,5 +1,7 @@
 import * as t from './types';
 import * as s from './schemas';
+/* TODO: fix dependency cycle */
+// eslint-disable-next-line import/no-cycle
 import request from './request';
 import * as endpoints from './api-endpoints';
 
@@ -97,6 +99,10 @@ export const searchConversations = async (
 
 export const getAIEndpoints = () => {
   return request.get(endpoints.aiEndpoints());
+};
+
+export const getModels = () => {
+  return request.get(endpoints.models());
 };
 
 export const updateTokenCount = (text: string) => {

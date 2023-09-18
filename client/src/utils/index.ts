@@ -7,8 +7,9 @@ export { default as getLoginError } from './getLoginError';
 export { default as cleanupPreset } from './cleanupPreset';
 export { default as validateIframe } from './validateIframe';
 export { default as getMessageError } from './getMessageError';
+export { default as buildDefaultConvo } from './buildDefaultConvo';
+export { default as getDefaultEndpoint } from './getDefaultEndpoint';
 export { default as getLocalStorageItems } from './getLocalStorageItems';
-export { default as getDefaultConversation } from './getDefaultConversation';
 
 export function cn(...inputs: string[]) {
   return twMerge(clsx(inputs));

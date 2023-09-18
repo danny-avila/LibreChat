@@ -1,9 +1,6 @@
 // const { Agent, ProxyAgent } = require('undici');
 const BaseClient = require('./BaseClient');
-const {
-  encoding_for_model: encodingForModel,
-  get_encoding: getEncoding,
-} = require('@dqbd/tiktoken');
+const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const Anthropic = require('@anthropic-ai/sdk');
 
 const HUMAN_PROMPT = '\n\nHuman:';
@@ -268,14 +265,25 @@ class AnthropicClient extends BaseClient {
     };
 
     let text = '';
-    const { model, stream, maxOutputTokens, ...rest } = this.modelOptions;
+    const {
+      stream,
+      model,
+      temperature,
+      maxOutputTokens,
+      stop: stop_sequences,
+      topP: top_p,
+      topK: top_k,
+    } = this.modelOptions;
     const requestOptions = {
       prompt: payload,
       model,
       stream: stream || true,
       max_tokens_to_sample: maxOutputTokens || 1500,
+      stop_sequences,
+      temperature,
       metadata,
-      ...rest,
+      top_p,
+      top_k,
     };
     if (this.options.debug) {
       console.log('AnthropicClient: requestOptions');

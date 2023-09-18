@@ -2,7 +2,13 @@ import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import React, { useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { useClearConversationsMutation } from 'librechat-data-provider';
-import { ThemeContext, useLocalize, useOnClickOutside } from '~/hooks';
+import {
+  ThemeContext,
+  useLocalize,
+  useOnClickOutside,
+  useConversation,
+  useConversations,
+} from '~/hooks';
 import type { TDangerButtonProps } from '~/common';
 import DangerButton from './DangerButton';
 import store from '~/store';
@@ -86,6 +92,7 @@ export const LangSelector = ({
         <option value="br">{localize('com_nav_lang_brazilian_portuguese')}</option>
         <option value="ru">{localize('com_nav_lang_russian')}</option>
         <option value="jp">{localize('com_nav_lang_japanese')}</option>
+        <option value="sv">{localize('com_nav_lang_swedish')}</option>
       </select>
     </div>
   );
@@ -96,8 +103,8 @@ function General() {
   const clearConvosMutation = useClearConversationsMutation();
   const [confirmClear, setConfirmClear] = useState(false);
   const [langcode, setLangcode] = useRecoilState(store.lang);
-  const { newConversation } = store.useConversation();
-  const { refreshConversations } = store.useConversations();
+  const { newConversation } = useConversation();
+  const { refreshConversations } = useConversations();
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);

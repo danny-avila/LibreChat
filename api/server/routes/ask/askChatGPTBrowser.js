@@ -41,10 +41,6 @@ router.post('/', setHeaders, async (req, res) => {
     key: req.body?.key ?? null,
   };
 
-  // const availableModels = getChatGPTBrowserModels();
-  // if (availableModels.find((model) => model === endpointOption.model) === undefined)
-  //   return handleError(res, { text: 'Illegal request: model' });
-
   console.log('ask log', {
     userMessage,
     endpointOption,

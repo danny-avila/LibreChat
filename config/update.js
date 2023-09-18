@@ -3,9 +3,10 @@ const path = require('path');
 const { askQuestion, isDockerRunning, deleteNodeModules, silentExit } = require('./helpers');
 
 const config = {
-  localUpdate: process.argv.includes('-l'),
-  dockerUpdate: process.argv.includes('-d'),
-  useSingleComposeFile: process.argv.includes('-s'),
+  bun: process.argv.includes('-b'),
+  local: process.argv.includes('-l'),
+  docker: process.argv.includes('-d'),
+  singleCompose: process.argv.includes('-s'),
   useSudo: process.argv.includes('--sudo'),
   skipGit: process.argv.includes('-g'),
 };
@@ -20,14 +21,14 @@ const directories = [
 ];
 
 async function updateConfigWithWizard() {
-  if (!config.dockerUpdate && !config.useSingleComposeFile) {
-    config.dockerUpdate = (await askQuestion('Are you using Docker? (y/n): '))
+  if (!config.docker && !config.singleCompose) {
+    config.docker = (await askQuestion('Are you using Docker? (y/n): '))
       .toLowerCase()
       .startsWith('y');
   }
 
-  if (config.dockerUpdate && !config.useSingleComposeFile) {
-    config.useSingleComposeFile = !(
+  if (config.docker && !config.singleCompose) {
+    config.singleCompose = !(
       await askQuestion('Are you using the default docker-compose file? (y/n): ')
     )
       .toLowerCase()
@@ -36,11 +37,11 @@ async function updateConfigWithWizard() {
 }
 
 async function validateDockerRunning() {
-  if (!config.dockerUpdate && config.useSingleComposeFile) {
-    config.dockerUpdate = true;
+  if (!config.docker && config.singleCompose) {
+    config.docker = true;
   }
 
-  if (config.dockerUpdate && !isDockerRunning()) {
+  if (config.docker && !isDockerRunning()) {
     console.red(
       'Error: Docker is not running. You will need to start Docker Desktop or if using linux/mac, run `sudo systemctl start docker`',
     );
@@ -49,7 +50,7 @@ async function validateDockerRunning() {
 }
 
 (async () => {
-  const showWizard = !config.localUpdate && !config.dockerUpdate && !config.useSingleComposeFile;
+  const showWizard = !config.local && !config.docker && !config.singleCompose;
 
   if (showWizard) {
     await updateConfigWithWizard();
@@ -60,7 +61,7 @@ async function validateDockerRunning() {
   );
 
   await validateDockerRunning();
-  const { dockerUpdate, useSingleComposeFile: singleCompose, useSudo, skipGit } = config;
+  const { docker, singleCompose, useSudo, skipGit, bun } = config;
   const sudo = useSudo ? 'sudo ' : '';
   if (!skipGit) {
     // Fetch latest repo
@@ -76,7 +77,7 @@ async function validateDockerRunning() {
     execSync('git pull origin main', { stdio: 'inherit' });
   }
 
-  if (dockerUpdate) {
+  if (docker) {
     console.purple('Removing previously made Docker container...');
     const downCommand = `${sudo}docker-compose ${
       singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''
@@ -113,11 +114,11 @@ async function validateDockerRunning() {
 
     // Build client-side code
     console.purple('Building frontend...');
-    execSync('npm run frontend', { stdio: 'inherit' });
+    execSync(bun ? 'bun b:client' : 'npm run frontend', { stdio: 'inherit' });
   }
 
   let startCommand = 'npm run backend';
-  if (dockerUpdate) {
+  if (docker) {
     startCommand = `${sudo}docker-compose ${
       singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''
     }up`;

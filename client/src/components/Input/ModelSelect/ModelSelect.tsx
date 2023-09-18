@@ -32,14 +32,14 @@ const optionComponents: { [key: string]: React.FC<TModelSelectProps> } = {
 };
 
 export default function ModelSelect({ conversation, setOption }: TSelectProps) {
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
+  const modelsConfig = useRecoilValue(store.modelsConfig);
   if (!conversation?.endpoint) {
     return null;
   }
 
   const { endpoint } = conversation;
   const OptionComponent = optionComponents[endpoint];
-  const models = endpointsConfig?.[endpoint]?.['availableModels'] ?? [];
+  const models = modelsConfig?.[endpoint] ?? [];
 
   if (!OptionComponent) {
     return null;
