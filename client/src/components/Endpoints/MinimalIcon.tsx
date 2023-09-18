@@ -35,6 +35,7 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
 
   return (
     <div
+      data-testid="convo-icon"
       title={name}
       style={{
         width: size,

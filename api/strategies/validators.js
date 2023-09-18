@@ -11,6 +11,20 @@ function errorsToString(errors) {
     .join(' ');
 }
 
+const allowedCharactersRegex = /^[a-zA-Z0-9_.@#$%&*()\p{Script=Latin}\p{Script=Common}]+$/u;
+const injectionPatternsRegex = /('|--|\$ne|\$gt|\$lt|\$or|\{|\}|\*|;|<|>|\/|=)/i;
+
+const usernameSchema = z
+  .string()
+  .min(2)
+  .max(80)
+  .refine((value) => allowedCharactersRegex.test(value), {
+    message: 'Invalid characters in username',
+  })
+  .refine((value) => !injectionPatternsRegex.test(value), {
+    message: 'Potential injection attack detected',
+  });
+
 const loginSchema = z.object({
   email: z.string().email(),
   password: z
@@ -26,14 +40,7 @@ const registerSchema = z
   .object({
     name: z.string().min(3).max(80),
     username: z
-      .union([
-        z.literal(''),
-        z
-          .string()
-          .min(2)
-          .max(80)
-          .regex(/^[a-zA-Z0-9_.-@#$%&*() ]+$/),
-      ])
+      .union([z.literal(''), usernameSchema])
       .transform((value) => (value === '' ? null : value))
       .optional()
       .nullable(),
