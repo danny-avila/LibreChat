@@ -3,7 +3,7 @@ import { Trash2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import { useDeletePresetMutation, useCreatePresetMutation } from 'librechat-data-provider';
-import { getIcon, EditPresetDialog } from '~/components/Endpoints';
+import { Icon, EditPresetDialog } from '~/components/Endpoints';
 import EndpointItems from './EndpointItems';
 import PresetItems from './PresetItems';
 import FileUpload from './FileUpload';
@@ -136,10 +136,9 @@ export default function NewConversationMenu() {
     deletePresetsMutation.mutate({ arg: preset });
   };
 
-  const icon = getIcon({
+  const icon = Icon({
     size: 32,
     ...conversation,
-    isCreatedByUser: false,
     error: false,
     button: true,
   });
