@@ -3,7 +3,8 @@ import authenticate from './authenticate';
 
 async function globalSetup(config: FullConfig) {
   const user = {
-    username: String(process.env.E2E_USER_EMAIL),
+    name: 'test',
+    email: String(process.env.E2E_USER_EMAIL),
     password: String(process.env.E2E_USER_PASSWORD),
   };
 
