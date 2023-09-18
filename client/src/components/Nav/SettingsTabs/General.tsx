@@ -106,8 +106,8 @@ function General() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [langcode, setLangcode] = useRecoilState(store.lang);
   const [selectedLang, setSelectedLang] = useLocalStorage('selectedLang', langcode);
-  const { newConversation } = store.useConversation();
-  const { refreshConversations } = store.useConversations();
+  const { newConversation } = useConversation();
+  const { refreshConversations } = useConversations();
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
