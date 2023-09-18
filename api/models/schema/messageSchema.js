@@ -14,6 +14,11 @@ const messageSchema = mongoose.Schema(
       required: true,
       meiliIndex: true,
     },
+    user: {
+      type: String,
+      index: true,
+      default: null,
+    },
     model: {
       type: String,
     },

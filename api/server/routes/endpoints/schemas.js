@@ -46,7 +46,7 @@ const tAgentOptionsSchema = z.object({
 
 const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
-  title: z.string(),
+  title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   user: z.string().optional(),
   endpoint: eModelEndpointSchema.nullable(),
   suggestions: z.array(z.string()).optional(),

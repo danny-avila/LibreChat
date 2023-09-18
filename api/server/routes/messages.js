@@ -17,7 +17,7 @@ router.get('/:conversationId', requireJwtAuth, validateMessageReq, async (req, r
 // CREATE
 router.post('/:conversationId', requireJwtAuth, validateMessageReq, async (req, res) => {
   const message = req.body;
-  const savedMessage = await saveMessage(message);
+  const savedMessage = await saveMessage({ ...message, user: req.user.id });
   await saveConvo(req.user.id, savedMessage);
   res.status(201).send(savedMessage);
 });

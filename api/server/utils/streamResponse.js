@@ -32,7 +32,8 @@ const sendMessage = (res, message, event = 'message') => {
  * @param {function} callback - [Optional] The callback function to be executed.
  */
 const sendError = async (res, options, callback) => {
-  const { sender, conversationId, messageId, parentMessageId, text, shouldSaveMessage } = options;
+  const { user, sender, conversationId, messageId, parentMessageId, text, shouldSaveMessage } =
+    options;
   const errorMessage = {
     sender,
     messageId: messageId ?? crypto.randomUUID(),
@@ -50,7 +51,7 @@ const sendError = async (res, options, callback) => {
   }
 
   if (shouldSaveMessage) {
-    await saveMessage(errorMessage);
+    await saveMessage({ ...errorMessage, user });
   }
 
   handleError(res, errorMessage);
