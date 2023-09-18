@@ -79,11 +79,12 @@ export default function NewConversationMenu() {
         lastModelUpdate.secondaryModel = conversation.agentOptions.model;
       }
       setLastModel(lastModelUpdate);
-      setLastConvo(conversation);
     } else if (endpoint === 'bingAI') {
       const { jailbreak, toneStyle } = conversation;
       setLastBingSettings({ ...lastBingSettings, jailbreak, toneStyle });
     }
+
+    setLastConvo(conversation);
   }, [conversation]);
 
   // set the current model
