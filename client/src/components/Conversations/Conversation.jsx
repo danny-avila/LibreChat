@@ -3,7 +3,7 @@ import { useRecoilState, useSetRecoilState } from 'recoil';
 import { useUpdateConversationMutation } from 'librechat-data-provider';
 import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
-import ConvoIcon from '../svg/ConvoIcon';
+import { MinimalIcon } from '~/components/Endpoints';
 import { useConversations, useConversation } from '~/hooks';
 import store from '~/store';
 
@@ -66,6 +66,14 @@ export default function Conversation({ conversation, retainView }) {
     updateConvoMutation.mutate({ conversationId, title: titleInput });
   };
 
+  const icon = MinimalIcon({
+    size: 20,
+    endpoint: conversation.endpoint,
+    model: conversation.model,
+    error: false,
+    className: 'mr-0',
+  });
+
   useEffect(() => {
     if (updateConvoMutation.isSuccess) {
       refreshConversations();
@@ -97,7 +105,7 @@ export default function Conversation({ conversation, retainView }) {
 
   return (
     <a data-testid="convo-item" onClick={() => clickHandler()} {...aProps}>
-      <ConvoIcon />
+      {icon}
       <div className="relative max-h-5 flex-1 overflow-hidden text-ellipsis break-all">
         {renaming === true ? (
           <input
