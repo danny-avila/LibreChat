@@ -13,25 +13,27 @@ class PluginsClient extends OpenAIClient {
     this.sender = options.sender ?? 'Assistant';
     this.tools = [];
     this.actions = [];
-    this.openAIApiKey = apiKey;
     this.setOptions(options);
+    this.openAIApiKey = this.apiKey;
     this.executor = null;
   }
 
   setOptions(options) {
-    this.agentOptions = options.agentOptions;
+    this.agentOptions = { ...options.agentOptions };
     this.functionsAgent = this.agentOptions?.agent === 'functions';
-    this.agentIsGpt3 = this.agentOptions?.model.startsWith('gpt-3');
-    if (this.functionsAgent && this.agentOptions.model) {
+    this.agentIsGpt3 = this.agentOptions?.model?.includes('gpt-3');
+
+    super.setOptions(options);
+
+    if (this.functionsAgent && this.agentOptions.model && !this.useOpenRouter) {
       this.agentOptions.model = this.getFunctionModelName(this.agentOptions.model);
     }
 
-    super.setOptions(options);
-    this.isGpt3 = this.modelOptions.model.startsWith('gpt-3');
+    this.isGpt3 = this.modelOptions?.model?.includes('gpt-3');
 
-    // if (this.options.reverseProxyUrl) {
-    //   this.langchainProxy = this.options.reverseProxyUrl.match(/.*v1/)[0];
-    // }
+    if (this.options.reverseProxyUrl) {
+      this.langchainProxy = this.options.reverseProxyUrl.match(/.*v1/)[0];
+    }
   }
 
   getSaveOptions() {
@@ -75,6 +77,16 @@ class PluginsClient extends OpenAIClient {
 
     if (this.langchainProxy) {
       configOptions.basePath = this.langchainProxy;
+    }
+
+    if (this.useOpenRouter) {
+      configOptions.basePath = 'https://openrouter.ai/api/v1';
+      configOptions.baseOptions = {
+        headers: {
+          'HTTP-Referer': 'https://librechat.ai',
+          'X-Title': 'LibreChat',
+        },
+      };
     }
 
     const model = createLLM({

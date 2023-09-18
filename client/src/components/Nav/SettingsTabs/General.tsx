@@ -2,7 +2,13 @@ import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import React, { useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { useClearConversationsMutation } from 'librechat-data-provider';
-import { ThemeContext, useLocalize, useOnClickOutside } from '~/hooks';
+import {
+  ThemeContext,
+  useLocalize,
+  useOnClickOutside,
+  useConversation,
+  useConversations,
+} from '~/hooks';
 import type { TDangerButtonProps } from '~/common';
 import DangerButton from './DangerButton';
 import store from '~/store';

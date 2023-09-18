@@ -30,6 +30,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
   let responseMessageId;
   let lastSavedTimestamp = 0;
   let saveDelay = 100;
+  const user = req.user.id;
 
   const getIds = (data) => {
     userMessage = data.userMessage;
@@ -55,6 +56,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
           unfinished: true,
           cancelled: false,
           error: false,
+          user,
         });
       }
 
@@ -80,7 +82,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     let response = await client.sendMessage(text, {
       getIds,
       // debug: true,
-      user: req.user.id,
+      user,
       conversationId,
       parentMessageId,
       overrideParentMessageId,
@@ -98,18 +100,18 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       response.parentMessageId = overrideParentMessageId;
     }
 
-    await saveConvo(req.user.id, {
+    await saveConvo(user, {
       ...endpointOption,
       ...endpointOption.modelOptions,
       conversationId,
       endpoint: 'anthropic',
     });
 
-    await saveMessage(response);
+    await saveMessage({ ...response, user });
     sendMessage(res, {
-      title: await getConvoTitle(req.user.id, conversationId),
+      title: await getConvoTitle(user, conversationId),
       final: true,
-      conversation: await getConvo(req.user.id, conversationId),
+      conversation: await getConvo(user, conversationId),
       requestMessage: userMessage,
       responseMessage: response,
     });

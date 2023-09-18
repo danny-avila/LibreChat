@@ -7,6 +7,7 @@ module.exports = {
   Message,
 
   async saveMessage({
+    user,
     messageId,
     newMessageId,
     conversationId,
@@ -33,6 +34,7 @@ module.exports = {
       await Message.findOneAndUpdate(
         { messageId },
         {
+          user,
           messageId: newMessageId || messageId,
           conversationId,
           parentMessageId,

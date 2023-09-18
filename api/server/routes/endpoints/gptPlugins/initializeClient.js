@@ -1,13 +1,20 @@
 const { PluginsClient } = require('../../../../app');
+const { isEnabled } = require('../../../utils');
 const { getAzureCredentials } = require('../../../../utils');
 const { getUserKey, checkUserKeyExpiry } = require('../../../services/UserService');
 
 const initializeClient = async (req, endpointOption) => {
-  const { PROXY, OPENAI_API_KEY, AZURE_API_KEY, PLUGINS_USE_AZURE, OPENAI_REVERSE_PROXY } =
-    process.env;
+  const {
+    PROXY,
+    OPENAI_API_KEY,
+    AZURE_API_KEY,
+    PLUGINS_USE_AZURE,
+    OPENAI_REVERSE_PROXY,
+    DEBUG_PLUGINS,
+  } = process.env;
   const { key: expiresAt } = req.body;
   const clientOptions = {
-    // debug: true,
+    debug: isEnabled(DEBUG_PLUGINS),
     reverseProxyUrl: OPENAI_REVERSE_PROXY ?? null,
     proxy: PROXY ?? null,
     ...endpointOption,

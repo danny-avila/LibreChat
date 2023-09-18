@@ -8,8 +8,8 @@ import { SubRow, Plugin, MessageContent } from './Content';
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
-import { getIcon } from '~/components/Endpoints';
-import { useMessageHandler } from '~/hooks';
+import { Icon } from '~/components/Endpoints';
+import { useMessageHandler, useConversation } from '~/hooks';
 import type { TMessageProps } from '~/common';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -27,7 +27,7 @@ export default function Message({
   const setLatestMessage = useSetRecoilState(store.latestMessage);
   const [abortScroll, setAbort] = useState(false);
   const { isSubmitting, ask, regenerate, handleContinue } = useMessageHandler();
-  const { switchToConversation } = store.useConversation();
+  const { switchToConversation } = useConversation();
   const {
     text,
     children,
@@ -90,7 +90,7 @@ export default function Message({
     titleclass: '',
   };
 
-  const icon = getIcon({
+  const icon = Icon({
     ...conversation,
     ...message,
     model: message?.model ?? conversation?.model,

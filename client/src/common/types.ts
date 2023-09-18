@@ -178,3 +178,17 @@ export type TUserContext = {
 export type TAuthConfig = {
   loginRedirect: string;
 };
+
+export type IconProps = {
+  size?: number;
+  isCreatedByUser?: boolean;
+  button?: boolean;
+  model?: string;
+  message?: boolean;
+  className?: string;
+  endpoint?: string | null;
+  error?: boolean;
+  chatGptLabel?: string;
+  modelLabel?: string;
+  jailbreak?: boolean;
+};

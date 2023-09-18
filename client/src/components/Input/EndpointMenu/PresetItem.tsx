@@ -1,7 +1,7 @@
 import type { TPresetItemProps } from '~/common';
 import type { TPreset } from 'librechat-data-provider';
 import { DropdownMenuRadioItem, EditIcon, TrashIcon } from '~/components';
-import { getIcon } from '~/components/Endpoints';
+import { Icon } from '~/components/Endpoints';
 
 export default function PresetItem({
   preset = {} as TPreset,
@@ -11,7 +11,7 @@ export default function PresetItem({
 }: TPresetItemProps) {
   const { endpoint } = preset;
 
-  const icon = getIcon({
+  const icon = Icon({
     size: 20,
     endpoint: preset?.endpoint,
     model: preset?.model,

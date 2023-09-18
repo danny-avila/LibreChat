@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Settings } from 'lucide-react';
 import { DropdownMenuRadioItem } from '~/components';
-import { getIcon } from '~/components/Endpoints';
+import { Icon } from '~/components/Endpoints';
 import { SetKeyDialog } from '../SetKeyDialog';
 import { useLocalize } from '~/hooks';
 
@@ -21,7 +21,7 @@ export default function ModelItem({
   const [isDialogOpen, setDialogOpen] = useState(false);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
-  const icon = getIcon({
+  const icon = Icon({
     size: 20,
     endpoint,
     error: false,

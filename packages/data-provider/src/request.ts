@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import axios, { AxiosRequestConfig, AxiosError } from 'axios';
+/* TODO: fix dependency cycle */
 // eslint-disable-next-line import/no-cycle
 import { refreshToken } from './data-service';
 import { setTokenHeader } from './headers-helpers';
