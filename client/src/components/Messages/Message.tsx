@@ -8,7 +8,7 @@ import { SubRow, Plugin, MessageContent } from './Content';
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
-import { getIcon } from '~/components/Endpoints';
+import { Icon } from '~/components/Endpoints';
 import { useMessageHandler, useConversation } from '~/hooks';
 import type { TMessageProps } from '~/common';
 import { cn } from '~/utils';
@@ -90,7 +90,7 @@ export default function Message({
     titleclass: '',
   };
 
-  const icon = getIcon({
+  const icon = Icon({
     ...conversation,
     ...message,
     model: message?.model ?? conversation?.model,
