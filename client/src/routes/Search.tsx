@@ -5,12 +5,13 @@ import { useRecoilState, useRecoilValue } from 'recoil';
 import Messages from '~/components/Messages/Messages';
 import TextChat from '~/components/Input/TextChat';
 
+import { useConversation } from '~/hooks';
 import store from '~/store';
 
 export default function Search() {
   const [searchQuery, setSearchQuery] = useRecoilState(store.searchQuery);
   const conversation = useRecoilValue(store.conversation);
-  const { searchPlaceholderConversation } = store.useConversation();
+  const { searchPlaceholderConversation } = useConversation();
   const { query } = useParams();
   const navigate = useNavigate();
 

@@ -1,9 +1,8 @@
 import React from 'react';
-import store from '~/store';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useConversation } from '~/hooks';
 
 export default function NewChat() {
-  const { newConversation } = store.useConversation();
+  const { newConversation } = useConversation();
   const localize = useLocalize();
 
   const clickHandler = () => {

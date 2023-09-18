@@ -4,15 +4,15 @@ import { useUpdateConversationMutation } from 'librechat-data-provider';
 import RenameButton from './RenameButton';
 import DeleteButton from './DeleteButton';
 import ConvoIcon from '../svg/ConvoIcon';
-
+import { useConversations, useConversation } from '~/hooks';
 import store from '~/store';
 
 export default function Conversation({ conversation, retainView }) {
   const [currentConversation, setCurrentConversation] = useRecoilState(store.conversation);
   const setSubmission = useSetRecoilState(store.submission);
 
-  const { refreshConversations } = store.useConversations();
-  const { switchToConversation } = store.useConversation();
+  const { refreshConversations } = useConversations();
+  const { switchToConversation } = useConversation();
 
   const updateConvoMutation = useUpdateConversationMutation(currentConversation?.conversationId);
 

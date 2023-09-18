@@ -179,6 +179,11 @@ class ChatGPTClient extends BaseClient {
       opts.headers.Authorization = `Bearer ${this.apiKey}`;
     }
 
+    if (this.useOpenRouter) {
+      opts.headers['HTTP-Referer'] = 'https://librechat.ai';
+      opts.headers['X-Title'] = 'LibreChat';
+    }
+
     if (this.options.headers) {
       opts.headers = { ...opts.headers, ...this.options.headers };
     }

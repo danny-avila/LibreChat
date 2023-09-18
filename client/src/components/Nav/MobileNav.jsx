@@ -1,11 +1,11 @@
 import React from 'react';
 import { useRecoilValue } from 'recoil';
+import { useLocalize, useConversation } from '~/hooks';
 import store from '~/store';
-import { useLocalize } from '~/hooks';
 
 export default function MobileNav({ setNavVisible }) {
   const conversation = useRecoilValue(store.conversation);
-  const { newConversation } = store.useConversation();
+  const { newConversation } = useConversation();
   const { title = 'New Chat' } = conversation || {};
   const localize = useLocalize();
 

@@ -11,7 +11,14 @@ import SearchBar from './SearchBar';
 import NavLinks from './NavLinks';
 import { Panel, Spinner } from '~/components';
 import { Conversations, Pages } from '../Conversations';
-import { useAuthContext, useDebounce, useMediaQuery, useLocalize } from '~/hooks';
+import {
+  useAuthContext,
+  useDebounce,
+  useMediaQuery,
+  useLocalize,
+  useConversation,
+  useConversations,
+} from '~/hooks';
 import { cn } from '~/utils/';
 import store from '~/store';
 
@@ -47,14 +54,14 @@ export default function Nav({ navVisible, setNavVisible }) {
   const searchQuery = useRecoilValue(store.searchQuery);
   const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
   const isSearching = useRecoilValue(store.isSearching);
-  const { newConversation, searchPlaceholderConversation } = store.useConversation();
+  const { newConversation, searchPlaceholderConversation } = useConversation();
 
   // current conversation
   const conversation = useRecoilValue(store.conversation);
   const { conversationId } = conversation || {};
   const setSearchResultMessages = useSetRecoilState(store.searchResultMessages);
   const refreshConversationsHint = useRecoilValue(store.refreshConversationsHint);
-  const { refreshConversations } = store.useConversations();
+  const { refreshConversations } = useConversations();
 
   const [isFetching, setIsFetching] = useState(false);
 
