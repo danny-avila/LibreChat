@@ -23,7 +23,6 @@ const usePresetOptions: TUsePresetOptions = (_preset) => {
           ...prevState,
           ...update,
         },
-        endpointsConfig,
       }),
     );
   };
@@ -41,7 +40,6 @@ const usePresetOptions: TUsePresetOptions = (_preset) => {
           ...prevState,
           ...update,
         },
-        endpointsConfig,
       }),
     );
   };
@@ -57,7 +55,6 @@ const usePresetOptions: TUsePresetOptions = (_preset) => {
           ...prevState,
           ...update,
         },
-        endpointsConfig,
       }),
     );
   };
@@ -73,7 +70,6 @@ const usePresetOptions: TUsePresetOptions = (_preset) => {
             ...prevState,
             ...update,
           },
-          endpointsConfig,
         }),
       );
       return;
@@ -86,7 +82,6 @@ const usePresetOptions: TUsePresetOptions = (_preset) => {
           ...prevState,
           ...update,
         },
-        endpointsConfig,
       }),
     );
   };
@@ -101,7 +96,6 @@ const usePresetOptions: TUsePresetOptions = (_preset) => {
           ...prevState,
           agentOptions,
         },
-        endpointsConfig,
       }),
     );
   };

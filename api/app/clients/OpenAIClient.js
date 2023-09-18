@@ -61,7 +61,13 @@ class OpenAIClient extends BaseClient {
       };
     }
 
+    if (process.env.OPENROUTER_API_KEY) {
+      this.apiKey = process.env.OPENROUTER_API_KEY;
+      this.useOpenRouter = true;
+    }
+
     this.isChatCompletion =
+      this.useOpenRouter ||
       this.options.reverseProxyUrl ||
       this.options.localAI ||
       this.modelOptions.model.startsWith('gpt-');
@@ -117,6 +123,10 @@ class OpenAIClient extends BaseClient {
 
     if (this.azureEndpoint && this.options.debug) {
       console.debug('Using Azure endpoint');
+    }
+
+    if (this.useOpenRouter) {
+      this.completionsUrl = 'https://openrouter.ai/api/v1/chat/completions';
     }
 
     return this;
@@ -324,12 +334,24 @@ class OpenAIClient extends BaseClient {
             return;
           }
 
+          if (this.options.debug) {
+            // console.debug('progressMessage');
+            // console.dir(progressMessage, { depth: null });
+          }
+
           if (progressMessage.choices) {
             streamResult = progressMessage;
           }
-          const token = this.isChatCompletion
-            ? progressMessage.choices?.[0]?.delta?.content
-            : progressMessage.choices?.[0]?.text;
+
+          let token = null;
+          if (this.isChatCompletion) {
+            token =
+              progressMessage.choices?.[0]?.delta?.content ?? progressMessage.choices?.[0]?.text;
+          }
+
+          if (!token && this.useOpenRouter) {
+            token = progressMessage.choices?.[0]?.message?.content;
+          }
           // first event's delta content is always undefined
           if (!token) {
             return;
@@ -394,6 +416,16 @@ class OpenAIClient extends BaseClient {
 
     if (this.langchainProxy) {
       configOptions.basePath = this.langchainProxy;
+    }
+
+    if (this.useOpenRouter) {
+      configOptions.basePath = 'https://openrouter.ai/api/v1';
+      configOptions.baseOptions = {
+        headers: {
+          'HTTP-Referer': 'https://librechat.ai',
+          'X-Title': 'LibreChat',
+        },
+      };
     }
 
     try {

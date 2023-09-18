@@ -16,7 +16,6 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditP
   const [preset, setPreset] = useRecoilState(store.preset);
   const setPresets = useSetRecoilState(store.presets);
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const { setOption } = useSetOptions(_preset);
   const localize = useLocalize();
 
@@ -27,7 +26,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditP
     axios({
       method: 'post',
       url: '/api/presets',
-      data: cleanupPreset({ preset, endpointsConfig }),
+      data: cleanupPreset({ preset }),
       withCredentials: true,
     }).then((res) => {
       setPresets(res?.data);
@@ -40,7 +39,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditP
     }
     const fileName = filenamify(preset?.title || 'preset');
     exportFromJSON({
-      data: cleanupPreset({ preset, endpointsConfig }),
+      data: cleanupPreset({ preset }),
       fileName,
       exportType: exportFromJSON.types.json,
     });

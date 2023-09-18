@@ -111,21 +111,16 @@ export type TSearchResults = {
 };
 
 export type TConfig = {
-  availableModels: [];
+  availableModels?: [];
   userProvide?: boolean | null;
   availableTools?: [];
   plugins?: [];
+  azure?: boolean;
 };
 
-export type TEndpointsConfig = {
-  azureOpenAI: TConfig | null;
-  bingAI: TConfig | null;
-  chatGPTBrowser: TConfig | null;
-  anthropic: TConfig | null;
-  google: TConfig | null;
-  openAI: TConfig | null;
-  gptPlugins: TConfig | null;
-};
+export type TModelsConfig = Record<string, string[]>;
+
+export type TEndpointsConfig = Record<string, TConfig | null>;
 
 export type TUpdateTokenCountResponse = {
   count: number;

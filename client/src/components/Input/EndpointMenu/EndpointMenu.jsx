@@ -23,12 +23,13 @@ import {
   TooltipContent,
 } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { cn, cleanupPreset, getDefaultConversation } from '~/utils';
-import { useLocalize, useLocalStorage } from '~/hooks';
+import { cn, cleanupPreset } from '~/utils';
+import { useLocalize, useLocalStorage, useConversation, useDefaultConvo } from '~/hooks';
 import store from '~/store';
 
 export default function NewConversationMenu() {
   const localize = useLocalize();
+  const getDefaultConversation = useDefaultConvo();
   const [menuOpen, setMenuOpen] = useState(false);
   const [showPresets, setShowPresets] = useState(true);
   const [showEndpoints, setShowEndpoints] = useState(true);
@@ -37,12 +38,12 @@ export default function NewConversationMenu() {
   const [conversation, setConversation] = useRecoilState(store.conversation) ?? {};
   const [messages, setMessages] = useRecoilState(store.messages);
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
+
   const [presets, setPresets] = useRecoilState(store.presets);
   const modularEndpoints = new Set(['gptPlugins', 'anthropic', 'google', 'openAI']);
 
-  const { endpoint, conversationId } = conversation;
-  const { newConversation } = store.useConversation();
+  const { endpoint } = conversation;
+  const { newConversation } = useConversation();
 
   const deletePresetsMutation = useDeletePresetMutation();
   const createPresetMutation = useCreatePresetMutation();
@@ -62,18 +63,9 @@ export default function NewConversationMenu() {
   };
 
   const onFileSelected = (jsonData) => {
-    const jsonPreset = { ...cleanupPreset({ preset: jsonData, endpointsConfig }), presetId: null };
+    const jsonPreset = { ...cleanupPreset({ preset: jsonData }), presetId: null };
     importPreset(jsonPreset);
   };
-
-  // update the default model when availableModels changes
-  // typically, availableModels changes => modelsFilter or customGPTModels changes
-  useEffect(() => {
-    const isInvalidConversation = !availableEndpoints.find((e) => e === endpoint);
-    if (conversationId == 'new' && isInvalidConversation) {
-      newConversation();
-    }
-  }, [availableEndpoints]);
 
   // save states to localStorage
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
@@ -82,7 +74,12 @@ export default function NewConversationMenu() {
   const [lastBingSettings, setLastBingSettings] = useLocalStorage('lastBingSettings', {});
   useEffect(() => {
     if (endpoint && endpoint !== 'bingAI') {
-      setLastModel({ ...lastModel, [endpoint]: conversation?.model }), setLastConvo(conversation);
+      const lastModelUpdate = { ...lastModel, [endpoint]: conversation?.model };
+      if (endpoint === 'gptPlugins') {
+        lastModelUpdate.secondaryModel = conversation.agentOptions.model;
+      }
+      setLastModel(lastModelUpdate);
+      setLastConvo(conversation);
     } else if (endpoint === 'bingAI') {
       const { jailbreak, toneStyle } = conversation;
       setLastBingSettings({ ...lastBingSettings, jailbreak, toneStyle });
@@ -114,7 +111,6 @@ export default function NewConversationMenu() {
     ) {
       const currentConvo = getDefaultConversation({
         conversation,
-        endpointsConfig,
         preset: newPreset,
       });
 
