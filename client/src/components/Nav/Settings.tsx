@@ -36,7 +36,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
             >
               <Tabs.Trigger
                 className={cn(
-                  'group flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm radix-state-active:bg-gray-800 radix-state-active:text-white',
+                  'group flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-gray-500 radix-state-active:bg-gray-800 radix-state-active:text-white',
                   isSmallScreen
                     ? 'flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                     : '',
@@ -48,7 +48,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 className={cn(
-                  'group flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm radix-state-active:bg-gray-800 radix-state-active:text-white',
+                  'group flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-gray-500 radix-state-active:bg-gray-800 radix-state-active:text-white',
                   isSmallScreen
                     ? 'flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                     : '',
