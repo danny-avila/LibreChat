@@ -2,14 +2,14 @@ import { useEffect, useRef } from 'react';
 
 type TUseTimeoutParams = {
   callback: (error: string | number | boolean | null) => void;
-  delay?: number | undefined;
+  delay?: number;
 };
 type TTimeout = ReturnType<typeof setTimeout> | null;
 
 function useTimeout({ callback, delay = 400 }: TUseTimeoutParams) {
   const timeout = useRef<TTimeout>(null);
 
-  const callOnTimeout = (value: string | undefined) => {
+  const callOnTimeout = (value?: string) => {
     // Clear existing timeout
     if (timeout.current !== null) {
       clearTimeout(timeout.current);

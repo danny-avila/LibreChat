@@ -17,6 +17,7 @@ export enum QueryKeys {
   searchEnabled = 'searchEnabled',
   user = 'user',
   name = 'name', // user key name
+  models = 'models',
   endpoints = 'endpoints',
   presets = 'presets',
   searchResults = 'searchResults',
@@ -218,6 +219,14 @@ export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpointsConfig> 
   });
 };
 
+export const useGetModelsQuery = (): QueryObserverResult<t.TModelsConfig> => {
+  return useQuery([QueryKeys.models], () => dataService.getModels(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  });
+};
+
 export const useCreatePresetMutation = (): UseMutationResult<
   s.TPreset[],
   unknown,
@@ -313,6 +322,9 @@ export const useLoginUserMutation = (): UseMutationResult<
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.user]);
     },
+    onMutate: () => {
+      queryClient.invalidateQueries([QueryKeys.models]);
+    },
   });
 };
 
@@ -345,7 +357,12 @@ export const useRefreshTokenMutation = (): UseMutationResult<
   unknown,
   unknown
 > => {
-  return useMutation(() => dataService.refreshToken(), {});
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.refreshToken(), {
+    onMutate: () => {
+      queryClient.invalidateQueries([QueryKeys.models]);
+    },
+  });
 };
 
 export const useUserKeyQuery = (
