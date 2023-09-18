@@ -55,6 +55,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
   let responseMessageId;
   let lastSavedTimestamp = 0;
   const { overrideParentMessageId = null } = req.body;
+  const user = req.user.id;
 
   try {
     const getIds = (data) => {
@@ -82,6 +83,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
             unfinished: true,
             cancelled: false,
             error: false,
+            user,
           });
         }
       },
@@ -97,7 +99,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
         endpointOption.key,
         'Your GOOGLE_TOKEN has expired. Please provide your token again.',
       );
-      key = await getUserKey({ userId: req.user.id, name: 'google' });
+      key = await getUserKey({ userId: user, name: 'google' });
       key = JSON.parse(key);
       delete endpointOption.key;
       console.log('Using service account key provided by User for PaLM models');
@@ -120,7 +122,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
 
     let response = await client.sendMessage(text, {
       getIds,
-      user: req.user.id,
+      user,
       conversationId,
       parentMessageId,
       overrideParentMessageId,
@@ -136,18 +138,18 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       response.parentMessageId = overrideParentMessageId;
     }
 
-    await saveConvo(req.user.id, {
+    await saveConvo(user, {
       ...endpointOption,
       ...endpointOption.modelOptions,
       conversationId,
       endpoint: 'google',
     });
 
-    await saveMessage(response);
+    await saveMessage({ ...response, user });
     sendMessage(res, {
-      title: await getConvoTitle(req.user.id, conversationId),
+      title: await getConvoTitle(user, conversationId),
       final: true,
-      conversation: await getConvo(req.user.id, conversationId),
+      conversation: await getConvo(user, conversationId),
       requestMessage: userMessage,
       responseMessage: response,
     });
@@ -164,7 +166,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       error: true,
       text: error.message,
     };
-    await saveMessage(errorMessage);
+    await saveMessage({ ...errorMessage, user });
     handleError(res, errorMessage);
   }
 };

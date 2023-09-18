@@ -54,7 +54,7 @@ const createAbortController = (req, res, getAbortData) => {
       isCreatedByUser: false,
     };
 
-    saveMessage(responseMessage);
+    saveMessage({ ...responseMessage, user: req.user.id });
 
     return {
       title: await getConvoTitle(req.user.id, conversationId),
@@ -80,6 +80,7 @@ const handleAbortError = async (res, req, error, data) => {
       parentMessageId,
       text: error.message,
       shouldSaveMessage: true,
+      user: req.user.id,
     };
     const callback = async () => {
       if (abortControllers.has(conversationId)) {
