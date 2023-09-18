@@ -1,6 +1,7 @@
 import connectDb from '@librechat/backend/lib/db/connectDb';
 import User from '@librechat/backend/models/User';
 import Session from '@librechat/backend/models/Session';
+import { deleteMessages } from '@librechat/backend/models/Message';
 import { deleteConvos } from '@librechat/backend/models/Conversation';
 type TUser = { email: string; password: string };
 
@@ -19,6 +20,12 @@ export default async function cleanupUser(user: TUser) {
 
     if (messages.deletedCount > 0 || deletedCount > 0) {
       console.log(`🤖:  ✅  Deleted ${deletedCount} convos & ${messages.deletedCount} messages`);
+    }
+
+    // Ensure all user messages are deleted
+    const { deletedCount: deletedMessages } = await deleteMessages({ user: _id });
+    if (deletedMessages > 0) {
+      console.log(`🤖:  ✅  Deleted ${deletedMessages} remaining message(s)`);
     }
 
     await Session.deleteAllUserSessions(_id);
