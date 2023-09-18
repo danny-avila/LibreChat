@@ -260,6 +260,184 @@ describe('Zod Schemas', () => {
       });
       expect(result.success).toBe(true);
     });
+
+    it('should handle username with special characters from various languages', () => {
+      const usernames = [
+        // General
+        'éèäöü',
+
+        // German
+        'Jöhn.Döe@',
+        'Jöhn_Ü',
+        'Jöhnß',
+
+        // French
+        'Jéan-Piérre',
+        'Élève',
+        'Fiançée',
+        'Mère',
+
+        // Spanish
+        'Niño',
+        'Señor',
+        'Muñoz',
+
+        // Portuguese
+        'João',
+        'Coração',
+        'Pão',
+
+        // Italian
+        'Pietro',
+        'Bambino',
+        'Forlì',
+
+        // Romanian
+        'Mâncare',
+        'Școală',
+        'Țară',
+
+        // Catalan
+        'Niç',
+        'Màquina',
+        'Çap',
+
+        // Swedish
+        'Fjärran',
+        'Skål',
+        'Öland',
+
+        // Norwegian
+        'Blåbær',
+        'Fjord',
+        'Årstid',
+
+        // Danish
+        'Flød',
+        'Søster',
+        'Århus',
+
+        // Icelandic
+        'Þór',
+        'Ætt',
+        'Öx',
+
+        // Turkish
+        'Şehir',
+        'Çocuk',
+        'Gözlük',
+
+        // Polish
+        'Łódź',
+        'Część',
+        'Świat',
+
+        // Czech
+        'Čaj',
+        'Řeka',
+        'Život',
+
+        // Slovak
+        'Kočka',
+        'Ľudia',
+        'Žaba',
+
+        // Croatian
+        'Čovjek',
+        'Šuma',
+        'Žaba',
+
+        // Hungarian
+        'Tűz',
+        'Ősz',
+        'Ünnep',
+
+        // Finnish
+        'Mäki',
+        'Yö',
+        'Äiti',
+
+        // Estonian
+        'Tänav',
+        'Öö',
+        'Ülikool',
+
+        // Latvian
+        'Ēka',
+        'Ūdens',
+        'Čempions',
+
+        // Lithuanian
+        'Ūsas',
+        'Ąžuolas',
+        'Čia',
+
+        // Dutch
+        'Maïs',
+        'Geërfd',
+        'Coördinatie',
+      ];
+
+      const failingUsernames = usernames.reduce((acc, username) => {
+        const result = registerSchema.safeParse({
+          name: 'John Doe',
+          username,
+          email: 'john@example.com',
+          password: 'password123',
+          confirm_password: 'password123',
+        });
+
+        if (!result.success) {
+          acc.push({ username, error: result.error });
+        }
+
+        return acc;
+      }, []);
+
+      if (failingUsernames.length > 0) {
+        console.log('Failing Usernames:', failingUsernames);
+      }
+      expect(failingUsernames).toEqual([]);
+    });
+
+    it('should reject invalid usernames', () => {
+      const invalidUsernames = [
+        'Дмитрий', // Cyrillic characters
+        'محمد', // Arabic characters
+        '张伟', // Chinese characters
+        'john{doe}', // Contains `{` and `}`
+        'j', // Only one character
+        'a'.repeat(81), // More than 80 characters
+        '\' OR \'1\'=\'1\'; --', // SQL Injection
+        '{$ne: null}', // MongoDB Injection
+        '<script>alert("XSS")</script>', // Basic XSS
+        '"><script>alert("XSS")</script>', // XSS breaking out of an attribute
+        '"><img src=x onerror=alert("XSS")>', // XSS using an image tag
+      ];
+
+      const passingUsernames = [];
+      const failingUsernames = invalidUsernames.reduce((acc, username) => {
+        const result = registerSchema.safeParse({
+          name: 'John Doe',
+          username,
+          email: 'john@example.com',
+          password: 'password123',
+          confirm_password: 'password123',
+        });
+
+        if (!result.success) {
+          acc.push({ username, error: result.error });
+        }
+
+        if (result.success) {
+          passingUsernames.push({ username });
+        }
+
+        return acc;
+      }, []);
+
+      expect(failingUsernames.length).toEqual(invalidUsernames.length); // They should match since all invalidUsernames should fail.
+    });
   });
 
   describe('errorsToString', () => {
