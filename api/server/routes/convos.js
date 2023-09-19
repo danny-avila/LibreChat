@@ -1,7 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const { getConvo, saveConvo, likeConvo } = require('../../models');
-const { getConvosByPage, deleteConvos, getRecentConvos, getHottestConvo, getSharedConvo, getLikedConvos, getPublicConvos, getFollowingConvos } = require('../../models/Conversation');
+const {
+  getConvosByPage,
+  deleteConvos,
+  getRecentConvos,
+  getHottestConvo,
+  getSharedConvo,
+  getLikedConvos,
+  getPublicConvos,
+  getFollowingConvos,
+  increaseConvoViewCount
+} = require('../../models/Conversation');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 const { duplicateMessages } = require('../../models/Message');
 const crypto = require('crypto');
@@ -49,7 +59,7 @@ router.get('/following', requireJwtAuth, async (req, res) => {
   }
 });
 
-router.get('/likedConvos/:userId' , requireJwtAuth, async (req, res) => {
+router.get('/likedConvos/:userId', requireJwtAuth, async (req, res) => {
   try {
     const { userId } = req.params;
     const likedConvos = await getLikedConvos(userId);
@@ -60,7 +70,7 @@ router.get('/likedConvos/:userId' , requireJwtAuth, async (req, res) => {
   }
 });
 
-router.get('/publicConvos/:userId' , requireJwtAuth, async (req, res) => {
+router.get('/publicConvos/:userId', requireJwtAuth, async (req, res) => {
   try {
     const { userId } = req.params;
     const likedConvos = await getPublicConvos(userId);
@@ -147,12 +157,28 @@ router.post('/duplicate', requireJwtAuth, async (req, res) => {
 
 router.post('/like', async (req, res) => {
   const { conversationId, userId, liked } = req.body.arg;
-  console.log('hit like router')
+  console.log('hit like router');
   try {
     const dbResponse = await likeConvo(conversationId, userId, liked);
-    console.log('saved in like router')
+    console.log('saved in like router');
 
     res.status(201).send(dbResponse);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send(error);
+  }
+});
+
+router.post('/:conversationId/viewcount/increment', async (req, res) => {
+  const { conversationId } = req.params;
+  console.log(`routes: hit viewcount increment router for conversationId ${conversationId}`);
+  try {
+    const dbResponse = await increaseConvoViewCount(conversationId);
+    console.log(
+      `routes: viewcount updated for conversationId ${conversationId}: viewCount=${dbResponse?.viewCount}`
+    );
+
+    res.status(200).send(dbResponse);
   } catch (error) {
     console.error(error);
     res.status(500).send(error);

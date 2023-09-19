@@ -8,10 +8,11 @@
       "type": "node",
       "request": "launch",
       "name": "Debug API Server",
+      "runtimeExecutable": "nodemon",
       "skipFiles": ["<node_internals>/**"],
       "program": "${workspaceFolder}/api/server/index.js",
       "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "development"
       }
     },
     {
