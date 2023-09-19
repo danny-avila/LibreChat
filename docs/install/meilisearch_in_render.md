@@ -1,66 +1,66 @@
-# Utilizar o Meilisearch rodando o LibreChat no Render
+"# Utilize Meilisearch by running LibreChat on Render
 
-## Crie uma nova conta ou um novo projeto no Render
+## Create a new account or a new project on Render
 
-**1.** visite [https://render.com/](https://render.com/) e clique em 'Comece Grátis` para criar uma conta e fazer login
+**1.** Visit [https://render.com/](https://render.com/) and click on 'Start Free` to create an account and sign in
 
-**2.** Acesse o seu painel de controle
+**2.** Access your control panel
 
-**3.** Selecione `Novo` e depois `Serviço Web`
+**3.** Select `New` and then `Web Service`
   
   ![image](https://github.com/fuegovic/LibreChat/assets/32828263/4edeceaf-6032-4bd0-9575-0dda76fd9958)
 
-**4.** Adicione `https://github.com/itzraiss/Meilisearch` na seção de repositórios públicos e clique em `continuar`
+**4.** Add `https://github.com/itzraiss/Meilisearch` to the public repositories section and click `continue`
   
   ![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-09-19%20184044.png)
 
-**5.** Dê um nome único e continue com a opção gratuita e clique no botão `criar serviço web` na parte inferior da página
+**5.** Assign a unique name and proceed with the free option and click on the `create web service` button at the bottom of the page
   
   ![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-09-19%20185545.png)
 
-## Clique em Advanced para adicionar as Variáveis de Ambiente  
+## Click on Advanced to add Environment Variables 
   ![image](https://github.com/itzraiss/images/blob/main/imagem_2023-09-19_185841007.png)
 
-## Adicione as Variáveis de Ambiente
+## Add the Environment Variables
 
-**1.** Para adicionar manualmente as `Variáveis de Ambiente`
-  - Você precisa usar o `Adicionar Variáveis de Ambiente` e adicioná-las uma de cada vez, pois adicionar um arquivo secreto não funcionará no nosso caso.
+**1.** To manually add the `Environment Variables`
+  - You need to use `Add Environment Variables` and add them one at a time, as adding a secret file will not work in our case.
 
   ![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-09-19%20184259.png)
 
-**2.** Você precisa inserir estes valores:
+**2.** You need to enter these values:
 
-| Chave | Valor |
+| Key | Value |
 | --- | --- |
 | MEILI_HOST | http://meilisearch:7700 |
 | MEILI_HTTP_ADDR | meilisearch:7700 |
 | MEILI_MASTER_KEY | DrhYf7zENyR6AlUCKmnz0eYASOQdl6zxH7s7MKFSfFCt | 
 | MEILI_NO_ANALYTICS | true |
 
-**Implantação**
+**Deployment**
 
-**1.** Já está tudo condigurado, agora só basta clicar em Create Web Service. Vai levar alguns segundos
+**1.** Everything is set up, now all you need to do is click on 'Create Web Service'. This will take a few seconds
 
   ![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-09-19%20184303.png)
 
-**3.** Quando estiver pronto, você verá `your service is live 🎉` no console e o ícone verde `Live` no topo
+**3.** Once it's ready, you'll see `your service is live 🎉` in the console and the green `Live` icon at the top
 
   ![image](https://github.com/itzraiss/images/blob/main/imagem_2023-09-19_192433154.png)
 
 
-**Obtendo Endereço URL**
+**Get URL Address**
 
-Após receber a mensagem: `your service is live 🎉`, copie o endereço URL no render do seu projeto no canto superior esquerdo:
+Once you get the message: `your service is live 🎉`, copy the URL address of your project in the top left corner of Render:
 
   ![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-09-19%20184509.png)
 
-## No projeto do LibreChat
+## In LibreChat Project
 
-Agora insira os valores das Varáveis de Ambiente abaixo no seu projeto do LibreChat (Substitua MEILI_HOST adicionando o endereço URL do seu projeto Meilisearch do Render que você copiou):
+Now, insert the below environment variable values into your LibreChat project (Replace MEILI_HOST by adding the URL address of your Render's Meilisearch project that you copied):
 
-| Chave | Valor |
+| Key | Value |
 | --- | --- |
-| MEILI_HOST | URL do seu projeto Meilisearch no Render|
+| MEILI_HOST | Your Render project's Meilisearch URL|
 | MEILI_HTTP_ADDR | meilisearch:7700 |
 | MEILI_MASTER_KEY | DrhYf7zENyR6AlUCKmnz0eYASOQdl6zxH7s7MKFSfFCt | 
 | MEILI_NO_ANALYTICS | true |
@@ -68,17 +68,17 @@ Agora insira os valores das Varáveis de Ambiente abaixo no seu projeto do Libre
 
   ![image](https://github.com/itzraiss/images/blob/main/imagem_2023-09-19_190801655.png)
 
-## Implantação
+## Deployment
 
-**1.** Agora clique em `Implantação Manual` e selecione `Clear build cache & Deploy`. Vai levar alguns minutos
+**1.** Now, click on `Manual Deployment` and select `Clear build cache & Deploy`. It will take a few minutes
 
   ![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-09-19%20193702.png)
 
-**3.** Quando estiver pronto, você verá `your service is live 🎉` no console e o ícone verde `Live` no topo
+**3.** Once it's ready, you'll see `your service is live 🎉` in the console and the green `Live` icon at the top
 
   ![image](https://github.com/itzraiss/images/blob/main/imagem_2023-09-19_200952435.png)
 
-## Conclusão
-Agora você poderá realizar pesquisas novamente, parabéns, você implantou com sucesso o Meilisearch no render.com
+## Conclusion
+Now, you should be able to perform searches again, congratulations, you have successfully deployed Meilisearch on render.com
 
-### Nota: Se você ainda está tendo problemas, antes de criar um novo problema, por favor, procure por problemas semelhantes no nosso [#issues thread on our discord](https://discord.gg/weqZFtD9C4) ou na nossa [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) na nossa página de Discussões. Se você não encontrar um problema relevante, sinta-se à vontade para criar um novo e fornecer o máximo de detalhes possível.
+### Note: If you are still having issues, before creating a new issue, please search for similar issues on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or on our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussion page. If you cannot find a relevant issue, feel free to create a new one and provide as many details as possible.
