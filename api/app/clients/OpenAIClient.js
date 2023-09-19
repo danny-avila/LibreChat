@@ -2,6 +2,7 @@ const BaseClient = require('./BaseClient');
 const ChatGPTClient = require('./ChatGPTClient');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const { maxTokensMap, genAzureChatCompletion } = require('../../utils');
+const { formatMessage } = require('./output_parsers');
 const { truncateText } = require('./prompts');
 const { runTitleChain } = require('./chains');
 const { createLLM } = require('./llm');
@@ -89,6 +90,15 @@ class OpenAIClient extends BaseClient {
     this.isUnofficialChatGptModel =
       model.startsWith('text-chat') || model.startsWith('text-davinci-002-render');
     this.maxContextTokens = maxTokensMap[model] ?? 4095; // 1 less than maximum
+
+    if (this.shouldRefineContext) {
+      this.maxContextTokens = Math.floor(this.maxContextTokens / 2);
+    }
+
+    if (this.options.debug) {
+      console.debug('maxContextTokens', this.maxContextTokens);
+    }
+
     this.maxResponseTokens = this.modelOptions.max_tokens || 1024;
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
@@ -286,22 +296,15 @@ class OpenAIClient extends BaseClient {
       }
     }
 
-    const formattedMessages = orderedMessages.map((message) => {
-      let { role: _role, sender, text } = message;
-      const role = _role ?? sender;
-      const content = text ?? '';
-      const formattedMessage = {
-        role: role?.toLowerCase() === 'user' ? 'user' : 'assistant',
-        content,
-      };
+    const formattedMessages = orderedMessages.map((message, i) => {
+      const formattedMessage = formatMessage({
+        message,
+        userName: this.options?.name,
+        assistantName: this.options?.chatGptLabel,
+      });
 
-      if (this.options?.name && formattedMessage.role === 'user') {
-        formattedMessage.name = this.options.name;
-      }
-
-      if (this.contextStrategy) {
-        formattedMessage.tokenCount =
-          message.tokenCount ?? this.getTokenCountForMessage(formattedMessage);
+      if (this.contextStrategy && !orderedMessages.tokenCount) {
+        orderedMessages[i].tokenCount = this.getTokenCountForMessage(formattedMessage);
       }
 
       return formattedMessage;

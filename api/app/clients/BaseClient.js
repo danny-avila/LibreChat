@@ -1,11 +1,8 @@
 const crypto = require('crypto');
 const TextStream = require('./TextStream');
-const { RecursiveCharacterTextSplitter } = require('langchain/text_splitter');
-const { ChatOpenAI } = require('langchain/chat_models/openai');
-const { loadSummarizationChain } = require('langchain/chains');
 const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('../../models');
 const { addSpaceIfNeeded } = require('../../server/utils');
-const { refinePrompt } = require('./prompts');
+const summaryBuffer = require('./memory/summaryBuffer');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -170,16 +167,16 @@ class BaseClient {
       const { messageId } = message;
       const update = {};
 
-      if (messageId === tokenCountMap.refined?.messageId) {
+      if (messageId === tokenCountMap.summary?.messageId) {
         if (this.options.debug) {
-          console.debug(`Adding refined props to ${messageId}.`);
+          console.debug(`Adding summary props to ${messageId}.`);
         }
 
-        update.refinedMessageText = tokenCountMap.refined.content;
-        update.refinedTokenCount = tokenCountMap.refined.tokenCount;
+        update.summary = tokenCountMap.summary.content;
+        update.summaryTokenCount = tokenCountMap.summary.tokenCount;
       }
 
-      if (message.tokenCount && !update.refinedTokenCount) {
+      if (message.tokenCount && !update.summaryTokenCount) {
         if (this.options.debug) {
           console.debug(`Skipping ${messageId}: already had a token count.`);
         }
@@ -203,57 +200,34 @@ class BaseClient {
   }
 
   async refineMessages(messagesToRefine, remainingContextTokens) {
-    const model = new ChatOpenAI({ temperature: 0 });
-    const chain = loadSummarizationChain(model, {
-      type: 'refine',
-      verbose: this.options.debug,
-      refinePrompt,
-    });
-    const splitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 1500,
-      chunkOverlap: 100,
-    });
-    const userMessages = this.concatenateMessages(
-      messagesToRefine.filter((m) => m.role === 'user'),
-    );
-    const assistantMessages = this.concatenateMessages(
-      messagesToRefine.filter((m) => m.role !== 'user'),
-    );
-    const userDocs = await splitter.createDocuments([userMessages], [], {
-      chunkHeader: 'DOCUMENT NAME: User Message\n\n---\n\n',
-      appendChunkOverlapHeader: true,
-    });
-    const assistantDocs = await splitter.createDocuments([assistantMessages], [], {
-      chunkHeader: 'DOCUMENT NAME: Assistant Message\n\n---\n\n',
-      appendChunkOverlapHeader: true,
-    });
-    // const chunkSize = Math.round(concatenatedMessages.length / 512);
-    const input_documents = userDocs.concat(assistantDocs);
     if (this.options.debug) {
       console.debug('Refining messages...');
     }
+
     try {
-      const res = await chain.call({
-        input_documents,
-        signal: this.abortController.signal,
+      const summary = await summaryBuffer({
+        debug: this.options.debug,
+        messagesToRefine,
+        modelName: this.modelOptions.model,
+        formatOptions: {
+          userName: this.options?.name,
+          assistantName: this.options?.chatGptLabel,
+        },
+        // previous_summary: '',
       });
 
-      const refinedMessage = {
-        role: 'assistant',
-        content: res.output_text,
-        tokenCount: this.getTokenCount(res.output_text),
-      };
+      const summaryTokenCount = this.getTokenCountForMessage(summary);
 
       if (this.options.debug) {
-        console.debug('Refined messages', refinedMessage);
+        console.debug('Refined messages', summary);
         console.debug(
           `remainingContextTokens: ${remainingContextTokens}, after refining: ${
-            remainingContextTokens - refinedMessage.tokenCount
+            remainingContextTokens - summaryTokenCount
           }`,
         );
       }
 
-      return refinedMessage;
+      return { summary, summaryTokenCount };
     } catch (e) {
       console.error('Error refining messages');
       console.error(e);
@@ -269,106 +243,76 @@ class BaseClient {
    * The method also includes a mechanism to avoid blocking the event loop by waiting for the next tick after each iteration.
    *
    * @param {Array} messages - An array of messages, each with a `tokenCount` property. The messages should be ordered from oldest to newest.
-   * @returns {Object} An object with three properties: `context`, `remainingContextTokens`, and `messagesToRefine`. `context` is an array of messages that fit within the token limit. `remainingContextTokens` is the number of tokens remaining within the limit after adding the messages to the context. `messagesToRefine` is an array of messages that were not added to the context because they would have exceeded the token limit.
+   * @returns {Object} An object with three properties: `context`, `remainingContextTokens`, and `messagesToRefine`.
+   *    `context` is an array of messages that fit within the token limit.
+   *    `summaryIndex` is the index of the first message added to the array that should be refined.
+   *    `remainingContextTokens` is the number of tokens remaining within the limit after adding the messages to the context.
+   *    `messagesToRefine` is an array of messages that were not added to the context because they would have exceeded the token limit.
    */
-  async getMessagesWithinTokenLimit(messages) {
+  async getMessagesWithinTokenLimit(_messages) {
     // Every reply is primed with <|start|>assistant<|message|>, so we
     // start with 3 tokens for the label after all messages have been counted.
     let currentTokenCount = 3;
-    let context = [];
-    let messagesToRefine = [];
-    let refineIndex = -1;
+    let summaryIndex = -1;
     let remainingContextTokens = this.maxContextTokens;
+    const messages = [..._messages];
 
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const message = messages[i];
-      const newTokenCount = currentTokenCount + message.tokenCount;
-      const exceededLimit = newTokenCount > this.maxContextTokens;
-      let shouldRefine = exceededLimit && this.shouldRefineContext;
-      let refineNextMessage = i !== 0 && i !== 1 && context.length > 0;
+    const context = [];
+    if (currentTokenCount < remainingContextTokens) {
+      while (messages.length > 0 && currentTokenCount < remainingContextTokens) {
+        const poppedMessage = messages.pop();
+        const { tokenCount } = poppedMessage;
 
-      if (shouldRefine) {
-        messagesToRefine.push(message);
-
-        if (refineIndex === -1) {
-          refineIndex = i;
+        if (poppedMessage && currentTokenCount + tokenCount <= remainingContextTokens) {
+          context.push(poppedMessage);
+          currentTokenCount += tokenCount;
+        } else {
+          messages.push(poppedMessage);
+          break;
         }
-
-        if (refineNextMessage) {
-          refineIndex = i + 1;
-          const removedMessage = context.pop();
-          messagesToRefine.push(removedMessage);
-          currentTokenCount -= removedMessage.tokenCount;
-          remainingContextTokens = this.maxContextTokens - currentTokenCount;
-          refineNextMessage = false;
-        }
-
-        continue;
-      } else if (exceededLimit) {
-        break;
       }
-
-      context.push(message);
-      currentTokenCount = newTokenCount;
-      remainingContextTokens = this.maxContextTokens - currentTokenCount;
-      await new Promise((resolve) => setImmediate(resolve));
     }
+
+    const prunedMemory = messages;
+    summaryIndex = prunedMemory.length - 1;
+    remainingContextTokens -= currentTokenCount;
 
     return {
       context: context.reverse(),
       remainingContextTokens,
-      messagesToRefine: messagesToRefine.reverse(),
-      refineIndex,
+      messagesToRefine: prunedMemory,
+      summaryIndex,
     };
   }
 
   async handleContextStrategy({ instructions, orderedMessages, formattedMessages }) {
     let payload = this.addInstructions(formattedMessages, instructions);
     let orderedWithInstructions = this.addInstructions(orderedMessages, instructions);
-    let { context, remainingContextTokens, messagesToRefine, refineIndex } =
-      await this.getMessagesWithinTokenLimit(payload);
 
-    payload = context;
-    let refinedMessage;
+    let { context, remainingContextTokens, messagesToRefine, summaryIndex } =
+      await this.getMessagesWithinTokenLimit(orderedWithInstructions);
 
-    // if (messagesToRefine.length > 0) {
-    //   refinedMessage = await this.refineMessages(messagesToRefine, remainingContextTokens);
-    //   payload.unshift(refinedMessage);
-    //   remainingContextTokens -= refinedMessage.tokenCount;
-    // }
-    // if (remainingContextTokens <= instructions?.tokenCount) {
-    //   if (this.options.debug) {
-    //     console.debug(`Remaining context (${remainingContextTokens}) is less than instructions token count: ${instructions.tokenCount}`);
-    //   }
-
-    //   ({ context, remainingContextTokens, messagesToRefine, refineIndex } = await this.getMessagesWithinTokenLimit(payload));
-    //   payload = context;
-    // }
+    let summary;
+    let summaryTokenCount;
 
     // Calculate the difference in length to determine how many messages were discarded if any
-    let diff = orderedWithInstructions.length - payload.length;
+    let diff = formattedMessages.length - context.length;
 
-    if (this.options.debug) {
-      console.debug('<---------------------------------DIFF--------------------------------->');
-      console.debug(
-        `Difference between payload (${payload.length}) and orderedWithInstructions (${orderedWithInstructions.length}): ${diff}`,
-      );
-      console.debug(
-        'remainingContextTokens, this.maxContextTokens (1/2)',
-        remainingContextTokens,
-        this.maxContextTokens,
-      );
-    }
-
-    // If the difference is positive, slice the orderedWithInstructions array
+    // If the difference is positive, slice the payload array
     if (diff > 0) {
-      orderedWithInstructions = orderedWithInstructions.slice(diff);
+      payload = formattedMessages.slice(diff);
+      console.debug(
+        `Difference between original payload (${formattedMessages.length}) and context (${context.length}): ${diff}`,
+      );
     }
 
     if (messagesToRefine.length > 0) {
-      refinedMessage = await this.refineMessages(messagesToRefine, remainingContextTokens);
-      payload.unshift(refinedMessage);
-      remainingContextTokens -= refinedMessage.tokenCount;
+      ({ summary, summaryTokenCount } = await this.refineMessages(
+        messagesToRefine,
+        remainingContextTokens,
+      ));
+      payload.unshift(summary);
+      remainingContextTokens -= summaryTokenCount;
     }
 
     if (this.options.debug) {
@@ -379,16 +323,18 @@ class BaseClient {
       );
     }
 
+    console.log('summaryIndex', summaryIndex);
+
     let tokenCountMap = orderedWithInstructions.reduce((map, message, index) => {
       if (!message.messageId) {
         return map;
       }
 
-      if (index === refineIndex) {
-        map.refined = { ...refinedMessage, messageId: message.messageId };
+      if (index === summaryIndex) {
+        map.summary = { ...summary, messageId: message.messageId, tokenCount: summaryTokenCount };
       }
 
-      map[message.messageId] = payload[index].tokenCount;
+      map[message.messageId] = orderedWithInstructions[index].tokenCount;
       return map;
     }, {});
 
@@ -396,9 +342,16 @@ class BaseClient {
 
     if (this.options.debug) {
       console.debug('<-------------------------PAYLOAD/TOKEN COUNT MAP------------------------->');
-      // console.debug('Payload:', payload);
+      console.debug('Payload:', payload);
       console.debug('Token Count Map:', tokenCountMap);
-      console.debug('Prompt Tokens', promptTokens, remainingContextTokens, this.maxContextTokens);
+      console.debug(
+        'Prompt Tokens',
+        promptTokens,
+        'remainingContextTokens',
+        remainingContextTokens,
+        'this.maxContextTokens',
+        this.maxContextTokens,
+      );
     }
 
     return { payload, tokenCountMap, promptTokens, messages: orderedWithInstructions };
@@ -446,8 +399,8 @@ class BaseClient {
     );
 
     if (this.options.debug) {
-      console.debug('payload');
-      console.debug(payload);
+      // console.debug('payload');
+      // console.debug(payload);
     }
 
     if (tokenCountMap) {
@@ -458,11 +411,6 @@ class BaseClient {
         console.log('userMessage', userMessage);
       }
 
-      payload = payload.map((message) => {
-        const messageWithoutTokenCount = message;
-        delete messageWithoutTokenCount.tokenCount;
-        return messageWithoutTokenCount;
-      });
       this.handleTokenCountMap(tokenCountMap);
     }
 

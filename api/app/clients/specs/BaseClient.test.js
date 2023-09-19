@@ -15,26 +15,10 @@ jest.mock('../../../models', () => {
   };
 });
 
-jest.mock('langchain/text_splitter', () => {
-  return {
-    RecursiveCharacterTextSplitter: jest.fn().mockImplementation(() => {
-      return { createDocuments: jest.fn().mockResolvedValue([]) };
-    }),
-  };
-});
-
 jest.mock('langchain/chat_models/openai', () => {
   return {
     ChatOpenAI: jest.fn().mockImplementation(() => {
       return {};
-    }),
-  };
-});
-
-jest.mock('langchain/chains', () => {
-  return {
-    loadSummarizationChain: jest.fn().mockReturnValue({
-      call: jest.fn().mockResolvedValue({ output_text: 'Refined answer' }),
     }),
   };
 });
@@ -69,6 +53,13 @@ describe('BaseClient', () => {
 
   beforeEach(() => {
     TestClient = initializeFakeClient(apiKey, options, fakeMessages);
+    TestClient.refineMessages = jest.fn().mockResolvedValue({
+      summary: {
+        role: 'system',
+        content: 'Refined answer',
+      },
+      summaryTokenCount: 5,
+    });
   });
 
   test('returns the input messages without instructions when addInstructions() is called with empty instructions', () => {
@@ -110,23 +101,17 @@ describe('BaseClient', () => {
     ];
     const remainingContextTokens = 100;
     const expectedRefinedMessage = {
-      role: 'assistant',
+      role: 'system',
       content: 'Refined answer',
-      tokenCount: 14, // 'Refined answer'.length
     };
 
     const result = await TestClient.refineMessages(messagesToRefine, remainingContextTokens);
-    expect(result).toEqual(expectedRefinedMessage);
+    expect(result.summary).toEqual(expectedRefinedMessage);
   });
 
   test('gets messages within token limit (under limit) correctly in getMessagesWithinTokenLimit()', async () => {
     TestClient.maxContextTokens = 100;
     TestClient.shouldRefineContext = true;
-    TestClient.refineMessages = jest.fn().mockResolvedValue({
-      role: 'assistant',
-      content: 'Refined answer',
-      tokenCount: 30,
-    });
 
     const messages = [
       { role: 'user', content: 'Hello', tokenCount: 5 },
@@ -142,43 +127,50 @@ describe('BaseClient', () => {
     const expectedRemainingContextTokens = 58 - 3; // (100 - 5 - 19 - 18) - 3
     const expectedMessagesToRefine = [];
 
+    const lastExpectedMessage =
+      expectedMessagesToRefine?.[expectedMessagesToRefine.length - 1] ?? {};
+    const expectedIndex = messages.findIndex((msg) => msg.content === lastExpectedMessage?.content);
+
     const result = await TestClient.getMessagesWithinTokenLimit(messages);
+
     expect(result.context).toEqual(expectedContext);
+    expect(result.summaryIndex).toEqual(expectedIndex);
     expect(result.remainingContextTokens).toBe(expectedRemainingContextTokens);
     expect(result.messagesToRefine).toEqual(expectedMessagesToRefine);
   });
 
-  test('gets messages within token limit (over limit) correctly in getMessagesWithinTokenLimit()', async () => {
+  test('gets result over token limit correctly in getMessagesWithinTokenLimit()', async () => {
     TestClient.maxContextTokens = 50; // Set a lower limit
     TestClient.shouldRefineContext = true;
-    TestClient.refineMessages = jest.fn().mockResolvedValue({
-      role: 'assistant',
-      content: 'Refined answer',
-      tokenCount: 4,
-    });
 
     const messages = [
-      { role: 'user', content: 'I need a coffee, stat!', tokenCount: 30 },
-      { role: 'assistant', content: 'Sure, I can help with that.', tokenCount: 30 },
-      { role: 'user', content: 'Hello', tokenCount: 5 },
-      { role: 'assistant', content: 'How can I help you?', tokenCount: 19 },
-      { role: 'user', content: 'I have a question.', tokenCount: 18 },
-    ];
-    const expectedContext = [
-      { role: 'user', content: 'Hello', tokenCount: 5 },
-      { role: 'assistant', content: 'How can I help you?', tokenCount: 19 },
-      { role: 'user', content: 'I have a question.', tokenCount: 18 },
+      { role: 'user', content: 'Hello', tokenCount: 30 },
+      { role: 'assistant', content: 'How can I help you?', tokenCount: 30 },
+      { role: 'user', content: 'I have a question.', tokenCount: 5 },
+      { role: 'user', content: 'I need a coffee, stat!', tokenCount: 19 },
+      { role: 'assistant', content: 'Sure, I can help with that.', tokenCount: 18 },
     ];
 
     // Subtract 3 tokens for Assistant Label priming after all messages have been counted.
-    const expectedRemainingContextTokens = 8 - 3; // (50 - 18 - 19 - 5) - 3
+    const expectedRemainingContextTokens = 5; // (50 - 18 - 19 - 5) - 3
     const expectedMessagesToRefine = [
-      { role: 'user', content: 'I need a coffee, stat!', tokenCount: 30 },
-      { role: 'assistant', content: 'Sure, I can help with that.', tokenCount: 30 },
+      { role: 'user', content: 'Hello', tokenCount: 30 },
+      { role: 'assistant', content: 'How can I help you?', tokenCount: 30 },
+    ];
+    const expectedContext = [
+      { role: 'user', content: 'I have a question.', tokenCount: 5 },
+      { role: 'user', content: 'I need a coffee, stat!', tokenCount: 19 },
+      { role: 'assistant', content: 'Sure, I can help with that.', tokenCount: 18 },
     ];
 
+    const lastExpectedMessage =
+      expectedMessagesToRefine?.[expectedMessagesToRefine.length - 1] ?? {};
+    const expectedIndex = messages.findIndex((msg) => msg.content === lastExpectedMessage?.content);
+
     const result = await TestClient.getMessagesWithinTokenLimit(messages);
+
     expect(result.context).toEqual(expectedContext);
+    expect(result.summaryIndex).toEqual(expectedIndex);
     expect(result.remainingContextTokens).toBe(expectedRemainingContextTokens);
     expect(result.messagesToRefine).toEqual(expectedMessagesToRefine);
   });
@@ -200,13 +192,9 @@ describe('BaseClient', () => {
       ],
       remainingContextTokens: 80,
       messagesToRefine: [{ content: 'Hello' }],
-      refineIndex: 3,
+      summaryIndex: 3,
     });
-    TestClient.refineMessages = jest.fn().mockResolvedValue({
-      role: 'assistant',
-      content: 'Refined answer',
-      tokenCount: 30,
-    });
+
     TestClient.getTokenCountForResponse = jest.fn().mockReturnValue(40);
 
     const instructions = { content: 'Please provide more details.' };
@@ -225,9 +213,8 @@ describe('BaseClient', () => {
     const expectedResult = {
       payload: [
         {
+          role: 'system',
           content: 'Refined answer',
-          role: 'assistant',
-          tokenCount: 30,
         },
         { content: 'How can I help you?' },
         { content: 'Please provide more details.' },
