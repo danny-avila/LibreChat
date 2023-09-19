@@ -1,4 +1,4 @@
-# Utilizar o Render no Meilisearch
+# Utilizar o Meilisearch no LibreChat usando o Render
 
 ## Crie uma nova conta ou um novo projeto no Render
 
@@ -54,7 +54,7 @@
 
 **Obtendo Endereço URL**
 
-Após receber a mensagem: `your service is live 🎉`, é obrigatório que copie o endereço URL no render do seu projeto no canto superior direito:
+Após receber a mensagem: `your service is live 🎉`, copie o endereço URL no render do seu projeto no canto superior esquerdo:
 
   ![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-09-19%20184509.png)
 
