@@ -76,7 +76,7 @@ Agora insira os valores das Varáveis de Ambiente abaixo no seu projeto do Libre
 
 **3.** Quando estiver pronto, você verá `your service is live 🎉` no console e o ícone verde `Live` no topo
 
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/c200e052-8a12-46b2-9f64-b3cdff146980)
+  ![image](https://github.com/itzraiss/images/blob/main/imagem_2023-09-19_200952435.png)
 
 ## Conclusão
 Agora você poderá realizar pesquisas novamente, parabéns, você implantou com sucesso o Meilisearch no render.com
