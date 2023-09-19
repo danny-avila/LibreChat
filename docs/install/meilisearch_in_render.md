@@ -1,4 +1,4 @@
-# Utilizar o Meilisearch no LibreChat usando o Render
+# Utilizar o Meilisearch rodando o LibreChat no Render
 
 ## Crie uma nova conta ou um novo projeto no Render
 
@@ -28,7 +28,7 @@
 
   ![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-09-19%20184259.png)
 
-**2.** Você precisa inserir este valor:
+**2.** Você precisa inserir estes valores:
 
 | Chave | Valor |
 | --- | --- |
@@ -39,13 +39,9 @@
 
 **Implantação**
 
-**1.** Já está tudo condigurado, agora só basta clicar em Create Web Service
+**1.** Já está tudo condigurado, agora só basta clicar em Create Web Service. Vai levar alguns segundos
 
   ![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-09-19%20184303.png)
-
-**2.** Vai levar alguns segundos
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/418ce867-b15e-4532-abcc-e4b601748a58)
 
 **3.** Quando estiver pronto, você verá `your service is live 🎉` no console e o ícone verde `Live` no topo
 
@@ -60,7 +56,7 @@ Após receber a mensagem: `your service is live 🎉`, copie o endereço URL no 
 
 ## No projeto do LibreChat
 
-Agora insira os valores das Varáveis de Ambiente abaixo no seu projeto do LibreChat (Substitua MEILI_HOST adicionando o endereço URL do sue projeto Meilisearch do Render que você copiou):
+Agora insira os valores das Varáveis de Ambiente abaixo no seu projeto do LibreChat (Substitua MEILI_HOST adicionando o endereço URL do seu projeto Meilisearch do Render que você copiou):
 
 | Chave | Valor |
 | --- | --- |
@@ -74,17 +70,13 @@ Agora insira os valores das Varáveis de Ambiente abaixo no seu projeto do Libre
 
 ## Implantação
 
-**1.** Agora clique em `Implantação Manual` e selecione `Clear build Cache & Deploy`
+**1.** Agora clique em `Implantação Manual` e selecione `Clear build cache & Deploy`. Vai levar alguns minutos
 
   ![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-09-19%20193702.png)
 
-**2.** Vai levar alguns segundos
-
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/418ce867-b15e-4532-abcc-e4b601748a58)
-
 **3.** Quando estiver pronto, você verá `your service is live 🎉` no console e o ícone verde `Live` no topo
 
-  ![image](https://github.com/itzraiss/images/blob/main/imagem_2023-09-19_192433154.png)
+  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/c200e052-8a12-46b2-9f64-b3cdff146980)
 
 ## Conclusão
 Agora você poderá realizar pesquisas novamente, parabéns, você implantou com sucesso o Meilisearch no render.com
