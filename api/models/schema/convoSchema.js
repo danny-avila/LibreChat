@@ -60,6 +60,10 @@ const convoSchema = mongoose.Schema(
       type: Boolean,
       default: false
     },
+    viewCount: {
+      type: Number,
+      default: 0
+    }
   },
   { timestamps: true }
 );
@@ -76,4 +80,3 @@ if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
 const Conversation = mongoose.models.Conversation || mongoose.model('Conversation', convoSchema);
 
 module.exports = Conversation;
-

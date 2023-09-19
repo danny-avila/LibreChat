@@ -138,7 +138,10 @@ module.exports = {
       return await Conversation.find({
         user: { $ne: userId },
         isPrivate: { $eq: false }
-      }).sort( { createdAt: -1 } ).limit(200).exec();
+      })
+        .sort({ createdAt: -1 })
+        .limit(200)
+        .exec();
     } catch (error) {
       console.log(error);
       return { message: 'Error fetching recent conversations' };
@@ -149,7 +152,10 @@ module.exports = {
       return await Conversation.find({
         user: { $in: following },
         isPrivate: { $eq: false }
-      }).sort( { createdAt: -1 } ).limit(200).exec();
+      })
+        .sort({ createdAt: -1 })
+        .limit(200)
+        .exec();
     } catch (error) {
       console.log(error);
       return { message: 'Error fetching recent conversations' };
@@ -164,7 +170,8 @@ module.exports = {
       const update = {};
       update[`likedBy.${userId}`] = { $type: 'date' };
 
-      if (!likedBy) { // If the likedBy object is undefined, that means this conversation has 0 likes
+      if (!likedBy) {
+        // If the likedBy object is undefined, that means this conversation has 0 likes
         return await Conversation.findOneAndUpdate(
           { conversationId },
           { $currentDate: update, $inc: { likes: 1 } },
@@ -181,7 +188,8 @@ module.exports = {
             { $currentDate: update, $inc: { likes: 1 } },
             { new: true, upsert: false }
           ).exec();
-        } else { // User request is different from DB record
+        } else {
+          // User request is different from DB record
           return await Conversation.findOneAndUpdate(
             { conversationId },
             { $unset: update, $inc: { likes: -1 } },
@@ -199,8 +207,10 @@ module.exports = {
       return await Conversation.find({
         user: { $ne: userId },
         isPrivate: { $eq: false }
-      }).sort({ likes: -1 }) // Sort by count in descending order (hottest first)
-        .limit(200).exec();
+      })
+        .sort({ likes: -1 }) // Sort by count in descending order (hottest first)
+        .limit(200)
+        .exec();
     } catch (error) {
       console.log(error);
       return { message: 'Error getting the hottest conversations' };
@@ -227,12 +237,29 @@ module.exports = {
       const dbResponse = await Conversation.find({
         user: { $eq: userId },
         isPrivate: { $eq: false }
-      }).sort({ createdAt: -1 }).limit(30).exec();
+      })
+        .sort({ createdAt: -1 })
+        .limit(30)
+        .exec();
 
       return dbResponse;
     } catch (error) {
       console.log(error);
       return { message: 'Error fetching liked conversations' };
+    }
+  },
+  //increase conversation view count
+  increaseConvoViewCount: async (conversationId) => {
+    console.log(`increaseConvoViewCount(${conversationId}) called.`);
+    try {
+      return await Conversation.findOneAndUpdate(
+        { conversationId },
+        { $inc: { viewCount: 1 } },
+        { new: true, upsert: false }
+      ).exec();
+    } catch (error) {
+      console.log(error);
+      return { message: `Error increasing view count for conversation ${conversationId}` };
     }
   }
 };
