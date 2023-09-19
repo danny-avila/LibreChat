@@ -1,4 +1,4 @@
-"# Utilize Meilisearch by running LibreChat on Render
+# Utilize Meilisearch by running LibreChat on Render
 
 ## Create a new account or a new project on Render
 
