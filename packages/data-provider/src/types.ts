@@ -69,6 +69,7 @@ export type TGetConversationsResponse = {
 export type TUpdateMessageRequest = {
   conversationId: string;
   messageId: string;
+  model: string;
   text: string;
 };
 
