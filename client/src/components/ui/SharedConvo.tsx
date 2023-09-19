@@ -34,8 +34,7 @@ export default function SharedConvo() {
   const likeConversationMutation = useLikeConversationMutation(conversationId || '');
   const navigate = useNavigate();
 
-  // const { viewCount } = conversation;
-  const viewCount = conversation?.viewCount;
+  const [viewCount, setViewCount] = useState<number>(0);
 
   const plugins = (
     <>
@@ -176,6 +175,28 @@ export default function SharedConvo() {
       console.log(error);
     }
   }
+
+  // increase view count
+  async function incrementViewCount() {
+    try {
+      const response = await fetch(`/api/convos/${conversationId}/viewcount/increment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const responseObject = await response.json();
+      setViewCount(responseObject?.viewCount);
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
+  // increase view count upon page load
+  useEffect(() => {
+    incrementViewCount(); // set viewCount
+  }, []);
 
   // Get recommendations on mount
   useEffect(() => {
