@@ -1,6 +1,6 @@
-"# Utilizar o Render no Meilisearch
+# Utilizar o Render no Meilisearch
 
-## Crie uma conta
+## Crie uma conta ou um novo projeto
 
 **1.** visite [https://render.com/](https://render.com/) e clique em 'Comece Grátis` para criar uma conta e fazer login
 
@@ -18,9 +18,12 @@
   
   ![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-09-19%20185545.png)
 
-## Adicione Variáveis de Ambiente
+## Clique em Advanced para adicionar as Variáveis de Ambiente  
+  ![image](https://github.com/itzraiss/images/blob/main/imagem_2023-09-19_185841007.png)
 
-**1.** Em seguida, você vai querer ir na seção `Ambiente` do menu para adicionar manualmente as `Variáveis de Ambiente`
+## Adicione as Variáveis de Ambiente
+
+**1.** Para adicionar manualmente as `Variáveis de Ambiente`
   - Você precisa usar o `Adicionar Variáveis de Ambiente` e adicioná-las uma de cada vez, pois adicionar um arquivo secreto não funcionará no nosso caso.
 
   ![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-09-19%20184259.png)
@@ -34,15 +37,30 @@
 | MEILI_MASTER_KEY | DrhYf7zENyR6AlUCKmnz0eYASOQdl6zxH7s7MKFSfFCt | 
 | MEILI_NO_ANALYTICS | true |
 
-> ⬆️ **Adicione um único espaço no campo de valor para qualquer endpoint que você deseje desabilitar.**
+**Implantação**
 
-**NÃO SE ESQUEÇA DE SALVAR SUAS ALTERAÇÕES**
+**1.** Está tudo condigurado, agora só basta clicar em Create Web Service
 
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/1101669f-b793-4e0a-80c2-7784131f7dae)
+  ![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-09-19%20184303.png)
+
+**2.** Vai levar alguns minutos
+
+  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/418ce867-b15e-4532-abcc-e4b601748a58)
+
+**3.** Quando estiver pronto, você verá `your service is live 🎉` no console e o ícone verde `Live` no topo
+
+  ![image](https://github.com/itzraiss/images/blob/main/imagem_2023-09-19_192433154.png)
+
+
+**Obtendo Endereço URL**
+
+Após receber a mensagem: `your service is live 🎉`, é obrigatório que copie o endereço do render:
+
+  ![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-09-19%20184509.png)
 
 ## No projeto do LibreChat
 
-A última coisa que você precisa fazer é inserir em "MEILI_HOST" o endereço do seu projeto do Meilisearch no Render
+A última coisa que você precisa fazer é inserir em "MEILI_HOST" na aba de Enviroments o endereço do seu projeto do Meilisearch no Render
 
   ![image](https://github.com/itzraiss/images/blob/main/imagem_2023-09-19_190801655.png)
 
@@ -58,10 +76,9 @@ A última coisa que você precisa fazer é inserir em "MEILI_HOST" o endereço d
 
 **3.** Quando estiver pronto, você verá `your service is live 🎉` no console e o ícone verde `Live` no topo
 
-  ![image](https://github.com/fuegovic/LibreChat/assets/32828263/c200e052-8a12-46b2-9f64-b3cdff146980)
+  ![image](https://github.com/itzraiss/images/blob/main/imagem_2023-09-19_192433154.png)
 
 ## Conclusão
 Agora você poderá realizar pesquisas novamente, parabéns, você implantou com sucesso o Meilisearch no render.com
 
 ### Nota: Se você ainda está tendo problemas, antes de criar um novo problema, por favor, procure por problemas semelhantes no nosso [#issues thread on our discord](https://discord.gg/weqZFtD9C4) ou na nossa [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) na nossa página de Discussões. Se você não encontrar um problema relevante, sinta-se à vontade para criar um novo e fornecer o máximo de detalhes possível.
-"
