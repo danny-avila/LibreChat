@@ -1,7 +1,7 @@
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { ConversationSummaryBufferMemory, ChatMessageHistory } = require('langchain/memory');
 const { HumanMessage, AIMessage, SystemMessage } = require('langchain/schema');
-const { formatMessage } = require('../output_parsers');
+const { formatMessage } = require('../prompts');
 
 const summaryBuffer = async ({
   debug,

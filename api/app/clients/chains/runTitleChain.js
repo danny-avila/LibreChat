@@ -1,6 +1,5 @@
 const { z } = require('zod');
-const { langPrompt, createTitlePrompt } = require('../prompts');
-const { escapeBraces, getSnippet } = require('../output_parsers');
+const { langPrompt, createTitlePrompt, escapeBraces, getSnippet } = require('../prompts');
 const { createStructuredOutputChainFromZod } = require('langchain/chains/openai_functions');
 
 const langSchema = z.object({
