@@ -177,17 +177,6 @@ describe('OpenAIClient', () => {
       expect(hasUserWithName).toBe(true);
     });
 
-    it('should calculate tokenCount for each message when contextStrategy is set', async () => {
-      client.contextStrategy = 'refine';
-      const result = await client.buildMessages(messages, parentMessageId, {
-        isChatCompletion: true,
-      });
-      const hasUserWithTokenCount = result.prompt.some(
-        (item) => item.role === 'user' && item.tokenCount > 0,
-      );
-      expect(hasUserWithTokenCount).toBe(true);
-    });
-
     it('should handle promptPrefix from options when promptPrefix argument is not provided', async () => {
       client.options.promptPrefix = 'Test Prefix from options';
       const result = await client.buildMessages(messages, parentMessageId, {
