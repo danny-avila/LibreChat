@@ -15,7 +15,7 @@ const createLanguageChain = ({ llm }) =>
   });
 
 const titleSchema = z.object({
-  title: z.string().describe('The title-cased title of the conversation in the given language.'),
+  title: z.string().describe('The conversation title in title-case, in the given language.'),
 });
 const createTitleChain = ({ llm, convo }) => {
   const titlePrompt = createTitlePrompt({ convo });
