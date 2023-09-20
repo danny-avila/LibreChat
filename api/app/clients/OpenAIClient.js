@@ -59,6 +59,12 @@ class OpenAIClient extends BaseClient {
           typeof modelOptions.presence_penalty === 'undefined' ? 1 : modelOptions.presence_penalty,
         stop: modelOptions.stop,
       };
+    } else {
+      // Update the modelOptions if it already exists
+      this.modelOptions = {
+        ...this.modelOptions,
+        ...modelOptions,
+      };
     }
 
     if (process.env.OPENROUTER_API_KEY) {
