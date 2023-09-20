@@ -323,8 +323,6 @@ class BaseClient {
       );
     }
 
-    console.log('summaryIndex', summaryIndex);
-
     let tokenCountMap = orderedWithInstructions.reduce((map, message, index) => {
       if (!message.messageId) {
         return map;
