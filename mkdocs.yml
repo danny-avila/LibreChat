@@ -107,6 +107,7 @@ nav:
     - Proxy: 'features/proxy.md'
     - Bing Jailbreak: 'features/bing_jailbreak.md'
   - Cloud Deployment:
+    - Meilisearch on Render: 'deployment/meilisearch_in_render.md'
     - DigitalOcean (preferred): 'deployment/digitalocean.md'
     - Cloudflare: 'deployment/cloudflare.md'
     - Hetzner: 'deployment/hetzner_ubuntu.md'
