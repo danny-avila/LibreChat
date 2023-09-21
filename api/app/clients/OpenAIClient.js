@@ -2,6 +2,7 @@ const BaseClient = require('./BaseClient');
 const ChatGPTClient = require('./ChatGPTClient');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const { maxTokensMap, genAzureChatCompletion } = require('../../utils');
+const { truncateText } = require('./prompts');
 const { runTitleChain } = require('./chains');
 const { createLLM } = require('./llm');
 
@@ -58,6 +59,12 @@ class OpenAIClient extends BaseClient {
         presence_penalty:
           typeof modelOptions.presence_penalty === 'undefined' ? 1 : modelOptions.presence_penalty,
         stop: modelOptions.stop,
+      };
+    } else {
+      // Update the modelOptions if it already exists
+      this.modelOptions = {
+        ...this.modelOptions,
+        ...modelOptions,
       };
     }
 
@@ -400,12 +407,14 @@ class OpenAIClient extends BaseClient {
   async titleConvo({ text, responseText = '' }) {
     let title = 'New Chat';
     const convo = `||>User:
-"${text}"
+"${truncateText(text)}"
 ||>Response:
-"${JSON.stringify(responseText)}"`;
+"${JSON.stringify(truncateText(responseText))}"`;
+
+    const { OPENAI_TITLE_MODEL } = process.env ?? {};
 
     const modelOptions = {
-      model: 'gpt-3.5-turbo-0613',
+      model: OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo-0613',
       temperature: 0.2,
       presence_penalty: 0,
       frequency_penalty: 0,
@@ -440,7 +449,7 @@ class OpenAIClient extends BaseClient {
     } catch (e) {
       console.error(e.message);
       console.log('There was an issue generating title with LangChain, trying the old method...');
-      modelOptions.model = 'gpt-3.5-turbo';
+      modelOptions.model = OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
       const instructionsPayload = [
         {
           role: 'system',
