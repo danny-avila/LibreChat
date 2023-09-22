@@ -107,7 +107,6 @@ nav:
     - Proxy: 'features/proxy.md'
     - Bing Jailbreak: 'features/bing_jailbreak.md'
   - Cloud Deployment:
-    - Meilisearch on Render: 'deployment/meilisearch_in_render.md'
     - DigitalOcean (preferred): 'deployment/digitalocean.md'
     - Cloudflare: 'deployment/cloudflare.md'
     - Hetzner: 'deployment/hetzner_ubuntu.md'
@@ -115,6 +114,7 @@ nav:
     - Linode: 'deployment/linode.md'
     - Ngrok: 'deployment/ngrok.md'
     - Render: 'deployment/render.md'
+    - Meilisearch on Render: 'deployment/meilisearch_in_render.md'
     - Azure (Terraform): 'deployment/azure-terraform.md'
     - HuggingFace: 'deployment/huggingface.md'
   - Contributions:
