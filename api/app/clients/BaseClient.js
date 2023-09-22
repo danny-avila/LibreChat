@@ -475,11 +475,21 @@ class BaseClient {
 
   /**
    * Iterate through messages, building an array based on the parentMessageId.
-   * Each message has an id and a parentMessageId. The parentMessageId is the id of the message that this message is a reply to.
-   * @param messages
-   * @param parentMessageId
-   * @returns {*[]} An array containing the messages in the order they should be displayed, starting with the root message.
+   *
+   * This function constructs a conversation thread by traversing messages from a given parentMessageId up to the root message.
+   * It handles cyclic references by ensuring that a message is not processed more than once.
+   * If a message has a 'summary' property, the traversal stops at that message.
+   *
+   * Each message object should have an 'id' or 'messageId' property and may have a 'parentMessageId' property.
+   * The 'parentMessageId' is the ID of the message that the current message is a reply to.
+   * If 'parentMessageId' is not present or null, the message is considered a root message.
+   *
+   * @param {Array} messages - An array of message objects. Each object should have either an 'id' or 'messageId' property, and may have a 'parentMessageId' property.
+   * @param {string} parentMessageId - The ID of the parent message to start the traversal from.
+   * @param {Function} [mapMethod] - An optional function to map over the ordered messages. If provided, it will be applied to each message in the resulting array.
+   * @returns {Array} An array containing the messages in the order they should be displayed, starting with the most recent message with a 'summary' property if present, and ending with the message identified by 'parentMessageId'.
    */
+
   static getMessagesForConversation(messages, parentMessageId, mapMethod = null) {
     if (!messages || messages.length === 0) {
       return [];
@@ -487,17 +497,31 @@ class BaseClient {
 
     const orderedMessages = [];
     let currentMessageId = parentMessageId;
+    const visitedMessageIds = new Set();
+
     while (currentMessageId) {
+      if (visitedMessageIds.has(currentMessageId)) {
+        break;
+      }
       const message = messages.find((msg) => {
         const messageId = msg.messageId ?? msg.id;
         return messageId === currentMessageId;
       });
+
+      visitedMessageIds.add(currentMessageId);
+
       if (!message) {
         break;
       }
-      orderedMessages.unshift(message);
+
+      orderedMessages.push(message);
+      if (message.summary) {
+        break;
+      }
       currentMessageId = message.parentMessageId;
     }
+
+    orderedMessages.reverse();
 
     if (mapMethod) {
       return orderedMessages.map(mapMethod);
