@@ -76,7 +76,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
                 message: localize('com_auth_password_min_length'),
               },
               maxLength: {
-                value: 40,
+                value: 128,
                 message: localize('com_auth_password_max_length'),
               },
             })}
