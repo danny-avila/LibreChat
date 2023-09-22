@@ -46,7 +46,7 @@ function LikedConversations() {
           onClick={() => {
             if (copied === true) return;
 
-            navigator.clipboard.writeText(window.location.host + `/chat/share/${convo.conversationId}`);
+            navigator.clipboard.writeText(window.location.protocol + '//' + window.location.host + `/chat/share/${convo.conversationId}`);
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
           }}
