@@ -14,6 +14,11 @@ const messageSchema = mongoose.Schema(
       required: true,
       meiliIndex: true,
     },
+    user: {
+      type: String,
+      index: true,
+      default: null,
+    },
     model: {
       type: String,
     },
@@ -53,6 +58,10 @@ const messageSchema = mongoose.Schema(
     isCreatedByUser: {
       type: Boolean,
       required: true,
+      default: false,
+    },
+    isEdited: {
+      type: Boolean,
       default: false,
     },
     unfinished: {

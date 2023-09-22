@@ -3,8 +3,8 @@
 ## Note:
 
 Some features will not work:
-- Bing/Sydney (success may vary)
-- Meilisearch
+- Bing/Sydney: success may vary
+- Meilisearch: additional configuration is needed, [see guide here](./meilisearch_in_render.md).
 
 Also:
 - You need to create an online MongoDB Atlas Database to be able to properly deploy
@@ -78,7 +78,7 @@ Also:
 
 The last thing you need is to create a MongoDB Atlas Database and get your connection string.
 
-Follow the instructions in this document: [Online MongoDB Database](..\install\mongodb.md)
+Follow the instructions in this document: [Online MongoDB Database](../install/mongodb.md)
 
 ## Complete the Environment Variables configuration 
 

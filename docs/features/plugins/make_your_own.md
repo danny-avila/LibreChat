@@ -201,7 +201,7 @@ Here are a few customConstructors, which have varying initializations
 
 ## Step 6: Export your Plugin into index.js
 
-##Find the `index.js` under `api/app/clients/tools`. You need to put your plugin into the `module.exports`, to make it compile, you will also need to declare your plugin as `consts`:
+Find the `index.js` under `api/app/clients/tools`. You need to put your plugin into the `module.exports`, to make it compile, you will also need to declare your plugin as `consts`:
 
 ```js
 const StructuredSD = require('./structured/StableDiffusion');
@@ -243,12 +243,12 @@ module.exports = {
   },
 ```
   
-  Each of the fields of the "plugin" object are important. Follow this format strictly. If your plugin requires authentication, you will add those details under `authConfig` as an array since there could be multiple authentication variables. See the Calculator plugin for an example of one that doesn't require authentication, where the authConfig is an empty array (an array is always required).
-  
-  **Note:** as mentioned earlier, the `pluginKey` matches the class `name` of the Tool class you made.
-  **Note:** the `authField` prop must match the process.env variable name
-  
-  Here is an example of a plugin with more than one credential variable
+Each of the fields of the "plugin" object are important. Follow this format strictly. If your plugin requires authentication, you will add those details under `authConfig` as an array since there could be multiple authentication variables. See the Calculator plugin for an example of one that doesn't require authentication, where the authConfig is an empty array (an array is always required).
+
+**Note:** as mentioned earlier, the `pluginKey` matches the class `name` of the Tool class you made.
+**Note:** the `authField` prop must match the process.env variable name
+
+Here is an example of a plugin with more than one credential variable
 
 ```json
   [

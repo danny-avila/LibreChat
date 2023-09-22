@@ -1,10 +1,10 @@
 const BaseClient = require('./BaseClient');
 const ChatGPTClient = require('./ChatGPTClient');
-const {
-  encoding_for_model: encodingForModel,
-  get_encoding: getEncoding,
-} = require('@dqbd/tiktoken');
+const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const { maxTokensMap, genAzureChatCompletion } = require('../../utils');
+const { truncateText } = require('./prompts');
+const { runTitleChain } = require('./chains');
+const { createLLM } = require('./llm');
 
 // Cache to store Tiktoken instances
 const tokenizersCache = {};
@@ -60,22 +60,35 @@ class OpenAIClient extends BaseClient {
           typeof modelOptions.presence_penalty === 'undefined' ? 1 : modelOptions.presence_penalty,
         stop: modelOptions.stop,
       };
+    } else {
+      // Update the modelOptions if it already exists
+      this.modelOptions = {
+        ...this.modelOptions,
+        ...modelOptions,
+      };
     }
 
+    if (process.env.OPENROUTER_API_KEY) {
+      this.apiKey = process.env.OPENROUTER_API_KEY;
+      this.useOpenRouter = true;
+    }
+
+    const { model } = this.modelOptions;
+
     this.isChatCompletion =
+      this.useOpenRouter ||
       this.options.reverseProxyUrl ||
       this.options.localAI ||
-      this.modelOptions.model.startsWith('gpt-');
+      model.includes('gpt-');
     this.isChatGptModel = this.isChatCompletion;
-    if (this.modelOptions.model === 'text-davinci-003') {
+    if (model.includes('text-davinci-003') || model.includes('instruct')) {
       this.isChatCompletion = false;
       this.isChatGptModel = false;
     }
     const { isChatGptModel } = this;
     this.isUnofficialChatGptModel =
-      this.modelOptions.model.startsWith('text-chat') ||
-      this.modelOptions.model.startsWith('text-davinci-002-render');
-    this.maxContextTokens = maxTokensMap[this.modelOptions.model] ?? 4095; // 1 less than maximum
+      model.startsWith('text-chat') || model.startsWith('text-davinci-002-render');
+    this.maxContextTokens = maxTokensMap[model] ?? 4095; // 1 less than maximum
     this.maxResponseTokens = this.modelOptions.max_tokens || 1024;
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
@@ -105,6 +118,7 @@ class OpenAIClient extends BaseClient {
 
     if (this.options.reverseProxyUrl) {
       this.completionsUrl = this.options.reverseProxyUrl;
+      this.langchainProxy = this.options.reverseProxyUrl.match(/.*v1/)[0];
     } else if (isChatGptModel) {
       this.completionsUrl = 'https://api.openai.com/v1/chat/completions';
     } else {
@@ -116,7 +130,11 @@ class OpenAIClient extends BaseClient {
     }
 
     if (this.azureEndpoint && this.options.debug) {
-      console.debug(`Using Azure endpoint: ${this.azureEndpoint}`, this.azure);
+      console.debug('Using Azure endpoint');
+    }
+
+    if (this.useOpenRouter) {
+      this.completionsUrl = 'https://openrouter.ai/api/v1/chat/completions';
     }
 
     return this;
@@ -151,8 +169,9 @@ class OpenAIClient extends BaseClient {
       tokenizer = this.constructor.getTokenizer(this.encoding, true, extendSpecialTokens);
     } else {
       try {
-        this.encoding = this.modelOptions.model;
-        tokenizer = this.constructor.getTokenizer(this.modelOptions.model, true);
+        const { model } = this.modelOptions;
+        this.encoding = model.includes('instruct') ? 'text-davinci-003' : model;
+        tokenizer = this.constructor.getTokenizer(this.encoding, true);
       } catch {
         tokenizer = this.constructor.getTokenizer(this.encoding, true);
       }
@@ -315,6 +334,7 @@ class OpenAIClient extends BaseClient {
     let reply = '';
     let result = null;
     let streamResult = null;
+    this.modelOptions.user = this.user;
     if (typeof opts.onProgress === 'function') {
       await this.getCompletion(
         payload,
@@ -323,12 +343,26 @@ class OpenAIClient extends BaseClient {
             return;
           }
 
+          if (this.options.debug) {
+            // console.debug('progressMessage');
+            // console.dir(progressMessage, { depth: null });
+          }
+
           if (progressMessage.choices) {
             streamResult = progressMessage;
           }
-          const token = this.isChatCompletion
-            ? progressMessage.choices?.[0]?.delta?.content
-            : progressMessage.choices?.[0]?.text;
+
+          let token = null;
+          if (this.isChatCompletion) {
+            token =
+              progressMessage.choices?.[0]?.delta?.content ?? progressMessage.choices?.[0]?.text;
+          } else {
+            token = progressMessage.choices?.[0]?.text;
+          }
+
+          if (!token && this.useOpenRouter) {
+            token = progressMessage.choices?.[0]?.message?.content;
+          }
           // first event's delta content is always undefined
           if (!token) {
             return;
@@ -372,6 +406,76 @@ class OpenAIClient extends BaseClient {
       role: 'assistant',
       content: response.text,
     });
+  }
+
+  async titleConvo({ text, responseText = '' }) {
+    let title = 'New Chat';
+    const convo = `||>User:
+"${truncateText(text)}"
+||>Response:
+"${JSON.stringify(truncateText(responseText))}"`;
+
+    const { OPENAI_TITLE_MODEL } = process.env ?? {};
+
+    const modelOptions = {
+      model: OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo-0613',
+      temperature: 0.2,
+      presence_penalty: 0,
+      frequency_penalty: 0,
+      max_tokens: 16,
+    };
+
+    const configOptions = {};
+
+    if (this.langchainProxy) {
+      configOptions.basePath = this.langchainProxy;
+    }
+
+    if (this.useOpenRouter) {
+      configOptions.basePath = 'https://openrouter.ai/api/v1';
+      configOptions.baseOptions = {
+        headers: {
+          'HTTP-Referer': 'https://librechat.ai',
+          'X-Title': 'LibreChat',
+        },
+      };
+    }
+
+    try {
+      const llm = createLLM({
+        modelOptions,
+        configOptions,
+        openAIApiKey: this.apiKey,
+        azure: this.azure,
+      });
+
+      title = await runTitleChain({ llm, text, convo });
+    } catch (e) {
+      console.error(e.message);
+      console.log('There was an issue generating title with LangChain, trying the old method...');
+      modelOptions.model = OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
+      const instructionsPayload = [
+        {
+          role: 'system',
+          content: `Detect user language and write in the same language an extremely concise title for this conversation, which you must accurately detect.
+Write in the detected language. Title in 5 Words or Less. No Punctuation or Quotation. Do not mention the language. All first letters of every word should be capitalized and write the title in User Language only.
+
+${convo}
+
+||>Title:`,
+        },
+      ];
+
+      try {
+        title = (await this.sendPayload(instructionsPayload, { modelOptions })).replaceAll('"', '');
+      } catch (e) {
+        console.error(e);
+        console.log('There was another issue generating the title, see error above.');
+      }
+    }
+
+    console.log('CONVERSATION TITLE', title);
+    return title;
   }
 }
 

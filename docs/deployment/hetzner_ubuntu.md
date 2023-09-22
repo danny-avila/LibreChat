@@ -4,9 +4,9 @@
 
 ## Starting from Zero:
 
-### 1. Login to Hetzner Cloud Console (https://console.hetzner.cloud/projects) and Create a new Ubuntu 20 Project with 4GB Ram. Do not worry about SSH keys *yet*. 
+### 1. Login to Hetzner Cloud Console (https://console.hetzner.cloud/projects) and Create a new Ubuntu 20 Project with 4GB Ram. Do not worry about SSH keys *yet*.
 
-Hetzner will email you the root password. 
+Hetzner will email you the root password.
 
 ### 2. Once you have that, you can login with any SSH terminal with:
 
@@ -79,7 +79,7 @@ sudo reboot
 
 ## Using Docker to Install the Service
 
-### 1. **Recommended: [Docker Install](../install/docker_install.md)**
+### 1. **Recommended: [Docker Install](../install/docker_compose_install.md)**
 From the *server* commandline (as your user, not root):
 
 ```
@@ -95,7 +95,7 @@ nano docker-compose.yml
 ```
        VITE_APP_TITLE: LibreChat # default, change to your desired app >
        VITE_SHOW_GOOGLE_LOGIN_OPTION: 'false'  # default, change to true if you want to show google login
-```       
+```
 
 ### 2. Create a global environment file and open it up to begin adding the tokens/keys you prepared in the PreReqs section.
 ```
@@ -106,9 +106,9 @@ nano .env
 ### 3. In addition to adding all your api tokens and other tokens that you prepared above, change:
 
 ```
-HOST=Localhost 
+HOST=Localhost
 ```
-to 
+to
 ```
 HOST=<yourserverip>
 ```
@@ -130,9 +130,9 @@ MEILI_HTTP_ADDR=meilisearch
 
 It is safe to close the terminal -- the docker app will continue to run.
 
-*To disable external signups, after you have created your admin account, make sure you set 
+*To disable external signups, after you have created your admin account, make sure you set
 ```
-ALLOW_REGISTRATION:False 
+ALLOW_REGISTRATION:False
 ```
 
 ---

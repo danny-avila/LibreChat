@@ -73,10 +73,11 @@ export const tMessageSchema = z.object({
   overrideParentMessageId: z.string().nullable().optional(),
   bg: z.string().nullable().optional(),
   model: z.string().nullable().optional(),
-  title: z.string().nullable().optional(),
+  title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   sender: z.string(),
   text: z.string(),
   generation: z.string().nullable().optional(),
+  isEdited: z.boolean().optional(),
   isCreatedByUser: z.boolean(),
   error: z.boolean(),
   createdAt: z
@@ -102,7 +103,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
 
 export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
-  title: z.string(),
+  title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   user: z.string().optional(),
   endpoint: eModelEndpointSchema.nullable(),
   suggestions: z.array(z.string()).optional(),
@@ -266,7 +267,7 @@ export const anthropicSchema = tConversationSchema
     modelLabel: obj.modelLabel ?? null,
     promptPrefix: obj.promptPrefix ?? null,
     temperature: obj.temperature ?? 1,
-    maxOutputTokens: obj.maxOutputTokens ?? 1024,
+    maxOutputTokens: obj.maxOutputTokens ?? 4000,
     topP: obj.topP ?? 0.7,
     topK: obj.topK ?? 5,
   }))
@@ -275,7 +276,7 @@ export const anthropicSchema = tConversationSchema
     modelLabel: null,
     promptPrefix: null,
     temperature: 1,
-    maxOutputTokens: 1024,
+    maxOutputTokens: 4000,
     topP: 0.7,
     topK: 5,
   }));
@@ -368,7 +369,8 @@ function getFirstDefinedValue(possibleValues: string[]) {
 }
 
 type TPossibleValues = {
-  model: string[];
+  models: string[];
+  secondaryModels?: string[];
 };
 
 export const parseConvo = (
@@ -382,10 +384,15 @@ export const parseConvo = (
     throw new Error(`Unknown endpoint: ${endpoint}`);
   }
 
-  const convo = schema.parse(conversation);
+  const convo = schema.parse(conversation) as TConversation;
+  const { models, secondaryModels } = possibleValues ?? {};
 
-  if (possibleValues && convo) {
-    convo.model = getFirstDefinedValue(possibleValues.model) ?? convo.model;
+  if (models && convo) {
+    convo.model = getFirstDefinedValue(models) ?? convo.model;
+  }
+
+  if (secondaryModels && convo.agentOptions) {
+    convo.agentOptions.model = getFirstDefinedValue(secondaryModels) ?? convo.agentOptions.model;
   }
 
   return convo;
@@ -399,7 +406,7 @@ export type TEndpointOption = {
   chatGptLabel?: string | null;
   modelLabel?: string | null;
   jailbreak?: boolean;
-  token?: string | null;
+  key?: string | null;
 };
 
 export const getResponseSender = (endpointOption: TEndpointOption): string => {

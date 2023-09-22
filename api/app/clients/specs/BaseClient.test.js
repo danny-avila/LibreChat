@@ -138,7 +138,8 @@ describe('BaseClient', () => {
       { role: 'assistant', content: 'How can I help you?', tokenCount: 19 },
       { role: 'user', content: 'I have a question.', tokenCount: 18 },
     ];
-    const expectedRemainingContextTokens = 58; // 100 - 5 - 19 - 18
+    // Subtract 3 tokens for Assistant Label priming after all messages have been counted.
+    const expectedRemainingContextTokens = 58 - 3; // (100 - 5 - 19 - 18) - 3
     const expectedMessagesToRefine = [];
 
     const result = await TestClient.getMessagesWithinTokenLimit(messages);
@@ -168,7 +169,9 @@ describe('BaseClient', () => {
       { role: 'assistant', content: 'How can I help you?', tokenCount: 19 },
       { role: 'user', content: 'I have a question.', tokenCount: 18 },
     ];
-    const expectedRemainingContextTokens = 8; // 50 - 18 - 19 - 5
+
+    // Subtract 3 tokens for Assistant Label priming after all messages have been counted.
+    const expectedRemainingContextTokens = 8 - 3; // (50 - 18 - 19 - 5) - 3
     const expectedMessagesToRefine = [
       { role: 'user', content: 'I need a coffee, stat!', tokenCount: 30 },
       { role: 'assistant', content: 'Sure, I can help with that.', tokenCount: 30 },

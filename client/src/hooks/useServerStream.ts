@@ -1,8 +1,11 @@
 import { useEffect } from 'react';
 import { useResetRecoilState, useSetRecoilState } from 'recoil';
+/* @ts-ignore */
 import { SSE, createPayload, tMessageSchema, tConversationSchema } from 'librechat-data-provider';
 import type { TResPlugin, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
-import { useAuthContext } from '~/hooks/AuthContext';
+import useConversations from './useConversations';
+import { useAuthContext } from './AuthContext';
+
 import store from '~/store';
 
 type TResData = {
@@ -21,7 +24,7 @@ export default function useServerStream(submission: TSubmission | null) {
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
   const { token } = useAuthContext();
 
-  const { refreshConversations } = store.useConversations();
+  const { refreshConversations } = useConversations();
 
   const messageHandler = (data: string, submission: TSubmission) => {
     const {

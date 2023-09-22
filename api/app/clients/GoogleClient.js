@@ -1,10 +1,7 @@
 const BaseClient = require('./BaseClient');
 const { google } = require('googleapis');
 const { Agent, ProxyAgent } = require('undici');
-const {
-  encoding_for_model: encodingForModel,
-  get_encoding: getEncoding,
-} = require('@dqbd/tiktoken');
+const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 
 const tokenizersCache = {};
 
@@ -29,7 +26,8 @@ class GoogleClient extends BaseClient {
 
     jwtClient.authorize((err) => {
       if (err) {
-        console.log(err);
+        console.error('Error: jwtClient failed to authorize');
+        console.error(err.message);
         throw err;
       }
     });
@@ -247,7 +245,8 @@ class GoogleClient extends BaseClient {
         console.debug(result);
       }
     } catch (err) {
-      console.error(err);
+      console.error('Error: failed to send completion to Google');
+      console.error(err.message);
     }
 
     if (!blocked) {

@@ -5,14 +5,14 @@ import { useRecoilValue } from 'recoil';
 import { useDeleteConversationMutation } from 'librechat-data-provider';
 import { Dialog, DialogTrigger, Label } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
+import { useLocalize, useConversations, useConversation } from '~/hooks';
 import store from '~/store';
-import { useLocalize } from '~/hooks';
 
 export default function DeleteButton({ conversationId, renaming, retainView, title }) {
   const localize = useLocalize();
   const currentConversation = useRecoilValue(store.conversation) || {};
-  const { newConversation } = store.useConversation();
-  const { refreshConversations } = store.useConversations();
+  const { newConversation } = useConversation();
+  const { refreshConversations } = useConversations();
 
   const confirmDelete = () => {
     deleteConvoMutation.mutate({ conversationId, source: 'button' });

@@ -1,11 +1,11 @@
 const { Strategy: PassportLocalStrategy } = require('passport-local');
 const User = require('../models/User');
-const { loginSchema } = require('./validators');
+const { loginSchema, errorsToString } = require('./validators');
 const DebugControl = require('../utils/debug.js');
 
 async function validateLoginRequest(req) {
-  const { error } = loginSchema.validate(req.body);
-  return error ? error.details[0].message : null;
+  const { error } = loginSchema.safeParse(req.body);
+  return error ? errorsToString(error.errors) : null;
 }
 
 async function findUserByEmail(email) {
@@ -50,9 +50,10 @@ async function passportLogin(req, email, password, done) {
 }
 
 function logError(title, parameters) {
+  const entries = Object.entries(parameters).map(([name, value]) => ({ name, value }));
   DebugControl.log.functionName(title);
-  if (parameters) {
-    DebugControl.log.parameters(parameters);
+  if (entries) {
+    DebugControl.log.parameters(entries);
   }
 }
 

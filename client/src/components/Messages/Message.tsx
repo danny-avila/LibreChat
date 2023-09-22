@@ -8,9 +8,10 @@ import { SubRow, Plugin, MessageContent } from './Content';
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
-import { getIcon } from '~/components/Endpoints';
-import { useMessageHandler } from '~/hooks';
+import { Icon } from '~/components/Endpoints';
+import { useMessageHandler, useConversation } from '~/hooks';
 import type { TMessageProps } from '~/common';
+import { cn } from '~/utils';
 import store from '~/store';
 
 export default function Message({
@@ -26,7 +27,7 @@ export default function Message({
   const setLatestMessage = useSetRecoilState(store.latestMessage);
   const [abortScroll, setAbort] = useState(false);
   const { isSubmitting, ask, regenerate, handleContinue } = useMessageHandler();
-  const { switchToConversation } = store.useConversation();
+  const { switchToConversation } = useConversation();
   const {
     text,
     children,
@@ -78,22 +79,22 @@ export default function Message({
     }
   };
 
+  const commonClasses =
+    'w-full border-b text-gray-800 group border-black/10 dark:border-gray-900/50 dark:text-gray-100';
+  const uniqueClasses = isCreatedByUser
+    ? 'bg-white dark:bg-gray-800 dark:text-gray-20'
+    : 'bg-gray-50 dark:bg-gray-1000 dark:text-gray-70';
+
   const props = {
-    className:
-      'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 bg-white dark:text-gray-100 group dark:bg-gray-800',
+    className: cn(commonClasses, uniqueClasses),
     titleclass: '',
   };
 
-  const icon = getIcon({
+  const icon = Icon({
     ...conversation,
     ...message,
     model: message?.model ?? conversation?.model,
   });
-
-  if (!isCreatedByUser) {
-    props.className =
-      'w-full border-b border-black/10 bg-gray-50 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-100 dark:bg-gray-1000';
-  }
 
   if (message?.bg && searchResult) {
     props.className = message?.bg?.split('hover')[0];

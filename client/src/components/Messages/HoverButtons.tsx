@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import useSpeechSynthesis from './SpeechSynthesis';
 import { Clipboard, CheckMark, EditIcon, RegenerateIcon, ContinueIcon, VolumeIcon, VolumeMuteIcon } from '~/components/svg';
-import { useGenerations } from '~/hooks';
+import { useGenerations, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 type THoverButtons = {
@@ -26,6 +26,7 @@ export default function HoverButtons({
   regenerate,
   handleContinue,
 }: THoverButtons) {
+  const localize = useLocalize();
   const { endpoint } = conversation ?? {};
   const [isCopied, setIsCopied] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -82,7 +83,7 @@ export default function HoverButtons({
         )}
         onClick={onEdit}
         type="button"
-        title="edit"
+        title={localize('com_ui_edit')}
         disabled={hideEditButton}
       >
         <EditIcon />
@@ -94,7 +95,9 @@ export default function HoverButtons({
         )}
         onClick={() => copyToClipboard(setIsCopied)}
         type="button"
-        title={isCopied ? 'Copied to clipboard' : 'Copy to clipboard'}
+        title={
+          isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')
+        }
       >
         {isCopied ? <CheckMark /> : <Clipboard />}
       </button>
@@ -103,7 +106,7 @@ export default function HoverButtons({
           className="hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible"
           onClick={regenerate}
           type="button"
-          title="regenerate"
+          title={localize('com_ui_regenerate')}
         >
           <RegenerateIcon className="hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>
@@ -113,7 +116,7 @@ export default function HoverButtons({
           className="hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible "
           onClick={handleContinue}
           type="button"
-          title="continue"
+          title={localize('com_ui_continue')}
         >
           <ContinueIcon className="h-4 w-4 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>

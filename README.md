@@ -64,7 +64,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   <summary><strong>Getting Started</strong></summary>
 
   * Installation
-    * [Docker Install🐳](docs/install/docker_install.md)
+    * [Docker Compose Install🐳](docs/install/docker_compose_install.md)
     * [Linux Install🐧](docs/install/linux_install.md)
     * [Mac Install🍎](docs/install/mac_install.md)
     * [Windows Install💙](docs/install/windows_install.md)
@@ -78,7 +78,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 <details>
   <summary><strong>General Information</strong></summary>
 
-  * [Code of Conduct](CODE_OF_CONDUCT.md)
+  * [Code of Conduct](.github/CODE_OF_CONDUCT.md)
   * [Project Origin](docs/general_info/project_origin.md)
   * [Multilingual Information](docs/general_info/multilingual_information.md)
   * [Tech Stack](docs/general_info/tech_stack.md)   
@@ -96,7 +96,8 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
     * [Using official ChatGPT Plugins](docs/features/plugins/chatgpt_plugins_openapi.md)
 
   
-  * [Third-Party Tools](docs/features/third-party.md)
+  * [Automated Moderation](docs/features/mod_system.md)
+  * [Third-Party Tools](docs/features/third_party.md)
   * [Proxy](docs/features/proxy.md)
   * [Bing Jailbreak](docs/features/bing_jailbreak.md)
 </details>
@@ -118,13 +119,13 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 <details>
   <summary><strong>Contributions</strong></summary>
   
-  * [Contributor Guidelines](CONTRIBUTING.md)
+  * [Contributor Guidelines](.github/CONTRIBUTING.md)
   * [Documentation Guidelines](docs/contributions/documentation_guidelines.md)
   * [Contribute a Translation](docs/contributions/translation_contribution.md)
   * [Code Standards and Conventions](docs/contributions/coding_conventions.md)
   * [Testing](docs/contributions/testing.md)
-  * [Security](SECURITY.md)
-  * [Trello Board](https://trello.com/b/17z094kq/LibreChate)
+  * [Security](.github/SECURITY.md)
+  * [Project Roadmap](https://github.com/users/danny-avila/projects/2)
 </details>
 
 

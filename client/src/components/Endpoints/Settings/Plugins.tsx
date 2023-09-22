@@ -9,7 +9,8 @@ import {
   HoverCardTrigger,
 } from '~/components';
 import OptionHover from './OptionHover';
-import { ESide, TModelSelectProps } from '~/common';
+import type { TModelSelectProps } from '~/common';
+import { ESide } from '~/common';
 import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
 import { useLocalize } from '~/hooks';
 

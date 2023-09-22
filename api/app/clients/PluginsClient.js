@@ -1,10 +1,11 @@
 const OpenAIClient = require('./OpenAIClient');
 const { CallbackManager } = require('langchain/callbacks');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
-const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents/');
-const { addImages, createLLM, buildErrorInput, buildPromptPrefix } = require('./agents/methods/');
-const { SelfReflectionTool } = require('./tools/');
+const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents');
+const { addImages, buildErrorInput, buildPromptPrefix } = require('./output_parsers');
+const { SelfReflectionTool } = require('./tools');
 const { loadTools } = require('./tools/util');
+const { createLLM } = require('./llm');
 
 class PluginsClient extends OpenAIClient {
   constructor(apiKey, options = {}) {
@@ -12,21 +13,23 @@ class PluginsClient extends OpenAIClient {
     this.sender = options.sender ?? 'Assistant';
     this.tools = [];
     this.actions = [];
-    this.openAIApiKey = apiKey;
     this.setOptions(options);
+    this.openAIApiKey = this.apiKey;
     this.executor = null;
   }
 
   setOptions(options) {
-    this.agentOptions = options.agentOptions;
+    this.agentOptions = { ...options.agentOptions };
     this.functionsAgent = this.agentOptions?.agent === 'functions';
-    this.agentIsGpt3 = this.agentOptions?.model.startsWith('gpt-3');
-    if (this.functionsAgent && this.agentOptions.model) {
+    this.agentIsGpt3 = this.agentOptions?.model?.includes('gpt-3');
+
+    super.setOptions(options);
+
+    if (this.functionsAgent && this.agentOptions.model && !this.useOpenRouter) {
       this.agentOptions.model = this.getFunctionModelName(this.agentOptions.model);
     }
 
-    super.setOptions(options);
-    this.isGpt3 = this.modelOptions.model.startsWith('gpt-3');
+    this.isGpt3 = this.modelOptions?.model?.includes('gpt-3');
 
     if (this.options.reverseProxyUrl) {
       this.langchainProxy = this.options.reverseProxyUrl.match(/.*v1/)[0];
@@ -74,6 +77,16 @@ class PluginsClient extends OpenAIClient {
 
     if (this.langchainProxy) {
       configOptions.basePath = this.langchainProxy;
+    }
+
+    if (this.useOpenRouter) {
+      configOptions.basePath = 'https://openrouter.ai/api/v1';
+      configOptions.baseOptions = {
+        headers: {
+          'HTTP-Referer': 'https://librechat.ai',
+          'X-Title': 'LibreChat',
+        },
+      };
     }
 
     const model = createLLM({
@@ -241,6 +254,7 @@ class PluginsClient extends OpenAIClient {
     }
     const {
       user,
+      isEdited,
       conversationId,
       responseMessageId,
       saveOptions,
@@ -292,6 +306,7 @@ class PluginsClient extends OpenAIClient {
       conversationId,
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
+      isEdited,
       model: this.modelOptions.model,
       sender: this.sender,
       promptTokens,

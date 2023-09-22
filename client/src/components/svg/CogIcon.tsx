@@ -1,13 +1,16 @@
-import * as React from 'react';
+import { cn } from '~/utils';
 
-export default function CogIcon() {
+export default function CogIcon({ className = '' }) {
   return (
     <svg
       stroke="currentColor"
       fill="currentColor"
       strokeWidth="0"
       viewBox="0 0 20 20"
-      className="group-radix-state-active:fill-white h-4 h-5 w-4 w-5 fill-white dark:fill-gray-500"
+      className={cn(
+        'h-4 h-5 w-4 w-5 fill-white group-radix-state-active:fill-white dark:fill-gray-500',
+        className,
+      )}
       height="1em"
       width="1em"
       xmlns="http://www.w3.org/2000/svg"

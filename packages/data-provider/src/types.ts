@@ -1,4 +1,7 @@
 import type { TResPlugin, TMessage, TConversation, TEndpointOption } from './schemas';
+import type { UseMutationResult } from '@tanstack/react-query';
+
+export type TMutation = UseMutationResult<unknown>;
 
 export * from './schemas';
 
@@ -69,6 +72,12 @@ export type TUpdateMessageRequest = {
   text: string;
 };
 
+export type TUpdateUserKeyRequest = {
+  name: string;
+  value: string;
+  expiresAt: string;
+};
+
 export type TUpdateConversationRequest = {
   conversationId: string;
   title: string;
@@ -102,21 +111,16 @@ export type TSearchResults = {
 };
 
 export type TConfig = {
-  availableModels: [];
+  availableModels?: [];
   userProvide?: boolean | null;
   availableTools?: [];
   plugins?: [];
+  azure?: boolean;
 };
 
-export type TEndpointsConfig = {
-  azureOpenAI: TConfig | null;
-  bingAI: TConfig | null;
-  chatGPTBrowser: TConfig | null;
-  anthropic: TConfig | null;
-  google: TConfig | null;
-  openAI: TConfig | null;
-  gptPlugins: TConfig | null;
-};
+export type TModelsConfig = Record<string, string[]>;
+
+export type TEndpointsConfig = Record<string, TConfig | null>;
 
 export type TUpdateTokenCountResponse = {
   count: number;
@@ -175,6 +179,10 @@ export type TStartupConfig = {
 export type TRefreshTokenResponse = {
   token: string;
   user: TUser;
+};
+
+export type TCheckUserKeyResponse = {
+  expiresAt: string;
 };
 
 export type TRequestPasswordResetResponse = {

@@ -2,8 +2,24 @@ const passport = require('passport');
 const express = require('express');
 const router = express.Router();
 const config = require('../../../config/loader');
+const { setAuthTokens } = require('../services/AuthService');
+const { loginLimiter, checkBan } = require('../middleware');
 const domains = config.domains;
-const isProduction = config.isProduction;
+
+router.use(loginLimiter);
+
+const oauthHandler = async (req, res) => {
+  try {
+    await checkBan(req, res);
+    if (req.banned) {
+      return;
+    }
+    await setAuthTokens(req.user._id, res);
+    res.redirect(domains.client);
+  } catch (err) {
+    console.error('Error in setting authentication tokens:', err);
+  }
+};
 
 /**
  * Google Routes
@@ -24,15 +40,7 @@ router.get(
     session: false,
     scope: ['openid', 'profile', 'email'],
   }),
-  (req, res) => {
-    const token = req.user.generateToken();
-    res.cookie('token', token, {
-      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
-      httpOnly: false,
-      secure: isProduction,
-    });
-    res.redirect(domains.client);
-  },
+  oauthHandler,
 );
 
 router.get(
@@ -53,15 +61,7 @@ router.get(
     scope: ['public_profile'],
     profileFields: ['id', 'email', 'name'],
   }),
-  (req, res) => {
-    const token = req.user.generateToken();
-    res.cookie('token', token, {
-      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
-      httpOnly: false,
-      secure: isProduction,
-    });
-    res.redirect(domains.client);
-  },
+  oauthHandler,
 );
 
 router.get(
@@ -78,15 +78,7 @@ router.get(
     failureMessage: true,
     session: false,
   }),
-  (req, res) => {
-    const token = req.user.generateToken();
-    res.cookie('token', token, {
-      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
-      httpOnly: false,
-      secure: isProduction,
-    });
-    res.redirect(domains.client);
-  },
+  oauthHandler,
 );
 
 router.get(
@@ -105,17 +97,8 @@ router.get(
     session: false,
     scope: ['user:email', 'read:user'],
   }),
-  (req, res) => {
-    const token = req.user.generateToken();
-    res.cookie('token', token, {
-      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
-      httpOnly: false,
-      secure: isProduction,
-    });
-    res.redirect(domains.client);
-  },
+  oauthHandler,
 );
-
 router.get(
   '/discord',
   passport.authenticate('discord', {
@@ -132,15 +115,7 @@ router.get(
     session: false,
     scope: ['identify', 'email'],
   }),
-  (req, res) => {
-    const token = req.user.generateToken();
-    res.cookie('token', token, {
-      expires: new Date(Date.now() + eval(process.env.SESSION_EXPIRY)),
-      httpOnly: false,
-      secure: isProduction,
-    });
-    res.redirect(domains.client);
-  },
+  oauthHandler,
 );
 
 module.exports = router;
