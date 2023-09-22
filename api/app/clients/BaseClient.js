@@ -243,7 +243,7 @@ class BaseClient {
    * The method also includes a mechanism to avoid blocking the event loop by waiting for the next tick after each iteration.
    *
    * @param {Array} messages - An array of messages, each with a `tokenCount` property. The messages should be ordered from oldest to newest.
-   * @returns {Object} An object with three properties: `context`, `remainingContextTokens`, and `messagesToRefine`.
+   * @returns {Object} An object with four properties: `context`, `summaryIndex`, `remainingContextTokens`, and `messagesToRefine`.
    *    `context` is an array of messages that fit within the token limit.
    *    `summaryIndex` is the index of the first message added to the array that should be refined.
    *    `remainingContextTokens` is the number of tokens remaining within the limit after adding the messages to the context.
