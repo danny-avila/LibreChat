@@ -26,7 +26,7 @@ export default function MessageHeaderButtons() {
   // Copies conversation share link
   const copyShareLinkHandler = () => {
     if (copied) return;
-    navigator.clipboard.writeText(window.location.host + `/chat/share/${conversationId}`);
+    navigator.clipboard.writeText(window.location.protocol + '//' + window.location.host + `/chat/share/${conversationId}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
