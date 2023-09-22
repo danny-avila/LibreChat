@@ -203,14 +203,23 @@ module.exports = {
     }
   },
   getHottestConvo: async (userId) => {
+    console.log(`calling getHottestConvo(${userId})`);
     try {
-      return await Conversation.find({
-        user: { $ne: userId },
-        isPrivate: { $eq: false }
-      })
-        .sort({ likes: -1 }) // Sort by count in descending order (hottest first)
-        .limit(200)
-        .exec();
+      return await Conversation.aggregate([
+        {
+          $match: {
+            isPrivate: { $eq: false },
+            user: { $ne: userId }
+          }
+        }, // Filter for documents where isPrivate is false and user is not equal to userId
+        {
+          $addFields: {
+            totalLikesAndViewCount: { $sum: ['$likes', '$viewCount'] }
+          }
+        },
+        { $sort: { totalLikesAndViewCount: -1 } },
+        { $limit: 200 }
+      ]);
     } catch (error) {
       console.log(error);
       return { message: 'Error getting the hottest conversations' };

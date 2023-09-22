@@ -16,6 +16,17 @@
       }
     },
     {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Frontend",
+      "runtimeExecutable": "npm",
+      "skipFiles": ["<node_internals>/**"],
+      "runtimeArgs": ["run-script", "frontend:dev"],
+      "env": {
+        "NODE_ENV": "development"
+      }
+    },
+    {
       "type": "msedge",
       "request": "launch",
       "name": "Debug Client (Edge)",
