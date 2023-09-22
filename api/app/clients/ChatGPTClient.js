@@ -153,6 +153,11 @@ class ChatGPTClient extends BaseClient {
     } else {
       modelOptions.prompt = input;
     }
+
+    if (this.useOpenRouter && modelOptions.prompt) {
+      delete modelOptions.stop;
+    }
+
     const { debug } = this.options;
     const url = this.completionsUrl;
     if (debug) {
