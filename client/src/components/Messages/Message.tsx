@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useGetConversationByIdQuery } from 'librechat-data-provider';
-import { useState, useEffect } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useEffect } from 'react';
+import { useSetRecoilState, useRecoilState } from 'recoil';
 import copy from 'copy-to-clipboard';
 import { SubRow, Plugin, MessageContent } from './Content';
 // eslint-disable-next-line import/no-cycle
@@ -25,7 +25,7 @@ export default function Message({
   setSiblingIdx,
 }: TMessageProps) {
   const setLatestMessage = useSetRecoilState(store.latestMessage);
-  const [abortScroll, setAbort] = useState(false);
+  const [abortScroll, setAbortScroll] = useRecoilState(store.abortScroll);
   const { isSubmitting, ask, regenerate, handleContinue } = useMessageHandler();
   const { switchToConversation } = useConversation();
   const {
@@ -71,11 +71,11 @@ export default function Message({
   const enterEdit = (cancel?: boolean) =>
     setCurrentEditId && setCurrentEditId(cancel ? -1 : messageId);
 
-  const handleWheel = () => {
+  const handleScroll = () => {
     if (blinker) {
-      setAbort(true);
+      setAbortScroll(true);
     } else {
-      setAbort(false);
+      setAbortScroll(false);
     }
   };
 
@@ -133,7 +133,7 @@ export default function Message({
 
   return (
     <>
-      <div {...props} onWheel={handleWheel}>
+      <div {...props} onWheel={handleScroll} onTouchMove={handleScroll}>
         <div className="relative m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
           <div className="relative flex h-[30px] w-[30px] flex-col items-end text-right text-xs md:text-sm">
             {typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
