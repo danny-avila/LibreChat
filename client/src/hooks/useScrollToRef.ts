@@ -1,7 +1,13 @@
 import { RefObject, useCallback } from 'react';
 import throttle from 'lodash/throttle';
 
-export default function useScrollToRef(targetRef: RefObject<HTMLDivElement>, callback: () => void) {
+type TUseScrollToRef = {
+  targetRef: RefObject<HTMLDivElement>;
+  callback: () => void;
+  smoothCallback: () => void;
+};
+
+export default function useScrollToRef({ targetRef, callback, smoothCallback }: TUseScrollToRef) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const scrollToRef = useCallback(
     throttle(
@@ -20,7 +26,7 @@ export default function useScrollToRef(targetRef: RefObject<HTMLDivElement>, cal
     throttle(
       () => {
         targetRef.current?.scrollIntoView({ behavior: 'smooth' });
-        callback();
+        smoothCallback();
       },
       750,
       { leading: true },

@@ -19,7 +19,7 @@ const Icon: React.FC<IconProps> = (props) => {
           width: size,
           height: size,
         }}
-        className={`relative flex items-center justify-center ${props.className || ''}`}
+        className={`relative flex items-center justify-center ${props.className ?? ''}`}
       >
         <img
           className="rounded-sm"
@@ -73,7 +73,7 @@ const Icon: React.FC<IconProps> = (props) => {
       default: { icon: <GPTIcon size={size * 0.7} />, bg: 'grey', name: 'UNKNOWN' },
     };
 
-    const { icon, bg, name } = endpointIcons[endpoint] || endpointIcons.default;
+    const { icon, bg, name } = endpointIcons[endpoint ?? ''] ?? endpointIcons.default;
 
     return (
       <div
