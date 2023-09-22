@@ -69,7 +69,7 @@ function ProfileContent() {
           onClick={() => {
             if (copied === true) return;
 
-            navigator.clipboard.writeText(window.location.host + `/profile/${id}`);
+            navigator.clipboard.writeText(window.location.protocol + '//' + window.location.host + `/profile/${id}`);
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
           }}

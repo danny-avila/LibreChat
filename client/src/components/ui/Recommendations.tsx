@@ -323,7 +323,7 @@ export default function Recommendations() {
         );
       }
 
-      setShareLink(window.location.host + `/chat/share/${convoData[convoIdx].conversationId}`);
+      setShareLink(window.location.protocol + '//' + window.location.host + `/chat/share/${convoData[convoIdx].conversationId}`);
       setNumOfLikes(convoData[convoIdx].likes);
 
       // set convo created data

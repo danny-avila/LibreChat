@@ -220,7 +220,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const openProfileHandler = () => navigate(`/profile/${user.id}`);
 
   useEffect(() => {
-    if (user) setRefLink(window.location.host +`/register/${user.id}`);
+    if (user) setRefLink(window.location.protocol + '//' + window.location.host +`/register/${user.id}`);
   }, [user]);
 
   useEffect(() => {

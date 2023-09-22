@@ -210,7 +210,7 @@ export default function SharedConvo() {
       fetchMessagesByConvoId(conversation.conversationId);
       fetchConvoUser(conversation.user);
       setPageTitle(conversation.title);
-      setShareLink(window.location.host +  `/chat/share/${conversation.conversationId}`);
+      setShareLink(window.location.protocol + '//' + window.location.host +  `/chat/share/${conversation.conversationId}`);
       setNumOfLikes(conversation.likes);
 
       if (user && conversation.likedBy) setLiked(conversation.likedBy[user?.id] ? true : false);
