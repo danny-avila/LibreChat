@@ -171,7 +171,7 @@ class OpenAIClient extends BaseClient {
       try {
         const { model } = this.modelOptions;
         this.encoding = model.includes('instruct') ? 'text-davinci-003' : model;
-        tokenizer = this.constructor.getTokenizer(this.modelOptions.model, true);
+        tokenizer = this.constructor.getTokenizer(this.encoding, true);
       } catch {
         tokenizer = this.constructor.getTokenizer(this.encoding, true);
       }
