@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { StopGeneratingIcon } from '~/components';
+import { ListeningIcon, StopGeneratingIcon } from '~/components';
 import { Settings } from 'lucide-react';
 import { SetKeyDialog } from './SetKeyDialog';
 import { useUserKey, useLocalize } from '~/hooks';
@@ -10,6 +10,7 @@ export default function SubmitButton({
   handleStopGenerating,
   disabled,
   isSubmitting,
+  isListening,
   userProvidesKey,
 }) {
   const { endpoint } = conversation;
@@ -18,6 +19,7 @@ export default function SubmitButton({
   const [isKeyProvided, setKeyProvided] = useState(userProvidesKey ? checkExpiry() : true);
   const isKeyActive = checkExpiry();
   const localize = useLocalize();
+  const [countdown, setCountdown] = useState(0);
 
   useEffect(() => {
     if (userProvidesKey) {
@@ -39,6 +41,21 @@ export default function SubmitButton({
     setDialogOpen(true);
   }, []);
 
+  useEffect(() => {
+    let timer;
+    if (isListening) {
+      setCountdown(3);
+      timer = setInterval(() => {
+        setCountdown(prev => (prev > 1 ? prev - 1 : 0));
+      }, 1000);
+    } else {
+      setCountdown(0);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [isListening]);
+  
   if (isSubmitting) {
     return (
       <button
@@ -70,6 +87,21 @@ export default function SubmitButton({
           <SetKeyDialog open={isDialogOpen} onOpenChange={setDialogOpen} endpoint={endpoint} />
         )}
       </>
+    );
+  } else if (isListening) {
+    return (
+      <button 
+        className="group absolute bottom-0 right-0 z-[101] flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500"
+        disabled="true"
+      >
+        <div className="m-1 mr-0 rounded-md pb-[9px] pl-[9.5px] pr-[7px] pt-[11px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
+          {countdown > 0 ? (
+            <div className="text-xl  text-red-600">{countdown}</div>
+          ) : (
+            <ListeningIcon />
+          )}
+        </div>
+      </button>
     );
   } else {
     return (
