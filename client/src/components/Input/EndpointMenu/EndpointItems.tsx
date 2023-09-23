@@ -1,6 +1,16 @@
 import EndpointItem from './EndpointItem';
 
-export default function EndpointItems({ endpoints, onSelect, selectedEndpoint }) {
+interface EndpointItemsProps {
+  endpoints: string[];
+  onSelect: (endpoint: string) => void;
+  selectedEndpoint: string;
+}
+
+export default function EndpointItems({
+  endpoints,
+  onSelect,
+  selectedEndpoint,
+}: EndpointItemsProps) {
   return (
     <>
       {endpoints.map((endpoint) => (
