@@ -67,19 +67,38 @@ const useSpeechRecognition = (ask) => {
     }
   };
 
+  const handleKeyDown = (e) => {
+    if (e.shiftKey && e.altKey && e.key === 'L') {
+      if (isSpeechSupported) {
+        console.log('keydown pressed');
+        toggleListening();
+      }
+    }
+  };
+
   useEffect(() => {
-    hotkeys('shift+alt+l', (event, handler) => {
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  });
+
+  useEffect(() => {
+    console.log('Setting up hotkeys');
+    hotkeys('shift+alt+l', function(event, handler){
       event.preventDefault();
       if (isSpeechSupported) {
+        console.log('hotkeys pressed');
         toggleListening();
       }
     });
-
+    //Cleanup function (runs on unmount)
     return () => {
       hotkeys.unbind('shift+alt+l');
-    };
-  }, [isSpeechSupported]);
-  
+    }
+  }, []);
+
   return { isSpeechSupported, isListening, text, toggleListening };
 };
 
