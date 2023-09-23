@@ -8,7 +8,7 @@ import submission from './submission';
 import search from './search';
 import preset from './preset';
 import lang from './language';
-import optionSettings from './optionSettings';
+import settings from './settings';
 
 export default {
   ...conversation,
@@ -21,5 +21,5 @@ export default {
   ...search,
   ...preset,
   ...lang,
-  ...optionSettings,
+  ...settings,
 };
