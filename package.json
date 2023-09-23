@@ -93,5 +93,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "winston": "^3.10.0"
   }
 }
