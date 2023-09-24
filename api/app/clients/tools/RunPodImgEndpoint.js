@@ -22,13 +22,13 @@ class RundPodImgEndpointAPI extends Tool {
   constructor(fields) {
     super();
     console.log('fields', fields);
-    this.name = 'runpod-endpoint';
+    this.name = 'Txt2Img';
     this.runPodEnabled = this.getRudPodEnabled();
     this.url = fields.RUNPOD_ENDPOINT_URL || this.getServerURL();
     this.apiKey = fields.RUNPOD_API_KEY || this.getApiKey();
     this.useSync = fields.RUNPOD_USE_SYNC || this.getRunPodUseSync();
     this.headers = this.getHeaders(this.apiKey);
-    this.description = `You can generate images with 'runpod-endpoint'. This tool is exclusively for visual content.
+    this.description = `You can generate images with "${this.name}". This tool is exclusively for visual content.
 Guidelines:
 - Visually describe the moods, details, structures, styles, and/or proportions of the image. Remember, the focus is on visual attributes.
 - Craft your input by "showing" and not "telling" the imagery. Think in terms of what you'd want to see in a photograph or a painting.
