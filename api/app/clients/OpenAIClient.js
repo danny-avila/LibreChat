@@ -302,7 +302,7 @@ class OpenAIClient extends BaseClient {
         assistantName: this.options?.chatGptLabel,
       });
 
-      if (this.contextStrategy && !orderedMessages.tokenCount) {
+      if (this.contextStrategy && !orderedMessages[i].tokenCount) {
         orderedMessages[i].tokenCount = this.getTokenCountForMessage(formattedMessage);
       }
 
