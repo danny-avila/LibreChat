@@ -5,6 +5,11 @@ type TOptionSettings = {
   isCodeChat?: boolean;
 };
 
+const abortScroll = atom<boolean>({
+  key: 'abortScroll',
+  default: false,
+});
+
 const optionSettings = atom<TOptionSettings>({
   key: 'optionSettings',
   default: {},
@@ -31,6 +36,7 @@ const showPopover = atom<boolean>({
 });
 
 export default {
+  abortScroll,
   optionSettings,
   showPluginStoreDialog,
   showAgentSettings,

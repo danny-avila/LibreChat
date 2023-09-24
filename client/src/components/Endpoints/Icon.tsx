@@ -19,7 +19,7 @@ const Icon: React.FC<IconProps> = (props) => {
           width: size,
           height: size,
         }}
-        className={`relative flex items-center justify-center ${props.className || ''}`}
+        className={`relative flex items-center justify-center ${props.className ?? ''}`}
       >
         <img
           className="rounded-sm"

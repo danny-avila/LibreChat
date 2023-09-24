@@ -114,6 +114,7 @@ nav:
     - Linode: 'deployment/linode.md'
     - Ngrok: 'deployment/ngrok.md'
     - Render: 'deployment/render.md'
+    - Meilisearch on Render: 'deployment/meilisearch_in_render.md'
     - Azure (Terraform): 'deployment/azure-terraform.md'
     - HuggingFace: 'deployment/huggingface.md'
   - Contributions:
