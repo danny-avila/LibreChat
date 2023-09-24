@@ -482,7 +482,8 @@ class BaseClient {
    *
    * Each message object should have an 'id' or 'messageId' property and may have a 'parentMessageId' property.
    * The 'parentMessageId' is the ID of the message that the current message is a reply to.
-   * If 'parentMessageId' is not present or null, the message is considered a root message.
+   * If 'parentMessageId' is not present, null, or is '00000000-0000-0000-0000-000000000000',
+   * the message is considered a root message.
    *
    * @param {Array} messages - An array of message objects. Each object should have either an 'id' or 'messageId' property, and may have a 'parentMessageId' property.
    * @param {string} parentMessageId - The ID of the parent message to start the traversal from.
@@ -518,7 +519,10 @@ class BaseClient {
       if (message.summary) {
         break;
       }
-      currentMessageId = message.parentMessageId;
+      currentMessageId =
+        message.parentMessageId === '00000000-0000-0000-0000-000000000000'
+          ? null
+          : message.parentMessageId;
     }
 
     orderedMessages.reverse();

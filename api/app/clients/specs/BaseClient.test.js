@@ -279,13 +279,13 @@ describe('BaseClient', () => {
     const unorderedMessages = [
       { id: '3', parentMessageId: '2', text: 'Message 3' },
       { id: '2', parentMessageId: '1', text: 'Message 2' },
-      { id: '1', parentMessageId: null, text: 'Message 1' },
+      { id: '1', parentMessageId: '00000000-0000-0000-0000-000000000000', text: 'Message 1' },
     ];
 
     it('should return ordered messages based on parentMessageId', () => {
       const result = TestClient.constructor.getMessagesForConversation(unorderedMessages, '3');
       expect(result).toEqual([
-        { id: '1', parentMessageId: null, text: 'Message 1' },
+        { id: '1', parentMessageId: '00000000-0000-0000-0000-000000000000', text: 'Message 1' },
         { id: '2', parentMessageId: '1', text: 'Message 2' },
         { id: '3', parentMessageId: '2', text: 'Message 3' },
       ]);
