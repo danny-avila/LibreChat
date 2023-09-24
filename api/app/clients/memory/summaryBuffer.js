@@ -10,6 +10,11 @@ const summaryBuffer = async ({
   formatOptions = {},
   previous_summary = '',
 }) => {
+  if (debug && previous_summary) {
+    console.log('<-----------PREVIOUS SUMMARY----------->\n\n');
+    console.log(previous_summary);
+  }
+
   const formattedMessages = messagesToRefine.map((msg) => {
     const message = formatMessage({ ...formatOptions, message: msg });
 
