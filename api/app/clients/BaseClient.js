@@ -213,7 +213,7 @@ class BaseClient {
           userName: this.options?.name,
           assistantName: this.options?.chatGptLabel ?? this.options?.modelLabel,
         },
-        previous_summary: messagesToRefine?.[0]?.summary,
+        previous_summary: this.previous_summary.summary,
       });
 
       const summaryTokenCount = this.getTokenCountForMessage(summaryMessage);
@@ -261,14 +261,7 @@ class BaseClient {
     if (currentTokenCount < remainingContextTokens) {
       while (messages.length > 0 && currentTokenCount < remainingContextTokens) {
         const poppedMessage = messages.pop();
-        let { tokenCount, summary, summaryTokenCount } = poppedMessage;
-
-        if (this.shouldRefineContext && summary && summaryTokenCount) {
-          tokenCount = summaryTokenCount;
-          poppedMessage.text = summary;
-        }
-
-        console.log('poppedMessage ID & token count', poppedMessage.messageId, tokenCount);
+        const { tokenCount } = poppedMessage;
 
         if (poppedMessage && currentTokenCount + tokenCount <= remainingContextTokens) {
           context.push(poppedMessage);
@@ -299,40 +292,54 @@ class BaseClient {
     let { context, remainingContextTokens, messagesToRefine, summaryIndex } =
       await this.getMessagesWithinTokenLimit(orderedWithInstructions);
 
+    this.options.debug &&
+      console.debug(
+        'remainingContextTokens, this.maxContextTokens (1/2)',
+        remainingContextTokens,
+        this.maxContextTokens,
+      );
+
     let summaryMessage;
     let summaryTokenCount;
 
     // Calculate the difference in length to determine how many messages were discarded if any
     const { length } = payload;
-    let diff = length - context.length;
+    const diff = length - context.length;
+    const firstMessage = orderedWithInstructions[0];
+    const usePrevSummary =
+      this.shouldRefineContext &&
+      diff === 1 &&
+      firstMessage?.summary &&
+      this.previous_summary.messageId === firstMessage.messageId;
 
-    // If the difference is positive, slice the payload array
     if (diff > 0) {
       payload = payload.slice(diff);
-      console.debug(
-        `Difference between original payload (${length}) and context (${context.length}): ${diff}`,
-      );
+      this.options.debug &&
+        console.debug(
+          `Difference between original payload (${length}) and context (${context.length}): ${diff}`,
+        );
     }
 
-    if (messagesToRefine.length > 0) {
+    if (usePrevSummary) {
+      summaryMessage = { role: 'system', content: firstMessage.summary };
+      summaryTokenCount = firstMessage.summaryTokenCount;
+      payload.unshift(summaryMessage);
+      remainingContextTokens -= summaryTokenCount;
+    } else if (messagesToRefine.length > 0) {
       ({ summaryMessage, summaryTokenCount } = await this.refineMessages({
         messagesToRefine,
         remainingContextTokens,
       }));
       payload.unshift(summaryMessage);
       remainingContextTokens -= summaryTokenCount;
-    } else if (this.shouldRefineContext && messagesToRefine.length === 0 && context?.[0]?.summary) {
-      payload[0].role = 'system';
-      payload[0].content = context[0].summary;
     }
 
-    if (this.options.debug) {
+    this.options.debug &&
       console.debug(
         'remainingContextTokens, this.maxContextTokens (2/2)',
         remainingContextTokens,
         this.maxContextTokens,
       );
-    }
 
     let tokenCountMap = orderedWithInstructions.reduce((map, message, index) => {
       const { messageId } = message;
@@ -340,7 +347,7 @@ class BaseClient {
         return map;
       }
 
-      if (index === summaryIndex) {
+      if (index === summaryIndex && !usePrevSummary) {
         map.summaryMessage = { ...summaryMessage, messageId, tokenCount: summaryTokenCount };
       }
 
@@ -469,7 +476,30 @@ class BaseClient {
       mapMethod = this.getMessageMapMethod();
     }
 
-    return this.constructor.getMessagesForConversation(messages, parentMessageId, mapMethod);
+    const orderedMessages = this.constructor.getMessagesForConversation({
+      messages,
+      parentMessageId,
+      mapMethod,
+    });
+
+    if (!this.shouldRefineContext) {
+      return orderedMessages;
+    }
+
+    // Find the latest message with a 'summary' property
+    for (let i = orderedMessages.length - 1; i >= 0; i--) {
+      if (orderedMessages[i]?.summary) {
+        this.previous_summary = orderedMessages[i];
+        break;
+      }
+    }
+
+    if (this.options.debug && this.previous_summary) {
+      const { messageId, summary, tokenCount, summaryTokenCount } = this.previous_summary;
+      console.debug('Previous summary:', { messageId, summary, tokenCount, summaryTokenCount });
+    }
+
+    return orderedMessages;
   }
 
   async saveMessageToDatabase(message, endpointOptions, user = null) {
@@ -490,20 +520,30 @@ class BaseClient {
    *
    * This function constructs a conversation thread by traversing messages from a given parentMessageId up to the root message.
    * It handles cyclic references by ensuring that a message is not processed more than once.
-   * If a message has a 'summary' property, the traversal stops at that message.
+   * If the 'summary' option is set to true and a message has a 'summary' property:
+   * - The message's 'role' is set to 'system'.
+   * - The message's 'text' is set to its 'summary'.
+   * - If the message has a 'summaryTokenCount', the message's 'tokenCount' is set to 'summaryTokenCount'.
+   * The traversal stops at the message with the 'summary' property.
    *
    * Each message object should have an 'id' or 'messageId' property and may have a 'parentMessageId' property.
    * The 'parentMessageId' is the ID of the message that the current message is a reply to.
    * If 'parentMessageId' is not present, null, or is '00000000-0000-0000-0000-000000000000',
    * the message is considered a root message.
    *
-   * @param {Array} messages - An array of message objects. Each object should have either an 'id' or 'messageId' property, and may have a 'parentMessageId' property.
-   * @param {string} parentMessageId - The ID of the parent message to start the traversal from.
-   * @param {Function} [mapMethod] - An optional function to map over the ordered messages. If provided, it will be applied to each message in the resulting array.
-   * @returns {Array} An array containing the messages in the order they should be displayed, starting with the most recent message with a 'summary' property if present, and ending with the message identified by 'parentMessageId'.
+   * @param {Object} options - The options for the function.
+   * @param {Array} options.messages - An array of message objects. Each object should have either an 'id' or 'messageId' property, and may have a 'parentMessageId' property.
+   * @param {string} options.parentMessageId - The ID of the parent message to start the traversal from.
+   * @param {Function} [options.mapMethod] - An optional function to map over the ordered messages. If provided, it will be applied to each message in the resulting array.
+   * @param {boolean} [options.summary=false] - If set to true, the traversal modifies messages with 'summary' and 'summaryTokenCount' properties and stops at the message with a 'summary' property.
+   * @returns {Array} An array containing the messages in the order they should be displayed, starting with the most recent message with a 'summary' property if the 'summary' option is true, and ending with the message identified by 'parentMessageId'.
    */
-
-  static getMessagesForConversation(messages, parentMessageId, mapMethod = null) {
+  static getMessagesForConversation({
+    messages,
+    parentMessageId,
+    mapMethod = null,
+    summary = false,
+  }) {
     if (!messages || messages.length === 0) {
       return [];
     }
@@ -527,10 +567,21 @@ class BaseClient {
         break;
       }
 
+      if (summary && message.summary) {
+        message.role = 'system';
+        message.text = message.summary;
+      }
+
+      if (summary && message.summaryTokenCount) {
+        message.tokenCount = message.summaryTokenCount;
+      }
+
       orderedMessages.push(message);
-      if (message.summary) {
+
+      if (summary && message.summary) {
         break;
       }
+
       currentMessageId =
         message.parentMessageId === '00000000-0000-0000-0000-000000000000'
           ? null

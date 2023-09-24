@@ -91,7 +91,10 @@ class AnthropicClient extends BaseClient {
   }
 
   async buildMessages(messages, parentMessageId) {
-    const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
+    const orderedMessages = this.constructor.getMessagesForConversation({
+      messages,
+      parentMessageId,
+    });
     if (this.options.debug) {
       console.debug('AnthropicClient: orderedMessages', orderedMessages, parentMessageId);
     }

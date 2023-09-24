@@ -235,7 +235,10 @@ describe('BaseClient', () => {
 
   describe('getMessagesForConversation', () => {
     it('should return an empty array if the parentMessageId does not exist', () => {
-      const result = TestClient.constructor.getMessagesForConversation(unorderedMessages, '999');
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: unorderedMessages,
+        parentMessageId: '999',
+      });
       expect(result).toEqual([]);
     });
 
@@ -244,7 +247,10 @@ describe('BaseClient', () => {
         { messageId: '1', parentMessageId: null, text: 'Message 1' },
         { messageId: '2', parentMessageId: '1', text: 'Message 2' },
       ];
-      const result = TestClient.constructor.getMessagesForConversation(messagesWithMessageId, '2');
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: messagesWithMessageId,
+        parentMessageId: '2',
+      });
       expect(result).toEqual([
         { messageId: '1', parentMessageId: null, text: 'Message 1' },
         { messageId: '2', parentMessageId: '1', text: 'Message 2' },
@@ -257,7 +263,10 @@ describe('BaseClient', () => {
     ];
 
     it('should handle messages with null parentMessageId that are not root', () => {
-      const result = TestClient.constructor.getMessagesForConversation(messagesWithNullParent, '2');
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: messagesWithNullParent,
+        parentMessageId: '2',
+      });
       expect(result).toEqual([{ id: '2', parentMessageId: null, text: 'Message 2' }]);
     });
 
@@ -268,7 +277,10 @@ describe('BaseClient', () => {
     ];
 
     it('should handle cyclic references without going into an infinite loop', () => {
-      const result = TestClient.constructor.getMessagesForConversation(cyclicMessages, '3');
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: cyclicMessages,
+        parentMessageId: '3',
+      });
       expect(result).toEqual([
         { id: '1', parentMessageId: '3', text: 'Message 1' },
         { id: '2', parentMessageId: '1', text: 'Message 2' },
@@ -283,7 +295,10 @@ describe('BaseClient', () => {
     ];
 
     it('should return ordered messages based on parentMessageId', () => {
-      const result = TestClient.constructor.getMessagesForConversation(unorderedMessages, '3');
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: unorderedMessages,
+        parentMessageId: '3',
+      });
       expect(result).toEqual([
         { id: '1', parentMessageId: '00000000-0000-0000-0000-000000000000', text: 'Message 1' },
         { id: '2', parentMessageId: '1', text: 'Message 2' },
@@ -307,10 +322,10 @@ describe('BaseClient', () => {
     ];
 
     it('should return ordered messages from a branched array based on parentMessageId', () => {
-      const result = TestClient.constructor.getMessagesForConversation(
-        unorderedBranchedMessages,
-        '10',
-      );
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: unorderedBranchedMessages,
+        parentMessageId: '10',
+      });
       expect(result).toEqual([
         { id: '1', parentMessageId: null, text: 'Message 1' },
         { id: '3', parentMessageId: '1', text: 'Message 3' },
@@ -321,17 +336,20 @@ describe('BaseClient', () => {
     });
 
     it('should return an empty array if no messages are provided', () => {
-      const result = TestClient.constructor.getMessagesForConversation([], '3');
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: [],
+        parentMessageId: '3',
+      });
       expect(result).toEqual([]);
     });
 
     it('should map over the ordered messages if mapMethod is provided', () => {
       const mapMethod = (msg) => msg.text;
-      const result = TestClient.constructor.getMessagesForConversation(
-        unorderedMessages,
-        '3',
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: unorderedMessages,
+        parentMessageId: '3',
         mapMethod,
-      );
+      });
       expect(result).toEqual(['Message 1', 'Message 2', 'Message 3']);
     });
 
@@ -343,12 +361,18 @@ describe('BaseClient', () => {
     ];
 
     it('should start with the message that has a summary property and continue until the specified parentMessageId', () => {
-      const result = TestClient.constructor.getMessagesForConversation(
-        unorderedMessagesWithSummary,
-        '4',
-      );
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: unorderedMessagesWithSummary,
+        parentMessageId: '4',
+        summary: true,
+      });
       expect(result).toEqual([
-        { id: '3', parentMessageId: '2', text: 'Message 3', summary: 'Summary for Message 3' },
+        {
+          id: '3',
+          parentMessageId: '2',
+          text: 'Summary for Message 3',
+          summary: 'Summary for Message 3',
+        },
         { id: '4', parentMessageId: '3', text: 'Message 4' },
       ]);
     });
@@ -361,12 +385,18 @@ describe('BaseClient', () => {
         { id: '4', parentMessageId: '3', text: 'Message 4', summary: 'Summary for Message 4' },
         { id: '1', parentMessageId: null, text: 'Message 1' },
       ];
-      const result = TestClient.constructor.getMessagesForConversation(
-        unorderedMessagesWithSummary,
-        '5',
-      );
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: unorderedMessagesWithSummary,
+        parentMessageId: '5',
+        summary: true,
+      });
       expect(result).toEqual([
-        { id: '4', parentMessageId: '3', text: 'Message 4', summary: 'Summary for Message 4' },
+        {
+          id: '4',
+          parentMessageId: '3',
+          text: 'Summary for Message 4',
+          summary: 'Summary for Message 4',
+        },
         { id: '5', parentMessageId: '4', text: 'Message 5' },
       ]);
     });
@@ -379,12 +409,18 @@ describe('BaseClient', () => {
         { id: '2', parentMessageId: '1', text: 'Message 2', summary: 'Summary for Message 2' },
         { id: '3', parentMessageId: '2', text: 'Message 3', summary: 'Summary for Message 3' },
       ];
-      const result = TestClient.constructor.getMessagesForConversation(
-        unorderedMessagesWithSummary,
-        '5',
-      );
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: unorderedMessagesWithSummary,
+        parentMessageId: '5',
+        summary: true,
+      });
       expect(result).toEqual([
-        { id: '4', parentMessageId: '3', text: 'Message 4', summary: 'Summary for Message 4' },
+        {
+          id: '4',
+          parentMessageId: '3',
+          text: 'Summary for Message 4',
+          summary: 'Summary for Message 4',
+        },
         { id: '5', parentMessageId: '4', text: 'Message 5' },
       ]);
     });

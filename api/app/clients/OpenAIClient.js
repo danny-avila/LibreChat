@@ -268,8 +268,13 @@ class OpenAIClient extends BaseClient {
     parentMessageId,
     { isChatCompletion = false, promptPrefix = null },
   ) {
+    let orderedMessages = this.constructor.getMessagesForConversation({
+      messages,
+      parentMessageId,
+      summary: this.shouldRefineContext,
+    });
     if (!isChatCompletion) {
-      return await this.buildPrompt(messages, parentMessageId, {
+      return await this.buildPrompt(orderedMessages, {
         isChatGptModel: isChatCompletion,
         promptPrefix,
       });
@@ -279,7 +284,6 @@ class OpenAIClient extends BaseClient {
     let instructions;
     let tokenCountMap;
     let promptTokens;
-    let orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
 
     promptPrefix = (promptPrefix || this.options.promptPrefix || '').trim();
     if (promptPrefix) {
