@@ -54,7 +54,7 @@ describe('BaseClient', () => {
   beforeEach(() => {
     TestClient = initializeFakeClient(apiKey, options, fakeMessages);
     TestClient.refineMessages = jest.fn().mockResolvedValue({
-      summary: {
+      summaryMessage: {
         role: 'system',
         content: 'Refined answer',
       },
@@ -105,8 +105,8 @@ describe('BaseClient', () => {
       content: 'Refined answer',
     };
 
-    const result = await TestClient.refineMessages(messagesToRefine, remainingContextTokens);
-    expect(result.summary).toEqual(expectedRefinedMessage);
+    const result = await TestClient.refineMessages({ messagesToRefine, remainingContextTokens });
+    expect(result.summaryMessage).toEqual(expectedRefinedMessage);
   });
 
   test('gets messages within token limit (under limit) correctly in getMessagesWithinTokenLimit()', async () => {

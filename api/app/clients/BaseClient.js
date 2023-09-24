@@ -167,13 +167,13 @@ class BaseClient {
       const { messageId } = message;
       const update = {};
 
-      if (messageId === tokenCountMap.summary?.messageId) {
+      if (messageId === tokenCountMap.summaryMessage?.messageId) {
         if (this.options.debug) {
           console.debug(`Adding summary props to ${messageId}.`);
         }
 
-        update.summary = tokenCountMap.summary.content;
-        update.summaryTokenCount = tokenCountMap.summary.tokenCount;
+        update.summary = tokenCountMap.summaryMessage.content;
+        update.summaryTokenCount = tokenCountMap.summaryMessage.tokenCount;
       }
 
       if (message.tokenCount && !update.summaryTokenCount) {
@@ -199,27 +199,27 @@ class BaseClient {
     }, '');
   }
 
-  async refineMessages(messagesToRefine, remainingContextTokens) {
+  async refineMessages({ messagesToRefine, remainingContextTokens }) {
     if (this.options.debug) {
       console.debug('Refining messages...');
     }
 
     try {
-      const summary = await summaryBuffer({
+      const summaryMessage = await summaryBuffer({
         debug: this.options.debug,
         messagesToRefine,
         modelName: this.modelOptions.model,
         formatOptions: {
           userName: this.options?.name,
-          assistantName: this.options?.chatGptLabel,
+          assistantName: this.options?.chatGptLabel ?? this.options?.modelLabel,
         },
-        // previous_summary: '',
+        previous_summary: messagesToRefine?.[0]?.summary,
       });
 
-      const summaryTokenCount = this.getTokenCountForMessage(summary);
+      const summaryTokenCount = this.getTokenCountForMessage(summaryMessage);
 
       if (this.options.debug) {
-        console.debug('Refined messages', summary);
+        console.debug('summaryMessage:', summaryMessage);
         console.debug(
           `remainingContextTokens: ${remainingContextTokens}, after refining: ${
             remainingContextTokens - summaryTokenCount
@@ -227,7 +227,7 @@ class BaseClient {
         );
       }
 
-      return { summary, summaryTokenCount };
+      return { summaryMessage, summaryTokenCount };
     } catch (e) {
       console.error('Error refining messages');
       console.error(e);
@@ -261,7 +261,14 @@ class BaseClient {
     if (currentTokenCount < remainingContextTokens) {
       while (messages.length > 0 && currentTokenCount < remainingContextTokens) {
         const poppedMessage = messages.pop();
-        const { tokenCount } = poppedMessage;
+        let { tokenCount, summary, summaryTokenCount } = poppedMessage;
+
+        if (this.shouldRefineContext && summary && summaryTokenCount) {
+          tokenCount = summaryTokenCount;
+          poppedMessage.text = summary;
+        }
+
+        console.log('poppedMessage ID & token count', poppedMessage.messageId, tokenCount);
 
         if (poppedMessage && currentTokenCount + tokenCount <= remainingContextTokens) {
           context.push(poppedMessage);
@@ -292,27 +299,31 @@ class BaseClient {
     let { context, remainingContextTokens, messagesToRefine, summaryIndex } =
       await this.getMessagesWithinTokenLimit(orderedWithInstructions);
 
-    let summary;
+    let summaryMessage;
     let summaryTokenCount;
 
     // Calculate the difference in length to determine how many messages were discarded if any
-    let diff = formattedMessages.length - context.length;
+    const { length } = payload;
+    let diff = length - context.length;
 
     // If the difference is positive, slice the payload array
     if (diff > 0) {
-      payload = formattedMessages.slice(diff);
+      payload = payload.slice(diff);
       console.debug(
-        `Difference between original payload (${formattedMessages.length}) and context (${context.length}): ${diff}`,
+        `Difference between original payload (${length}) and context (${context.length}): ${diff}`,
       );
     }
 
     if (messagesToRefine.length > 0) {
-      ({ summary, summaryTokenCount } = await this.refineMessages(
+      ({ summaryMessage, summaryTokenCount } = await this.refineMessages({
         messagesToRefine,
         remainingContextTokens,
-      ));
-      payload.unshift(summary);
+      }));
+      payload.unshift(summaryMessage);
       remainingContextTokens -= summaryTokenCount;
+    } else if (this.shouldRefineContext && messagesToRefine.length === 0 && context?.[0]?.summary) {
+      payload[0].role = 'system';
+      payload[0].content = context[0].summary;
     }
 
     if (this.options.debug) {
@@ -324,15 +335,16 @@ class BaseClient {
     }
 
     let tokenCountMap = orderedWithInstructions.reduce((map, message, index) => {
-      if (!message.messageId) {
+      const { messageId } = message;
+      if (!messageId) {
         return map;
       }
 
       if (index === summaryIndex) {
-        map.summary = { ...summary, messageId: message.messageId, tokenCount: summaryTokenCount };
+        map.summaryMessage = { ...summaryMessage, messageId, tokenCount: summaryTokenCount };
       }
 
-      map[message.messageId] = orderedWithInstructions[index].tokenCount;
+      map[messageId] = orderedWithInstructions[index].tokenCount;
       return map;
     }, {});
 
