@@ -1,17 +1,7 @@
 const { Strategy: PassportLocalStrategy } = require('passport-local');
 const User = require('../models/User');
 const { loginSchema, errorsToString } = require('./validators');
-const winston = require('winston');
-
-// Configure Winston logger
-const logger = winston.createLogger({
-  level: 'info',
-  format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
-  transports: [
-    new winston.transports.Console(),
-    new winston.transports.File({ filename: 'login-logs.log' }),
-  ],
-});
+const logger = require('../utils/logger');
 
 async function validateLoginRequest(req) {
   const { error } = loginSchema.safeParse(req.body);
