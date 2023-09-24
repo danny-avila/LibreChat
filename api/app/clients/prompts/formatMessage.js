@@ -1,9 +1,8 @@
 const formatMessage = ({ message, userName, assistantName }) => {
   let { role: _role, _name, sender, text } = message;
-  const role = _role ?? sender;
   const content = text ?? '';
   const formattedMessage = {
-    role: role?.toLowerCase() === 'user' ? 'user' : 'assistant',
+    role: _role ?? sender?.toLowerCase() === 'user' ? 'user' : 'assistant',
     content,
   };
 
