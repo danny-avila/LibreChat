@@ -1,0 +1,110 @@
+# Sample GitHub Actions CICD
+# see https://docs.github.com/en/actions/learn-github-actions/understanding-github-actions for more info
+name: CICD
+run-name: ${{ github.actor }} is testing changes 🚀
+on:
+  push:
+permissions:
+  id-token: write   # This is required for requesting the JWT for auth with AWS
+  contents: read    # This is required for actions/checkout
+env:
+  AWS_ACCOUNT_ID: "769378065131"
+  IMAGE_REGISTRY: 769378065131.dkr.ecr.us-east-2.amazonaws.com
+  IMAGE_NAME: vera-librechat
+jobs:
+  # first job is to just run tests, no multi platform build
+  build_and_test:
+    runs-on: ubuntu-latest
+    steps:
+      # summary
+      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
+      - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
+      - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
+
+      # checkout code
+      - name: Check out repository code
+        uses: actions/checkout@v3
+      - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
+      - run: echo "🖥️ The workflow is now ready to test your code on the runner."
+      - name: List files in the repository
+        run: |
+          ls ${{ github.workspace }}
+
+      # aws config
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/GithubActionsRole
+          role-session-name: cicdsession
+          aws-region: us-east-2
+      - name: Log AWS role being used
+        run: aws sts get-caller-identity
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+            mask-password: 'true'
+      
+      # validate version is unique
+      # create tag using commit
+      - name: Get version tag from python code
+        run: echo "VERSION=$(python -c 'from version import __VERSION__;print(__VERSION__)')" >> $GITHUB_ENV
+      - name: Create PR tag
+        run: echo "NEXT_PR_TAG=$(bash .github/workflows/get_next_pr_tag.sh ${{ env.IMAGE_NAME }} ${{ env.VERSION }})" >> $GITHUB_ENV
+        shell: bash
+      - name: Create SHA Tag
+        run: echo "SHA_TAG=${VERSION}.${GITHUB_SHA:0-7}" >> $GITHUB_ENV
+      - name: Echo tags
+        run: echo "Building version ${{ env.VERSION }} with tags ${{ env.NEXT_PR_TAG }} and ${{ env.SHA_TAG }}"
+        # TODO this check wasnt' working as intended. was being triggered when all were set properly. needs to be revisited
+    #   - name: If this step fails, there is an error in Verion or Tags. Check previous steps output
+    #     if: (${{ env.VERSION }} == '') || (${{ env.NEXT_PR_TAG }} == '') || (${{ env.SHA_TAG }} == '')
+    #     run: exit 1
+
+
+      - name: Docker build and test
+        run: docker build --build-arg RUN_TESTS=true -t ${IMAGE_NAME}:${{ env.SHA_TAG }} .
+        
+      # TODO maybe need to add code to check if SHA commit tag already exists. in case of manual deploy then merge
+      - name: Push SHA Tag to ECR
+        if: github.ref == 'refs/heads/main'
+        run: |
+            docker tag ${{ env.IMAGE_NAME }}:${{ env.SHA_TAG }}  ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.SHA_TAG }}
+            docker push ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.SHA_TAG }}
+      - name: Push PR Tag to ECR
+        if: github.ref == 'refs/heads/main'
+        run: |
+            docker tag ${{ env.IMAGE_NAME }}:${{ env.SHA_TAG }}  ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.NEXT_PR_TAG }}
+            docker push ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.NEXT_PR_TAG }}
+    
+      - run: echo "🍏 This job's status is ${{ job.status }}."
+    outputs:
+      tag: ${{ env.NEXT_PR_TAG }}
+
+  deploy_to_dev:
+    runs-on: ubuntu-latest
+    needs: build_and_test
+    # only run on pushes to main branch (aka merging a PR)
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
+      - name: Check out repository code
+        uses: actions/checkout@v3
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: arn:aws:iam::769378065131:role/GithubActionsRole
+          role-session-name: cicdsession
+          aws-region: us-east-2
+      
+      - name: Deploy Helm
+        uses: bitovi/github-actions-deploy-eks-helm@v1.2.4
+        with:
+            aws-region: us-east-2
+            cluster-name: vera-dev
+            config-files: ./helm/dev_values.yaml
+            chart-path: ./helm/vera-librechat
+            namespace: vera
+            name: vera-librechat
+            values: image.tag=${{ needs.build_and_test.outputs.tag }}

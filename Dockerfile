@@ -1,5 +1,10 @@
 # Base node image
-FROM node:18-alpine AS node
+FROM node:19-alpine AS node
+
+ARG RUN_TESTS
+
+# Install curl for health check
+RUN apk --no-cache add curl
 
 COPY . /app
 WORKDIR /app
