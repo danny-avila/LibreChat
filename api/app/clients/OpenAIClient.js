@@ -3,6 +3,7 @@ const ChatGPTClient = require('./ChatGPTClient');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const { maxTokensMap, genAzureChatCompletion } = require('../../utils');
 const { truncateText, formatMessage } = require('./prompts');
+const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { createLLM } = require('./llm');
 
@@ -414,22 +415,23 @@ class OpenAIClient extends BaseClient {
     });
   }
 
-  async titleConvo({ text, responseText = '' }) {
-    let title = 'New Chat';
-    const convo = `||>User:
-"${truncateText(text)}"
-||>Response:
-"${JSON.stringify(truncateText(responseText))}"`;
-
-    const { OPENAI_TITLE_MODEL } = process.env ?? {};
-
+  initializeLLM({
+    model = 'gpt-3.5-turbo',
+    temperature = 0.2,
+    presence_penalty = 0,
+    frequency_penalty = 0,
+    max_tokens,
+  }) {
     const modelOptions = {
-      model: OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo-0613',
-      temperature: 0.2,
-      presence_penalty: 0,
-      frequency_penalty: 0,
-      max_tokens: 16,
+      model,
+      temperature,
+      presence_penalty,
+      frequency_penalty,
     };
+
+    if (max_tokens) {
+      modelOptions.max_tokens = max_tokens;
+    }
 
     const configOptions = {};
 
@@ -447,14 +449,35 @@ class OpenAIClient extends BaseClient {
       };
     }
 
-    try {
-      const llm = createLLM({
-        modelOptions,
-        configOptions,
-        openAIApiKey: this.apiKey,
-        azure: this.azure,
-      });
+    const llm = createLLM({
+      modelOptions,
+      configOptions,
+      openAIApiKey: this.apiKey,
+      azure: this.azure,
+    });
 
+    return llm;
+  }
+
+  async titleConvo({ text, responseText = '' }) {
+    let title = 'New Chat';
+    const convo = `||>User:
+"${truncateText(text)}"
+||>Response:
+"${JSON.stringify(truncateText(responseText))}"`;
+
+    const { OPENAI_TITLE_MODEL } = process.env ?? {};
+
+    const modelOptions = {
+      model: OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo-0613',
+      temperature: 0.2,
+      presence_penalty: 0,
+      frequency_penalty: 0,
+      max_tokens: 16,
+    };
+
+    try {
+      const llm = this.initializeLLM(modelOptions);
       title = await runTitleChain({ llm, text, convo });
     } catch (e) {
       console.error(e.message);
@@ -482,6 +505,46 @@ ${convo}
 
     console.log('CONVERSATION TITLE', title);
     return title;
+  }
+
+  async refineMessages({ messagesToRefine, remainingContextTokens }) {
+    this.options.debug && console.debug('Refining messages...');
+
+    const { OPENAI_SUMMARY_MODEL } = process.env ?? {};
+    const llm = this.initializeLLM({
+      model: OPENAI_SUMMARY_MODEL,
+      temperature: 0.2,
+    });
+
+    try {
+      const summaryMessage = await summaryBuffer({
+        llm,
+        debug: this.options.debug,
+        messagesToRefine,
+        formatOptions: {
+          userName: this.options?.name,
+          assistantName: this.options?.chatGptLabel ?? this.options?.modelLabel,
+        },
+        previous_summary: this.previous_summary?.summary,
+      });
+
+      const summaryTokenCount = this.getTokenCountForMessage(summaryMessage);
+
+      if (this.options.debug) {
+        console.debug('summaryMessage:', summaryMessage);
+        console.debug(
+          `remainingContextTokens: ${remainingContextTokens}, after refining: ${
+            remainingContextTokens - summaryTokenCount
+          }`,
+        );
+      }
+
+      return { summaryMessage, summaryTokenCount };
+    } catch (e) {
+      console.error('Error refining messages');
+      console.error(e);
+      return null;
+    }
   }
 }
 

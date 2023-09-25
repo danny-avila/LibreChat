@@ -2,7 +2,6 @@ const crypto = require('crypto');
 const TextStream = require('./TextStream');
 const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('../../models');
 const { addSpaceIfNeeded } = require('../../server/utils');
-const summaryBuffer = require('./memory/summaryBuffer');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -34,6 +33,10 @@ class BaseClient {
 
   async buildMessages() {
     throw new Error('Subclasses must implement buildMessages');
+  }
+
+  async refineMessages() {
+    throw new Error('Subclasses attempted to call refineMessages without implementing it');
   }
 
   getBuildMessagesOptions() {
@@ -193,42 +196,6 @@ class BaseClient {
       const nameOrRole = message.name ?? message.role;
       return acc + `${nameOrRole}:\n${message.content}\n\n`;
     }, '');
-  }
-
-  async refineMessages({ messagesToRefine, remainingContextTokens }) {
-    if (this.options.debug) {
-      console.debug('Refining messages...');
-    }
-
-    try {
-      const summaryMessage = await summaryBuffer({
-        debug: this.options.debug,
-        messagesToRefine,
-        modelName: this.modelOptions.model,
-        formatOptions: {
-          userName: this.options?.name,
-          assistantName: this.options?.chatGptLabel ?? this.options?.modelLabel,
-        },
-        previous_summary: this.previous_summary?.summary,
-      });
-
-      const summaryTokenCount = this.getTokenCountForMessage(summaryMessage);
-
-      if (this.options.debug) {
-        console.debug('summaryMessage:', summaryMessage);
-        console.debug(
-          `remainingContextTokens: ${remainingContextTokens}, after refining: ${
-            remainingContextTokens - summaryTokenCount
-          }`,
-        );
-      }
-
-      return { summaryMessage, summaryTokenCount };
-    } catch (e) {
-      console.error('Error refining messages');
-      console.error(e);
-      return null;
-    }
   }
 
   /**
@@ -599,6 +566,7 @@ class BaseClient {
    * https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
    *
    * An additional 3 tokens need to be added for assistant label priming after all messages have been counted.
+   * In our implementation, this is accounted for in the getMessagesWithinTokenLimit method.
    *
    * @param {Object} message
    */
