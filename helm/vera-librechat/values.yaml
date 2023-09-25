@@ -5,10 +5,10 @@
 replicaCount: 1
 
 image:
-  repository: 665916959988.dkr.ecr.us-east-2.amazonaws.com/vera-librechat
+  repository: ""
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
-  tag: "0.0.1"
+  tag: ""
 
 # this is copy/pasted from .env.example with some values edited
 config:

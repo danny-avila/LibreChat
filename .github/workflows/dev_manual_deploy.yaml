@@ -1,0 +1,100 @@
+# Sample GitHub Actions CICD
+# see https://docs.github.com/en/actions/learn-github-actions/understanding-github-actions for more info
+name: "Dev: Manual Deploy"
+run-name: ${{ github.actor }} is pushing a commit to Dev
+on:
+  workflow_dispatch:
+    inputs:
+      commit_hash:
+        description: "The commit hash to check out"
+permissions:
+  id-token: write   # This is required for requesting the JWT for auth with AWS
+  contents: read    # This is required for actions/checkout
+env:
+  AWS_ACCOUNT_NUMBER: "769378065131"
+  IMAGE_REGISTRY: 769378065131.dkr.ecr.us-east-2.amazonaws.com
+  IMAGE_NAME: vera-librechat
+jobs:
+  # first job is to just run tests, no multi platform build
+  test_and_build:
+    runs-on: ubuntu-latest
+    steps:
+      # summary
+      - run: echo "🎉 The job was manually triggered by ${{ github.actor }}."
+      - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
+
+      # checkout code using commit
+      - name: Check out repository code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.inputs.commit_hash }}
+      - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
+      - name: List files in the repository
+        run: |
+          ls ${{ github.workspace }}
+
+      # aws config
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_NUMBER }}:role/GithubActionsRole
+          role-session-name: cicdsession
+          aws-region: us-east-2
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+            mask-password: 'true'
+      
+      # create tag using commit
+      - name: Get version tag from python code
+        run: echo "VERSION=$(python -c 'from app.version import __VERSION__;print(__VERSION__)')" >> $GITHUB_ENV
+      - name: Create tag
+        run: echo "TAG=${VERSION}.${COMMIT:0-7}" >> $GITHUB_ENV
+        env:
+            COMMIT: ${{ github.event.inputs.commit_hash }}
+      - name: Echo tag
+        run: echo "Building with tag ${{ env.TAG }}"
+      
+      # run tests, build image, and push to ECR
+      - name: Test in Docker
+        run: docker build --build-arg RUN_TESTS=true -t ${IMAGE_NAME}:${{ env.TAG }} .
+      - name: Tag docker image
+        run: docker tag ${{ env.IMAGE_NAME }}:${{ env.TAG }}  ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
+      - name: Push docker image
+        run: docker push ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
+    #   - name: Store tag in output
+    #     id: tag_pushed
+    #     run: echo "TAG=${{ env.TAG }}" >> "$GITHUB_OUTPUT"
+      
+      - run: echo "🍏 This job's status is ${{ job.status }}."
+    outputs:
+        tag: ${{ env.TAG }}
+  
+
+  deploy_to_dev:
+    runs-on: ubuntu-latest
+    needs: [test_and_build]
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.inputs.commit_hash }}
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_NUMBER }}:role/GithubActionsRole
+          role-session-name: cicdsession
+          aws-region: us-east-2
+
+      - name: Deploy Helm
+        uses: bitovi/github-actions-deploy-eks-helm@v1.2.4
+        with:
+            aws-region: us-east-2
+            cluster-name: vera-dev
+            config-files: ./helm/dev_values.yaml
+            chart-path: ./helm/vera-librechat
+            namespace: vera
+            name: vera-librechat
+            values: image.tag=${{ needs.test_and_build.outputs.tag }}

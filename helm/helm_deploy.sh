@@ -1,1 +1,1 @@
-helm upgrade --install --create-namespace --namespace librechat vera-librechat vera-librechat
+helm upgrade --install --create-namespace --namespace vera --values dev_values.yaml vera-librechat vera-librechat
