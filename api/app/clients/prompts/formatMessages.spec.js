@@ -1,4 +1,4 @@
-const { formatMessage, formatLangChainMessages } = require('./formatMessage'); // Adjust the path accordingly
+const { formatMessage, formatLangChainMessages } = require('./formatMessages'); // Adjust the path accordingly
 const { HumanMessage, AIMessage, SystemMessage } = require('langchain/schema');
 
 describe('formatMessage', () => {
