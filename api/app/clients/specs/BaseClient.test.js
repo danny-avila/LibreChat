@@ -225,11 +225,13 @@ describe('BaseClient', () => {
       messages: expect.any(Array),
     };
 
+    TestClient.shouldRefineContext = true;
     const result = await TestClient.handleContextStrategy({
       instructions,
       orderedMessages,
       formattedMessages,
     });
+
     expect(result).toEqual(expectedResult);
   });
 
@@ -307,11 +309,11 @@ describe('BaseClient', () => {
     });
 
     const unorderedBranchedMessages = [
+      { id: '4', parentMessageId: '2', text: 'Message 4', summary: 'Summary for Message 4' },
       { id: '10', parentMessageId: '7', text: 'Message 10' },
       { id: '1', parentMessageId: null, text: 'Message 1' },
       { id: '6', parentMessageId: '5', text: 'Message 7' },
       { id: '7', parentMessageId: '5', text: 'Message 7' },
-      { id: '4', parentMessageId: '2', text: 'Message 4' },
       { id: '2', parentMessageId: '1', text: 'Message 2' },
       { id: '8', parentMessageId: '6', text: 'Message 8' },
       { id: '5', parentMessageId: '3', text: 'Message 5' },
@@ -319,12 +321,14 @@ describe('BaseClient', () => {
       { id: '6', parentMessageId: '4', text: 'Message 6' },
       { id: '8', parentMessageId: '7', text: 'Message 9' },
       { id: '9', parentMessageId: '7', text: 'Message 9' },
+      { id: '11', parentMessageId: '2', text: 'Message 11', summary: 'Summary for Message 11' },
     ];
 
     it('should return ordered messages from a branched array based on parentMessageId', () => {
       const result = TestClient.constructor.getMessagesForConversation({
         messages: unorderedBranchedMessages,
         parentMessageId: '10',
+        summary: true,
       });
       expect(result).toEqual([
         { id: '1', parentMessageId: null, text: 'Message 1' },
@@ -370,6 +374,7 @@ describe('BaseClient', () => {
         {
           id: '3',
           parentMessageId: '2',
+          role: 'system',
           text: 'Summary for Message 3',
           summary: 'Summary for Message 3',
         },
@@ -394,6 +399,7 @@ describe('BaseClient', () => {
         {
           id: '4',
           parentMessageId: '3',
+          role: 'system',
           text: 'Summary for Message 4',
           summary: 'Summary for Message 4',
         },
@@ -418,6 +424,7 @@ describe('BaseClient', () => {
         {
           id: '4',
           parentMessageId: '3',
+          role: 'system',
           text: 'Summary for Message 4',
           summary: 'Summary for Message 4',
         },
