@@ -1,16 +1,17 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useGetConversationByIdQuery } from 'librechat-data-provider';
-import { useState, useEffect } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useEffect } from 'react';
+import { useSetRecoilState, useRecoilState } from 'recoil';
 import copy from 'copy-to-clipboard';
-import { Plugin, SubRow, MessageContent } from './Content';
+import { SubRow, Plugin, MessageContent } from './Content';
 // eslint-disable-next-line import/no-cycle
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
-import { getIcon } from '~/components/Endpoints';
-import { useMessageHandler } from '~/hooks';
+import { Icon } from '~/components/Endpoints';
+import { useMessageHandler, useConversation } from '~/hooks';
 import type { TMessageProps } from '~/common';
+import { cn } from '~/utils';
 import store from '~/store';
 
 export default function Message({
@@ -24,9 +25,9 @@ export default function Message({
   setSiblingIdx,
 }: TMessageProps) {
   const setLatestMessage = useSetRecoilState(store.latestMessage);
-  const [abortScroll, setAbort] = useState(false);
+  const [abortScroll, setAbortScroll] = useRecoilState(store.abortScroll);
   const { isSubmitting, ask, regenerate, handleContinue } = useMessageHandler();
-  const { switchToConversation } = store.useConversation();
+  const { switchToConversation } = useConversation();
   const {
     text,
     children,
@@ -36,7 +37,7 @@ export default function Message({
     error,
     unfinished,
   } = message ?? {};
-  const last = !children?.length;
+  const isLast = !children?.length;
   const edit = messageId == currentEditId;
   const getConversationQuery = useGetConversationByIdQuery(message?.conversationId ?? '', {
     enabled: false,
@@ -58,10 +59,10 @@ export default function Message({
   useEffect(() => {
     if (!message) {
       return;
-    } else if (last) {
+    } else if (isLast) {
       setLatestMessage({ ...message });
     }
-  }, [last, message]);
+  }, [isLast, message]);
 
   if (!message) {
     return null;
@@ -70,30 +71,30 @@ export default function Message({
   const enterEdit = (cancel?: boolean) =>
     setCurrentEditId && setCurrentEditId(cancel ? -1 : messageId);
 
-  const handleWheel = () => {
+  const handleScroll = () => {
     if (blinker) {
-      setAbort(true);
+      setAbortScroll(true);
     } else {
-      setAbort(false);
+      setAbortScroll(false);
     }
   };
 
+  const commonClasses =
+    'w-full border-b text-gray-800 group border-black/10 dark:border-gray-900/50 dark:text-gray-100';
+  const uniqueClasses = isCreatedByUser
+    ? 'bg-white dark:bg-gray-800 dark:text-gray-20'
+    : 'bg-gray-50 dark:bg-gray-1000 dark:text-gray-70';
+
   const props = {
-    className:
-      'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 bg-white dark:text-gray-100 group dark:bg-gray-800',
+    className: cn(commonClasses, uniqueClasses),
     titleclass: '',
   };
 
-  const icon = getIcon({
+  const icon = Icon({
     ...conversation,
     ...message,
     model: message?.model ?? conversation?.model,
   });
-
-  if (!isCreatedByUser) {
-    props.className =
-      'w-full border-b border-black/10 bg-gray-50 dark:border-gray-900/50 text-gray-800 dark:text-gray-100 group bg-gray-100 dark:bg-gray-1000';
-  }
 
   if (message?.bg && searchResult) {
     props.className = message?.bg?.split('hover')[0];
@@ -132,7 +133,7 @@ export default function Message({
 
   return (
     <>
-      <div {...props} onWheel={handleWheel}>
+      <div {...props} onWheel={handleScroll} onTouchMove={handleScroll}>
         <div className="relative m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
           <div className="relative flex h-[30px] w-[30px] flex-col items-end text-right text-xs md:text-sm">
             {typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
@@ -159,16 +160,18 @@ export default function Message({
               </SubRow>
             )}
             <div className="flex flex-grow flex-col gap-3">
+              {/* Legacy Plugins */}
               {message?.plugin && <Plugin plugin={message?.plugin} />}
               <MessageContent
                 ask={ask}
-                text={text ?? ''}
                 edit={edit}
-                error={error ?? false}
+                isLast={isLast}
+                text={text ?? ''}
                 message={message}
                 enterEdit={enterEdit}
-                unfinished={unfinished ?? false}
+                error={error ?? false}
                 isSubmitting={isSubmitting}
+                unfinished={unfinished ?? false}
                 isCreatedByUser={isCreatedByUser ?? true}
                 siblingIdx={siblingIdx ?? 0}
                 setSiblingIdx={

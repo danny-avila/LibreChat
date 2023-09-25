@@ -147,7 +147,7 @@ function MultiSelectDropDown({
                       <Listbox.Option
                         key={i}
                         value={option[optionValueKey]}
-                        className="group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-900 last:border-0 hover:bg-[#ECECF1] dark:border-white/20 dark:text-white dark:hover:bg-gray-700"
+                        className="group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-900 last:border-0 hover:bg-gray-20 dark:border-white/20 dark:text-white dark:hover:bg-gray-700"
                       >
                         <span className="flex items-center gap-1.5 truncate">
                           {!option.isButton && (

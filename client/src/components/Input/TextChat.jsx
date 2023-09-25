@@ -127,7 +127,7 @@ export default function TextChat({ isSearchView = false }) {
   return (
     <>
       <div
-        className="no-gradient-sm fixed bottom-0 left-0 w-full pt-6 sm:bg-gradient-to-b md:absolute"
+        className="no-gradient-sm fixed bottom-0 left-0 w-full pt-6 sm:bg-gradient-to-b md:absolute md:w-[calc(100%-.5rem)]"
         style={{
           background: `linear-gradient(to bottom, 
                 ${isDark ? 'rgba(52, 53, 65, 0)' : 'rgba(255, 255, 255, 0)'}, 
@@ -169,12 +169,12 @@ export default function TextChat({ isSearchView = false }) {
                   className="m-0 flex h-auto max-h-52 flex-1 resize-none overflow-auto border-0 bg-transparent p-0 pl-2 pr-12 leading-6 placeholder:text-sm placeholder:text-gray-600 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder:text-gray-500 md:pl-2"
                 />
                 <SubmitButton
+                  conversation={conversation}
                   submitMessage={submitMessage}
                   handleStopGenerating={handleStopGenerating}
                   disabled={disabled || isNotAppendable}
                   isSubmitting={isSubmitting}
-                  endpointsConfig={endpointsConfig}
-                  endpoint={conversation?.endpoint}
+                  userProvidesKey={endpointsConfig?.[conversation.endpoint]?.userProvide}
                 />
               </div>
             </div>

@@ -3,12 +3,11 @@ import { Dialog } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { ClearChatsButton } from './SettingsTabs/';
 import { useClearConversationsMutation } from 'librechat-data-provider';
-import store from '~/store';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useConversation, useConversations } from '~/hooks';
 
 const ClearConvos = ({ open, onOpenChange }) => {
-  const { newConversation } = store.useConversation();
-  const { refreshConversations } = store.useConversations();
+  const { newConversation } = useConversation();
+  const { refreshConversations } = useConversations();
   const clearConvosMutation = useClearConversationsMutation();
   const [confirmClear, setConfirmClear] = useState(false);
   const localize = useLocalize();

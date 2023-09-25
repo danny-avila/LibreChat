@@ -9,7 +9,6 @@ const Logout = forwardRef(() => {
 
   const handleLogout = () => {
     logout();
-    window.location.reload();
   };
 
   return (

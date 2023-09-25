@@ -1,4 +1,11 @@
-import { TConversation, TMessage, TPreset } from 'librechat-data-provider';
+import type {
+  TConversation,
+  TMessage,
+  TPreset,
+  TMutation,
+  TLoginUser,
+  TUser,
+} from 'librechat-data-provider';
 
 export type TSetOption = (param: number | string) => (newValue: number | string | boolean) => void;
 export type TSetExample = (
@@ -93,3 +100,90 @@ export type TMessageProps = {
   setCurrentEditId?: React.Dispatch<React.SetStateAction<string | number | null>> | null;
   setSiblingIdx?: ((value: number) => void | React.Dispatch<React.SetStateAction<number>>) | null;
 };
+
+export type TInitialProps = {
+  text: string;
+  edit: boolean;
+  error: boolean;
+  unfinished: boolean;
+  isSubmitting: boolean;
+  isLast: boolean;
+};
+export type TAdditionalProps = {
+  ask: TAskFunction;
+  message: TMessage;
+  isCreatedByUser: boolean;
+  siblingIdx: number;
+  enterEdit: (cancel: boolean) => void;
+  setSiblingIdx: (value: number) => void;
+};
+
+export type TMessageContent = TInitialProps & TAdditionalProps;
+
+export type TText = Pick<TInitialProps, 'text'>;
+export type TEditProps = Pick<TInitialProps, 'text' | 'isSubmitting'> &
+  Omit<TAdditionalProps, 'isCreatedByUser'>;
+export type TDisplayProps = TText &
+  Pick<TAdditionalProps, 'isCreatedByUser' | 'message'> & {
+    showCursor?: boolean;
+  };
+
+export type TConfigProps = {
+  userKey: string;
+  setUserKey: React.Dispatch<React.SetStateAction<string>>;
+  endpoint: string;
+};
+
+export type TDangerButtonProps = {
+  id: string;
+  confirmClear: boolean;
+  className?: string;
+  disabled?: boolean;
+  showText?: boolean;
+  mutation?: TMutation;
+  onClick: () => void;
+  infoTextCode: string;
+  actionTextCode: string;
+  dataTestIdInitial: string;
+  dataTestIdConfirm: string;
+  confirmActionTextCode?: string;
+};
+
+export type TDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+};
+
+export type TResError = {
+  response: { data: { message: string } };
+  message: string;
+};
+
+export type TAuthContext = {
+  user: TUser | undefined;
+  token: string | undefined;
+  isAuthenticated: boolean;
+  error: string | undefined;
+  login: (data: TLoginUser) => void;
+  logout: () => void;
+};
+
+export type TUserContext = {
+  user?: TUser | undefined;
+  token: string | undefined;
+  isAuthenticated: boolean;
+  redirect?: string;
+};
+
+export type TAuthConfig = {
+  loginRedirect: string;
+};
+
+export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model' | 'error'> &
+  Pick<TConversation, 'chatGptLabel' | 'modelLabel' | 'jailbreak'> & {
+    size?: number;
+    button?: boolean;
+    message?: boolean;
+    className?: string;
+    endpoint?: string | null;
+  };

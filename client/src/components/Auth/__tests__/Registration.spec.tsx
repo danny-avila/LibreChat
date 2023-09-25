@@ -19,11 +19,21 @@ const setup = ({
     isSuccess: false,
     error: null as Error | null,
   },
+  useRefreshTokenMutationReturnValue = {
+    isLoading: false,
+    isError: false,
+    mutate: jest.fn(),
+    data: {
+      token: 'mock-token',
+      user: {},
+    },
+  },
   useGetStartupCongfigReturnValue = {
     isLoading: false,
     isError: false,
     data: {
       googleLoginEnabled: true,
+      facebookLoginEnabled: true,
       openidLoginEnabled: true,
       openidLabel: 'Test OpenID',
       openidImageUrl: 'http://test-server.com',
@@ -47,7 +57,10 @@ const setup = ({
     .spyOn(mockDataProvider, 'useGetStartupConfig')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetStartupCongfigReturnValue);
-
+  const mockUseRefreshTokenMutation = jest
+    .spyOn(mockDataProvider, 'useRefreshTokenMutation')
+    //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
+    .mockReturnValue(useRefreshTokenMutationReturnValue);
   const renderResult = render(<Registration />);
 
   return {
@@ -55,6 +68,7 @@ const setup = ({
     mockUseRegisterUserMutation,
     mockUseGetUserQuery,
     mockUseGetStartupConfig,
+    mockUseRefreshTokenMutation,
   };
 };
 
@@ -74,6 +88,21 @@ test('renders registration form', () => {
   expect(getByRole('link', { name: /Login with Google/i })).toHaveAttribute(
     'href',
     'mock-server/oauth/google',
+  );
+  expect(getByRole('link', { name: /Login with Facebook/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Login with Facebook/i })).toHaveAttribute(
+    'href',
+    'mock-server/oauth/facebook',
+  );
+  expect(getByRole('link', { name: /Login with Github/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Login with Github/i })).toHaveAttribute(
+    'href',
+    'mock-server/oauth/github',
+  );
+  expect(getByRole('link', { name: /Login with Discord/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Login with Discord/i })).toHaveAttribute(
+    'href',
+    'mock-server/oauth/discord',
   );
 });
 

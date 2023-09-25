@@ -12,47 +12,6 @@ const EModelEndpoint = {
 
 const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
-/*
-const tMessageSchema = z.object({
-  messageId: z.string(),
-  clientId: z.string().nullable().optional(),
-  conversationId: z.string().nullable(),
-  parentMessageId: z.string().nullable(),
-  sender: z.string(),
-  text: z.string(),
-  isCreatedByUser: z.boolean(),
-  error: z.boolean(),
-  createdAt: z
-    .string()
-    .optional()
-    .default(() => new Date().toISOString()),
-  updatedAt: z
-    .string()
-    .optional()
-    .default(() => new Date().toISOString()),
-  current: z.boolean().optional(),
-  unfinished: z.boolean().optional(),
-  submitting: z.boolean().optional(),
-  searchResult: z.boolean().optional(),
-  finish_reason: z.string().optional(),
-});
-
-const tPresetSchema = tConversationSchema
-  .omit({
-    conversationId: true,
-    createdAt: true,
-    updatedAt: true,
-    title: true,
-  })
-  .merge(
-    z.object({
-      conversationId: z.string().optional(),
-      presetId: z.string().nullable().optional(),
-      title: z.string().nullable().optional(),
-    }),
-  );
-*/
-
 const tPluginAuthConfigSchema = z.object({
   authField: z.string(),
   label: z.string(),
@@ -87,7 +46,7 @@ const tAgentOptionsSchema = z.object({
 
 const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
-  title: z.string(),
+  title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   user: z.string().optional(),
   endpoint: eModelEndpointSchema.nullable(),
   suggestions: z.array(z.string()).optional(),
@@ -232,7 +191,7 @@ const anthropicSchema = tConversationSchema
     modelLabel: obj.modelLabel ?? null,
     promptPrefix: obj.promptPrefix ?? null,
     temperature: obj.temperature ?? 1,
-    maxOutputTokens: obj.maxOutputTokens ?? 1024,
+    maxOutputTokens: obj.maxOutputTokens ?? 4000,
     topP: obj.topP ?? 0.7,
     topK: obj.topK ?? 5,
   }))
@@ -241,7 +200,7 @@ const anthropicSchema = tConversationSchema
     modelLabel: null,
     promptPrefix: null,
     temperature: 1,
-    maxOutputTokens: 1024,
+    maxOutputTokens: 4000,
     topP: 0.7,
     topK: 5,
   }));

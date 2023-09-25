@@ -19,7 +19,7 @@ const waitForServerStream = async (response: Response) => {
 };
 
 async function clearConvos(page: Page) {
-  await page.goto(initialUrl);
+  await page.goto(initialUrl, { timeout: 5000 });
   await page.getByRole('button', { name: 'test' }).click();
   await page.getByText('Settings').click();
   await page.getByTestId('clear-convos-initial').click();
@@ -47,7 +47,7 @@ test.afterAll(async () => {
 });
 
 test.beforeEach(async ({ page }) => {
-  await page.goto(initialUrl);
+  await page.goto(initialUrl, { timeout: 5000 });
 });
 
 test.afterEach(async ({ page }) => {
@@ -60,7 +60,7 @@ test.describe('Messaging suite', () => {
   }) => {
     test.setTimeout(120000);
     const message = 'hi';
-    await page.goto(initialUrl);
+    await page.goto(initialUrl, { timeout: 5000 });
     await page.locator('#new-conversation-menu').click();
     await page.locator(`#${endpoint}`).click();
     await page.locator('form').getByRole('textbox').click();
@@ -125,7 +125,7 @@ test.describe('Messaging suite', () => {
 
   test('message should stop and continue', async ({ page }) => {
     const message = 'write me a 10 stanza poem about space';
-    await page.goto(initialUrl);
+    await page.goto(initialUrl, { timeout: 5000 });
 
     await page.locator('#new-conversation-menu').click();
     await page.locator(`#${endpoint}`).click();
@@ -161,7 +161,7 @@ test.describe('Messaging suite', () => {
 
   // in this spec as we are testing post-message navigation, we are not testing the message response
   test('Page navigations', async ({ page }) => {
-    await page.goto(initialUrl);
+    await page.goto(initialUrl, { timeout: 5000 });
     await page.getByTestId('convo-icon').first().click({ timeout: 5000 });
     const currentUrl = page.url();
     const conversationId = currentUrl.split(basePath).pop() ?? '';

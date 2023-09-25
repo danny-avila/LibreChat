@@ -1,5 +1,5 @@
 const { saveMessage, getConvo, getConvoTitle } = require('../../models');
-const { sendMessage, handleError } = require('../utils');
+const { sendMessage, sendError } = require('../utils');
 const abortControllers = require('./abortControllers');
 
 async function abortMessage(req, res) {
@@ -26,8 +26,9 @@ const handleAbort = () => {
   };
 };
 
-const createAbortController = (res, req, endpointOption, getAbortData) => {
+const createAbortController = (req, res, getAbortData) => {
   const abortController = new AbortController();
+  const { endpointOption } = req.body;
   const onStart = (userMessage) => {
     sendMessage(res, { message: userMessage, created: true });
     const abortKey = userMessage?.conversationId ?? req.user.id;
@@ -44,14 +45,16 @@ const createAbortController = (res, req, endpointOption, getAbortData) => {
 
     const responseMessage = {
       ...responseData,
+      conversationId,
       finish_reason: 'incomplete',
       model: endpointOption.modelOptions.model,
       unfinished: false,
       cancelled: true,
       error: false,
+      isCreatedByUser: false,
     };
 
-    saveMessage(responseMessage);
+    saveMessage({ ...responseMessage, user: req.user.id });
 
     return {
       title: await getConvoTitle(req.user.id, conversationId),
@@ -70,24 +73,24 @@ const handleAbortError = async (res, req, error, data) => {
   const { sender, conversationId, messageId, parentMessageId, partialText } = data;
 
   const respondWithError = async () => {
-    const errorMessage = {
+    const options = {
       sender,
       messageId,
       conversationId,
       parentMessageId,
-      unfinished: false,
-      cancelled: false,
-      error: true,
       text: error.message,
-      isCreatedByUser: false,
+      shouldSaveMessage: true,
+      user: req.user.id,
     };
-    if (abortControllers.has(conversationId)) {
-      const { abortController } = abortControllers.get(conversationId);
-      abortController.abort();
-      abortControllers.delete(conversationId);
-    }
-    await saveMessage(errorMessage);
-    handleError(res, errorMessage);
+    const callback = async () => {
+      if (abortControllers.has(conversationId)) {
+        const { abortController } = abortControllers.get(conversationId);
+        abortController.abort();
+        abortControllers.delete(conversationId);
+      }
+    };
+
+    await sendError(res, options, callback);
   };
 
   if (partialText && partialText.length > 5) {

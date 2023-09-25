@@ -82,7 +82,8 @@ nav:
     - Multilingual Information: 'general_info/multilingual_information.md'
   - Installation Guides:
     - Installation:
-        - Docker Install: 'install/docker_install.md'
+        - Docker (Compose) Install: 'install/docker_compose_install.md'
+        - Container Install: 'install/container_install.md'
         - Linux Install: 'install/linux_install.md'
         - Mac Install: 'install/mac_install.md'
         - Windows Install: 'install/windows_install.md'
@@ -91,7 +92,7 @@ nav:
         - APIs and Tokens: 'install/apis_and_tokens.md'
         - User Auth System: 'install/user_auth_system.md'
         - Online MongoDB Database: 'install/mongodb.md'
-        - Languages: 'install/languages.md'
+        - Languages: 'install/default_language.md'
   - Features:
     - Plugins:
       - Introduction: 'features/plugins/introduction.md'
@@ -101,6 +102,8 @@ nav:
       - Azure Cognitive Search: 'features/plugins/azure_cognitive_search.md'
       - Make Your Own Plugin: 'features/plugins/make_your_own.md'
       - Using official ChatGPT Plugins: 'features/plugins/chatgpt_plugins_openapi.md'
+    - Automated Moderation: 'features/mod_system.md'
+    - Third-Party Tools: 'features/third_party.md'
     - Proxy: 'features/proxy.md'
     - Bing Jailbreak: 'features/bing_jailbreak.md'
   - Cloud Deployment:
@@ -111,9 +114,12 @@ nav:
     - Linode: 'deployment/linode.md'
     - Ngrok: 'deployment/ngrok.md'
     - Render: 'deployment/render.md'
+    - Meilisearch on Render: 'deployment/meilisearch_in_render.md'
     - Azure (Terraform): 'deployment/azure-terraform.md'
+    - HuggingFace: 'deployment/huggingface.md'
   - Contributions:
     - Documentation Guidelines: 'contributions/documentation_guidelines.md'
+    - Contribute a Translation: 'contributions/translation_contribution.md'
     - Code Standards and Conventions: 'contributions/coding_conventions.md'
     - Testing: 'contributions/testing.md'
 

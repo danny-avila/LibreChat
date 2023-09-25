@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Settings } from 'lucide-react';
 import { DropdownMenuRadioItem } from '~/components';
-import { getIcon } from '~/components/Endpoints';
-import { SetTokenDialog } from '../SetTokenDialog';
+import { Icon } from '~/components/Endpoints';
+import { SetKeyDialog } from '../SetKeyDialog';
 import { useLocalize } from '~/hooks';
 
 import store from '~/store';
@@ -18,10 +18,10 @@ export default function ModelItem({
   value: string;
   isSelected: boolean;
 }) {
-  const [setTokenDialogOpen, setSetTokenDialogOpen] = useState(false);
+  const [isDialogOpen, setDialogOpen] = useState(false);
   const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
-  const icon = getIcon({
+  const icon = Icon({
     size: 20,
     endpoint,
     error: false,
@@ -29,7 +29,7 @@ export default function ModelItem({
     message: false,
   });
 
-  const isUserProvided = endpointsConfig?.[endpoint]?.userProvide;
+  const userProvidesKey = endpointsConfig?.[endpoint]?.userProvide;
   const localize = useLocalize();
 
   // regular model
@@ -52,7 +52,7 @@ export default function ModelItem({
           </span>
         )}
         <div className="flex w-4 flex-1" />
-        {isUserProvided ? (
+        {userProvidesKey ? (
           <button
             className={cn(
               'invisible m-0 mr-1 flex-initial rounded-md p-0 text-xs font-medium text-gray-400 hover:text-gray-700 group-hover:visible dark:font-normal dark:text-gray-400 dark:hover:text-gray-200',
@@ -60,19 +60,17 @@ export default function ModelItem({
             )}
             onClick={(e) => {
               e.preventDefault();
-              setSetTokenDialogOpen(true);
+              setDialogOpen(true);
             }}
           >
             <Settings className="mr-1 inline-block w-[16px] items-center stroke-1" />
-            {localize('com_endpoint_config_token')}
+            {localize('com_endpoint_config_key')}
           </button>
         ) : null}
       </DropdownMenuRadioItem>
-      <SetTokenDialog
-        open={setTokenDialogOpen}
-        onOpenChange={setSetTokenDialogOpen}
-        endpoint={endpoint}
-      />
+      {userProvidesKey && (
+        <SetKeyDialog open={isDialogOpen} onOpenChange={setDialogOpen} endpoint={endpoint} />
+      )}
     </>
   );
 }

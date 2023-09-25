@@ -1,5 +1,5 @@
 # Mac Installation Guide
-## **Recommended : [Docker Install](docker_install.md)**
+## **Recommended : [Docker Install](docker_compose_install.md)**
 
 ---
 
@@ -16,7 +16,7 @@
   - Change into the cloned directory by running cd LibreChat
   - If using MongoDB Atlas, remove &w=majority from the default connection string
 Follow the instructions for setting up proxies, access tokens, and user system:
-  
+
 ## [Create a MongoDB database](mongodb.md) (Required)
 
 ## [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
@@ -74,13 +74,13 @@ fi
 npm run backend
 ```
 
-### **Make the script executable by running** 
+### **Make the script executable by running**
 
 ```
   chmod +x start_chatgpt.sh
 ```
 
-### **Start LibreChat by running** 
+### **Start LibreChat by running**
 ```
   ./start_chatgpt.sh
 ```
@@ -92,4 +92,4 @@ npm run backend
 
 ---
 
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+>⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

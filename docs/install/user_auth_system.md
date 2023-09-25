@@ -1,19 +1,36 @@
 # User/Auth System
 
+
+>⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+
 ## **First Time Setup**
 
 In order for the auth system to function properly, there are some environment variables that are needed. Note that this information is also included in the [/.env.example](/.env.example) file.
 
 In /.env, you will need to set the following variables:
 ```bash
-# Change this to a secure string
+# Change the secrets to a secure, random string
 JWT_SECRET=secret
+JWT_REFRESH_SECRET=refresh_secret
+
 # Set the expiration delay for the secure cookie with the JWT token
-# Delay is in millisecond e.g. 7 days is 1000*60*60*24*7
-SESSION_EXPIRY=1000 * 60 * 60 * 24 * 7
+# Delay is in milliseconds e.g. 7 days is 1000*60*60*24*7
+
+# Recommended session expiry is 15 minutes. Make it longer if you want the user to be able to revist the page without logging in for a longer duration of time.
+
+# Recommended refresh token expiry is 7 days
+SESSION_EXPIRY=1000 * 60 * 15
+REFRESH_TOKEN_EXPIRY=(1000 * 60 * 60 * 24) * 7
+
 DOMAIN_SERVER=http://localhost:3080
 DOMAIN_CLIENT=http://localhost:3080
 ```
+
+## Automated Moderation System (optional)
+
+The Automated Moderation System uses a scoring mechanism to track user violations. As users commit actions like excessive logins, registrations, or messaging, they accumulate violation scores. Upon reaching a set threshold, the user and their IP are temporarily banned. This system ensures platform security by monitoring and penalizing rapid or suspicious activities.
+
+To set up the mod system, review [the setup guide](../features/mod_system.md).
 
 *Please Note: If you are wanting this to work in development mode, you will need to create a file called `.env.development` in the root directory and set `DOMAIN_CLIENT` to `http://localhost:3090` or whatever port  is provided by vite when runnning `npm run frontend-dev`*
 
@@ -42,6 +59,24 @@ To enable Google login, you must create an application in the [Google Cloud Cons
 9. Click on "Create" and copy your client ID and client secret.
 10. Paste them into your `/.env` file.
 11. Enable the feature in the `/.env` file
+
+---
+
+## Facebook Authentication 
+### (It only works with a domain, not with localhost)
+
+1. Go to [Facebook Developer Portal](https://developers.facebook.com/)
+2. Create a new Application and give it a name
+4. In the Dashboard tab select product and select "Facebook login", then tap on "Configure" and "Settings". Male sure "OAuth client access", "Web OAuth access", "Apply HTTPS" and "Use limited mode for redirect URIs" are **enabled** 
+5. In the Valid OAuth Redirect URIs add "your-domain/oauth/facebook/callback" (example: http://example.com/oauth/facebook/callback)
+6. Save changes and in the "settings" tab, reset the Client Secret
+7. Put the Client ID and Client Secret in the .env file:
+```bash
+FACEBOOK_CLIENT_ID=your_client_id
+FACEBOOK_CLIENT_SECRET=your_client_secret
+FACEBOOK_CALLBACK_URL=/oauth/facebook/callback # this should be the same for everyone
+```
+8. Save the .env file
 
 ---
 
@@ -132,6 +167,7 @@ DISCORD_CLIENT_SECRET=your_client_secret
 DISCORD_CALLBACK_URL=/oauth/discord/callback # this should be the same for everyone
 ```
 8. Save the .env file
+
 ---
 ## **Email and Password Reset** 
 

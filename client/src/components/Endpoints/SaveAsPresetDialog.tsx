@@ -1,16 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { useRecoilValue } from 'recoil';
 import { useCreatePresetMutation } from 'librechat-data-provider';
 import type { TEditPresetProps } from '~/common';
 import { Dialog, Input, Label } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { cn, defaultTextPropsLabel, removeFocusOutlines, cleanupPreset } from '~/utils/';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
 
 const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) => {
   const [title, setTitle] = useState<string>(preset?.title || 'My Preset');
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const createPresetMutation = useCreatePresetMutation();
   const localize = useLocalize();
 
@@ -20,7 +17,6 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) =>
         ...preset,
         title,
       },
-      endpointsConfig,
     });
     createPresetMutation.mutate(_preset);
   };
@@ -58,7 +54,7 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) =>
         selection={{
           selectHandler: submitPreset,
           selectClasses: 'bg-green-600 hover:bg-green-700 dark:hover:bg-green-800 text-white',
-          selectText: 'Save',
+          selectText: localize('com_ui_save'),
         }}
       />
     </Dialog>

@@ -38,11 +38,28 @@ function validateJson(json, verbose = true) {
 }
 
 // omit the LLM to return the well known jsons as objects
-async function loadSpecs({ llm, user, message, map = false, verbose = false }) {
+async function loadSpecs({ llm, user, message, tools = [], map = false, verbose = false }) {
   const directoryPath = path.join(__dirname, '..', '.well-known');
-  const files = (await fs.promises.readdir(directoryPath)).filter(
-    (file) => path.extname(file) === '.json',
-  );
+  let files = [];
+
+  for (let i = 0; i < tools.length; i++) {
+    const filePath = path.join(directoryPath, tools[i] + '.json');
+
+    try {
+      // If the access Promise is resolved, it means that the file exists
+      // Then we can add it to the files array
+      await fs.promises.access(filePath, fs.constants.F_OK);
+      files.push(tools[i] + '.json');
+    } catch (err) {
+      console.error(`File ${tools[i] + '.json'} does not exist`);
+    }
+  }
+
+  if (files.length === 0) {
+    files = (await fs.promises.readdir(directoryPath)).filter(
+      (file) => path.extname(file) === '.json',
+    );
+  }
 
   const validJsons = [];
   const constructorMap = {};

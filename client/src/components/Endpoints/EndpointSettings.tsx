@@ -23,13 +23,13 @@ export default function Settings({
   isPreset = false,
   className = '',
 }: TSettingsProps) {
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
+  const modelsConfig = useRecoilValue(store.modelsConfig);
   if (!conversation?.endpoint) {
     return null;
   }
 
   const { endpoint } = conversation;
-  const models = endpointsConfig?.[endpoint]?.['availableModels'] || [];
+  const models = modelsConfig?.[endpoint] ?? [];
   const OptionComponent = optionComponents[endpoint];
 
   if (OptionComponent) {

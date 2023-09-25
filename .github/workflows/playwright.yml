@@ -27,6 +27,7 @@ jobs:
       E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
       E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
       CREDS_KEY: ${{ secrets.CREDS_KEY }}
       CREDS_IV: ${{ secrets.CREDS_IV }}
       DOMAIN_CLIENT: ${{ secrets.DOMAIN_CLIENT }}
@@ -43,11 +44,11 @@ jobs:
       - name: Install global dependencies
         run: npm ci
 
-      - name: Remove sharp dependency
-        run: rm -rf node_modules/sharp
+      # - name: Remove sharp dependency
+      #   run: rm -rf node_modules/sharp
 
-      - name: Install sharp with linux dependencies
-        run: cd api && SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install --arch=x64 --platform=linux --libc=glibc sharp
+      # - name: Install sharp with linux dependencies
+      #   run: cd api && SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install --arch=x64 --platform=linux --libc=glibc sharp
 
       - name: Build Client
         run: npm run frontend
