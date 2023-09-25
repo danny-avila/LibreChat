@@ -53,7 +53,7 @@ describe('BaseClient', () => {
 
   beforeEach(() => {
     TestClient = initializeFakeClient(apiKey, options, fakeMessages);
-    TestClient.refineMessages = jest.fn().mockResolvedValue({
+    TestClient.summarizeMessages = jest.fn().mockResolvedValue({
       summaryMessage: {
         role: 'system',
         content: 'Refined answer',
@@ -94,7 +94,7 @@ describe('BaseClient', () => {
     expect(result).toBe(expected);
   });
 
-  test('refines messages correctly in refineMessages()', async () => {
+  test('refines messages correctly in summarizeMessages()', async () => {
     const messagesToRefine = [
       { role: 'user', content: 'Hello', tokenCount: 10 },
       { role: 'assistant', content: 'How can I help you?', tokenCount: 20 },
@@ -105,7 +105,7 @@ describe('BaseClient', () => {
       content: 'Refined answer',
     };
 
-    const result = await TestClient.refineMessages({ messagesToRefine, remainingContextTokens });
+    const result = await TestClient.summarizeMessages({ messagesToRefine, remainingContextTokens });
     expect(result.summaryMessage).toEqual(expectedRefinedMessage);
   });
 

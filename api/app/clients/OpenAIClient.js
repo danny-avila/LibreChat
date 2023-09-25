@@ -507,7 +507,7 @@ ${convo}
     return title;
   }
 
-  async refineMessages({ messagesToRefine, remainingContextTokens }) {
+  async summarizeMessages({ messagesToRefine, remainingContextTokens }) {
     this.options.debug && console.debug('Refining messages...');
 
     const { OPENAI_SUMMARY_MODEL } = process.env ?? {};

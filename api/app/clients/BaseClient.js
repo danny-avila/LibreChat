@@ -35,8 +35,8 @@ class BaseClient {
     throw new Error('Subclasses must implement buildMessages');
   }
 
-  async refineMessages() {
-    throw new Error('Subclasses attempted to call refineMessages without implementing it');
+  async summarizeMessages() {
+    throw new Error('Subclasses attempted to call summarizeMessages without implementing it');
   }
 
   getBuildMessagesOptions() {
@@ -290,7 +290,7 @@ class BaseClient {
       payload.unshift(summaryMessage);
       remainingContextTokens -= summaryTokenCount;
     } else if (shouldSummarize && messagesToRefine.length > 0) {
-      ({ summaryMessage, summaryTokenCount } = await this.refineMessages({
+      ({ summaryMessage, summaryTokenCount } = await this.summarizeMessages({
         messagesToRefine,
         remainingContextTokens,
       }));

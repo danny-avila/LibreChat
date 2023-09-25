@@ -22,7 +22,7 @@ describe('OpenAIClient', () => {
     };
     client = new OpenAIClient('test-api-key', options);
     client2 = new OpenAIClient('test-api-key', options);
-    client.refineMessages = jest.fn().mockResolvedValue({
+    client.summarizeMessages = jest.fn().mockResolvedValue({
       role: 'assistant',
       content: 'Refined answer',
       tokenCount: 30,
