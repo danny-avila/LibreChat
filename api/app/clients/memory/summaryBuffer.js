@@ -1,12 +1,11 @@
-const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { ConversationSummaryBufferMemory, ChatMessageHistory } = require('langchain/memory');
 const { HumanMessage, AIMessage, SystemMessage } = require('langchain/schema');
 const { formatMessage } = require('../prompts');
 
 const summaryBuffer = async ({
+  llm,
   debug,
   messagesToRefine,
-  modelName,
   formatOptions = {},
   previous_summary = '',
 }) => {
@@ -30,7 +29,7 @@ const summaryBuffer = async ({
   const chatHistory = new ChatMessageHistory(formattedMessages);
 
   const chatPromptMemory = new ConversationSummaryBufferMemory({
-    llm: new ChatOpenAI({ modelName, temperature: 0.2 }),
+    llm,
     returnMessages: true,
     chatHistory,
   });
