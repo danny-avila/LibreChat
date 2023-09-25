@@ -417,13 +417,14 @@ class OpenAIClient extends BaseClient {
 
   initializeLLM({
     model = 'gpt-3.5-turbo',
+    modelName,
     temperature = 0.2,
     presence_penalty = 0,
     frequency_penalty = 0,
     max_tokens,
   }) {
     const modelOptions = {
-      model,
+      modelName: modelName ?? model,
       temperature,
       presence_penalty,
       frequency_penalty,
