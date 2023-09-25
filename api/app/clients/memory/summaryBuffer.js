@@ -1,6 +1,14 @@
 const { ConversationSummaryBufferMemory, ChatMessageHistory } = require('langchain/memory');
-const { HumanMessage, AIMessage, SystemMessage } = require('langchain/schema');
-const { formatMessage } = require('../prompts');
+const { formatLangChainMessages } = require('../prompts');
+
+const createSummaryBufferMemory = ({ llm, messages }) => {
+  const chatHistory = new ChatMessageHistory(messages);
+  return new ConversationSummaryBufferMemory({
+    llm,
+    chatHistory,
+    returnMessages: true,
+  });
+};
 
 const summaryBuffer = async ({
   llm,
@@ -14,24 +22,10 @@ const summaryBuffer = async ({
     console.log(previous_summary);
   }
 
-  const formattedMessages = messagesToRefine.map((msg) => {
-    const message = formatMessage({ ...formatOptions, message: msg });
-
-    if (message.role === 'user') {
-      return new HumanMessage(message);
-    } else if (message.role === 'assistant') {
-      return new AIMessage(message);
-    } else {
-      return new SystemMessage(message);
-    }
-  });
-
-  const chatHistory = new ChatMessageHistory(formattedMessages);
-
-  const chatPromptMemory = new ConversationSummaryBufferMemory({
+  const formattedMessages = formatLangChainMessages(messagesToRefine, formatOptions);
+  const chatPromptMemory = createSummaryBufferMemory({
     llm,
-    returnMessages: true,
-    chatHistory,
+    messages: formattedMessages,
   });
 
   const messages = await chatPromptMemory.chatHistory.getMessages();
@@ -51,4 +45,4 @@ const summaryBuffer = async ({
   return { role: 'system', content: predictSummary };
 };
 
-module.exports = summaryBuffer;
+module.exports = { createSummaryBufferMemory, summaryBuffer };
