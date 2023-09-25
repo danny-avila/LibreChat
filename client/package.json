@@ -60,7 +60,7 @@
     "lodash": "^4.17.21",
     "lucide-react": "^0.220.0",
     "pino": "^8.12.1",
-    "rc-input-number": "^7.4.2",
+    "rc-input-number": "^8.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.43.9",
