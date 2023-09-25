@@ -72,7 +72,7 @@
     "react-transition-group": "^4.4.5",
     "recoil": "^0.7.7",
     "rehype-highlight": "^6.0.0",
-    "rehype-katex": "^6.0.2",
+    "rehype-katex": "^7.0.0",
     "rehype-raw": "^6.1.1",
     "remark-gfm": "^3.0.1",
     "remark-math": "^5.1.1",
