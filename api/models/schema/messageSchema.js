@@ -14,6 +14,11 @@ const messageSchema = mongoose.Schema(
       required: true,
       meiliIndex: true,
     },
+    user: {
+      type: String,
+      index: true,
+      default: null,
+    },
     model: {
       type: String,
     },
@@ -55,6 +60,10 @@ const messageSchema = mongoose.Schema(
       required: true,
       default: false,
     },
+    isEdited: {
+      type: Boolean,
+      default: false,
+    },
     unfinished: {
       type: Boolean,
       default: false,
@@ -90,6 +99,7 @@ const messageSchema = mongoose.Schema(
         required: false,
       },
     },
+    plugins: [{ type: mongoose.Schema.Types.Mixed }],
   },
   { timestamps: true },
 );

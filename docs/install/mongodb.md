@@ -4,7 +4,7 @@
 - Open a new tab and go to [https://account.mongodb.com/account/register](https://account.mongodb.com/account/register) to create an account.
 
 ## Create a project
-- Once you have set up your account, create a new project and name it:
+- Once you have set up your account, create a new project and name it (the name can be anything):
 
   ![image](https://github.com/fuegovic/LibreChat/assets/32828263/5cdeeba0-2982-47c3-8228-17e8500fd0d7)
 
@@ -86,4 +86,6 @@
 mongodb+srv://fuegovic:1Gr8Banana@render-librechat.fgycwpi.mongo.net/?retryWrites=true
 ```
 
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+---
+
+>⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

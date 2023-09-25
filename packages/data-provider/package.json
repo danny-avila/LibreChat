@@ -1,6 +1,6 @@
 {
   "name": "librechat-data-provider",
-  "version": "0.1.6",
+  "version": "0.1.9",
   "description": "data services for librechat apps",
   "main": "dist/index.js",
   "module": "dist/index.es.js",
@@ -11,7 +11,9 @@
     "build:watch": "rollup -c -w",
     "test": "jest --coverage --watch",
     "test:ci": "jest --coverage --ci",
-    "verify": "npm run test:ci"
+    "verify": "npm run test:ci",
+    "b:clean": "bun run rimraf dist",
+    "b:build": "bun run b:clean && bun run rollup -c --silent --bundleConfigAsCjs"
   },
   "repository": {
     "type": "git",
@@ -26,7 +28,7 @@
   "dependencies": {
     "@tanstack/react-query": "^4.28.0",
     "axios": "^1.3.4",
-    "zod": "^3.21.4"
+    "zod": "^3.22.2"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.21.5",

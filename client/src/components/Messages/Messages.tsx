@@ -1,6 +1,6 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { CSSTransition } from 'react-transition-group';
-import { useRecoilValue } from 'recoil';
 
 import ScrollToBottom from './ScrollToBottom';
 import MessageHeader from './MessageHeader';
@@ -18,6 +18,7 @@ export default function Messages({ isSearchView = false }) {
 
   const messagesTree = useRecoilValue(store.messagesTree);
   const showPopover = useRecoilValue(store.showPopover);
+  const setAbortScroll = useSetRecoilState(store.abortScroll);
   const searchResultMessagesTree = useRecoilValue(store.searchResultMessagesTree);
 
   const _messagesTree = isSearchView ? searchResultMessagesTree : messagesTree;
@@ -27,50 +28,47 @@ export default function Messages({ isSearchView = false }) {
 
   const { screenshotTargetRef } = useScreenshot();
 
-  const handleScroll = () => {
+  const checkIfAtBottom = useCallback(() => {
     if (!scrollableRef.current) {
       return;
     }
+
     const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
     const diff = Math.abs(scrollHeight - scrollTop);
     const percent = Math.abs(clientHeight - diff) / clientHeight;
-    if (percent <= 0.2) {
-      setShowScrollButton(false);
-    } else {
-      setShowScrollButton(true);
-    }
-  };
+    const hasScrollbar = scrollHeight > clientHeight && percent >= 0.15;
+    setShowScrollButton(hasScrollbar);
+  }, [scrollableRef]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (!scrollableRef.current) {
-        return;
-      }
-      const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
-      const diff = Math.abs(scrollHeight - scrollTop);
-      const percent = Math.abs(clientHeight - diff) / clientHeight;
-      const hasScrollbar = scrollHeight > clientHeight && percent > 0.2;
-      setShowScrollButton(hasScrollbar);
+      checkIfAtBottom();
     }, 650);
 
     // Add a listener on the window object
-    window.addEventListener('scroll', handleScroll);
+    window.addEventListener('scroll', checkIfAtBottom);
 
     return () => {
       clearTimeout(timeoutId);
-      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('scroll', checkIfAtBottom);
     };
-  }, [_messagesTree]);
+  }, [_messagesTree, checkIfAtBottom]);
 
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const debouncedHandleScroll = () => {
     clearTimeout(timeoutId);
-    timeoutId = setTimeout(handleScroll, 100);
+    timeoutId = setTimeout(checkIfAtBottom, 100);
   };
 
-  const { scrollToRef: scrollToBottom, handleSmoothToRef } = useScrollToRef(messagesEndRef, () =>
-    setShowScrollButton(false),
-  );
+  const scrollCallback = () => setShowScrollButton(false);
+  const { scrollToRef: scrollToBottom, handleSmoothToRef } = useScrollToRef({
+    targetRef: messagesEndRef,
+    callback: scrollCallback,
+    smoothCallback: () => {
+      scrollCallback();
+      setAbortScroll(false);
+    },
+  });
 
   return (
     <div

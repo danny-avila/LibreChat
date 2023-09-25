@@ -1,21 +1,10 @@
 const partialRight = require('lodash/partialRight');
-const citationRegex = /\[\^\d+?\^]/g;
 const { getCitations, citeText } = require('./citations');
+const { sendMessage } = require('./streamResponse');
 const cursor = '<span className="result-streaming">█</span>';
+const citationRegex = /\[\^\d+?\^]/g;
 
 const addSpaceIfNeeded = (text) => (text.length > 0 && !text.endsWith(' ') ? text + ' ' : text);
-
-const handleError = (res, message) => {
-  res.write(`event: error\ndata: ${JSON.stringify(message)}\n\n`);
-  res.end();
-};
-
-const sendMessage = (res, message, event = 'message') => {
-  if (message.length === 0) {
-    return;
-  }
-  res.write(`event: ${event}\ndata: ${JSON.stringify(message)}\n\n`);
-};
 
 const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
   let i = 0;
@@ -24,7 +13,7 @@ const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
   let codeBlock = false;
   let tokens = addSpaceIfNeeded(generation);
 
-  const progressCallback = async (partial, { res, text, plugin, bing = false, ...rest }) => {
+  const progressCallback = async (partial, { res, text, bing = false, ...rest }) => {
     let chunk = partial === text ? '' : partial;
     tokens += chunk;
     precode += chunk;
@@ -45,7 +34,7 @@ const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
       codeBlock = true;
     }
 
-    if (tokens.match(/^\n/)) {
+    if (tokens.match(/^\n(?!:::plugins:::)/)) {
       tokens = tokens.replace(/^\n/, '');
     }
 
@@ -54,15 +43,13 @@ const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
     }
 
     const payload = { text: tokens, message: true, initial: i === 0, ...rest };
-    if (plugin) {
-      payload.plugin = plugin;
-    }
     sendMessage(res, { ...payload, text: tokens });
     _onProgress && _onProgress(payload);
     i++;
   };
 
-  const sendIntermediateMessage = (res, payload) => {
+  const sendIntermediateMessage = (res, payload, extraTokens = '') => {
+    tokens += extraTokens;
     sendMessage(res, {
       text: tokens?.length === 0 ? cursor : tokens,
       message: true,
@@ -150,10 +137,27 @@ function formatAction(action) {
   return formattedAction;
 }
 
+/**
+ * Checks if the given string value is truthy by comparing it to the string 'true' (case-insensitive).
+ *
+ * @function
+ * @param {string|null|undefined} value - The string value to check.
+ * @returns {boolean} Returns `true` if the value is a case-insensitive match for the string 'true', otherwise returns `false`.
+ * @example
+ *
+ * isEnabled("True");  // returns true
+ * isEnabled("TRUE");  // returns true
+ * isEnabled("false"); // returns false
+ * isEnabled(null);    // returns false
+ * isEnabled();        // returns false
+ */
+function isEnabled(value) {
+  return value?.toLowerCase()?.trim() === 'true';
+}
+
 module.exports = {
-  handleError,
-  sendMessage,
   createOnProgress,
+  isEnabled,
   handleText,
   formatSteps,
   formatAction,

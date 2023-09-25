@@ -3,11 +3,11 @@
 ## Note:
 
 Some features will not work:
-- Bing/Sydney (the IP is blocked by Microsoft)
-- Meilisearch
+- Bing/Sydney: success may vary
+- Meilisearch: additional configuration is needed, [see guide here](./meilisearch_in_render.md).
 
 Also:
-- You will have to create an online MongoDB Atlas Database to be able to properly deploy
+- You need to create an online MongoDB Atlas Database to be able to properly deploy
 
 ## Create an account
 
@@ -57,7 +57,7 @@ Also:
 | PORT | 3080 |
 | SESSION_EXPIRY | (1000 * 60 * 60 * 24) * 7 |
 
-⬆️ **Add a single space in the value field for `BINGAI_TOKEN` and all other endpoints that you wish to disable.**
+> ⬆️ **Add a single space in the value field for any endpoints that you wish to disable.**
 
 **DO NOT FORGET TO SAVE YOUR CHANGES**
 
@@ -78,7 +78,7 @@ Also:
 
 The last thing you need is to create a MongoDB Atlas Database and get your connection string.
 
-Follow the instructions in this document: [Online MongoDB Database](..\install\mongodb.md)
+Follow the instructions in this document: [Online MongoDB Database](../install/mongodb.md)
 
 ## Complete the Environment Variables configuration 
 

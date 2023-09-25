@@ -2,10 +2,29 @@ import English from './languages/Eng';
 import Chinese from './languages/Zh';
 import German from './languages/De';
 import Italian from './languages/It';
+import Polish from './languages/Pl';
 import Portuguese from './languages/Br';
 import Spanish from './languages/Es';
 import French from './languages/Fr';
+import Russian from './languages/Ru';
+import Japanese from './languages/Jp';
+import Swedish from './languages/Sv';
 // === import additional language files here === //
+
+const languageMap: { [key: string]: unknown } = {
+  'en-US': English,
+  'zh-CN': Chinese,
+  'de-DE': German,
+  'es-ES': Spanish,
+  'fr-FR': French,
+  'it-IT': Italian,
+  'pl-PL': Polish,
+  'pt-BR': Portuguese,
+  'ru-RU': Russian,
+  'ja-JP': Japanese,
+  'sv-SE': Swedish,
+  // Add additional language mappings here
+};
 
 // New method on String allow using "{\d}" placeholder for
 // loading value dynamically.
@@ -18,7 +37,7 @@ declare global {
 if (!String.prototype.format) {
   String.prototype.format = function (...args: string[]) {
     return this.replace(/{(\d+)}/g, function (match, number) {
-      return typeof args[number] != 'undefined' ? args[number] : match;
+      return typeof args[number] !== 'undefined' ? args[number] : match;
     });
   };
 }
@@ -26,45 +45,15 @@ if (!String.prototype.format) {
 // input: language code in string
 // returns an object of translated strings in the language
 export const getTranslations = (langCode: string) => {
-  if (langCode === 'en') {
-    return English;
-  }
-  if (langCode === 'cn') {
-    return Chinese;
-  }
-  if (langCode === 'fr') {
-    return French;
-  }
-  if (langCode === 'de') {
-    return German;
-  }
-  if (langCode === 'it') {
-    return Italian;
-  }
-  if (langCode === 'br') {
-    return Portuguese;
-  }
-  if (langCode === 'es') {
-    return Spanish;
-  }
-
-  // === add conditionals here for additional languages here === //
-  return English; // default to English
+  const language = languageMap[langCode] || English;
+  return language;
 };
 
 // input: language code in string & phrase key in string
 // returns an corresponding phrase value in string
 export const localize = (langCode: string, phraseKey: string, ...values: string[]) => {
   const lang = getTranslations(langCode);
-  if (phraseKey in lang) {
-    return lang[phraseKey].format(...values);
-  }
+  const phrase = lang[phraseKey] || English[phraseKey] || '';
 
-  if (phraseKey in English) {
-    // Fall back logic to cover untranslated phrases
-    return English[phraseKey].format(...values);
-  }
-
-  // In case the key is not defined, return empty instead of throw errors.
-  return '';
+  return phrase.format(...values);
 };

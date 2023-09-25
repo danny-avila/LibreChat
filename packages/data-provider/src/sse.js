@@ -4,6 +4,9 @@
  * All rights reserved.
  */
 
+import { refreshToken } from './data-service';
+import { setTokenHeader } from './headers-helpers';
+
 var SSE = function (url, options) {
   if (!(this instanceof SSE)) {
     return new SSE(url, options);
@@ -102,12 +105,27 @@ var SSE = function (url, options) {
     this.close();
   };
 
-  this._onStreamProgress = function (e) {
+  this._onStreamProgress = async function (e) {
     if (!this.xhr) {
       return;
     }
 
-    if (this.xhr.status !== 200) {
+    if (this.xhr.status === 401 && !this._retry) {
+      this._retry = true;
+      try {
+        const refreshResponse = await refreshToken();
+        this.headers = {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${refreshResponse.token}`,
+        };
+        setTokenHeader(refreshResponse.token);
+        window.dispatchEvent(new CustomEvent('tokenUpdated', { detail: refreshResponse.token }));
+        this.stream();
+      } catch (err) {
+        this._onStreamFailure(e);
+        return;
+      }
+    } else if (this.xhr.status !== 200) {
       this._onStreamFailure(e);
       return;
     }

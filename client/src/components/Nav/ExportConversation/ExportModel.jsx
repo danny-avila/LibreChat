@@ -22,7 +22,6 @@ export default function ExportModel({ open, onOpenChange }) {
 
   const conversation = useRecoilValue(store.conversation) || {};
   const messagesTree = useRecoilValue(store.messagesTree) || [];
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   const getSiblingIdx = useRecoilCallback(
     ({ snapshot }) =>
@@ -119,7 +118,13 @@ export default function ExportModel({ open, onOpenChange }) {
   };
 
   const exportScreenshot = async () => {
-    const data = await captureScreenshot();
+    let data;
+    try {
+      data = await captureScreenshot();
+    } catch (err) {
+      console.error('Failed to capture screenshot');
+      return console.error(err);
+    }
     download(data, `${filename}.png`, 'image/png');
   };
 
@@ -191,7 +196,7 @@ export default function ExportModel({ open, onOpenChange }) {
 
     if (includeOptions) {
       data += '\n## Options\n';
-      const options = cleanupPreset({ preset: conversation, endpointsConfig });
+      const options = cleanupPreset({ preset: conversation });
 
       for (const key of Object.keys(options)) {
         data += `- ${key}: ${options[key]}\n`;
@@ -240,7 +245,7 @@ export default function ExportModel({ open, onOpenChange }) {
 
     if (includeOptions) {
       data += '\nOptions\n########################\n';
-      const options = cleanupPreset({ preset: conversation, endpointsConfig });
+      const options = cleanupPreset({ preset: conversation });
 
       for (const key of Object.keys(options)) {
         data += `${key}: ${options[key]}\n`;
@@ -289,7 +294,7 @@ export default function ExportModel({ open, onOpenChange }) {
     };
 
     if (includeOptions) {
-      data.options = cleanupPreset({ preset: conversation, endpointsConfig });
+      data.options = cleanupPreset({ preset: conversation });
     }
 
     const messages = await buildMessageTree({

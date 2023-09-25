@@ -16,6 +16,8 @@ export enum QueryKeys {
   conversation = 'conversation',
   searchEnabled = 'searchEnabled',
   user = 'user',
+  name = 'name', // user key name
+  models = 'models',
   endpoints = 'endpoints',
   presets = 'presets',
   searchResults = 'searchResults',
@@ -121,6 +123,20 @@ export const useUpdateMessageMutation = (
   });
 };
 
+export const useUpdateUserKeysMutation = (): UseMutationResult<
+  t.TUser,
+  unknown,
+  t.TUpdateUserKeyRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: t.TUpdateUserKeyRequest) => dataService.updateUserKey(payload), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.name]);
+    },
+  });
+};
+
 export const useDeleteConversationMutation = (
   id?: string,
 ): UseMutationResult<
@@ -146,6 +162,24 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
   return useMutation(() => dataService.clearAllConversations(), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.allConversations]);
+    },
+  });
+};
+
+export const useRevokeUserKeyMutation = (name: string): UseMutationResult<unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.revokeUserKey(name), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.name]);
+    },
+  });
+};
+
+export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.revokeAllUserKeys(), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.name]);
     },
   });
 };
@@ -179,6 +213,14 @@ export const useGetSearchEnabledQuery = (
 
 export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpointsConfig> => {
   return useQuery([QueryKeys.endpoints], () => dataService.getAIEndpoints(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  });
+};
+
+export const useGetModelsQuery = (): QueryObserverResult<t.TModelsConfig> => {
+  return useQuery([QueryKeys.models], () => dataService.getModels(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -280,6 +322,9 @@ export const useLoginUserMutation = (): UseMutationResult<
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.user]);
     },
+    onMutate: () => {
+      queryClient.invalidateQueries([QueryKeys.models]);
+    },
   });
 };
 
@@ -312,7 +357,34 @@ export const useRefreshTokenMutation = (): UseMutationResult<
   unknown,
   unknown
 > => {
-  return useMutation(() => dataService.refreshToken(), {});
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.refreshToken(), {
+    onMutate: () => {
+      queryClient.invalidateQueries([QueryKeys.models]);
+    },
+  });
+};
+
+export const useUserKeyQuery = (
+  name: string,
+  config?: UseQueryOptions<t.TCheckUserKeyResponse>,
+): QueryObserverResult<t.TCheckUserKeyResponse> => {
+  return useQuery<t.TCheckUserKeyResponse>(
+    [QueryKeys.name, name],
+    () => {
+      if (!name) {
+        return Promise.resolve({ expiresAt: '' });
+      }
+      return dataService.userKeyQuery(name);
+    },
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+    },
+  );
 };
 
 export const useRequestPasswordResetMutation = (): UseMutationResult<

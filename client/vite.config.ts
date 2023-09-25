@@ -26,7 +26,7 @@ export default defineConfig({
   plugins: [react(), sourcemapExclude({ excludeNodeModules: true })],
   publicDir: './public',
   build: {
-    sourcemap: true,
+    sourcemap: process.env.NODE_ENV === 'development',
     outDir: './dist',
     rollupOptions: {
       // external: ['uuid'],

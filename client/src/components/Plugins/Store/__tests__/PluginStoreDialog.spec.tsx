@@ -113,6 +113,15 @@ const setup = ({
       plugins: ['wolfram'],
     },
   },
+  useRefreshTokenMutationReturnValue = {
+    isLoading: false,
+    isError: false,
+    mutate: jest.fn(),
+    data: {
+      token: 'mock-token',
+      user: {},
+    },
+  },
   useAvailablePluginsQueryReturnValue = {
     isLoading: false,
     isError: false,
@@ -137,6 +146,10 @@ const setup = ({
     .spyOn(mockDataProvider, 'useGetUserQuery')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetUserQueryReturnValue);
+  const mockUseRefreshTokenMutation = jest
+    .spyOn(mockDataProvider, 'useRefreshTokenMutation')
+    //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
+    .mockReturnValue(useRefreshTokenMutationReturnValue);
   const mockSetIsOpen = jest.fn();
   const renderResult = render(<PluginStoreDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
 
@@ -145,6 +158,7 @@ const setup = ({
     mockUseGetUserQuery,
     mockUseAvailablePluginsQuery,
     mockUseUpdateUserPluginsMutation,
+    mockUseRefreshTokenMutation,
     mockSetIsOpen,
   };
 };

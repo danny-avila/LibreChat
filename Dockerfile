@@ -7,9 +7,16 @@ ARG RUN_TESTS
 RUN apk --no-cache add curl
 
 COPY . /app
-# Install dependencies
 WORKDIR /app
-RUN npm ci
+
+# Install call deps - Install curl for health check
+RUN apk --no-cache add curl && \
+    # We want to inherit env from the container, not the file
+    # This will preserve any existing env file if it's already in souce
+    # otherwise it will create a new one
+    touch .env && \
+    # Build deps in seperate 
+    npm ci
 
 # React client build
 ENV NODE_OPTIONS="--max-old-space-size=2048"

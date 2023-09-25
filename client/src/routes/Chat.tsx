@@ -1,18 +1,18 @@
 import { useState, useEffect } from 'react';
-import { useAuthContext } from '~/hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
-
-import Landing from '~/components/ui/Landing';
-import Messages from '~/components/Messages/Messages';
-import TextChat from '~/components/Input/TextChat';
-
-import store from '~/store';
 import {
   useGetMessagesByConvoId,
   useGetConversationByIdMutation,
   useGetStartupConfig,
 } from 'librechat-data-provider';
+
+import Landing from '~/components/ui/Landing';
+import Messages from '~/components/Messages/Messages';
+import TextChat from '~/components/Input/TextChat';
+
+import { useAuthContext, useConversation } from '~/hooks';
+import store from '~/store';
 
 export default function Chat() {
   const { isAuthenticated } = useAuthContext();
@@ -22,7 +22,7 @@ export default function Chat() {
   const setMessages = useSetRecoilState(store.messages);
   const messagesTree = useRecoilValue(store.messagesTree);
   const isSubmitting = useRecoilValue(store.isSubmitting);
-  const { newConversation } = store.useConversation();
+  const { newConversation } = useConversation();
   const { conversationId } = useParams();
   const navigate = useNavigate();
 

@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import filenamify from 'filenamify';
 import exportFromJSON from 'export-from-json';
 import { useSetRecoilState, useRecoilState, useRecoilValue } from 'recoil';
-import { TEditPresetProps } from '~/common';
+import type { TEditPresetProps } from '~/common';
 import { useSetOptions, useLocalize } from '~/hooks';
 import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
@@ -16,7 +16,6 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditP
   const [preset, setPreset] = useRecoilState(store.preset);
   const setPresets = useSetRecoilState(store.presets);
   const availableEndpoints = useRecoilValue(store.availableEndpoints);
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const { setOption } = useSetOptions(_preset);
   const localize = useLocalize();
 
@@ -27,7 +26,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditP
     axios({
       method: 'post',
       url: '/api/presets',
-      data: cleanupPreset({ preset, endpointsConfig }),
+      data: cleanupPreset({ preset }),
       withCredentials: true,
     }).then((res) => {
       setPresets(res?.data);
@@ -40,7 +39,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditP
     }
     const fileName = filenamify(preset?.title || 'preset');
     exportFromJSON({
-      data: cleanupPreset({ preset, endpointsConfig }),
+      data: cleanupPreset({ preset }),
       fileName,
       exportType: exportFromJSON.types.json,
     });
@@ -59,7 +58,9 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditP
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title={`${title || localize('com_endpoint_edit_preset')} - ${preset?.title}`}
+        title={`${title || localize('com_ui_edit') + ' ' + localize('com_endpoint_preset')} - ${
+          preset?.title
+        }`}
         className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[720px] md:w-[750px] md:overflow-y-hidden lg:w-[950px] xl:h-[720px]"
         main={
           <div className="flex w-full flex-col items-center gap-2 md:h-[530px]">

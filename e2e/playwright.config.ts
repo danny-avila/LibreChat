@@ -6,12 +6,13 @@ dotenv.config();
 
 export default defineConfig({
   globalSetup: require.resolve('./setup/global-setup'),
+  globalTeardown: require.resolve('./setup/global-teardown'),
   testDir: 'specs/',
   outputDir: 'specs/.test-results',
   /* Run tests in files in parallel.
   NOTE: This sometimes causes issues on Windows.
   Set to false if you experience issues running on a Windows machine. */
-  fullyParallel: true,
+  fullyParallel: false,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */
@@ -61,8 +62,11 @@ export default defineConfig({
     reuseExistingServer: true,
     env: {
       ...process.env,
+      SEARCH: 'false',
       NODE_ENV: 'development',
-      SESSION_EXPIRY: '86400000',
+      SESSION_EXPIRY: '60000',
+      ALLOW_REGISTRATION: 'true',
+      REFRESH_TOKEN_EXPIRY: '300000',
     },
   },
 });
