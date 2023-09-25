@@ -59,6 +59,8 @@ describe('formatMessage', () => {
     };
     const result = formatMessage(input);
     expect(result).toBeInstanceOf(HumanMessage);
+    expect(result.lc_kwargs.content).toEqual(input.message.text);
+    expect(result.lc_kwargs.name).toEqual(input.userName);
   });
 
   it('formats assistant message with langChain', () => {
@@ -72,6 +74,21 @@ describe('formatMessage', () => {
     };
     const result = formatMessage(input);
     expect(result).toBeInstanceOf(AIMessage);
+    expect(result.lc_kwargs.content).toEqual(input.message.text);
+    expect(result.lc_kwargs.name).toEqual(input.assistantName);
+  });
+
+  it('formats system message with langChain', () => {
+    const input = {
+      message: {
+        role: 'system',
+        text: 'This is a system message.',
+      },
+      langChain: true,
+    };
+    const result = formatMessage(input);
+    expect(result).toBeInstanceOf(SystemMessage);
+    expect(result.lc_kwargs.content).toEqual(input.message.text);
   });
 });
 
@@ -100,8 +117,12 @@ describe('formatLangChainMessages', () => {
     expect(result[0]).toBeInstanceOf(SystemMessage);
     expect(result[1]).toBeInstanceOf(HumanMessage);
     expect(result[2]).toBeInstanceOf(AIMessage);
+
     expect(result[0].lc_kwargs.content).toEqual(messages[0].content);
     expect(result[1].lc_kwargs.content).toEqual(messages[1].text);
     expect(result[2].lc_kwargs.content).toEqual(messages[2].text);
+
+    expect(result[1].lc_kwargs.name).toEqual(formatOptions.userName);
+    expect(result[2].lc_kwargs.name).toEqual(formatOptions.assistantName);
   });
 });
