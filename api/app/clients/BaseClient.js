@@ -168,18 +168,14 @@ class BaseClient {
       const update = {};
 
       if (messageId === tokenCountMap.summaryMessage?.messageId) {
-        if (this.options.debug) {
-          console.debug(`Adding summary props to ${messageId}.`);
-        }
+        this.options.debug && console.debug(`Adding summary props to ${messageId}.`);
 
         update.summary = tokenCountMap.summaryMessage.content;
         update.summaryTokenCount = tokenCountMap.summaryMessage.tokenCount;
       }
 
       if (message.tokenCount && !update.summaryTokenCount) {
-        if (this.options.debug) {
-          console.debug(`Skipping ${messageId}: already had a token count.`);
-        }
+        this.options.debug && console.debug(`Skipping ${messageId}: already had a token count.`);
         continue;
       }
 
@@ -213,7 +209,7 @@ class BaseClient {
           userName: this.options?.name,
           assistantName: this.options?.chatGptLabel ?? this.options?.modelLabel,
         },
-        previous_summary: this.previous_summary.summary,
+        previous_summary: this.previous_summary?.summary,
       });
 
       const summaryTokenCount = this.getTokenCountForMessage(summaryMessage);
@@ -301,13 +297,14 @@ class BaseClient {
 
     let summaryMessage;
     let summaryTokenCount;
+    const { shouldRefineContext } = this;
 
     // Calculate the difference in length to determine how many messages were discarded if any
     const { length } = payload;
     const diff = length - context.length;
     const firstMessage = orderedWithInstructions[0];
     const usePrevSummary =
-      this.shouldRefineContext &&
+      shouldRefineContext &&
       diff === 1 &&
       firstMessage?.summary &&
       this.previous_summary.messageId === firstMessage.messageId;
@@ -325,7 +322,7 @@ class BaseClient {
       summaryTokenCount = firstMessage.summaryTokenCount;
       payload.unshift(summaryMessage);
       remainingContextTokens -= summaryTokenCount;
-    } else if (messagesToRefine.length > 0) {
+    } else if (shouldRefineContext && messagesToRefine.length > 0) {
       ({ summaryMessage, summaryTokenCount } = await this.refineMessages({
         messagesToRefine,
         remainingContextTokens,
@@ -347,7 +344,7 @@ class BaseClient {
         return map;
       }
 
-      if (index === summaryIndex && !usePrevSummary) {
+      if (shouldRefineContext && index === summaryIndex && !usePrevSummary) {
         map.summaryMessage = { ...summaryMessage, messageId, tokenCount: summaryTokenCount };
       }
 
