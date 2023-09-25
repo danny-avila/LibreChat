@@ -111,7 +111,7 @@ describe('BaseClient', () => {
 
   test('gets messages within token limit (under limit) correctly in getMessagesWithinTokenLimit()', async () => {
     TestClient.maxContextTokens = 100;
-    TestClient.shouldRefineContext = true;
+    TestClient.shouldSummarize = true;
 
     const messages = [
       { role: 'user', content: 'Hello', tokenCount: 5 },
@@ -141,7 +141,7 @@ describe('BaseClient', () => {
 
   test('gets result over token limit correctly in getMessagesWithinTokenLimit()', async () => {
     TestClient.maxContextTokens = 50; // Set a lower limit
-    TestClient.shouldRefineContext = true;
+    TestClient.shouldSummarize = true;
 
     const messages = [
       { role: 'user', content: 'Hello', tokenCount: 30 },
@@ -225,7 +225,7 @@ describe('BaseClient', () => {
       messages: expect.any(Array),
     };
 
-    TestClient.shouldRefineContext = true;
+    TestClient.shouldSummarize = true;
     const result = await TestClient.handleContextStrategy({
       instructions,
       orderedMessages,

@@ -264,14 +264,14 @@ class BaseClient {
 
     let summaryMessage;
     let summaryTokenCount;
-    const { shouldRefineContext } = this;
+    const { shouldSummarize } = this;
 
     // Calculate the difference in length to determine how many messages were discarded if any
     const { length } = payload;
     const diff = length - context.length;
     const firstMessage = orderedWithInstructions[0];
     const usePrevSummary =
-      shouldRefineContext &&
+      shouldSummarize &&
       diff === 1 &&
       firstMessage?.summary &&
       this.previous_summary.messageId === firstMessage.messageId;
@@ -289,7 +289,7 @@ class BaseClient {
       summaryTokenCount = firstMessage.summaryTokenCount;
       payload.unshift(summaryMessage);
       remainingContextTokens -= summaryTokenCount;
-    } else if (shouldRefineContext && messagesToRefine.length > 0) {
+    } else if (shouldSummarize && messagesToRefine.length > 0) {
       ({ summaryMessage, summaryTokenCount } = await this.refineMessages({
         messagesToRefine,
         remainingContextTokens,
@@ -311,7 +311,7 @@ class BaseClient {
         return map;
       }
 
-      if (shouldRefineContext && index === summaryIndex && !usePrevSummary) {
+      if (shouldSummarize && index === summaryIndex && !usePrevSummary) {
         map.summaryMessage = { ...summaryMessage, messageId, tokenCount: summaryTokenCount };
       }
 
@@ -446,7 +446,7 @@ class BaseClient {
       mapMethod,
     });
 
-    if (!this.shouldRefineContext) {
+    if (!this.shouldSummarize) {
       return orderedMessages;
     }
 

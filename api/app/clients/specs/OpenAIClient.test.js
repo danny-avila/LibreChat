@@ -158,7 +158,7 @@ describe('OpenAIClient', () => {
     });
 
     it('should handle context strategy correctly', async () => {
-      client.contextStrategy = 'refine';
+      client.contextStrategy = 'summarize';
       const result = await client.buildMessages(messages, parentMessageId, {
         isChatCompletion: true,
       });

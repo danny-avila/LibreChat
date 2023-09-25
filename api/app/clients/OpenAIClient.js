@@ -22,7 +22,7 @@ class OpenAIClient extends BaseClient {
     this.contextStrategy = options.contextStrategy
       ? options.contextStrategy.toLowerCase()
       : 'discard';
-    this.shouldRefineContext = this.contextStrategy === 'refine';
+    this.shouldSummarize = this.contextStrategy === 'summarize';
     this.azure = options.azure || false;
     if (this.azure) {
       this.azureEndpoint = genAzureChatCompletion(this.azure);
@@ -91,7 +91,7 @@ class OpenAIClient extends BaseClient {
       model.startsWith('text-chat') || model.startsWith('text-davinci-002-render');
     this.maxContextTokens = maxTokensMap[model] ?? 4095; // 1 less than maximum
 
-    if (this.shouldRefineContext) {
+    if (this.shouldSummarize) {
       this.maxContextTokens = Math.floor(this.maxContextTokens / 2);
     }
 
@@ -272,7 +272,7 @@ class OpenAIClient extends BaseClient {
     let orderedMessages = this.constructor.getMessagesForConversation({
       messages,
       parentMessageId,
-      summary: this.shouldRefineContext,
+      summary: this.shouldSummarize,
     });
     if (!isChatCompletion) {
       return await this.buildPrompt(orderedMessages, {
