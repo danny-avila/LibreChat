@@ -481,8 +481,8 @@ class OpenAIClient extends BaseClient {
       const llm = this.initializeLLM(modelOptions);
       title = await runTitleChain({ llm, text, convo });
     } catch (e) {
-      console.error(e.message);
       console.log('There was an issue generating title with LangChain, trying the old method...');
+      console.error(e.message, e);
       modelOptions.model = OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
       const instructionsPayload = [
         {
