@@ -249,7 +249,9 @@ class BaseClient {
   }
 
   async handleContextStrategy({ instructions, orderedMessages, formattedMessages }) {
-    let payload = this.addInstructions(formattedMessages, instructions);
+    const { tokenCount, ..._instructions } = instructions;
+    this.options.debug && console.debug('instructions tokenCount', tokenCount);
+    let payload = this.addInstructions(formattedMessages, _instructions);
     let orderedWithInstructions = this.addInstructions(orderedMessages, instructions);
 
     let { context, remainingContextTokens, messagesToRefine, summaryIndex } =
