@@ -9,6 +9,7 @@ import French from './languages/Fr';
 import Russian from './languages/Ru';
 import Japanese from './languages/Jp';
 import Swedish from './languages/Sv';
+import Korean from './languages/Ko';
 // === import additional language files here === //
 
 const languageMap: { [key: string]: unknown } = {
@@ -23,6 +24,7 @@ const languageMap: { [key: string]: unknown } = {
   'ru-RU': Russian,
   'ja-JP': Japanese,
   'sv-SE': Swedish,
+  'ko-KR': Korean,
   // Add additional language mappings here
 };
 
