@@ -49,7 +49,7 @@ class FunctionsAgent extends Agent {
   static createPrompt(_tools, fields) {
     const { prefix = PREFIX, currentDateString } = fields || {};
 
-    return ChatPromptTemplate.fromPromptMessages([
+    return ChatPromptTemplate.fromMessages([
       SystemMessagePromptTemplate.fromTemplate(`Date: ${currentDateString}\n${prefix}`),
       new MessagesPlaceholder('chat_history'),
       HumanMessagePromptTemplate.fromTemplate('Query: {input}'),

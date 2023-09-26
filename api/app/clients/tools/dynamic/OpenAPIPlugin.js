@@ -133,7 +133,7 @@ async function createOpenAPIPlugin({ data, llm, user, message, memory, verbose =
     chainOptions.params = data.params;
   }
 
-  chainOptions.prompt = ChatPromptTemplate.fromPromptMessages([
+  chainOptions.prompt = ChatPromptTemplate.fromMessages([
     HumanMessagePromptTemplate.fromTemplate(
       `# Use the provided API's to respond to this query:\n\n{query}\n\n## Instructions:\n${addLinePrefix(
         description_for_model,
