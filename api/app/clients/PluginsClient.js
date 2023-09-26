@@ -405,7 +405,9 @@ class PluginsClient extends OpenAIClient {
         const message = orderedMessages.pop();
         const isCreatedByUser = message.isCreatedByUser || message.role?.toLowerCase() === 'user';
         const roleLabel = isCreatedByUser ? this.userLabel : this.chatGptLabel;
-        let messageString = `${this.startToken}${roleLabel}:\n${message.text}${this.endToken}\n`;
+        let messageString = `${this.startToken}${roleLabel}:\n${
+          message.text ?? message.content ?? ''
+        }${this.endToken}\n`;
         let newPromptBody = `${messageString}${promptBody}`;
 
         const tokenCountForMessage = this.getTokenCount(messageString);
