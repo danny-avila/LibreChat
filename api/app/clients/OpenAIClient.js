@@ -1,10 +1,11 @@
 const BaseClient = require('./BaseClient');
 const ChatGPTClient = require('./ChatGPTClient');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
-const { maxTokensMap, genAzureChatCompletion } = require('../../utils');
-const { truncateText, formatMessage } = require('./prompts');
+const { getModelMaxTokens, genAzureChatCompletion } = require('../../utils');
+const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
+const { tokenSplit } = require('./document');
 const { createLLM } = require('./llm');
 
 // Cache to store Tiktoken instances
@@ -89,7 +90,7 @@ class OpenAIClient extends BaseClient {
     const { isChatGptModel } = this;
     this.isUnofficialChatGptModel =
       model.startsWith('text-chat') || model.startsWith('text-davinci-002-render');
-    this.maxContextTokens = maxTokensMap[model] ?? 4095; // 1 less than maximum
+    this.maxContextTokens = getModelMaxTokens(model) ?? 4095; // 1 less than maximum
 
     if (this.shouldSummarize) {
       this.maxContextTokens = Math.floor(this.maxContextTokens / 2);
@@ -509,9 +510,45 @@ ${convo}
   }
 
   async summarizeMessages({ messagesToRefine, remainingContextTokens }) {
-    this.options.debug && console.debug('Refining messages...');
+    this.options.debug && console.debug('Summarizing messages...');
+    let context = messagesToRefine;
+    let prompt;
 
     const { OPENAI_SUMMARY_MODEL } = process.env ?? {};
+    const maxContextTokens = getModelMaxTokens(OPENAI_SUMMARY_MODEL) ?? 4095;
+
+    // Token count of messagesToSummarize: start with 3 tokens for the assistant label
+    const excessTokenCount = context.reduce((acc, message) => acc + message.tokenCount, 3);
+
+    if (excessTokenCount > maxContextTokens) {
+      ({ context } = await this.getMessagesWithinTokenLimit(context, maxContextTokens));
+    }
+
+    if (context.length === 0) {
+      this.options.debug &&
+        console.debug('Summary context is empty, using latest message within token limit');
+
+      const { text, ...latestMessage } = messagesToRefine[messagesToRefine.length - 1];
+      const refinedContent = await tokenSplit({
+        text,
+        chunkSize: maxContextTokens - 40,
+        returnSize: 1,
+      });
+
+      const newText = refinedContent[0];
+
+      if (newText.length < text.length) {
+        prompt = CUT_OFF_PROMPT;
+      }
+
+      context = [
+        {
+          ...latestMessage,
+          text: newText,
+        },
+      ];
+    }
+
     const llm = this.initializeLLM({
       model: OPENAI_SUMMARY_MODEL,
       temperature: 0.2,
@@ -521,7 +558,8 @@ ${convo}
       const summaryMessage = await summaryBuffer({
         llm,
         debug: this.options.debug,
-        messagesToRefine,
+        prompt,
+        context,
         formatOptions: {
           userName: this.options?.name,
           assistantName: this.options?.chatGptLabel ?? this.options?.modelLabel,
@@ -544,7 +582,7 @@ ${convo}
     } catch (e) {
       console.error('Error refining messages');
       console.error(e);
-      return null;
+      return {};
     }
   }
 }

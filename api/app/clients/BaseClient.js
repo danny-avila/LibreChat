@@ -208,25 +208,25 @@ class BaseClient {
   }
 
   /**
-   * This method processes an array of messages and returns a context of messages that fit within a token limit.
+   * This method processes an array of messages and returns a context of messages that fit within a specified token limit.
    * It iterates over the messages from newest to oldest, adding them to the context until the token limit is reached.
-   * If the token limit would be exceeded by adding a message, that message and possibly the previous one are added to a separate array of messages to refine.
-   * The method uses `push` and `pop` operations for efficient array manipulation, and reverses the arrays at the end to maintain the original order of the messages.
-   * The method also includes a mechanism to avoid blocking the event loop by waiting for the next tick after each iteration.
+   * If the token limit would be exceeded by adding a message, that message is not added to the context and remains in the original array.
+   * The method uses `push` and `pop` operations for efficient array manipulation, and reverses the context array at the end to maintain the original order of the messages.
    *
-   * @param {Array} messages - An array of messages, each with a `tokenCount` property. The messages should be ordered from oldest to newest.
+   * @param {Array} _messages - An array of messages, each with a `tokenCount` property. The messages should be ordered from oldest to newest.
+   * @param {number} [maxContextTokens] - The max number of tokens allowed in the context. If not provided, defaults to `this.maxContextTokens`.
    * @returns {Object} An object with four properties: `context`, `summaryIndex`, `remainingContextTokens`, and `messagesToRefine`.
    *    `context` is an array of messages that fit within the token limit.
-   *    `summaryIndex` is the index of the first message added to the array that should be refined.
+   *    `summaryIndex` is the index of the first message in the `messagesToRefine` array.
    *    `remainingContextTokens` is the number of tokens remaining within the limit after adding the messages to the context.
    *    `messagesToRefine` is an array of messages that were not added to the context because they would have exceeded the token limit.
    */
-  async getMessagesWithinTokenLimit(_messages) {
+  async getMessagesWithinTokenLimit(_messages, maxContextTokens) {
     // Every reply is primed with <|start|>assistant<|message|>, so we
     // start with 3 tokens for the label after all messages have been counted.
     let currentTokenCount = 3;
     let summaryIndex = -1;
-    let remainingContextTokens = this.maxContextTokens;
+    let remainingContextTokens = maxContextTokens ?? this.maxContextTokens;
     const messages = [..._messages];
 
     const context = [];
@@ -280,7 +280,7 @@ class BaseClient {
 
     let summaryMessage;
     let summaryTokenCount;
-    const { shouldSummarize } = this;
+    let { shouldSummarize } = this;
 
     // Calculate the difference in length to determine how many messages were discarded if any
     const { length } = payload;
@@ -310,9 +310,12 @@ class BaseClient {
         messagesToRefine,
         remainingContextTokens,
       }));
-      payload.unshift(summaryMessage);
+      summaryMessage && payload.unshift(summaryMessage);
       remainingContextTokens -= summaryTokenCount;
     }
+
+    // Make sure to only continue summarization logic if the summary message was generated
+    shouldSummarize = summaryMessage && shouldSummarize;
 
     this.options.debug &&
       console.debug(
