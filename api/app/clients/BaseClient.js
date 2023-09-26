@@ -300,6 +300,13 @@ class BaseClient {
         );
     }
 
+    const latestMessage = orderedWithInstructions[orderedWithInstructions.length - 1];
+    if (payload.length === 0 && !shouldSummarize && latestMessage) {
+      throw new Error(
+        `Prompt token count of ${latestMessage.tokenCount} exceeds max token count of ${this.maxContextTokens}.`,
+      );
+    }
+
     if (usePrevSummary) {
       summaryMessage = { role: 'system', content: firstMessage.summary };
       summaryTokenCount = firstMessage.summaryTokenCount;
