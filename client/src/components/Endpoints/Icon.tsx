@@ -41,7 +41,7 @@ const Icon: React.FC<IconProps> = (props) => {
       openAI: {
         icon: <GPTIcon size={size * 0.7} />,
         bg:
-          typeof model === 'string' && model.toLowerCase().startsWith('gpt-4')
+          typeof model === 'string' && model.toLowerCase().includes('gpt-4')
             ? '#AB68FF'
             : '#19C37D',
         name: 'ChatGPT',
@@ -64,7 +64,7 @@ const Icon: React.FC<IconProps> = (props) => {
       chatGPTBrowser: {
         icon: <GPTIcon size={size * 0.7} />,
         bg:
-          typeof model === 'string' && model.toLowerCase().startsWith('gpt-4')
+          typeof model === 'string' && model.toLowerCase().includes('gpt-4')
             ? '#AB68FF'
             : `rgba(0, 163, 255, ${button ? 0.75 : 1})`,
         name: 'ChatGPT',

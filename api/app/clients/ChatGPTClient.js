@@ -50,7 +50,7 @@ class ChatGPTClient extends BaseClient {
       stop: modelOptions.stop,
     };
 
-    this.isChatGptModel = this.modelOptions.model.startsWith('gpt-');
+    this.isChatGptModel = this.modelOptions.model.includes('gpt-');
     const { isChatGptModel } = this;
     this.isUnofficialChatGptModel =
       this.modelOptions.model.startsWith('text-chat') ||

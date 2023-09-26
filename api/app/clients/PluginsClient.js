@@ -50,9 +50,9 @@ class PluginsClient extends OpenAIClient {
   }
 
   getFunctionModelName(input) {
-    if (input.startsWith('gpt-3.5-turbo')) {
+    if (input.includes('gpt-3.5-turbo')) {
       return 'gpt-3.5-turbo';
-    } else if (input.startsWith('gpt-4')) {
+    } else if (input.includes('gpt-4')) {
       return 'gpt-4';
     } else {
       return 'gpt-3.5-turbo';
