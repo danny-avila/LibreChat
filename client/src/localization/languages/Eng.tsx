@@ -267,4 +267,5 @@ export default {
   com_nav_lang_russian: 'Русский',
   com_nav_lang_japanese: '日本語',
   com_nav_lang_swedish: 'Svenska',
+  com_nav_lang_korean: '한국어',
 };
