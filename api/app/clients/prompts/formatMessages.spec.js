@@ -18,6 +18,38 @@ describe('formatMessage', () => {
     });
   });
 
+  it('formats a realistic user message', () => {
+    const input = {
+      message: {
+        _id: '6512cdfb92cbf69fea615331',
+        messageId: 'b620bf73-c5c3-4a38-b724-76886aac24c4',
+        __v: 0,
+        cancelled: false,
+        conversationId: '5c23d24f-941f-4aab-85df-127b596c8aa5',
+        createdAt: Date.now(),
+        error: false,
+        finish_reason: null,
+        isCreatedByUser: true,
+        isEdited: false,
+        model: null,
+        parentMessageId: '00000000-0000-0000-0000-000000000000',
+        sender: 'User',
+        text: 'hi',
+        tokenCount: 5,
+        unfinished: false,
+        updatedAt: Date.now(),
+        user: '6512cdf475f05c86d44c31d2',
+      },
+      userName: 'John',
+    };
+    const result = formatMessage(input);
+    expect(result).toEqual({
+      role: 'user',
+      content: 'hi',
+      name: 'John',
+    });
+  });
+
   it('formats assistant message', () => {
     const input = {
       message: {

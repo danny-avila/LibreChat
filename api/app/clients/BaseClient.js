@@ -137,9 +137,18 @@ class BaseClient {
     };
   }
 
+  /**
+   * Adds instructions to the messages array. If the instructions object is empty or undefined,
+   * the original messages array is returned. Otherwise, the instructions are added to the messages
+   * array, preserving the last message at the end.
+   *
+   * @param {Array} messages - An array of messages.
+   * @param {Object} instructions - An object containing instructions to be added to the messages.
+   * @returns {Array} An array containing messages and instructions, or the original messages if instructions are empty.
+   */
   addInstructions(messages, instructions) {
     const payload = [];
-    if (!instructions) {
+    if (!instructions || Object.keys(instructions).length === 0) {
       return messages;
     }
     if (messages.length > 1) {
@@ -249,7 +258,12 @@ class BaseClient {
   }
 
   async handleContextStrategy({ instructions, orderedMessages, formattedMessages }) {
-    const { tokenCount, ..._instructions } = instructions ?? {};
+    let _instructions;
+    let tokenCount;
+
+    if (instructions) {
+      ({ tokenCount, ..._instructions } = instructions);
+    }
     this.options.debug && _instructions && console.debug('instructions tokenCount', tokenCount);
     let payload = this.addInstructions(formattedMessages, _instructions);
     let orderedWithInstructions = this.addInstructions(orderedMessages, instructions);
