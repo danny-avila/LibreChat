@@ -529,13 +529,13 @@ ${convo}
         console.debug('Summary context is empty, using latest message within token limit');
 
       const { text, ...latestMessage } = messagesToRefine[messagesToRefine.length - 1];
-      const refinedContent = await tokenSplit({
+      const splitText = await tokenSplit({
         text,
         chunkSize: maxContextTokens - 40,
         returnSize: 1,
       });
 
-      const newText = refinedContent[0];
+      const newText = splitText[0];
 
       if (newText.length < text.length) {
         prompt = CUT_OFF_PROMPT;
