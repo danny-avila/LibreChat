@@ -25,10 +25,10 @@ const SUMMARY_PROMPT = new PromptTemplate({
   template: _DEFAULT_SUMMARIZER_TEMPLATE,
 });
 
-const _CUT_OFF_SUMMARIZER = `The following is a cut-off message:
+const _CUT_OFF_SUMMARIZER = `The following text is cut-off:
 {new_lines}
 
-Summarize the content as best as you can.
+Summarize the content as best as you can, noting that it was cut-off.
 
 Summary:`;
 
