@@ -1,5 +1,5 @@
 const formatMessages = require('./formatMessages');
-const refinePrompts = require('./refinePrompts');
+const summaryPrompts = require('./summaryPrompts');
 const handleInputs = require('./handleInputs');
 const instructions = require('./instructions');
 const titlePrompts = require('./titlePrompts');
@@ -7,7 +7,7 @@ const truncateText = require('./truncateText');
 
 module.exports = {
   ...formatMessages,
-  ...refinePrompts,
+  ...summaryPrompts,
   ...handleInputs,
   ...instructions,
   ...titlePrompts,
