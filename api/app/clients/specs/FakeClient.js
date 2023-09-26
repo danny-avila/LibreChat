@@ -1,5 +1,5 @@
 const BaseClient = require('../BaseClient');
-const { maxTokensMap } = require('../../../utils');
+const { getModelMaxTokens } = require('../../../utils');
 
 class FakeClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -40,7 +40,7 @@ class FakeClient extends BaseClient {
       };
     }
 
-    this.maxContextTokens = maxTokensMap[this.modelOptions.model] ?? 4097;
+    this.maxContextTokens = getModelMaxTokens(this.modelOptions.model) ?? 4097;
   }
   getCompletion() {}
   buildMessages() {}
