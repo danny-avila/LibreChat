@@ -6,11 +6,7 @@ interface EndpointItemsProps {
   selectedEndpoint: string;
 }
 
-export default function EndpointItems({
-  endpoints,
-  onSelect,
-  selectedEndpoint,
-}: EndpointItemsProps) {
+export default function EndpointItems({ endpoints, selectedEndpoint }: EndpointItemsProps) {
   return (
     <>
       {endpoints.map((endpoint) => (
@@ -18,7 +14,6 @@ export default function EndpointItems({
           isSelected={selectedEndpoint === endpoint}
           key={endpoint}
           value={endpoint}
-          onSelect={onSelect}
           endpoint={endpoint}
         />
       ))}
