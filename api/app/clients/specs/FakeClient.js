@@ -1,5 +1,5 @@
 const BaseClient = require('../BaseClient');
-const { maxTokensMap } = require('../../../utils');
+const { getModelMaxTokens } = require('../../../utils');
 
 class FakeClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -40,7 +40,7 @@ class FakeClient extends BaseClient {
       };
     }
 
-    this.maxContextTokens = maxTokensMap[this.modelOptions.model] ?? 4097;
+    this.maxContextTokens = getModelMaxTokens(this.modelOptions.model) ?? 4097;
   }
   getCompletion() {}
   buildMessages() {}
@@ -65,10 +65,10 @@ const initializeFakeClient = (apiKey, options, fakeMessages) => {
         return Promise.resolve([]);
       }
 
-      const orderedMessages = TestClient.constructor.getMessagesForConversation(
-        fakeMessages,
+      const orderedMessages = TestClient.constructor.getMessagesForConversation({
+        messages: fakeMessages,
         parentMessageId,
-      );
+      });
 
       TestClient.currentMessages = orderedMessages;
       return Promise.resolve(orderedMessages);
@@ -87,10 +87,10 @@ const initializeFakeClient = (apiKey, options, fakeMessages) => {
   });
 
   TestClient.buildMessages = jest.fn(async (messages, parentMessageId) => {
-    const orderedMessages = TestClient.constructor.getMessagesForConversation(
+    const orderedMessages = TestClient.constructor.getMessagesForConversation({
       messages,
       parentMessageId,
-    );
+    });
     const formattedMessages = orderedMessages.map((message) => {
       let { role: _role, sender, text } = message;
       const role = _role ?? sender;

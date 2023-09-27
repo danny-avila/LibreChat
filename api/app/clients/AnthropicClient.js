@@ -91,7 +91,10 @@ class AnthropicClient extends BaseClient {
   }
 
   async buildMessages(messages, parentMessageId) {
-    const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
+    const orderedMessages = this.constructor.getMessagesForConversation({
+      messages,
+      parentMessageId,
+    });
     if (this.options.debug) {
       console.debug('AnthropicClient: orderedMessages', orderedMessages, parentMessageId);
     }
@@ -239,7 +242,6 @@ class AnthropicClient extends BaseClient {
     console.log('AnthropicClient doesn\'t use getCompletion (all handled in sendCompletion)');
   }
 
-  // TODO: implement abortController usage
   async sendCompletion(payload, { onProgress, abortController }) {
     if (!abortController) {
       abortController = new AbortController();
@@ -316,14 +318,6 @@ class AnthropicClient extends BaseClient {
 
     return text.trim();
   }
-
-  // I commented this out because I will need to refactor this for the BaseClient/all clients
-  // getMessageMapMethod() {
-  //   return ((message) => ({
-  //     author: message.isCreatedByUser ? this.userLabel : this.assistantLabel,
-  //     content: message?.content ?? message.text
-  //   })).bind(this);
-  // }
 
   getSaveOptions() {
     return {

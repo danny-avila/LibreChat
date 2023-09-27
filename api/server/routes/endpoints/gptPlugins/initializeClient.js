@@ -10,10 +10,13 @@ const initializeClient = async (req, endpointOption) => {
     AZURE_API_KEY,
     PLUGINS_USE_AZURE,
     OPENAI_REVERSE_PROXY,
+    OPENAI_SUMMARIZE,
     DEBUG_PLUGINS,
   } = process.env;
   const { key: expiresAt } = req.body;
+  const contextStrategy = isEnabled(OPENAI_SUMMARIZE) ? 'summarize' : null;
   const clientOptions = {
+    contextStrategy,
     debug: isEnabled(DEBUG_PLUGINS),
     reverseProxyUrl: OPENAI_REVERSE_PROXY ?? null,
     proxy: PROXY ?? null,

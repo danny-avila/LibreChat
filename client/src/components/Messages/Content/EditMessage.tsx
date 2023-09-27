@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { useRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { useUpdateMessageMutation } from 'librechat-data-provider';
 import type { TEditProps } from '~/common';
 import store from '~/store';
@@ -16,6 +16,7 @@ const EditMessage = ({
   setSiblingIdx,
 }: TEditProps) => {
   const [messages, setMessages] = useRecoilState(store.messages);
+  const conversation = useRecoilValue(store.conversation);
   const textEditor = useRef<HTMLDivElement | null>(null);
   const { conversationId, parentMessageId, messageId } = message;
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
@@ -60,6 +61,7 @@ const EditMessage = ({
     const text = textEditor?.current?.innerText ?? '';
     updateMessageMutation.mutate({
       conversationId: conversationId ?? '',
+      model: conversation?.model ?? 'gpt-3.5-turbo',
       messageId,
       text,
     });

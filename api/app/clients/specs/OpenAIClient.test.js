@@ -22,7 +22,7 @@ describe('OpenAIClient', () => {
     };
     client = new OpenAIClient('test-api-key', options);
     client2 = new OpenAIClient('test-api-key', options);
-    client.refineMessages = jest.fn().mockResolvedValue({
+    client.summarizeMessages = jest.fn().mockResolvedValue({
       role: 'assistant',
       content: 'Refined answer',
       tokenCount: 30,
@@ -158,7 +158,7 @@ describe('OpenAIClient', () => {
     });
 
     it('should handle context strategy correctly', async () => {
-      client.contextStrategy = 'refine';
+      client.contextStrategy = 'summarize';
       const result = await client.buildMessages(messages, parentMessageId, {
         isChatCompletion: true,
       });
@@ -175,17 +175,6 @@ describe('OpenAIClient', () => {
         (item) => item.role === 'user' && item.name === 'Test User',
       );
       expect(hasUserWithName).toBe(true);
-    });
-
-    it('should calculate tokenCount for each message when contextStrategy is set', async () => {
-      client.contextStrategy = 'refine';
-      const result = await client.buildMessages(messages, parentMessageId, {
-        isChatCompletion: true,
-      });
-      const hasUserWithTokenCount = result.prompt.some(
-        (item) => item.role === 'user' && item.tokenCount > 0,
-      );
-      expect(hasUserWithTokenCount).toBe(true);
     });
 
     it('should handle promptPrefix from options when promptPrefix argument is not provided', async () => {

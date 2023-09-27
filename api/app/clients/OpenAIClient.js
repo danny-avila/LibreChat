@@ -1,9 +1,11 @@
 const BaseClient = require('./BaseClient');
 const ChatGPTClient = require('./ChatGPTClient');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
-const { maxTokensMap, genAzureChatCompletion } = require('../../utils');
-const { truncateText } = require('./prompts');
+const { getModelMaxTokens, genAzureChatCompletion } = require('../../utils');
+const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
+const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
+const { tokenSplit } = require('./document');
 const { createLLM } = require('./llm');
 
 // Cache to store Tiktoken instances
@@ -21,7 +23,7 @@ class OpenAIClient extends BaseClient {
     this.contextStrategy = options.contextStrategy
       ? options.contextStrategy.toLowerCase()
       : 'discard';
-    this.shouldRefineContext = this.contextStrategy === 'refine';
+    this.shouldSummarize = this.contextStrategy === 'summarize';
     this.azure = options.azure || false;
     if (this.azure) {
       this.azureEndpoint = genAzureChatCompletion(this.azure);
@@ -88,7 +90,16 @@ class OpenAIClient extends BaseClient {
     const { isChatGptModel } = this;
     this.isUnofficialChatGptModel =
       model.startsWith('text-chat') || model.startsWith('text-davinci-002-render');
-    this.maxContextTokens = maxTokensMap[model] ?? 4095; // 1 less than maximum
+    this.maxContextTokens = getModelMaxTokens(model) ?? 4095; // 1 less than maximum
+
+    if (this.shouldSummarize) {
+      this.maxContextTokens = Math.floor(this.maxContextTokens / 2);
+    }
+
+    if (this.options.debug) {
+      console.debug('maxContextTokens', this.maxContextTokens);
+    }
+
     this.maxResponseTokens = this.modelOptions.max_tokens || 1024;
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
@@ -259,8 +270,13 @@ class OpenAIClient extends BaseClient {
     parentMessageId,
     { isChatCompletion = false, promptPrefix = null },
   ) {
+    let orderedMessages = this.constructor.getMessagesForConversation({
+      messages,
+      parentMessageId,
+      summary: this.shouldSummarize,
+    });
     if (!isChatCompletion) {
-      return await this.buildPrompt(messages, parentMessageId, {
+      return await this.buildPrompt(orderedMessages, {
         isChatGptModel: isChatCompletion,
         promptPrefix,
       });
@@ -270,7 +286,6 @@ class OpenAIClient extends BaseClient {
     let instructions;
     let tokenCountMap;
     let promptTokens;
-    let orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
 
     promptPrefix = (promptPrefix || this.options.promptPrefix || '').trim();
     if (promptPrefix) {
@@ -286,22 +301,15 @@ class OpenAIClient extends BaseClient {
       }
     }
 
-    const formattedMessages = orderedMessages.map((message) => {
-      let { role: _role, sender, text } = message;
-      const role = _role ?? sender;
-      const content = text ?? '';
-      const formattedMessage = {
-        role: role?.toLowerCase() === 'user' ? 'user' : 'assistant',
-        content,
-      };
+    const formattedMessages = orderedMessages.map((message, i) => {
+      const formattedMessage = formatMessage({
+        message,
+        userName: this.options?.name,
+        assistantName: this.options?.chatGptLabel,
+      });
 
-      if (this.options?.name && formattedMessage.role === 'user') {
-        formattedMessage.name = this.options.name;
-      }
-
-      if (this.contextStrategy) {
-        formattedMessage.tokenCount =
-          message.tokenCount ?? this.getTokenCountForMessage(formattedMessage);
+      if (this.contextStrategy && !orderedMessages[i].tokenCount) {
+        orderedMessages[i].tokenCount = this.getTokenCountForMessage(formattedMessage);
       }
 
       return formattedMessage;
@@ -408,22 +416,24 @@ class OpenAIClient extends BaseClient {
     });
   }
 
-  async titleConvo({ text, responseText = '' }) {
-    let title = 'New Chat';
-    const convo = `||>User:
-"${truncateText(text)}"
-||>Response:
-"${JSON.stringify(truncateText(responseText))}"`;
-
-    const { OPENAI_TITLE_MODEL } = process.env ?? {};
-
+  initializeLLM({
+    model = 'gpt-3.5-turbo',
+    modelName,
+    temperature = 0.2,
+    presence_penalty = 0,
+    frequency_penalty = 0,
+    max_tokens,
+  }) {
     const modelOptions = {
-      model: OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo-0613',
-      temperature: 0.2,
-      presence_penalty: 0,
-      frequency_penalty: 0,
-      max_tokens: 16,
+      modelName: modelName ?? model,
+      temperature,
+      presence_penalty,
+      frequency_penalty,
     };
+
+    if (max_tokens) {
+      modelOptions.max_tokens = max_tokens;
+    }
 
     const configOptions = {};
 
@@ -441,18 +451,39 @@ class OpenAIClient extends BaseClient {
       };
     }
 
-    try {
-      const llm = createLLM({
-        modelOptions,
-        configOptions,
-        openAIApiKey: this.apiKey,
-        azure: this.azure,
-      });
+    const llm = createLLM({
+      modelOptions,
+      configOptions,
+      openAIApiKey: this.apiKey,
+      azure: this.azure,
+    });
 
+    return llm;
+  }
+
+  async titleConvo({ text, responseText = '' }) {
+    let title = 'New Chat';
+    const convo = `||>User:
+"${truncateText(text)}"
+||>Response:
+"${JSON.stringify(truncateText(responseText))}"`;
+
+    const { OPENAI_TITLE_MODEL } = process.env ?? {};
+
+    const modelOptions = {
+      model: OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo-0613',
+      temperature: 0.2,
+      presence_penalty: 0,
+      frequency_penalty: 0,
+      max_tokens: 16,
+    };
+
+    try {
+      const llm = this.initializeLLM(modelOptions);
       title = await runTitleChain({ llm, text, convo });
     } catch (e) {
-      console.error(e.message);
       console.log('There was an issue generating title with LangChain, trying the old method...');
+      console.error(e.message, e);
       modelOptions.model = OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
       const instructionsPayload = [
         {
@@ -476,6 +507,83 @@ ${convo}
 
     console.log('CONVERSATION TITLE', title);
     return title;
+  }
+
+  async summarizeMessages({ messagesToRefine, remainingContextTokens }) {
+    this.options.debug && console.debug('Summarizing messages...');
+    let context = messagesToRefine;
+    let prompt;
+
+    const { OPENAI_SUMMARY_MODEL } = process.env ?? {};
+    const maxContextTokens = getModelMaxTokens(OPENAI_SUMMARY_MODEL) ?? 4095;
+
+    // Token count of messagesToSummarize: start with 3 tokens for the assistant label
+    const excessTokenCount = context.reduce((acc, message) => acc + message.tokenCount, 3);
+
+    if (excessTokenCount > maxContextTokens) {
+      ({ context } = await this.getMessagesWithinTokenLimit(context, maxContextTokens));
+    }
+
+    if (context.length === 0) {
+      this.options.debug &&
+        console.debug('Summary context is empty, using latest message within token limit');
+
+      const { text, ...latestMessage } = messagesToRefine[messagesToRefine.length - 1];
+      const splitText = await tokenSplit({
+        text,
+        chunkSize: maxContextTokens - 40,
+        returnSize: 1,
+      });
+
+      const newText = splitText[0];
+
+      if (newText.length < text.length) {
+        prompt = CUT_OFF_PROMPT;
+      }
+
+      context = [
+        {
+          ...latestMessage,
+          text: newText,
+        },
+      ];
+    }
+
+    const llm = this.initializeLLM({
+      model: OPENAI_SUMMARY_MODEL,
+      temperature: 0.2,
+    });
+
+    try {
+      const summaryMessage = await summaryBuffer({
+        llm,
+        debug: this.options.debug,
+        prompt,
+        context,
+        formatOptions: {
+          userName: this.options?.name,
+          assistantName: this.options?.chatGptLabel ?? this.options?.modelLabel,
+        },
+        previous_summary: this.previous_summary?.summary,
+      });
+
+      const summaryTokenCount = this.getTokenCountForMessage(summaryMessage);
+
+      if (this.options.debug) {
+        console.debug('summaryMessage:', summaryMessage);
+        console.debug(
+          `remainingContextTokens: ${remainingContextTokens}, after refining: ${
+            remainingContextTokens - summaryTokenCount
+          }`,
+        );
+      }
+
+      return { summaryMessage, summaryTokenCount };
+    } catch (e) {
+      console.error('Error refining messages');
+      console.error(e);
+      return {};
+    }
   }
 }
 

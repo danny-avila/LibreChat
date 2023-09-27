@@ -15,26 +15,10 @@ jest.mock('../../../models', () => {
   };
 });
 
-jest.mock('langchain/text_splitter', () => {
-  return {
-    RecursiveCharacterTextSplitter: jest.fn().mockImplementation(() => {
-      return { createDocuments: jest.fn().mockResolvedValue([]) };
-    }),
-  };
-});
-
 jest.mock('langchain/chat_models/openai', () => {
   return {
     ChatOpenAI: jest.fn().mockImplementation(() => {
       return {};
-    }),
-  };
-});
-
-jest.mock('langchain/chains', () => {
-  return {
-    loadSummarizationChain: jest.fn().mockReturnValue({
-      call: jest.fn().mockResolvedValue({ output_text: 'Refined answer' }),
     }),
   };
 });
@@ -69,6 +53,13 @@ describe('BaseClient', () => {
 
   beforeEach(() => {
     TestClient = initializeFakeClient(apiKey, options, fakeMessages);
+    TestClient.summarizeMessages = jest.fn().mockResolvedValue({
+      summaryMessage: {
+        role: 'system',
+        content: 'Refined answer',
+      },
+      summaryTokenCount: 5,
+    });
   });
 
   test('returns the input messages without instructions when addInstructions() is called with empty instructions', () => {
@@ -103,30 +94,24 @@ describe('BaseClient', () => {
     expect(result).toBe(expected);
   });
 
-  test('refines messages correctly in refineMessages()', async () => {
+  test('refines messages correctly in summarizeMessages()', async () => {
     const messagesToRefine = [
       { role: 'user', content: 'Hello', tokenCount: 10 },
       { role: 'assistant', content: 'How can I help you?', tokenCount: 20 },
     ];
     const remainingContextTokens = 100;
     const expectedRefinedMessage = {
-      role: 'assistant',
+      role: 'system',
       content: 'Refined answer',
-      tokenCount: 14, // 'Refined answer'.length
     };
 
-    const result = await TestClient.refineMessages(messagesToRefine, remainingContextTokens);
-    expect(result).toEqual(expectedRefinedMessage);
+    const result = await TestClient.summarizeMessages({ messagesToRefine, remainingContextTokens });
+    expect(result.summaryMessage).toEqual(expectedRefinedMessage);
   });
 
   test('gets messages within token limit (under limit) correctly in getMessagesWithinTokenLimit()', async () => {
     TestClient.maxContextTokens = 100;
-    TestClient.shouldRefineContext = true;
-    TestClient.refineMessages = jest.fn().mockResolvedValue({
-      role: 'assistant',
-      content: 'Refined answer',
-      tokenCount: 30,
-    });
+    TestClient.shouldSummarize = true;
 
     const messages = [
       { role: 'user', content: 'Hello', tokenCount: 5 },
@@ -142,43 +127,50 @@ describe('BaseClient', () => {
     const expectedRemainingContextTokens = 58 - 3; // (100 - 5 - 19 - 18) - 3
     const expectedMessagesToRefine = [];
 
+    const lastExpectedMessage =
+      expectedMessagesToRefine?.[expectedMessagesToRefine.length - 1] ?? {};
+    const expectedIndex = messages.findIndex((msg) => msg.content === lastExpectedMessage?.content);
+
     const result = await TestClient.getMessagesWithinTokenLimit(messages);
+
     expect(result.context).toEqual(expectedContext);
+    expect(result.summaryIndex).toEqual(expectedIndex);
     expect(result.remainingContextTokens).toBe(expectedRemainingContextTokens);
     expect(result.messagesToRefine).toEqual(expectedMessagesToRefine);
   });
 
-  test('gets messages within token limit (over limit) correctly in getMessagesWithinTokenLimit()', async () => {
+  test('gets result over token limit correctly in getMessagesWithinTokenLimit()', async () => {
     TestClient.maxContextTokens = 50; // Set a lower limit
-    TestClient.shouldRefineContext = true;
-    TestClient.refineMessages = jest.fn().mockResolvedValue({
-      role: 'assistant',
-      content: 'Refined answer',
-      tokenCount: 4,
-    });
+    TestClient.shouldSummarize = true;
 
     const messages = [
-      { role: 'user', content: 'I need a coffee, stat!', tokenCount: 30 },
-      { role: 'assistant', content: 'Sure, I can help with that.', tokenCount: 30 },
-      { role: 'user', content: 'Hello', tokenCount: 5 },
-      { role: 'assistant', content: 'How can I help you?', tokenCount: 19 },
-      { role: 'user', content: 'I have a question.', tokenCount: 18 },
-    ];
-    const expectedContext = [
-      { role: 'user', content: 'Hello', tokenCount: 5 },
-      { role: 'assistant', content: 'How can I help you?', tokenCount: 19 },
-      { role: 'user', content: 'I have a question.', tokenCount: 18 },
+      { role: 'user', content: 'Hello', tokenCount: 30 },
+      { role: 'assistant', content: 'How can I help you?', tokenCount: 30 },
+      { role: 'user', content: 'I have a question.', tokenCount: 5 },
+      { role: 'user', content: 'I need a coffee, stat!', tokenCount: 19 },
+      { role: 'assistant', content: 'Sure, I can help with that.', tokenCount: 18 },
     ];
 
     // Subtract 3 tokens for Assistant Label priming after all messages have been counted.
-    const expectedRemainingContextTokens = 8 - 3; // (50 - 18 - 19 - 5) - 3
+    const expectedRemainingContextTokens = 5; // (50 - 18 - 19 - 5) - 3
     const expectedMessagesToRefine = [
-      { role: 'user', content: 'I need a coffee, stat!', tokenCount: 30 },
-      { role: 'assistant', content: 'Sure, I can help with that.', tokenCount: 30 },
+      { role: 'user', content: 'Hello', tokenCount: 30 },
+      { role: 'assistant', content: 'How can I help you?', tokenCount: 30 },
+    ];
+    const expectedContext = [
+      { role: 'user', content: 'I have a question.', tokenCount: 5 },
+      { role: 'user', content: 'I need a coffee, stat!', tokenCount: 19 },
+      { role: 'assistant', content: 'Sure, I can help with that.', tokenCount: 18 },
     ];
 
+    const lastExpectedMessage =
+      expectedMessagesToRefine?.[expectedMessagesToRefine.length - 1] ?? {};
+    const expectedIndex = messages.findIndex((msg) => msg.content === lastExpectedMessage?.content);
+
     const result = await TestClient.getMessagesWithinTokenLimit(messages);
+
     expect(result.context).toEqual(expectedContext);
+    expect(result.summaryIndex).toEqual(expectedIndex);
     expect(result.remainingContextTokens).toBe(expectedRemainingContextTokens);
     expect(result.messagesToRefine).toEqual(expectedMessagesToRefine);
   });
@@ -200,13 +192,9 @@ describe('BaseClient', () => {
       ],
       remainingContextTokens: 80,
       messagesToRefine: [{ content: 'Hello' }],
-      refineIndex: 3,
+      summaryIndex: 3,
     });
-    TestClient.refineMessages = jest.fn().mockResolvedValue({
-      role: 'assistant',
-      content: 'Refined answer',
-      tokenCount: 30,
-    });
+
     TestClient.getTokenCountForResponse = jest.fn().mockReturnValue(40);
 
     const instructions = { content: 'Please provide more details.' };
@@ -225,9 +213,8 @@ describe('BaseClient', () => {
     const expectedResult = {
       payload: [
         {
+          role: 'system',
           content: 'Refined answer',
-          role: 'assistant',
-          tokenCount: 30,
         },
         { content: 'How can I help you?' },
         { content: 'Please provide more details.' },
@@ -238,12 +225,212 @@ describe('BaseClient', () => {
       messages: expect.any(Array),
     };
 
+    TestClient.shouldSummarize = true;
     const result = await TestClient.handleContextStrategy({
       instructions,
       orderedMessages,
       formattedMessages,
     });
+
     expect(result).toEqual(expectedResult);
+  });
+
+  describe('getMessagesForConversation', () => {
+    it('should return an empty array if the parentMessageId does not exist', () => {
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: unorderedMessages,
+        parentMessageId: '999',
+      });
+      expect(result).toEqual([]);
+    });
+
+    it('should handle messages with messageId property', () => {
+      const messagesWithMessageId = [
+        { messageId: '1', parentMessageId: null, text: 'Message 1' },
+        { messageId: '2', parentMessageId: '1', text: 'Message 2' },
+      ];
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: messagesWithMessageId,
+        parentMessageId: '2',
+      });
+      expect(result).toEqual([
+        { messageId: '1', parentMessageId: null, text: 'Message 1' },
+        { messageId: '2', parentMessageId: '1', text: 'Message 2' },
+      ]);
+    });
+
+    const messagesWithNullParent = [
+      { id: '1', parentMessageId: null, text: 'Message 1' },
+      { id: '2', parentMessageId: null, text: 'Message 2' },
+    ];
+
+    it('should handle messages with null parentMessageId that are not root', () => {
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: messagesWithNullParent,
+        parentMessageId: '2',
+      });
+      expect(result).toEqual([{ id: '2', parentMessageId: null, text: 'Message 2' }]);
+    });
+
+    const cyclicMessages = [
+      { id: '3', parentMessageId: '2', text: 'Message 3' },
+      { id: '1', parentMessageId: '3', text: 'Message 1' },
+      { id: '2', parentMessageId: '1', text: 'Message 2' },
+    ];
+
+    it('should handle cyclic references without going into an infinite loop', () => {
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: cyclicMessages,
+        parentMessageId: '3',
+      });
+      expect(result).toEqual([
+        { id: '1', parentMessageId: '3', text: 'Message 1' },
+        { id: '2', parentMessageId: '1', text: 'Message 2' },
+        { id: '3', parentMessageId: '2', text: 'Message 3' },
+      ]);
+    });
+
+    const unorderedMessages = [
+      { id: '3', parentMessageId: '2', text: 'Message 3' },
+      { id: '2', parentMessageId: '1', text: 'Message 2' },
+      { id: '1', parentMessageId: '00000000-0000-0000-0000-000000000000', text: 'Message 1' },
+    ];
+
+    it('should return ordered messages based on parentMessageId', () => {
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: unorderedMessages,
+        parentMessageId: '3',
+      });
+      expect(result).toEqual([
+        { id: '1', parentMessageId: '00000000-0000-0000-0000-000000000000', text: 'Message 1' },
+        { id: '2', parentMessageId: '1', text: 'Message 2' },
+        { id: '3', parentMessageId: '2', text: 'Message 3' },
+      ]);
+    });
+
+    const unorderedBranchedMessages = [
+      { id: '4', parentMessageId: '2', text: 'Message 4', summary: 'Summary for Message 4' },
+      { id: '10', parentMessageId: '7', text: 'Message 10' },
+      { id: '1', parentMessageId: null, text: 'Message 1' },
+      { id: '6', parentMessageId: '5', text: 'Message 7' },
+      { id: '7', parentMessageId: '5', text: 'Message 7' },
+      { id: '2', parentMessageId: '1', text: 'Message 2' },
+      { id: '8', parentMessageId: '6', text: 'Message 8' },
+      { id: '5', parentMessageId: '3', text: 'Message 5' },
+      { id: '3', parentMessageId: '1', text: 'Message 3' },
+      { id: '6', parentMessageId: '4', text: 'Message 6' },
+      { id: '8', parentMessageId: '7', text: 'Message 9' },
+      { id: '9', parentMessageId: '7', text: 'Message 9' },
+      { id: '11', parentMessageId: '2', text: 'Message 11', summary: 'Summary for Message 11' },
+    ];
+
+    it('should return ordered messages from a branched array based on parentMessageId', () => {
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: unorderedBranchedMessages,
+        parentMessageId: '10',
+        summary: true,
+      });
+      expect(result).toEqual([
+        { id: '1', parentMessageId: null, text: 'Message 1' },
+        { id: '3', parentMessageId: '1', text: 'Message 3' },
+        { id: '5', parentMessageId: '3', text: 'Message 5' },
+        { id: '7', parentMessageId: '5', text: 'Message 7' },
+        { id: '10', parentMessageId: '7', text: 'Message 10' },
+      ]);
+    });
+
+    it('should return an empty array if no messages are provided', () => {
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: [],
+        parentMessageId: '3',
+      });
+      expect(result).toEqual([]);
+    });
+
+    it('should map over the ordered messages if mapMethod is provided', () => {
+      const mapMethod = (msg) => msg.text;
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: unorderedMessages,
+        parentMessageId: '3',
+        mapMethod,
+      });
+      expect(result).toEqual(['Message 1', 'Message 2', 'Message 3']);
+    });
+
+    let unorderedMessagesWithSummary = [
+      { id: '4', parentMessageId: '3', text: 'Message 4' },
+      { id: '2', parentMessageId: '1', text: 'Message 2', summary: 'Summary for Message 2' },
+      { id: '3', parentMessageId: '2', text: 'Message 3', summary: 'Summary for Message 3' },
+      { id: '1', parentMessageId: null, text: 'Message 1' },
+    ];
+
+    it('should start with the message that has a summary property and continue until the specified parentMessageId', () => {
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: unorderedMessagesWithSummary,
+        parentMessageId: '4',
+        summary: true,
+      });
+      expect(result).toEqual([
+        {
+          id: '3',
+          parentMessageId: '2',
+          role: 'system',
+          text: 'Summary for Message 3',
+          summary: 'Summary for Message 3',
+        },
+        { id: '4', parentMessageId: '3', text: 'Message 4' },
+      ]);
+    });
+
+    it('should handle multiple summaries and return the branch from the latest to the parentMessageId', () => {
+      unorderedMessagesWithSummary = [
+        { id: '5', parentMessageId: '4', text: 'Message 5' },
+        { id: '2', parentMessageId: '1', text: 'Message 2', summary: 'Summary for Message 2' },
+        { id: '3', parentMessageId: '2', text: 'Message 3', summary: 'Summary for Message 3' },
+        { id: '4', parentMessageId: '3', text: 'Message 4', summary: 'Summary for Message 4' },
+        { id: '1', parentMessageId: null, text: 'Message 1' },
+      ];
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: unorderedMessagesWithSummary,
+        parentMessageId: '5',
+        summary: true,
+      });
+      expect(result).toEqual([
+        {
+          id: '4',
+          parentMessageId: '3',
+          role: 'system',
+          text: 'Summary for Message 4',
+          summary: 'Summary for Message 4',
+        },
+        { id: '5', parentMessageId: '4', text: 'Message 5' },
+      ]);
+    });
+
+    it('should handle summary at root edge case and continue until the parentMessageId', () => {
+      unorderedMessagesWithSummary = [
+        { id: '5', parentMessageId: '4', text: 'Message 5' },
+        { id: '1', parentMessageId: null, text: 'Message 1', summary: 'Summary for Message 1' },
+        { id: '4', parentMessageId: '3', text: 'Message 4', summary: 'Summary for Message 4' },
+        { id: '2', parentMessageId: '1', text: 'Message 2', summary: 'Summary for Message 2' },
+        { id: '3', parentMessageId: '2', text: 'Message 3', summary: 'Summary for Message 3' },
+      ];
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: unorderedMessagesWithSummary,
+        parentMessageId: '5',
+        summary: true,
+      });
+      expect(result).toEqual([
+        {
+          id: '4',
+          parentMessageId: '3',
+          role: 'system',
+          text: 'Summary for Message 4',
+          summary: 'Summary for Message 4',
+        },
+        { id: '5', parentMessageId: '4', text: 'Message 5' },
+      ]);
+    });
   });
 
   describe('sendMessage', () => {

@@ -37,6 +37,7 @@ const models = [
   'gpt-3.5-turbo-0301',
 ];
 
+// Order is important here: by model series and context size (gpt-4 then gpt-3, ascending)
 const maxTokensMap = {
   'gpt-4': 8191,
   'gpt-4-0613': 8191,
@@ -47,6 +48,38 @@ const maxTokensMap = {
   'gpt-3.5-turbo-0613': 4095,
   'gpt-3.5-turbo-0301': 4095,
   'gpt-3.5-turbo-16k': 15999,
+  'gpt-3.5-turbo-16k-0613': 15999,
 };
 
-module.exports = { tiktokenModels: new Set(models), maxTokensMap };
+/**
+ * Retrieves the maximum tokens for a given model name. If the exact model name isn't found,
+ * it searches for partial matches within the model name, checking keys in reverse order.
+ *
+ * @param {string} modelName - The name of the model to look up.
+ * @returns {number|undefined} The maximum tokens for the given model or undefined if no match is found.
+ *
+ * @example
+ * getModelMaxTokens('gpt-4-32k-0613'); // Returns 32767
+ * getModelMaxTokens('gpt-4-32k-unknown'); // Returns 32767
+ * getModelMaxTokens('unknown-model'); // Returns undefined
+ */
+function getModelMaxTokens(modelName) {
+  if (typeof modelName !== 'string') {
+    return undefined;
+  }
+
+  if (maxTokensMap[modelName]) {
+    return maxTokensMap[modelName];
+  }
+
+  const keys = Object.keys(maxTokensMap);
+  for (let i = keys.length - 1; i >= 0; i--) {
+    if (modelName.includes(keys[i])) {
+      return maxTokensMap[keys[i]];
+    }
+  }
+
+  return undefined;
+}
+
+module.exports = { tiktokenModels: new Set(models), maxTokensMap, getModelMaxTokens };

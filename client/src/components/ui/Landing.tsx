@@ -13,8 +13,7 @@ export default function Landing() {
   const setText = useSetRecoilState(store.text);
   const conversation = useRecoilValue(store.conversation);
   const localize = useLocalize();
-  // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
-  const { title = localize('com_ui_new_chat') } = conversation || {};
+  const { title = localize('com_ui_new_chat') } = conversation ?? {};
 
   useDocumentTitle(title);
 
