@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Dialog } from '@headlessui/react';
 import { useRecoilState } from 'recoil';
-import { X } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import store from '~/store';
 import PluginStoreItem from './PluginStoreItem';
 import PluginPagination from './PluginPagination';
@@ -54,6 +54,11 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     });
     setShowPluginAuthForm(false);
   };
+
+  const [searchValue, setSearchValue] = useState<string>('');
+  const filteredPlugins = availablePlugins?.filter((plugin) =>
+    plugin.name.toLowerCase().includes(searchValue.toLowerCase()),
+  );
 
   const onPluginUninstall = (plugin: string) => {
     updateUserPlugins.mutate(
@@ -128,11 +133,15 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
         setUserPlugins(user.plugins);
       }
     }
-    if (availablePlugins) {
-      setMaxPage(Math.ceil(availablePlugins.length / itemsPerPage));
+    if (filteredPlugins) {
+      setMaxPage(Math.ceil(filteredPlugins.length / itemsPerPage));
+      setCurrentPage(1);
     }
-  }, [availablePlugins, itemsPerPage, user]);
-
+    // if (availablePlugins) {
+    //   console.log('Entrando aqui tambem')
+    //   setMaxPage(Math.ceil(availablePlugins.length / itemsPerPage));
+    // }
+  }, [filteredPlugins, itemsPerPage, searchValue]);
   const handleChangePage = (page: number) => {
     setCurrentPage(page);
   };
@@ -183,12 +192,36 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
           )}
           <div className="p-4 sm:p-6 sm:pt-4">
             <div className="mt-4 flex flex-col gap-4">
+              <div style={{ position: 'relative', display: 'inline-block', width: '250px' }}>
+                <input
+                  type="text"
+                  value={searchValue}
+                  onChange={(e) => setSearchValue(e.target.value)}
+                  placeholder="Search plugins"
+                  style={{
+                    width: '100%',
+                    paddingLeft: '30px',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px', // This rounds the corners
+                  }}
+                />
+                <Search
+                  style={{
+                    position: 'absolute',
+                    left: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    width: '16px',
+                    height: '16px',
+                  }}
+                />
+              </div>
               <div
                 ref={gridRef}
                 className="grid grid-cols-1 grid-rows-2 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
               >
-                {availablePlugins &&
-                  availablePlugins
+                {filteredPlugins &&
+                  filteredPlugins
                     .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                     .map((plugin, index) => (
                       <PluginStoreItem
