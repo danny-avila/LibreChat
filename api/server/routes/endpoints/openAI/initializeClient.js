@@ -1,13 +1,22 @@
 const { OpenAIClient } = require('../../../../app');
+const { isEnabled } = require('../../../utils');
 const { getAzureCredentials } = require('../../../../utils');
 const { getUserKey, checkUserKeyExpiry } = require('../../../services/UserService');
 
 const initializeClient = async (req, endpointOption) => {
-  const { PROXY, OPENAI_API_KEY, AZURE_API_KEY, OPENAI_REVERSE_PROXY } = process.env;
+  const {
+    PROXY,
+    OPENAI_API_KEY,
+    AZURE_API_KEY,
+    OPENAI_REVERSE_PROXY,
+    OPENAI_SUMMARIZE,
+    DEBUG_OPENAI,
+  } = process.env;
   const { key: expiresAt, endpoint } = req.body;
+  const contextStrategy = isEnabled(OPENAI_SUMMARIZE) ? 'summarize' : null;
   const clientOptions = {
-    // debug: true,
-    // contextStrategy: 'refine',
+    debug: isEnabled(DEBUG_OPENAI),
+    contextStrategy,
     reverseProxyUrl: OPENAI_REVERSE_PROXY ?? null,
     proxy: PROXY ?? null,
     ...endpointOption,

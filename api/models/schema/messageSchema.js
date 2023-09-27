@@ -39,7 +39,7 @@ const messageSchema = mongoose.Schema(
     tokenCount: {
       type: Number,
     },
-    refinedTokenCount: {
+    summaryTokenCount: {
       type: Number,
     },
     sender: {
@@ -52,7 +52,7 @@ const messageSchema = mongoose.Schema(
       required: true,
       meiliIndex: true,
     },
-    refinedMessageText: {
+    summary: {
       type: String,
     },
     isCreatedByUser: {
