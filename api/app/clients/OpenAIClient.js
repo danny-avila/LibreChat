@@ -523,9 +523,18 @@ ${convo}
 
     const { OPENAI_SUMMARY_MODEL } = process.env ?? {};
     const maxContextTokens = getModelMaxTokens(OPENAI_SUMMARY_MODEL) ?? 4095;
+    // 3 tokens for the assistant label, and 97 for the summarizer prompt (100)
+    const promptBuffer = 100;
 
-    // Token count of messagesToSummarize: start with 3 tokens for the assistant label
-    const excessTokenCount = context.reduce((acc, message) => acc + message.tokenCount, 3);
+    /*
+     * Note: token counting here is to block summarization if it exceeds the spend; complete
+     * accuracy is not important. Actual spend will happen after successful summarization.
+     */
+    const excessTokenCount = context.reduce(
+      (acc, message) => acc + message.tokenCount,
+      promptBuffer,
+    );
+    let summaryPromptTokens = excessTokenCount;
 
     if (excessTokenCount > maxContextTokens) {
       ({ context } = await this.getMessagesWithinTokenLimit(context, maxContextTokens));
@@ -535,10 +544,11 @@ ${convo}
       this.options.debug &&
         console.debug('Summary context is empty, using latest message within token limit');
 
+      let buffer = promptBuffer;
       const { text, ...latestMessage } = messagesToRefine[messagesToRefine.length - 1];
       const splitText = await tokenSplit({
         text,
-        chunkSize: maxContextTokens - 40,
+        chunkSize: maxContextTokens - buffer,
         returnSize: 1,
       });
 
@@ -546,15 +556,32 @@ ${convo}
 
       if (newText.length < text.length) {
         prompt = CUT_OFF_PROMPT;
+        buffer = 30;
       }
 
       context = [
-        {
-          ...latestMessage,
-          text: newText,
-        },
+        formatMessage({
+          message: {
+            ...latestMessage,
+            text: newText,
+          },
+          userName: this.options?.name,
+          assistantName: this.options?.chatGptLabel,
+        }),
       ];
+      summaryPromptTokens = this.getTokenCountForMessage(context[0]) + buffer;
+    } else {
+      summaryPromptTokens = context.reduce(
+        (acc, message) => acc + message.tokenCount,
+        promptBuffer,
+      );
     }
+
+    const initialPromptTokens = this.maxContextTokens - remainingContextTokens;
+    this.options.debug &&
+      console.debug(
+        `initialPromptTokens: ${initialPromptTokens}, summaryPromptTokens: ${summaryPromptTokens}`,
+      );
 
     const llm = this.initializeLLM({
       model: OPENAI_SUMMARY_MODEL,
