@@ -1,5 +1,6 @@
 const streamResponse = require('./streamResponse');
 const removePorts = require('./removePorts');
+const countTokens = require('./countTokens');
 const handleText = require('./handleText');
 const cryptoUtils = require('./crypto');
 const citations = require('./citations');
@@ -11,6 +12,7 @@ module.exports = {
   ...cryptoUtils,
   ...handleText,
   ...citations,
+  countTokens,
   removePorts,
   sendEmail,
   math,

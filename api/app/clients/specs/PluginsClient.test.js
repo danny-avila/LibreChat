@@ -41,10 +41,10 @@ describe('PluginsClient', () => {
           return Promise.resolve([]);
         }
 
-        const orderedMessages = TestAgent.constructor.getMessagesForConversation(
-          fakeMessages,
+        const orderedMessages = TestAgent.constructor.getMessagesForConversation({
+          messages: fakeMessages,
           parentMessageId,
-        );
+        });
 
         const chatMessages = orderedMessages.map((msg) =>
           msg?.isCreatedByUser || msg?.role?.toLowerCase() === 'user'

@@ -83,7 +83,7 @@ async function getSpec(url) {
   return ValidSpecPath.parse(url);
 }
 
-async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }) {
+async function createOpenAPIPlugin({ data, llm, user, message, memory, verbose = false }) {
   let spec;
   try {
     spec = await getSpec(data.api.url, verbose);
@@ -113,6 +113,11 @@ async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }
     verbose,
   };
 
+  if (memory) {
+    verbose && console.debug('openAPI chain: memory detected', memory);
+    chainOptions.memory = memory;
+  }
+
   if (data.headers && data.headers['librechat_user_id']) {
     verbose && console.debug('id detected', headers);
     headers[data.headers['librechat_user_id']] = user;
@@ -128,7 +133,7 @@ async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }
     chainOptions.params = data.params;
   }
 
-  chainOptions.prompt = ChatPromptTemplate.fromPromptMessages([
+  chainOptions.prompt = ChatPromptTemplate.fromMessages([
     HumanMessagePromptTemplate.fromTemplate(
       `# Use the provided API's to respond to this query:\n\n{query}\n\n## Instructions:\n${addLinePrefix(
         description_for_model,
