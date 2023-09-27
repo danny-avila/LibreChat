@@ -420,6 +420,7 @@ class BaseClient {
       await this.saveMessageToDatabase(userMessage, saveOptions, user);
     }
 
+    const completion = await this.sendCompletion(payload, opts);
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
@@ -428,12 +429,12 @@ class BaseClient {
       isEdited,
       model: this.modelOptions.model,
       sender: this.sender,
-      text: addSpaceIfNeeded(generation) + (await this.sendCompletion(payload, opts)),
+      text: addSpaceIfNeeded(generation) + completion,
       promptTokens,
     };
 
-    if (tokenCountMap && this.getTokenCountForResponse) {
-      responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
+    if (tokenCountMap && this.getTokenCount) {
+      responseMessage.tokenCount = this.getTokenCount(completion);
       responseMessage.completionTokens = responseMessage.tokenCount;
     }
     await this.saveMessageToDatabase(responseMessage, saveOptions, user);
