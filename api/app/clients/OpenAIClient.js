@@ -409,13 +409,6 @@ class OpenAIClient extends BaseClient {
     return reply.trim();
   }
 
-  getTokenCountForResponse(response) {
-    return this.getTokenCountForMessage({
-      role: 'assistant',
-      content: response.text,
-    });
-  }
-
   initializeLLM({
     model = 'gpt-3.5-turbo',
     modelName,
@@ -423,6 +416,7 @@ class OpenAIClient extends BaseClient {
     presence_penalty = 0,
     frequency_penalty = 0,
     max_tokens,
+    streaming,
   }) {
     const modelOptions = {
       modelName: modelName ?? model,
@@ -451,11 +445,24 @@ class OpenAIClient extends BaseClient {
       };
     }
 
+    const callbacks = [
+      {
+        handleLLMEnd: async (output) => {
+          console.log(JSON.stringify(output, null, 2));
+        },
+        handleLLMError: async (err) => {
+          console.error(err);
+        },
+      },
+    ];
+
     const llm = createLLM({
       modelOptions,
       configOptions,
       openAIApiKey: this.apiKey,
       azure: this.azure,
+      streaming,
+      callbacks,
     });
 
     return llm;
@@ -471,7 +478,7 @@ class OpenAIClient extends BaseClient {
     const { OPENAI_TITLE_MODEL } = process.env ?? {};
 
     const modelOptions = {
-      model: OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo-0613',
+      model: OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo',
       temperature: 0.2,
       presence_penalty: 0,
       frequency_penalty: 0,
@@ -479,7 +486,7 @@ class OpenAIClient extends BaseClient {
     };
 
     try {
-      const llm = this.initializeLLM(modelOptions);
+      const llm = this.initializeLLM({ ...modelOptions, streaming: false });
       title = await runTitleChain({ llm, text, convo });
     } catch (e) {
       console.log('There was an issue generating title with LangChain, trying the old method...');
@@ -552,6 +559,7 @@ ${convo}
     const llm = this.initializeLLM({
       model: OPENAI_SUMMARY_MODEL,
       temperature: 0.2,
+      streaming: false,
     });
 
     try {
