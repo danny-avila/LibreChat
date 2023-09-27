@@ -405,11 +405,6 @@ class BaseClient {
       this.getBuildMessagesOptions(opts),
     );
 
-    if (this.options.debug) {
-      // console.debug('payload');
-      // console.debug(payload);
-    }
-
     if (tokenCountMap) {
       console.dir(tokenCountMap, { depth: null });
       if (tokenCountMap[userMessage.messageId]) {
