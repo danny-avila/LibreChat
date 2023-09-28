@@ -136,10 +136,12 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
       }
     }
     if (filteredPlugins) {
-      setMaxPage(Math.ceil(filteredPlugins.length / itemsPerPage));
-      setCurrentPage(1);
+      const newMaxPage = Math.ceil(filteredPlugins.length / itemsPerPage);
+      // Mantieni la pagina corrente solo se è valida per il nuovo set di dati.
+      setCurrentPage((prevPage) => (prevPage <= newMaxPage ? prevPage : 1));
+      setMaxPage(newMaxPage);
     }
-  }, [filteredPlugins, itemsPerPage, searchValue]);
+  }, [filteredPlugins, itemsPerPage, searchValue, user]);
   const handleChangePage = (page: number) => {
     setCurrentPage(page);
   };
