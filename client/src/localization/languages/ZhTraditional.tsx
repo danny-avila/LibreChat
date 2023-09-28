@@ -252,5 +252,4 @@ export default {
   com_nav_search_placeholder: '搜索訊息',
   com_nav_setting_general: '一般',
   com_nav_setting_data: '數據控制',
-  com_nav_language: '語言',
 };
