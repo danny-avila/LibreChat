@@ -126,23 +126,15 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     plugin.name.toLowerCase().includes(searchValue.toLowerCase()),
   );
   useEffect(() => {
-    if (user) {
-      if (user.plugins) {
-        setUserPlugins(user.plugins);
-      }
+    if (user && user.plugins) {
+      setUserPlugins(user.plugins);
     }
+
     if (filteredPlugins) {
       setMaxPage(Math.ceil(filteredPlugins.length / itemsPerPage));
-      setCurrentPage(1);
-      const newMaxPage = Math.ceil(filteredPlugins.length / itemsPerPage);
-      // Mantieni la pagina corrente solo se è valida per il nuovo set di dati.
-      setCurrentPage((prevPage) => (prevPage <= newMaxPage ? prevPage : 1));
-      setMaxPage(newMaxPage);
+      setCurrentPage(1); // Reset the current page to 1 whenever the filtered list changes
     }
-    if (availablePlugins) {
-      setMaxPage(Math.ceil(availablePlugins.length / itemsPerPage));
-    }
-  }, [availablePlugins, itemsPerPage, user]);
+  }, [availablePlugins, itemsPerPage, user, searchValue]); // Add searchValue to the dependency list
 
   const handleChangePage = (page: number) => {
     setCurrentPage(page);
