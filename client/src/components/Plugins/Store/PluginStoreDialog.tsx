@@ -15,6 +15,7 @@ import {
   TError,
 } from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useLocalize } from '~/hooks';
 
 type TPluginStoreDialogProps = {
   isOpen: boolean;
@@ -22,6 +23,7 @@ type TPluginStoreDialogProps = {
 };
 
 function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
+  const localize = useLocalize();
   const { data: availablePlugins } = useAvailablePluginsQuery();
   const { user } = useAuthContext();
   const updateUserPlugins = useUpdateUserPluginsMutation();
@@ -137,10 +139,6 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
       setMaxPage(Math.ceil(filteredPlugins.length / itemsPerPage));
       setCurrentPage(1);
     }
-    // if (availablePlugins) {
-    //   console.log('Entrando aqui tambem')
-    //   setMaxPage(Math.ceil(availablePlugins.length / itemsPerPage));
-    // }
   }, [filteredPlugins, itemsPerPage, searchValue]);
   const handleChangePage = (page: number) => {
     setCurrentPage(page);
@@ -152,12 +150,15 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
       <div className="fixed inset-0 bg-gray-500/90 transition-opacity dark:bg-gray-800/90" />
       {/* Full-screen container to center the panel */}
       <div className="fixed inset-0 flex items-center justify-center p-4">
-        <Dialog.Panel className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-900 max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl">
+        <Dialog.Panel
+          className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-900 max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
+          style={{ minHeight: '610px' }}
+        >
           <div className="flex items-center justify-between border-b-[1px] border-black/10 px-4 pb-4 pt-5 dark:border-white/10 sm:p-6">
             <div className="flex items-center">
               <div className="text-center sm:text-left">
                 <Dialog.Title className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
-                  Plugin store
+                  {localize('com_nav_plugin_store')}
                 </Dialog.Title>
               </div>
             </div>
@@ -178,8 +179,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
               className="relative m-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
               role="alert"
             >
-              There was an error attempting to authenticate this plugin. Please try again.{' '}
-              {errorMessage}
+              {localize('com_nav_plugin_auth_error')} {errorMessage}
             </div>
           )}
           {showPluginAuthForm && (
@@ -197,7 +197,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                   type="text"
                   value={searchValue}
                   onChange={(e) => setSearchValue(e.target.value)}
-                  placeholder="Search plugins"
+                  placeholder={localize('com_nav_plugin_search')}
                   style={{
                     width: '100%',
                     paddingLeft: '30px',

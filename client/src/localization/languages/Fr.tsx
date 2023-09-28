@@ -170,6 +170,10 @@ export default {
   com_endpoint_func_hover: 'Activer l\'utilisation des plugins comme fonctions OpenAI',
   com_endpoint_skip_hover:
     'Activer le saut de l\'étape de complétion, qui examine la réponse finale et les étapes générées',
+  com_nav_plugin_store: 'Boutique de plugins',
+  com_nav_plugin_search: 'Rechercher des plugins',
+  com_nav_plugin_auth_error:
+    'Une erreur s\'est produite lors de la tentative d\'authentification de ce plugin. Veuillez réessayer.',
   com_nav_export_filename: 'Nom du fichier',
   com_nav_export_filename_placeholder: 'Définir le nom du fichier',
   com_nav_export_type: 'Type',
