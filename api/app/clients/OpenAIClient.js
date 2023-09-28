@@ -447,8 +447,13 @@ class OpenAIClient extends BaseClient {
 
     const callbacks = [
       {
-        handleLLMEnd: async (output) => {
-          console.log(JSON.stringify(output, null, 2));
+        handleChatModelStart: async (_llm, _messages, runId, _parentRunId, extraParams) => {
+          console.dir({ runId, extraParams }, { depth: null });
+          // extraParams.invocation_params.model
+        },
+        handleLLMEnd: async (output, runId, _parentRunId) => {
+          console.dir({ output, runId, _parentRunId }, { depth: null });
+          // output.llmOutput.tokenUsage -> completionTokens, promptTokens
         },
         handleLLMError: async (err) => {
           console.error(err);
@@ -544,20 +549,15 @@ ${convo}
       this.options.debug &&
         console.debug('Summary context is empty, using latest message within token limit');
 
-      let buffer = promptBuffer;
+      let buffer = 32;
       const { text, ...latestMessage } = messagesToRefine[messagesToRefine.length - 1];
       const splitText = await tokenSplit({
         text,
-        chunkSize: maxContextTokens - buffer,
-        returnSize: 1,
+        chunkSize: Math.floor((maxContextTokens - buffer) / 3),
       });
 
-      const newText = splitText[0];
-
-      if (newText.length < text.length) {
-        prompt = CUT_OFF_PROMPT;
-        buffer = 30;
-      }
+      const newText = `${splitText[0]}\n...[truncated]...\n${splitText[splitText.length - 1]}`;
+      prompt = CUT_OFF_PROMPT;
 
       context = [
         formatMessage({
@@ -582,6 +582,7 @@ ${convo}
       console.debug(
         `initialPromptTokens: ${initialPromptTokens}, summaryPromptTokens: ${summaryPromptTokens}`,
       );
+    // const promptTokens = initialPromptTokens + summaryPromptTokens - 3; // this is accurate
 
     const llm = this.initializeLLM({
       model: OPENAI_SUMMARY_MODEL,
