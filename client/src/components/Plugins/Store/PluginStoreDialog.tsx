@@ -57,11 +57,6 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     setShowPluginAuthForm(false);
   };
 
-  const [searchValue, setSearchValue] = useState<string>('');
-  const filteredPlugins = availablePlugins?.filter((plugin) =>
-    plugin.name.toLowerCase().includes(searchValue.toLowerCase()),
-  );
-
   const onPluginUninstall = (plugin: string) => {
     updateUserPlugins.mutate(
       { pluginKey: plugin, action: 'uninstall', auth: null },
@@ -128,20 +123,21 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     },
     [itemsPerPage],
   );
-
+  const [searchValue, setSearchValue] = useState<string>('');
+  const filteredPlugins = availablePlugins?.filter((plugin) =>
+    plugin.name.toLowerCase().includes(searchValue.toLowerCase()),
+  );
   useEffect(() => {
-    if (user) {
-      if (user.plugins) {
-        setUserPlugins(user.plugins);
-      }
+    if (user && user.plugins) {
+      setUserPlugins(user.plugins);
     }
+
     if (filteredPlugins) {
-      const newMaxPage = Math.ceil(filteredPlugins.length / itemsPerPage);
-      // Mantieni la pagina corrente solo se è valida per il nuovo set di dati.
-      setCurrentPage((prevPage) => (prevPage <= newMaxPage ? prevPage : 1));
-      setMaxPage(newMaxPage);
+      setMaxPage(Math.ceil(filteredPlugins.length / itemsPerPage));
+      setCurrentPage(1); // Reset the current page to 1 whenever the filtered list changes
     }
-  }, [filteredPlugins, itemsPerPage, searchValue, user]);
+  }, [availablePlugins, itemsPerPage, user, searchValue]); // Add searchValue to the dependency list
+
   const handleChangePage = (page: number) => {
     setCurrentPage(page);
   };
@@ -221,6 +217,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
               <div
                 ref={gridRef}
                 className="grid grid-cols-1 grid-rows-2 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                style={{ minHeight: '410px' }}
               >
                 {filteredPlugins &&
                   filteredPlugins
@@ -237,14 +234,14 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
               </div>
             </div>
             <div className="mt-2 flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
-              {maxPage > 1 && (
-                <div>
-                  <PluginPagination
-                    currentPage={currentPage}
-                    maxPage={maxPage}
-                    onChangePage={handleChangePage}
-                  />
-                </div>
+              {maxPage > 0 ? (
+                <PluginPagination
+                  currentPage={currentPage}
+                  maxPage={maxPage}
+                  onChangePage={handleChangePage}
+                />
+              ) : (
+                <div style={{ height: '21px' }}></div>
               )}
               {/* API not yet implemented: */}
               {/* <div className="flex flex-col items-center gap-2 sm:flex-row">
