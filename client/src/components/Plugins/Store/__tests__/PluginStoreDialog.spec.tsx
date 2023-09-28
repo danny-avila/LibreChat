@@ -1,4 +1,4 @@
-import { render } from 'test/layout-test-utils';
+import { render, screen, fireEvent } from 'test/layout-test-utils';
 import PluginStoreDialog from '../PluginStoreDialog';
 import userEvent from '@testing-library/user-event';
 import * as mockDataProvider from 'librechat-data-provider';
@@ -201,4 +201,21 @@ test('allows the user to navigate between pages', async () => {
   expect(getByText('Google')).toBeInTheDocument();
   expect(getByText('Wolfram')).toBeInTheDocument();
   expect(getByText('Plugin 1')).toBeInTheDocument();
+});
+
+test('allows the user to search for plugins', async () => {
+  setup();
+
+  const searchInput = screen.getByPlaceholderText('Search plugins');
+  fireEvent.change(searchInput, { target: { value: 'Google' } });
+
+  expect(screen.getByText('Google')).toBeInTheDocument();
+  expect(screen.queryByText('Wolfram')).not.toBeInTheDocument();
+  expect(screen.queryByText('Plugin 1')).not.toBeInTheDocument();
+
+  fireEvent.change(searchInput, { target: { value: 'Plugin 1' } });
+
+  expect(screen.getByText('Plugin 1')).toBeInTheDocument();
+  expect(screen.queryByText('Google')).not.toBeInTheDocument();
+  expect(screen.queryByText('Wolfram')).not.toBeInTheDocument();
 });
