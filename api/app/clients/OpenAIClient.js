@@ -448,8 +448,11 @@ class OpenAIClient extends BaseClient {
     const callbacks = [
       {
         handleChatModelStart: async (_llm, _messages, runId, _parentRunId, extraParams) => {
-          console.dir({ runId, extraParams }, { depth: null });
+          // console.dir({ runId, extraParams }, { depth: null });
           // extraParams.invocation_params.model
+          const { invocation_params } = extraParams;
+          const { model, functions } = invocation_params;
+          console.dir({ model, functions }, { depth: null });
         },
         handleLLMEnd: async (output, runId, _parentRunId) => {
           console.dir({ output, runId, _parentRunId }, { depth: null });
@@ -491,7 +494,7 @@ class OpenAIClient extends BaseClient {
     };
 
     try {
-      const llm = this.initializeLLM({ ...modelOptions, streaming: false });
+      const llm = this.initializeLLM(modelOptions);
       title = await runTitleChain({ llm, text, convo });
     } catch (e) {
       console.log('There was an issue generating title with LangChain, trying the old method...');
@@ -587,7 +590,6 @@ ${convo}
     const llm = this.initializeLLM({
       model: OPENAI_SUMMARY_MODEL,
       temperature: 0.2,
-      streaming: false,
     });
 
     try {
