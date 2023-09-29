@@ -4,7 +4,7 @@ function createLLM({
   modelOptions,
   configOptions,
   callbacks,
-  streaming = true,
+  streaming = false,
   openAIApiKey,
   azure = {},
 }) {
