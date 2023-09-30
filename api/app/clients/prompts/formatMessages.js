@@ -62,13 +62,13 @@ const formatLangChainMessages = (messages, formatOptions) =>
   messages.map((msg) => formatMessage({ ...formatOptions, message: msg, langChain: true }));
 
 /**
- * Formats a message object by merging properties from `kwargs` and `additional_kwargs`.
+ * Formats a LangChain message object by merging properties from `kwargs` and `additional_kwargs`.
  *
  * @param {Object} message - The message object to format.
  * @param {Object} message.kwargs - Contains properties to be merged.
  * @param {Object} [message.kwargs.additional_kwargs] - Additional properties to be merged.
  *
- * @returns {Object} The formatted message object.
+ * @returns {Object} The formatted LangChain message.
  */
 const formatFromLangChain = (message) => {
   const { additional_kwargs, ...message_kwargs } = message.kwargs;
