@@ -1,7 +1,7 @@
 const { HumanMessage, AIMessage, SystemMessage } = require('langchain/schema');
 
 /**
- * Formats a message based on the provided options.
+ * Formats a message to OpenAI payload format based on the provided options.
  *
  * @param {Object} params - The parameters for formatting.
  * @param {Object} params.message - The message object to format.
@@ -16,7 +16,15 @@ const { HumanMessage, AIMessage, SystemMessage } = require('langchain/schema');
  * @returns {(Object|HumanMessage|AIMessage|SystemMessage)} - The formatted message.
  */
 const formatMessage = ({ message, userName, assistantName, langChain = false }) => {
-  const { role: _role, _name, sender, text, content: _content } = message;
+  const roleMapping = {
+    SystemMessage: 'system',
+    HumanMessage: 'user',
+    AIMessage: 'assistant',
+  };
+  let { role: _role, _name, sender, text, content: _content, lc_id } = message;
+  if (!langChain && lc_id && lc_id[2]) {
+    _role = roleMapping[lc_id[2]];
+  }
   const role = _role ?? (sender && sender?.toLowerCase() === 'user' ? 'user' : 'assistant');
   const content = text ?? _content ?? '';
   const formattedMessage = {

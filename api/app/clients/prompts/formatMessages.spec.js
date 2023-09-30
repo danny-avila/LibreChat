@@ -122,6 +122,39 @@ describe('formatMessage', () => {
     expect(result).toBeInstanceOf(SystemMessage);
     expect(result.lc_kwargs.content).toEqual(input.message.text);
   });
+
+  it('formats langChain messages into OpenAI payload format', () => {
+    const human = {
+      message: new HumanMessage({
+        content: 'Hello',
+      }),
+    };
+    const system = {
+      message: new SystemMessage({
+        content: 'Hello',
+      }),
+    };
+    const ai = {
+      message: new AIMessage({
+        content: 'Hello',
+      }),
+    };
+    const humanResult = formatMessage(human);
+    const systemResult = formatMessage(system);
+    const aiResult = formatMessage(ai);
+    expect(humanResult).toEqual({
+      role: 'user',
+      content: 'Hello',
+    });
+    expect(systemResult).toEqual({
+      role: 'system',
+      content: 'Hello',
+    });
+    expect(aiResult).toEqual({
+      role: 'assistant',
+      content: 'Hello',
+    });
+  });
 });
 
 describe('formatLangChainMessages', () => {
