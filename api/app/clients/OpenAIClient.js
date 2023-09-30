@@ -417,6 +417,7 @@ class OpenAIClient extends BaseClient {
     frequency_penalty = 0,
     max_tokens,
     streaming,
+    role,
   }) {
     const modelOptions = {
       modelName: modelName ?? model,
@@ -452,13 +453,16 @@ class OpenAIClient extends BaseClient {
           // extraParams.invocation_params.model
           const { invocation_params } = extraParams;
           const { model, functions } = invocation_params;
+          console.log(`handleChatModelStart: ${role}`);
           console.dir({ model, functions }, { depth: null });
         },
         handleLLMEnd: async (output, runId, _parentRunId) => {
+          console.log(`handleLLMEnd: ${role}`);
           console.dir({ output, runId, _parentRunId }, { depth: null });
           // output.llmOutput.tokenUsage -> completionTokens, promptTokens
         },
         handleLLMError: async (err) => {
+          console.log(`handleLLMError: ${role}`);
           console.error(err);
         },
       },
@@ -494,7 +498,7 @@ class OpenAIClient extends BaseClient {
     };
 
     try {
-      const llm = this.initializeLLM(modelOptions);
+      const llm = this.initializeLLM({ ...modelOptions, role: 'title' });
       title = await runTitleChain({ llm, text, convo });
     } catch (e) {
       console.log('There was an issue generating title with LangChain, trying the old method...');
@@ -590,6 +594,7 @@ ${convo}
     const llm = this.initializeLLM({
       model: OPENAI_SUMMARY_MODEL,
       temperature: 0.2,
+      role: 'summary',
     });
 
     try {
