@@ -1,8 +1,9 @@
-const BaseClient = require('./BaseClient');
-const ChatGPTClient = require('./ChatGPTClient');
+const { promptTokensEstimate } = require('openai-chat-tokens');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
+const { truncateText, formatMessage, formatFromLangChain, CUT_OFF_PROMPT } = require('./prompts');
 const { getModelMaxTokens, genAzureChatCompletion } = require('../../utils');
-const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
+const ChatGPTClient = require('./ChatGPTClient');
+const BaseClient = require('./BaseClient');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
@@ -452,9 +453,19 @@ class OpenAIClient extends BaseClient {
           // console.dir({ runId, extraParams }, { depth: null });
           // extraParams.invocation_params.model
           const { invocation_params } = extraParams;
-          const { model, functions } = invocation_params;
+          const { model, functions, function_call } = invocation_params;
+          const messages = _messages[0].map(formatFromLangChain);
           console.log(`handleChatModelStart: ${role}`);
-          console.dir({ model, functions }, { depth: null });
+          console.dir({ model, functions, function_call }, { depth: null });
+          const payload = { messages };
+          if (functions) {
+            payload.functions = functions;
+          }
+          if (function_call) {
+            payload.function_call = function_call;
+          }
+          const result = promptTokensEstimate(payload) + 3;
+          console.log('Prompt Tokens pre-gen:', result);
         },
         handleLLMEnd: async (output, runId, _parentRunId) => {
           console.log(`handleLLMEnd: ${role}`);
