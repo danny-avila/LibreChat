@@ -1,9 +1,9 @@
-const { promptTokensEstimate } = require('openai-chat-tokens');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
-const { truncateText, formatMessage, formatFromLangChain, CUT_OFF_PROMPT } = require('./prompts');
-const { getModelMaxTokens, genAzureChatCompletion } = require('../../utils');
 const ChatGPTClient = require('./ChatGPTClient');
 const BaseClient = require('./BaseClient');
+const { getModelMaxTokens, genAzureChatCompletion } = require('../../utils');
+const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
+const { createStartHandler } = require('./callbacks');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
@@ -449,24 +449,7 @@ class OpenAIClient extends BaseClient {
 
     const callbacks = [
       {
-        handleChatModelStart: async (_llm, _messages, runId, _parentRunId, extraParams) => {
-          // console.dir({ runId, extraParams }, { depth: null });
-          // extraParams.invocation_params.model
-          const { invocation_params } = extraParams;
-          const { model, functions, function_call } = invocation_params;
-          const messages = _messages[0].map(formatFromLangChain);
-          console.log(`handleChatModelStart: ${role}`);
-          console.dir({ model, functions, function_call }, { depth: null });
-          const payload = { messages };
-          if (functions) {
-            payload.functions = functions;
-          }
-          if (function_call) {
-            payload.function_call = function_call;
-          }
-          const result = promptTokensEstimate(payload) + 3;
-          console.log('Prompt Tokens pre-gen:', result);
-        },
+        handleChatModelStart: createStartHandler({ role }),
         handleLLMEnd: async (output, runId, _parentRunId) => {
           console.log(`handleLLMEnd: ${role}`);
           console.dir({ output, runId, _parentRunId }, { depth: null });
