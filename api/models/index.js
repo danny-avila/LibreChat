@@ -7,12 +7,16 @@ const {
 } = require('./Message');
 const { getConvoTitle, getConvo, saveConvo } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
+const Key = require('./Key');
 const User = require('./User');
-const Key = require('./schema/keySchema');
+const Balance = require('./Balance');
+const Transaction = require('./Transaction');
 
 module.exports = {
   User,
   Key,
+  Balance,
+  Transaction,
 
   getMessages,
   saveMessage,
