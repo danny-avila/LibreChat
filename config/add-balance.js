@@ -88,7 +88,7 @@ const Transaction = require('@librechat/backend/models/Transaction');
   try {
     result = await Transaction.create({
       user: user._id,
-      tokenType: 'general',
+      tokenType: 'credits',
       context: 'admin',
       rawAmount: +amount,
     });
@@ -99,7 +99,7 @@ const Transaction = require('@librechat/backend/models/Transaction');
   }
 
   // Check the result
-  if (!result.tokens) {
+  if (!result.tokenCredits) {
     console.red('Error: Something went wrong while updating the balance!');
     console.error(result);
     silentExit(1);
@@ -108,6 +108,6 @@ const Transaction = require('@librechat/backend/models/Transaction');
   // Done!
   console.green('Transaction created successfully!');
   console.purple(`Amount: ${amount}
-New Balance: ${result.tokens}`);
+New Balance: ${result.tokenCredits}`);
   silentExit(0);
 })();

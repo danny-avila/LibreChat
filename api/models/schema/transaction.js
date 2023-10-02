@@ -14,7 +14,7 @@ const transactionSchema = mongoose.Schema({
   },
   tokenType: {
     type: String,
-    enum: ['prompt', 'completion', 'general'],
+    enum: ['prompt', 'completion', 'credits'],
     required: true,
   },
   model: {

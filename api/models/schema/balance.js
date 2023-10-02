@@ -7,7 +7,8 @@ const balanceSchema = mongoose.Schema({
     index: true,
     required: true,
   },
-  tokens: {
+  // 1000 tokenCredits = 1 mill ($0.001 USD)
+  tokenCredits: {
     type: Number,
     default: 0,
   },
