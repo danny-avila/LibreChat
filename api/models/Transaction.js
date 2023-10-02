@@ -15,7 +15,8 @@ const getMultiplier = (valueKey, tokenType) => {
   if (!values) {
     return 1;
   }
-  return values[tokenType] ?? 1;
+  // If we got this far, and values[tokenType] is undefined somehow, return a rough average of default multipliers
+  return values[tokenType] ?? 4.5;
 };
 
 // Method to calculate and set the tokenValue for a transaction
