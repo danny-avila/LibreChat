@@ -1,6 +1,7 @@
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const ChatGPTClient = require('./ChatGPTClient');
 const BaseClient = require('./BaseClient');
+const { Balance } = require('../../models');
 const { getModelMaxTokens, genAzureChatCompletion } = require('../../utils');
 const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
 const { createStartHandler } = require('./callbacks');
@@ -447,9 +448,11 @@ class OpenAIClient extends BaseClient {
       };
     }
 
+    const { req, res } = this.options;
+
     const callbacks = [
       {
-        handleChatModelStart: createStartHandler({ context }),
+        handleChatModelStart: createStartHandler({ req, res, context }),
         handleLLMEnd: async (output, runId, _parentRunId) => {
           console.log(`handleLLMEnd: ${context}`);
           console.dir({ output, runId, _parentRunId }, { depth: null });
@@ -527,10 +530,10 @@ ${convo}
     let context = messagesToRefine;
     let prompt;
 
-    const { OPENAI_SUMMARY_MODEL } = process.env ?? {};
+    const { OPENAI_SUMMARY_MODEL = 'gpt-3.5-turbo' } = process.env ?? {};
     const maxContextTokens = getModelMaxTokens(OPENAI_SUMMARY_MODEL) ?? 4095;
-    // 3 tokens for the assistant label, and 97 for the summarizer prompt (100)
-    const promptBuffer = 100;
+    // 3 tokens for the assistant label, and 98 for the summarizer prompt (101)
+    const promptBuffer = 101;
 
     /*
      * Note: token counting here is to block summarization if it exceeds the spend; complete
@@ -571,7 +574,7 @@ ${convo}
         }),
       ];
       summaryPromptTokens = this.getTokenCountForMessage(context[0]) + buffer;
-    } else {
+    } else if (context.length !== messagesToRefine.length) {
       summaryPromptTokens = context.reduce(
         (acc, message) => acc + message.tokenCount,
         promptBuffer,
@@ -583,7 +586,14 @@ ${convo}
       console.debug(
         `initialPromptTokens: ${initialPromptTokens}, summaryPromptTokens: ${summaryPromptTokens}`,
       );
-    // const promptTokens = initialPromptTokens + summaryPromptTokens - 3; // this is accurate
+    const promptTokens = initialPromptTokens + summaryPromptTokens - 3;
+    await Balance.check({
+      user: this.user,
+      tokenType: 'prompt',
+      amount: promptTokens,
+      debug: this.options.debug,
+      model: OPENAI_SUMMARY_MODEL,
+    });
 
     const llm = this.initializeLLM({
       model: OPENAI_SUMMARY_MODEL,

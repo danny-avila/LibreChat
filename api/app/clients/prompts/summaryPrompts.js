@@ -1,7 +1,7 @@
 const { PromptTemplate } = require('langchain/prompts');
 /*
- * Without `{summary}` and `{new_lines}`, token count is 99
- * We are counting this towards the max context tokens for summaries, +3 for the assistant label (102)
+ * Without `{summary}` and `{new_lines}`, token count is 98
+ * We are counting this towards the max context tokens for summaries, +3 for the assistant label (101)
  * If this prompt changes, use https://tiktokenizer.vercel.app/ to count the tokens
  */
 const _DEFAULT_SUMMARIZER_TEMPLATE = `Summarize the conversation by integrating new lines into the current summary.
