@@ -1,14 +1,14 @@
 const { promptTokensEstimate } = require('openai-chat-tokens');
 const { formatFromLangChain } = require('../prompts');
 
-const createStartHandler = ({ role }) => {
+const createStartHandler = ({ context }) => {
   return async (_llm, _messages, runId, _parentRunId, extraParams) => {
     // console.dir({ runId, extraParams }, { depth: null });
     // extraParams.invocation_params.model
     const { invocation_params } = extraParams;
     const { model, functions, function_call } = invocation_params;
     const messages = _messages[0].map(formatFromLangChain);
-    console.log(`handleChatModelStart: ${role}`);
+    console.log(`handleChatModelStart: ${context}`);
     console.dir({ model, functions, function_call }, { depth: null });
     const payload = { messages };
     if (functions) {

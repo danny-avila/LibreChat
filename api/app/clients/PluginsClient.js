@@ -73,7 +73,7 @@ class PluginsClient extends OpenAIClient {
       temperature: this.agentOptions.temperature,
     };
 
-    const model = this.initializeLLM({ ...modelOptions, role: 'plugins' });
+    const model = this.initializeLLM({ ...modelOptions, context: 'plugins' });
 
     if (this.options.debug) {
       console.debug(
