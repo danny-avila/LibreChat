@@ -1,7 +1,7 @@
 const { AnthropicClient } = require('../../../../app');
 const { getUserKey, checkUserKeyExpiry } = require('../../../services/UserService');
 
-const initializeClient = async (req) => {
+const initializeClient = async ({ req, res }) => {
   const { ANTHROPIC_API_KEY } = process.env;
   const { key: expiresAt } = req.body;
 
@@ -16,7 +16,7 @@ const initializeClient = async (req) => {
     key = await getUserKey({ userId: req.user.id, name: 'anthropic' });
   }
   let anthropicApiKey = isUserProvided ? key : ANTHROPIC_API_KEY;
-  const client = new AnthropicClient(anthropicApiKey);
+  const client = new AnthropicClient(anthropicApiKey, { req, res });
   return {
     client,
     anthropicApiKey,

@@ -77,7 +77,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
 
     const { abortController, onStart } = createAbortController(req, res, getAbortData);
 
-    const { client } = await initializeClient(req, endpointOption);
+    const { client } = await initializeClient({ req, res, endpointOption });
 
     let response = await client.sendMessage(text, {
       getIds,

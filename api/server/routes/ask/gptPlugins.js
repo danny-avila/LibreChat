@@ -147,7 +147,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
 
   try {
     endpointOption.tools = await validateTools(user, endpointOption.tools);
-    const { client } = await initializeClient(req, endpointOption);
+    const { client } = await initializeClient({ req, res, endpointOption });
 
     let response = await client.sendMessage(text, {
       user,
