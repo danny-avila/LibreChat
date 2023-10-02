@@ -88,7 +88,7 @@ const Transaction = require('@librechat/backend/models/Transaction');
   try {
     result = await Transaction.create({
       user: user._id,
-      tokenType: amount >= 0 ? 'increase' : 'decrease',
+      tokenType: 'general',
       context: 'admin',
       rawAmount: +amount,
     });

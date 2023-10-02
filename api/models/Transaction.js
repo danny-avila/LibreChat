@@ -15,7 +15,7 @@ const getMultiplier = (valueKey, tokenType) => {
   if (!values) {
     return 1;
   }
-  return values[tokenType];
+  return values[tokenType] ?? 1;
 };
 
 // Method to calculate and set the tokenValue for a transaction
