@@ -3,31 +3,34 @@ const transactionSchema = require('./schema/transaction');
 const Balance = require('./Balance');
 
 const tokenValueConfig = {
-  '8K': { promptTokens: 3, completionTokens: 6 },
-  '32K': { promptTokens: 6, completionTokens: 12 },
-  '4K': { promptTokens: 1.5, completionTokens: 2 },
-  '16K': { promptTokens: 3, completionTokens: 4 },
+  '8K': { prompt: 3, completion: 6 },
+  '32K': { prompt: 6, completion: 12 },
+  '4K': { prompt: 1.5, completion: 2 },
+  '16K': { prompt: 3, completion: 4 },
 };
 
 // Static method to get token value based on valueKey and type
-transactionSchema.statics.getTokenValue = function (valueKey, tokenType) {
+const getMultiplier = (valueKey, tokenType) => {
   const values = tokenValueConfig[valueKey];
   if (!values) {
-    return null;
+    return 1;
   }
   return values[tokenType];
 };
 
 // Method to calculate and set the tokenValue for a transaction
 transactionSchema.methods.calculateTokenValue = function () {
-  const value = this.model('Transaction').getTokenValue(this.valueKey, this.tokenType);
-  if (value) {
-    this.tokenValue = this.rawAmount * value;
+  if (!this.valueKey || !this.tokenType) {
+    this.tokenValue = this.rawAmount;
+  }
+  const multiplier = getMultiplier(this.valueKey, this.tokenType);
+  if (multiplier) {
+    this.tokenValue = this.rawAmount * multiplier;
   }
 };
 
 // Static method to create a transaction and update the balance
-transactionSchema.statics.createAndAdjustBalance = async function (transactionData) {
+transactionSchema.statics.create = async function (transactionData) {
   const Transaction = this;
 
   const transaction = new Transaction(transactionData);
@@ -37,7 +40,7 @@ transactionSchema.statics.createAndAdjustBalance = async function (transactionDa
   await transaction.save();
 
   // Adjust the user's balance
-  await Balance.findOneAndUpdate(
+  return await Balance.findOneAndUpdate(
     { user: transaction.user },
     { $inc: { tokens: transaction.tokenValue } },
     { upsert: true, new: true },
