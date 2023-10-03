@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plugin, GPTIcon, AnthropicIcon } from '~/components/svg';
+import { Plugin, GPTIcon, AnthropicIcon, AzureMinimalIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
 import { IconProps } from '~/common';
@@ -34,12 +34,12 @@ const Icon: React.FC<IconProps> = (props) => {
   } else {
     const endpointIcons = {
       azureOpenAI: {
-        icon: <GPTIcon size={size * 0.7} />,
+        icon: <AzureMinimalIcon size={size * 0.55} />,
         bg: 'linear-gradient(0.375turn, #61bde2, #4389d0)',
         name: 'ChatGPT',
       },
       openAI: {
-        icon: <GPTIcon size={size * 0.7} />,
+        icon: <GPTIcon size={size * 0.55} />,
         bg:
           typeof model === 'string' && model.toLowerCase().includes('gpt-4')
             ? '#AB68FF'
@@ -52,7 +52,7 @@ const Icon: React.FC<IconProps> = (props) => {
         name: 'Plugins',
       },
       google: { icon: <img src="/assets/google-palm.svg" alt="Palm Icon" />, name: 'PaLM2' },
-      anthropic: { icon: <AnthropicIcon size={size * 0.7} />, bg: '#d09a74', name: 'Claude' },
+      anthropic: { icon: <AnthropicIcon size={size * 0.55} />, bg: '#d09a74', name: 'Claude' },
       bingAI: {
         icon: jailbreak ? (
           <img src="/assets/bingai-jb.png" alt="Bing Icon" />
@@ -62,7 +62,7 @@ const Icon: React.FC<IconProps> = (props) => {
         name: jailbreak ? 'Sydney' : 'BingAI',
       },
       chatGPTBrowser: {
-        icon: <GPTIcon size={size * 0.7} />,
+        icon: <GPTIcon size={size * 0.55} />,
         bg:
           typeof model === 'string' && model.toLowerCase().includes('gpt-4')
             ? '#AB68FF'
@@ -73,7 +73,7 @@ const Icon: React.FC<IconProps> = (props) => {
       default: { icon: <GPTIcon size={size * 0.7} />, bg: 'grey', name: 'UNKNOWN' },
     };
 
-    const { icon, bg, name } = endpointIcons[endpoint ?? ''] ?? endpointIcons.default;
+    const { icon, bg, name } = endpointIcons[endpoint ?? 'default'];
 
     return (
       <div

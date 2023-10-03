@@ -17,6 +17,7 @@ export default function PresetItem({
     model: preset?.model,
     error: false,
     className: 'mr-2',
+    isCreatedByUser: false,
   });
 
   const getPresetTitle = () => {
