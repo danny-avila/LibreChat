@@ -1,5 +1,5 @@
 const { createStartHandler } = require('../callbacks');
-const { Transaction } = require('../../../models');
+const spendTokens = require('./spendTokens');
 
 class RunManager {
   constructor(fields) {
@@ -59,25 +59,7 @@ class RunManager {
             ...metadata,
           };
 
-          try {
-            const prompt = await Transaction.create({
-              ...txData,
-              tokenType: 'prompt',
-              rawAmount: -tokenUsage.promptTokens,
-            });
-
-            const completion = await Transaction.create({
-              ...txData,
-              tokenType: 'completion',
-              rawAmount: -tokenUsage.completionTokens,
-            });
-
-            if (this.debug) {
-              console.dir({ prompt, completion }, { depth: null });
-            }
-          } catch (err) {
-            console.error(err);
-          }
+          await spendTokens(txData, tokenUsage);
         },
         handleLLMError: async (err) => {
           console.log(`handleLLMError: ${JSON.stringify(metadata)}`);
