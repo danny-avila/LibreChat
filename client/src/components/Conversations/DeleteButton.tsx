@@ -22,7 +22,7 @@ export default function DeleteButton({ conversationId, renaming, retainView, tit
 
   useEffect(() => {
     if (deleteConvoMutation.isSuccess) {
-      if (currentConversation?.conversationId == conversationId) {
+      if ((currentConversation as { conversationId?: string }).conversationId == conversationId) {
         newConversation();
       }
 
