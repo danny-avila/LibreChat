@@ -10,6 +10,7 @@ import Russian from './languages/Ru';
 import Japanese from './languages/Jp';
 import Swedish from './languages/Sv';
 import Korean from './languages/Ko';
+import TraditionalChinese from './languages/ZhTraditional';
 // === import additional language files here === //
 
 const languageMap: { [key: string]: unknown } = {
@@ -25,6 +26,7 @@ const languageMap: { [key: string]: unknown } = {
   'ja-JP': Japanese,
   'sv-SE': Swedish,
   'ko-KR': Korean,
+  'zh-TC': TraditionalChinese,
   // Add additional language mappings here
 };
 
