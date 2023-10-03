@@ -94,6 +94,7 @@ export default function Message({
     ...conversation,
     ...message,
     model: message?.model ?? conversation?.model,
+    size: 38,
   });
 
   if (message?.bg && searchResult) {
@@ -135,7 +136,7 @@ export default function Message({
     <>
       <div {...props} onWheel={handleScroll} onTouchMove={handleScroll}>
         <div className="relative m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
-          <div className="relative flex h-[30px] w-[30px] flex-col items-end text-right text-xs md:text-sm">
+          <div className="relative flex h-[40px] w-[40px] flex-col items-end text-right text-xs md:text-sm">
             {typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
               <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>
             ) : (

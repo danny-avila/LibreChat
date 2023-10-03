@@ -27,6 +27,7 @@ export default function ModelItem({
     error: false,
     className: 'mr-2',
     message: false,
+    isCreatedByUser: false,
   });
 
   const userProvidesKey = endpointsConfig?.[endpoint]?.userProvide;
