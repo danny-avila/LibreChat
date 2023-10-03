@@ -30,6 +30,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
   let responseMessageId;
   let lastSavedTimestamp = 0;
   let saveDelay = 100;
+  const sender = getResponseSender(endpointOption);
   const user = req.user.id;
 
   const getIds = (data) => {
@@ -49,7 +50,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
         lastSavedTimestamp = currentTimestamp;
         saveMessage({
           messageId: responseMessageId,
-          sender: getResponseSender(endpointOption),
+          sender,
           conversationId,
           parentMessageId: overrideParentMessageId ?? userMessageId,
           text: partialText,
@@ -69,7 +70,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     const getAbortData = () => ({
       conversationId,
       messageId: responseMessageId,
-      sender: getResponseSender(endpointOption),
+      sender,
       parentMessageId: overrideParentMessageId ?? userMessageId,
       text: getPartialText(),
       userMessage,
@@ -123,7 +124,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     handleAbortError(res, req, error, {
       partialText,
       conversationId,
-      sender: getResponseSender(endpointOption),
+      sender,
       messageId: responseMessageId,
       parentMessageId: userMessageId ?? parentMessageId,
     });
