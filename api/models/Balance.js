@@ -3,8 +3,9 @@ const balanceSchema = require('./schema/balance');
 const { getMultiplier } = require('./tx');
 
 balanceSchema.statics.check = async function ({ user, model, valueKey, tokenType, amount, debug }) {
-  const { tokenCredits: balance } = await this.findOne({ user });
   const multiplier = getMultiplier({ valueKey, tokenType, model });
+  const tokenCost = amount * multiplier;
+  const { tokenCredits: balance } = await this.findOne({ user }, 'tokenCredits').lean();
 
   if (debug) {
     console.log('balance check', {
@@ -20,15 +21,18 @@ balanceSchema.statics.check = async function ({ user, model, valueKey, tokenType
   }
 
   if (!balance) {
-    return false;
+    return {
+      canSpend: false,
+      balance: 0,
+      tokenCost,
+    };
   }
-  const tokenCost = amount * multiplier;
 
   if (debug) {
     console.log('balance check', { tokenCost });
   }
 
-  return balance >= tokenCost;
+  return { canSpend: balance >= tokenCost, balance, tokenCost };
 };
 
 module.exports = mongoose.model('Balance', balanceSchema);

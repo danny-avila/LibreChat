@@ -1,7 +1,6 @@
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const ChatGPTClient = require('./ChatGPTClient');
 const BaseClient = require('./BaseClient');
-const { Balance } = require('../../models');
 const { getModelMaxTokens, genAzureChatCompletion } = require('../../utils');
 const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
 const { createLLM, RunManager } = require('./llm');
@@ -574,14 +573,7 @@ ${convo}
       console.debug(
         `initialPromptTokens: ${initialPromptTokens}, summaryPromptTokens: ${summaryPromptTokens}`,
       );
-    const promptTokens = initialPromptTokens + summaryPromptTokens - 3;
-    await Balance.check({
-      user: this.user,
-      tokenType: 'prompt',
-      amount: promptTokens,
-      debug: this.options.debug,
-      model: OPENAI_SUMMARY_MODEL,
-    });
+    // const promptTokens = initialPromptTokens + summaryPromptTokens - 3;
 
     const llm = this.initializeLLM({
       model: OPENAI_SUMMARY_MODEL,

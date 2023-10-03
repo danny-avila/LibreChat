@@ -1,0 +1,45 @@
+const { Balance } = require('../../../models');
+const { logViolation } = require('../../../cache');
+const denyRequest = require('../../../server/middleware/denyRequest');
+
+/**
+ * Checks the balance for a user and determines if they can spend a certain amount.
+ * If the user cannot spend the amount, it logs a violation and denies the request.
+ *
+ * @async
+ * @function
+ * @param {Object} params - The function parameters.
+ * @param {Object} params.req - The Express request object.
+ * @param {Object} params.res - The Express response object.
+ * @param {Object} params.txData - The transaction data.
+ * @param {string} params.txData.user - The user ID or identifier.
+ * @param {('prompt' | 'completion')} params.txData.tokenType - The type of token.
+ * @param {number} params.txData.amount - The amount of tokens.
+ * @param {boolean} params.txData.debug - Debug flag.
+ * @param {string} params.txData.model - The model name or identifier.
+ * @returns {Promise<boolean>} Returns true if the user can spend the amount, otherwise denies the request.
+ * @throws {Error} Throws an error if there's an issue with the balance check.
+ */
+const checkBalance = async ({ req, res, txData }) => {
+  try {
+    const { canSpend, balance, tokenCost } = await Balance.check(txData);
+
+    if (canSpend) {
+      return true;
+    }
+
+    const type = 'token_balance';
+    const errorMessage = {
+      type,
+      balance,
+      tokenCost,
+    };
+
+    await logViolation(req, res, type, errorMessage, 0);
+    return await denyRequest(req, res, errorMessage);
+  } catch (err) {
+    console.error(err);
+  }
+};
+
+module.exports = checkBalance;
