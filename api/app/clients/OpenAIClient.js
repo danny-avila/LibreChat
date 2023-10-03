@@ -4,11 +4,10 @@ const BaseClient = require('./BaseClient');
 const { Balance } = require('../../models');
 const { getModelMaxTokens, genAzureChatCompletion } = require('../../utils');
 const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
-const { createStartHandler } = require('./callbacks');
+const { createLLM, RunManager } = require('./llm');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
-const { createLLM } = require('./llm');
 
 // Cache to store Tiktoken instances
 const tokenizersCache = {};
@@ -426,6 +425,7 @@ class OpenAIClient extends BaseClient {
       temperature,
       presence_penalty,
       frequency_penalty,
+      user: this.user,
     };
 
     if (max_tokens) {
@@ -448,22 +448,7 @@ class OpenAIClient extends BaseClient {
       };
     }
 
-    const { req, res } = this.options;
-
-    const callbacks = [
-      {
-        handleChatModelStart: createStartHandler({ req, res, context }),
-        handleLLMEnd: async (output, runId, _parentRunId) => {
-          console.log(`handleLLMEnd: ${context}`);
-          console.dir({ output, runId, _parentRunId }, { depth: null });
-          // output.llmOutput.tokenUsage -> completionTokens, promptTokens
-        },
-        handleLLMError: async (err) => {
-          console.log(`handleLLMError: ${context}`);
-          console.error(err);
-        },
-      },
-    ];
+    const runManager = new RunManager(this.options);
 
     const llm = createLLM({
       modelOptions,
@@ -471,7 +456,10 @@ class OpenAIClient extends BaseClient {
       openAIApiKey: this.apiKey,
       azure: this.azure,
       streaming,
-      callbacks,
+      callbacks: runManager.createCallbacks({
+        context,
+        conversationId: this.conversationId,
+      }),
     });
 
     return llm;
