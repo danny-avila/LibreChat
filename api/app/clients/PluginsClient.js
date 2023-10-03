@@ -245,7 +245,6 @@ class PluginsClient extends OpenAIClient {
       onToolEnd,
     } = await this.handleStartMethods(message, opts);
 
-    this.conversationId = conversationId;
     this.currentMessages.push(userMessage);
 
     let {

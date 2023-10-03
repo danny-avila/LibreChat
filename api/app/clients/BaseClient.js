@@ -64,6 +64,7 @@ class BaseClient {
     let responseMessageId = opts.responseMessageId ?? crypto.randomUUID();
     let head = isEdited ? responseMessageId : parentMessageId;
     this.currentMessages = (await this.loadHistory(conversationId, head)) ?? [];
+    this.conversationId = conversationId;
 
     if (isEdited && !isContinued) {
       responseMessageId = crypto.randomUUID();
