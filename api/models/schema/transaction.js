@@ -8,7 +8,7 @@ const transactionSchema = mongoose.Schema({
     required: true,
   },
   conversationId: {
-    type: mongoose.Schema.Types.ObjectId,
+    type: String,
     ref: 'Conversation',
     index: true,
   },
