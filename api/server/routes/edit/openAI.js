@@ -107,11 +107,6 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       response = { ...response, ...metadata };
     }
 
-    console.log(
-      'promptTokens, completionTokens:',
-      response.promptTokens,
-      response.completionTokens,
-    );
     await saveMessage({ ...response, user });
 
     sendMessage(res, {
