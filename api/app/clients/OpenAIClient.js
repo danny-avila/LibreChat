@@ -3,7 +3,7 @@ const ChatGPTClient = require('./ChatGPTClient');
 const BaseClient = require('./BaseClient');
 const { getModelMaxTokens, genAzureChatCompletion } = require('../../utils');
 const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
-const { createLLM, RunManager } = require('./llm');
+const { createLLM, RunManager, checkBalance } = require('./llm');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
@@ -324,6 +324,18 @@ class OpenAIClient extends BaseClient {
       }));
     }
 
+    await checkBalance({
+      req: this.options.req,
+      res: this.options.res,
+      txData: {
+        user: this.user,
+        tokenType: 'prompt',
+        amount: promptTokens,
+        debug: this.options.debug,
+        model: this.modelOptions.model,
+      },
+    });
+
     const result = {
       prompt: payload,
       promptTokens,
@@ -418,6 +430,7 @@ class OpenAIClient extends BaseClient {
     max_tokens,
     streaming,
     context,
+    tokenBuffer,
   }) {
     const modelOptions = {
       modelName: modelName ?? model,
@@ -457,6 +470,7 @@ class OpenAIClient extends BaseClient {
       streaming,
       callbacks: runManager.createCallbacks({
         context,
+        tokenBuffer,
         conversationId: this.conversationId,
       }),
     });
@@ -579,6 +593,7 @@ ${convo}
       model: OPENAI_SUMMARY_MODEL,
       temperature: 0.2,
       context: 'summary',
+      tokenBuffer: initialPromptTokens,
     });
 
     try {
