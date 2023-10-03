@@ -11,6 +11,9 @@ transactionSchema.methods.calculateTokenValue = function () {
   const { valueKey, tokenType, model } = this;
   const multiplier = getMultiplier({ valueKey, tokenType, model });
   this.tokenValue = this.rawAmount * multiplier;
+  if (this.context && this.context === 'incomplete') {
+    this.tokenValue = this.tokenValue * 1.2;
+  }
 };
 
 // Static method to create a transaction and update the balance
