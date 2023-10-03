@@ -26,6 +26,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
   console.log('ask log');
   console.dir({ text, conversationId, endpointOption }, { depth: null });
   let userMessage;
+  let promptTokens;
   let userMessageId;
   let responseMessageId;
   let lastSavedTimestamp = 0;
@@ -33,12 +34,18 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
   const sender = getResponseSender(endpointOption);
   const user = req.user.id;
 
-  const getIds = (data) => {
-    userMessage = data.userMessage;
-    userMessageId = data.userMessage.messageId;
-    responseMessageId = data.responseMessageId;
-    if (!conversationId) {
-      conversationId = data.conversationId;
+  const getIds = (data = {}) => {
+    for (let key in data) {
+      if (key === 'userMessage') {
+        userMessage = data[key];
+        userMessageId = data[key].messageId;
+      } else if (key === 'responseMessageId') {
+        responseMessageId = data[key];
+      } else if (key === 'promptTokens') {
+        promptTokens = data[key];
+      } else if (!conversationId && key === 'conversationId') {
+        conversationId = data[key];
+      }
     }
   };
 
@@ -74,6 +81,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       parentMessageId: overrideParentMessageId ?? userMessageId,
       text: getPartialText(),
       userMessage,
+      promptTokens,
     });
 
     const { abortController, onStart } = createAbortController(req, res, getAbortData);

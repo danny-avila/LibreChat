@@ -30,6 +30,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
   console.dir({ text, generation, isContinued, conversationId, endpointOption }, { depth: null });
   let metadata;
   let userMessage;
+  let promptTokens;
   let lastSavedTimestamp = 0;
   let saveDelay = 100;
   const sender = getResponseSender(endpointOption);
@@ -37,9 +38,16 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
   const user = req.user.id;
 
   const addMetadata = (data) => (metadata = data);
-  const getIds = (data) => {
-    userMessage = data.userMessage;
-    responseMessageId = data.responseMessageId;
+  const getIds = (data = {}) => {
+    for (let key in data) {
+      if (key === 'userMessage') {
+        userMessage = data[key];
+      } else if (key === 'responseMessageId') {
+        responseMessageId = data[key];
+      } else if (key === 'promptTokens') {
+        promptTokens = data[key];
+      }
+    }
   };
 
   const { onProgress: progressCallback, getPartialText } = createOnProgress({
@@ -75,6 +83,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       parentMessageId: overrideParentMessageId ?? userMessageId,
       text: getPartialText(),
       userMessage,
+      promptTokens,
     });
 
     const { abortController, onStart } = createAbortController(req, res, getAbortData);

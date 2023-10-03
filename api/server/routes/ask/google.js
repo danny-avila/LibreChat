@@ -52,18 +52,25 @@ router.post('/', setHeaders, async (req, res) => {
 const ask = async ({ text, endpointOption, parentMessageId = null, conversationId, req, res }) => {
   let userMessage;
   let userMessageId;
+  // let promptTokens;
   let responseMessageId;
   let lastSavedTimestamp = 0;
   const { overrideParentMessageId = null } = req.body;
   const user = req.user.id;
 
   try {
-    const getIds = (data) => {
-      userMessage = data.userMessage;
-      userMessageId = userMessage.messageId;
-      responseMessageId = data.responseMessageId;
-      if (!conversationId) {
-        conversationId = data.conversationId;
+    const getIds = (data = {}) => {
+      for (let key in data) {
+        if (key === 'userMessage') {
+          userMessage = data[key];
+          userMessageId = data[key].messageId;
+        } else if (key === 'responseMessageId') {
+          responseMessageId = data[key];
+          // } else if (key === 'promptTokens') {
+          //   promptTokens = data[key];
+        } else if (!conversationId && key === 'conversationId') {
+          conversationId = data[key];
+        }
       }
 
       sendMessage(res, { message: userMessage, created: true });
