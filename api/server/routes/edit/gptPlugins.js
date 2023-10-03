@@ -46,7 +46,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
   };
 
   const addMetadata = (data) => (metadata = data);
-  const getIds = (data = {}) => {
+  const getReqData = (data = {}) => {
     for (let key in data) {
       if (key === 'userMessage') {
         userMessage = data[key];
@@ -139,7 +139,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       parentMessageId,
       responseMessageId,
       overrideParentMessageId,
-      getIds,
+      getReqData,
       onAgentAction,
       onChainEnd,
       onStart,

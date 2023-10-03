@@ -34,7 +34,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
   const sender = getResponseSender(endpointOption);
   const user = req.user.id;
 
-  const getIds = (data = {}) => {
+  const getReqData = (data = {}) => {
     for (let key in data) {
       if (key === 'userMessage') {
         userMessage = data[key];
@@ -89,7 +89,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     const { client } = await initializeClient({ req, res, endpointOption });
 
     let response = await client.sendMessage(text, {
-      getIds,
+      getReqData,
       // debug: true,
       user,
       conversationId,

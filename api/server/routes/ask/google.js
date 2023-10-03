@@ -59,7 +59,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
   const user = req.user.id;
 
   try {
-    const getIds = (data = {}) => {
+    const getReqData = (data = {}) => {
       for (let key in data) {
         if (key === 'userMessage') {
           userMessage = data[key];
@@ -128,7 +128,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
     const client = new GoogleClient(key, clientOptions);
 
     let response = await client.sendMessage(text, {
-      getIds,
+      getReqData,
       user,
       conversationId,
       parentMessageId,

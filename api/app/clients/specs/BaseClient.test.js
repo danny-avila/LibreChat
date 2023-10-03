@@ -455,7 +455,7 @@ describe('BaseClient', () => {
       const opts = {
         conversationId,
         parentMessageId,
-        getIds: jest.fn(),
+        getReqData: jest.fn(),
         onStart: jest.fn(),
       };
 
@@ -472,7 +472,7 @@ describe('BaseClient', () => {
       parentMessageId = response.messageId;
       expect(response.conversationId).toEqual(conversationId);
       expect(response).toEqual(expectedResult);
-      expect(opts.getIds).toHaveBeenCalled();
+      expect(opts.getReqData).toHaveBeenCalled();
       expect(opts.onStart).toHaveBeenCalled();
       expect(TestClient.getBuildMessagesOptions).toHaveBeenCalled();
       expect(TestClient.getSaveOptions).toHaveBeenCalled();
@@ -546,11 +546,11 @@ describe('BaseClient', () => {
       );
     });
 
-    test('getIds is called with the correct arguments', async () => {
-      const getIds = jest.fn();
-      const opts = { getIds };
+    test('getReqData is called with the correct arguments', async () => {
+      const getReqData = jest.fn();
+      const opts = { getReqData };
       const response = await TestClient.sendMessage('Hello, world!', opts);
-      expect(getIds).toHaveBeenCalledWith({
+      expect(getReqData).toHaveBeenCalledWith({
         userMessage: expect.objectContaining({ text: 'Hello, world!' }),
         conversationId: response.conversationId,
         responseMessageId: response.messageId,

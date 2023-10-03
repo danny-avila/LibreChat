@@ -121,8 +121,8 @@ class BaseClient {
         text: message,
       });
 
-    if (typeof opts?.getIds === 'function') {
-      opts.getIds({
+    if (typeof opts?.getReqData === 'function') {
+      opts.getReqData({
         userMessage,
         conversationId,
         responseMessageId,
