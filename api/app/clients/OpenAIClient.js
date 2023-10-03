@@ -3,7 +3,7 @@ const ChatGPTClient = require('./ChatGPTClient');
 const BaseClient = require('./BaseClient');
 const { getModelMaxTokens, genAzureChatCompletion } = require('../../utils');
 const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
-const { createLLM, RunManager, checkBalance } = require('./llm');
+const { createLLM, RunManager, checkBalance, spendTokens } = require('./llm');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
@@ -626,6 +626,22 @@ ${convo}
       console.error(e);
       return {};
     }
+  }
+
+  async logTokenCost({ promptTokens, completionTokens }) {
+    if (this.options.debug) {
+      console.debug('promptTokens', promptTokens);
+      console.debug('completionTokens', completionTokens);
+    }
+    await spendTokens(
+      {
+        user: this.user,
+        model: this.modelOptions.model,
+        context: 'message',
+        conversationId: this.conversationId,
+      },
+      { promptTokens, completionTokens },
+    );
   }
 }
 
