@@ -6,7 +6,7 @@ const langSchema = z.object({
   language: z.string().describe('The language of the input text (full noun, no abbreviations).'),
 });
 
-const createLanguageChain = ({ config }) =>
+const createLanguageChain = (config) =>
   createStructuredOutputChainFromZod(langSchema, {
     prompt: langPrompt,
     ...config,
