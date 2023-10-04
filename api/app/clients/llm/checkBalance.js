@@ -1,7 +1,5 @@
 const { Balance } = require('../../../models');
 const { logViolation } = require('../../../cache');
-const denyRequest = require('../../../server/middleware/denyRequest');
-
 /**
  * Checks the balance for a user and determines if they can spend a certain amount.
  * If the user cannot spend the amount, it logs a violation and denies the request.
@@ -21,25 +19,21 @@ const denyRequest = require('../../../server/middleware/denyRequest');
  * @throws {Error} Throws an error if there's an issue with the balance check.
  */
 const checkBalance = async ({ req, res, txData }) => {
-  try {
-    const { canSpend, balance, tokenCost } = await Balance.check(txData);
+  const { canSpend, balance, tokenCost } = await Balance.check(txData);
 
-    if (canSpend) {
-      return true;
-    }
-
-    const type = 'token_balance';
-    const errorMessage = {
-      type,
-      balance,
-      tokenCost,
-    };
-
-    await logViolation(req, res, type, errorMessage, 0);
-    return await denyRequest(req, res, errorMessage);
-  } catch (err) {
-    console.error(err);
+  if (canSpend) {
+    return true;
   }
+
+  const type = 'token_balance';
+  const errorMessage = {
+    type,
+    balance,
+    tokenCost,
+  };
+
+  await logViolation(req, res, type, errorMessage, 0);
+  throw new Error(JSON.stringify(errorMessage));
 };
 
 module.exports = checkBalance;
