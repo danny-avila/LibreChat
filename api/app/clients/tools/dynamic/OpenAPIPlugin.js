@@ -83,7 +83,7 @@ async function getSpec(url) {
   return ValidSpecPath.parse(url);
 }
 
-async function createOpenAPIPlugin({ data, llm, user, message, memory, verbose = false }) {
+async function createOpenAPIPlugin({ data, llm, user, message, memory, signal, verbose = false }) {
   let spec;
   try {
     spec = await getSpec(data.api.url, verbose);
@@ -113,11 +113,6 @@ async function createOpenAPIPlugin({ data, llm, user, message, memory, verbose =
     verbose,
   };
 
-  if (memory) {
-    verbose && console.debug('openAPI chain: memory detected', memory);
-    chainOptions.memory = memory;
-  }
-
   if (data.headers && data.headers['librechat_user_id']) {
     verbose && console.debug('id detected', headers);
     headers[data.headers['librechat_user_id']] = user;
@@ -133,15 +128,23 @@ async function createOpenAPIPlugin({ data, llm, user, message, memory, verbose =
     chainOptions.params = data.params;
   }
 
+  let history = '';
+  if (memory) {
+    verbose && console.debug('openAPI chain: memory detected', memory);
+    const { history: chat_history } = await memory.loadMemoryVariables({});
+    history = chat_history?.length > 0 ? `\n\n## Chat History:\n${chat_history}\n` : '';
+  }
+
   chainOptions.prompt = ChatPromptTemplate.fromMessages([
     HumanMessagePromptTemplate.fromTemplate(
       `# Use the provided API's to respond to this query:\n\n{query}\n\n## Instructions:\n${addLinePrefix(
         description_for_model,
-      )}`,
+      )}${history}`,
     ),
   ]);
 
   const chain = await createOpenAPIChain(spec, chainOptions);
+
   const { functions } = chain.chains[0].lc_kwargs.llmKwargs;
 
   return new DynamicStructuredTool({
@@ -161,8 +164,13 @@ async function createOpenAPIPlugin({ data, llm, user, message, memory, verbose =
         ),
     }),
     func: async ({ func = '' }) => {
-      const result = await chain.run(`${message}${func?.length > 0 ? `\nUse ${func}` : ''}`);
-      return result;
+      const filteredFunctions = functions.filter((f) => f.name === func);
+      chain.chains[0].lc_kwargs.llmKwargs.functions = filteredFunctions;
+      const result = await chain.call({
+        query: `${message}${func?.length > 0 ? `\nUse ${func}` : ''}`,
+        signal,
+      });
+      return result.response;
     },
   });
 }
