@@ -32,17 +32,24 @@ const createStartHandler = ({ context, conversationId, tokenBuffer = 0, manager 
     }
     prelimPromptTokens += tokenBuffer;
 
-    await checkBalance({
-      req: manager.req,
-      res: manager.res,
-      txData: {
-        user: manager.user,
-        tokenType: 'prompt',
-        amount: prelimPromptTokens,
-        debug: manager.debug,
-        model,
-      },
-    });
+    try {
+      await checkBalance({
+        req: manager.req,
+        res: manager.res,
+        txData: {
+          user: manager.user,
+          tokenType: 'prompt',
+          amount: prelimPromptTokens,
+          debug: manager.debug,
+          model,
+        },
+      });
+    } catch (err) {
+      console.error(`[${context}] checkBalance error`, err);
+      manager.debug && console.error(err);
+      manager.abortController.abort();
+      return;
+    }
 
     manager.addRun(runId, {
       model,

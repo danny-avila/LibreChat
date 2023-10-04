@@ -3,7 +3,8 @@ const spendTokens = require('./spendTokens');
 
 class RunManager {
   constructor(fields) {
-    const { req, res, debug } = fields;
+    const { req, res, abortController, debug } = fields;
+    this.abortController = abortController;
     this.user = req.user.id;
     this.req = req;
     this.res = res;

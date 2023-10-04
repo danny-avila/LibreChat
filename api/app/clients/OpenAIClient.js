@@ -464,7 +464,8 @@ class OpenAIClient extends BaseClient {
       };
     }
 
-    const runManager = new RunManager(this.options);
+    const { req, res, debug } = this.options;
+    const runManager = new RunManager({ req, res, debug, abortController: this.abortController });
 
     const llm = createLLM({
       modelOptions,
@@ -500,11 +501,16 @@ class OpenAIClient extends BaseClient {
     };
 
     try {
+      this.abortController = new AbortController();
       const llm = this.initializeLLM({ ...modelOptions, context: 'title' });
-      title = await runTitleChain({ llm, text, convo });
+      title = await runTitleChain({ llm, text, convo, signal: this.abortController.signal });
     } catch (e) {
+      if (e?.message?.toLowerCase()?.includes('abort')) {
+        this.options.debug && console.debug('Aborted title generation');
+        return;
+      }
       console.log('There was an issue generating title with LangChain, trying the old method...');
-      console.error(e.message, e);
+      this.options.debug && console.error(e.message, e);
       modelOptions.model = OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
       const instructionsPayload = [
         {
