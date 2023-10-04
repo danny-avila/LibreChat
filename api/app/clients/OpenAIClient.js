@@ -640,7 +640,7 @@ ${convo}
     }
   }
 
-  async logTokenCost({ promptTokens, completionTokens }) {
+  async recordTokenUsage({ promptTokens, completionTokens }) {
     if (this.options.debug) {
       console.debug('promptTokens', promptTokens);
       console.debug('completionTokens', completionTokens);

@@ -39,9 +39,9 @@ class BaseClient {
     throw new Error('Subclasses attempted to call summarizeMessages without implementing it');
   }
 
-  async logTokenCost({ promptTokens, completionTokens }) {
+  async recordTokenUsage({ promptTokens, completionTokens }) {
     if (this.options.debug) {
-      console.debug('`logTokenCost` not implemented.', { promptTokens, completionTokens });
+      console.debug('`recordTokenUsage` not implemented.', { promptTokens, completionTokens });
     }
   }
 
@@ -444,7 +444,7 @@ class BaseClient {
       responseMessage.tokenCount = this.getTokenCount(completion);
       responseMessage.completionTokens = responseMessage.tokenCount;
     }
-    await this.logTokenCost(responseMessage);
+    await this.recordTokenUsage(responseMessage);
     await this.saveMessageToDatabase(responseMessage, saveOptions, user);
     delete responseMessage.tokenCount;
     return responseMessage;

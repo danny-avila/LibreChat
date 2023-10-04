@@ -217,7 +217,7 @@ class PluginsClient extends OpenAIClient {
   async handleResponseMessage(responseMessage, saveOptions, user) {
     responseMessage.tokenCount = this.getTokenCount(responseMessage.text);
     responseMessage.completionTokens = responseMessage.tokenCount;
-    await this.logTokenCost(responseMessage);
+    await this.recordTokenUsage(responseMessage);
     await this.saveMessageToDatabase(responseMessage, saveOptions, user);
     delete responseMessage.tokenCount;
     return { ...responseMessage, ...this.result };
