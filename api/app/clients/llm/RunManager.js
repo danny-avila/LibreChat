@@ -78,12 +78,13 @@ class RunManager {
           this.debug && console.error(err);
           if (metadata.context === 'title') {
             return;
+          } else if (metadata.context === 'plugins') {
+            throw new Error(err);
           }
           const { conversationId } = metadata;
-          const { run, runId } = this.getRunByConversationId(conversationId);
+          const { run } = this.getRunByConversationId(conversationId);
           if (run && run.error) {
             const { error } = run;
-            this.removeRun(runId);
             throw new Error(error);
           }
         },
