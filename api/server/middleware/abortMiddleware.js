@@ -1,6 +1,6 @@
 const { saveMessage, getConvo, getConvoTitle } = require('../../models');
 const { sendMessage, sendError, countTokens } = require('../utils');
-const { spendTokens } = require('../../app/clients/llm');
+const spendTokens = require('../../app/clients/llm/spendTokens');
 const abortControllers = require('./abortControllers');
 
 async function abortMessage(req, res) {
@@ -43,7 +43,7 @@ const createAbortController = (req, res, getAbortData) => {
   abortController.abortCompletion = async function () {
     abortController.abort();
     const { conversationId, userMessage, promptTokens, ...responseData } = getAbortData();
-    const completionTokens = await countTokens(responseData.text);
+    const completionTokens = await countTokens(responseData?.text ?? '');
     const user = req.user.id;
 
     const responseMessage = {
