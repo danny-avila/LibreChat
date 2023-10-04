@@ -6,28 +6,26 @@ const langSchema = z.object({
   language: z.string().describe('The language of the input text (full noun, no abbreviations).'),
 });
 
-const createLanguageChain = ({ llm, callbacks }) =>
+const createLanguageChain = ({ config }) =>
   createStructuredOutputChainFromZod(langSchema, {
     prompt: langPrompt,
-    callbacks,
-    llm,
+    ...config,
     // verbose: true,
   });
 
 const titleSchema = z.object({
   title: z.string().describe('The conversation title in title-case, in the given language.'),
 });
-const createTitleChain = ({ llm, convo, callbacks }) => {
+const createTitleChain = ({ convo, ...config }) => {
   const titlePrompt = createTitlePrompt({ convo });
   return createStructuredOutputChainFromZod(titleSchema, {
     prompt: titlePrompt,
-    callbacks,
-    llm,
+    ...config,
     // verbose: true,
   });
 };
 
-const runTitleChain = async ({ llm, text, convo, callbacks }) => {
+const runTitleChain = async ({ llm, text, convo, signal, callbacks }) => {
   let snippet = text;
   try {
     snippet = getSnippet(text);
@@ -37,8 +35,8 @@ const runTitleChain = async ({ llm, text, convo, callbacks }) => {
   }
   const languageChain = createLanguageChain({ llm, callbacks });
   const titleChain = createTitleChain({ llm, callbacks, convo: escapeBraces(convo) });
-  const { language } = await languageChain.run(snippet);
-  return (await titleChain.run(language)).title;
+  const { language } = (await languageChain.call({ inputText: snippet, signal })).output;
+  return (await titleChain.call({ language, signal })).output.title;
 };
 
 module.exports = runTitleChain;
