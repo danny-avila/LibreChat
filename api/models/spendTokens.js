@@ -1,7 +1,7 @@
-const { Transaction } = require('../../../models');
+const Transaction = require('./Transaction');
 
 /**
- * Creates two transactions to record the spending of tokens.
+ * Creates up to two transactions to record the spending of tokens.
  *
  * @function
  * @async

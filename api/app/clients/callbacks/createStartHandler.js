@@ -1,6 +1,6 @@
 const { promptTokensEstimate } = require('openai-chat-tokens');
 const { formatFromLangChain } = require('../prompts');
-const checkBalance = require('../llm/checkBalance');
+const checkBalance = require('../../../models/checkBalance');
 
 const createStartHandler = ({ context, conversationId, tokenBuffer = 0, manager }) => {
   return async (_llm, _messages, runId, parentRunId, extraParams) => {

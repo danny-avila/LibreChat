@@ -1,5 +1,5 @@
 const { createStartHandler } = require('../callbacks');
-const spendTokens = require('./spendTokens');
+const spendTokens = require('../../../models/spendTokens');
 
 class RunManager {
   constructor(fields) {
@@ -53,7 +53,6 @@ class RunManager {
   }
 
   createCallbacks(metadata) {
-    // const { context, conversationId } = metadata;
     return [
       {
         handleChatModelStart: createStartHandler({ ...metadata, manager: this }),
@@ -76,6 +75,10 @@ class RunManager {
         },
         handleLLMError: async (err) => {
           this.debug && console.log(`handleLLMError: ${JSON.stringify(metadata)}`);
+          this.debug && console.error(err);
+          if (metadata.context === 'title') {
+            return;
+          }
           const { conversationId } = metadata;
           const { run, runId } = this.getRunByConversationId(conversationId);
           if (run && run.error) {
@@ -83,7 +86,6 @@ class RunManager {
             this.removeRun(runId);
             throw new Error(error);
           }
-          this.debug && console.error(err);
         },
       },
     ];

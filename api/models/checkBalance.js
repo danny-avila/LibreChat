@@ -1,5 +1,5 @@
-const { Balance } = require('../../../models');
-const { logViolation } = require('../../../cache');
+const Balance = require('./Balance');
+const { logViolation } = require('../cache');
 /**
  * Checks the balance for a user and determines if they can spend a certain amount.
  * If the user cannot spend the amount, it logs a violation and denies the request.

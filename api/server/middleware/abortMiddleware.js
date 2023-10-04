@@ -1,6 +1,6 @@
 const { saveMessage, getConvo, getConvoTitle } = require('../../models');
 const { sendMessage, sendError, countTokens } = require('../utils');
-const spendTokens = require('../../app/clients/llm/spendTokens');
+const spendTokens = require('../../models/spendTokens');
 const abortControllers = require('./abortControllers');
 
 async function abortMessage(req, res) {
