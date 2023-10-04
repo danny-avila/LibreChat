@@ -19,22 +19,28 @@ const { Transaction } = require('../../../models');
  */
 const spendTokens = async (txData, tokenUsage) => {
   const { promptTokens, completionTokens } = tokenUsage;
+  let prompt, completion;
   try {
-    const prompt = await Transaction.create({
-      ...txData,
-      tokenType: 'prompt',
-      rawAmount: -promptTokens,
-    });
+    if (promptTokens >= 0) {
+      prompt = await Transaction.create({
+        ...txData,
+        tokenType: 'prompt',
+        rawAmount: -promptTokens,
+      });
+    }
 
-    const completion = await Transaction.create({
+    if (!completionTokens) {
+      this.debug && console.dir({ prompt, completion }, { depth: null });
+      return;
+    }
+
+    completion = await Transaction.create({
       ...txData,
       tokenType: 'completion',
       rawAmount: -completionTokens,
     });
 
-    if (this.debug) {
-      console.dir({ prompt, completion }, { depth: null });
-    }
+    this.debug && console.dir({ prompt, completion }, { depth: null });
   } catch (err) {
     console.error(err);
   }
