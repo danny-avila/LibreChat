@@ -10,16 +10,23 @@ class RunManager {
     this.res = res;
     this.debug = debug;
     this.runs = new Map();
+    this.convos = new Map();
   }
 
   addRun(runId, runData) {
     if (!this.runs.has(runId)) {
       this.runs.set(runId, runData);
+      if (runData.conversationId) {
+        this.convos.set(runData.conversationId, runId);
+      }
       return runData;
     } else {
       const existingData = this.runs.get(runId);
       const update = { ...existingData, ...runData };
       this.runs.set(runId, update);
+      if (update.conversationId) {
+        this.convos.set(update.conversationId, runId);
+      }
       return update;
     }
   }
@@ -40,6 +47,11 @@ class RunManager {
     return this.runs.get(runId);
   }
 
+  getRunByConversationId(conversationId) {
+    const runId = this.convos.get(conversationId);
+    return { run: this.runs.get(runId), runId };
+  }
+
   createCallbacks(metadata) {
     // const { context, conversationId } = metadata;
     return [
@@ -56,15 +68,22 @@ class RunManager {
 
           const txData = {
             user: this.user,
-            model: run.model,
+            model: run?.model ?? 'gpt-3.5-turbo',
             ...metadata,
           };
 
           await spendTokens(txData, tokenUsage);
         },
         handleLLMError: async (err) => {
-          console.log(`handleLLMError: ${JSON.stringify(metadata)}`);
-          console.error(err);
+          this.debug && console.log(`handleLLMError: ${JSON.stringify(metadata)}`);
+          const { conversationId } = metadata;
+          const { run, runId } = this.getRunByConversationId(conversationId);
+          if (run && run.error) {
+            const { error } = run;
+            this.removeRun(runId);
+            throw new Error(error);
+          }
+          this.debug && console.error(err);
         },
       },
     ];
