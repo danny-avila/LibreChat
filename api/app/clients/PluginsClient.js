@@ -1,8 +1,8 @@
 const OpenAIClient = require('./OpenAIClient');
 const { CallbackManager } = require('langchain/callbacks');
+const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
 const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents');
 const { addImages, buildErrorInput, buildPromptPrefix } = require('./output_parsers');
-// const { createSummaryBufferMemory } = require('./memory');
 const { formatLangChainMessages } = require('./prompts');
 const { SelfReflectionTool } = require('./tools');
 const { loadTools } = require('./tools/util');
@@ -87,8 +87,11 @@ class PluginsClient extends OpenAIClient {
     });
     this.options.debug && console.debug('pastMessages: ', pastMessages);
 
-    // TODO: implement new token efficient way of processing openAPI plugins so they can "share" memory with agent
-    // const memory = createSummaryBufferMemory({ llm: this.initializeLLM(modelOptions), messages: pastMessages });
+    // TODO: use readOnly memory, TokenBufferMemory? (both unavailable in LangChainJS)
+    const memory = new BufferMemory({
+      llm: model,
+      chatHistory: new ChatMessageHistory(pastMessages),
+    });
 
     this.tools = await loadTools({
       user,
@@ -96,7 +99,8 @@ class PluginsClient extends OpenAIClient {
       tools: this.options.tools,
       functions: this.functionsAgent,
       options: {
-        // memory,
+        memory,
+        signal: this.abortController.signal,
         openAIApiKey: this.openAIApiKey,
         conversationId: this.conversationId,
         debug: this.options?.debug,
@@ -198,16 +202,12 @@ class PluginsClient extends OpenAIClient {
         break; // Exit the loop if the function call is successful
       } catch (err) {
         console.error(err);
-        errorMessage = err.message;
-        let content = '';
-        if (content) {
-          errorMessage = content;
-          break;
-        }
         if (attempts === maxAttempts) {
-          this.result.output = `Encountered an error while attempting to respond. Error: ${err.message}`;
+          const { run } = this.runManager.getRunByConversationId(this.conversationId);
+          const defaultOutput = `Encountered an error while attempting to respond. Error: ${err.message}`;
+          this.result.output = run && run.error ? run.error : defaultOutput;
+          this.result.errorMessage = run && run.error ? run.error : err.message;
           this.result.intermediateSteps = this.actions;
-          this.result.errorMessage = errorMessage;
           break;
         }
       }
@@ -215,12 +215,17 @@ class PluginsClient extends OpenAIClient {
   }
 
   async handleResponseMessage(responseMessage, saveOptions, user) {
-    responseMessage.tokenCount = this.getTokenCount(responseMessage.text);
-    responseMessage.completionTokens = responseMessage.tokenCount;
-    await this.recordTokenUsage(responseMessage);
+    const { output, errorMessage, ...result } = this.result;
+    this.options.debug &&
+      console.debug('[handleResponseMessage] Output:', { output, errorMessage, ...result });
+    if (!responseMessage.error) {
+      responseMessage.tokenCount = this.getTokenCount(responseMessage.text);
+      responseMessage.completionTokens = responseMessage.tokenCount;
+      await this.recordTokenUsage(responseMessage);
+    }
     await this.saveMessageToDatabase(responseMessage, saveOptions, user);
     delete responseMessage.tokenCount;
-    return { ...responseMessage, ...this.result };
+    return { ...responseMessage, ...result };
   }
 
   async sendMessage(message, opts = {}) {
@@ -308,6 +313,13 @@ class PluginsClient extends OpenAIClient {
     // If message was aborted mid-generation
     if (this.result?.errorMessage?.length > 0 && this.result?.errorMessage?.includes('cancel')) {
       responseMessage.text = 'Cancelled.';
+      return await this.handleResponseMessage(responseMessage, saveOptions, user);
+    }
+
+    // If error occurred during generation (likely token_balance)
+    if (this.result?.errorMessage?.length > 0) {
+      responseMessage.error = true;
+      responseMessage.text = this.result.output;
       return await this.handleResponseMessage(responseMessage, saveOptions, user);
     }
 
