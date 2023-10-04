@@ -30,6 +30,7 @@ const checkBalance = async ({ req, res, txData }) => {
     type,
     balance,
     tokenCost,
+    promptTokens: txData.amount,
   };
 
   await logViolation(req, res, type, errorMessage, 0);
