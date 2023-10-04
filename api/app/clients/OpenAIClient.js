@@ -505,7 +505,7 @@ class OpenAIClient extends BaseClient {
 
     try {
       this.abortController = new AbortController();
-      const llm = this.initializeLLM({ ...modelOptions, context: 'title' });
+      const llm = this.initializeLLM({ ...modelOptions, context: 'title', tokenBuffer: 150 });
       title = await runTitleChain({ llm, text, convo, signal: this.abortController.signal });
     } catch (e) {
       if (e?.message?.toLowerCase()?.includes('abort')) {
