@@ -46,8 +46,11 @@ const createStartHandler = ({ context, conversationId, tokenBuffer = 0, manager 
       });
     } catch (err) {
       console.error(`[${context}] checkBalance error`, err);
-      manager.debug && console.error(err);
       manager.abortController.abort();
+      if (context === 'summary') {
+        manager.addRun(runId, { conversationId, error: err.message });
+        throw new Error(err);
+      }
       return;
     }
 
