@@ -466,6 +466,7 @@ class OpenAIClient extends BaseClient {
 
     const { req, res, debug } = this.options;
     const runManager = new RunManager({ req, res, debug, abortController: this.abortController });
+    this.runManager = runManager;
 
     const llm = createLLM({
       modelOptions,
@@ -544,7 +545,7 @@ ${convo}
     const { OPENAI_SUMMARY_MODEL = 'gpt-3.5-turbo' } = process.env ?? {};
     const maxContextTokens = getModelMaxTokens(OPENAI_SUMMARY_MODEL) ?? 4095;
     // 3 tokens for the assistant label, and 98 for the summarizer prompt (101)
-    const promptBuffer = 101;
+    let promptBuffer = 101;
 
     /*
      * Note: token counting here is to block summarization if it exceeds the spend; complete
@@ -554,7 +555,6 @@ ${convo}
       (acc, message) => acc + message.tokenCount,
       promptBuffer,
     );
-    let summaryPromptTokens = excessTokenCount;
 
     if (excessTokenCount > maxContextTokens) {
       ({ context } = await this.getMessagesWithinTokenLimit(context, maxContextTokens));
@@ -564,11 +564,11 @@ ${convo}
       this.options.debug &&
         console.debug('Summary context is empty, using latest message within token limit');
 
-      let buffer = 32;
+      promptBuffer = 32;
       const { text, ...latestMessage } = messagesToRefine[messagesToRefine.length - 1];
       const splitText = await tokenSplit({
         text,
-        chunkSize: Math.floor((maxContextTokens - buffer) / 3),
+        chunkSize: Math.floor((maxContextTokens - promptBuffer) / 3),
       });
 
       const newText = `${splitText[0]}\n...[truncated]...\n${splitText[splitText.length - 1]}`;
@@ -584,20 +584,12 @@ ${convo}
           assistantName: this.options?.chatGptLabel,
         }),
       ];
-      summaryPromptTokens = this.getTokenCountForMessage(context[0]) + buffer;
-    } else if (context.length !== messagesToRefine.length) {
-      summaryPromptTokens = context.reduce(
-        (acc, message) => acc + message.tokenCount,
-        promptBuffer,
-      );
     }
+    // TODO: We can accurately count the tokens here before handleChatModelStart
+    // by recreating the summary prompt (single message) to avoid LangChain handling
 
     const initialPromptTokens = this.maxContextTokens - remainingContextTokens;
-    this.options.debug &&
-      console.debug(
-        `initialPromptTokens: ${initialPromptTokens}, summaryPromptTokens: ${summaryPromptTokens}`,
-      );
-    // const promptTokens = initialPromptTokens + summaryPromptTokens - 3;
+    this.options.debug && console.debug(`initialPromptTokens: ${initialPromptTokens}`);
 
     const llm = this.initializeLLM({
       model: OPENAI_SUMMARY_MODEL,
@@ -617,6 +609,7 @@ ${convo}
           assistantName: this.options?.chatGptLabel ?? this.options?.modelLabel,
         },
         previous_summary: this.previous_summary?.summary,
+        signal: this.abortController.signal,
       });
 
       const summaryTokenCount = this.getTokenCountForMessage(summaryMessage);
@@ -632,8 +625,17 @@ ${convo}
 
       return { summaryMessage, summaryTokenCount };
     } catch (e) {
-      console.error('Error refining messages');
-      console.error(e);
+      if (e?.message?.toLowerCase()?.includes('abort')) {
+        this.options.debug && console.debug('Aborted summarization');
+        const { run, runId } = this.runManager.getRunByConversationId(this.conversationId);
+        if (run && run.error) {
+          const { error } = run;
+          this.runManager.removeRun(runId);
+          throw new Error(error);
+        }
+      }
+      console.error('Error summarizing messages');
+      this.options.debug && console.error(e);
       return {};
     }
   }
