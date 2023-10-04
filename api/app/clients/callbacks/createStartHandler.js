@@ -23,6 +23,7 @@ const createStartHandler = ({ context, conversationId, tokenBuffer = 0, manager 
 
     if (function_call) {
       payload.function_call = function_call;
+      prelimPromptTokens -= 5;
     }
 
     prelimPromptTokens += promptTokensEstimate(payload);
