@@ -180,6 +180,7 @@ export type TStartupConfig = {
   registrationEnabled: boolean;
   socialLoginEnabled: boolean;
   emailEnabled: boolean;
+  checkBalance: boolean;
 };
 
 export type TRefreshTokenResponse = {

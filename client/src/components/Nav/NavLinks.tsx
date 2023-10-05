@@ -1,6 +1,7 @@
 import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Fragment, useState } from 'react';
+import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import { Menu, Transition } from '@headlessui/react';
 import { ExportModel } from './ExportConversation';
@@ -16,6 +17,8 @@ import { cn } from '~/utils/';
 import store from '~/store';
 
 export default function NavLinks() {
+  const balanceQuery = useGetUserBalance();
+  const { data: startupConfig } = useGetStartupConfig();
   const [showExports, setShowExports] = useState(false);
   const [showClearConvos, setShowClearConvos] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -40,6 +43,11 @@ export default function NavLinks() {
       <Menu as="div" className="group relative">
         {({ open }) => (
           <>
+            {startupConfig?.checkBalance && balanceQuery.data && (
+              <div className="m-1 whitespace-nowrap text-left text-sm text-gray-100">
+                {`Balance: ${balanceQuery.data}`}
+              </div>
+            )}
             <Menu.Button
               className={cn(
                 'group-ui-open:bg-gray-800 flex w-full items-center gap-2.5 rounded-md px-3 py-3 text-sm transition-colors duration-200 hover:bg-gray-800',
