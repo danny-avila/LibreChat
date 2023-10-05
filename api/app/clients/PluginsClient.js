@@ -224,9 +224,13 @@ class PluginsClient extends OpenAIClient {
     const { output, errorMessage, ...result } = this.result;
     this.options.debug &&
       console.debug('[handleResponseMessage] Output:', { output, errorMessage, ...result });
-    if (!responseMessage.error) {
+    const { error } = responseMessage;
+    if (!error) {
       responseMessage.tokenCount = this.getTokenCount(responseMessage.text);
       responseMessage.completionTokens = responseMessage.tokenCount;
+    }
+
+    if (!this.agentOptions.skipCompletion && !error) {
       await this.recordTokenUsage(responseMessage);
     }
     await this.saveMessageToDatabase(responseMessage, saveOptions, user);
