@@ -42,7 +42,7 @@ const createStartHandler = ({
     try {
       if (isEnabled(process.env.CHECK_BALANCE)) {
         const generations =
-          initialMessageCount && initialMessageCount > messages.length
+          initialMessageCount && messages.length > initialMessageCount
             ? messages.slice(initialMessageCount)
             : null;
         await checkBalance({
