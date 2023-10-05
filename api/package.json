@@ -63,7 +63,7 @@
     "tiktoken": "^1.0.10",
     "ua-parser-js": "^1.0.36",
     "winston": "^3.10.0",
-    "zod": "^3.22.2"
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "jest": "^29.5.0",
