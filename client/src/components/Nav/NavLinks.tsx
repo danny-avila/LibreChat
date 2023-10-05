@@ -44,7 +44,7 @@ export default function NavLinks() {
         {({ open }) => (
           <>
             {startupConfig?.checkBalance && balanceQuery.data && (
-              <div className="m-1 whitespace-nowrap text-left text-sm text-gray-100">
+              <div className="m-1 ml-3 whitespace-nowrap text-left text-sm text-gray-100">
                 {`Balance: ${balanceQuery.data}`}
               </div>
             )}
