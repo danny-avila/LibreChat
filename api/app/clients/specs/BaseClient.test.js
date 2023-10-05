@@ -195,7 +195,7 @@ describe('BaseClient', () => {
       summaryIndex: 3,
     });
 
-    TestClient.getTokenCountForResponse = jest.fn().mockReturnValue(40);
+    TestClient.getTokenCount = jest.fn().mockReturnValue(40);
 
     const instructions = { content: 'Please provide more details.' };
     const orderedMessages = [
@@ -591,12 +591,12 @@ describe('BaseClient', () => {
       expect(TestClient.sendCompletion).toHaveBeenCalledWith(payload, opts);
     });
 
-    test('getTokenCountForResponse is called with the correct arguments', async () => {
+    test('getTokenCount for response is called with the correct arguments', async () => {
       const tokenCountMap = {}; // Mock tokenCountMap
       TestClient.buildMessages.mockReturnValue({ prompt: [], tokenCountMap });
-      TestClient.getTokenCountForResponse = jest.fn();
+      TestClient.getTokenCount = jest.fn();
       const response = await TestClient.sendMessage('Hello, world!', {});
-      expect(TestClient.getTokenCountForResponse).toHaveBeenCalledWith(response);
+      expect(TestClient.getTokenCount).toHaveBeenCalledWith(response.text);
     });
 
     test('returns an object with the correct shape', async () => {
