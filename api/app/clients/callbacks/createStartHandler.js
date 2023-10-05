@@ -3,7 +3,13 @@ const checkBalance = require('../../../models/checkBalance');
 const { isEnabled } = require('../../../server/utils');
 const { formatFromLangChain } = require('../prompts');
 
-const createStartHandler = ({ context, conversationId, tokenBuffer = 0, manager }) => {
+const createStartHandler = ({
+  context,
+  conversationId,
+  tokenBuffer = 0,
+  initialMessageCount,
+  manager,
+}) => {
   return async (_llm, _messages, runId, parentRunId, extraParams) => {
     const { invocation_params } = extraParams;
     const { model, functions, function_call } = invocation_params;
@@ -35,6 +41,10 @@ const createStartHandler = ({ context, conversationId, tokenBuffer = 0, manager 
 
     try {
       if (isEnabled(process.env.CHECK_BALANCE)) {
+        const generations =
+          initialMessageCount && initialMessageCount > messages.length
+            ? messages.slice(initialMessageCount)
+            : null;
         await checkBalance({
           req: manager.req,
           res: manager.res,
@@ -43,6 +53,7 @@ const createStartHandler = ({ context, conversationId, tokenBuffer = 0, manager 
             tokenType: 'prompt',
             amount: prelimPromptTokens,
             debug: manager.debug,
+            generations,
             model,
           },
         });

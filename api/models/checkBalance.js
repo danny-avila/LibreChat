@@ -33,6 +33,10 @@ const checkBalance = async ({ req, res, txData }) => {
     promptTokens: txData.amount,
   };
 
+  if (txData.generations && txData.generations.length > 0) {
+    errorMessage.generations = txData.generations;
+  }
+
   await logViolation(req, res, type, errorMessage, 0);
   throw new Error(JSON.stringify(errorMessage));
 };

@@ -424,6 +424,7 @@ class OpenAIClient extends BaseClient {
     streaming,
     context,
     tokenBuffer,
+    initialMessageCount,
   }) {
     const modelOptions = {
       modelName: modelName ?? model,
@@ -467,6 +468,7 @@ class OpenAIClient extends BaseClient {
         context,
         tokenBuffer,
         conversationId: this.conversationId,
+        initialMessageCount,
       }),
     });
 
