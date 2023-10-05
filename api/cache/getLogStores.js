@@ -12,6 +12,7 @@ const namespaces = {
   concurrent: new Keyv({ store: violationFile, namespace: 'concurrent' }),
   non_browser: new Keyv({ store: violationFile, namespace: 'non_browser' }),
   message_limit: new Keyv({ store: violationFile, namespace: 'message_limit' }),
+  token_balance: new Keyv({ store: violationFile, namespace: 'token_balance' }),
   registrations: new Keyv({ store: violationFile, namespace: 'registrations' }),
   logins: new Keyv({ store: violationFile, namespace: 'logins' }),
 };

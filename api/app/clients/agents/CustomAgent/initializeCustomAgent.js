@@ -2,7 +2,7 @@ const CustomAgent = require('./CustomAgent');
 const { CustomOutputParser } = require('./outputParser');
 const { AgentExecutor } = require('langchain/agents');
 const { LLMChain } = require('langchain/chains');
-const { ConversationSummaryBufferMemory, ChatMessageHistory } = require('langchain/memory');
+const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
 const {
   ChatPromptTemplate,
   SystemMessagePromptTemplate,
@@ -27,7 +27,7 @@ Query: {input}
 
   const outputParser = new CustomOutputParser({ tools });
 
-  const memory = new ConversationSummaryBufferMemory({
+  const memory = new BufferMemory({
     llm: model,
     chatHistory: new ChatMessageHistory(pastMessages),
     // returnMessages: true, // commenting this out retains memory

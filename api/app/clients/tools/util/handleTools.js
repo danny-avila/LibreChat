@@ -225,6 +225,7 @@ const loadTools = async ({
       user,
       message: options.message,
       memory: options.memory,
+      signal: options.signal,
       tools: remainingTools,
       map: true,
       verbose: false,

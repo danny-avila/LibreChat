@@ -3,7 +3,7 @@ const { isEnabled } = require('../../../utils');
 const { getAzureCredentials } = require('../../../../utils');
 const { getUserKey, checkUserKeyExpiry } = require('../../../services/UserService');
 
-const initializeClient = async (req, endpointOption) => {
+const initializeClient = async ({ req, res, endpointOption }) => {
   const {
     PROXY,
     OPENAI_API_KEY,
@@ -19,6 +19,8 @@ const initializeClient = async (req, endpointOption) => {
     contextStrategy,
     reverseProxyUrl: OPENAI_REVERSE_PROXY ?? null,
     proxy: PROXY ?? null,
+    req,
+    res,
     ...endpointOption,
   };
 

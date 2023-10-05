@@ -30,6 +30,7 @@ const logViolation = async (req, res, type, errorMessage, score = 1) => {
   await banViolation(req, res, errorMessage);
   const userLogs = (await logs.get(userId)) ?? [];
   userLogs.push(errorMessage);
+  delete errorMessage.user_id;
   await logs.set(userId, userLogs);
 };
 

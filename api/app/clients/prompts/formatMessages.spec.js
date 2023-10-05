@@ -1,4 +1,4 @@
-const { formatMessage, formatLangChainMessages } = require('./formatMessages'); // Adjust the path accordingly
+const { formatMessage, formatLangChainMessages, formatFromLangChain } = require('./formatMessages');
 const { HumanMessage, AIMessage, SystemMessage } = require('langchain/schema');
 
 describe('formatMessage', () => {
@@ -122,6 +122,39 @@ describe('formatMessage', () => {
     expect(result).toBeInstanceOf(SystemMessage);
     expect(result.lc_kwargs.content).toEqual(input.message.text);
   });
+
+  it('formats langChain messages into OpenAI payload format', () => {
+    const human = {
+      message: new HumanMessage({
+        content: 'Hello',
+      }),
+    };
+    const system = {
+      message: new SystemMessage({
+        content: 'Hello',
+      }),
+    };
+    const ai = {
+      message: new AIMessage({
+        content: 'Hello',
+      }),
+    };
+    const humanResult = formatMessage(human);
+    const systemResult = formatMessage(system);
+    const aiResult = formatMessage(ai);
+    expect(humanResult).toEqual({
+      role: 'user',
+      content: 'Hello',
+    });
+    expect(systemResult).toEqual({
+      role: 'system',
+      content: 'Hello',
+    });
+    expect(aiResult).toEqual({
+      role: 'assistant',
+      content: 'Hello',
+    });
+  });
 });
 
 describe('formatLangChainMessages', () => {
@@ -156,5 +189,59 @@ describe('formatLangChainMessages', () => {
 
     expect(result[1].lc_kwargs.name).toEqual(formatOptions.userName);
     expect(result[2].lc_kwargs.name).toEqual(formatOptions.assistantName);
+  });
+
+  describe('formatFromLangChain', () => {
+    it('should merge kwargs and additional_kwargs', () => {
+      const message = {
+        kwargs: {
+          content: 'some content',
+          name: 'dan',
+          additional_kwargs: {
+            function_call: {
+              name: 'dall-e',
+              arguments: '{\n  "input": "Subject: hedgehog, Style: cute"\n}',
+            },
+          },
+        },
+      };
+
+      const expected = {
+        content: 'some content',
+        name: 'dan',
+        function_call: {
+          name: 'dall-e',
+          arguments: '{\n  "input": "Subject: hedgehog, Style: cute"\n}',
+        },
+      };
+
+      expect(formatFromLangChain(message)).toEqual(expected);
+    });
+
+    it('should handle messages without additional_kwargs', () => {
+      const message = {
+        kwargs: {
+          content: 'some content',
+          name: 'dan',
+        },
+      };
+
+      const expected = {
+        content: 'some content',
+        name: 'dan',
+      };
+
+      expect(formatFromLangChain(message)).toEqual(expected);
+    });
+
+    it('should handle empty messages', () => {
+      const message = {
+        kwargs: {},
+      };
+
+      const expected = {};
+
+      expect(formatFromLangChain(message)).toEqual(expected);
+    });
   });
 });

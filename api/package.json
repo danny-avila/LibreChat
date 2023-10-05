@@ -48,7 +48,8 @@
     "meilisearch": "^0.33.0",
     "mongoose": "^7.1.1",
     "nodemailer": "^6.9.4",
-    "openai": "^3.2.1",
+    "openai": "^4.11.1",
+    "openai-chat-tokens": "^0.2.8",
     "openid-client": "^5.4.2",
     "passport": "^0.6.0",
     "passport-discord": "^0.1.4",
@@ -62,7 +63,7 @@
     "tiktoken": "^1.0.10",
     "ua-parser-js": "^1.0.36",
     "winston": "^3.10.0",
-    "zod": "^3.22.2"
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "jest": "^29.5.0",

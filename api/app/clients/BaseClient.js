@@ -1,7 +1,8 @@
 const crypto = require('crypto');
 const TextStream = require('./TextStream');
 const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('../../models');
-const { addSpaceIfNeeded } = require('../../server/utils');
+const { addSpaceIfNeeded, isEnabled } = require('../../server/utils');
+const checkBalance = require('../../models/checkBalance');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -39,6 +40,12 @@ class BaseClient {
     throw new Error('Subclasses attempted to call summarizeMessages without implementing it');
   }
 
+  async recordTokenUsage({ promptTokens, completionTokens }) {
+    if (this.options.debug) {
+      console.debug('`recordTokenUsage` not implemented.', { promptTokens, completionTokens });
+    }
+  }
+
   getBuildMessagesOptions() {
     throw new Error('Subclasses must implement getBuildMessagesOptions');
   }
@@ -64,6 +71,7 @@ class BaseClient {
     let responseMessageId = opts.responseMessageId ?? crypto.randomUUID();
     let head = isEdited ? responseMessageId : parentMessageId;
     this.currentMessages = (await this.loadHistory(conversationId, head)) ?? [];
+    this.conversationId = conversationId;
 
     if (isEdited && !isContinued) {
       responseMessageId = crypto.randomUUID();
@@ -114,8 +122,8 @@ class BaseClient {
         text: message,
       });
 
-    if (typeof opts?.getIds === 'function') {
-      opts.getIds({
+    if (typeof opts?.getReqData === 'function') {
+      opts.getReqData({
         userMessage,
         conversationId,
         responseMessageId,
@@ -420,6 +428,21 @@ class BaseClient {
       await this.saveMessageToDatabase(userMessage, saveOptions, user);
     }
 
+    if (isEnabled(process.env.CHECK_BALANCE)) {
+      await checkBalance({
+        req: this.options.req,
+        res: this.options.res,
+        txData: {
+          user: this.user,
+          tokenType: 'prompt',
+          amount: promptTokens,
+          debug: this.options.debug,
+          model: this.modelOptions.model,
+        },
+      });
+    }
+
+    const completion = await this.sendCompletion(payload, opts);
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
@@ -428,14 +451,15 @@ class BaseClient {
       isEdited,
       model: this.modelOptions.model,
       sender: this.sender,
-      text: addSpaceIfNeeded(generation) + (await this.sendCompletion(payload, opts)),
+      text: addSpaceIfNeeded(generation) + completion,
       promptTokens,
     };
 
-    if (tokenCountMap && this.getTokenCountForResponse) {
-      responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
+    if (tokenCountMap && this.getTokenCount) {
+      responseMessage.tokenCount = this.getTokenCount(completion);
       responseMessage.completionTokens = responseMessage.tokenCount;
     }
+    await this.recordTokenUsage(responseMessage);
     await this.saveMessageToDatabase(responseMessage, saveOptions, user);
     delete responseMessage.tokenCount;
     return responseMessage;
