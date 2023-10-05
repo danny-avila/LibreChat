@@ -111,3 +111,16 @@ const Transaction = require('@librechat/backend/models/Transaction');
 New Balance: ${result.tokenCredits}`);
   silentExit(0);
 })();
+
+process.on('uncaughtException', (err) => {
+  if (!err.message.includes('fetch failed')) {
+    console.error('There was an uncaught error:');
+    console.error(err);
+  }
+
+  if (err.message.includes('fetch failed')) {
+    return;
+  } else {
+    process.exit(1);
+  }
+});
