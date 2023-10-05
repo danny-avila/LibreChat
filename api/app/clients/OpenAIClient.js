@@ -3,7 +3,6 @@ const ChatGPTClient = require('./ChatGPTClient');
 const BaseClient = require('./BaseClient');
 const { getModelMaxTokens, genAzureChatCompletion } = require('../../utils');
 const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
-const checkBalance = require('../../models/checkBalance');
 const spendTokens = require('../../models/spendTokens');
 const { createLLM, RunManager } = require('./llm');
 const { summaryBuffer } = require('./memory');
@@ -325,18 +324,6 @@ class OpenAIClient extends BaseClient {
         formattedMessages,
       }));
     }
-
-    await checkBalance({
-      req: this.options.req,
-      res: this.options.res,
-      txData: {
-        user: this.user,
-        tokenType: 'prompt',
-        amount: promptTokens,
-        debug: this.options.debug,
-        model: this.modelOptions.model,
-      },
-    });
 
     const result = {
       prompt: payload,

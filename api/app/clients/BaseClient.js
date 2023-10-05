@@ -1,7 +1,8 @@
 const crypto = require('crypto');
 const TextStream = require('./TextStream');
 const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('../../models');
-const { addSpaceIfNeeded } = require('../../server/utils');
+const { addSpaceIfNeeded, isEnabled } = require('../../server/utils');
+const checkBalance = require('../../models/checkBalance');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -425,6 +426,20 @@ class BaseClient {
 
     if (!isEdited) {
       await this.saveMessageToDatabase(userMessage, saveOptions, user);
+    }
+
+    if (isEnabled(process.env.CHECK_BALANCE)) {
+      await checkBalance({
+        req: this.options.req,
+        res: this.options.res,
+        txData: {
+          user: this.user,
+          tokenType: 'prompt',
+          amount: promptTokens,
+          debug: this.options.debug,
+          model: this.modelOptions.model,
+        },
+      });
     }
 
     const completion = await this.sendCompletion(payload, opts);

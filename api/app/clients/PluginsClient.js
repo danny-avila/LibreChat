@@ -3,7 +3,9 @@ const { CallbackManager } = require('langchain/callbacks');
 const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
 const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents');
 const { addImages, buildErrorInput, buildPromptPrefix } = require('./output_parsers');
+const checkBalance = require('../../models/checkBalance');
 const { formatLangChainMessages } = require('./prompts');
+const { isEnabled } = require('../../server/utils');
 const { SelfReflectionTool } = require('./tools');
 const { loadTools } = require('./tools/util');
 
@@ -235,9 +237,7 @@ class PluginsClient extends OpenAIClient {
       this.setOptions(opts);
       return super.sendMessage(message, opts);
     }
-    if (this.options.debug) {
-      console.log('Plugins sendMessage', message, opts);
-    }
+    this.options.debug && console.log('Plugins sendMessage', message, opts);
     const {
       user,
       isEdited,
@@ -280,6 +280,21 @@ class PluginsClient extends OpenAIClient {
       this.currentMessages = payload;
     }
     await this.saveMessageToDatabase(userMessage, saveOptions, user);
+
+    if (isEnabled(process.env.CHECK_BALANCE)) {
+      await checkBalance({
+        req: this.options.req,
+        res: this.options.res,
+        txData: {
+          user: this.user,
+          tokenType: 'prompt',
+          amount: promptTokens,
+          debug: this.options.debug,
+          model: this.modelOptions.model,
+        },
+      });
+    }
+
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,

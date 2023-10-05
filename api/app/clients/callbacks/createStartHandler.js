@@ -1,6 +1,7 @@
 const { promptTokensEstimate } = require('openai-chat-tokens');
-const { formatFromLangChain } = require('../prompts');
 const checkBalance = require('../../../models/checkBalance');
+const { isEnabled } = require('../../../server/utils');
+const { formatFromLangChain } = require('../prompts');
 
 const createStartHandler = ({ context, conversationId, tokenBuffer = 0, manager }) => {
   return async (_llm, _messages, runId, parentRunId, extraParams) => {
@@ -33,17 +34,19 @@ const createStartHandler = ({ context, conversationId, tokenBuffer = 0, manager 
     prelimPromptTokens += tokenBuffer;
 
     try {
-      await checkBalance({
-        req: manager.req,
-        res: manager.res,
-        txData: {
-          user: manager.user,
-          tokenType: 'prompt',
-          amount: prelimPromptTokens,
-          debug: manager.debug,
-          model,
-        },
-      });
+      if (isEnabled(process.env.CHECK_BALANCE)) {
+        await checkBalance({
+          req: manager.req,
+          res: manager.res,
+          txData: {
+            user: manager.user,
+            tokenType: 'prompt',
+            amount: prelimPromptTokens,
+            debug: manager.debug,
+            model,
+          },
+        });
+      }
     } catch (err) {
       console.error(`[${context}] checkBalance error`, err);
       manager.abortController.abort();
