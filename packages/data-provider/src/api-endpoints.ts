@@ -1,5 +1,7 @@
 export const user = () => '/api/user';
 
+export const balance = () => '/api/balance';
+
 export const userPlugins = () => '/api/user/plugins';
 
 export const messages = (conversationId: string, messageId?: string) =>
