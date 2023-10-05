@@ -1,4 +1,4 @@
-const { getModelMaxTokens } = require('./tokens');
+const { getModelMaxTokens, matchModelName } = require('./tokens');
 
 describe('getModelMaxTokens', () => {
   test('should return correct tokens for exact match', () => {
@@ -35,5 +35,26 @@ describe('getModelMaxTokens', () => {
 
   test('should return undefined for number input', () => {
     expect(getModelMaxTokens(123)).toBeUndefined();
+  });
+});
+
+describe('matchModelName', () => {
+  it('should return the exact model name if it exists in maxTokensMap', () => {
+    expect(matchModelName('gpt-4-32k-0613')).toBe('gpt-4-32k-0613');
+  });
+
+  it('should return the closest matching key for partial matches', () => {
+    expect(matchModelName('gpt-4-32k-unknown')).toBe('gpt-4-32k');
+  });
+
+  it('should return the input model name if no match is found', () => {
+    expect(matchModelName('unknown-model')).toBe('unknown-model');
+  });
+
+  it('should return undefined for non-string inputs', () => {
+    expect(matchModelName(undefined)).toBeUndefined();
+    expect(matchModelName(null)).toBeUndefined();
+    expect(matchModelName(123)).toBeUndefined();
+    expect(matchModelName({})).toBeUndefined();
   });
 });

@@ -1,5 +1,10 @@
-import type { TResPlugin, TMessage, TConversation, TEndpointOption } from './schemas';
+import OpenAI from 'openai';
 import type { UseMutationResult } from '@tanstack/react-query';
+import type { TResPlugin, TMessage, TConversation, TEndpointOption } from './schemas';
+
+export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
+export type TOpenAIFunction = OpenAI.Chat.ChatCompletionCreateParams.Function;
+export type TOpenAIFunctionCall = OpenAI.Chat.ChatCompletionCreateParams.FunctionCallOption;
 
 export type TMutation = UseMutationResult<unknown>;
 
@@ -175,6 +180,7 @@ export type TStartupConfig = {
   registrationEnabled: boolean;
   socialLoginEnabled: boolean;
   emailEnabled: boolean;
+  checkBalance: boolean;
 };
 
 export type TRefreshTokenResponse = {

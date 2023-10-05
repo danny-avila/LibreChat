@@ -27,21 +27,29 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
   console.dir({ text, conversationId, endpointOption }, { depth: null });
   let metadata;
   let userMessage;
+  let promptTokens;
   let userMessageId;
   let responseMessageId;
   let lastSavedTimestamp = 0;
   let saveDelay = 100;
+  const sender = getResponseSender(endpointOption);
   const newConvo = !conversationId;
   const user = req.user.id;
 
   const addMetadata = (data) => (metadata = data);
 
-  const getIds = (data) => {
-    userMessage = data.userMessage;
-    userMessageId = userMessage.messageId;
-    responseMessageId = data.responseMessageId;
-    if (!conversationId) {
-      conversationId = data.conversationId;
+  const getReqData = (data = {}) => {
+    for (let key in data) {
+      if (key === 'userMessage') {
+        userMessage = data[key];
+        userMessageId = data[key].messageId;
+      } else if (key === 'responseMessageId') {
+        responseMessageId = data[key];
+      } else if (key === 'promptTokens') {
+        promptTokens = data[key];
+      } else if (!conversationId && key === 'conversationId') {
+        conversationId = data[key];
+      }
     }
   };
 
@@ -53,7 +61,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
         lastSavedTimestamp = currentTimestamp;
         saveMessage({
           messageId: responseMessageId,
-          sender: getResponseSender(endpointOption),
+          sender,
           conversationId,
           parentMessageId: overrideParentMessageId ?? userMessageId,
           text: partialText,
@@ -72,25 +80,26 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
   });
 
   const getAbortData = () => ({
-    sender: getResponseSender(endpointOption),
+    sender,
     conversationId,
     messageId: responseMessageId,
     parentMessageId: overrideParentMessageId ?? userMessageId,
     text: getPartialText(),
     userMessage,
+    promptTokens,
   });
 
   const { abortController, onStart } = createAbortController(req, res, getAbortData);
 
   try {
-    const { client } = await initializeClient(req, endpointOption);
+    const { client } = await initializeClient({ req, res, endpointOption });
 
     let response = await client.sendMessage(text, {
       user,
       parentMessageId,
       conversationId,
       overrideParentMessageId,
-      getIds,
+      getReqData,
       onStart,
       addMetadata,
       abortController,
@@ -109,11 +118,6 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       response = { ...response, ...metadata };
     }
 
-    console.log(
-      'promptTokens, completionTokens:',
-      response.promptTokens,
-      response.completionTokens,
-    );
     await saveMessage({ ...response, user });
 
     sendMessage(res, {
@@ -125,7 +129,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     });
     res.end();
 
-    if (parentMessageId == '00000000-0000-0000-0000-000000000000' && newConvo) {
+    if (parentMessageId === '00000000-0000-0000-0000-000000000000' && newConvo) {
       addTitle(req, {
         text,
         response,
@@ -137,7 +141,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     handleAbortError(res, req, error, {
       partialText,
       conversationId,
-      sender: getResponseSender(endpointOption),
+      sender,
       messageId: responseMessageId,
       parentMessageId: userMessageId ?? parentMessageId,
     });

@@ -1,5 +1,6 @@
 const { ConversationSummaryBufferMemory, ChatMessageHistory } = require('langchain/memory');
 const { formatLangChainMessages, SUMMARY_PROMPT } = require('../prompts');
+const { predictNewSummary } = require('../chains');
 
 const createSummaryBufferMemory = ({ llm, prompt, messages, ...rest }) => {
   const chatHistory = new ChatMessageHistory(messages);
@@ -19,6 +20,7 @@ const summaryBuffer = async ({
   formatOptions = {},
   previous_summary = '',
   prompt = SUMMARY_PROMPT,
+  signal,
 }) => {
   if (debug && previous_summary) {
     console.log('<-----------PREVIOUS SUMMARY----------->\n\n');
@@ -48,7 +50,12 @@ const summaryBuffer = async ({
     console.log(JSON.stringify(messages));
   }
 
-  const predictSummary = await chatPromptMemory.predictNewSummary(messages, previous_summary);
+  const predictSummary = await predictNewSummary({
+    messages,
+    previous_summary,
+    memory: chatPromptMemory,
+    signal,
+  });
 
   if (debug) {
     console.log('<-----------SUMMARY----------->\n\n');
