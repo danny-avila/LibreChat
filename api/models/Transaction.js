@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { isEnabled } = require('../server/utils');
 const transactionSchema = require('./schema/transaction');
 const { getMultiplier } = require('./tx');
 const Balance = require('./Balance');
@@ -25,6 +26,10 @@ transactionSchema.statics.create = async function (transactionData) {
 
   // Save the transaction
   await transaction.save();
+
+  if (!isEnabled(process.env.CHECK_BALANCE)) {
+    return;
+  }
 
   // Adjust the user's balance
   return await Balance.findOneAndUpdate(
