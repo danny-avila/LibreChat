@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { isEnabled } = require('../server/utils');
+const { isEnabled } = require('../server/utils/handleText');
 const transactionSchema = require('./schema/transaction');
 const { getMultiplier } = require('./tx');
 const Balance = require('./Balance');
