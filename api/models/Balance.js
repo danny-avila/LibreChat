@@ -5,7 +5,7 @@ const { getMultiplier } = require('./tx');
 balanceSchema.statics.check = async function ({ user, model, valueKey, tokenType, amount, debug }) {
   const multiplier = getMultiplier({ valueKey, tokenType, model });
   const tokenCost = amount * multiplier;
-  const { tokenCredits: balance } = await this.findOne({ user }, 'tokenCredits').lean();
+  const { tokenCredits: balance } = (await this.findOne({ user }, 'tokenCredits').lean()) ?? {};
 
   if (debug) {
     console.log('balance check', {
