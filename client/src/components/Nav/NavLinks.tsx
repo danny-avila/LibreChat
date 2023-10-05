@@ -1,15 +1,16 @@
 import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Fragment, useState } from 'react';
+import type { TConversation } from 'librechat-data-provider';
 import { Menu, Transition } from '@headlessui/react';
+import { ExportModel } from './ExportConversation';
 import ClearConvos from './ClearConvos';
 import Settings from './Settings';
 import NavLink from './NavLink';
 import Logout from './Logout';
-import { ExportModel } from './ExportConversation';
 import { LinkIcon, DotsIcon, GearIcon } from '~/components';
-import { useLocalize } from '~/hooks';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
 
 import store from '~/store';
@@ -21,7 +22,7 @@ export default function NavLinks() {
   const { user } = useAuthContext();
   const localize = useLocalize();
 
-  const conversation = useRecoilValue(store.conversation) || {};
+  const conversation = useRecoilValue(store.conversation) ?? ({} as TConversation);
 
   const exportable =
     conversation?.conversationId &&
