@@ -129,7 +129,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     });
     res.end();
 
-    if (parentMessageId == '00000000-0000-0000-0000-000000000000' && newConvo) {
+    if (parentMessageId === '00000000-0000-0000-0000-000000000000' && newConvo) {
       addTitle(req, {
         text,
         response,
