@@ -94,7 +94,7 @@ export default function Message({
     ...conversation,
     ...message,
     model: message?.model ?? conversation?.model,
-    size: 38,
+    size: 36,
   });
 
   if (message?.bg && searchResult) {

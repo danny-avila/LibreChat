@@ -10,6 +10,7 @@ const auth = require('./auth');
 const keys = require('./keys');
 const oauth = require('./oauth');
 const endpoints = require('./endpoints');
+const balance = require('./balance');
 const models = require('./models');
 const plugins = require('./plugins');
 const user = require('./user');
@@ -29,6 +30,7 @@ module.exports = {
   user,
   tokenizer,
   endpoints,
+  balance,
   models,
   plugins,
   config,

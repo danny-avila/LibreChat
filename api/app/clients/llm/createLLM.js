@@ -1,7 +1,13 @@
 const { ChatOpenAI } = require('langchain/chat_models/openai');
-const { CallbackManager } = require('langchain/callbacks');
 
-function createLLM({ modelOptions, configOptions, handlers, openAIApiKey, azure = {} }) {
+function createLLM({
+  modelOptions,
+  configOptions,
+  callbacks,
+  streaming = false,
+  openAIApiKey,
+  azure = {},
+}) {
   let credentials = { openAIApiKey };
   let configuration = {
     apiKey: openAIApiKey,
@@ -17,12 +23,13 @@ function createLLM({ modelOptions, configOptions, handlers, openAIApiKey, azure 
 
   return new ChatOpenAI(
     {
-      streaming: true,
+      streaming,
+      verbose: true,
       credentials,
       configuration,
       ...azure,
       ...modelOptions,
-      callbackManager: handlers && CallbackManager.fromHandlers(handlers),
+      callbacks,
     },
     configOptions,
   );

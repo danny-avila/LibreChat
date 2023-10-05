@@ -1,7 +1,7 @@
 const { HumanMessage, AIMessage, SystemMessage } = require('langchain/schema');
 
 /**
- * Formats a message based on the provided options.
+ * Formats a message to OpenAI payload format based on the provided options.
  *
  * @param {Object} params - The parameters for formatting.
  * @param {Object} params.message - The message object to format.
@@ -16,7 +16,15 @@ const { HumanMessage, AIMessage, SystemMessage } = require('langchain/schema');
  * @returns {(Object|HumanMessage|AIMessage|SystemMessage)} - The formatted message.
  */
 const formatMessage = ({ message, userName, assistantName, langChain = false }) => {
-  const { role: _role, _name, sender, text, content: _content } = message;
+  let { role: _role, _name, sender, text, content: _content, lc_id } = message;
+  if (lc_id && lc_id[2] && !langChain) {
+    const roleMapping = {
+      SystemMessage: 'system',
+      HumanMessage: 'user',
+      AIMessage: 'assistant',
+    };
+    _role = roleMapping[lc_id[2]];
+  }
   const role = _role ?? (sender && sender?.toLowerCase() === 'user' ? 'user' : 'assistant');
   const content = text ?? _content ?? '';
   const formattedMessage = {
@@ -61,4 +69,22 @@ const formatMessage = ({ message, userName, assistantName, langChain = false }) 
 const formatLangChainMessages = (messages, formatOptions) =>
   messages.map((msg) => formatMessage({ ...formatOptions, message: msg, langChain: true }));
 
-module.exports = { formatMessage, formatLangChainMessages };
+/**
+ * Formats a LangChain message object by merging properties from `lc_kwargs` or `kwargs` and `additional_kwargs`.
+ *
+ * @param {Object} message - The message object to format.
+ * @param {Object} [message.lc_kwargs] - Contains properties to be merged. Either this or `message.kwargs` should be provided.
+ * @param {Object} [message.kwargs] - Contains properties to be merged. Either this or `message.lc_kwargs` should be provided.
+ * @param {Object} [message.kwargs.additional_kwargs] - Additional properties to be merged.
+ *
+ * @returns {Object} The formatted LangChain message.
+ */
+const formatFromLangChain = (message) => {
+  const { additional_kwargs, ...message_kwargs } = message.lc_kwargs ?? message.kwargs;
+  return {
+    ...message_kwargs,
+    ...additional_kwargs,
+  };
+};
+
+module.exports = { formatMessage, formatLangChainMessages, formatFromLangChain };

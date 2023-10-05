@@ -1,11 +1,11 @@
+import { useRecoilValue } from 'recoil';
+import { Disclosure } from '@headlessui/react';
 import { useCallback, memo, ReactNode } from 'react';
 import type { TResPlugin, TInput } from 'librechat-data-provider';
 import { ChevronDownIcon, LucideProps } from 'lucide-react';
-import { Disclosure } from '@headlessui/react';
-import { useRecoilValue } from 'recoil';
+import { cn, formatJSON } from '~/utils';
 import { Spinner } from '~/components';
 import CodeBlock from './CodeBlock';
-import { cn } from '~/utils/';
 import store from '~/store';
 
 type PluginsMap = {
@@ -15,14 +15,6 @@ type PluginsMap = {
 type PluginIconProps = LucideProps & {
   className?: string;
 };
-
-function formatJSON(json: string) {
-  try {
-    return JSON.stringify(JSON.parse(json), null, 2);
-  } catch (e) {
-    return json;
-  }
-}
 
 function formatInputs(inputs: TInput[]) {
   let output = '';
