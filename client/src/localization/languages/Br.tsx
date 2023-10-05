@@ -186,6 +186,8 @@ export default {
   com_nav_settings: 'Configurações',
   com_nav_search_placeholder: 'Procurar mensagens',
   com_nav_setting_general: 'Geral',
+  com_nav_setting_data: 'Controle de Dados',
+  com_nav_lang_brazilian_portuguese: 'Português Brasileiro',
   com_nav_setting_api: 'API',
   com_nav_reverse_proxy: 'Proxy Reverso',
   com_nav_reverse_proxy_url: 'URL',

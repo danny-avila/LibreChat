@@ -8,7 +8,7 @@ import search from './search';
 import preset from './preset';
 import token from './token';
 import lang from './language';
-import optionSettings from './optionSettings';
+import settings from './settings';
 import reverse from './reverseProxy';
 
 export default {
@@ -22,6 +22,6 @@ export default {
   ...preset,
   ...token,
   ...lang,
-  ...optionSettings,
+  ...settings,
   ...reverse,
 };

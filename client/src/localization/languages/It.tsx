@@ -202,6 +202,7 @@ export default {
   com_nav_settings: 'Impostazioni',
   com_nav_search_placeholder: 'Cerca messaggi',
   com_nav_setting_general: 'Generale',
+  com_nav_setting_data: 'Controllo dei dati',
   com_nav_setting_api: 'API',
   com_nav_reverse_proxy: 'Proxy Inverso',
   com_nav_reverse_proxy_url: 'URL',
