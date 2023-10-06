@@ -1,17 +1,30 @@
-// controllers/PaymentController.js
-
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const User = require('../../models/User'); // Adjust the path to your User Model
+// const UserId = require('../../models/User');  // Adjust the path to your User Model
+const addTokens = require('../../../config/addTokens'); // Import the addTokens function
 
 exports.createPaymentIntent = async (req, res) => {
   try {
-    const { amount, userId } = req.body;
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount,
-      currency: 'usd', // Adjust currency if necessary
-      metadata: { userId }, // Store userId in metadata
+    //   const { amount, userId } = req.body;
+    const { amount } = req.body;
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: 'Tokens',
+            },
+            unit_amount: amount,
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'payment',
+      success_url: 'http://localhost:3090',
+      cancel_url: 'http://localhost:3090',
     });
-    res.status(200).json({ client_secret: paymentIntent.client_secret });
+    res.status(200).json({ sessionId: session.id });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -27,25 +40,16 @@ exports.handleWebhook = async (req, res) => {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  if (event['type'] === 'payment_intent.succeeded') {
-    const paymentIntent = event.data.object; // Contains a paymentIntent object
-    const userId = paymentIntent.metadata.userId; // Retrieve userId from metadata
-
-    if (!userId) {
-      return res.status(400).send('User ID not found in paymentIntent metadata');
-    }
+  if (event['type'] === 'checkout.session.completed') {
+    const session = event.data.object;
+    const email = session.customer_email; // Assume you've collected and stored the customer's email in Stripe
+    const amount = session.amount_total / 100; // Convert amount to tokens based on your conversion logic
 
     try {
-      const user = await User.findById(userId);
-      const tokens = paymentIntent.amount / 100; // Adjust this line to your conversion logic
-      user.freeMessages += tokens; // Adjust this line to your balance field and conversion logic
-      await user.save();
-
-      res.status(200).send('Payment handled successfully');
+      const newBalance = await addTokens(email, amount);
+      res.status(200).send(`Success! New balance is ${newBalance}`);
     } catch (error) {
-      res.status(500).send({
-        error: `Error updating balance: ${error.message}`,
-      });
+      res.status(500).send({ error: `Error updating balance: ${error.message}` });
     }
   } else {
     // Handle other types of events or ignore them

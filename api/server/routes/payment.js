@@ -1,10 +1,21 @@
-// routes/payment.js
-
 const express = require('express');
-const PaymentController = require('../controllers/PaymentController');
+const PaymentController = require('../controllers/PaymentController'); // Ensure this path is correct
 const router = express.Router();
 
-router.post('/create-payment-intent', PaymentController.createPaymentIntent);
-router.post('/webhook', PaymentController.handleWebhook);
+// Middleware to capture raw body
+function rawBodyBuffer(req, res, buf, encoding) {
+  if (buf && buf.length) {
+    req.rawBody = buf.toString(encoding || 'utf8');
+  }
+}
+
+router.post('/create-checkout-session', PaymentController.createPaymentIntent);
+
+// Update this route to use express.raw()
+router.post(
+  '/webhook',
+  express.raw({ type: 'application/json', verify: rawBodyBuffer }),
+  PaymentController.handleWebhook,
+);
 
 module.exports = router;

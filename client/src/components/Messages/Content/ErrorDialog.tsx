@@ -3,24 +3,27 @@ import { Dialog, Label } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
+import { useAuthContext } from '../../../hooks/AuthContext.tsx';
 
 const stripePromise = loadStripe(
   'pk_test_51MwvEEHKD0byXXClhlIY96bsuIIIcdGgTenVqBnktRp8fzoUHlcI29yTj9ktyqumu2Xk1uz7KptFryWfTZz5Sdj200f3cPZSa3',
 );
 
 export default function ErrorDialog({ message }) {
+  const { user } = useAuthContext();
+  const userId = user?.id;
   const [loading, setLoading] = useState(false);
   const title = 'Insufficient Funds';
 
   const handlePurchase = async (amount) => {
     setLoading(true);
     try {
-      const res = await fetch('/api/payment/create-payment-intent', {
+      const res = await fetch('/api/payment/create-checkout-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ amount, userId: 'your-user-id' }),
+        body: JSON.stringify({ amount, userId: userId }),
       });
       const data = await res.json();
       const stripe = await stripePromise;
