@@ -24,8 +24,8 @@ describe('getValueKey', () => {
 
 describe('getMultiplier', () => {
   it('should return the correct multiplier for a given valueKey and tokenType', () => {
-    expect(getMultiplier({ valueKey: '8k', tokenType: 'prompt' })).toBe(3);
-    expect(getMultiplier({ valueKey: '8k', tokenType: 'completion' })).toBe(6);
+    expect(getMultiplier({ valueKey: '8k', tokenType: 'prompt' })).toBe(30);
+    expect(getMultiplier({ valueKey: '8k', tokenType: 'completion' })).toBe(60);
   });
 
   it('should return defaultRate if tokenType is provided but not found in tokenValues', () => {
@@ -33,7 +33,7 @@ describe('getMultiplier', () => {
   });
 
   it('should derive the valueKey from the model if not provided', () => {
-    expect(getMultiplier({ tokenType: 'prompt', model: 'gpt-4-some-other-info' })).toBe(3);
+    expect(getMultiplier({ tokenType: 'prompt', model: 'gpt-4-some-other-info' })).toBe(30);
   });
 
   it('should return 1 if only model or tokenType is missing', () => {
