@@ -1,12 +1,13 @@
 const { matchModelName } = require('../utils');
+const defaultRate = 6;
 
 /**
  * Mapping of model token sizes to their respective multipliers for prompt and completion.
  * @type {Object.<string, {prompt: number, completion: number}>}
  */
 const tokenValues = {
-  '8k': { prompt: 3, completion: 6 },
-  '32k': { prompt: 6, completion: 12 },
+  '8k': { prompt: 30, completion: 60 },
+  '32k': { prompt: 60, completion: 120 },
   '4k': { prompt: 1.5, completion: 2 },
   '16k': { prompt: 3, completion: 4 },
 };
@@ -48,7 +49,7 @@ const getValueKey = (model) => {
  */
 const getMultiplier = ({ valueKey, tokenType, model }) => {
   if (valueKey && tokenType) {
-    return tokenValues[valueKey][tokenType] ?? 4.5;
+    return tokenValues[valueKey][tokenType] ?? defaultRate;
   }
 
   if (!tokenType || !model) {
@@ -57,11 +58,11 @@ const getMultiplier = ({ valueKey, tokenType, model }) => {
 
   valueKey = getValueKey(model);
   if (!valueKey) {
-    return 4.5;
+    return defaultRate;
   }
 
   // If we got this far, and values[tokenType] is undefined somehow, return a rough average of default multipliers
-  return tokenValues[valueKey][tokenType] ?? 4.5;
+  return tokenValues[valueKey][tokenType] ?? defaultRate;
 };
 
-module.exports = { tokenValues, getValueKey, getMultiplier };
+module.exports = { tokenValues, getValueKey, getMultiplier, defaultRate };
