@@ -3,6 +3,7 @@ const { isEnabled } = require('../server/utils/handleText');
 const transactionSchema = require('./schema/transaction');
 const { getMultiplier } = require('./tx');
 const Balance = require('./Balance');
+const cancelRate = 1.15;
 
 // Method to calculate and set the tokenValue for a transaction
 transactionSchema.methods.calculateTokenValue = function () {
@@ -11,9 +12,11 @@ transactionSchema.methods.calculateTokenValue = function () {
   }
   const { valueKey, tokenType, model } = this;
   const multiplier = getMultiplier({ valueKey, tokenType, model });
+  this.rate = multiplier;
   this.tokenValue = this.rawAmount * multiplier;
   if (this.context && this.tokenType === 'completion' && this.context === 'incomplete') {
-    this.tokenValue = Math.floor(this.tokenValue * 1.15);
+    this.tokenValue = Math.ceil(this.tokenValue * cancelRate);
+    this.rate *= cancelRate;
   }
 };
 

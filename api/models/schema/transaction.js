@@ -26,6 +26,7 @@ const transactionSchema = mongoose.Schema({
   valueKey: {
     type: String,
   },
+  rate: Number,
   rawAmount: Number,
   tokenValue: Number,
 });
