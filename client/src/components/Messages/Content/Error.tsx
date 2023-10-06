@@ -2,6 +2,7 @@ import React from 'react';
 import type { TOpenAIMessage } from 'librechat-data-provider';
 import { formatJSON, extractJson } from '~/utils/json';
 import CodeBlock from './CodeBlock';
+import ErrorDialog from './ErrorDialog';
 
 const isJson = (str: string) => {
   try {
@@ -56,6 +57,7 @@ const errorMessages = {
     const message = `Insufficient Funds! Balance: ${balance}. Prompt tokens: ${promptTokens}. Cost: ${tokenCost}.`;
     return (
       <>
+        <ErrorDialog message={message} />
         {message}
         {generations && (
           <>

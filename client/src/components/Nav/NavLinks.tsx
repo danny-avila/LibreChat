@@ -43,9 +43,9 @@ export default function NavLinks() {
       <Menu as="div" className="group relative">
         {({ open }) => (
           <>
-            {startupConfig?.checkBalance && balanceQuery.data && (
+            {startupConfig?.checkBalance && (
               <div className="m-1 ml-3 whitespace-nowrap text-left text-sm text-gray-100">
-                {`Balance: ${balanceQuery.data}`}
+                {`Tokens Remaining: ${balanceQuery.data}`}
               </div>
             )}
             <Menu.Button
