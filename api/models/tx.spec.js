@@ -1,4 +1,4 @@
-const { getValueKey, getMultiplier } = require('./tx');
+const { getValueKey, getMultiplier, defaultRate } = require('./tx');
 
 describe('getValueKey', () => {
   it('should return "16k" for model name containing "gpt-3.5-turbo-16k"', () => {
@@ -28,8 +28,8 @@ describe('getMultiplier', () => {
     expect(getMultiplier({ valueKey: '8k', tokenType: 'completion' })).toBe(6);
   });
 
-  it('should return 4.5 if tokenType is provided but not found in tokenValues', () => {
-    expect(getMultiplier({ valueKey: '8k', tokenType: 'unknownType' })).toBe(4.5);
+  it('should return defaultRate if tokenType is provided but not found in tokenValues', () => {
+    expect(getMultiplier({ valueKey: '8k', tokenType: 'unknownType' })).toBe(defaultRate);
   });
 
   it('should derive the valueKey from the model if not provided', () => {
@@ -41,7 +41,9 @@ describe('getMultiplier', () => {
     expect(getMultiplier({ model: 'gpt-4-some-other-info' })).toBe(1);
   });
 
-  it('should return 4.5 if derived valueKey does not match any known patterns', () => {
-    expect(getMultiplier({ tokenType: 'prompt', model: 'gpt-5-some-other-info' })).toBe(4.5);
+  it('should return defaultRate if derived valueKey does not match any known patterns', () => {
+    expect(getMultiplier({ tokenType: 'prompt', model: 'gpt-5-some-other-info' })).toBe(
+      defaultRate,
+    );
   });
 });
