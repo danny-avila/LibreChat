@@ -12,7 +12,7 @@ const { PORT, HOST, ALLOW_SOCIAL_LOGIN } = process.env ?? {};
 const port = Number(PORT) || 3080;
 const host = HOST || 'localhost';
 const projectPath = path.join(__dirname, '..', '..', 'client');
-const { jwtLogin, passportLogin } = require('../strategies');
+const { jwtLogin, joseLogin, passportLogin } = require('../strategies');
 
 const startServer = async () => {
   await connectDb();
@@ -39,7 +39,11 @@ const startServer = async () => {
 
   // OAUTH
   app.use(passport.initialize());
-  passport.use(await jwtLogin());
+  if (typeof Bun !== 'undefined') {
+    passport.use('jwt', await joseLogin());
+  } else {
+    passport.use(await jwtLogin());
+  }
   passport.use(passportLogin());
 
   if (ALLOW_SOCIAL_LOGIN?.toLowerCase() === 'true') {

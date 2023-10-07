@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const signPayload = require('../server/services/signPayload');
 const userSchema = require('./schema/userSchema.js');
 const { SESSION_EXPIRY } = process.env ?? {};
 const expires = eval(SESSION_EXPIRY) ?? 1000 * 60 * 15;
@@ -21,18 +21,17 @@ userSchema.methods.toJSON = function () {
   };
 };
 
-userSchema.methods.generateToken = function () {
-  const token = jwt.sign(
-    {
+userSchema.methods.generateToken = async function () {
+  return await signPayload({
+    payload: {
       id: this._id,
       username: this.username,
       provider: this.provider,
       email: this.email,
     },
-    process.env.JWT_SECRET,
-    { expiresIn: expires / 1000 },
-  );
-  return token;
+    secret: process.env.JWT_SECRET,
+    expirationTime: expires / 1000,
+  });
 };
 
 userSchema.methods.comparePassword = function (candidatePassword, callback) {
