@@ -22,7 +22,7 @@ userSchema.methods.toJSON = function () {
 };
 
 userSchema.methods.generateToken = async function () {
-  return signPayload({
+  return await signPayload({
     payload: {
       id: this._id,
       username: this.username,
