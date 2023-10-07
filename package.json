@@ -47,7 +47,7 @@
     "lint": "eslint \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\"",
     "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\"",
     "b:api": "NODE_ENV=production bun run api/server/index.js",
-    "b:api:dev": "NODE_ENV=development bun run --watch api/server/index.js",
+    "b:api:dev": "NODE_ENV=production bun run --watch api/server/index.js",
     "b:data-provider": "cd packages/data-provider && bun run b:build",
     "b:client": "bun --bun run b:data-provider && cd client && bun --bun run b:build",
     "b:client:dev": "cd client && bun run b:dev",
