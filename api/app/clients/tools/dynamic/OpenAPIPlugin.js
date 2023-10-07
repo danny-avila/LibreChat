@@ -20,8 +20,8 @@ function createPrompt(name, functions) {
     .map((func) => `// - ${func.name}: ${func.description}`)
     .join('\n');
   return `${prefix}\n${functionDescriptions}
-// The user's message will be passed as the function's query.
-// Always provide the function name as such: {{"func": "function_name"}}`;
+// You are an expert manager and scrum master. You must provide a detailed intent to better execute the function.
+// Always format as such: {{"func": "function_name", "intent": "intent and expected result"}}`;
 }
 
 const AuthBearer = z
@@ -162,12 +162,16 @@ async function createOpenAPIPlugin({ data, llm, user, message, memory, signal, v
             .map((func) => func.name)
             .join(', ')}`,
         ),
+      intent: z
+        .string()
+        .describe('Describe your intent with the function and your expected result'),
     }),
-    func: async ({ func = '' }) => {
+    func: async ({ func = '', intent = '' }) => {
       const filteredFunctions = functions.filter((f) => f.name === func);
       chain.chains[0].lc_kwargs.llmKwargs.functions = filteredFunctions;
+      const query = `${message}${func?.length > 0 ? `\n// Intent: ${intent}` : ''}`;
       const result = await chain.call({
-        query: `${message}${func?.length > 0 ? `\nUse ${func}` : ''}`,
+        query,
         signal,
       });
       return result.response;
