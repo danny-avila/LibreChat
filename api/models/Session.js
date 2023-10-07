@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
+const signPayload = require('../server/services/signPayload');
 const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
 const expires = eval(REFRESH_TOKEN_EXPIRY) ?? 1000 * 60 * 60 * 24 * 7;
 
@@ -31,13 +31,11 @@ sessionSchema.methods.generateRefreshToken = async function () {
       this.expiration = new Date(expiresIn);
     }
 
-    const refreshToken = jwt.sign(
-      {
-        id: this.user,
-      },
-      process.env.JWT_REFRESH_SECRET,
-      { expiresIn: Math.floor((expiresIn - Date.now()) / 1000) },
-    );
+    const refreshToken = await signPayload({
+      payload: { id: this.user },
+      secret: process.env.JWT_REFRESH_SECRET,
+      expirationTime: Math.floor((expiresIn - Date.now()) / 1000),
+    });
 
     const hash = crypto.createHash('sha256');
     this.refreshTokenHash = hash.update(refreshToken).digest('hex');
