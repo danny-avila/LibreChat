@@ -1,7 +1,7 @@
 const KeyvRedis = require('@keyv/redis');
-const { REDIS_URI } = process.env ?? {};
+const redis = require('./redis');
 
-const keyvRedis = new KeyvRedis(REDIS_URI, { useRedisSets: false });
+const keyvRedis = new KeyvRedis(redis, { useRedisSets: false });
 
 keyvRedis.on('error', (err) => console.error('KeyvRedis connection error:', err));
 
