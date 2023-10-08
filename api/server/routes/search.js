@@ -7,9 +7,14 @@ const { Conversation, getConvosQueried } = require('../../models/Conversation');
 const { reduceHits } = require('../../lib/utils/reduceHits');
 const { cleanUpPrimaryKeyValue } = require('../../lib/utils/misc');
 const requireJwtAuth = require('../middleware/requireJwtAuth');
+const keyvRedis = require('../../cache/keyvRedis');
+const { isEnabled } = require('../utils');
 
 const expiration = 60 * 1000;
-const cache = new Keyv({ namespace: 'search', ttl: expiration });
+const cacheOptions = { namespace: 'search', ttl: expiration };
+const cache = isEnabled(process.env.USE_REDIS)
+  ? new Keyv({ store: keyvRedis })
+  : new Keyv(cacheOptions);
 
 router.get('/sync', async function (req, res) {
   await Message.syncWithMeili();
@@ -22,7 +27,7 @@ router.get('/', requireJwtAuth, async function (req, res) {
     let user = req.user.id ?? '';
     const { q } = req.query;
     const pageNumber = req.query.pageNumber || 1;
-    const key = `${user}${q}`;
+    const key = `${user}:search:${q}`;
     const cached = await cache.get(key);
     if (cached) {
       console.log('cache hit', key);
