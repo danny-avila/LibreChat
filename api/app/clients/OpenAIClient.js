@@ -4,6 +4,7 @@ const BaseClient = require('./BaseClient');
 const { getModelMaxTokens, genAzureChatCompletion } = require('../../utils');
 const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
 const spendTokens = require('../../models/spendTokens');
+const { isEnabled } = require('../../server/utils');
 const { createLLM, RunManager } = require('./llm');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
@@ -71,20 +72,22 @@ class OpenAIClient extends BaseClient {
       };
     }
 
-    if (process.env.OPENROUTER_API_KEY) {
-      this.apiKey = process.env.OPENROUTER_API_KEY;
+    const { OPENROUTER_API_KEY, OPENAI_FORCE_PROMPT } = process.env ?? {};
+    if (OPENROUTER_API_KEY) {
+      this.apiKey = OPENROUTER_API_KEY;
       this.useOpenRouter = true;
     }
 
+    const { reverseProxyUrl: reverseProxy } = this.options;
+    this.FORCE_PROMPT =
+      isEnabled(OPENAI_FORCE_PROMPT) ||
+      (reverseProxy && reverseProxy.includes('completions') && !reverseProxy.includes('chat'));
+
     const { model } = this.modelOptions;
 
-    this.isChatCompletion =
-      this.useOpenRouter ||
-      this.options.reverseProxyUrl ||
-      this.options.localAI ||
-      model.includes('gpt-');
+    this.isChatCompletion = this.useOpenRouter || !!reverseProxy || model.includes('gpt-');
     this.isChatGptModel = this.isChatCompletion;
-    if (model.includes('text-davinci-003') || model.includes('instruct')) {
+    if (model.includes('text-davinci-003') || model.includes('instruct') || this.FORCE_PROMPT) {
       this.isChatCompletion = false;
       this.isChatGptModel = false;
     }
@@ -128,9 +131,13 @@ class OpenAIClient extends BaseClient {
       this.modelOptions.stop = stopTokens;
     }
 
-    if (this.options.reverseProxyUrl) {
-      this.completionsUrl = this.options.reverseProxyUrl;
-      this.langchainProxy = this.options.reverseProxyUrl.match(/.*v1/)[0];
+    if (reverseProxy) {
+      this.completionsUrl = reverseProxy;
+      this.langchainProxy = reverseProxy.match(/.*v1/)?.[0];
+      !this.langchainProxy &&
+        console.warn(`The reverse proxy URL ${reverseProxy} is not valid for Plugins.
+The url must follow OpenAI specs, for example: https://localhost:8080/v1/chat/completions
+If your reverse proxy is compatible to OpenAI specs in every other way, it may still work without plugins enabled.`);
     } else if (isChatGptModel) {
       this.completionsUrl = 'https://api.openai.com/v1/chat/completions';
     } else {
@@ -185,7 +192,7 @@ class OpenAIClient extends BaseClient {
         this.encoding = model.includes('instruct') ? 'text-davinci-003' : model;
         tokenizer = this.constructor.getTokenizer(this.encoding, true);
       } catch {
-        tokenizer = this.constructor.getTokenizer(this.encoding, true);
+        tokenizer = this.constructor.getTokenizer('text-davinci-003', true);
       }
     }
 
