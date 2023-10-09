@@ -1,6 +1,12 @@
 import { useCallback } from 'react';
 import { useSetRecoilState, useResetRecoilState, useRecoilCallback, useRecoilValue } from 'recoil';
-import { TConversation, TMessagesAtom, TSubmission, TPreset } from 'librechat-data-provider';
+import type {
+  TConversation,
+  TMessagesAtom,
+  TSubmission,
+  TPreset,
+  TModelsConfig,
+} from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint } from '~/utils';
 import store from '~/store';
 
@@ -17,8 +23,9 @@ const useConversation = () => {
         conversation: TConversation,
         messages: TMessagesAtom = null,
         preset: TPreset | null = null,
+        modelsData?: TModelsConfig,
       ) => {
-        const modelsConfig = snapshot.getLoadable(store.modelsConfig).contents;
+        const modelsConfig = modelsData ?? snapshot.getLoadable(store.modelsConfig).contents;
         const { endpoint = null } = conversation;
 
         if (endpoint === null) {
@@ -45,7 +52,7 @@ const useConversation = () => {
   );
 
   const newConversation = useCallback(
-    (template = {}, preset?: TPreset) => {
+    (template = {}, preset?: TPreset, modelsData?: TModelsConfig) => {
       switchToConversation(
         {
           conversationId: 'new',
@@ -57,6 +64,7 @@ const useConversation = () => {
         },
         [],
         preset,
+        modelsData,
       );
     },
     [switchToConversation],
