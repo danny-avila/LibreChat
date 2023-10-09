@@ -192,7 +192,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                           <Panel open={false} />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent side="right" sideOffset={10}>
+                      <TooltipContent side="right" sideOffset={17}>
                         {localize('com_nav_close_menu')}
                       </TooltipContent>
                     </div>
@@ -240,7 +240,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                   </div>
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={10}>
+              <TooltipContent side="right" sideOffset={17}>
                 {localize('com_nav_open_menu')}
               </TooltipContent>
             </div>
