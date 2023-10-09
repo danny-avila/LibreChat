@@ -13,7 +13,6 @@ import { Panel, Spinner } from '~/components';
 import { Conversations, Pages } from '../Conversations';
 import {
   useAuthContext,
-  useDebounce,
   useMediaQuery,
   useLocalize,
   useConversation,
@@ -65,14 +64,8 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const [isFetching, setIsFetching] = useState(false);
 
-  const debouncedSearchTerm = useDebounce(searchQuery, 750);
-  const searchQueryFn = useSearchQuery(debouncedSearchTerm, pageNumber + '', {
-    enabled: !!(
-      !!debouncedSearchTerm &&
-      debouncedSearchTerm.length > 0 &&
-      isSearchEnabled &&
-      isSearching
-    ),
+  const searchQueryFn = useSearchQuery(searchQuery, pageNumber + '', {
+    enabled: !!(!!searchQuery && searchQuery.length > 0 && isSearchEnabled && isSearching),
   });
 
   const onSearchSuccess = useCallback((data: TSearchResults, expectedPage?: number) => {
