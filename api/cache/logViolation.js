@@ -21,7 +21,7 @@ const logViolation = async (req, res, type, errorMessage, score = 1) => {
   const key = isEnabled(process.env.USE_REDIS) ? `${type}:${userId}` : userId;
 
   const userViolations = (await violationLogs.get(key)) ?? 0;
-  const violationCount = userViolations + score;
+  const violationCount = +userViolations + +score;
   await violationLogs.set(key, violationCount);
 
   errorMessage.user_id = userId;
