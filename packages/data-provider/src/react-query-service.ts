@@ -238,11 +238,14 @@ export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpointsConfig> 
   });
 };
 
-export const useGetModelsQuery = (): QueryObserverResult<t.TModelsConfig> => {
-  return useQuery([QueryKeys.models], () => dataService.getModels(), {
+export const useGetModelsQuery = (
+  config?: UseQueryOptions<t.TModelsConfig>,
+): QueryObserverResult<t.TModelsConfig> => {
+  return useQuery<t.TModelsConfig>([QueryKeys.models], () => dataService.getModels(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
+    ...config,
   });
 };
 
