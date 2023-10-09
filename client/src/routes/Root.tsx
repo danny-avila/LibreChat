@@ -30,7 +30,7 @@ export default function Root() {
 
   const searchEnabledQuery = useGetSearchEnabledQuery();
   const endpointsQuery = useGetEndpointsQuery();
-  const modelsQuery = useGetModelsQuery();
+  const modelsQuery = useGetModelsQuery({ enabled: isAuthenticated });
   const presetsQuery = useGetPresetsQuery({ enabled: !!user });
 
   useEffect(() => {
