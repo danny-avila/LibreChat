@@ -34,6 +34,7 @@ jobs:
       DOMAIN_SERVER: ${{ secrets.DOMAIN_SERVER }}
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1 # Skip downloading during npm install
       PLAYWRIGHT_BROWSERS_PATH: 0 # Places binaries to node_modules/@playwright/test
+      TITLE_CONVO: false
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v3
