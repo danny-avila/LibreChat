@@ -86,7 +86,7 @@ test.describe('Messaging suite', () => {
     expect(currentUrl).toBe(initialUrl);
 
     //cleanup the conversation
-    await page.getByText('New chat', { exact: true }).click();
+    await page.getByTestId('new-chat-button').click();
     expect(page.url()).toBe(initialUrl);
 
     // Click on the first conversation
@@ -166,7 +166,7 @@ test.describe('Messaging suite', () => {
     const currentUrl = page.url();
     const conversationId = currentUrl.split(basePath).pop() ?? '';
     expect(isUUID(conversationId)).toBeTruthy();
-    await page.getByText('New chat', { exact: true }).click();
+    await page.getByTestId('new-chat-button').click();
     expect(page.url()).toBe(initialUrl);
   });
 });

@@ -29,11 +29,13 @@ export default function useServerStream(submission: TSubmission | null) {
   const setIsSubmitting = useSetRecoilState(store.isSubmitting);
   const setConversation = useSetRecoilState(store.conversation);
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
-  const { token } = useAuthContext();
+  const { token, isAuthenticated } = useAuthContext();
 
   const { data: startupConfig } = useGetStartupConfig();
   const { refreshConversations } = useConversations();
-  const balanceQuery = useGetUserBalance();
+  const balanceQuery = useGetUserBalance({
+    enabled: !!isAuthenticated && startupConfig?.checkBalance,
+  });
 
   const messageHandler = (data: string, submission: TSubmission) => {
     const {
