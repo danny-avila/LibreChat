@@ -16,13 +16,15 @@ const cache = isEnabled(process.env.USE_REDIS)
   ? new Keyv({ store: keyvRedis })
   : new Keyv(cacheOptions);
 
+router.use(requireJwtAuth);
+
 router.get('/sync', async function (req, res) {
   await Message.syncWithMeili();
   await Conversation.syncWithMeili();
   res.send('synced');
 });
 
-router.get('/', requireJwtAuth, async function (req, res) {
+router.get('/', async function (req, res) {
   try {
     let user = req.user.id ?? '';
     const { q } = req.query;
@@ -70,7 +72,7 @@ router.get('/', requireJwtAuth, async function (req, res) {
       if (message.conversationId.includes('--')) {
         message.conversationId = cleanUpPrimaryKeyValue(message.conversationId);
       }
-      if (result.convoMap[message.conversationId] && !message.error) {
+      if (result.convoMap[message.conversationId]) {
         const convo = result.convoMap[message.conversationId];
         const { title, chatGptLabel, model } = convo;
         message = { ...message, ...{ title, chatGptLabel, model } };
