@@ -105,7 +105,7 @@ export const getAIEndpoints = () => {
   return request.get(endpoints.aiEndpoints());
 };
 
-export const getModels = () => {
+export const getModels = async (): Promise<t.TModelsConfig> => {
   return request.get(endpoints.models());
 };
 

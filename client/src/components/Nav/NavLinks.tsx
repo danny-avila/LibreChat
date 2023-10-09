@@ -17,12 +17,14 @@ import { cn } from '~/utils/';
 import store from '~/store';
 
 export default function NavLinks() {
-  const balanceQuery = useGetUserBalance();
+  const { user, isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
+  const balanceQuery = useGetUserBalance({
+    enabled: !!isAuthenticated && startupConfig?.checkBalance,
+  });
   const [showExports, setShowExports] = useState(false);
   const [showClearConvos, setShowClearConvos] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const { user } = useAuthContext();
   const localize = useLocalize();
 
   const conversation = useRecoilValue(store.conversation) ?? ({} as TConversation);
