@@ -3,18 +3,22 @@ const keyvMongo = require('./keyvMongo');
 const keyvRedis = require('./keyvRedis');
 const { math, isEnabled } = require('../server/utils');
 const { logFile, violationFile } = require('./keyvFiles');
-const { BAN_DURATION } = process.env ?? {};
+const { BAN_DURATION, USE_REDIS } = process.env ?? {};
 
 const duration = math(BAN_DURATION, 7200000);
 
 const createViolationInstance = (namespace) => {
-  const config = isEnabled(process.env.USE_REDIS)
-    ? { store: keyvRedis }
-    : { store: violationFile, namespace };
+  const config = isEnabled(USE_REDIS) ? { store: keyvRedis } : { store: violationFile, namespace };
   return new Keyv(config);
 };
 
+// Serve cache from memory so no need to clear it on startup/exit
+const pending_req = isEnabled(USE_REDIS)
+  ? new Keyv({ store: keyvRedis })
+  : new Keyv({ namespace: 'pending_req' });
+
 const namespaces = {
+  pending_req,
   ban: new Keyv({ store: keyvMongo, namespace: 'bans', duration }),
   general: new Keyv({ store: logFile, namespace: 'violations' }),
   concurrent: createViolationInstance('concurrent'),
