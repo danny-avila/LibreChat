@@ -1,9 +1,13 @@
 const Keyv = require('keyv');
 const axios = require('axios');
+const { isEnabled } = require('../utils');
+const keyvRedis = require('../../cache/keyvRedis');
 // const { getAzureCredentials, genAzureChatCompletion } = require('../../utils/');
 const { openAIApiKey, userProvidedOpenAI } = require('./EndpointService').config;
 
-const modelsCache = new Keyv({ namespace: 'models' });
+const modelsCache = isEnabled(process.env.USE_REDIS)
+  ? new Keyv({ store: keyvRedis })
+  : new Keyv({ namespace: 'models' });
 
 const { OPENROUTER_API_KEY, OPENAI_REVERSE_PROXY, CHATGPT_MODELS, ANTHROPIC_MODELS } =
   process.env ?? {};
