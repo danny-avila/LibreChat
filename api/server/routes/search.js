@@ -11,10 +11,9 @@ const keyvRedis = require('../../cache/keyvRedis');
 const { isEnabled } = require('../utils');
 
 const expiration = 60 * 1000;
-const cacheOptions = { namespace: 'search', ttl: expiration };
 const cache = isEnabled(process.env.USE_REDIS)
   ? new Keyv({ store: keyvRedis })
-  : new Keyv(cacheOptions);
+  : new Keyv({ namespace: 'search', ttl: expiration });
 
 router.use(requireJwtAuth);
 
