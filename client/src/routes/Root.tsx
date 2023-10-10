@@ -29,8 +29,8 @@ export default function Root() {
   const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
   const setModelsConfig = useSetRecoilState(store.modelsConfig);
 
-  const searchEnabledQuery = useGetSearchEnabledQuery();
   const endpointsQuery = useGetEndpointsQuery();
+  const searchEnabledQuery = useGetSearchEnabledQuery({ enabled: isAuthenticated });
   const modelsQuery = useGetModelsQuery({ enabled: isAuthenticated });
   const presetsQuery = useGetPresetsQuery({ enabled: !!user });
 
