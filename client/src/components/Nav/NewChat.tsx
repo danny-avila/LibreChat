@@ -1,14 +1,14 @@
-import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useLocalize, useConversation } from '~/hooks';
 
 export default function NewChat() {
   const { newConversation } = useConversation();
+  const navigate = useNavigate();
   const localize = useLocalize();
 
   const clickHandler = () => {
-    // dispatch(setInputValue(''));
-    // dispatch(setQuery(''));
     newConversation();
+    navigate('/chat/new');
   };
 
   return (
