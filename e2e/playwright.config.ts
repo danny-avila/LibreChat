@@ -6,7 +6,11 @@ dotenv.config();
 
 export default defineConfig({
   globalSetup: require.resolve('./setup/global-setup'),
-  globalTeardown: require.resolve('./setup/global-teardown'),
+  // Github CI will hang on globalTeardown for unknown reasons:
+  // https://github.com/microsoft/playwright/issues/24071
+  // https://github.com/microsoft/playwright/issues/24159
+  // https://github.com/microsoft/playwright/issues/27048
+  // globalTeardown: require.resolve('./setup/global-teardown'),
   testDir: 'specs/',
   outputDir: 'specs/.test-results',
   /* Run tests in files in parallel.
