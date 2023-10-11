@@ -226,6 +226,10 @@ export default {
   com_endpoint_config_key_google_service_account: 'Create a Service Account',
   com_endpoint_config_key_google_vertex_api_role:
     'Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role. Lastly, create a JSON key to import here.',
+  com_nav_plugin_store: 'Plugin store',
+  com_nav_plugin_search: 'Search plugins',
+  com_nav_plugin_auth_error:
+    'There was an error attempting to authenticate this plugin. Please try again.',
   com_nav_close_menu: 'Close sidebar',
   com_nav_open_menu: 'Open sidebar',
   com_nav_export_filename: 'Filename',
