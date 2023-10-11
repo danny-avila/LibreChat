@@ -1,5 +1,6 @@
 const { saveMessage, getConvo, getConvoTitle } = require('../../models');
-const { sendMessage, sendError } = require('../utils');
+const { sendMessage, sendError, countTokens } = require('../utils');
+const spendTokens = require('../../models/spendTokens');
 const abortControllers = require('./abortControllers');
 
 async function abortMessage(req, res) {
@@ -41,7 +42,9 @@ const createAbortController = (req, res, getAbortData) => {
 
   abortController.abortCompletion = async function () {
     abortController.abort();
-    const { conversationId, userMessage, ...responseData } = getAbortData();
+    const { conversationId, userMessage, promptTokens, ...responseData } = getAbortData();
+    const completionTokens = await countTokens(responseData?.text ?? '');
+    const user = req.user.id;
 
     const responseMessage = {
       ...responseData,
@@ -52,14 +55,20 @@ const createAbortController = (req, res, getAbortData) => {
       cancelled: true,
       error: false,
       isCreatedByUser: false,
+      tokenCount: completionTokens,
     };
 
-    saveMessage({ ...responseMessage, user: req.user.id });
+    await spendTokens(
+      { ...responseMessage, context: 'incomplete', user },
+      { promptTokens, completionTokens },
+    );
+
+    saveMessage({ ...responseMessage, user });
 
     return {
-      title: await getConvoTitle(req.user.id, conversationId),
+      title: await getConvoTitle(user, conversationId),
       final: true,
-      conversation: await getConvo(req.user.id, conversationId),
+      conversation: await getConvo(user, conversationId),
       requestMessage: userMessage,
       responseMessage: responseMessage,
     };

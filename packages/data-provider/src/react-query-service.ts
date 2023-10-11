@@ -18,6 +18,7 @@ export enum QueryKeys {
   user = 'user',
   name = 'name', // user key name
   models = 'models',
+  balance = 'balance',
   endpoints = 'endpoints',
   presets = 'presets',
   searchResults = 'searchResults',
@@ -31,8 +32,15 @@ export const useAbortRequestWithMessage = (): UseMutationResult<
   Error,
   { endpoint: string; abortKey: string; message: string }
 > => {
-  return useMutation(({ endpoint, abortKey, message }) =>
-    dataService.abortRequestWithMessage(endpoint, abortKey, message),
+  const queryClient = useQueryClient();
+  return useMutation(
+    ({ endpoint, abortKey, message }) =>
+      dataService.abortRequestWithMessage(endpoint, abortKey, message),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.balance]);
+      },
+    },
   );
 };
 
@@ -62,6 +70,17 @@ export const useGetMessagesByConvoId = (
       ...config,
     },
   );
+};
+
+export const useGetUserBalance = (
+  config?: UseQueryOptions<string>,
+): QueryObserverResult<string> => {
+  return useQuery<string>([QueryKeys.balance], () => dataService.getUserBalance(), {
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchOnMount: true,
+    ...config,
+  });
 };
 
 export const useGetConversationByIdQuery = (
@@ -219,11 +238,14 @@ export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpointsConfig> 
   });
 };
 
-export const useGetModelsQuery = (): QueryObserverResult<t.TModelsConfig> => {
-  return useQuery([QueryKeys.models], () => dataService.getModels(), {
+export const useGetModelsQuery = (
+  config?: UseQueryOptions<t.TModelsConfig>,
+): QueryObserverResult<t.TModelsConfig> => {
+  return useQuery<t.TModelsConfig>([QueryKeys.models], () => dataService.getModels(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
+    ...config,
   });
 };
 

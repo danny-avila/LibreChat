@@ -10,10 +10,11 @@ import {
 } from 'librechat-data-provider';
 
 import { Nav, MobileNav } from '~/components/Nav';
-import { useAuthContext, useServerStream } from '~/hooks';
+import { useAuthContext, useServerStream, useConversation } from '~/hooks';
 import store from '~/store';
 
 export default function Root() {
+  const { newConversation } = useConversation();
   const { user, isAuthenticated } = useAuthContext();
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
@@ -30,7 +31,7 @@ export default function Root() {
 
   const searchEnabledQuery = useGetSearchEnabledQuery();
   const endpointsQuery = useGetEndpointsQuery();
-  const modelsQuery = useGetModelsQuery();
+  const modelsQuery = useGetModelsQuery({ enabled: isAuthenticated });
   const presetsQuery = useGetPresetsQuery({ enabled: !!user });
 
   useEffect(() => {
@@ -48,6 +49,7 @@ export default function Root() {
   useEffect(() => {
     if (modelsQuery.data) {
       setModelsConfig(modelsQuery.data);
+      newConversation(modelsQuery.data);
     } else if (modelsQuery.isError) {
       console.error('Failed to get models', modelsQuery.error);
     }

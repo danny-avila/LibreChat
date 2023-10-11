@@ -1,12 +1,14 @@
-const BaseClient = require('./BaseClient');
-const ChatGPTClient = require('./ChatGPTClient');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
+const ChatGPTClient = require('./ChatGPTClient');
+const BaseClient = require('./BaseClient');
 const { getModelMaxTokens, genAzureChatCompletion } = require('../../utils');
 const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
+const spendTokens = require('../../models/spendTokens');
+const { isEnabled } = require('../../server/utils');
+const { createLLM, RunManager } = require('./llm');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
-const { createLLM } = require('./llm');
 
 // Cache to store Tiktoken instances
 const tokenizersCache = {};
@@ -70,20 +72,22 @@ class OpenAIClient extends BaseClient {
       };
     }
 
-    if (process.env.OPENROUTER_API_KEY) {
-      this.apiKey = process.env.OPENROUTER_API_KEY;
+    const { OPENROUTER_API_KEY, OPENAI_FORCE_PROMPT } = process.env ?? {};
+    if (OPENROUTER_API_KEY) {
+      this.apiKey = OPENROUTER_API_KEY;
       this.useOpenRouter = true;
     }
 
+    const { reverseProxyUrl: reverseProxy } = this.options;
+    this.FORCE_PROMPT =
+      isEnabled(OPENAI_FORCE_PROMPT) ||
+      (reverseProxy && reverseProxy.includes('completions') && !reverseProxy.includes('chat'));
+
     const { model } = this.modelOptions;
 
-    this.isChatCompletion =
-      this.useOpenRouter ||
-      this.options.reverseProxyUrl ||
-      this.options.localAI ||
-      model.includes('gpt-');
+    this.isChatCompletion = this.useOpenRouter || !!reverseProxy || model.includes('gpt-');
     this.isChatGptModel = this.isChatCompletion;
-    if (model.includes('text-davinci-003') || model.includes('instruct')) {
+    if (model.includes('text-davinci-003') || model.includes('instruct') || this.FORCE_PROMPT) {
       this.isChatCompletion = false;
       this.isChatGptModel = false;
     }
@@ -127,9 +131,13 @@ class OpenAIClient extends BaseClient {
       this.modelOptions.stop = stopTokens;
     }
 
-    if (this.options.reverseProxyUrl) {
-      this.completionsUrl = this.options.reverseProxyUrl;
-      this.langchainProxy = this.options.reverseProxyUrl.match(/.*v1/)[0];
+    if (reverseProxy) {
+      this.completionsUrl = reverseProxy;
+      this.langchainProxy = reverseProxy.match(/.*v1/)?.[0];
+      !this.langchainProxy &&
+        console.warn(`The reverse proxy URL ${reverseProxy} is not valid for Plugins.
+The url must follow OpenAI specs, for example: https://localhost:8080/v1/chat/completions
+If your reverse proxy is compatible to OpenAI specs in every other way, it may still work without plugins enabled.`);
     } else if (isChatGptModel) {
       this.completionsUrl = 'https://api.openai.com/v1/chat/completions';
     } else {
@@ -184,7 +192,7 @@ class OpenAIClient extends BaseClient {
         this.encoding = model.includes('instruct') ? 'text-davinci-003' : model;
         tokenizer = this.constructor.getTokenizer(this.encoding, true);
       } catch {
-        tokenizer = this.constructor.getTokenizer(this.encoding, true);
+        tokenizer = this.constructor.getTokenizer('text-davinci-003', true);
       }
     }
 
@@ -335,6 +343,10 @@ class OpenAIClient extends BaseClient {
       result.tokenCountMap = tokenCountMap;
     }
 
+    if (promptTokens >= 0 && typeof this.options.getReqData === 'function') {
+      this.options.getReqData({ promptTokens });
+    }
+
     return result;
   }
 
@@ -409,13 +421,6 @@ class OpenAIClient extends BaseClient {
     return reply.trim();
   }
 
-  getTokenCountForResponse(response) {
-    return this.getTokenCountForMessage({
-      role: 'assistant',
-      content: response.text,
-    });
-  }
-
   initializeLLM({
     model = 'gpt-3.5-turbo',
     modelName,
@@ -423,12 +428,17 @@ class OpenAIClient extends BaseClient {
     presence_penalty = 0,
     frequency_penalty = 0,
     max_tokens,
+    streaming,
+    context,
+    tokenBuffer,
+    initialMessageCount,
   }) {
     const modelOptions = {
       modelName: modelName ?? model,
       temperature,
       presence_penalty,
       frequency_penalty,
+      user: this.user,
     };
 
     if (max_tokens) {
@@ -451,11 +461,22 @@ class OpenAIClient extends BaseClient {
       };
     }
 
+    const { req, res, debug } = this.options;
+    const runManager = new RunManager({ req, res, debug, abortController: this.abortController });
+    this.runManager = runManager;
+
     const llm = createLLM({
       modelOptions,
       configOptions,
       openAIApiKey: this.apiKey,
       azure: this.azure,
+      streaming,
+      callbacks: runManager.createCallbacks({
+        context,
+        tokenBuffer,
+        conversationId: this.conversationId,
+        initialMessageCount,
+      }),
     });
 
     return llm;
@@ -471,7 +492,7 @@ class OpenAIClient extends BaseClient {
     const { OPENAI_TITLE_MODEL } = process.env ?? {};
 
     const modelOptions = {
-      model: OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo-0613',
+      model: OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo',
       temperature: 0.2,
       presence_penalty: 0,
       frequency_penalty: 0,
@@ -479,11 +500,16 @@ class OpenAIClient extends BaseClient {
     };
 
     try {
-      const llm = this.initializeLLM(modelOptions);
-      title = await runTitleChain({ llm, text, convo });
+      this.abortController = new AbortController();
+      const llm = this.initializeLLM({ ...modelOptions, context: 'title', tokenBuffer: 150 });
+      title = await runTitleChain({ llm, text, convo, signal: this.abortController.signal });
     } catch (e) {
+      if (e?.message?.toLowerCase()?.includes('abort')) {
+        this.options.debug && console.debug('Aborted title generation');
+        return;
+      }
       console.log('There was an issue generating title with LangChain, trying the old method...');
-      console.error(e.message, e);
+      this.options.debug && console.error(e.message, e);
       modelOptions.model = OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
       const instructionsPayload = [
         {
@@ -514,11 +540,19 @@ ${convo}
     let context = messagesToRefine;
     let prompt;
 
-    const { OPENAI_SUMMARY_MODEL } = process.env ?? {};
+    const { OPENAI_SUMMARY_MODEL = 'gpt-3.5-turbo' } = process.env ?? {};
     const maxContextTokens = getModelMaxTokens(OPENAI_SUMMARY_MODEL) ?? 4095;
+    // 3 tokens for the assistant label, and 98 for the summarizer prompt (101)
+    let promptBuffer = 101;
 
-    // Token count of messagesToSummarize: start with 3 tokens for the assistant label
-    const excessTokenCount = context.reduce((acc, message) => acc + message.tokenCount, 3);
+    /*
+     * Note: token counting here is to block summarization if it exceeds the spend; complete
+     * accuracy is not important. Actual spend will happen after successful summarization.
+     */
+    const excessTokenCount = context.reduce(
+      (acc, message) => acc + message.tokenCount,
+      promptBuffer,
+    );
 
     if (excessTokenCount > maxContextTokens) {
       ({ context } = await this.getMessagesWithinTokenLimit(context, maxContextTokens));
@@ -528,30 +562,38 @@ ${convo}
       this.options.debug &&
         console.debug('Summary context is empty, using latest message within token limit');
 
+      promptBuffer = 32;
       const { text, ...latestMessage } = messagesToRefine[messagesToRefine.length - 1];
       const splitText = await tokenSplit({
         text,
-        chunkSize: maxContextTokens - 40,
-        returnSize: 1,
+        chunkSize: Math.floor((maxContextTokens - promptBuffer) / 3),
       });
 
-      const newText = splitText[0];
-
-      if (newText.length < text.length) {
-        prompt = CUT_OFF_PROMPT;
-      }
+      const newText = `${splitText[0]}\n...[truncated]...\n${splitText[splitText.length - 1]}`;
+      prompt = CUT_OFF_PROMPT;
 
       context = [
-        {
-          ...latestMessage,
-          text: newText,
-        },
+        formatMessage({
+          message: {
+            ...latestMessage,
+            text: newText,
+          },
+          userName: this.options?.name,
+          assistantName: this.options?.chatGptLabel,
+        }),
       ];
     }
+    // TODO: We can accurately count the tokens here before handleChatModelStart
+    // by recreating the summary prompt (single message) to avoid LangChain handling
+
+    const initialPromptTokens = this.maxContextTokens - remainingContextTokens;
+    this.options.debug && console.debug(`initialPromptTokens: ${initialPromptTokens}`);
 
     const llm = this.initializeLLM({
       model: OPENAI_SUMMARY_MODEL,
       temperature: 0.2,
+      context: 'summary',
+      tokenBuffer: initialPromptTokens,
     });
 
     try {
@@ -565,6 +607,7 @@ ${convo}
           assistantName: this.options?.chatGptLabel ?? this.options?.modelLabel,
         },
         previous_summary: this.previous_summary?.summary,
+        signal: this.abortController.signal,
       });
 
       const summaryTokenCount = this.getTokenCountForMessage(summaryMessage);
@@ -580,10 +623,35 @@ ${convo}
 
       return { summaryMessage, summaryTokenCount };
     } catch (e) {
-      console.error('Error refining messages');
-      console.error(e);
+      if (e?.message?.toLowerCase()?.includes('abort')) {
+        this.options.debug && console.debug('Aborted summarization');
+        const { run, runId } = this.runManager.getRunByConversationId(this.conversationId);
+        if (run && run.error) {
+          const { error } = run;
+          this.runManager.removeRun(runId);
+          throw new Error(error);
+        }
+      }
+      console.error('Error summarizing messages');
+      this.options.debug && console.error(e);
       return {};
     }
+  }
+
+  async recordTokenUsage({ promptTokens, completionTokens }) {
+    if (this.options.debug) {
+      console.debug('promptTokens', promptTokens);
+      console.debug('completionTokens', completionTokens);
+    }
+    await spendTokens(
+      {
+        user: this.user,
+        model: this.modelOptions.model,
+        context: 'message',
+        conversationId: this.conversationId,
+      },
+      { promptTokens, completionTokens },
+    );
   }
 }
 

@@ -38,7 +38,16 @@ function validateJson(json, verbose = true) {
 }
 
 // omit the LLM to return the well known jsons as objects
-async function loadSpecs({ llm, user, message, tools = [], map = false, memory, verbose = false }) {
+async function loadSpecs({
+  llm,
+  user,
+  message,
+  tools = [],
+  map = false,
+  memory,
+  signal,
+  verbose = false,
+}) {
   const directoryPath = path.join(__dirname, '..', '.well-known');
   let files = [];
 
@@ -86,6 +95,7 @@ async function loadSpecs({ llm, user, message, tools = [], map = false, memory, 
             llm,
             message,
             memory,
+            signal,
             user,
             verbose,
           });

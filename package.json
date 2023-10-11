@@ -10,6 +10,7 @@
   "scripts": {
     "install": "node config/install.js",
     "update": "node config/update.js",
+    "add-balance": "node config/add-balance.js",
     "rebuild:package-lock": "node config/packages",
     "reinstall": "node config/update.js -l -g",
     "b:reinstall": "bun config/update.js -b -l -g",
@@ -46,12 +47,13 @@
     "lint": "eslint \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\"",
     "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\"",
     "b:api": "NODE_ENV=production bun run api/server/index.js",
-    "b:api:dev": "NODE_ENV=development bun run --watch api/server/index.js",
+    "b:api:dev": "NODE_ENV=production bun run --watch api/server/index.js",
     "b:data-provider": "cd packages/data-provider && bun run b:build",
     "b:client": "bun --bun run b:data-provider && cd client && bun --bun run b:build",
     "b:client:dev": "cd client && bun run b:dev",
     "b:test:client": "cd client && bun run b:test",
-    "b:test:api": "cd api && bun run b:test"
+    "b:test:api": "cd api && bun run b:test",
+    "b:balance": "bun config/add-balance.js"
   },
   "repository": {
     "type": "git",

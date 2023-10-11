@@ -1,8 +1,12 @@
 import connectDb from '@librechat/backend/lib/db/connectDb';
-import User from '@librechat/backend/models/User';
-import Session from '@librechat/backend/models/Session';
-import { deleteMessages } from '@librechat/backend/models/Message';
-import { deleteConvos } from '@librechat/backend/models/Conversation';
+import {
+  deleteMessages,
+  deleteConvos,
+  User,
+  Session,
+  Balance,
+  Transaction,
+} from '@librechat/backend/models';
 type TUser = { email: string; password: string };
 
 export default async function cleanupUser(user: TUser) {
@@ -12,25 +16,27 @@ export default async function cleanupUser(user: TUser) {
     const db = await connectDb();
     console.log('🤖:  ✅  Connected to Database');
 
-    const { _id } = await User.findOne({ email }).lean();
+    const { _id: user } = await User.findOne({ email }).lean();
     console.log('🤖:  ✅  Found user in Database');
 
     // Delete all conversations & associated messages
-    const { deletedCount, messages } = await deleteConvos(_id, {});
+    const { deletedCount, messages } = await deleteConvos(user, {});
 
     if (messages.deletedCount > 0 || deletedCount > 0) {
       console.log(`🤖:  ✅  Deleted ${deletedCount} convos & ${messages.deletedCount} messages`);
     }
 
     // Ensure all user messages are deleted
-    const { deletedCount: deletedMessages } = await deleteMessages({ user: _id });
+    const { deletedCount: deletedMessages } = await deleteMessages({ user });
     if (deletedMessages > 0) {
       console.log(`🤖:  ✅  Deleted ${deletedMessages} remaining message(s)`);
     }
 
-    await Session.deleteAllUserSessions(_id);
+    await Session.deleteAllUserSessions(user);
 
-    await User.deleteMany({ email });
+    await User.deleteMany({ _id: user });
+    await Balance.deleteMany({ user });
+    await Transaction.deleteMany({ user });
 
     console.log('🤖:  ✅  Deleted user from Database');
 

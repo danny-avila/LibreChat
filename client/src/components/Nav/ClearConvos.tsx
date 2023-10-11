@@ -12,6 +12,7 @@ const ClearConvos = ({ open, onOpenChange }) => {
   const [confirmClear, setConfirmClear] = useState(false);
   const localize = useLocalize();
 
+  // Clear all conversations
   const clearConvos = useCallback(() => {
     if (confirmClear) {
       console.log('Clearing conversations...');
@@ -22,6 +23,7 @@ const ClearConvos = ({ open, onOpenChange }) => {
     }
   }, [confirmClear, clearConvosMutation]);
 
+  // Refresh conversations after clearing
   useEffect(() => {
     if (clearConvosMutation.isSuccess) {
       refreshConversations();

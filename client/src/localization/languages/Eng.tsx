@@ -2,7 +2,7 @@
 
 export default {
   com_ui_examples: 'Examples',
-  com_ui_new_chat: 'New chat',
+  com_ui_new_chat: 'New Chat',
   com_ui_example_quantum_computing: 'Explain quantum computing in simple terms',
   com_ui_example_10_year_old_b_day: 'Got any creative ideas for a 10 year old\'s birthday?',
   com_ui_example_http_in_js: 'How do I make an HTTP request in Javascript?',
@@ -230,6 +230,8 @@ export default {
   com_nav_plugin_search: 'Search plugins',
   com_nav_plugin_auth_error:
     'There was an error attempting to authenticate this plugin. Please try again.',
+  com_nav_close_menu: 'Close sidebar',
+  com_nav_open_menu: 'Open sidebar',
   com_nav_export_filename: 'Filename',
   com_nav_export_filename_placeholder: 'Set the filename',
   com_nav_export_type: 'Type',
@@ -272,4 +274,5 @@ export default {
   com_nav_lang_japanese: '日本語',
   com_nav_lang_swedish: 'Svenska',
   com_nav_lang_korean: '한국어',
+  com_nav_lang_traditionalchinese: '繁體中文',
 };

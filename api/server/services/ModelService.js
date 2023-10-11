@@ -28,7 +28,7 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
   }
 
   if (reverseProxyUrl) {
-    basePath = reverseProxyUrl.match(/.*v1/)[0];
+    basePath = reverseProxyUrl.match(/.*v1/)?.[0];
   }
 
   const cachedModels = await modelsCache.get(basePath);

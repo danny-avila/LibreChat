@@ -82,4 +82,40 @@ function getModelMaxTokens(modelName) {
   return undefined;
 }
 
-module.exports = { tiktokenModels: new Set(models), maxTokensMap, getModelMaxTokens };
+/**
+ * Retrieves the model name key for a given model name input. If the exact model name isn't found,
+ * it searches for partial matches within the model name, checking keys in reverse order.
+ *
+ * @param {string} modelName - The name of the model to look up.
+ * @returns {string|undefined} The model name key for the given model; returns input if no match is found and is string.
+ *
+ * @example
+ * matchModelName('gpt-4-32k-0613'); // Returns 'gpt-4-32k-0613'
+ * matchModelName('gpt-4-32k-unknown'); // Returns 'gpt-4-32k'
+ * matchModelName('unknown-model'); // Returns undefined
+ */
+function matchModelName(modelName) {
+  if (typeof modelName !== 'string') {
+    return undefined;
+  }
+
+  if (maxTokensMap[modelName]) {
+    return modelName;
+  }
+
+  const keys = Object.keys(maxTokensMap);
+  for (let i = keys.length - 1; i >= 0; i--) {
+    if (modelName.includes(keys[i])) {
+      return keys[i];
+    }
+  }
+
+  return modelName;
+}
+
+module.exports = {
+  tiktokenModels: new Set(models),
+  maxTokensMap,
+  getModelMaxTokens,
+  matchModelName,
+};
