@@ -13,6 +13,7 @@ import { LinkIcon, DotsIcon, GearIcon } from '~/components';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
+import ErrorDialog from '~/components/Messages/Content/ErrorDialog';
 
 import store from '~/store';
 
@@ -38,14 +39,22 @@ export default function NavLinks() {
     }
   };
 
+  const [showBuyTokens, setShowBuyTokens] = useState(false);
+
   return (
     <>
       <Menu as="div" className="group relative">
         {({ open }) => (
           <>
             {startupConfig?.checkBalance && (
-              <div className="m-1 ml-3 whitespace-nowrap text-left text-sm text-gray-100">
+              <div className="m-1 ml-3 flex flex-col items-start whitespace-nowrap text-left text-sm text-gray-100">
                 {`Tokens Remaining: ${balanceQuery.data}`}
+                <button
+                  onClick={() => setShowBuyTokens(true)}
+                  className="mt-2 w-full rounded bg-green-500 p-2 text-white hover:bg-green-600 dark:hover:bg-green-600"
+                >
+                  Buy Tokens
+                </button>
               </div>
             )}
             <Menu.Button
@@ -124,6 +133,7 @@ export default function NavLinks() {
       {showExports && <ExportModel open={showExports} onOpenChange={setShowExports} />}
       {showClearConvos && <ClearConvos open={showClearConvos} onOpenChange={setShowClearConvos} />}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
+      {showBuyTokens && <ErrorDialog open={showBuyTokens} onOpenChange={setShowBuyTokens} />}
     </>
   );
 }
