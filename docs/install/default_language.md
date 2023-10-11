@@ -8,7 +8,7 @@
 Example: 
 from **English** as default
 
-```typescript
+```js
 import { atom } from 'recoil';
 
 const lang = atom({
@@ -21,7 +21,7 @@ export default { lang };
 
 to **Italian** as default 
 
-```typescript
+```js
 import { atom } from 'recoil';
 
 const lang = atom({
