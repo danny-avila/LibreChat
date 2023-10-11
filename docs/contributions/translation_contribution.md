@@ -16,16 +16,18 @@ Fork the [LibreChat repository](https://github.com/danny-avila/LibreChat) and do
 - At the beginning of the code, add your language below all the others in this format:
 
   `import Language-name from './languages/** ';`
+
   Example (English):`import English from './languages/Eng';`
 
-- Further down in the code, add the following:
+- Further down in the code, add in the language mapping, the following:
 
-  `if (langCode === '**') return Language-name;` 
+  `'**-**': LanguageName,` 
 
->Replace "**" with the ISO 3166 Alpha-2 code of your language (in lowercase). 
-Example (English): `if (langCode === 'en') return English;`
+> Replace `**-**` with the local identifier of your language (ask ChatGPT or search it on Google). 
 
->If you don't know the ISO 3166 code for your language, check it [here](https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes) and also use it with an initial capital)
+> Replace `LanguageName` with the name of your language. 
+
+Example (English): `'en-US': English,`
 
 ### Create your new language file
 - Go into the `client\src\localization\languages` folder and create a file named as follows: `**.tsx`
@@ -56,7 +58,7 @@ Example (English): `if (langCode === 'en') return English;`
 
   ⚠️ Do not modify the `com_...` part ⚠️
 
-> Delete the Language list after `com_nav_setting_general: 'General',` near the bottom of the file (You do not need to translate the individual language names)
+### Delete the Language list after `com_nav_setting_general: 'General',` near the bottom of the file (You do not need to translate the individual language names), except for `com_nav_setting_data: 'Data controls'` (you need to translate it)
 
 
 ### Add your language to `Eng.tsx`
@@ -69,7 +71,7 @@ Add your language to the `LangSelector` variable in the following way:
 ```js
 export const LangSelector = ({
   //other code
-        <option value="en">{localize(lang, 'com_nav_lang_english')}</option>
+        <option value="en-US">{localize(lang, 'com_nav_lang_english')}</option>
         //other languages...
         <option value="**">{localize(lang, 'com_nav_lang_your-language-name')}</option>
       </select>
@@ -78,12 +80,12 @@ export const LangSelector = ({
 };
 ```
 
-Where `**` is the ISO 3166 Alpha-2 code and `com_nav_lang_your-language-name` stands for the name of your language. 
+Where `**-**` is the local identifier of your language and `com_nav_lang_your-language-name` stands for the name of your language. 
 Example: `com_nav_lang_english` or `com_nav_lang_italian`
 
 **You should only need to add one line of code:**
 ```js
-<option value="**">{localize(lang, 'com_nav_lang_your-language-name')}</option>
+<option value="**-**">{localize(lang, 'com_nav_lang_your-language-name')}</option>
 ```
 
 ### Summary
