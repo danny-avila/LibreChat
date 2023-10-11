@@ -1,17 +1,19 @@
 import { atom, selector } from 'recoil';
 import { TEndpointsConfig } from 'librechat-data-provider';
 
+const defaultConfig: TEndpointsConfig = {
+  azureOpenAI: null,
+  openAI: null,
+  bingAI: null,
+  chatGPTBrowser: null,
+  gptPlugins: null,
+  google: null,
+  anthropic: null,
+};
+
 const endpointsConfig = atom<TEndpointsConfig>({
   key: 'endpointsConfig',
-  default: {
-    azureOpenAI: null,
-    openAI: null,
-    bingAI: null,
-    chatGPTBrowser: null,
-    gptPlugins: null,
-    google: null,
-    anthropic: null,
-  },
+  default: defaultConfig,
 });
 
 const plugins = selector({
@@ -58,4 +60,5 @@ export default {
   endpointsConfig,
   endpointsFilter,
   availableEndpoints,
+  defaultConfig,
 };

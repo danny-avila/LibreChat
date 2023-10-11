@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES6",
+    "module": "CommonJS",
+    // "checkJs": true,           // Report errors in JavaScript files
+    "baseUrl": "./",
+    "paths": {
+      "*": ["*", "node_modules/*"],
+      "~/*": ["./*"]
+    }
+  },
+  "exclude": ["node_modules"]
+}

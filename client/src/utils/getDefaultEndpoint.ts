@@ -28,11 +28,18 @@ const getEndpointFromSetup = (convoSetup: TConvoSetup, endpointsConfig: TEndpoin
 const getEndpointFromLocalStorage = (endpointsConfig: TEndpointsConfig) => {
   try {
     const { lastConversationSetup } = getLocalStorageItems();
+    const { endpoint } = lastConversationSetup;
+    const isDefaultConfig = Object.values(endpointsConfig ?? {})?.every((value) => !value);
 
-    return (
-      lastConversationSetup.endpoint &&
-      (endpointsConfig[lastConversationSetup.endpoint] ? lastConversationSetup.endpoint : null)
-    );
+    if (isDefaultConfig && endpoint) {
+      return endpoint;
+    }
+
+    if (isDefaultConfig && endpoint) {
+      return endpoint;
+    }
+
+    return endpoint && endpointsConfig[endpoint] ? endpoint : null;
   } catch (error) {
     console.error(error);
     return null;

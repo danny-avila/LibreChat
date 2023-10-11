@@ -3,8 +3,11 @@ const uap = require('ua-parser-js');
 const { getLogStores } = require('../../cache');
 const denyRequest = require('./denyRequest');
 const { isEnabled, removePorts } = require('../utils');
+const keyvRedis = require('../../cache/keyvRedis');
 
-const banCache = new Keyv({ namespace: 'bans', ttl: 0 });
+const banCache = isEnabled(process.env.USE_REDIS)
+  ? new Keyv({ store: keyvRedis })
+  : new Keyv({ namespace: 'bans', ttl: 0 });
 const message = 'Your account has been temporarily banned due to violations of our service.';
 
 /**
@@ -50,9 +53,11 @@ const checkBan = async (req, res, next = () => {}) => {
 
   req.ip = removePorts(req);
   const userId = req.user?.id ?? req.user?._id ?? null;
+  const ipKey = isEnabled(process.env.USE_REDIS) ? `ban_cache:ip:${req.ip}` : req.ip;
+  const userKey = isEnabled(process.env.USE_REDIS) ? `ban_cache:user:${userId}` : userId;
 
-  const cachedIPBan = await banCache.get(req.ip);
-  const cachedUserBan = await banCache.get(userId);
+  const cachedIPBan = await banCache.get(ipKey);
+  const cachedUserBan = await banCache.get(userKey);
   const cachedBan = cachedIPBan || cachedUserBan;
 
   if (cachedBan) {
@@ -78,13 +83,13 @@ const checkBan = async (req, res, next = () => {}) => {
   const timeLeft = Number(isBanned.expiresAt) - Date.now();
 
   if (timeLeft <= 0) {
-    await banLogs.delete(req.ip);
-    await banLogs.delete(userId);
+    await banLogs.delete(ipKey);
+    await banLogs.delete(userKey);
     return next();
   }
 
-  banCache.set(req.ip, isBanned, timeLeft);
-  banCache.set(userId, isBanned, timeLeft);
+  banCache.set(ipKey, isBanned, timeLeft);
+  banCache.set(userKey, isBanned, timeLeft);
   req.banned = true;
   return await banResponse(req, res);
 };

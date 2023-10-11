@@ -170,7 +170,7 @@ export default function Message({
                 text={text ?? ''}
                 message={message}
                 enterEdit={enterEdit}
-                error={error ?? false}
+                error={!!(error && !searchResult)}
                 isSubmitting={isSubmitting}
                 unfinished={unfinished ?? false}
                 isCreatedByUser={isCreatedByUser ?? true}
