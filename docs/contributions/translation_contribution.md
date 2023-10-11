@@ -23,7 +23,7 @@ Fork the [LibreChat repository](https://github.com/danny-avila/LibreChat) and do
 
   `'**-**': LanguageName,` 
 
-> Replace "**-**" with the Locale Identifier of your language (ask ChatGPT or search it on Google). 
+> Replace "**-**" with the local identifier of your language (ask ChatGPT or search it on Google). 
 
 > Replace "LanguageName" with the name of your language. 
 
@@ -80,7 +80,7 @@ export const LangSelector = ({
 };
 ```
 
-Where `**-**` is the Locale Identifier of your language and `com_nav_lang_your-language-name` stands for the name of your language. 
+Where `**-**` is the local identifier of your language and `com_nav_lang_your-language-name` stands for the name of your language. 
 Example: `com_nav_lang_english` or `com_nav_lang_italian`
 
 **You should only need to add one line of code:**
