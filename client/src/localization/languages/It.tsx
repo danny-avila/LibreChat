@@ -226,6 +226,8 @@ export default {
   com_endpoint_config_key_google_service_account: 'Crea un account di servizio',
   com_endpoint_config_key_google_vertex_api_role:
     'Assicurati di fare clic su \'Crea e continua\' per dare almeno il ruolo \'Utente Vertex AI\'. Infine, crea una chiave JSON da importare qui.',
+  com_nav_close_menu: 'Apri la barra laterale',
+  com_nav_open_menu: 'Chiudi la barra laterale',
   com_nav_export_filename: 'Nome del file',
   com_nav_export_filename_placeholder: 'Imposta il nome del file',
   com_nav_export_type: 'Tipo',

@@ -22,6 +22,8 @@ import {
 import { cn } from '~/utils/';
 import store from '~/store';
 
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/';
+
 export default function Nav({ navVisible, setNavVisible }) {
   const [isHovering, setIsHovering] = useState(false);
   const [navWidth, setNavWidth] = useState('260px');
@@ -161,78 +163,92 @@ export default function Nav({ navVisible, setNavVisible }) {
       : 'flex flex-col gap-2 text-gray-100 text-sm';
 
   return (
-    <>
-      <div
-        className="nav active dark max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-900 md:max-w-[260px]"
-        style={{
-          width: navVisible ? navWidth : '0px',
-          visibility: navVisible ? 'visible' : 'hidden',
-          transition: 'width 0.2s, visibility 0.2s',
-        }}
-      >
-        <div className="h-full w-[320px] md:w-[260px]">
-          <div className="flex h-full min-h-0 flex-col ">
-            <div className="scrollbar-trigger relative flex h-full w-full flex-1 items-start border-white/20">
-              <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
-                <div className="mb-1 flex h-11 flex-row">
-                  <NewChat />
-                  <button
-                    type="button"
-                    className={cn(
-                      'nav-close-button inline-flex h-11 w-11 items-center justify-center rounded-md border border-white/20 text-white hover:bg-gray-500/10',
-                    )}
-                    onClick={toggleNavVisible}
-                  >
-                    <span className="sr-only">{localize('com_nav_close_sidebar')}</span>
-                    <Panel open={false} />
-                  </button>
-                </div>
-                {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
-                <div
-                  className={`flex-1 flex-col overflow-y-auto ${
-                    isHovering ? '' : 'scrollbar-transparent'
-                  } border-b border-white/20`}
-                  onMouseEnter={() => setIsHovering(true)}
-                  onMouseLeave={() => setIsHovering(false)}
-                  ref={containerRef}
-                >
-                  <div className={containerClasses}>
-                    {(getConversationsQuery.isLoading && pageNumber === 1) || isFetching ? (
-                      <Spinner />
-                    ) : (
-                      <Conversations conversations={conversations} moveToTop={moveToTop} />
-                    )}
-                    <Pages
-                      pageNumber={pageNumber}
-                      pages={pages}
-                      nextPage={nextPage}
-                      previousPage={previousPage}
-                      setPageNumber={setPageNumber}
-                    />
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <div
+          className={
+            'nav active dark max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-900 md:max-w-[260px]'
+          }
+          style={{
+            width: navVisible ? navWidth : '0px',
+            visibility: navVisible ? 'visible' : 'hidden',
+            transition: 'width 0.2s, visibility 0.2s',
+          }}
+        >
+          <div className="h-full w-[320px] md:w-[260px]">
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="scrollbar-trigger relative flex h-full w-full flex-1 items-start border-white/20">
+                <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
+                  <div className="mb-1 flex h-11 flex-row">
+                    <NewChat />
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className={cn(
+                          'nav-close-button inline-flex h-11 w-11 items-center justify-center rounded-md border border-white/20 text-white hover:bg-gray-500/10',
+                        )}
+                        onClick={toggleNavVisible}
+                      >
+                        <span className="sr-only">{localize('com_nav_close_sidebar')}</span>
+                        <Panel open={false} />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={17}>
+                      {localize('com_nav_close_menu')}
+                    </TooltipContent>
                   </div>
-                </div>
-                <NavLinks />
-              </nav>
+                  {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
+                  <div
+                    className={`flex-1 flex-col overflow-y-auto ${
+                      isHovering ? '' : 'scrollbar-transparent'
+                    } border-b border-white/20`}
+                    onMouseEnter={() => setIsHovering(true)}
+                    onMouseLeave={() => setIsHovering(false)}
+                    ref={containerRef}
+                  >
+                    <div className={containerClasses}>
+                      {(getConversationsQuery.isLoading && pageNumber === 1) || isFetching ? (
+                        <Spinner />
+                      ) : (
+                        <Conversations conversations={conversations} moveToTop={moveToTop} />
+                      )}
+                      <Pages
+                        pageNumber={pageNumber}
+                        pages={pages}
+                        nextPage={nextPage}
+                        previousPage={previousPage}
+                        setPageNumber={setPageNumber}
+                      />
+                    </div>
+                  </div>
+                  <NavLinks />
+                </nav>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      {!navVisible && (
-        <div className="absolute left-2 top-2 z-10 hidden md:inline-block">
-          <button
-            type="button"
-            className="nav-open-button flex h-11 cursor-pointer items-center gap-3 rounded-md border border-black/10 bg-white p-3 text-sm text-black transition-colors duration-200 hover:bg-gray-50 dark:border-white/20 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
-            onClick={toggleNavVisible}
-          >
-            <div className="flex items-center justify-center">
-              <span className="sr-only">{localize('com_nav_open_sidebar')}</span>
-              <Panel open={true} />
-            </div>
-          </button>
-        </div>
-      )}
+        {!navVisible && (
+          <div className="absolute left-2 top-2 z-10 hidden md:inline-block">
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="nav-open-button flex h-11 cursor-pointer items-center gap-3 rounded-md border border-black/10 bg-white p-3 text-sm text-black transition-colors duration-200 hover:bg-gray-50 dark:border-white/20 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
+                onClick={toggleNavVisible}
+              >
+                <div className="flex items-center justify-center">
+                  <span className="sr-only">{localize('com_nav_open_sidebar')}</span>
+                  <Panel open={true} />
+                </div>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={17}>
+              {localize('com_nav_open_menu')}
+            </TooltipContent>
+          </div>
+        )}
 
-      <div className={'nav-mask' + (navVisible ? ' active' : '')} onClick={toggleNavVisible}></div>
-    </>
+        <div className={`nav-mask${navVisible ? ' active' : ''}`} onClick={toggleNavVisible}></div>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
