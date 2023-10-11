@@ -103,9 +103,9 @@ export default {
   com_endpoint_bing_to_enable_sydney: '시드니를 활성화하려면',
   com_endpoint_bing_jailbreak: 'Jailbreak',
   com_endpoint_bing_context_placeholder:
-    "Bing은 '컨텍스트'로 최대 7,000개의 토큰을 사용할 수 있으며, 대화에서 참조할 수 있습니다. 구체적인 제한은 알려져 있지 않지만, 7,000개의 토큰을 초과하면 오류가 발생할 수 있습니다.",
+    'Bing은 \'컨텍스트\'로 최대 7,000개의 토큰을 사용할 수 있으며, 대화에서 참조할 수 있습니다. 구체적인 제한은 알려져 있지 않지만, 7,000개의 토큰을 초과하면 오류가 발생할 수 있습니다.',
   com_endpoint_bing_system_message_placeholder:
-    "경고: 이 기능의 오용으로 인해 Bing의 사용이 '금지'될 수 있습니다. 모든 내용을 보려면 '시스템 메시지'를 클릭하세요. 생략된 경우 '시드니' 프리셋이 사용됩니다.",
+    '경고: 이 기능의 오용으로 인해 Bing의 사용이 \'금지\'될 수 있습니다. 모든 내용을 보려면 \'시스템 메시지\'를 클릭하세요. 생략된 경우 \'시드니\' 프리셋이 사용됩니다.',
   com_endpoint_system_message: '시스템 메시지',
   com_endpoint_default_blank: '기본값: 공백',
   com_endpoint_default_false: '기본값: false',
@@ -209,6 +209,10 @@ export default {
     '로그인한 상태에서 개발 도구 또는 확장 프로그램을 사용하여 _U 쿠키의 내용을 복사합니다. 실패하는 경우 다음',
   com_endpoint_config_key_edge_instructions: '지침',
   com_endpoint_config_key_edge_full_key_string: '전체 쿠키 문자열을 제공하세요',
+  com_nav_plugin_store: '플러그인 스토어',
+  com_nav_plugin_search: '플러그인 검색',
+  com_nav_plugin_auth_error:
+    '이 플러그인을 인증하려는 중에 오류가 발생했습니다. 다시 시도해주세요.',
   com_nav_export_filename: '파일 이름',
   com_nav_export_filename_placeholder: '파일 이름을 설정하세요',
   com_nav_export_type: '유형',

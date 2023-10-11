@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Dialog } from '@headlessui/react';
 import { useRecoilState } from 'recoil';
-import { X } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import store from '~/store';
 import PluginStoreItem from './PluginStoreItem';
 import PluginPagination from './PluginPagination';
@@ -15,6 +15,7 @@ import {
   TError,
 } from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useLocalize } from '~/hooks';
 
 type TPluginStoreDialogProps = {
   isOpen: boolean;
@@ -22,6 +23,7 @@ type TPluginStoreDialogProps = {
 };
 
 function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
+  const localize = useLocalize();
   const { data: availablePlugins } = useAvailablePluginsQuery();
   const { user } = useAuthContext();
   const updateUserPlugins = useUpdateUserPluginsMutation();
@@ -121,17 +123,20 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     },
     [itemsPerPage],
   );
-
+  const [searchValue, setSearchValue] = useState<string>('');
+  const filteredPlugins = availablePlugins?.filter((plugin) =>
+    plugin.name.toLowerCase().includes(searchValue.toLowerCase()),
+  );
   useEffect(() => {
-    if (user) {
-      if (user.plugins) {
-        setUserPlugins(user.plugins);
-      }
+    if (user && user.plugins) {
+      setUserPlugins(user.plugins);
     }
-    if (availablePlugins) {
-      setMaxPage(Math.ceil(availablePlugins.length / itemsPerPage));
+
+    if (filteredPlugins) {
+      setMaxPage(Math.ceil(filteredPlugins.length / itemsPerPage));
+      setCurrentPage(1); // Reset the current page to 1 whenever the filtered list changes
     }
-  }, [availablePlugins, itemsPerPage, user]);
+  }, [availablePlugins, itemsPerPage, user, searchValue]); // Add searchValue to the dependency list
 
   const handleChangePage = (page: number) => {
     setCurrentPage(page);
@@ -143,12 +148,15 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
       <div className="fixed inset-0 bg-gray-500/90 transition-opacity dark:bg-gray-800/90" />
       {/* Full-screen container to center the panel */}
       <div className="fixed inset-0 flex items-center justify-center p-4">
-        <Dialog.Panel className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-900 max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl">
+        <Dialog.Panel
+          className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-900 max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
+          style={{ minHeight: '610px' }}
+        >
           <div className="flex items-center justify-between border-b-[1px] border-black/10 px-4 pb-4 pt-5 dark:border-white/10 sm:p-6">
             <div className="flex items-center">
               <div className="text-center sm:text-left">
                 <Dialog.Title className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
-                  Plugin store
+                  {localize('com_nav_plugin_store')}
                 </Dialog.Title>
               </div>
             </div>
@@ -169,8 +177,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
               className="relative m-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
               role="alert"
             >
-              There was an error attempting to authenticate this plugin. Please try again.{' '}
-              {errorMessage}
+              {localize('com_nav_plugin_auth_error')} {errorMessage}
             </div>
           )}
           {showPluginAuthForm && (
@@ -183,12 +190,37 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
           )}
           <div className="p-4 sm:p-6 sm:pt-4">
             <div className="mt-4 flex flex-col gap-4">
+              <div style={{ position: 'relative', display: 'inline-block', width: '250px' }}>
+                <input
+                  type="text"
+                  value={searchValue}
+                  onChange={(e) => setSearchValue(e.target.value)}
+                  placeholder={localize('com_nav_plugin_search')}
+                  style={{
+                    width: '100%',
+                    paddingLeft: '30px',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px', // This rounds the corners
+                  }}
+                />
+                <Search
+                  style={{
+                    position: 'absolute',
+                    left: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    width: '16px',
+                    height: '16px',
+                  }}
+                />
+              </div>
               <div
                 ref={gridRef}
                 className="grid grid-cols-1 grid-rows-2 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                style={{ minHeight: '410px' }}
               >
-                {availablePlugins &&
-                  availablePlugins
+                {filteredPlugins &&
+                  filteredPlugins
                     .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                     .map((plugin, index) => (
                       <PluginStoreItem
@@ -202,14 +234,14 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
               </div>
             </div>
             <div className="mt-2 flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
-              {maxPage > 1 && (
-                <div>
-                  <PluginPagination
-                    currentPage={currentPage}
-                    maxPage={maxPage}
-                    onChangePage={handleChangePage}
-                  />
-                </div>
+              {maxPage > 0 ? (
+                <PluginPagination
+                  currentPage={currentPage}
+                  maxPage={maxPage}
+                  onChangePage={handleChangePage}
+                />
+              ) : (
+                <div style={{ height: '21px' }}></div>
               )}
               {/* API not yet implemented: */}
               {/* <div className="flex flex-col items-center gap-2 sm:flex-row">
