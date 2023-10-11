@@ -1,6 +1,6 @@
-# Docker Installation Guide
+# Docker Compose Installation Guide
 
-Docker installation is recommended for most use cases. It's the easiest, simplest, and most reliable method to get started.
+Docker Compose installation is recommended for most use cases. It's the easiest, simplest, and most reliable method to get started.
 
 See the video guide for [Windows](windows_install.md#recommended) or [Ubuntu 22.04 LTS](linux_install.md#recommended)
 ## Installation and Configuration
@@ -116,4 +116,4 @@ That's it! If you need more detailed information on configuring your compose fil
 
 ---
 
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+>⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
