@@ -32,7 +32,11 @@ export default function Landing() {
           data-testid="landing-title"
           className="mb-10 ml-auto mr-auto mt-6 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-16 md:mt-[10vh]"
         >
-          {config?.appTitle || 'LibreChat'}
+          <img
+            src="/assets/logo-no-background.png"
+            alt=""
+            className="h-auto w-1/2 object-contain sm:w-1/3"
+          />
         </h1>
         <div className="items-start gap-3.5 text-center md:flex">
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
