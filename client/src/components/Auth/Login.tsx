@@ -22,6 +22,7 @@ function Login() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
+      <img src="/assets/logo-no-background.png" alt="GPTChina.io" className="mb-6 h-16 w-auto" />
       <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
         <h1 className="mb-4 text-center text-3xl font-semibold">
           {localize('com_auth_welcome_back')}
