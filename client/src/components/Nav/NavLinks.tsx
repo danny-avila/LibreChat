@@ -55,6 +55,7 @@ export default function NavLinks() {
                 'group-ui-open:bg-gray-800 flex w-full items-center gap-2.5 rounded-md px-3 py-3 text-sm transition-colors duration-200 hover:bg-gray-800',
                 open ? 'bg-gray-800' : '',
               )}
+              data-testid="nav-user"
             >
               <div className="-ml-0.9 -mt-0.8 h-9 w-8 flex-shrink-0">
                 <div className="relative flex">
