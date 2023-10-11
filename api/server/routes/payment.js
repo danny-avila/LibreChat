@@ -2,19 +2,27 @@ const express = require('express');
 const PaymentController = require('../controllers/PaymentController'); // Ensure this path is correct
 const router = express.Router();
 
-// Middleware to capture raw body
-function rawBodyBuffer(req, res, buf, encoding) {
+function rawBodySaver(req, res, buf, encoding) {
   if (buf && buf.length) {
     req.rawBody = buf.toString(encoding || 'utf8');
   }
 }
 
+function rawMiddleware(req, res, next) {
+  express.raw({ type: 'application/json', verify: rawBodySaver })(req, res, (err) => {
+    if (err) {
+      next(err);
+    } else {
+      next();
+    }
+  });
+}
+
 router.post('/create-checkout-session', PaymentController.createPaymentIntent);
 
-// Update this route to use express.raw()
 router.post(
   '/webhook',
-  express.raw({ type: 'application/json', verify: rawBodyBuffer }),
+  rawMiddleware, // Apply rawMiddleware only to this route
   PaymentController.handleWebhook,
 );
 

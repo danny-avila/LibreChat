@@ -1,16 +1,11 @@
 const User = require('@librechat/backend/models/User');
 const Transaction = require('@librechat/backend/models/Transaction');
 
-async function addTokens(email, amount) {
-  // Validate the email
-  if (!email.includes('@')) {
-    throw new Error('Invalid email address!');
-  }
-
+async function addTokensByUserId(userId, amount) {
   // Validate the user
-  const user = await User.findOne({ email }).lean();
+  const user = await User.findById(userId);
   if (!user) {
-    throw new Error('No user with that email was found!');
+    throw new Error('No user with that userId was found!');
   }
 
   // Create the transaction and update the balance
@@ -29,4 +24,4 @@ async function addTokens(email, amount) {
   return result.tokenCredits; // Return the new balance
 }
 
-module.exports = addTokens;
+module.exports = addTokensByUserId;

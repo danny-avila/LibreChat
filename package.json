@@ -99,6 +99,7 @@
   "dependencies": {
     "@stripe/react-stripe-js": "^2.3.1",
     "@stripe/stripe-js": "^2.1.7",
+    "body-parser": "^1.20.2",
     "stripe": "^13.9.0"
   }
 }

@@ -1,17 +1,24 @@
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-// const UserId = require('../../models/User');  // Adjust the path to your User Model
-const addTokens = require('../../../config/addTokens'); // Import the addTokens function
+const addTokensByUserId = require('../../../config/addTokens'); // Adjust the import path
 
 exports.createPaymentIntent = async (req, res) => {
   try {
-    //   const { amount, userId } = req.body;
-    const { amount } = req.body;
+    let { amount, userId } = req.body;
+    amount = parseInt(amount, 10) * 100; // Convert RMB to cents for Stripe
+
+    if (isNaN(amount) || amount <= 0) {
+      res.status(400).json({ error: `Invalid amount: ${amount}` });
+      return;
+    }
+
+    console.log('User ID:', userId);
+
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
+      payment_method_types: ['card', 'wechat_pay', 'alipay'],
       line_items: [
         {
           price_data: {
-            currency: 'usd',
+            currency: 'cny', // Changed to Chinese Yuan
             product_data: {
               name: 'Tokens',
             },
@@ -20,12 +27,26 @@ exports.createPaymentIntent = async (req, res) => {
           quantity: 1,
         },
       ],
+      payment_intent_data: {
+        metadata: {
+          userId: userId.toString(),
+        },
+      },
+      payment_method_options: {
+        wechat_pay: {
+          client: 'web',
+        },
+      },
       mode: 'payment',
       success_url: 'http://localhost:3090',
       cancel_url: 'http://localhost:3090',
     });
+
+    console.log('Session:', session);
+
     res.status(200).json({ sessionId: session.id });
   } catch (error) {
+    console.error(error); // Log the error to the console
     res.status(500).json({ error: error.message });
   }
 };
@@ -35,24 +56,52 @@ exports.handleWebhook = async (req, res) => {
   let event;
 
   try {
-    event = stripe.webhooks.constructEvent(req.body, sigHeader, process.env.STRIPE_WEBHOOK_SECRET);
+    event = stripe.webhooks.constructEvent(
+      req.rawBody,
+      sigHeader,
+      process.env.STRIPE_WEBHOOK_SECRET,
+    );
+    console.log('Webhook Event:', event);
   } catch (err) {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  if (event['type'] === 'checkout.session.completed') {
-    const session = event.data.object;
-    const email = session.customer_email; // Assume you've collected and stored the customer's email in Stripe
-    const amount = session.amount_total / 100; // Convert amount to tokens based on your conversion logic
+  if (event['type'] === 'payment_intent.succeeded') {
+    console.log('Payment Intent Succeeded:', event);
+    const paymentIntent = event.data.object;
+    const { metadata } = paymentIntent;
+    const userId = metadata.userId;
+    const amountInRMB = paymentIntent.amount_received / 100;
+
+    console.log('Metadata:', event.data.object.metadata);
+
+    let tokens;
+    switch (amountInRMB) {
+      case 20:
+        tokens = 100000;
+        break;
+      case 40:
+        tokens = 250000;
+        break;
+      case 65:
+        tokens = 500000;
+        break;
+      case 100:
+        tokens = 1000000;
+        break;
+      default:
+        console.error('Invalid amount:', amountInRMB);
+        res.status(400).send({ error: `Invalid amount: ${amountInRMB}` });
+        return;
+    }
 
     try {
-      const newBalance = await addTokens(email, amount);
+      const newBalance = await addTokensByUserId(userId, tokens); // Pass tokens instead of amount
       res.status(200).send(`Success! New balance is ${newBalance}`);
     } catch (error) {
       res.status(500).send({ error: `Error updating balance: ${error.message}` });
     }
   } else {
-    // Handle other types of events or ignore them
     res.status(200).send();
   }
 };

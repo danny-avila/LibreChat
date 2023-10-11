@@ -23,7 +23,14 @@ const startServer = async () => {
 
   // Middleware
   app.use(errorController);
-  app.use(express.json({ limit: '3mb' }));
+  app.use(
+    express.json({
+      limit: '5mb',
+      verify: (req, res, buf) => {
+        req.rawBody = buf.toString();
+      },
+    }),
+  );
   app.use(mongoSanitize());
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(express.static(path.join(projectPath, 'dist')));

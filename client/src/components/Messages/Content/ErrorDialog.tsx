@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog, Label } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { loadStripe } from '@stripe/stripe-js';
@@ -13,10 +13,40 @@ export default function ErrorDialog({ message }) {
   const { user } = useAuthContext();
   const userId = user?.id;
   const [loading, setLoading] = useState(false);
+  const [tokenBalance, setTokenBalance] = useState(null);
   const title = 'Insufficient Funds';
 
-  const handlePurchase = async (amount) => {
+  const fetchTokenBalance = async () => {
+    try {
+      const response = await fetch('/api/balance');
+      const balance = await response.text();
+      setTokenBalance(balance);
+    } catch (error) {
+      console.error('Error fetching token balance:', error);
+    }
+  };
+
+  const handlePurchase = async (tokens) => {
     setLoading(true);
+    let amount;
+    switch (tokens) {
+      case 100000:
+        amount = 20;
+        break;
+      case 250000:
+        amount = 40;
+        break;
+      case 500000:
+        amount = 65;
+        break;
+      case 1000000:
+        amount = 100;
+        break;
+      default:
+        console.error('Invalid token amount');
+        return;
+    }
+
     try {
       const res = await fetch('/api/payment/create-checkout-session', {
         method: 'POST',
@@ -32,6 +62,8 @@ export default function ErrorDialog({ message }) {
       });
       if (error) {
         console.error(error);
+      } else {
+        await fetchTokenBalance();
       }
     } catch (error) {
       console.error('Error:', error);
@@ -39,6 +71,10 @@ export default function ErrorDialog({ message }) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchTokenBalance(); // Fetch token balance on component mount
+  }, []);
 
   return (
     <Dialog defaultOpen={true}>
@@ -54,20 +90,33 @@ export default function ErrorDialog({ message }) {
                 </Label>
                 <Elements stripe={stripePromise}>
                   <button
-                    onClick={() => handlePurchase(2000)} // Replace 2000 with the amount in cents
+                    onClick={() => handlePurchase(100000)}
                     disabled={loading}
                     className="rounded bg-green-600 p-2 text-white hover:bg-green-700 dark:hover:bg-green-800"
                   >
                     {loading ? 'Processing...' : 'Purchase 100k Tokens for 20 RMB'}
                   </button>
                   <button
-                    onClick={() => handlePurchase(4000)} // Replace 4000 with the amount in cents
+                    onClick={() => handlePurchase(250000)}
                     disabled={loading}
                     className="rounded bg-green-600 p-2 text-white hover:bg-green-700 dark:hover:bg-green-800"
                   >
                     {loading ? 'Processing...' : 'Purchase 250k Tokens for 40 RMB'}
                   </button>
-                  {/* Add more buttons for other amounts */}
+                  <button
+                    onClick={() => handlePurchase(500000)}
+                    disabled={loading}
+                    className="rounded bg-green-600 p-2 text-white hover:bg-green-700 dark:hover:bg-green-800"
+                  >
+                    {loading ? 'Processing...' : 'Purchase 500k Tokens for 65 RMB'}
+                  </button>
+                  <button
+                    onClick={() => handlePurchase(1000000)}
+                    disabled={loading}
+                    className="rounded bg-green-600 p-2 text-white hover:bg-green-700 dark:hover:bg-green-800"
+                  >
+                    {loading ? 'Processing...' : 'Purchase 1 Million Tokens for 100 RMB'}
+                  </button>
                 </Elements>
               </div>
             </div>
