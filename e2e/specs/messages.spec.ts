@@ -38,14 +38,6 @@ test.beforeAll(async ({ browser }) => {
   await page.close();
 });
 
-test.afterAll(async () => {
-  console.log('🤖: clearing conversations after message tests.');
-  const page = await beforeAfterAllContext.newPage();
-  await clearConvos(page);
-  await page.close();
-  await beforeAfterAllContext.close();
-});
-
 test.beforeEach(async ({ page }) => {
   await page.goto(initialUrl, { timeout: 5000 });
 });
