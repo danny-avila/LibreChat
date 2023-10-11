@@ -14,7 +14,7 @@ export default function ErrorDialog({ message }) {
   const userId = user?.id;
   const [loading, setLoading] = useState(false);
   const [tokenBalance, setTokenBalance] = useState(null);
-  const title = 'Insufficient Funds';
+  const title = 'Purchase Tokens';
 
   const fetchTokenBalance = async () => {
     try {

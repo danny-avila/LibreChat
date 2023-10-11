@@ -38,8 +38,8 @@ exports.createPaymentIntent = async (req, res) => {
         },
       },
       mode: 'payment',
-      success_url: 'http://localhost:3090',
-      cancel_url: 'http://localhost:3090',
+      success_url: 'https://7be6-204-16-39-70.ngrok-free.app',
+      cancel_url: 'https://7be6-204-16-39-70.ngrok-free.app',
     });
 
     console.log('Session:', session);
