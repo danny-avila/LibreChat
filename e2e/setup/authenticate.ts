@@ -1,8 +1,10 @@
 import { Page, FullConfig, chromium } from '@playwright/test';
+import cleanupUser from './cleanupUser';
 import dotenv from 'dotenv';
 dotenv.config();
 
 type User = { email: string; name: string; password: string };
+const timeout = 3500;
 
 async function register(page: Page, user: User) {
   await page.getByRole('link', { name: 'Sign up' }).click();
@@ -52,18 +54,31 @@ async function authenticate(config: FullConfig, user: User) {
   });
   console.log('🤖: ✔️  localStorage: set Nav as Visible', storageState);
 
-  await page.goto(baseURL, { timeout: 5000 });
+  await page.goto(baseURL, { timeout });
   await register(page, user);
-  await page.waitForURL(`${baseURL}/chat/new`);
+  try {
+    await page.waitForURL(`${baseURL}/chat/new`, { timeout });
+  } catch (error) {
+    console.error('Error:', error);
+    const userExists = page.getByTestId('registration-error');
+    if (userExists) {
+      console.log('🤖: 🚨  user already exists');
+      await cleanupUser(user);
+      await page.goto(baseURL, { timeout });
+      await register(page, user);
+    } else {
+      throw new Error('🤖: 🚨  user failed to register');
+    }
+  }
   console.log('🤖: ✔️  user successfully registered');
 
   // Logout
   await logout(page, user);
-  await page.waitForURL(`${baseURL}/login`);
+  await page.waitForURL(`${baseURL}/login`, { timeout });
   console.log('🤖: ✔️  user successfully logged out');
 
   await login(page, user);
-  await page.waitForURL(`${baseURL}/chat/new`);
+  await page.waitForURL(`${baseURL}/chat/new`, { timeout });
   console.log('🤖: ✔️  user successfully authenticated');
 
   await page.context().storageState({ path: storageState as string });
