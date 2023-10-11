@@ -7,6 +7,7 @@ const {
 const jwt = require('jsonwebtoken');
 const Session = require('../../models/Session');
 const User = require('../../models/User');
+const Balance = require('../../models/Balance');
 const crypto = require('crypto');
 const cookies = require('cookie');
 
@@ -20,6 +21,14 @@ const registrationController = async (req, res) => {
         newUser = new User(user);
         await newUser.save();
       }
+
+      // Create a new Balance document for the user with 10,000 token credits
+      const newBalance = new Balance({
+        user: newUser._id,
+        tokenCredits: 10000,
+      });
+      await newBalance.save();
+
       const token = await setAuthTokens(user._id, res);
       res.setHeader('Authorization', `Bearer ${token}`);
       res.status(status).send({ user });
