@@ -168,6 +168,10 @@ export default {
   com_endpoint_func_hover: 'Aktiviere die Plugin Funktion für ChatGPT',
   com_endpoint_skip_hover:
     'Aktivieren Sie das Überspringen des Abschlussschritts, der die endgültige Antwort und die generierten Schritte überprüft.',
+  com_nav_plugin_store: 'Plugin-Store',
+  com_nav_plugin_search: 'Suche nach Plugins',
+  com_nav_plugin_auth_error:
+    'Beim Versuch, dieses Plugin zu authentifizieren, ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.',
   com_nav_export_filename: 'Dateiname',
   com_nav_export_filename_placeholder: 'Lege einen Dateinamen fest',
   com_nav_export_type: 'Typ',

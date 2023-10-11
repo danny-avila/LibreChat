@@ -223,6 +223,10 @@ export default {
   com_endpoint_config_key_google_service_account: 'Service Accountを作成する',
   com_endpoint_config_key_google_vertex_api_role:
     '必ず「作成して続行」をクリックして、最低でも「Vertex AI ユーザー」ロールを与えてください。最後にここにインポートするJSONキーを作成してください。',
+  com_nav_plugin_store: 'プラグインストア',
+  com_nav_plugin_search: 'プラグイン検索',
+  com_nav_plugin_auth_error:
+    'このプラグインの認証中にエラーが発生しました。もう一度お試しください。',
   com_nav_export_filename: 'ファイル名',
   com_nav_export_filename_placeholder: 'ファイル名を入力してください',
   com_nav_export_type: 'タイプ',
