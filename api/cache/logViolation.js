@@ -1,5 +1,6 @@
 const getLogStores = require('./getLogStores');
 const banViolation = require('./banViolation');
+const { isEnabled } = require('../server/utils');
 
 /**
  * Logs the violation.
@@ -17,10 +18,11 @@ const logViolation = async (req, res, type, errorMessage, score = 1) => {
   }
   const logs = getLogStores('general');
   const violationLogs = getLogStores(type);
+  const key = isEnabled(process.env.USE_REDIS) ? `${type}:${userId}` : userId;
 
-  const userViolations = (await violationLogs.get(userId)) ?? 0;
-  const violationCount = userViolations + score;
-  await violationLogs.set(userId, violationCount);
+  const userViolations = (await violationLogs.get(key)) ?? 0;
+  const violationCount = +userViolations + +score;
+  await violationLogs.set(key, violationCount);
 
   errorMessage.user_id = userId;
   errorMessage.prev_count = userViolations;
@@ -28,10 +30,10 @@ const logViolation = async (req, res, type, errorMessage, score = 1) => {
   errorMessage.date = new Date().toISOString();
 
   await banViolation(req, res, errorMessage);
-  const userLogs = (await logs.get(userId)) ?? [];
+  const userLogs = (await logs.get(key)) ?? [];
   userLogs.push(errorMessage);
   delete errorMessage.user_id;
-  await logs.set(userId, userLogs);
+  await logs.set(key, userLogs);
 };
 
 module.exports = logViolation;
