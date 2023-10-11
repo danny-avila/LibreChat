@@ -23,9 +23,9 @@ Fork the [LibreChat repository](https://github.com/danny-avila/LibreChat) and do
 
   `'**-**': LanguageName,` 
 
-> Replace "**-**" with the local identifier of your language (ask ChatGPT or search it on Google). 
+> Replace `**-**` with the local identifier of your language (ask ChatGPT or search it on Google). 
 
-> Replace "LanguageName" with the name of your language. 
+> Replace `LanguageName` with the name of your language. 
 
 Example (English): `'en-US': English,`
 
