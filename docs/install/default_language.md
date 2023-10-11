@@ -2,18 +2,18 @@
 
 ## How to change the default language
 
-- Open this file `client\src\store\language.js`
-- Modify the "default" in the lang variable with your ISO 3166 Alpha-2 code :
+- Open this file `client\src\store\language.ts`
+- Modify the "default" in the lang variable with your locale identifier :
 
 Example: 
 from **English** as default
 
-```js
+```typescript
 import { atom } from 'recoil';
 
 const lang = atom({
   key: 'lang',
-  default: 'en',
+  default: localStorage.getItem('lang') || 'en-US',
 });
 
 export default { lang };
@@ -21,12 +21,12 @@ export default { lang };
 
 to **Italian** as default 
 
-```js
+```typescript
 import { atom } from 'recoil';
 
 const lang = atom({
   key: 'lang',
-  default: 'it',
+  default: localStorage.getItem('lang') || 'it-IT',
 });
 
 export default { lang };
