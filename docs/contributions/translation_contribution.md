@@ -36,7 +36,7 @@ Example (English): `'en-US': English,`
 
 - Copy all the content from `Eng.tsx` into your file and modify it as follows:
 
-  ```typescript
+  ```js
   // your-language-name phrases
 
   export default {
@@ -47,7 +47,7 @@ Example (English): `'en-US': English,`
   __Translate only the part after the `:`.__ 
   Example:
 
-  ```typescript
+  ```js
   // my-language phrases
 
   export default {
@@ -68,7 +68,7 @@ Open `Eng.tsx` and add your language to the language list in the bottom of the d
 To add your language to the menu, open the file `client\src\components\Nav\SettingsTabs\General.tsx`. 
 Add your language to the `LangSelector` variable in the following way:
 
-```typescript
+```js
 export const LangSelector = ({
   //other code
         <option value="en-US">{localize(lang, 'com_nav_lang_english')}</option>
@@ -84,7 +84,7 @@ Where `**-**` is the local identifier of your language and `com_nav_lang_your-la
 Example: `com_nav_lang_english` or `com_nav_lang_italian`
 
 **You should only need to add one line of code:**
-```typescript
+```js
 <option value="**-**">{localize(lang, 'com_nav_lang_your-language-name')}</option>
 ```
 
