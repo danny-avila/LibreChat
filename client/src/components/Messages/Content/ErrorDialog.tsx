@@ -12,7 +12,7 @@ const stripePromise = loadStripe(
 export default function ErrorDialog({ message }) {
   const { user } = useAuthContext();
   const userId = user?.id;
-  const [loading, setLoading] = useState(false);
+  const [processingTokenAmount, setProcessingTokenAmount] = useState(null);
   const [tokenBalance, setTokenBalance] = useState(null);
   const title = 'Purchase Tokens';
 
@@ -27,7 +27,7 @@ export default function ErrorDialog({ message }) {
   };
 
   const handlePurchase = async (tokens) => {
-    setLoading(true);
+    setProcessingTokenAmount(tokens);
     let amount;
     switch (tokens) {
       case 100000:
@@ -68,7 +68,7 @@ export default function ErrorDialog({ message }) {
     } catch (error) {
       console.error('Error:', error);
     } finally {
-      setLoading(false);
+      setProcessingTokenAmount(null);
     }
   };
 
@@ -91,34 +91,45 @@ export default function ErrorDialog({ message }) {
                 <Elements stripe={stripePromise}>
                   <button
                     onClick={() => handlePurchase(100000)}
-                    disabled={loading}
+                    disabled={processingTokenAmount !== null}
                     className="rounded bg-green-600 p-2 text-white hover:bg-green-700 dark:hover:bg-green-800"
                   >
-                    {loading ? 'Processing...' : 'Purchase 100k Tokens for 20 RMB'}
+                    {processingTokenAmount === 100000
+                      ? 'Processing...'
+                      : 'Purchase 100k Tokens for 20 RMB'}
                   </button>
                   <button
                     onClick={() => handlePurchase(250000)}
-                    disabled={loading}
+                    disabled={processingTokenAmount !== null}
                     className="rounded bg-green-600 p-2 text-white hover:bg-green-700 dark:hover:bg-green-800"
                   >
-                    {loading ? 'Processing...' : 'Purchase 250k Tokens for 40 RMB'}
+                    {processingTokenAmount === 250000
+                      ? 'Processing...'
+                      : 'Purchase 250k Tokens for 40 RMB'}
                   </button>
                   <button
                     onClick={() => handlePurchase(500000)}
-                    disabled={loading}
+                    disabled={processingTokenAmount !== null}
                     className="rounded bg-green-600 p-2 text-white hover:bg-green-700 dark:hover:bg-green-800"
                   >
-                    {loading ? 'Processing...' : 'Purchase 500k Tokens for 65 RMB'}
+                    {processingTokenAmount === 500000
+                      ? 'Processing...'
+                      : 'Purchase 500k Tokens for 65 RMB'}
                   </button>
                   <button
                     onClick={() => handlePurchase(1000000)}
-                    disabled={loading}
+                    disabled={processingTokenAmount !== null}
                     className="rounded bg-green-600 p-2 text-white hover:bg-green-700 dark:hover:bg-green-800"
                   >
-                    {loading ? 'Processing...' : 'Purchase 1 Million Tokens for 100 RMB'}
+                    {processingTokenAmount === 1000000
+                      ? 'Processing...'
+                      : 'Purchase 1 Million Tokens for 100 RMB'}
                   </button>
                 </Elements>
               </div>
+            </div>
+            <div className="mt-4 text-center text-sm text-gray-100">
+              Please Note! WeChat and Alipay valid only with a Chinese National ID-linked account
             </div>
           </>
         }

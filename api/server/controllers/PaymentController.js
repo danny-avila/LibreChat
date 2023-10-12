@@ -11,8 +11,6 @@ exports.createPaymentIntent = async (req, res) => {
       return;
     }
 
-    console.log('User ID:', userId);
-
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card', 'wechat_pay', 'alipay'],
       line_items: [
@@ -41,8 +39,6 @@ exports.createPaymentIntent = async (req, res) => {
       success_url: 'https://gptchina.io',
       cancel_url: 'https://gptchina.io',
     });
-
-    console.log('Session:', session);
 
     res.status(200).json({ sessionId: session.id });
   } catch (error) {
