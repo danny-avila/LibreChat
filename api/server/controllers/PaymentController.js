@@ -38,8 +38,8 @@ exports.createPaymentIntent = async (req, res) => {
         },
       },
       mode: 'payment',
-      success_url: 'https://7be6-204-16-39-70.ngrok-free.app',
-      cancel_url: 'https://7be6-204-16-39-70.ngrok-free.app',
+      success_url: 'https://gptchina.io',
+      cancel_url: 'https://gptchina.io',
     });
 
     console.log('Session:', session);
