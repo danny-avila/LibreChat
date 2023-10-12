@@ -46,7 +46,7 @@ const tAgentOptionsSchema = z.object({
 
 const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
-  title: z.string(),
+  title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   user: z.string().optional(),
   endpoint: eModelEndpointSchema.nullable(),
   suggestions: z.array(z.string()).optional(),
@@ -191,7 +191,7 @@ const anthropicSchema = tConversationSchema
     modelLabel: obj.modelLabel ?? null,
     promptPrefix: obj.promptPrefix ?? null,
     temperature: obj.temperature ?? 1,
-    maxOutputTokens: obj.maxOutputTokens ?? 1024,
+    maxOutputTokens: obj.maxOutputTokens ?? 4000,
     topP: obj.topP ?? 0.7,
     topK: obj.topK ?? 5,
   }))
@@ -200,7 +200,7 @@ const anthropicSchema = tConversationSchema
     modelLabel: null,
     promptPrefix: null,
     temperature: 1,
-    maxOutputTokens: 1024,
+    maxOutputTokens: 4000,
     topP: 0.7,
     topK: 5,
   }));

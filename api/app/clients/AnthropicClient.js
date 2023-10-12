@@ -1,9 +1,6 @@
 // const { Agent, ProxyAgent } = require('undici');
 const BaseClient = require('./BaseClient');
-const {
-  encoding_for_model: encodingForModel,
-  get_encoding: getEncoding,
-} = require('@dqbd/tiktoken');
+const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const Anthropic = require('@anthropic-ai/sdk');
 
 const HUMAN_PROMPT = '\n\nHuman:';
@@ -94,7 +91,10 @@ class AnthropicClient extends BaseClient {
   }
 
   async buildMessages(messages, parentMessageId) {
-    const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
+    const orderedMessages = this.constructor.getMessagesForConversation({
+      messages,
+      parentMessageId,
+    });
     if (this.options.debug) {
       console.debug('AnthropicClient: orderedMessages', orderedMessages, parentMessageId);
     }
@@ -242,7 +242,6 @@ class AnthropicClient extends BaseClient {
     console.log('AnthropicClient doesn\'t use getCompletion (all handled in sendCompletion)');
   }
 
-  // TODO: implement abortController usage
   async sendCompletion(payload, { onProgress, abortController }) {
     if (!abortController) {
       abortController = new AbortController();
@@ -268,13 +267,25 @@ class AnthropicClient extends BaseClient {
     };
 
     let text = '';
+    const {
+      stream,
+      model,
+      temperature,
+      maxOutputTokens,
+      stop: stop_sequences,
+      topP: top_p,
+      topK: top_k,
+    } = this.modelOptions;
     const requestOptions = {
       prompt: payload,
-      model: this.modelOptions.model,
-      stream: this.modelOptions.stream || true,
-      max_tokens_to_sample: this.modelOptions.maxOutputTokens || 1500,
+      model,
+      stream: stream || true,
+      max_tokens_to_sample: maxOutputTokens || 1500,
+      stop_sequences,
+      temperature,
       metadata,
-      ...modelOptions,
+      top_p,
+      top_k,
     };
     if (this.options.debug) {
       console.log('AnthropicClient: requestOptions');
@@ -307,14 +318,6 @@ class AnthropicClient extends BaseClient {
 
     return text.trim();
   }
-
-  // I commented this out because I will need to refactor this for the BaseClient/all clients
-  // getMessageMapMethod() {
-  //   return ((message) => ({
-  //     author: message.isCreatedByUser ? this.userLabel : this.assistantLabel,
-  //     content: message?.content ?? message.text
-  //   })).bind(this);
-  // }
 
   getSaveOptions() {
     return {

@@ -1,11 +1,13 @@
 const OpenAIClient = require('./OpenAIClient');
 const { CallbackManager } = require('langchain/callbacks');
-const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
+const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
 const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents');
 const { addImages, buildErrorInput, buildPromptPrefix } = require('./output_parsers');
+const checkBalance = require('../../models/checkBalance');
+const { formatLangChainMessages } = require('./prompts');
+const { isEnabled } = require('../../server/utils');
 const { SelfReflectionTool } = require('./tools');
 const { loadTools } = require('./tools/util');
-const { createLLM } = require('./llm');
 
 class PluginsClient extends OpenAIClient {
   constructor(apiKey, options = {}) {
@@ -13,25 +15,31 @@ class PluginsClient extends OpenAIClient {
     this.sender = options.sender ?? 'Assistant';
     this.tools = [];
     this.actions = [];
-    this.openAIApiKey = apiKey;
     this.setOptions(options);
+    this.openAIApiKey = this.apiKey;
     this.executor = null;
   }
 
   setOptions(options) {
-    this.agentOptions = options.agentOptions;
+    this.agentOptions = { ...options.agentOptions };
     this.functionsAgent = this.agentOptions?.agent === 'functions';
-    this.agentIsGpt3 = this.agentOptions?.model.startsWith('gpt-3');
-    if (this.functionsAgent && this.agentOptions.model) {
+    this.agentIsGpt3 = this.agentOptions?.model?.includes('gpt-3');
+
+    super.setOptions(options);
+
+    if (this.functionsAgent && this.agentOptions.model && !this.useOpenRouter) {
       this.agentOptions.model = this.getFunctionModelName(this.agentOptions.model);
     }
 
-    super.setOptions(options);
-    this.isGpt3 = this.modelOptions.model.startsWith('gpt-3');
+    this.isGpt3 = this.modelOptions?.model?.includes('gpt-3');
 
-    // if (this.options.reverseProxyUrl) {
-    //   this.langchainProxy = this.options.reverseProxyUrl.match(/.*v1/)[0];
-    // }
+    if (this.options.reverseProxyUrl) {
+      this.langchainProxy = this.options.reverseProxyUrl.match(/.*v1/)?.[0];
+      !this.langchainProxy &&
+        console.warn(`The reverse proxy URL ${this.options.reverseProxyUrl} is not valid for Plugins.
+The url must follow OpenAI specs, for example: https://localhost:8080/v1/chat/completions
+If your reverse proxy is compatible to OpenAI specs in every other way, it may still work without plugins enabled.`);
+    }
   }
 
   getSaveOptions() {
@@ -48,9 +56,9 @@ class PluginsClient extends OpenAIClient {
   }
 
   getFunctionModelName(input) {
-    if (input.startsWith('gpt-3.5-turbo')) {
+    if (input.includes('gpt-3.5-turbo')) {
       return 'gpt-3.5-turbo';
-    } else if (input.startsWith('gpt-4')) {
+    } else if (input.includes('gpt-4')) {
       return 'gpt-4';
     } else {
       return 'gpt-3.5-turbo';
@@ -71,17 +79,10 @@ class PluginsClient extends OpenAIClient {
       temperature: this.agentOptions.temperature,
     };
 
-    const configOptions = {};
-
-    if (this.langchainProxy) {
-      configOptions.basePath = this.langchainProxy;
-    }
-
-    const model = createLLM({
-      modelOptions,
-      configOptions,
-      openAIApiKey: this.openAIApiKey,
-      azure: this.azure,
+    const model = this.initializeLLM({
+      ...modelOptions,
+      context: 'plugins',
+      initialMessageCount: this.currentMessages.length + 1,
     });
 
     if (this.options.debug) {
@@ -90,12 +91,26 @@ class PluginsClient extends OpenAIClient {
       );
     }
 
+    // Map Messages to Langchain format
+    const pastMessages = formatLangChainMessages(this.currentMessages.slice(0, -1), {
+      userName: this.options?.name,
+    });
+    this.options.debug && console.debug('pastMessages: ', pastMessages);
+
+    // TODO: use readOnly memory, TokenBufferMemory? (both unavailable in LangChainJS)
+    const memory = new BufferMemory({
+      llm: model,
+      chatHistory: new ChatMessageHistory(pastMessages),
+    });
+
     this.tools = await loadTools({
       user,
       model,
       tools: this.options.tools,
       functions: this.functionsAgent,
       options: {
+        memory,
+        signal: this.abortController.signal,
         openAIApiKey: this.openAIApiKey,
         conversationId: this.conversationId,
         debug: this.options?.debug,
@@ -127,15 +142,6 @@ class PluginsClient extends OpenAIClient {
         callback(action, runId);
       }
     };
-
-    // Map Messages to Langchain format
-    const pastMessages = this.currentMessages
-      .slice(0, -1)
-      .map((msg) =>
-        msg?.isCreatedByUser || msg?.role?.toLowerCase() === 'user'
-          ? new HumanChatMessage(msg.text)
-          : new AIChatMessage(msg.text),
-      );
 
     // initialize agent
     const initializer = this.functionsAgent ? initializeFunctionsAgent : initializeCustomAgent;
@@ -206,16 +212,12 @@ class PluginsClient extends OpenAIClient {
         break; // Exit the loop if the function call is successful
       } catch (err) {
         console.error(err);
-        errorMessage = err.message;
-        let content = '';
-        if (content) {
-          errorMessage = content;
-          break;
-        }
         if (attempts === maxAttempts) {
-          this.result.output = `Encountered an error while attempting to respond. Error: ${err.message}`;
+          const { run } = this.runManager.getRunByConversationId(this.conversationId);
+          const defaultOutput = `Encountered an error while attempting to respond. Error: ${err.message}`;
+          this.result.output = run && run.error ? run.error : defaultOutput;
+          this.result.errorMessage = run && run.error ? run.error : err.message;
           this.result.intermediateSteps = this.actions;
-          this.result.errorMessage = errorMessage;
           break;
         }
       }
@@ -223,11 +225,21 @@ class PluginsClient extends OpenAIClient {
   }
 
   async handleResponseMessage(responseMessage, saveOptions, user) {
-    responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
-    responseMessage.completionTokens = responseMessage.tokenCount;
+    const { output, errorMessage, ...result } = this.result;
+    this.options.debug &&
+      console.debug('[handleResponseMessage] Output:', { output, errorMessage, ...result });
+    const { error } = responseMessage;
+    if (!error) {
+      responseMessage.tokenCount = this.getTokenCount(responseMessage.text);
+      responseMessage.completionTokens = responseMessage.tokenCount;
+    }
+
+    if (!this.agentOptions.skipCompletion && !error) {
+      await this.recordTokenUsage(responseMessage);
+    }
     await this.saveMessageToDatabase(responseMessage, saveOptions, user);
     delete responseMessage.tokenCount;
-    return { ...responseMessage, ...this.result };
+    return { ...responseMessage, ...result };
   }
 
   async sendMessage(message, opts = {}) {
@@ -237,9 +249,7 @@ class PluginsClient extends OpenAIClient {
       this.setOptions(opts);
       return super.sendMessage(message, opts);
     }
-    if (this.options.debug) {
-      console.log('Plugins sendMessage', message, opts);
-    }
+    this.options.debug && console.log('Plugins sendMessage', message, opts);
     const {
       user,
       isEdited,
@@ -253,14 +263,12 @@ class PluginsClient extends OpenAIClient {
       onToolEnd,
     } = await this.handleStartMethods(message, opts);
 
-    this.conversationId = conversationId;
     this.currentMessages.push(userMessage);
 
     let {
       prompt: payload,
       tokenCountMap,
       promptTokens,
-      messages,
     } = await this.buildMessages(
       this.currentMessages,
       userMessage.messageId,
@@ -276,19 +284,29 @@ class PluginsClient extends OpenAIClient {
         userMessage.tokenCount = tokenCountMap[userMessage.messageId];
         console.log('userMessage.tokenCount', userMessage.tokenCount);
       }
-      payload = payload.map((message) => {
-        const messageWithoutTokenCount = message;
-        delete messageWithoutTokenCount.tokenCount;
-        return messageWithoutTokenCount;
-      });
       this.handleTokenCountMap(tokenCountMap);
     }
 
     this.result = {};
-    if (messages) {
-      this.currentMessages = messages;
+    if (payload) {
+      this.currentMessages = payload;
     }
     await this.saveMessageToDatabase(userMessage, saveOptions, user);
+
+    if (isEnabled(process.env.CHECK_BALANCE)) {
+      await checkBalance({
+        req: this.options.req,
+        res: this.options.res,
+        txData: {
+          user: this.user,
+          tokenType: 'prompt',
+          amount: promptTokens,
+          debug: this.options.debug,
+          model: this.modelOptions.model,
+        },
+      });
+    }
+
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
@@ -322,6 +340,13 @@ class PluginsClient extends OpenAIClient {
     // If message was aborted mid-generation
     if (this.result?.errorMessage?.length > 0 && this.result?.errorMessage?.includes('cancel')) {
       responseMessage.text = 'Cancelled.';
+      return await this.handleResponseMessage(responseMessage, saveOptions, user);
+    }
+
+    // If error occurred during generation (likely token_balance)
+    if (this.result?.errorMessage?.length > 0) {
+      responseMessage.error = true;
+      responseMessage.text = this.result.output;
       return await this.handleResponseMessage(responseMessage, saveOptions, user);
     }
 
@@ -419,7 +444,9 @@ class PluginsClient extends OpenAIClient {
         const message = orderedMessages.pop();
         const isCreatedByUser = message.isCreatedByUser || message.role?.toLowerCase() === 'user';
         const roleLabel = isCreatedByUser ? this.userLabel : this.chatGptLabel;
-        let messageString = `${this.startToken}${roleLabel}:\n${message.text}${this.endToken}\n`;
+        let messageString = `${this.startToken}${roleLabel}:\n${
+          message.text ?? message.content ?? ''
+        }${this.endToken}\n`;
         let newPromptBody = `${messageString}${promptBody}`;
 
         const tokenCountForMessage = this.getTokenCount(messageString);

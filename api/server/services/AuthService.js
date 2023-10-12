@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const User = require('../../models/User');
 const Session = require('../../models/Session');
 const Token = require('../../models/schema/tokenSchema');
-const { registerSchema } = require('../../strategies/validators');
+const { registerSchema, errorsToString } = require('../../strategies/validators');
 const config = require('../../../config/loader');
 const { sendEmail } = require('../utils');
 const domains = config.domains;
@@ -44,15 +44,16 @@ const logoutUser = async (userId, refreshToken) => {
  * @returns
  */
 const registerUser = async (user) => {
-  const { error } = registerSchema.validate(user);
+  const { error } = registerSchema.safeParse(user);
   if (error) {
+    const errorMessage = errorsToString(error.errors);
     console.info(
-      'Route: register - Joi Validation Error',
+      'Route: register - Validation Error',
       { name: 'Request params:', value: user },
-      { name: 'Validation error:', value: error.details },
+      { name: 'Validation error:', value: errorMessage },
     );
 
-    return { status: 422, message: error.details[0].message };
+    return { status: 422, message: errorMessage };
   }
 
   const { email, password, name, username } = user;

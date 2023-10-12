@@ -5,14 +5,20 @@ const {
   deleteMessagesSince,
   deleteMessages,
 } = require('./Message');
-const { getConvoTitle, getConvo, saveConvo } = require('./Conversation');
+const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
+const Key = require('./Key');
 const User = require('./User');
-const Key = require('./schema/keySchema');
+const Session = require('./Session');
+const Balance = require('./Balance');
+const Transaction = require('./Transaction');
 
 module.exports = {
   User,
   Key,
+  Session,
+  Balance,
+  Transaction,
 
   getMessages,
   saveMessage,
@@ -23,6 +29,7 @@ module.exports = {
   getConvoTitle,
   getConvo,
   saveConvo,
+  deleteConvos,
 
   getPreset,
   getPresets,

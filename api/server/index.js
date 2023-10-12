@@ -1,18 +1,18 @@
 const express = require('express');
 const mongoSanitize = require('express-mongo-sanitize');
-const connectDb = require('../lib/db/connectDb');
-const indexSync = require('../lib/db/indexSync');
+const { connectDb, indexSync } = require('../lib/db');
 const path = require('path');
 const cors = require('cors');
 const routes = require('./routes');
 const errorController = require('./controllers/ErrorController');
 const passport = require('passport');
 const configureSocialLogins = require('./socialLogins');
+const { PORT, HOST, ALLOW_SOCIAL_LOGIN } = process.env ?? {};
 
-const port = Number(process.env.PORT) || 3080;
-const host = process.env.HOST || 'localhost';
+const port = Number(PORT) || 3080;
+const host = HOST || 'localhost';
 const projectPath = path.join(__dirname, '..', '..', 'client');
-const { jwtLogin, passportLogin } = require('../strategies');
+const { jwtLogin, joseLogin, passportLogin } = require('../strategies');
 
 const startServer = async () => {
   await connectDb();
@@ -31,7 +31,7 @@ const startServer = async () => {
   app.set('trust proxy', 1); // trust first proxy
   app.use(cors());
 
-  if (!process.env.ALLOW_SOCIAL_LOGIN) {
+  if (!ALLOW_SOCIAL_LOGIN) {
     console.warn(
       'Social logins are disabled. Set Envrionment Variable "ALLOW_SOCIAL_LOGIN" to true to enable them.',
     );
@@ -39,13 +39,14 @@ const startServer = async () => {
 
   // OAUTH
   app.use(passport.initialize());
-  require('../strategies/jwtStrategy');
-  require('../strategies/localStrategy');
-
-  passport.use(await jwtLogin());
+  if (typeof Bun !== 'undefined') {
+    passport.use('jwt', await joseLogin());
+  } else {
+    passport.use(await jwtLogin());
+  }
   passport.use(passportLogin());
 
-  if (process.env.ALLOW_SOCIAL_LOGIN === 'true') {
+  if (ALLOW_SOCIAL_LOGIN?.toLowerCase() === 'true') {
     configureSocialLogins(app);
   }
 
@@ -63,6 +64,8 @@ const startServer = async () => {
   app.use('/api/prompts', routes.prompts);
   app.use('/api/tokenizer', routes.tokenizer);
   app.use('/api/endpoints', routes.endpoints);
+  app.use('/api/balance', routes.balance);
+  app.use('/api/models', routes.models);
   app.use('/api/plugins', routes.plugins);
   app.use('/api/config', routes.config);
 

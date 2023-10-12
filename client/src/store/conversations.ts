@@ -1,19 +1,8 @@
-import { atom, useSetRecoilState } from 'recoil';
-import { useCallback } from 'react';
+import { atom } from 'recoil';
 
-const refreshConversationsHint = atom({
+const refreshConversationsHint = atom<number>({
   key: 'refreshConversationsHint',
   default: 1,
 });
 
-const useConversations = () => {
-  const setRefreshConversationsHint = useSetRecoilState(refreshConversationsHint);
-
-  const refreshConversations = useCallback(() => {
-    setRefreshConversationsHint((prevState) => prevState + 1);
-  }, [setRefreshConversationsHint]);
-
-  return { refreshConversations };
-};
-
-export default { refreshConversationsHint, useConversations };
+export default { refreshConversationsHint };

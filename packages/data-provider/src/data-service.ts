@@ -1,5 +1,7 @@
 import * as t from './types';
 import * as s from './schemas';
+/* TODO: fix dependency cycle */
+// eslint-disable-next-line import/no-cycle
 import request from './request';
 import * as endpoints from './api-endpoints';
 
@@ -88,6 +90,10 @@ export function getUser(): Promise<t.TUser> {
   return request.get(endpoints.user());
 }
 
+export function getUserBalance(): Promise<string> {
+  return request.get(endpoints.balance());
+}
+
 export const searchConversations = async (
   q: string,
   pageNumber: string,
@@ -97,6 +103,10 @@ export const searchConversations = async (
 
 export const getAIEndpoints = () => {
   return request.get(endpoints.aiEndpoints());
+};
+
+export const getModels = async (): Promise<t.TModelsConfig> => {
+  return request.get(endpoints.models());
 };
 
 export const updateTokenCount = (text: string) => {

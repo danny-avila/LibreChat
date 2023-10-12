@@ -17,6 +17,8 @@ export enum QueryKeys {
   searchEnabled = 'searchEnabled',
   user = 'user',
   name = 'name', // user key name
+  models = 'models',
+  balance = 'balance',
   endpoints = 'endpoints',
   presets = 'presets',
   searchResults = 'searchResults',
@@ -30,8 +32,15 @@ export const useAbortRequestWithMessage = (): UseMutationResult<
   Error,
   { endpoint: string; abortKey: string; message: string }
 > => {
-  return useMutation(({ endpoint, abortKey, message }) =>
-    dataService.abortRequestWithMessage(endpoint, abortKey, message),
+  const queryClient = useQueryClient();
+  return useMutation(
+    ({ endpoint, abortKey, message }) =>
+      dataService.abortRequestWithMessage(endpoint, abortKey, message),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.balance]);
+      },
+    },
   );
 };
 
@@ -61,6 +70,17 @@ export const useGetMessagesByConvoId = (
       ...config,
     },
   );
+};
+
+export const useGetUserBalance = (
+  config?: UseQueryOptions<string>,
+): QueryObserverResult<string> => {
+  return useQuery<string>([QueryKeys.balance], () => dataService.getUserBalance(), {
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchOnMount: true,
+    ...config,
+  });
 };
 
 export const useGetConversationByIdQuery = (
@@ -218,6 +238,17 @@ export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpointsConfig> 
   });
 };
 
+export const useGetModelsQuery = (
+  config?: UseQueryOptions<t.TModelsConfig>,
+): QueryObserverResult<t.TModelsConfig> => {
+  return useQuery<t.TModelsConfig>([QueryKeys.models], () => dataService.getModels(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+  });
+};
+
 export const useCreatePresetMutation = (): UseMutationResult<
   s.TPreset[],
   unknown,
@@ -313,6 +344,9 @@ export const useLoginUserMutation = (): UseMutationResult<
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.user]);
     },
+    onMutate: () => {
+      queryClient.invalidateQueries([QueryKeys.models]);
+    },
   });
 };
 
@@ -345,7 +379,12 @@ export const useRefreshTokenMutation = (): UseMutationResult<
   unknown,
   unknown
 > => {
-  return useMutation(() => dataService.refreshToken(), {});
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.refreshToken(), {
+    onMutate: () => {
+      queryClient.invalidateQueries([QueryKeys.models]);
+    },
+  });
 };
 
 export const useUserKeyQuery = (

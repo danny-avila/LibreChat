@@ -14,6 +14,7 @@ const initializeFunctionsAgent = async ({
   ...rest
 }) => {
   const memory = new BufferMemory({
+    llm: model,
     chatHistory: new ChatMessageHistory(pastMessages),
     memoryKey: 'chat_history',
     humanPrefix: 'User',

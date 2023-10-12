@@ -2,10 +2,17 @@ import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import React, { useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { useClearConversationsMutation } from 'librechat-data-provider';
-import { ThemeContext, useLocalize, useOnClickOutside } from '~/hooks';
+import {
+  ThemeContext,
+  useLocalize,
+  useOnClickOutside,
+  useConversation,
+  useConversations,
+} from '~/hooks';
 import type { TDangerButtonProps } from '~/common';
 import DangerButton from './DangerButton';
 import store from '~/store';
+import useLocalStorage from '~/hooks/useLocalStorage';
 
 export const ThemeSelector = ({
   theme,
@@ -76,16 +83,20 @@ export const LangSelector = ({
         onChange={(e) => onChange(e.target.value)}
         value={langcode}
       >
-        <option value="en">{localize('com_nav_lang_english')}</option>
-        <option value="cn">{localize('com_nav_lang_chinese')}</option>
-        <option value="de">{localize('com_nav_lang_german')}</option>
-        <option value="es">{localize('com_nav_lang_spanish')}</option>
-        <option value="fr">{localize('com_nav_lang_french')}</option>
-        <option value="it">{localize('com_nav_lang_italian')}</option>
-        <option value="pl">{localize('com_nav_lang_polish')}</option>
-        <option value="br">{localize('com_nav_lang_brazilian_portuguese')}</option>
-        <option value="ru">{localize('com_nav_lang_russian')}</option>
-        <option value="jp">{localize('com_nav_lang_japanese')}</option>
+        <option value="auto">{localize('com_nav_lang_auto')}</option>
+        <option value="en-US">{localize('com_nav_lang_english')}</option>
+        <option value="zh-CN">{localize('com_nav_lang_chinese')}</option>
+        <option value="zh-TC">{localize('com_nav_lang_traditionalchinese')}</option>
+        <option value="de-DE">{localize('com_nav_lang_german')}</option>
+        <option value="es-ES">{localize('com_nav_lang_spanish')}</option>
+        <option value="fr-FR">{localize('com_nav_lang_french')}</option>
+        <option value="it-IT">{localize('com_nav_lang_italian')}</option>
+        <option value="pl-PL">{localize('com_nav_lang_polish')}</option>
+        <option value="pt-BR">{localize('com_nav_lang_brazilian_portuguese')}</option>
+        <option value="ru-RU">{localize('com_nav_lang_russian')}</option>
+        <option value="ja-JP">{localize('com_nav_lang_japanese')}</option>
+        <option value="sv-SE">{localize('com_nav_lang_swedish')}</option>
+        <option value="ko-KR">{localize('com_nav_lang_korean')}</option>
       </select>
     </div>
   );
@@ -96,8 +107,9 @@ function General() {
   const clearConvosMutation = useClearConversationsMutation();
   const [confirmClear, setConfirmClear] = useState(false);
   const [langcode, setLangcode] = useRecoilState(store.lang);
-  const { newConversation } = store.useConversation();
-  const { refreshConversations } = store.useConversations();
+  const [selectedLang, setSelectedLang] = useLocalStorage('selectedLang', langcode);
+  const { newConversation } = useConversation();
+  const { refreshConversations } = useConversations();
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
@@ -128,9 +140,17 @@ function General() {
 
   const changeLang = useCallback(
     (value: string) => {
-      setLangcode(value);
+      setSelectedLang(value);
+      if (value === 'auto') {
+        const userLang = navigator.language || navigator.languages[0];
+        setLangcode(userLang);
+        localStorage.setItem('lang', userLang);
+      } else {
+        setLangcode(value);
+        localStorage.setItem('lang', value);
+      }
     },
-    [setLangcode],
+    [setLangcode, setSelectedLang],
   );
 
   return (
@@ -145,7 +165,7 @@ function General() {
           <ThemeSelector theme={theme} onChange={changeTheme} />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <LangSelector langcode={langcode} onChange={changeLang} />
+          <LangSelector langcode={selectedLang} onChange={changeLang} />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <ClearChatsButton

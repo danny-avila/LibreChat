@@ -171,6 +171,10 @@ export default {
   com_endpoint_skip_hover:
     'Пропустить этап завершения, который проверяет окончательный ответ и сгенерированные шаги',
   com_endpoint_config_token: 'Токен конфигурации',
+  com_nav_plugin_store: 'Магазин плагинов',
+  com_nav_plugin_search: 'Поиск плагинов',
+  com_nav_plugin_auth_error:
+    'При попытке аутентификации этого плагина произошла ошибка. Пожалуйста, попробуйте еще раз.',
   com_nav_export_filename: 'Имя файла',
   com_nav_export_filename_placeholder: 'Установите имя файла',
   com_nav_export_type: 'Тип',

@@ -1,18 +1,18 @@
 import { useState, useEffect } from 'react';
-import { useAuthContext } from '~/hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
-
-import Landing from '~/components/ui/Landing';
-import Messages from '~/components/Messages/Messages';
-import TextChat from '~/components/Input/TextChat';
-
-import store from '~/store';
 import {
   useGetMessagesByConvoId,
   useGetConversationByIdMutation,
   useGetStartupConfig,
 } from 'librechat-data-provider';
+
+import Landing from '~/components/ui/Landing';
+import Messages from '~/components/Messages/Messages';
+import TextChat from '~/components/Input/TextChat';
+
+import { useAuthContext, useConversation } from '~/hooks';
+import store from '~/store';
 
 export default function Chat() {
   const { isAuthenticated } = useAuthContext();
@@ -22,12 +22,12 @@ export default function Chat() {
   const setMessages = useSetRecoilState(store.messages);
   const messagesTree = useRecoilValue(store.messagesTree);
   const isSubmitting = useRecoilValue(store.isSubmitting);
-  const { newConversation } = store.useConversation();
+  const { newConversation } = useConversation();
   const { conversationId } = useParams();
   const navigate = useNavigate();
 
   //disabled by default, we only enable it when messagesTree is null
-  const messagesQuery = useGetMessagesByConvoId(conversationId ?? '', { enabled: false });
+  const messagesQuery = useGetMessagesByConvoId(conversationId ?? '', { enabled: !messagesTree });
   const getConversationMutation = useGetConversationByIdMutation(conversationId ?? '');
   const { data: config } = useGetStartupConfig();
 
@@ -89,7 +89,8 @@ export default function Chat() {
       setShouldNavigate(false);
     }
     // conversationId (in url) should always follow conversation?.conversationId, unless conversation is null
-    else if (conversation?.conversationId !== conversationId) {
+    // messagesTree is null when user navigates, but not on page refresh, so we need to navigate in this case
+    else if (conversation?.conversationId !== conversationId && !messagesTree) {
       if (shouldNavigate) {
         navigate(`/chat/${conversation?.conversationId}`);
       } else {

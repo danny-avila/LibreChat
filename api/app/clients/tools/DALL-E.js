@@ -1,7 +1,7 @@
 // From https://platform.openai.com/docs/api-reference/images/create
 // To use this tool, you must pass in a configured OpenAIApi object.
 const fs = require('fs');
-const { Configuration, OpenAIApi } = require('openai');
+const OpenAI = require('openai');
 // const { genAzureEndpoint } = require('../../../utils/genAzureEndpoints');
 const { Tool } = require('langchain/tools');
 const saveImageFromUrl = require('./saveImageFromUrl');
@@ -36,7 +36,7 @@ class OpenAICreateImage extends Tool {
     //     }
     //   };
     // }
-    this.openaiApi = new OpenAIApi(new Configuration(config));
+    this.openai = new OpenAI(config);
     this.name = 'dall-e';
     this.description = `You can generate images with 'dall-e'. This tool is exclusively for visual content.
 Guidelines:
@@ -71,7 +71,7 @@ Guidelines:
   }
 
   async _call(input) {
-    const resp = await this.openaiApi.createImage({
+    const resp = await this.openai.images.generate({
       prompt: this.replaceUnwantedChars(input),
       // TODO: Future idea -- could we ask an LLM to extract these arguments from an input that might contain them?
       n: 1,
@@ -79,7 +79,7 @@ Guidelines:
       size: '512x512',
     });
 
-    const theImageUrl = resp.data.data[0].url;
+    const theImageUrl = resp.data[0].url;
 
     if (!theImageUrl) {
       throw new Error('No image URL returned from OpenAI API.');

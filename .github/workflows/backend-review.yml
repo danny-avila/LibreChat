@@ -18,6 +18,9 @@ jobs:
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
       CREDS_KEY: ${{ secrets.CREDS_KEY }}
       CREDS_IV: ${{ secrets.CREDS_IV }}
+      BAN_VIOLATIONS: ${{ secrets.BAN_VIOLATIONS }}
+      BAN_DURATION: ${{ secrets.BAN_DURATION }}
+      BAN_INTERVAL: ${{ secrets.BAN_INTERVAL }}
       NODE_ENV: ci
     steps:
       - uses: actions/checkout@v2

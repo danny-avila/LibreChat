@@ -20,8 +20,8 @@ function createPrompt(name, functions) {
     .map((func) => `// - ${func.name}: ${func.description}`)
     .join('\n');
   return `${prefix}\n${functionDescriptions}
-// The user's message will be passed as the function's query.
-// Always provide the function name as such: {{"func": "function_name"}}`;
+// You are an expert manager and scrum master. You must provide a detailed intent to better execute the function.
+// Always format as such: {{"func": "function_name", "intent": "intent and expected result"}}`;
 }
 
 const AuthBearer = z
@@ -83,7 +83,7 @@ async function getSpec(url) {
   return ValidSpecPath.parse(url);
 }
 
-async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }) {
+async function createOpenAPIPlugin({ data, llm, user, message, memory, signal, verbose = false }) {
   let spec;
   try {
     spec = await getSpec(data.api.url, verbose);
@@ -128,15 +128,23 @@ async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }
     chainOptions.params = data.params;
   }
 
-  chainOptions.prompt = ChatPromptTemplate.fromPromptMessages([
+  let history = '';
+  if (memory) {
+    verbose && console.debug('openAPI chain: memory detected', memory);
+    const { history: chat_history } = await memory.loadMemoryVariables({});
+    history = chat_history?.length > 0 ? `\n\n## Chat History:\n${chat_history}\n` : '';
+  }
+
+  chainOptions.prompt = ChatPromptTemplate.fromMessages([
     HumanMessagePromptTemplate.fromTemplate(
       `# Use the provided API's to respond to this query:\n\n{query}\n\n## Instructions:\n${addLinePrefix(
         description_for_model,
-      )}`,
+      )}${history}`,
     ),
   ]);
 
   const chain = await createOpenAPIChain(spec, chainOptions);
+
   const { functions } = chain.chains[0].lc_kwargs.llmKwargs;
 
   return new DynamicStructuredTool({
@@ -154,10 +162,19 @@ async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }
             .map((func) => func.name)
             .join(', ')}`,
         ),
+      intent: z
+        .string()
+        .describe('Describe your intent with the function and your expected result'),
     }),
-    func: async ({ func = '' }) => {
-      const result = await chain.run(`${message}${func?.length > 0 ? `\nUse ${func}` : ''}`);
-      return result;
+    func: async ({ func = '', intent = '' }) => {
+      const filteredFunctions = functions.filter((f) => f.name === func);
+      chain.chains[0].lc_kwargs.llmKwargs.functions = filteredFunctions;
+      const query = `${message}${func?.length > 0 ? `\n// Intent: ${intent}` : ''}`;
+      const result = await chain.call({
+        query,
+        signal,
+      });
+      return result.response;
     },
   });
 }

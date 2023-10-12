@@ -4,9 +4,9 @@ const router = express.Router();
 const { browserClient } = require('../../../app/');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('../../utils');
-const { requireJwtAuth, setHeaders } = require('../../middleware');
+const { setHeaders } = require('../../middleware');
 
-router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
+router.post('/', setHeaders, async (req, res) => {
   const {
     endpoint,
     text,
@@ -41,10 +41,6 @@ router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
     key: req.body?.key ?? null,
   };
 
-  // const availableModels = getChatGPTBrowserModels();
-  // if (availableModels.find((model) => model === endpointOption.model) === undefined)
-  //   return handleError(res, { text: 'Illegal request: model' });
-
   console.log('ask log', {
     userMessage,
     endpointOption,
@@ -52,7 +48,7 @@ router.post('/', requireJwtAuth, setHeaders, async (req, res) => {
   });
 
   if (!overrideParentMessageId) {
-    await saveMessage(userMessage);
+    await saveMessage({ ...userMessage, user: req.user.id });
     await saveConvo(req.user.id, {
       ...userMessage,
       ...endpointOption,
@@ -84,7 +80,7 @@ const ask = async ({
   res,
 }) => {
   let { text, parentMessageId: userParentMessageId, messageId: userMessageId } = userMessage;
-  const userId = req.user.id;
+  const user = req.user.id;
   let responseMessageId = crypto.randomUUID();
   let getPartialMessage = null;
   try {
@@ -104,6 +100,7 @@ const ask = async ({
             cancelled: false,
             error: false,
             isCreatedByUser: false,
+            user,
           });
         }
       },
@@ -118,7 +115,7 @@ const ask = async ({
       conversationId,
       ...endpointOption,
       abortController,
-      userId,
+      userId: user,
       onProgress: progressCallback.call(null, { res, text }),
       onEventMessage: (eventMessage) => {
         let data = null;
@@ -161,7 +158,7 @@ const ask = async ({
       isCreatedByUser: false,
     };
 
-    await saveMessage(responseMessage);
+    await saveMessage({ ...responseMessage, user });
     responseMessage.messageId = newResponseMessageId;
 
     // STEP2 update the conversation
@@ -185,7 +182,7 @@ const ask = async ({
       }
     }
 
-    await saveConvo(req.user.id, conversationUpdate);
+    await saveConvo(user, conversationUpdate);
     conversationId = newConversationId;
 
     // STEP3 update the user message
@@ -196,6 +193,7 @@ const ask = async ({
     if (!overrideParentMessageId) {
       await saveMessage({
         ...userMessage,
+        user,
         messageId: userMessageId,
         newMessageId: newUserMassageId,
       });
@@ -203,9 +201,9 @@ const ask = async ({
     userMessageId = newUserMassageId;
 
     sendMessage(res, {
-      title: await getConvoTitle(req.user.id, conversationId),
+      title: await getConvoTitle(user, conversationId),
       final: true,
-      conversation: await getConvo(req.user.id, conversationId),
+      conversation: await getConvo(user, conversationId),
       requestMessage: userMessage,
       responseMessage: responseMessage,
     });
@@ -214,7 +212,7 @@ const ask = async ({
     if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
       // const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: responseMessage });
       const title = await response.details.title;
-      await saveConvo(req.user.id, {
+      await saveConvo(user, {
         conversationId: conversationId,
         title,
       });
@@ -231,7 +229,7 @@ const ask = async ({
       isCreatedByUser: false,
       text: `${getPartialMessage() ?? ''}\n\nError message: "${error.message}"`,
     };
-    await saveMessage(errorMessage);
+    await saveMessage({ ...errorMessage, user });
     handleError(res, errorMessage);
   }
 };

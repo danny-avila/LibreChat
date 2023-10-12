@@ -4,14 +4,14 @@ test.describe('Navigation suite', () => {
   test('Navigation bar', async ({ page }) => {
     await page.goto('http://localhost:3080/', { timeout: 5000 });
 
-    await page.locator('[id="headlessui-menu-button-\\:r0\\:"]').click();
-    const navBar = await page.locator('[id="headlessui-menu-button-\\:r0\\:"]').isVisible();
-    expect(navBar).toBeTruthy();
+    await page.getByTestId('nav-user').click();
+    const navSettings = await page.getByTestId('nav-user').isVisible();
+    expect(navSettings).toBeTruthy();
   });
 
   test('Settings modal', async ({ page }) => {
     await page.goto('http://localhost:3080/', { timeout: 5000 });
-    await page.locator('[id="headlessui-menu-button-\\:r0\\:"]').click();
+    await page.getByTestId('nav-user').click();
     await page.getByText('Settings').click();
 
     const modal = await page.getByRole('dialog', { name: 'Settings' }).isVisible();

@@ -1,5 +1,7 @@
 export const user = () => '/api/user';
 
+export const balance = () => '/api/balance';
+
 export const userPlugins = () => '/api/user/plugins';
 
 export const messages = (conversationId: string, messageId?: string) =>
@@ -35,6 +37,8 @@ export const presets = () => '/api/presets';
 export const deletePreset = () => '/api/presets/delete';
 
 export const aiEndpoints = () => '/api/endpoints';
+
+export const models = () => '/api/models';
 
 export const tokenizer = () => '/api/tokenizer';
 

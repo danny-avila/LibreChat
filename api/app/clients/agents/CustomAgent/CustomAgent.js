@@ -16,11 +16,11 @@ class CustomAgent extends ZeroShotAgent {
     const inputVariables = ['input', 'chat_history', 'agent_scratchpad'];
 
     let prefix, instructions, suffix;
-    if (model.startsWith('gpt-3')) {
+    if (model.includes('gpt-3')) {
       prefix = gpt3.prefix;
       instructions = gpt3.instructions;
       suffix = gpt3.suffix;
-    } else if (model.startsWith('gpt-4')) {
+    } else if (model.includes('gpt-4')) {
       prefix = gpt4.prefix;
       instructions = gpt4.instructions;
       suffix = gpt4.suffix;

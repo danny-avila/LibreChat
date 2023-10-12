@@ -21,6 +21,7 @@ const {
   E2BTools,
   CodeSherpa,
   CodeSherpaTools,
+  CodeBrew,
 } = require('../');
 const { loadSpecs } = require('./loadSpecs');
 const { loadToolSuite } = require('./loadToolSuite');
@@ -100,6 +101,7 @@ const loadTools = async ({
     'dall-e': OpenAICreateImage,
     'stable-diffusion': functions ? StructuredSD : StableDiffusionAPI,
     'azure-cognitive-search': functions ? StructuredACS : AzureCognitiveSearch,
+    CodeBrew: CodeBrew,
   };
 
   const openAIApiKey = await getOpenAIKey(options, user);
@@ -222,6 +224,8 @@ const loadTools = async ({
       llm: model,
       user,
       message: options.message,
+      memory: options.memory,
+      signal: options.signal,
       tools: remainingTools,
       map: true,
       verbose: false,

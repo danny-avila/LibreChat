@@ -226,6 +226,12 @@ export default {
   com_endpoint_config_key_google_service_account: 'Crea un account di servizio',
   com_endpoint_config_key_google_vertex_api_role:
     'Assicurati di fare clic su \'Crea e continua\' per dare almeno il ruolo \'Utente Vertex AI\'. Infine, crea una chiave JSON da importare qui.',
+  com_nav_plugin_store: 'Negozio dei plugin',
+  com_nav_plugin_search: 'Cerca plugin',
+  com_nav_plugin_auth_error:
+    'Si è verificato un errore durante il tentativo di autenticare questo plugin. Per favore, riprova.',
+  com_nav_close_menu: 'Apri la barra laterale',
+  com_nav_open_menu: 'Chiudi la barra laterale',
   com_nav_export_filename: 'Nome del file',
   com_nav_export_filename_placeholder: 'Imposta il nome del file',
   com_nav_export_type: 'Tipo',
@@ -254,5 +260,5 @@ export default {
   com_nav_settings: 'Impostazioni',
   com_nav_search_placeholder: 'Cerca messaggi',
   com_nav_setting_general: 'Generale',
-  com_nav_setting_data: 'Controllo dati',
+  com_nav_setting_data: 'Controllo dei dati',
 };

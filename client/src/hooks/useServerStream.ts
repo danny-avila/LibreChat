@@ -1,9 +1,18 @@
 import { useEffect } from 'react';
 import { useResetRecoilState, useSetRecoilState } from 'recoil';
-/* @ts-ignore */
-import { SSE, createPayload, tMessageSchema, tConversationSchema } from 'librechat-data-provider';
+import {
+  /* @ts-ignore */
+  SSE,
+  createPayload,
+  useGetUserBalance,
+  tMessageSchema,
+  tConversationSchema,
+  useGetStartupConfig,
+} from 'librechat-data-provider';
 import type { TResPlugin, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
-import { useAuthContext } from '~/hooks/AuthContext';
+import useConversations from './useConversations';
+import { useAuthContext } from './AuthContext';
+
 import store from '~/store';
 
 type TResData = {
@@ -20,9 +29,13 @@ export default function useServerStream(submission: TSubmission | null) {
   const setIsSubmitting = useSetRecoilState(store.isSubmitting);
   const setConversation = useSetRecoilState(store.conversation);
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
-  const { token } = useAuthContext();
+  const { token, isAuthenticated } = useAuthContext();
 
-  const { refreshConversations } = store.useConversations();
+  const { data: startupConfig } = useGetStartupConfig();
+  const { refreshConversations } = useConversations();
+  const balanceQuery = useGetUserBalance({
+    enabled: !!isAuthenticated && startupConfig?.checkBalance,
+  });
 
   const messageHandler = (data: string, submission: TSubmission) => {
     const {
@@ -226,6 +239,7 @@ export default function useServerStream(submission: TSubmission | null) {
       if (data.final) {
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins, message });
+        startupConfig?.checkBalance && balanceQuery.refetch();
         console.log('final', data);
       }
       if (data.created) {
@@ -251,6 +265,7 @@ export default function useServerStream(submission: TSubmission | null) {
 
     events.onerror = function (e: MessageEvent) {
       console.log('error in opening conn.');
+      startupConfig?.checkBalance && balanceQuery.refetch();
       events.close();
 
       const data = JSON.parse(e.data);

@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { isEnabled } = require('../utils');
 
 router.get('/', async function (req, res) {
   try {
@@ -18,8 +19,9 @@ router.get('/', async function (req, res) {
     const discordLoginEnabled =
       !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET;
     const serverDomain = process.env.DOMAIN_SERVER || 'http://localhost:3080';
-    const registrationEnabled = process.env.ALLOW_REGISTRATION?.toLowerCase() === 'true';
-    const socialLoginEnabled = process.env.ALLOW_SOCIAL_LOGIN?.toLowerCase() === 'true';
+    const registrationEnabled = isEnabled(process.env.ALLOW_REGISTRATION);
+    const socialLoginEnabled = isEnabled(process.env.ALLOW_SOCIAL_LOGIN);
+    const checkBalance = isEnabled(process.env.CHECK_BALANCE);
     const emailEnabled =
       !!process.env.EMAIL_SERVICE &&
       !!process.env.EMAIL_USERNAME &&
@@ -39,6 +41,7 @@ router.get('/', async function (req, res) {
       registrationEnabled,
       socialLoginEnabled,
       emailEnabled,
+      checkBalance,
     });
   } catch (err) {
     console.error(err);
