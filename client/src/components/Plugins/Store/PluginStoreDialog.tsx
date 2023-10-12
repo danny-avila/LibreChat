@@ -36,6 +36,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const [showPluginAuthForm, setShowPluginAuthForm] = useState<boolean>(false);
   const [error, setError] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [searchChanged, setSearchChanged] = useState(false);
 
   const handleInstallError = (error: TError) => {
     setError(true);
@@ -127,6 +128,12 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const filteredPlugins = availablePlugins?.filter((plugin) =>
     plugin.name.toLowerCase().includes(searchValue.toLowerCase()),
   );
+
+  const handleSearch = (e) => {
+    setSearchValue(e.target.value);
+    setSearchChanged(true);
+  };
+
   useEffect(() => {
     if (user && user.plugins) {
       setUserPlugins(user.plugins);
@@ -134,9 +141,12 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
 
     if (filteredPlugins) {
       setMaxPage(Math.ceil(filteredPlugins.length / itemsPerPage));
-      setCurrentPage(1); // Reset the current page to 1 whenever the filtered list changes
+      if (searchChanged) {
+        setCurrentPage(1);
+        setSearchChanged(false);
+      }
     }
-  }, [availablePlugins, itemsPerPage, user, searchValue]); // Add searchValue to the dependency list
+  }, [availablePlugins, itemsPerPage, user, searchValue]);
 
   const handleChangePage = (page: number) => {
     setCurrentPage(page);
@@ -194,7 +204,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                 <input
                   type="text"
                   value={searchValue}
-                  onChange={(e) => setSearchValue(e.target.value)}
+                  onChange={handleSearch}
                   placeholder={localize('com_nav_plugin_search')}
                   style={{
                     width: '100%',
