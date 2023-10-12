@@ -5,7 +5,6 @@ const config = require('../../../config/loader');
 const { setAuthTokens } = require('../services/AuthService');
 const domains = config.domains;
 
-
 router.get(
   '/openid',
   passport.authenticate('openid', {
@@ -29,6 +28,5 @@ router.get(
     }
   },
 );
-
 
 module.exports = router;

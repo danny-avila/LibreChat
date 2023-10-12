@@ -125,7 +125,7 @@ async function setupOpenId() {
 
           done(null, user);
         } catch (err) {
-          console.log('error has occured in Issuer.discover prior to calling done')
+          console.log('error has occured in Issuer.discover prior to calling done');
           done(err);
         }
       },
