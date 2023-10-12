@@ -36,6 +36,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const [showPluginAuthForm, setShowPluginAuthForm] = useState<boolean>(false);
   const [error, setError] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [searchChanged, setSearchChanged] = useState(false);
 
   const handleInstallError = (error: TError) => {
     setError(true);
@@ -127,6 +128,12 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const filteredPlugins = availablePlugins?.filter((plugin) =>
     plugin.name.toLowerCase().includes(searchValue.toLowerCase()),
   );
+
+  const handleSearch = (e) => {
+    setSearchValue(e.target.value);
+    setSearchChanged(true);
+  };
+
   useEffect(() => {
     if (user && user.plugins) {
       setUserPlugins(user.plugins);
@@ -134,16 +141,27 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
 
     if (filteredPlugins) {
       setMaxPage(Math.ceil(filteredPlugins.length / itemsPerPage));
-      setCurrentPage(1); // Reset the current page to 1 whenever the filtered list changes
+      if (searchChanged) {
+        setCurrentPage(1);
+        setSearchChanged(false);
+      }
     }
-  }, [availablePlugins, itemsPerPage, user, searchValue]); // Add searchValue to the dependency list
+  }, [availablePlugins, itemsPerPage, user, searchValue, filteredPlugins, searchChanged]);
 
   const handleChangePage = (page: number) => {
     setCurrentPage(page);
   };
 
   return (
-    <Dialog open={isOpen} onClose={() => setIsOpen(false)} className="relative z-[102]">
+    <Dialog
+      open={isOpen}
+      onClose={() => {
+        setIsOpen(false);
+        setCurrentPage(1);
+        setSearchValue('');
+      }}
+      className="relative z-[102]"
+    >
       {/* The backdrop, rendered as a fixed sibling to the panel container */}
       <div className="fixed inset-0 bg-gray-500/90 transition-opacity dark:bg-gray-800/90" />
       {/* Full-screen container to center the panel */}
@@ -163,7 +181,10 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
             <div>
               <div className="sm:mt-0">
                 <button
-                  onClick={() => setIsOpen(false)}
+                  onClick={() => {
+                    setIsOpen(false);
+                    setCurrentPage(1);
+                  }}
                   className="inline-block text-gray-500 hover:text-gray-100"
                   tabIndex={0}
                 >
@@ -194,7 +215,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                 <input
                   type="text"
                   value={searchValue}
-                  onChange={(e) => setSearchValue(e.target.value)}
+                  onChange={handleSearch}
                   placeholder={localize('com_nav_plugin_search')}
                   style={{
                     width: '100%',
