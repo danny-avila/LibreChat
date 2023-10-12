@@ -230,6 +230,10 @@ export default {
   com_endpoint_config_key_google_service_account: 'Crear una Cuenta de Servicio',
   com_endpoint_config_key_google_vertex_api_role:
     'Asegúrese de hacer clic en \'Crear y Continuar\' para asignar al menos la función de \'Usuario de Vertex AI\'. Finalmente, cree una clave JSON para importar aquí.',
+  com_nav_plugin_store: 'Tienda de complementos',
+  com_nav_plugin_search: 'Buscar complementos',
+  com_nav_plugin_auth_error:
+    'Se produjo un error al intentar autenticar este complemento. Por favor, inténtalo de nuevo.',
   com_nav_export_filename: 'Nombre del Archivo',
   com_nav_export_filename_placeholder: 'Establece el nombre del archivo',
   com_nav_export_type: 'Tipo',

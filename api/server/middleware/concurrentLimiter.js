@@ -1,10 +1,13 @@
-const Keyv = require('keyv');
-const { logViolation } = require('../../cache');
-
+const clearPendingReq = require('../../cache/clearPendingReq');
+const { logViolation, getLogStores } = require('../../cache');
 const denyRequest = require('./denyRequest');
 
-// Serve cache from memory so no need to clear it on startup/exit
-const pendingReqCache = new Keyv({ namespace: 'pendingRequests' });
+const {
+  USE_REDIS,
+  CONCURRENT_MESSAGE_MAX = 1,
+  CONCURRENT_VIOLATION_SCORE: score,
+} = process.env ?? {};
+const ttl = 1000 * 60 * 1;
 
 /**
  * Middleware to limit concurrent requests for a user.
@@ -12,7 +15,7 @@ const pendingReqCache = new Keyv({ namespace: 'pendingRequests' });
  * This middleware checks if a user has exceeded a specified concurrent request limit.
  * If the user exceeds the limit, an error is returned. If the user is within the limit,
  * their request count is incremented. After the request is processed, the count is decremented.
- * If the `pendingReqCache` store is not available, the middleware will skip its logic.
+ * If the `cache` store is not available, the middleware will skip its logic.
  *
  * @function
  * @param {Object} req - Express request object containing user information.
@@ -21,7 +24,9 @@ const pendingReqCache = new Keyv({ namespace: 'pendingRequests' });
  * @throws {Error} Throws an error if the user exceeds the concurrent request limit.
  */
 const concurrentLimiter = async (req, res, next) => {
-  if (!pendingReqCache) {
+  const namespace = 'pending_req';
+  const cache = getLogStores(namespace);
+  if (!cache) {
     return next();
   }
 
@@ -29,12 +34,12 @@ const concurrentLimiter = async (req, res, next) => {
     return next();
   }
 
-  const { CONCURRENT_MESSAGE_MAX = 1, CONCURRENT_VIOLATION_SCORE: score } = process.env;
+  const userId = req.user?.id ?? req.user?._id ?? '';
   const limit = Math.max(CONCURRENT_MESSAGE_MAX, 1);
   const type = 'concurrent';
 
-  const userId = req.user?.id ?? req.user?._id ?? null;
-  const pendingRequests = (await pendingReqCache.get(userId)) ?? 0;
+  const key = `${USE_REDIS ? namespace : ''}:${userId}`;
+  const pendingRequests = +((await cache.get(key)) ?? 0);
 
   if (pendingRequests >= limit) {
     const errorMessage = {
@@ -46,22 +51,17 @@ const concurrentLimiter = async (req, res, next) => {
     await logViolation(req, res, type, errorMessage, score);
     return await denyRequest(req, res, errorMessage);
   } else {
-    await pendingReqCache.set(userId, pendingRequests + 1);
+    await cache.set(key, pendingRequests + 1, ttl);
   }
 
   // Ensure the requests are removed from the store once the request is done
+  let cleared = false;
   const cleanUp = async () => {
-    if (!pendingReqCache) {
+    if (cleared) {
       return;
     }
-
-    const currentRequests = await pendingReqCache.get(userId);
-
-    if (currentRequests && currentRequests >= 1) {
-      await pendingReqCache.set(userId, currentRequests - 1);
-    } else {
-      await pendingReqCache.delete(userId);
-    }
+    cleared = true;
+    await clearPendingReq({ userId, cache });
   };
 
   if (pendingRequests < limit) {
@@ -71,11 +71,5 @@ const concurrentLimiter = async (req, res, next) => {
 
   next();
 };
-
-// if cache is not served from memory, clear it on exit
-// process.on('exit', async () => {
-//   console.log('Clearing all pending requests before exiting...');
-//   await pendingReqCache.clear();
-// });
 
 module.exports = concurrentLimiter;
