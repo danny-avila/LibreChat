@@ -153,7 +153,15 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   };
 
   return (
-    <Dialog open={isOpen} onClose={() => setIsOpen(false)} className="relative z-[102]">
+    <Dialog
+      open={isOpen}
+      onClose={() => {
+        setIsOpen(false);
+        setCurrentPage(1);
+        setSearchValue('');
+      }}
+      className="relative z-[102]"
+    >
       {/* The backdrop, rendered as a fixed sibling to the panel container */}
       <div className="fixed inset-0 bg-gray-500/90 transition-opacity dark:bg-gray-800/90" />
       {/* Full-screen container to center the panel */}
@@ -173,7 +181,10 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
             <div>
               <div className="sm:mt-0">
                 <button
-                  onClick={() => setIsOpen(false)}
+                  onClick={() => {
+                    setIsOpen(false);
+                    setCurrentPage(1);
+                  }}
                   className="inline-block text-gray-500 hover:text-gray-100"
                   tabIndex={0}
                 >
