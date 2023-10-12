@@ -146,7 +146,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
         setSearchChanged(false);
       }
     }
-  }, [availablePlugins, itemsPerPage, user, searchValue]);
+  }, [availablePlugins, itemsPerPage, user, searchValue, filteredPlugins, searchChanged]);
 
   const handleChangePage = (page: number) => {
     setCurrentPage(page);
