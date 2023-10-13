@@ -13,6 +13,7 @@ import type { TDangerButtonProps } from '~/common';
 import DangerButton from './DangerButton';
 import store from '~/store';
 import useLocalStorage from '~/hooks/useLocalStorage';
+import { Switch } from '~/components/ui';
 
 export const ThemeSelector = ({
   theme,
@@ -102,6 +103,28 @@ export const LangSelector = ({
   );
 };
 
+export const AutoScrollSwitch = () => {
+  const [autoScroll, setAutoScroll] = useRecoilState(store.autoScroll);
+  const localize = useLocalize();
+
+  return (
+    <div className="flex items-center justify-between">
+      <label
+        htmlFor="autoScroll"
+        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+      >
+        <small>{localize('com_nav_auto_scroll')}</small>
+      </label>
+      <Switch
+        id="autoScroll"
+        checked={autoScroll}
+        onCheckedChange={setAutoScroll}
+        className="ml-4 mt-2"
+      />
+    </div>
+  );
+};
+
 function General() {
   const { theme, setTheme } = useContext(ThemeContext);
   const clearConvosMutation = useClearConversationsMutation();
@@ -174,6 +197,9 @@ function General() {
             showText={true}
             mutation={clearConvosMutation}
           />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <AutoScrollSwitch />
         </div>
       </div>
     </Tabs.Content>

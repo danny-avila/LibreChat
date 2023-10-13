@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useGetConversationByIdQuery } from 'librechat-data-provider';
 import { useEffect } from 'react';
-import { useSetRecoilState, useRecoilState } from 'recoil';
+import { useSetRecoilState, useRecoilState, useRecoilValue } from 'recoil';
 import copy from 'copy-to-clipboard';
 import { SubRow, Plugin, MessageContent } from './Content';
 // eslint-disable-next-line import/no-cycle
@@ -13,6 +13,7 @@ import { useMessageHandler, useConversation } from '~/hooks';
 import type { TMessageProps } from '~/common';
 import { cn } from '~/utils';
 import store from '~/store';
+import { useParams } from 'react-router-dom';
 
 export default function Message({
   conversation,
@@ -43,18 +44,25 @@ export default function Message({
     enabled: false,
   });
   const blinker = message?.submitting && isSubmitting;
-
+  const { conversationId } = useParams();
   // debugging
   // useEffect(() => {
   //   console.log('isSubmitting:', isSubmitting);
   //   console.log('unfinished:', unfinished);
   // }, [isSubmitting, unfinished]);
+  const autoScroll = useRecoilValue(store.autoScroll);
 
   useEffect(() => {
     if (blinker && scrollToBottom && !abortScroll) {
       scrollToBottom();
     }
   }, [isSubmitting, blinker, text, scrollToBottom]);
+
+  useEffect(() => {
+    if (scrollToBottom && autoScroll) {
+      scrollToBottom();
+    }
+  }, [conversationId]);
 
   useEffect(() => {
     if (!message) {

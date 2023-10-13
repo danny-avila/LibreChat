@@ -29,6 +29,12 @@ const modelsConfig = atom<TModelsConfig>({
   },
 });
 
+const autoScroll = atom({
+  key: 'autoScroll',
+  default: true,
+});
+
 export default {
   modelsConfig,
+  autoScroll,
 };
