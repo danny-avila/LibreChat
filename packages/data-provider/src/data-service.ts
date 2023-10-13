@@ -1,4 +1,7 @@
 import * as t from './types';
+import * as s from './schemas';
+/* TODO: fix dependency cycle */
+// eslint-disable-next-line import/no-cycle
 import request from './request';
 import * as endpoints from './api-endpoints';
 
@@ -23,11 +26,19 @@ export function clearAllConversations(): Promise<unknown> {
   return request.post(endpoints.deleteConversation(), { arg: {} });
 }
 
-export function getMessagesByConvoId(id: string): Promise<t.TMessage[]> {
-  return request.get(endpoints.messages(id));
+export function revokeUserKey(name: string): Promise<unknown> {
+  return request.delete(endpoints.revokeUserKey(name));
 }
 
-export function getConversationById(id: string): Promise<t.TConversation> {
+export function revokeAllUserKeys(): Promise<unknown> {
+  return request.delete(endpoints.revokeAllUserKeys());
+}
+
+export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
+  return request.get(endpoints.messages(conversationId));
+}
+
+export function getConversationById(id: string): Promise<s.TConversation> {
   return request.get(endpoints.conversationById(id));
 }
 
@@ -37,19 +48,37 @@ export function updateConversation(
   return request.post(endpoints.updateConversation(), { arg: payload });
 }
 
-export function getPresets(): Promise<t.TPreset[]> {
+export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown> {
+  const { conversationId, messageId, text } = payload;
+  if (!conversationId) {
+    throw new Error('conversationId is required');
+  }
+
+  return request.put(endpoints.messages(conversationId, messageId), { text });
+}
+
+export function updateUserKey(payload: t.TUpdateUserKeyRequest) {
+  const { value } = payload;
+  if (!value) {
+    throw new Error('value is required');
+  }
+
+  return request.put(endpoints.keys(), payload);
+}
+
+export function getPresets(): Promise<s.TPreset[]> {
   return request.get(endpoints.presets());
 }
 
-export function createPreset(payload: t.TPreset): Promise<t.TPreset[]> {
+export function createPreset(payload: s.TPreset): Promise<s.TPreset[]> {
   return request.post(endpoints.presets(), payload);
 }
 
-export function updatePreset(payload: t.TPreset): Promise<t.TPreset[]> {
+export function updatePreset(payload: s.TPreset): Promise<s.TPreset[]> {
   return request.post(endpoints.presets(), payload);
 }
 
-export function deletePreset(arg: t.TPreset | object): Promise<t.TPreset[]> {
+export function deletePreset(arg: s.TPreset | object): Promise<s.TPreset[]> {
   return request.post(endpoints.deletePreset(), arg);
 }
 
@@ -61,6 +90,10 @@ export function getUser(): Promise<t.TUser> {
   return request.get(endpoints.user());
 }
 
+export function getUserBalance(): Promise<string> {
+  return request.get(endpoints.balance());
+}
+
 export const searchConversations = async (
   q: string,
   pageNumber: string,
@@ -70,6 +103,10 @@ export const searchConversations = async (
 
 export const getAIEndpoints = () => {
   return request.get(endpoints.aiEndpoints());
+};
+
+export const getModels = async (): Promise<t.TModelsConfig> => {
+  return request.get(endpoints.models());
 };
 
 export const updateTokenCount = (text: string) => {
@@ -88,9 +125,10 @@ export const register = (payload: t.TRegisterUser) => {
   return request.post(endpoints.register(), payload);
 };
 
-export const refreshToken = () => {
-  return request.post(endpoints.refreshToken());
-};
+export const refreshToken = () => request.post(endpoints.refreshToken());
+
+export const userKeyQuery = (name: string): Promise<t.TCheckUserKeyResponse> =>
+  request.get(endpoints.userKeyQuery(name));
 
 export const getLoginGoogle = () => {
   return request.get(endpoints.loginGoogle());
@@ -106,7 +144,7 @@ export const resetPassword = (payload: t.TResetPassword) => {
   return request.post(endpoints.resetPassword(), payload);
 };
 
-export const getAvailablePlugins = (): Promise<t.TPlugin[]> => {
+export const getAvailablePlugins = (): Promise<s.TPlugin[]> => {
   return request.get(endpoints.plugins());
 };
 

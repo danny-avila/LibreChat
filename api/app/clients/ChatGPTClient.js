@@ -1,9 +1,6 @@
 const crypto = require('crypto');
 const Keyv = require('keyv');
-const {
-  encoding_for_model: encodingForModel,
-  get_encoding: getEncoding,
-} = require('@dqbd/tiktoken');
+const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
 const { Agent, ProxyAgent } = require('undici');
 const BaseClient = require('./BaseClient');
@@ -53,7 +50,7 @@ class ChatGPTClient extends BaseClient {
       stop: modelOptions.stop,
     };
 
-    this.isChatGptModel = this.modelOptions.model.startsWith('gpt-');
+    this.isChatGptModel = this.modelOptions.model.includes('gpt-');
     const { isChatGptModel } = this;
     this.isUnofficialChatGptModel =
       this.modelOptions.model.startsWith('text-chat') ||
@@ -156,6 +153,11 @@ class ChatGPTClient extends BaseClient {
     } else {
       modelOptions.prompt = input;
     }
+
+    if (this.useOpenRouter && modelOptions.prompt) {
+      delete modelOptions.stop;
+    }
+
     const { debug } = this.options;
     const url = this.completionsUrl;
     if (debug) {
@@ -180,6 +182,11 @@ class ChatGPTClient extends BaseClient {
       opts.headers['api-key'] = this.apiKey;
     } else if (this.apiKey) {
       opts.headers.Authorization = `Bearer ${this.apiKey}`;
+    }
+
+    if (this.useOpenRouter) {
+      opts.headers['HTTP-Referer'] = 'https://librechat.ai';
+      opts.headers['X-Title'] = 'LibreChat';
     }
 
     if (this.options.headers) {
@@ -430,9 +437,7 @@ ${botMessage.message}
     return returnData;
   }
 
-  async buildPrompt(messages, parentMessageId, { isChatGptModel = false, promptPrefix = null }) {
-    const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
-
+  async buildPrompt(messages, { isChatGptModel = false, promptPrefix = null }) {
     promptPrefix = (promptPrefix || this.options.promptPrefix || '').trim();
     if (promptPrefix) {
       // If the prompt prefix doesn't end with the end token, add it.
@@ -478,8 +483,8 @@ ${botMessage.message}
     // Iterate backwards through the messages, adding them to the prompt until we reach the max token count.
     // Do this within a recursive async function so that it doesn't block the event loop for too long.
     const buildPromptBody = async () => {
-      if (currentTokenCount < maxTokenCount && orderedMessages.length > 0) {
-        const message = orderedMessages.pop();
+      if (currentTokenCount < maxTokenCount && messages.length > 0) {
+        const message = messages.pop();
         const roleLabel =
           message?.isCreatedByUser || message?.role?.toLowerCase() === 'user'
             ? this.userLabel
@@ -526,8 +531,8 @@ ${botMessage.message}
     const prompt = `${promptBody}${promptSuffix}`;
     if (isChatGptModel) {
       messagePayload.content = prompt;
-      // Add 2 tokens for metadata after all messages have been counted.
-      currentTokenCount += 2;
+      // Add 3 tokens for Assistant Label priming after all messages have been counted.
+      currentTokenCount += 3;
     }
 
     // Use up to `this.maxContextTokens` tokens (prompt + response), but try to leave `this.maxTokens` tokens for the response.
@@ -554,33 +559,29 @@ ${botMessage.message}
    * Algorithm adapted from "6. Counting tokens for chat API calls" of
    * https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
    *
-   * An additional 2 tokens need to be added for metadata after all messages have been counted.
+   * An additional 3 tokens need to be added for assistant label priming after all messages have been counted.
    *
-   * @param {*} message
+   * @param {Object} message
    */
   getTokenCountForMessage(message) {
-    let tokensPerMessage;
-    let nameAdjustment;
-    if (this.modelOptions.model.startsWith('gpt-4')) {
-      tokensPerMessage = 3;
-      nameAdjustment = 1;
-    } else {
+    // Note: gpt-3.5-turbo and gpt-4 may update over time. Use default for these as well as for unknown models
+    let tokensPerMessage = 3;
+    let tokensPerName = 1;
+
+    if (this.modelOptions.model === 'gpt-3.5-turbo-0301') {
       tokensPerMessage = 4;
-      nameAdjustment = -1;
+      tokensPerName = -1;
     }
 
-    // Map each property of the message to the number of tokens it contains
-    const propertyTokenCounts = Object.entries(message).map(([key, value]) => {
-      // Count the number of tokens in the property value
-      const numTokens = this.getTokenCount(value);
+    let numTokens = tokensPerMessage;
+    for (let [key, value] of Object.entries(message)) {
+      numTokens += this.getTokenCount(value);
+      if (key === 'name') {
+        numTokens += tokensPerName;
+      }
+    }
 
-      // Adjust by `nameAdjustment` tokens if the property key is 'name'
-      const adjustment = key === 'name' ? nameAdjustment : 0;
-      return numTokens + adjustment;
-    });
-
-    // Sum the number of tokens in all properties and add `tokensPerMessage` for metadata
-    return propertyTokenCounts.reduce((a, b) => a + b, tokensPerMessage);
+    return numTokens;
   }
 }
 

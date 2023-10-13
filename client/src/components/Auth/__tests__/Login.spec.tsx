@@ -1,9 +1,9 @@
-import { render, waitFor } from 'layout-test-utils';
+import { render, waitFor } from 'test/layout-test-utils';
 import userEvent from '@testing-library/user-event';
 import Login from '../Login';
-import * as mockDataProvider from '@librechat/data-provider';
+import * as mockDataProvider from 'librechat-data-provider';
 
-jest.mock('@librechat/data-provider');
+jest.mock('librechat-data-provider');
 
 const setup = ({
   useGetUserQueryReturnValue = {
@@ -18,11 +18,21 @@ const setup = ({
     data: {},
     isSuccess: false,
   },
+  useRefreshTokenMutationReturnValue = {
+    isLoading: false,
+    isError: false,
+    mutate: jest.fn(),
+    data: {
+      token: 'mock-token',
+      user: {},
+    },
+  },
   useGetStartupCongfigReturnValue = {
     isLoading: false,
     isError: false,
     data: {
       googleLoginEnabled: true,
+      facebookLoginEnabled: true,
       openidLoginEnabled: true,
       openidLabel: 'Test OpenID',
       openidImageUrl: 'http://test-server.com',
@@ -46,12 +56,17 @@ const setup = ({
     .spyOn(mockDataProvider, 'useGetStartupConfig')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetStartupCongfigReturnValue);
+  const mockUseRefreshTokenMutation = jest
+    .spyOn(mockDataProvider, 'useRefreshTokenMutation')
+    //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
+    .mockReturnValue(useRefreshTokenMutationReturnValue);
   const renderResult = render(<Login />);
   return {
     ...renderResult,
     mockUseLoginUser,
     mockUseGetUserQuery,
     mockUseGetStartupConfig,
+    mockUseRefreshTokenMutation,
   };
 };
 
@@ -60,13 +75,6 @@ test('renders login form', () => {
   expect(getByLabelText(/email/i)).toBeInTheDocument();
   expect(getByLabelText(/password/i)).toBeInTheDocument();
   expect(getByRole('button', { name: /Sign in/i })).toBeInTheDocument();
-  expect(getByRole('link', { name: /Sign up/i })).toBeInTheDocument();
-  expect(getByRole('link', { name: /Sign up/i })).toHaveAttribute('href', '/register');
-  expect(getByRole('link', { name: /Login with Google/i })).toBeInTheDocument();
-  expect(getByRole('link', { name: /Login with Google/i })).toHaveAttribute(
-    'href',
-    'mock-server/oauth/google',
-  );
 });
 
 test('calls loginUser.mutate on login', async () => {

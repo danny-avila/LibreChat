@@ -1,14 +1,18 @@
 import { defineConfig, devices } from '@playwright/test';
 import path from 'path';
+const absolutePath = path.resolve(process.cwd(), 'api/server/index.js');
+import dotenv from 'dotenv';
+dotenv.config();
 
 export default defineConfig({
   globalSetup: require.resolve('./setup/global-setup'),
+  globalTeardown: require.resolve('./setup/global-teardown'),
   testDir: 'specs/',
   outputDir: 'specs/.test-results',
   /* Run tests in files in parallel.
   NOTE: This sometimes causes issues on Windows.
   Set to false if you experience issues running on a Windows machine. */
-  fullyParallel: true,
+  fullyParallel: false,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */
@@ -16,7 +20,7 @@ export default defineConfig({
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  // reporter: [['html', { outputFolder: 'playwright-report' }]],
+  reporter: [['html', { outputFolder: 'playwright-report' }]],
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     baseURL: 'http://localhost:3080',
@@ -24,7 +28,7 @@ export default defineConfig({
     trace: 'retain-on-failure',
     ignoreHTTPSErrors: true,
     headless: true,
-    storageState: path.resolve('./e2e/storageState.json'),
+    storageState: path.resolve(process.cwd(), 'e2e/storageState.json'),
     screenshot: 'only-on-failure',
   },
   expect: {
@@ -49,10 +53,20 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'node ../api/server/index.js',
+    command: `node ${absolutePath}`,
     port: 3080,
+    stdout: 'pipe',
+    ignoreHTTPSErrors: true,
     // url: 'http://localhost:3080',
     timeout: 30_000,
     reuseExistingServer: true,
+    env: {
+      ...process.env,
+      SEARCH: 'false',
+      NODE_ENV: 'development',
+      SESSION_EXPIRY: '60000',
+      ALLOW_REGISTRATION: 'true',
+      REFRESH_TOKEN_EXPIRY: '300000',
+    },
   },
 });

@@ -1,134 +1,97 @@
 const express = require('express');
 const router = express.Router();
-const crypto = require('crypto');
-const { titleConvo, AnthropicClient } = require('../../../app');
-const requireJwtAuth = require('../../../middleware/requireJwtAuth');
-const { abortMessage } = require('../../../utils');
+const { getResponseSender } = require('../endpoints/schemas');
+const { initializeClient } = require('../endpoints/anthropic');
+const {
+  handleAbort,
+  createAbortController,
+  handleAbortError,
+  setHeaders,
+  validateEndpoint,
+  buildEndpointOption,
+} = require('../../middleware');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress } = require('./handlers');
+const { sendMessage, createOnProgress } = require('../../utils');
 
-const abortControllers = new Map();
+router.post('/abort', handleAbort());
 
-router.post('/abort', requireJwtAuth, async (req, res) => {
-  return await abortMessage(req, res, abortControllers);
-});
-
-router.post('/', requireJwtAuth, async (req, res) => {
-  const { endpoint, text, parentMessageId, conversationId: oldConversationId } = req.body;
-  if (text.length === 0) {
-    return handleError(res, { text: 'Prompt empty or too short' });
-  }
-  if (endpoint !== 'anthropic') {
-    return handleError(res, { text: 'Illegal request' });
-  }
-
-  const endpointOption = {
-    promptPrefix: req.body?.promptPrefix ?? null,
-    modelLabel: req.body?.modelLabel ?? null,
-    token: req.body?.token ?? null,
-    modelOptions: {
-      model: req.body?.model ?? 'claude-1',
-      temperature: req.body?.temperature ?? 0.7,
-      maxOutputTokens: req.body?.maxOutputTokens ?? 1024,
-      topP: req.body?.topP ?? 0.7,
-      topK: req.body?.topK ?? 40,
-    },
-  };
-
-  const conversationId = oldConversationId || crypto.randomUUID();
-
-  return await ask({
+router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, res) => {
+  let {
     text,
     endpointOption,
     conversationId,
-    parentMessageId,
-    req,
-    res,
-  });
-});
-
-const ask = async ({ text, endpointOption, parentMessageId = null, conversationId, req, res }) => {
-  res.writeHead(200, {
-    Connection: 'keep-alive',
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    'Access-Control-Allow-Origin': '*',
-    'X-Accel-Buffering': 'no',
-  });
-
+    parentMessageId = null,
+    overrideParentMessageId = null,
+  } = req.body;
+  console.log('ask log');
+  console.dir({ text, conversationId, endpointOption }, { depth: null });
   let userMessage;
+  let promptTokens;
   let userMessageId;
   let responseMessageId;
   let lastSavedTimestamp = 0;
-  const { overrideParentMessageId = null } = req.body;
+  let saveDelay = 100;
+  const sender = getResponseSender(endpointOption);
+  const user = req.user.id;
 
-  try {
-    const getIds = (data) => {
-      userMessage = data.userMessage;
-      userMessageId = data.userMessage.messageId;
-      responseMessageId = data.responseMessageId;
-      if (!conversationId) {
-        conversationId = data.conversationId;
+  const getReqData = (data = {}) => {
+    for (let key in data) {
+      if (key === 'userMessage') {
+        userMessage = data[key];
+        userMessageId = data[key].messageId;
+      } else if (key === 'responseMessageId') {
+        responseMessageId = data[key];
+      } else if (key === 'promptTokens') {
+        promptTokens = data[key];
+      } else if (!conversationId && key === 'conversationId') {
+        conversationId = data[key];
       }
-    };
+    }
+  };
 
-    const { onProgress: progressCallback, getPartialText } = createOnProgress({
-      onProgress: ({ text: partialText }) => {
-        const currentTimestamp = Date.now();
-        if (currentTimestamp - lastSavedTimestamp > 500) {
-          lastSavedTimestamp = currentTimestamp;
-          saveMessage({
-            messageId: responseMessageId,
-            sender: 'Anthropic',
-            conversationId,
-            parentMessageId: overrideParentMessageId || userMessageId,
-            text: partialText,
-            unfinished: true,
-            cancelled: false,
-            error: false,
-          });
-        }
-      },
+  const { onProgress: progressCallback, getPartialText } = createOnProgress({
+    onProgress: ({ text: partialText }) => {
+      const currentTimestamp = Date.now();
+
+      if (currentTimestamp - lastSavedTimestamp > saveDelay) {
+        lastSavedTimestamp = currentTimestamp;
+        saveMessage({
+          messageId: responseMessageId,
+          sender,
+          conversationId,
+          parentMessageId: overrideParentMessageId ?? userMessageId,
+          text: partialText,
+          unfinished: true,
+          cancelled: false,
+          error: false,
+          user,
+        });
+      }
+
+      if (saveDelay < 500) {
+        saveDelay = 500;
+      }
+    },
+  });
+  try {
+    const getAbortData = () => ({
+      conversationId,
+      messageId: responseMessageId,
+      sender,
+      parentMessageId: overrideParentMessageId ?? userMessageId,
+      text: getPartialText(),
+      userMessage,
+      promptTokens,
     });
 
-    const abortController = new AbortController();
-    abortController.abortAsk = async function () {
-      this.abort();
+    const { abortController, onStart } = createAbortController(req, res, getAbortData);
 
-      const responseMessage = {
-        messageId: responseMessageId,
-        sender: 'Anthropic',
-        conversationId,
-        parentMessageId: overrideParentMessageId || userMessageId,
-        text: getPartialText(),
-        model: endpointOption.modelOptions.model,
-        unfinished: false,
-        cancelled: true,
-        error: false,
-      };
-
-      saveMessage(responseMessage);
-
-      return {
-        title: await getConvoTitle(req.user.id, conversationId),
-        final: true,
-        conversation: await getConvo(req.user.id, conversationId),
-        requestMessage: userMessage,
-        responseMessage: responseMessage,
-      };
-    };
-
-    const onStart = (userMessage) => {
-      sendMessage(res, { message: userMessage, created: true });
-      abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
-    };
-
-    const client = new AnthropicClient(endpointOption.token);
+    const { client } = await initializeClient({ req, res, endpointOption });
 
     let response = await client.sendMessage(text, {
-      getIds,
-      debug: false,
-      user: req.user.id,
+      getReqData,
+      // debug: true,
+      user,
       conversationId,
       parentMessageId,
       overrideParentMessageId,
@@ -136,7 +99,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       onProgress: progressCallback.call(null, {
         res,
         text,
-        parentMessageId: overrideParentMessageId || userMessageId,
+        parentMessageId: overrideParentMessageId ?? userMessageId,
       }),
       onStart,
       abortController,
@@ -146,45 +109,34 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       response.parentMessageId = overrideParentMessageId;
     }
 
-    await saveConvo(req.user.id, {
+    await saveConvo(user, {
       ...endpointOption,
       ...endpointOption.modelOptions,
       conversationId,
       endpoint: 'anthropic',
     });
 
-    await saveMessage(response);
+    await saveMessage({ ...response, user });
     sendMessage(res, {
-      title: await getConvoTitle(req.user.id, conversationId),
+      title: await getConvoTitle(user, conversationId),
       final: true,
-      conversation: await getConvo(req.user.id, conversationId),
+      conversation: await getConvo(user, conversationId),
       requestMessage: userMessage,
       responseMessage: response,
     });
     res.end();
 
-    if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
-      const title = await titleConvo({ text, response });
-      await saveConvo(req.user.id, {
-        conversationId,
-        title,
-      });
-    }
+    // TODO: add anthropic titling
   } catch (error) {
-    console.error(error);
-    const errorMessage = {
-      messageId: responseMessageId,
-      sender: 'Anthropic',
+    const partialText = getPartialText();
+    handleAbortError(res, req, error, {
+      partialText,
       conversationId,
-      parentMessageId,
-      unfinished: false,
-      cancelled: false,
-      error: true,
-      text: error.message,
-    };
-    await saveMessage(errorMessage);
-    handleError(res, errorMessage);
+      sender,
+      messageId: responseMessageId,
+      parentMessageId: userMessageId ?? parentMessageId,
+    });
   }
-};
+});
 
 module.exports = router;

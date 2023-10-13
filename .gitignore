@@ -3,6 +3,7 @@
 # Logs
 data-node
 meili_data
+data/
 logs
 *.log
 
@@ -50,6 +51,7 @@ types/
 # Environment
 .npmrc
 .env*
+my.secrets
 !**/.env.example
 !**/.env.test.example
 cache.json
@@ -71,6 +73,7 @@ junit.xml
 
 # meilisearch
 meilisearch
+meilisearch.exe
 data.ms/*
 auth.json
 

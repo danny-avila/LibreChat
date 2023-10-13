@@ -1,10 +1,64 @@
-const PassportLocalStrategy = require('passport-local').Strategy;
-
+const { Strategy: PassportLocalStrategy } = require('passport-local');
 const User = require('../models/User');
-const { loginSchema } = require('./validators');
-const DebugControl = require('../utils/debug.js');
+const { loginSchema, errorsToString } = require('./validators');
+const logger = require('../utils/logger');
 
-const passportLogin = async () =>
+async function validateLoginRequest(req) {
+  const { error } = loginSchema.safeParse(req.body);
+  return error ? errorsToString(error.errors) : null;
+}
+
+async function findUserByEmail(email) {
+  return User.findOne({ email: email.trim() });
+}
+
+async function comparePassword(user, password) {
+  return new Promise((resolve, reject) => {
+    user.comparePassword(password, function (err, isMatch) {
+      if (err) {
+        return reject(err);
+      }
+      resolve(isMatch);
+    });
+  });
+}
+
+async function passportLogin(req, email, password, done) {
+  try {
+    const validationError = await validateLoginRequest(req);
+    if (validationError) {
+      logError('Passport Local Strategy - Validation Error', { reqBody: req.body });
+      logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
+      return done(null, false, { message: validationError });
+    }
+
+    const user = await findUserByEmail(email);
+    if (!user) {
+      logError('Passport Local Strategy - User Not Found', { email });
+      logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
+      return done(null, false, { message: 'Email does not exist.' });
+    }
+
+    const isMatch = await comparePassword(user, password);
+    if (!isMatch) {
+      logError('Passport Local Strategy - Password does not match', { isMatch });
+      logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
+      return done(null, false, { message: 'Incorrect password.' });
+    }
+
+    logger.info(`[Login] [Login successful] [Username: ${email}] [Request-IP: ${req.ip}]`);
+    return done(null, user);
+  } catch (err) {
+    return done(err);
+  }
+}
+
+function logError(title, parameters) {
+  const entries = Object.entries(parameters).map(([name, value]) => ({ name, value }));
+  logger.error(title, { parameters: entries });
+}
+
+module.exports = () =>
   new PassportLocalStrategy(
     {
       usernameField: 'email',
@@ -12,55 +66,5 @@ const passportLogin = async () =>
       session: false,
       passReqToCallback: true,
     },
-    async (req, email, password, done) => {
-      const { error } = loginSchema.validate(req.body);
-      if (error) {
-        log({
-          title: 'Passport Local Strategy - Validation Error',
-          parameters: [{ name: 'req.body', value: req.body }],
-        });
-        return done(null, false, { message: error.details[0].message });
-      }
-
-      try {
-        const user = await User.findOne({ email: email.trim() });
-        if (!user) {
-          log({
-            title: 'Passport Local Strategy - User Not Found',
-            parameters: [{ name: 'email', value: email }],
-          });
-          return done(null, false, { message: 'Email does not exists.' });
-        }
-
-        user.comparePassword(password, function (err, isMatch) {
-          if (err) {
-            log({
-              title: 'Passport Local Strategy - Compare password error',
-              parameters: [{ name: 'error', value: err }],
-            });
-            return done(err);
-          }
-          if (!isMatch) {
-            log({
-              title: 'Passport Local Strategy - Password does not match',
-              parameters: [{ name: 'isMatch', value: isMatch }],
-            });
-            return done(null, false, { message: 'Incorrect password.' });
-          }
-
-          return done(null, user);
-        });
-      } catch (err) {
-        return done(err);
-      }
-    },
+    passportLogin,
   );
-
-function log({ title, parameters }) {
-  DebugControl.log.functionName(title);
-  if (parameters) {
-    DebugControl.log.parameters(parameters);
-  }
-}
-
-module.exports = passportLogin;

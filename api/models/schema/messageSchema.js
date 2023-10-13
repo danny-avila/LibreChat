@@ -14,6 +14,11 @@ const messageSchema = mongoose.Schema(
       required: true,
       meiliIndex: true,
     },
+    user: {
+      type: String,
+      index: true,
+      default: null,
+    },
     model: {
       type: String,
     },
@@ -25,7 +30,7 @@ const messageSchema = mongoose.Schema(
       type: String,
     },
     invocationId: {
-      type: String,
+      type: Number,
     },
     parentMessageId: {
       type: String,
@@ -34,7 +39,7 @@ const messageSchema = mongoose.Schema(
     tokenCount: {
       type: Number,
     },
-    refinedTokenCount: {
+    summaryTokenCount: {
       type: Number,
     },
     sender: {
@@ -47,12 +52,16 @@ const messageSchema = mongoose.Schema(
       required: true,
       meiliIndex: true,
     },
-    refinedMessageText: {
+    summary: {
       type: String,
     },
     isCreatedByUser: {
       type: Boolean,
       required: true,
+      default: false,
+    },
+    isEdited: {
+      type: Boolean,
       default: false,
     },
     unfinished: {
@@ -66,6 +75,9 @@ const messageSchema = mongoose.Schema(
     error: {
       type: Boolean,
       default: false,
+    },
+    finish_reason: {
+      type: String,
     },
     _meiliIndex: {
       type: Boolean,
@@ -87,6 +99,7 @@ const messageSchema = mongoose.Schema(
         required: false,
       },
     },
+    plugins: [{ type: mongoose.Schema.Types.Mixed }],
   },
   { timestamps: true },
 );

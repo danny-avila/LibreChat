@@ -12,7 +12,7 @@ In this video, you will learn how to install and run LibreChat, using Docker on 
 - 0:00 - Intro
 - 0:14 - Update the system
 - 0:29 - Clone the repository
-- 0:37 - Docker installation 
+- 0:37 - Docker installation
 - 1:03 - Enter in the folder
 - 1:07 - Create the .env file
 - 1:14 - Build using docker-compose
@@ -30,13 +30,13 @@ Here are the steps to follow:
 - Build the Docker image: `docker-compose build`
 - Start LibreChat: `docker-compose up -d`
 
-Note: If you run the command on the same computer and want to access it, navigate to `localhost:3080`. You should see a login page where you can create or sign in to your account. Then you can choose an AI model and start chatting. 
+Note: If you run the command on the same computer and want to access it, navigate to `localhost:3080`. You should see a login page where you can create or sign in to your account. Then you can choose an AI model and start chatting.
 
 Have fun!
 
 ---
-## **[Docker Install](docker_install.md)** (General documentation)
---- 
+## **[Docker Install](docker_compose_install.md)** (General documentation)
+---
 
 ## **Manual Installation:**
 
@@ -128,8 +128,8 @@ gnome-terminal --tab --title="LibreChat" --working-directory=/home/user/LibreCha
 
 ## Update the app version
 
-If you update the LibreChat project files, manually redo the npm ci and npm run frontend steps.
+- Run `npm run update` from the project directory for a clean installation.
 
 ---
 
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+>⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

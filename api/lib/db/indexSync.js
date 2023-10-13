@@ -1,12 +1,15 @@
-const mongoose = require('mongoose');
-const Conversation = mongoose.models.Conversation;
-const Message = mongoose.models.Message;
+const Conversation = require('../../models/schema/convoSchema');
+const Message = require('../../models/schema/messageSchema');
 const { MeiliSearch } = require('meilisearch');
 let currentTimeout = null;
+const searchEnabled = process.env?.SEARCH?.toLowerCase() === 'true';
 
 // eslint-disable-next-line no-unused-vars
 async function indexSync(req, res, next) {
-  const searchEnabled = process.env.SEARCH && process.env.SEARCH.toLowerCase() === 'true';
+  if (!searchEnabled) {
+    return;
+  }
+
   try {
     if (!process.env.MEILI_HOST || !process.env.MEILI_MASTER_KEY || !searchEnabled) {
       throw new Error('Meilisearch not configured, search will be disabled.');
@@ -37,12 +40,12 @@ async function indexSync(req, res, next) {
 
     if (messageCount !== messagesIndexed) {
       console.log('Messages out of sync, indexing');
-      await Message.syncWithMeili();
+      Message.syncWithMeili();
     }
 
     if (convoCount !== convosIndexed) {
       console.log('Convos out of sync, indexing');
-      await Conversation.syncWithMeili();
+      Conversation.syncWithMeili();
     }
   } catch (err) {
     // console.log('in index sync');

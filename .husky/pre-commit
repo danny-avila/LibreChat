@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+set -e
+. "$(dirname -- "$0")/_/husky.sh"
+[ -n "$CI" ] && exit 0
+npx lint-staged --config ./.husky/lint-staged.config.js

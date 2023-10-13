@@ -1,5 +1,35 @@
 # ⚠️ **Breaking Changes** ⚠️
 
+> **Note:**
+**If you experience any issues after updating, we recommend clearing your browser cache and cookies.**
+Certain changes in the updates may impact cookies, leading to unexpected behaviors if not cleared properly.
+
+## v0.5.9
+
+- It's now required to set a **JWT_REFRESH_SECRET** in your .env file as of [#927](https://github.com/danny-avila/LibreChat/pull/927)
+  - It's also recommended you update your `SESSION_EXPIRY` to a lower value and set `REFRESH_TOKEN_EXPIRY`
+
+  - Default values: session expiry: 15 minutes, refresh token expiry: 7 days
+
+  - *See **[.env.example](https://github.com/danny-avila/LibreChat/blob/1378eb5097b666a4add27923e47be73919957e5b/.env.example#L314)** for exact values in millisecond calculation*
+
+## v0.5.8
+
+- It's now required to name manifest JSON files (for [ChatGPT Plugins](..\features\plugins\chatgpt_plugins_openapi.md)) in the `api\app\clients\tools\.well-known` directory after their `name_for_model` property should you add one yourself.
+    - This was a recommended convention before, but is now required.
+
+## v0.5.7
+
+Now, we have an easier and safer way to update LibreChat. You can simply run `npm run update` from the project directory for a clean update.
+If you want to skip the prompt you can use
+
+for a docker install:
+- `npm run update:docker`
+
+for a local install:
+- `npm run update:local`
+
+
 ## v0.5.5
 Some users have reported an error after updating their docker containers.
 
@@ -7,15 +37,15 @@ Some users have reported an error after updating their docker containers.
 
 - To fix this error, you need to:
   - Delete the LibreChat image in docker 🗑️
-    
-    **(leave mongo intact to preserve your profiles and history)** 
+
+    **(leave mongo intact to preserve your profiles and history)**
     ![image](https://github.com/fuegovic/LibreChat/assets/32828263/acf15682-435e-44bd-8873-a5dceb3121cc)
   - Repeat the docker update process: 🚀
     - `docker-compose build`
     - `docker-compose up -d`
 
 ## v0.5.4
-Some changes were made in the .env file  
+Some changes were made in the .env file
 **Look at the .env.example for reference.**
 
 - If you previously used social login, you need to:
@@ -40,7 +70,7 @@ ALLOW_SOCIAL_LOGIN=false
 
 ```env
 ##########################
-# Anthropic Endpoint: 
+# Anthropic Endpoint:
 ##########################
 # Access key from https://console.anthropic.com/
 # Leave it blank to disable this feature.
@@ -85,7 +115,7 @@ I had to change the environment variable from AZURE_OPENAI_API_KEY to AZURE_API_
 ---
 
 ### Docker
-- The docker-compose file had some change. Review the [new docker instructions](../install/docker_install.md) to make sure you are setup properly. This is still the simplest and most effective method.
+- The docker-compose file had some change. Review the [new docker instructions](../install/docker_compose_install.md) to make sure you are setup properly. This is still the simplest and most effective method.
 
 ---
 

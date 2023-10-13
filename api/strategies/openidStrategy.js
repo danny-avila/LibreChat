@@ -83,7 +83,7 @@ async function setupOpenId() {
           } else {
             user.provider = 'openid';
             user.openidId = userinfo.sub;
-            user.username = userinfo.given_name || '';
+            user.username = userinfo.username || userinfo.given_name || '';
             user.name = fullName;
           }
 
@@ -125,7 +125,7 @@ async function setupOpenId() {
 
           done(null, user);
         } catch (err) {
-          console.log('error has occured in Issuer.discover prior to calling done')
+          console.log('error has occured in Issuer.discover prior to calling done');
           done(err);
         }
       },

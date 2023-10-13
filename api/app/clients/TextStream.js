@@ -5,13 +5,13 @@ class TextStream extends Readable {
     super(options);
     this.text = text;
     this.currentIndex = 0;
-    this.delay = options.delay || 20; // Time in milliseconds
+    this.minChunkSize = options.minChunkSize ?? 2;
+    this.maxChunkSize = options.maxChunkSize ?? 4;
+    this.delay = options.delay ?? 20; // Time in milliseconds
   }
 
   _read() {
-    const minChunkSize = 2;
-    const maxChunkSize = 4;
-    const { delay } = this;
+    const { delay, minChunkSize, maxChunkSize } = this;
 
     if (this.currentIndex < this.text.length) {
       setTimeout(() => {
@@ -38,7 +38,7 @@ class TextStream extends Readable {
       });
 
       this.on('end', () => {
-        console.log('Stream ended');
+        // console.log('Stream ended');
         resolve();
       });
 

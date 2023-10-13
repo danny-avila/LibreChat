@@ -54,8 +54,6 @@ module.exports = {
       const cache = {};
       const convoMap = {};
       const promises = [];
-      // will handle a syncing solution soon
-      const deletedConvoIds = [];
 
       convoIds.forEach((convo) =>
         promises.push(
@@ -66,23 +64,17 @@ module.exports = {
         ),
       );
 
-      const results = (await Promise.all(promises)).filter((convo, i) => {
-        if (!convo) {
-          deletedConvoIds.push(convoIds[i].conversationId);
-          return false;
-        } else {
-          const page = Math.floor(i / pageSize) + 1;
-          if (!cache[page]) {
-            cache[page] = [];
-          }
-          cache[page].push(convo);
-          convoMap[convo.conversationId] = convo;
-          return true;
+      const results = (await Promise.all(promises)).filter(Boolean);
+
+      results.forEach((convo, i) => {
+        const page = Math.floor(i / pageSize) + 1;
+        if (!cache[page]) {
+          cache[page] = [];
         }
+        cache[page].push(convo);
+        convoMap[convo.conversationId] = convo;
       });
 
-      // const startIndex = (pageNumber - 1) * pageSize;
-      // const convos = results.slice(startIndex, startIndex + pageSize);
       const totalPages = Math.ceil(results.length / pageSize);
       cache.pages = totalPages;
       cache.pageSize = pageSize;
@@ -92,8 +84,6 @@ module.exports = {
         pages: totalPages || 1,
         pageNumber,
         pageSize,
-        // will handle a syncing solution soon
-        filter: new Set(deletedConvoIds),
         convoMap,
       };
     } catch (error) {
@@ -118,6 +108,23 @@ module.exports = {
       return { message: 'Error getting conversation title' };
     }
   },
+  /**
+   * Asynchronously deletes conversations and associated messages for a given user and filter.
+   *
+   * @async
+   * @function
+   * @param {string|ObjectId} user - The user's ID.
+   * @param {Object} filter - Additional filter criteria for the conversations to be deleted.
+   * @returns {Promise<{ n: number, ok: number, deletedCount: number, messages: { n: number, ok: number, deletedCount: number } }>}
+   *          An object containing the count of deleted conversations and associated messages.
+   * @throws {Error} Throws an error if there's an issue with the database operations.
+   *
+   * @example
+   * const user = 'someUserId';
+   * const filter = { someField: 'someValue' };
+   * const result = await deleteConvos(user, filter);
+   * console.log(result); // { n: 5, ok: 1, deletedCount: 5, messages: { n: 10, ok: 1, deletedCount: 10 } }
+   */
   deleteConvos: async (user, filter) => {
     let toRemove = await Conversation.find({ ...filter, user }).select('conversationId');
     const ids = toRemove.map((instance) => instance.conversationId);

@@ -1,23 +1,4 @@
-const pino = require('pino');
-
-const logger = pino({
-  level: 'info',
-  redact: {
-    paths: [
-      // List of Paths to redact from the logs (https://getpino.io/#/docs/redaction)
-      'env.OPENAI_API_KEY',
-      'env.BINGAI_TOKEN',
-      'env.CHATGPT_TOKEN',
-      'env.MEILI_MASTER_KEY',
-      'env.GOOGLE_CLIENT_SECRET',
-      'env.JWT_SECRET',
-      'env.JWT_SECRET_DEV',
-      'env.JWT_SECRET_PROD',
-      'newUser.password',
-    ], // See example to filter object class instances
-    censor: '***', // Redaction character
-  },
-});
+const logger = require('./logger');
 
 // Sanitize outside the logger paths. This is useful for sanitizing variables directly with Regex and patterns.
 const redactPatterns = [

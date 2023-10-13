@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
+const { isEnabled } = require('../utils');
 
 router.get('/', async function (req, res) {
   try {
     const appTitle = process.env.APP_TITLE || 'LibreChat';
     const googleLoginEnabled = !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET;
+    const facebookLoginEnabled =
+      !!process.env.FACEBOOK_CLIENT_ID && !!process.env.FACEBOOK_CLIENT_SECRET;
     const openidLoginEnabled =
       !!process.env.OPENID_CLIENT_ID &&
       !!process.env.OPENID_CLIENT_SECRET &&
@@ -16,12 +19,19 @@ router.get('/', async function (req, res) {
     const discordLoginEnabled =
       !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET;
     const serverDomain = process.env.DOMAIN_SERVER || 'http://localhost:3080';
-    const registrationEnabled = process.env.ALLOW_REGISTRATION === 'true';
-    const socialLoginEnabled = process.env.ALLOW_SOCIAL_LOGIN === 'true';
+    const registrationEnabled = isEnabled(process.env.ALLOW_REGISTRATION);
+    const socialLoginEnabled = isEnabled(process.env.ALLOW_SOCIAL_LOGIN);
+    const checkBalance = isEnabled(process.env.CHECK_BALANCE);
+    const emailEnabled =
+      !!process.env.EMAIL_SERVICE &&
+      !!process.env.EMAIL_USERNAME &&
+      !!process.env.EMAIL_PASSWORD &&
+      !!process.env.EMAIL_FROM;
 
     return res.status(200).send({
       appTitle,
       googleLoginEnabled,
+      facebookLoginEnabled,
       openidLoginEnabled,
       openidLabel,
       openidImageUrl,
@@ -30,6 +40,8 @@ router.get('/', async function (req, res) {
       serverDomain,
       registrationEnabled,
       socialLoginEnabled,
+      emailEnabled,
+      checkBalance,
     });
   } catch (err) {
     console.error(err);

@@ -1,10 +1,6 @@
-const Keyv = require('keyv');
 // const { Agent, ProxyAgent } = require('undici');
 const BaseClient = require('./BaseClient');
-const {
-  encoding_for_model: encodingForModel,
-  get_encoding: getEncoding,
-} = require('@dqbd/tiktoken');
+const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const Anthropic = require('@anthropic-ai/sdk');
 
 const HUMAN_PROMPT = '\n\nHuman:';
@@ -15,8 +11,6 @@ const tokenizersCache = {};
 class AnthropicClient extends BaseClient {
   constructor(apiKey, options = {}, cacheOptions = {}) {
     super(apiKey, options, cacheOptions);
-    cacheOptions.namespace = cacheOptions.namespace || 'anthropic';
-    this.conversationsCache = new Keyv(cacheOptions);
     this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
     this.sender = 'Anthropic';
     this.userLabel = HUMAN_PROMPT;
@@ -97,7 +91,10 @@ class AnthropicClient extends BaseClient {
   }
 
   async buildMessages(messages, parentMessageId) {
-    const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
+    const orderedMessages = this.constructor.getMessagesForConversation({
+      messages,
+      parentMessageId,
+    });
     if (this.options.debug) {
       console.debug('AnthropicClient: orderedMessages', orderedMessages, parentMessageId);
     }
@@ -106,6 +103,23 @@ class AnthropicClient extends BaseClient {
       author: message.isCreatedByUser ? this.userLabel : this.assistantLabel,
       content: message?.content ?? message.text,
     }));
+
+    let lastAuthor = '';
+    let groupedMessages = [];
+
+    for (let message of formattedMessages) {
+      // If last author is not same as current author, add to new group
+      if (lastAuthor !== message.author) {
+        groupedMessages.push({
+          author: message.author,
+          content: [message.content],
+        });
+        lastAuthor = message.author;
+        // If same author, append content to the last group
+      } else {
+        groupedMessages[groupedMessages.length - 1].content.push(message.content);
+      }
+    }
 
     let identityPrefix = '';
     if (this.options.userLabel) {
@@ -129,8 +143,12 @@ class AnthropicClient extends BaseClient {
       promptPrefix = `${identityPrefix}${promptPrefix}`;
     }
 
-    const promptSuffix = `${promptPrefix}${this.assistantLabel}\n`; // Prompt AI to respond.
-    let currentTokenCount = this.getTokenCount(promptSuffix);
+    // Prompt AI to respond, empty if last message was from AI
+    let isEdited = lastAuthor === this.assistantLabel;
+    const promptSuffix = isEdited ? '' : `${promptPrefix}${this.assistantLabel}\n`;
+    let currentTokenCount = isEdited
+      ? this.getTokenCount(promptPrefix)
+      : this.getTokenCount(promptSuffix);
 
     let promptBody = '';
     const maxTokenCount = this.maxPromptTokens;
@@ -148,10 +166,13 @@ class AnthropicClient extends BaseClient {
     };
 
     const buildPromptBody = async () => {
-      if (currentTokenCount < maxTokenCount && formattedMessages.length > 0) {
-        const message = formattedMessages.pop();
+      if (currentTokenCount < maxTokenCount && groupedMessages.length > 0) {
+        const message = groupedMessages.pop();
         const isCreatedByUser = message.author === this.userLabel;
-        const messageString = `${message.author}\n${message.content}${this.endToken}\n`;
+        // Use promptPrefix if message is edited assistant'
+        const messagePrefix =
+          isCreatedByUser || !isEdited ? message.author : `${promptPrefix}${message.author}`;
+        const messageString = `${messagePrefix}\n${message.content}${this.endToken}\n`;
         let newPromptBody = `${messageString}${promptBody}`;
 
         context.unshift(message);
@@ -182,6 +203,12 @@ class AnthropicClient extends BaseClient {
         }
         promptBody = newPromptBody;
         currentTokenCount = newTokenCount;
+
+        // Switch off isEdited after using it for the first time
+        if (isEdited) {
+          isEdited = false;
+        }
+
         // wait for next tick to avoid blocking the event loop
         await new Promise((resolve) => setImmediate(resolve));
         return buildPromptBody();
@@ -197,7 +224,8 @@ class AnthropicClient extends BaseClient {
       context.shift();
     }
 
-    const prompt = `${promptBody}${promptSuffix}`;
+    let prompt = `${promptBody}${promptSuffix}`;
+
     // Add 2 tokens for metadata after all messages have been counted.
     currentTokenCount += 2;
 
@@ -214,7 +242,6 @@ class AnthropicClient extends BaseClient {
     console.log('AnthropicClient doesn\'t use getCompletion (all handled in sendCompletion)');
   }
 
-  // TODO: implement abortController usage
   async sendCompletion(payload, { onProgress, abortController }) {
     if (!abortController) {
       abortController = new AbortController();
@@ -240,13 +267,25 @@ class AnthropicClient extends BaseClient {
     };
 
     let text = '';
+    const {
+      stream,
+      model,
+      temperature,
+      maxOutputTokens,
+      stop: stop_sequences,
+      topP: top_p,
+      topK: top_k,
+    } = this.modelOptions;
     const requestOptions = {
       prompt: payload,
-      model: this.modelOptions.model,
-      stream: this.modelOptions.stream || true,
-      max_tokens_to_sample: this.modelOptions.maxOutputTokens || 1500,
+      model,
+      stream: stream || true,
+      max_tokens_to_sample: maxOutputTokens || 1500,
+      stop_sequences,
+      temperature,
       metadata,
-      ...modelOptions,
+      top_p,
+      top_k,
     };
     if (this.options.debug) {
       console.log('AnthropicClient: requestOptions');
@@ -279,14 +318,6 @@ class AnthropicClient extends BaseClient {
 
     return text.trim();
   }
-
-  // I commented this out because I will need to refactor this for the BaseClient/all clients
-  // getMessageMapMethod() {
-  //   return ((message) => ({
-  //     author: message.isCreatedByUser ? this.userLabel : this.assistantLabel,
-  //     content: message?.content ?? message.text
-  //   })).bind(this);
-  // }
 
   getSaveOptions() {
     return {

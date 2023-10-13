@@ -1,95 +1,63 @@
-export const user = () => {
-  return '/api/user';
-};
+export const user = () => '/api/user';
 
-export const userPlugins = () => {
-  return '/api/user/plugins';
-};
+export const balance = () => '/api/balance';
 
-export const messages = (id: string) => {
-  return `/api/messages/${id}`;
-};
+export const userPlugins = () => '/api/user/plugins';
 
-export const abortRequest = (endpoint: string) => {
-  return `/api/ask/${endpoint}/abort`;
-};
+export const messages = (conversationId: string, messageId?: string) =>
+  `/api/messages/${conversationId}${messageId ? `/${messageId}` : ''}`;
 
-export const conversations = (pageNumber: string) => {
-  return `/api/convos?pageNumber=${pageNumber}`;
-};
+const keysEndpoint = '/api/keys';
 
-export const conversationById = (id: string) => {
-  return `/api/convos/${id}`;
-};
+export const keys = () => keysEndpoint;
 
-export const updateConversation = () => {
-  return '/api/convos/update';
-};
+export const userKeyQuery = (name: string) => `${keysEndpoint}?name=${name}`;
 
-export const deleteConversation = () => {
-  return '/api/convos/clear';
-};
+export const revokeUserKey = (name: string) => `${keysEndpoint}/${name}`;
 
-export const search = (q: string, pageNumber: string) => {
-  return `/api/search?q=${q}&pageNumber=${pageNumber}`;
-};
+export const revokeAllUserKeys = () => `${keysEndpoint}?all=true`;
 
-export const searchEnabled = () => {
-  return '/api/search/enable';
-};
+export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 
-export const presets = () => {
-  return '/api/presets';
-};
+export const conversations = (pageNumber: string) => `/api/convos?pageNumber=${pageNumber}`;
 
-export const deletePreset = () => {
-  return '/api/presets/delete';
-};
+export const conversationById = (id: string) => `/api/convos/${id}`;
 
-export const aiEndpoints = () => {
-  return '/api/endpoints';
-};
+export const updateConversation = () => '/api/convos/update';
 
-export const tokenizer = () => {
-  return '/api/tokenizer';
-};
+export const deleteConversation = () => '/api/convos/clear';
 
-export const login = () => {
-  return '/api/auth/login';
-};
+export const search = (q: string, pageNumber: string) =>
+  `/api/search?q=${q}&pageNumber=${pageNumber}`;
 
-export const logout = () => {
-  return '/api/auth/logout';
-};
+export const searchEnabled = () => '/api/search/enable';
 
-export const register = () => {
-  return '/api/auth/register';
-};
+export const presets = () => '/api/presets';
 
-export const loginFacebook = () => {
-  return '/api/auth/facebook';
-};
+export const deletePreset = () => '/api/presets/delete';
 
-export const loginGoogle = () => {
-  return '/api/auth/google';
-};
+export const aiEndpoints = () => '/api/endpoints';
 
-export const refreshToken = () => {
-  return '/api/auth/refresh';
-};
+export const models = () => '/api/models';
 
-export const requestPasswordReset = () => {
-  return '/api/auth/requestPasswordReset';
-};
+export const tokenizer = () => '/api/tokenizer';
 
-export const resetPassword = () => {
-  return '/api/auth/resetPassword';
-};
+export const login = () => '/api/auth/login';
 
-export const plugins = () => {
-  return '/api/plugins';
-};
+export const logout = () => '/api/auth/logout';
 
-export const config = () => {
-  return '/api/config';
-};
+export const register = () => '/api/auth/register';
+
+export const loginFacebook = () => '/api/auth/facebook';
+
+export const loginGoogle = () => '/api/auth/google';
+
+export const refreshToken = () => '/api/auth/refresh';
+
+export const requestPasswordReset = () => '/api/auth/requestPasswordReset';
+
+export const resetPassword = () => '/api/auth/resetPassword';
+
+export const plugins = () => '/api/plugins';
+
+export const config = () => '/api/config';

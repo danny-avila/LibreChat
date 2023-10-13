@@ -11,6 +11,12 @@ if (!process.stdin.isTTY) {
   exit(0);
 }
 
+// If we are in CI env, lets exit
+if (process.env.NODE_ENV === 'ci') {
+  console.log('Note: we are in a CI environment, skipping install script.');
+  exit(0);
+}
+
 // Save the original console.log function
 const originalConsoleWarn = console.warn;
 console.warn = () => {};
@@ -64,19 +70,11 @@ let env = {};
   const key = await askQuestion('Enter your OPENAI_API_KEY (default: "user_provided"): ');
   env['OPENAI_API_KEY'] = key || 'user_provided';
 
-  // GPT4???
-  const gpt4 = await askQuestion('Do you have access to the GPT4 api (y/n)? Default: n');
-  if (gpt4 == 'y' || gpt4 == 'yes') {
-    env['OPENAI_MODELS'] = 'gpt-3.5-turbo,gpt-3.5-turbo-0301,text-davinci-003,gpt-4,gpt-4-0314';
-  } else {
-    env['OPENAI_MODELS'] = 'gpt-3.5-turbo,gpt-3.5-turbo-0301,text-davinci-003';
-  }
-
   // Ask about mongodb
   const mongodb = await askQuestion(
-    'What is your mongodb url? (default: mongodb://127.0.0.1:27017/LibreChat)',
+    'What is your mongodb url? (default: mongodb://127.0.0.1:27018/LibreChat)',
   );
-  env['MONGO_URI'] = mongodb || 'mongodb://127.0.0.1:27017/LibreChat';
+  env['MONGO_URI'] = mongodb || 'mongodb://127.0.0.1:27018/LibreChat';
   // Very basic check to make sure they entered a url
   if (!env['MONGO_URI'].includes('://')) {
     console.orange(
