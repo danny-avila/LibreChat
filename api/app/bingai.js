@@ -29,7 +29,7 @@ const askBing = async ({
     key = await getUserKey({ userId, name: 'bingAI' });
   }
 
-  const { BingAIClient } = await import('@waylaidwanderer/chatgpt-api');
+  const { BingAIClient } = await import('nodejs-gpt');
   const store = {
     store: new KeyvFile({ filename: './data/cache.json' }),
   };
