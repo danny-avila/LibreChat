@@ -38,7 +38,7 @@ const showPopover = atom<boolean>({
 const autoScroll = atom({
   key: 'autoScroll',
   default: localStorage.getItem('autoScroll') === 'true',
-  effects_UNSTABLE: [
+  effects: [
     ({ setSelf, onSet }) => {
       const savedValue = localStorage.getItem('autoScroll');
       if (savedValue != null) {
