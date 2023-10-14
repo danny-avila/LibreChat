@@ -109,12 +109,7 @@ export const AutoScrollSwitch = () => {
 
   return (
     <div className="flex items-center justify-between">
-      <label
-        htmlFor="autoScroll"
-        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
-      >
-        <small>{localize('com_nav_auto_scroll')}</small>
-      </label>
+      <div>{localize('com_nav_auto_scroll')}</div>
       <Switch
         id="autoScroll"
         checked={autoScroll}
