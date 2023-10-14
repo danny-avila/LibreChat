@@ -8,7 +8,7 @@ const titleConvo = async ({ text, response }) => {
     return title;
   }
 
-  const { BingAIClient } = await import('@waylaidwanderer/chatgpt-api');
+  const { BingAIClient } = await import('nodejs-gpt');
   const titleGenerator = new BingAIClient({
     userToken: process.env.BINGAI_TOKEN,
     debug: false,
