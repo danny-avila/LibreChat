@@ -77,7 +77,8 @@ const Icon: React.FC<IconProps> = (props) => {
       default: { icon: <GPTIcon size={size * 0.7} />, bg: 'grey', name: 'UNKNOWN' },
     };
 
-    const { icon, bg, name } = endpointIcons[endpoint ?? 'default'];
+    const { icon, bg, name } =
+      endpoint && endpointIcons[endpoint] ? endpointIcons[endpoint] : endpointIcons.default;
 
     return (
       <div
