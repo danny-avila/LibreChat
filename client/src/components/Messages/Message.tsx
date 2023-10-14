@@ -15,20 +15,24 @@ import { cn } from '~/utils';
 import store from '~/store';
 import { useParams } from 'react-router-dom';
 
-export default function Message({
-  conversation,
-  message,
-  scrollToBottom,
-  currentEditId,
-  setCurrentEditId,
-  siblingIdx,
-  siblingCount,
-  setSiblingIdx,
-}: TMessageProps) {
+export default function Message(props: TMessageProps) {
+  const {
+    conversation,
+    message,
+    scrollToBottom,
+    currentEditId,
+    setCurrentEditId,
+    siblingIdx,
+    siblingCount,
+    setSiblingIdx,
+  } = props;
+
   const setLatestMessage = useSetRecoilState(store.latestMessage);
   const [abortScroll, setAbortScroll] = useRecoilState(store.abortScroll);
   const { isSubmitting, ask, regenerate, handleContinue } = useMessageHandler();
   const { switchToConversation } = useConversation();
+  const { conversationId } = useParams();
+
   const {
     text,
     children,
@@ -38,34 +42,30 @@ export default function Message({
     error,
     unfinished,
   } = message ?? {};
+
   const isLast = !children?.length;
-  const edit = messageId == currentEditId;
+  const edit = messageId === currentEditId;
   const getConversationQuery = useGetConversationByIdQuery(message?.conversationId ?? '', {
     enabled: false,
   });
   const blinker = message?.submitting && isSubmitting;
-  const { conversationId } = useParams();
-  // debugging
-  // useEffect(() => {
-  //   console.log('isSubmitting:', isSubmitting);
-  //   console.log('unfinished:', unfinished);
-  // }, [isSubmitting, unfinished]);
+
   const autoScroll = useRecoilValue(store.autoScroll);
 
   useEffect(() => {
     if (blinker && scrollToBottom && !abortScroll) {
       scrollToBottom();
     }
-  }, [isSubmitting, blinker, text, scrollToBottom]);
+  }, [isSubmitting, blinker, text, scrollToBottom, abortScroll]);
 
   useEffect(() => {
     if (scrollToBottom && autoScroll) {
       if (conversationId === 'new') {
-        return; // Add this return condition
+        return;
       }
       scrollToBottom();
     }
-  }, [conversationId]);
+  }, [autoScroll, conversationId, scrollToBottom]);
 
   useEffect(() => {
     if (!message) {
@@ -73,7 +73,7 @@ export default function Message({
     } else if (isLast) {
       setLatestMessage({ ...message });
     }
-  }, [isLast, message]);
+  }, [isLast, message, setLatestMessage]);
 
   if (!message) {
     return null;
@@ -96,7 +96,7 @@ export default function Message({
     ? 'bg-white dark:bg-gray-800 dark:text-gray-20'
     : 'bg-gray-50 dark:bg-gray-1000 dark:text-gray-70';
 
-  const props = {
+  const messageProps = {
     className: cn(commonClasses, uniqueClasses),
     titleclass: '',
   };
@@ -109,8 +109,8 @@ export default function Message({
   });
 
   if (message?.bg && searchResult) {
-    props.className = message?.bg?.split('hover')[0];
-    props.titleclass = message?.bg?.split(props.className)[1] + ' cursor-pointer';
+    messageProps.className = message?.bg?.split('hover')[0];
+    messageProps.titleclass = message?.bg?.split(messageProps.className)[1] + ' cursor-pointer';
   }
 
   const regenerateMessage = () => {
@@ -135,17 +135,20 @@ export default function Message({
     if (!message) {
       return;
     }
-    getConversationQuery.refetch({ queryKey: [message?.conversationId] }).then((response) => {
-      console.log('getConversationQuery response.data:', response.data);
-      if (response.data) {
-        switchToConversation(response.data);
-      }
+    const response = await getConversationQuery.refetch({
+      queryKey: [message?.conversationId],
     });
+
+    console.log('getConversationQuery response.data:', response.data);
+
+    if (response.data) {
+      switchToConversation(response.data);
+    }
   };
 
   return (
     <>
-      <div {...props} onWheel={handleScroll} onTouchMove={handleScroll}>
+      <div {...messageProps} onWheel={handleScroll} onTouchMove={handleScroll}>
         <div className="relative m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
           <div className="relative flex h-[40px] w-[40px] flex-col items-end text-right text-xs md:text-sm">
             {typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
@@ -164,7 +167,7 @@ export default function Message({
           <div className="relative flex w-[calc(100%-50px)] flex-col gap-1  md:gap-3 lg:w-[calc(100%-115px)]">
             {searchResult && (
               <SubRow
-                classes={props.titleclass + ' rounded'}
+                classes={messageProps.titleclass + ' rounded'}
                 subclasses="switch-result pl-2 pb-2"
                 onClick={clickSearchResult}
               >
