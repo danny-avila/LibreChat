@@ -60,6 +60,9 @@ export default function Message({
 
   useEffect(() => {
     if (scrollToBottom && autoScroll) {
+      if (conversationId === 'new') {
+        return; // Add this return condition
+      }
       scrollToBottom();
     }
   }, [conversationId]);
