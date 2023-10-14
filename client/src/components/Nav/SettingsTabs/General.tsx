@@ -112,14 +112,13 @@ export const AutoScrollSwitch = () => {
       <div>{localize('com_nav_auto_scroll')}</div>
       <Switch
         id="autoScroll"
-        checked={autoScroll}
+        checked={autoScroll as boolean | undefined}
         onCheckedChange={setAutoScroll}
         className="ml-4 mt-2"
       />
     </div>
   );
 };
-
 function General() {
   const { theme, setTheme } = useContext(ThemeContext);
   const clearConvosMutation = useClearConversationsMutation();
