@@ -115,10 +115,12 @@ export const AutoScrollSwitch = () => {
         checked={autoScroll as boolean | undefined}
         onCheckedChange={setAutoScroll}
         className="ml-4 mt-2"
+        data-testid="autoScroll"
       />
     </div>
   );
 };
+
 function General() {
   const { theme, setTheme } = useContext(ThemeContext);
   const clearConvosMutation = useClearConversationsMutation();
