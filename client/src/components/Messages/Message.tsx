@@ -32,6 +32,7 @@ export default function Message(props: TMessageProps) {
   const { isSubmitting, ask, regenerate, handleContinue } = useMessageHandler();
   const { switchToConversation } = useConversation();
   const { conversationId } = useParams();
+  const isSearching = useRecoilValue(store.isSearching);
 
   const {
     text,
@@ -59,13 +60,13 @@ export default function Message(props: TMessageProps) {
   }, [isSubmitting, blinker, text, scrollToBottom, abortScroll]);
 
   useEffect(() => {
-    if (scrollToBottom && autoScroll) {
+    if (scrollToBottom && autoScroll && !isSearching) {
       if (conversationId === 'new') {
         return;
       }
       scrollToBottom();
     }
-  }, [autoScroll, conversationId, scrollToBottom]);
+  }, [autoScroll, conversationId, scrollToBottom, isSearching]);
 
   useEffect(() => {
     if (!message) {
