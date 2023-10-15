@@ -103,9 +103,16 @@ export const LangSelector = ({
   );
 };
 
-export const AutoScrollSwitch = () => {
+export const AutoScrollSwitch = ({ onCheckedChange }) => {
   const [autoScroll, setAutoScroll] = useRecoilState(store.autoScroll);
   const localize = useLocalize();
+
+  const handleCheckedChange = (value) => {
+    setAutoScroll(value);
+    if (onCheckedChange) {
+      onCheckedChange(value);
+    }
+  };
 
   return (
     <div className="flex items-center justify-between">
@@ -113,7 +120,7 @@ export const AutoScrollSwitch = () => {
       <Switch
         id="autoScroll"
         checked={autoScroll as boolean | undefined}
-        onCheckedChange={setAutoScroll}
+        onCheckedChange={handleCheckedChange}
         className="ml-4 mt-2"
         data-testid="autoScroll"
       />

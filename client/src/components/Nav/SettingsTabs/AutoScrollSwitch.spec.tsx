@@ -14,7 +14,7 @@ describe('AutoScrollSwitch', () => {
   it('renders correctly', () => {
     const { getByText, getByTestId } = render(
       <RecoilRoot>
-        <AutoScrollSwitch />
+        <AutoScrollSwitch onCheckedChange={undefined} />
       </RecoilRoot>,
     );
 
@@ -25,7 +25,7 @@ describe('AutoScrollSwitch', () => {
   it('calls onCheckedChange when the switch is toggled', () => {
     const { getByTestId } = render(
       <RecoilRoot>
-        <AutoScrollSwitch />
+        <AutoScrollSwitch onCheckedChange={mockSetAutoScroll} />
       </RecoilRoot>,
     );
     const switchElement = getByTestId('autoScroll');
