@@ -8,11 +8,12 @@ import {
   useOnClickOutside,
   useConversation,
   useConversations,
+  useLocalStorage,
 } from '~/hooks';
 import type { TDangerButtonProps } from '~/common';
+import AutoScrollSwitch from './AutoScrollSwitch';
 import DangerButton from './DangerButton';
 import store from '~/store';
-import useLocalStorage from '~/hooks/useLocalStorage';
 
 export const ThemeSelector = ({
   theme,
@@ -174,6 +175,9 @@ function General() {
             showText={true}
             mutation={clearConvosMutation}
           />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <AutoScrollSwitch />
         </div>
       </div>
     </Tabs.Content>
