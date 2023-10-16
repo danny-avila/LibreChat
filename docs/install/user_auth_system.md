@@ -202,7 +202,7 @@ EMAIL_PASSWORD=your-app-password
 EMAIL_FROM=email address for the from field, e.g., noreply@librechat.ai
 ```
 
-NOTE: The variable EMAIL_FROM currently does not work. To stay updated, check the bug fixes [here](https://github.com/danny-avila/LibreChat/tags).
+NOTE: The variable EMAIL_FROM does not support all email providers **but is still required**. To stay updated, check the bug fixes [here](https://github.com/danny-avila/LibreChat/tags).
 
 
 ## **Disable User Registration**
