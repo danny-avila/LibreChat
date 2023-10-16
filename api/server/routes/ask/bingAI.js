@@ -210,7 +210,7 @@ const ask = async ({
       conversationUpdate.jailbreakConversationId = response.jailbreakConversationId;
     } else {
       conversationUpdate.jailbreak = false;
-      conversationUpdate.conversationSignature = response.conversationSignature;
+      conversationUpdate.conversationSignature = response.encryptedConversationSignature;
       conversationUpdate.clientId = response.clientId;
       conversationUpdate.invocationId = response.invocationId;
     }
