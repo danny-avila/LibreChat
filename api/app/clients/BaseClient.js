@@ -40,6 +40,12 @@ class BaseClient {
     throw new Error('Subclasses attempted to call summarizeMessages without implementing it');
   }
 
+  async getTokenCountForResponse(response) {
+    if (this.options.debug) {
+      console.debug('`recordTokenUsage` not implemented.', response);
+    }
+  }
+
   async recordTokenUsage({ promptTokens, completionTokens }) {
     if (this.options.debug) {
       console.debug('`recordTokenUsage` not implemented.', { promptTokens, completionTokens });
@@ -455,11 +461,16 @@ class BaseClient {
       promptTokens,
     };
 
-    if (tokenCountMap && this.getTokenCount) {
-      responseMessage.tokenCount = this.getTokenCount(completion);
-      responseMessage.completionTokens = responseMessage.tokenCount;
+    if (
+      tokenCountMap &&
+      this.recordTokenUsage &&
+      this.getTokenCountForResponse &&
+      this.getTokenCount
+    ) {
+      responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
+      const completionTokens = this.getTokenCount(completion);
+      await this.recordTokenUsage({ promptTokens, completionTokens });
     }
-    await this.recordTokenUsage(responseMessage);
     await this.saveMessageToDatabase(responseMessage, saveOptions, user);
     delete responseMessage.tokenCount;
     return responseMessage;

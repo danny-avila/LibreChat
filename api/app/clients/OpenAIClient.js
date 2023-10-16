@@ -653,6 +653,13 @@ ${convo}
       { promptTokens, completionTokens },
     );
   }
+
+  getTokenCountForResponse(response) {
+    return this.getTokenCountForMessage({
+      role: 'assistant',
+      content: response.text,
+    });
+  }
 }
 
 module.exports = OpenAIClient;
