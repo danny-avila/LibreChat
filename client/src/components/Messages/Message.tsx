@@ -49,21 +49,17 @@ export default function Message(props: TMessageProps) {
   const getConversationQuery = useGetConversationByIdQuery(message?.conversationId ?? '', {
     enabled: false,
   });
-  const blinker = message?.submitting && isSubmitting;
 
   const autoScroll = useRecoilValue(store.autoScroll);
 
   useEffect(() => {
-    if (blinker && scrollToBottom && !abortScroll) {
+    if (isSubmitting && scrollToBottom && !abortScroll) {
       scrollToBottom();
     }
-  }, [isSubmitting, blinker, text, scrollToBottom, abortScroll]);
+  }, [isSubmitting, text, scrollToBottom, abortScroll]);
 
   useEffect(() => {
-    if (scrollToBottom && autoScroll && !isSearching) {
-      if (conversationId === 'new') {
-        return;
-      }
+    if (scrollToBottom && autoScroll && !isSearching && conversationId !== 'new') {
       scrollToBottom();
     }
   }, [autoScroll, conversationId, scrollToBottom, isSearching]);
@@ -84,7 +80,7 @@ export default function Message(props: TMessageProps) {
     setCurrentEditId && setCurrentEditId(cancel ? -1 : messageId);
 
   const handleScroll = () => {
-    if (blinker) {
+    if (isSubmitting) {
       setAbortScroll(true);
     } else {
       setAbortScroll(false);
