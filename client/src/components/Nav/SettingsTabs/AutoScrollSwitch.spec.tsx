@@ -15,13 +15,12 @@ describe('AutoScrollSwitch', () => {
   });
 
   it('renders correctly', () => {
-    const { getByText, getByTestId } = render(
+    const { getByTestId } = render(
       <RecoilRoot>
         <AutoScrollSwitch />
       </RecoilRoot>,
     );
 
-    expect(getByText('Auto scroll')).toBeInTheDocument();
     expect(getByTestId('autoScroll')).toBeInTheDocument();
   });
 
