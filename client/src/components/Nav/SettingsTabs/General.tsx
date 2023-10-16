@@ -8,12 +8,12 @@ import {
   useOnClickOutside,
   useConversation,
   useConversations,
+  useLocalStorage,
 } from '~/hooks';
 import type { TDangerButtonProps } from '~/common';
+import AutoScrollSwitch from './AutoScrollSwitch';
 import DangerButton from './DangerButton';
 import store from '~/store';
-import useLocalStorage from '~/hooks/useLocalStorage';
-import { Switch } from '~/components/ui';
 
 export const ThemeSelector = ({
   theme,
@@ -99,31 +99,6 @@ export const LangSelector = ({
         <option value="sv-SE">{localize('com_nav_lang_swedish')}</option>
         <option value="ko-KR">{localize('com_nav_lang_korean')}</option>
       </select>
-    </div>
-  );
-};
-
-export const AutoScrollSwitch = ({ onCheckedChange }) => {
-  const [autoScroll, setAutoScroll] = useRecoilState(store.autoScroll);
-  const localize = useLocalize();
-
-  const handleCheckedChange = (value) => {
-    setAutoScroll(value);
-    if (onCheckedChange) {
-      onCheckedChange(value);
-    }
-  };
-
-  return (
-    <div className="flex items-center justify-between">
-      <div>{localize('com_nav_auto_scroll')}</div>
-      <Switch
-        id="autoScroll"
-        checked={autoScroll as boolean | undefined}
-        onCheckedChange={handleCheckedChange}
-        className="ml-4 mt-2"
-        data-testid="autoScroll"
-      />
     </div>
   );
 };

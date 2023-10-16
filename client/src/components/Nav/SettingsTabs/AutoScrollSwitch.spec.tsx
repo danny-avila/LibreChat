@@ -1,11 +1,14 @@
 import React from 'react';
-import { render, fireEvent } from 'test/layout-test-utils';
 import '@testing-library/jest-dom/extend-expect';
-import { AutoScrollSwitch } from './General';
+import { render, fireEvent } from 'test/layout-test-utils';
+import AutoScrollSwitch from './AutoScrollSwitch';
 import { RecoilRoot } from 'recoil';
 
 describe('AutoScrollSwitch', () => {
-  let mockSetAutoScroll;
+  /**
+   * Mock function to set the auto-scroll state.
+   */
+  let mockSetAutoScroll: jest.Mock<void, [boolean]> | ((value: boolean) => void) | undefined;
 
   beforeEach(() => {
     mockSetAutoScroll = jest.fn();
@@ -14,7 +17,7 @@ describe('AutoScrollSwitch', () => {
   it('renders correctly', () => {
     const { getByText, getByTestId } = render(
       <RecoilRoot>
-        <AutoScrollSwitch onCheckedChange={undefined} />
+        <AutoScrollSwitch />
       </RecoilRoot>,
     );
 
