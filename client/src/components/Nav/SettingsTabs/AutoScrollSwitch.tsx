@@ -8,10 +8,9 @@ export default function AutoScrollSwitch({
 }: {
   onCheckedChange?: (value: boolean) => void;
 }) {
-  const [autoScroll, setAutoScroll] = useRecoilState(store.autoScroll);
+  const [autoScroll, setAutoScroll] = useRecoilState<boolean>(store.autoScroll);
   const localize = useLocalize();
 
-  // const handleCheckedChange = (value: boolean) => setAutoScroll(value);
   const handleCheckedChange = (value: boolean) => {
     setAutoScroll(value);
     if (onCheckedChange) {
@@ -24,7 +23,7 @@ export default function AutoScrollSwitch({
       <div>{localize('com_nav_auto_scroll')}</div>
       <Switch
         id="autoScroll"
-        checked={autoScroll as boolean | undefined}
+        checked={autoScroll}
         onCheckedChange={handleCheckedChange}
         className="ml-4 mt-2"
         data-testid="autoScroll"

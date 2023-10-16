@@ -35,7 +35,7 @@ const showPopover = atom<boolean>({
   default: false,
 });
 
-const autoScroll = atom({
+const autoScroll = atom<boolean>({
   key: 'autoScroll',
   default: localStorage.getItem('autoScroll') === 'true',
   effects: [
