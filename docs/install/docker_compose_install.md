@@ -32,7 +32,7 @@ How to set up the user/auth system and Google login.
 ### Running LibreChat
 Once you have completed all the setup, you can start the LibreChat application by running the command `docker-compose up` in your terminal. After running this command, you can access the LibreChat application at `http://localhost:3080`.
 
-If you build your own containers out of the git checkout with `docker up -d --build` you should pre-create the mount points for the volumes. This avoids occasional trouble with directory permissions when rebuilding:
+If you build your own containers out of the git checkout with `docker-compose up --build` you should pre-create the mount points for the volumes. This avoids occasional trouble with directory permissions when rebuilding:
 ```
 mkdir meili_data images .env.production .env.development data-node
 ```

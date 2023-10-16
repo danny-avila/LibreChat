@@ -177,6 +177,7 @@ export type TUserContext = {
 
 export type TAuthConfig = {
   loginRedirect: string;
+  test?: boolean;
 };
 
 export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model' | 'error'> &
