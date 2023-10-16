@@ -28,7 +28,7 @@ export const ThemeSelector = ({
     <div className="flex items-center justify-between">
       <div>{localize('com_nav_theme')}</div>
       <select
-        className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20 dark:bg-gray-900"
+        className="w-24 rounded border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20 dark:bg-gray-900"
         onChange={(e) => onChange(e.target.value)}
         value={theme}
       >
@@ -80,7 +80,7 @@ export const LangSelector = ({
     <div className="flex items-center justify-between">
       <div>{localize('com_nav_language')}</div>
       <select
-        className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20 dark:bg-gray-900"
+        className="w-24 rounded border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20 dark:bg-gray-900"
         onChange={(e) => onChange(e.target.value)}
         value={langcode}
       >
