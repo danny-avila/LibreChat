@@ -230,13 +230,15 @@ If your reverse proxy is compatible to OpenAI specs in every other way, it may s
       console.debug('[handleResponseMessage] Output:', { output, errorMessage, ...result });
     const { error } = responseMessage;
     if (!error) {
-      responseMessage.tokenCount = this.getTokenCount(responseMessage.text);
-      responseMessage.completionTokens = responseMessage.tokenCount;
+      responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
+      responseMessage.completionTokens = this.getTokenCount(responseMessage.text);
     }
 
+    // Record usage only when completion is skipped as it is already recorded in the agent phase.
     if (!this.agentOptions.skipCompletion && !error) {
       await this.recordTokenUsage(responseMessage);
     }
+
     await this.saveMessageToDatabase(responseMessage, saveOptions, user);
     delete responseMessage.tokenCount;
     return { ...responseMessage, ...result };
