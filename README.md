@@ -100,6 +100,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Third-Party Tools](docs/features/third_party.md)
   * [Proxy](docs/features/proxy.md)
   * [Bing Jailbreak](docs/features/bing_jailbreak.md)
+  * [Token Usage](docs/features/token_usage.md)
 </details>
 
 <details>
@@ -112,6 +113,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Ngrok](docs/deployment/ngrok.md)
   * [HuggingFace](docs/deployment/huggingface.md)
   * [Render](docs/deployment/render.md)
+  * [Meilisearch in Render](docs/deployment/meilisearch_in_render.md)
   * [Hetzner](docs/deployment/hetzner_ubuntu.md)
   * [Heroku](docs/deployment/heroku.md)
 </details>
