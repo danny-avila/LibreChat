@@ -31,16 +31,16 @@ export default function ErrorDialog({ message }) {
     let amount;
     switch (tokens) {
       case 100000:
-        amount = 20;
-        break;
-      case 250000:
-        amount = 40;
+        amount = 10;
         break;
       case 500000:
-        amount = 65;
+        amount = 35;
         break;
       case 1000000:
-        amount = 100;
+        amount = 50;
+        break;
+      case 10000000:
+        amount = 250;
         break;
       default:
         console.error('Invalid token amount');
@@ -96,17 +96,9 @@ export default function ErrorDialog({ message }) {
                   >
                     {processingTokenAmount === 100000
                       ? 'Processing...'
-                      : 'Purchase 100k Tokens for 20 RMB'}
+                      : 'Purchase 100k Tokens for 10 RMB'}
                   </button>
-                  <button
-                    onClick={() => handlePurchase(250000)}
-                    disabled={processingTokenAmount !== null}
-                    className="rounded bg-green-600 p-2 text-white hover:bg-green-700 dark:hover:bg-green-800"
-                  >
-                    {processingTokenAmount === 250000
-                      ? 'Processing...'
-                      : 'Purchase 250k Tokens for 40 RMB'}
-                  </button>
+
                   <button
                     onClick={() => handlePurchase(500000)}
                     disabled={processingTokenAmount !== null}
@@ -114,8 +106,9 @@ export default function ErrorDialog({ message }) {
                   >
                     {processingTokenAmount === 500000
                       ? 'Processing...'
-                      : 'Purchase 500k Tokens for 65 RMB'}
+                      : 'Purchase 500k Tokens for 35 RMB'}
                   </button>
+
                   <button
                     onClick={() => handlePurchase(1000000)}
                     disabled={processingTokenAmount !== null}
@@ -123,7 +116,17 @@ export default function ErrorDialog({ message }) {
                   >
                     {processingTokenAmount === 1000000
                       ? 'Processing...'
-                      : 'Purchase 1 Million Tokens for 100 RMB'}
+                      : 'Purchase 1 Million Tokens for 50 RMB'}
+                  </button>
+
+                  <button
+                    onClick={() => handlePurchase(10000000)}
+                    disabled={processingTokenAmount !== null}
+                    className="rounded bg-green-600 p-2 text-white hover:bg-green-700 dark:hover:bg-green-800"
+                  >
+                    {processingTokenAmount === 10000000
+                      ? 'Processing...'
+                      : 'Purchase 10 Million Tokens for 250 RMB'}
                   </button>
                 </Elements>
               </div>

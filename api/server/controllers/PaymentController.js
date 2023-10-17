@@ -73,17 +73,17 @@ exports.handleWebhook = async (req, res) => {
 
     let tokens;
     switch (amountInRMB) {
-      case 20:
+      case 10: // Updated amount
         tokens = 100000;
         break;
-      case 40:
-        tokens = 250000;
-        break;
-      case 65:
+      case 35: // Updated amount
         tokens = 500000;
         break;
-      case 100:
+      case 50: // Updated amount
         tokens = 1000000;
+        break;
+      case 250: // Updated amount
+        tokens = 10000000;
         break;
       default:
         console.error('Invalid amount:', amountInRMB);
