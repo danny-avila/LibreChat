@@ -9,7 +9,7 @@ const stripePromise = loadStripe(
   'pk_live_51MwvEEHKD0byXXCl8IzAvUl0oZ7RE6vIz72lWUVYl5rW3zy0u3FiGtIAgsbmqSHbhkTJeZjs5VEbQMNStaaQL9xQ001pwxI3RP',
 );
 
-export default function ErrorDialog({ message }) {
+export default function ErrorDialog({ open, onOpenChange, message }) {
   const { user } = useAuthContext();
   const userId = user?.id;
   const [processingTokenAmount, setProcessingTokenAmount] = useState(null);
@@ -73,11 +73,13 @@ export default function ErrorDialog({ message }) {
   };
 
   useEffect(() => {
-    fetchTokenBalance(); // Fetch token balance on component mount
-  }, []);
+    if (open) {
+      fetchTokenBalance(); // Fetch token balance when dialog opens
+    }
+  }, [open]);
 
   return (
-    <Dialog defaultOpen={true}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={title}
         className="max-w-[450px]"
