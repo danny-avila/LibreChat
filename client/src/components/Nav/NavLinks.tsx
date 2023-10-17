@@ -50,12 +50,46 @@ export default function NavLinks() {
           <>
             {startupConfig?.checkBalance && (
               <div className="m-1 ml-3 flex flex-col items-start whitespace-nowrap text-left text-sm text-gray-100">
-                <span
-                  data-tooltip-id="token-explain"
-                  data-tooltip-html="GPT-4 burns tokens at a <br /> rate 30x that of GPT-3.5."
-                >
-                  {`Tokens Remaining: ${balanceQuery.data}`}
-                </span>
+                <div className="flex items-center">
+                  <span
+                    data-tooltip-id="token-explain"
+                    data-tooltip-html="GPT-4 burns tokens at a <br /> rate 30x that of GPT-3.5."
+                  >
+                    {`Tokens Remaining: ${balanceQuery.data}`}
+
+                    <svg
+                      width="18px"
+                      height="18px"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="ml-1"
+                      style={{ display: 'inline-block' }}
+                    >
+                      <path
+                        d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M9 9C9 5.49997 14.5 5.5 14.5 9C14.5 11.5 12 10.9999 12 13.9999"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M12 18.01L12.01 17.9989"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
+                </div>
                 <button
                   onClick={() => setShowBuyTokens(true)}
                   className="mt-2 w-full rounded bg-green-500 p-2 text-white hover:bg-green-600 dark:hover:bg-green-600"
@@ -112,14 +146,14 @@ export default function NavLinks() {
                   />
                 </Menu.Item>
                 <div className="my-1.5 h-px bg-white/20" role="none" />
-                <Menu.Item as="div">
+                {/* <Menu.Item as="div">
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <LinkIcon />}
                     text={localize('com_nav_help_faq')}
                     clickHandler={() => window.open('https://docs.librechat.ai/', '_blank')}
                   />
-                </Menu.Item>
+                </Menu.Item> */}
                 <Menu.Item as="div">
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"

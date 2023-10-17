@@ -25,7 +25,7 @@ const registrationController = async (req, res) => {
       // Create a new Balance document for the user with 10,000 token credits
       const newBalance = new Balance({
         user: newUser._id,
-        tokenCredits: 10000,
+        tokenCredits: 25000,
       });
       await newBalance.save();
 
