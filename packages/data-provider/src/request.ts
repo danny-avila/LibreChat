@@ -21,20 +21,19 @@ const processQueue = (error: AxiosError | null, token: string | null = null) => 
 
 axios.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     const originalRequest = error.config;
     if (error.response.status === 401 && !originalRequest._retry) {
       if (isRefreshing) {
-        return new Promise(function (resolve, reject) {
-          failedQueue.push({ resolve, reject });
-        })
-          .then((token) => {
-            originalRequest.headers['Authorization'] = 'Bearer ' + token;
-            return axios(originalRequest);
-          })
-          .catch((err) => {
-            return Promise.reject(err);
+        try {
+          const token = await new Promise(function (resolve, reject) {
+            failedQueue.push({ resolve, reject });
           });
+          originalRequest.headers['Authorization'] = 'Bearer ' + token;
+          return await axios(originalRequest);
+        } catch (err) {
+          return await Promise.reject(err);
+        }
       }
 
       originalRequest._retry = true;
