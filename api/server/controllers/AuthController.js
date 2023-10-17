@@ -112,7 +112,9 @@ const refreshController = async (req, res) => {
       res.status(401).send('Refresh token expired or not found for this user');
     }
   } catch (err) {
-    res.status(401).send('Invalid refresh token');
+    console.error('Refresh token error', refreshToken);
+    console.error(err);
+    res.status(403).send('Invalid refresh token');
   }
 };
 
