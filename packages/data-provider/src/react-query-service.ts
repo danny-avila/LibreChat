@@ -11,7 +11,7 @@ import * as s from './schemas';
 import * as dataService from './data-service';
 
 export enum QueryKeys {
-  messages = 'messsages',
+  messages = 'messages',
   allConversations = 'allConversations',
   conversation = 'conversation',
   searchEnabled = 'searchEnabled',
