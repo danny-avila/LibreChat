@@ -26,7 +26,7 @@ export default function Root() {
 
   const setPresets = useSetRecoilState(store.presets);
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
-  const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
+  // const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
   const setModelsConfig = useSetRecoilState(store.modelsConfig);
 
   const endpointsQuery = useGetEndpointsQuery();
@@ -38,13 +38,13 @@ export default function Root() {
     localStorage.setItem('navVisible', JSON.stringify(navVisible));
   }, [navVisible]);
 
-  useEffect(() => {
-    if (endpointsQuery.data) {
-      setEndpointsConfig(endpointsQuery.data);
-    } else if (endpointsQuery.isError) {
-      console.error('Failed to get endpoints', endpointsQuery.error);
-    }
-  }, [endpointsQuery.data, endpointsQuery.isError]);
+  // useEffect(() => {
+  //   if (endpointsQuery.data) {
+  //     setEndpointsConfig(endpointsQuery.data);
+  //   } else if (endpointsQuery.isError) {
+  //     console.error('Failed to get endpoints', endpointsQuery.error);
+  //   }
+  // }, [endpointsQuery.data, endpointsQuery.isError]);
 
   useEffect(() => {
     if (modelsQuery.data) {

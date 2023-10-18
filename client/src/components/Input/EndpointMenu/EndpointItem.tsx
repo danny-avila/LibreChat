@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { useRecoilValue } from 'recoil';
+// import { useRecoilValue } from 'recoil';
+import { useGetEndpointsQuery } from 'librechat-data-provider';
 import { Settings } from 'lucide-react';
 import { DropdownMenuRadioItem } from '~/components';
 import { Icon } from '~/components/Endpoints';
 import { SetKeyDialog } from '../SetKeyDialog';
 import { useLocalize } from '~/hooks';
 
-import store from '~/store';
+// import store from '~/store';
 import { cn, alternateName } from '~/utils';
 
 export default function ModelItem({
@@ -19,7 +20,8 @@ export default function ModelItem({
   isSelected: boolean;
 }) {
   const [isDialogOpen, setDialogOpen] = useState(false);
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
+  // const endpointsConfig = useRecoilValue(store.endpointsConfig);
+  const { data: endpointsConfig } = useGetEndpointsQuery();
 
   const icon = Icon({
     size: 20,

@@ -120,7 +120,7 @@ export type TConfig = {
   availableModels?: [];
   userProvide?: boolean | null;
   availableTools?: [];
-  plugins?: [];
+  plugins?: Record<string, string>;
   azure?: boolean;
 };
 

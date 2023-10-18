@@ -1,11 +1,16 @@
-import { useRecoilValue } from 'recoil';
+// import { useRecoilValue } from 'recoil';
 import { useMemo, useCallback } from 'react';
-import { useUpdateUserKeysMutation, useUserKeyQuery } from 'librechat-data-provider';
-import store from '~/store';
+import {
+  useUpdateUserKeysMutation,
+  useUserKeyQuery,
+  useGetEndpointsQuery,
+} from 'librechat-data-provider';
+// import store from '~/store';
 
 const useUserKey = (endpoint: string) => {
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
-  const config = endpointsConfig[endpoint];
+  // const endpointsConfig = useRecoilValue(store.endpointsConfig);
+  const { data: endpointsConfig } = useGetEndpointsQuery();
+  const config = endpointsConfig?.[endpoint];
 
   const { azure } = config ?? {};
   let keyEndpoint = endpoint;
