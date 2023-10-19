@@ -221,7 +221,7 @@ describe('OpenAIClient', () => {
         isChatCompletion: true,
       });
       const hasUserWithName = result.prompt.some(
-        (item) => item.role === 'user' && item.name === 'Test User',
+        (item) => item.role === 'user' && item.name === 'Test_User',
       );
       expect(hasUserWithName).toBe(true);
     });
