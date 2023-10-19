@@ -54,7 +54,7 @@ const errorMessages = {
   },
   token_balance: (json: TTokenBalance) => {
     const { balance, tokenCost, promptTokens, generations } = json;
-    const message = `Insufficient Funds! Balance: ${balance}. Prompt tokens: ${promptTokens}. Cost: ${tokenCost}.`;
+    const message = `Insufficient Funds! Balance: ${balance}.`;
     return (
       <>
         <ErrorDialog message={message} />
