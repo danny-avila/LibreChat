@@ -42,6 +42,18 @@ export default function NavLinks() {
 
   const [showBuyTokens, setShowBuyTokens] = useState(false);
 
+  function formatTokenCount(count) {
+    if (count >= 1000 && count < 1000000) {
+      return (count / 1000).toFixed(count % 1000 === 0 ? 0 : 1) + 'k';
+    } else if (count >= 1000000 && count < 10000000) {
+      return (count / 1000000).toFixed(count % 1000000 === 0 ? 0 : 1) + 'M';
+    } else if (count >= 10000000) {
+      return (count / 10000000).toFixed(count % 10000000 === 0 ? 0 : 1) + '00M';
+    } else {
+      return count;
+    }
+  }
+
   return (
     <>
       <Tooltip id="token-explain" />
@@ -55,7 +67,7 @@ export default function NavLinks() {
                     data-tooltip-id="token-explain"
                     data-tooltip-html="GPT-4 burns tokens at a <br /> rate 30x that of GPT-3.5."
                   >
-                    {`Tokens Remaining: ${balanceQuery.data}`}
+                    {`Tokens Remaining: ${formatTokenCount(balanceQuery.data)}`}
 
                     <svg
                       width="18px"
