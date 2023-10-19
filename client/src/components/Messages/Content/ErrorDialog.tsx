@@ -4,6 +4,7 @@ import DialogTemplate from '~/components/ui/DialogTemplate';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
 import { useAuthContext } from '../../../hooks/AuthContext.tsx';
+import { Spinner } from '~/components';
 
 const stripePromise = loadStripe(
   'pk_live_51MwvEEHKD0byXXCl8IzAvUl0oZ7RE6vIz72lWUVYl5rW3zy0u3FiGtIAgsbmqSHbhkTJeZjs5VEbQMNStaaQL9xQ001pwxI3RP',
@@ -86,55 +87,39 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
         main={
           <>
             <div className="flex w-full flex-col items-center gap-2">
-              <div className="grid w-full items-center gap-2">
-                <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
+              <div className="text-center text-sm text-gray-100">
+                Please Note! WeChat and Alipay valid only with a Chinese National ID-linked account
+              </div>
+              <div className="grid w-full grid-cols-2 gap-5 p-3">
+                <Label htmlFor="chatGptLabel" className="col-span-2 text-left text-sm font-medium">
                   {message}
                 </Label>
                 <Elements stripe={stripePromise}>
-                  <button
-                    onClick={() => handlePurchase(100000)}
-                    disabled={processingTokenAmount !== null}
-                    className="rounded bg-green-600 p-2 text-white hover:bg-green-700 dark:hover:bg-green-800"
-                  >
-                    {processingTokenAmount === 100000
-                      ? 'Processing...'
-                      : 'Purchase 100k Tokens for 10 RMB'}
-                  </button>
-
-                  <button
-                    onClick={() => handlePurchase(500000)}
-                    disabled={processingTokenAmount !== null}
-                    className="rounded bg-green-600 p-2 text-white hover:bg-green-700 dark:hover:bg-green-800"
-                  >
-                    {processingTokenAmount === 500000
-                      ? 'Processing...'
-                      : 'Purchase 500k Tokens for 35 RMB'}
-                  </button>
-
-                  <button
-                    onClick={() => handlePurchase(1000000)}
-                    disabled={processingTokenAmount !== null}
-                    className="rounded bg-green-600 p-2 text-white hover:bg-green-700 dark:hover:bg-green-800"
-                  >
-                    {processingTokenAmount === 1000000
-                      ? 'Processing...'
-                      : 'Purchase 1 Million Tokens for 50 RMB'}
-                  </button>
-
-                  <button
-                    onClick={() => handlePurchase(10000000)}
-                    disabled={processingTokenAmount !== null}
-                    className="rounded bg-green-600 p-2 text-white hover:bg-green-700 dark:hover:bg-green-800"
-                  >
-                    {processingTokenAmount === 10000000
-                      ? 'Processing...'
-                      : 'Purchase 10 Million Tokens for 250 RMB'}
-                  </button>
+                  {[
+                    { tokens: 100000, label: '100k', price: '10 RMB' },
+                    { tokens: 500000, label: '500k', price: '35 RMB' },
+                    { tokens: 1000000, label: '1 Million', price: '50 RMB' },
+                    { tokens: 10000000, label: '10 Million', price: '250 RMB' },
+                  ].map(({ tokens, label, price }) => (
+                    <button
+                      key={tokens}
+                      onClick={() => handlePurchase(tokens)}
+                      disabled={processingTokenAmount !== null}
+                      className="flex h-[100px] flex-col items-center justify-between rounded bg-green-500 p-3 text-white hover:bg-green-600 dark:hover:bg-green-600"
+                    >
+                      {processingTokenAmount === tokens ? (
+                        <Spinner />
+                      ) : (
+                        <>
+                          <div className="text-lg font-bold">{label}</div>
+                          <div>Tokens</div>
+                          <div className="text-sm">{price}</div>
+                        </>
+                      )}
+                    </button>
+                  ))}
                 </Elements>
               </div>
-            </div>
-            <div className="mt-4 text-center text-sm text-gray-100">
-              Please Note! WeChat and Alipay valid only with a Chinese National ID-linked account
             </div>
           </>
         }

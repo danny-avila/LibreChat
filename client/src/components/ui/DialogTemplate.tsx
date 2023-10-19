@@ -52,7 +52,7 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
       <DialogFooter>
         <div>{leftButtons ? leftButtons : null}</div>
         <div className="flex h-auto gap-2">
-          <DialogClose className="dark:hover:gray-400 border-gray-700">{Cancel}</DialogClose>
+          {/* <DialogClose className="dark:hover:gray-400 border-gray-700">{Cancel}</DialogClose>
           {buttons ? buttons : null}
           {selection ? (
             <DialogClose
@@ -63,7 +63,7 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
             >
               {selectText}
             </DialogClose>
-          ) : null}
+          ) : null} */}
         </div>
       </DialogFooter>
     </DialogContent>

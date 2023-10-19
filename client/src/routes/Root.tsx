@@ -17,7 +17,7 @@ export default function Root() {
   const { user, isAuthenticated } = useAuthContext();
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
-    return savedNavVisible !== null ? JSON.parse(savedNavVisible) : false;
+    return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });
 
   const submission = useRecoilValue(store.submission);
