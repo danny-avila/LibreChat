@@ -17,7 +17,6 @@ const useConversation = () => {
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submission);
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
   const { data: endpointsConfig = {} } = useGetEndpointsQuery();
-  // const endpointsConfig = useRecoilValue(store.endpointsConfig);
 
   const switchToConversation = useRecoilCallback(
     ({ snapshot }) =>

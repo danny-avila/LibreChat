@@ -14,7 +14,6 @@ const useMessageHandler = () => {
   const currentConversation = useRecoilValue(store.conversation) || { endpoint: null };
   const setSubmission = useSetRecoilState(store.submission);
   const isSubmitting = useRecoilValue(store.isSubmitting);
-  // const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const [messages, setMessages] = useRecoilState(store.messages);
   const { endpoint } = currentConversation;

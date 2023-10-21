@@ -7,7 +7,6 @@ import store from '~/store';
 type TDefaultConvo = { conversation: Partial<TConversation>; preset?: Partial<TPreset> | null };
 
 const useDefaultConvo = () => {
-  // const endpointsConfig = useRecoilValue(store.endpointsConfig);
   const { data: endpointsConfig = {} } = useGetEndpointsQuery();
   const modelsConfig = useRecoilValue(store.modelsConfig);
 
