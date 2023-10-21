@@ -2,6 +2,7 @@ export * from './json';
 export * from './languages';
 export { default as cn } from './cn';
 export { default as buildTree } from './buildTree';
+export { default as mapEndpoints } from './mapEndpoints';
 export { default as getLoginError } from './getLoginError';
 export { default as cleanupPreset } from './cleanupPreset';
 export { default as validateIframe } from './validateIframe';
