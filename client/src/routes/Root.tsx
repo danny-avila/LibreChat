@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Outlet } from 'react-router-dom';
 import {
-  useGetEndpointsQuery,
   useGetModelsQuery,
   useGetPresetsQuery,
   useGetSearchEnabledQuery,
@@ -26,10 +25,8 @@ export default function Root() {
 
   const setPresets = useSetRecoilState(store.presets);
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
-  const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
   const setModelsConfig = useSetRecoilState(store.modelsConfig);
 
-  const endpointsQuery = useGetEndpointsQuery();
   const searchEnabledQuery = useGetSearchEnabledQuery({ enabled: isAuthenticated });
   const modelsQuery = useGetModelsQuery({ enabled: isAuthenticated });
   const presetsQuery = useGetPresetsQuery({ enabled: !!user });
@@ -37,14 +34,6 @@ export default function Root() {
   useEffect(() => {
     localStorage.setItem('navVisible', JSON.stringify(navVisible));
   }, [navVisible]);
-
-  useEffect(() => {
-    if (endpointsQuery.data) {
-      setEndpointsConfig(endpointsQuery.data);
-    } else if (endpointsQuery.isError) {
-      console.error('Failed to get endpoints', endpointsQuery.error);
-    }
-  }, [endpointsQuery.data, endpointsQuery.isError]);
 
   useEffect(() => {
     if (modelsQuery.data) {

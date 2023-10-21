@@ -101,7 +101,7 @@ export const searchConversations = async (
   return request.get(endpoints.search(q, pageNumber));
 };
 
-export const getAIEndpoints = () => {
+export const getAIEndpoints = (): Promise<t.TEndpointsConfig> => {
   return request.get(endpoints.aiEndpoints());
 };
 

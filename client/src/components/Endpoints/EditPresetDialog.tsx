@@ -2,20 +2,23 @@ import axios from 'axios';
 import { useEffect } from 'react';
 import filenamify from 'filenamify';
 import exportFromJSON from 'export-from-json';
-import { useSetRecoilState, useRecoilState, useRecoilValue } from 'recoil';
+import { useSetRecoilState, useRecoilState } from 'recoil';
+import { useGetEndpointsQuery } from 'librechat-data-provider';
 import type { TEditPresetProps } from '~/common';
 import { useSetOptions, useLocalize } from '~/hooks';
 import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import PopoverButtons from './PopoverButtons';
 import EndpointSettings from './EndpointSettings';
-import { cn, defaultTextProps, removeFocusOutlines, cleanupPreset } from '~/utils/';
+import { cn, defaultTextProps, removeFocusOutlines, cleanupPreset, mapEndpoints } from '~/utils/';
 import store from '~/store';
 
 const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditPresetProps) => {
   const [preset, setPreset] = useRecoilState(store.preset);
   const setPresets = useSetRecoilState(store.presets);
-  const availableEndpoints = useRecoilValue(store.availableEndpoints);
+  const { data: availableEndpoints } = useGetEndpointsQuery({
+    select: mapEndpoints,
+  });
   const { setOption } = useSetOptions(_preset);
   const localize = useLocalize();
 

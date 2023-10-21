@@ -230,12 +230,19 @@ export const useGetSearchEnabledQuery = (
   });
 };
 
-export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpointsConfig> => {
-  return useQuery([QueryKeys.endpoints], () => dataService.getAIEndpoints(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-  });
+export const useGetEndpointsQuery = <TData = t.TEndpointsConfig>(
+  config?: UseQueryOptions<t.TEndpointsConfig, unknown, TData>,
+): QueryObserverResult<TData> => {
+  return useQuery<t.TEndpointsConfig, unknown, TData>(
+    [QueryKeys.endpoints],
+    () => dataService.getAIEndpoints(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
 };
 
 export const useGetModelsQuery = (

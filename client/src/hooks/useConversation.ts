@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
-import { useSetRecoilState, useResetRecoilState, useRecoilCallback, useRecoilValue } from 'recoil';
+import { useSetRecoilState, useResetRecoilState, useRecoilCallback } from 'recoil';
+import { useGetEndpointsQuery } from 'librechat-data-provider';
 import type {
   TConversation,
   TMessagesAtom,
@@ -15,7 +16,7 @@ const useConversation = () => {
   const setMessages = useSetRecoilState<TMessagesAtom>(store.messages);
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submission);
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
+  const { data: endpointsConfig = {} } = useGetEndpointsQuery();
 
   const switchToConversation = useRecoilCallback(
     ({ snapshot }) =>
