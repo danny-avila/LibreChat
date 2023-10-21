@@ -106,6 +106,9 @@ const refreshController = async (req, res) => {
       const token = await setAuthTokens(userId, res, session._id);
       const userObj = user.toJSON();
       res.status(200).send({ token, user: userObj });
+    } else if (req?.query?.retry) {
+      // Retrying from a refresh token request that failed (401)
+      res.status(403).send('No session found');
     } else if (payload.exp < Date.now() / 1000) {
       res.status(403).redirect('/login');
     } else {
