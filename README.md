@@ -135,7 +135,9 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date)](https://star-history.com/#danny-avila/LibreChat&Date)
+<a href="https://star-history.com/#danny-avila/LibreChat&Date">
+  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date&theme=dark" onerror="this.src='https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date'" />
+</a>
 
 ---
 
