@@ -16,9 +16,9 @@ import store from '~/store';
 const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditPresetProps) => {
   const [preset, setPreset] = useRecoilState(store.preset);
   const setPresets = useSetRecoilState(store.presets);
-  const { data: endpointsConfig = {} } = useGetEndpointsQuery();
-  const availableEndpoints = mapEndpoints(endpointsConfig);
-  // const availableEndpoints = useRecoilValue(store.availableEndpoints);
+  const { data: availableEndpoints } = useGetEndpointsQuery({
+    select: mapEndpoints,
+  });
   const { setOption } = useSetOptions(_preset);
   const localize = useLocalize();
 
