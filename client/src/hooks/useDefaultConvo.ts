@@ -1,4 +1,5 @@
 import { useRecoilValue } from 'recoil';
+import { useGetEndpointsQuery } from 'librechat-data-provider';
 import type { TConversation, TPreset } from 'librechat-data-provider';
 import { getDefaultEndpoint, buildDefaultConvo } from '~/utils';
 import store from '~/store';
@@ -6,7 +7,7 @@ import store from '~/store';
 type TDefaultConvo = { conversation: Partial<TConversation>; preset?: Partial<TPreset> | null };
 
 const useDefaultConvo = () => {
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
+  const { data: endpointsConfig = {} } = useGetEndpointsQuery();
   const modelsConfig = useRecoilValue(store.modelsConfig);
 
   const getDefaultConversation = ({ conversation, preset }: TDefaultConvo) => {

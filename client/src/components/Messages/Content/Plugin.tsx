@@ -1,16 +1,11 @@
-import { useRecoilValue } from 'recoil';
 import { Disclosure } from '@headlessui/react';
 import { useCallback, memo, ReactNode } from 'react';
+import { useGetEndpointsQuery } from 'librechat-data-provider';
 import type { TResPlugin, TInput } from 'librechat-data-provider';
 import { ChevronDownIcon, LucideProps } from 'lucide-react';
 import { cn, formatJSON } from '~/utils';
 import { Spinner } from '~/components';
 import CodeBlock from './CodeBlock';
-import store from '~/store';
-
-type PluginsMap = {
-  [pluginKey: string]: string;
-};
 
 type PluginIconProps = LucideProps & {
   className?: string;
@@ -36,7 +31,9 @@ type PluginProps = {
 };
 
 const Plugin: React.FC<PluginProps> = ({ plugin }) => {
-  const plugins: PluginsMap = useRecoilValue(store.plugins);
+  const { data: plugins } = useGetEndpointsQuery({
+    select: (data) => data?.gptPlugins?.plugins,
+  });
 
   const getPluginName = useCallback(
     (pluginKey: string) => {
@@ -47,7 +44,7 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
       if (pluginKey === 'n/a' || pluginKey === 'self reflection') {
         return pluginKey;
       }
-      return plugins[pluginKey] ?? 'self reflection';
+      return plugins?.[pluginKey] ?? 'self reflection';
     },
     [plugins],
   );
