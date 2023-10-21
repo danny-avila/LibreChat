@@ -9,7 +9,7 @@ env:
   ACI_NAME: 'gh-runner-linux-01'
   DNS_NAME_LABEL: 'gh-lin-01'
   GH_OWNER: ${{ github.repository_owner }}
-  GH_REPOSITORY: 'LibreChat' #Change here to deploy self hosted runner ACI to another repo.
+  GH_REPOSITORY: 'ChatEGPT' #Change here to deploy self hosted runner ACI to another repo.
 
 jobs:
   deploy-gh-runner-aci:

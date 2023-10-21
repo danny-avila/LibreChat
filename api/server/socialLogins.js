@@ -36,7 +36,7 @@ const configureSocialLogins = (app) => {
       saveUninitialized: false,
     };
     if (process.env.USE_REDIS) {
-      sessionOptions.store = new RedisStore({ client, prefix: 'librechat' });
+      sessionOptions.store = new RedisStore({ client, prefix: 'ChatEGPT' });
     }
     app.use(session(sessionOptions));
     app.use(passport.session());

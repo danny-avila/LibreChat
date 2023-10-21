@@ -2,7 +2,7 @@ version: '3.4'
 
 services:
   app:
-    # container_name: LibreChat_dev
+    # container_name: ChatEGPT_dev
     image: node:19-bullseye
     # Using a Dockerfile is optional, but included for completeness.
     # build: 

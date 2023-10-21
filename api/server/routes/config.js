@@ -4,7 +4,7 @@ const { isEnabled } = require('../utils');
 
 router.get('/', async function (req, res) {
   try {
-    const appTitle = process.env.APP_TITLE || 'LibreChat';
+    const appTitle = process.env.APP_TITLE || 'ChatEGPT';
     const googleLoginEnabled = !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET;
     const facebookLoginEnabled =
       !!process.env.FACEBOOK_CLIENT_ID && !!process.env.FACEBOOK_CLIENT_SECRET;

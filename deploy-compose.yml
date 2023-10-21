@@ -6,7 +6,7 @@ services:
     #   dockerfile: Dockerfile.multi
     #   target: api-build
     image: ghcr.io/danny-avila/librechat-dev-api:latest
-    container_name: LibreChat-API
+    container_name: ChatEGPT-API
     ports:
       - 3080:3080
     depends_on:
@@ -29,7 +29,7 @@ services:
       context: .
       dockerfile: Dockerfile.multi
       target: prod-stage
-    container_name: LibreChat-NGINX
+    container_name: ChatEGPT-NGINX
     ports:
       - 80:80
       - 443:443

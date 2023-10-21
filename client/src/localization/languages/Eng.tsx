@@ -256,7 +256,6 @@ export default {
   com_nav_clear_conversation: 'Clear conversations',
   com_nav_clear_conversation_confirm_message:
     'Are you sure you want to clear all conversations? This is irreversible.',
-  com_nav_help_faq: 'Help & FAQ',
   com_nav_settings: 'Settings',
   com_nav_search_placeholder: 'Search messages',
   com_nav_setting_general: 'General',

@@ -1,5 +1,5 @@
 {
-  "name": "LibreChat",
+  "name": "ChatEGPT",
   "version": "0.5.9",
   "description": "",
   "workspaces": [
@@ -57,14 +57,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danny-avila/LibreChat.git"
+    "url": "git+https://github.com/QuitCool/ChatEGPT.git"
   },
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/danny-avila/LibreChat/issues"
+    "url": "https://github.com/QuitCool/ChatEGPT/issues"
   },
-  "homepage": "https://github.com/danny-avila/LibreChat#readme",
+  "homepage": "https://github.com/QuitCool/ChatEGPT#readme",
   "devDependencies": {
     "@playwright/test": "^1.38.1",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
@@ -95,5 +95,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "sharp": "^0.32.6"
   }
 }

@@ -251,7 +251,6 @@ export default {
   com_nav_clear_conversation: 'Rensa konversationer', // Clear conversations
   com_nav_clear_conversation_confirm_message:
     'Är du säker på att du vill rensa alla konversationer? Detta går inte att ångra.', // Are you sure you want to clear all conversations? This is irreversible.
-  com_nav_help_faq: 'Hjälp & Vanliga frågor', // Help & FAQ
   com_nav_settings: 'Inställningar', // Settings
   com_nav_search_placeholder: 'Sök meddelanden', // Search messages
   com_nav_setting_general: 'Allmänt', // General

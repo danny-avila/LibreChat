@@ -11,15 +11,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danny-avila/LibreChat.git"
+    "url": "git+https://github.com/QuitCool/ChatEGPT.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/danny-avila/LibreChat/issues"
+    "url": "https://github.com/QuitCool/ChatEGPT/issues"
   },
-  "homepage": "https://github.com/danny-avila/LibreChat#readme",
+  "homepage": "https://github.com/QuitCool/ChatEGPT#readme",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.5.4",
     "@azure/search-documents": "^11.3.2",
