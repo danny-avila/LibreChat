@@ -19,7 +19,7 @@ const pending_req = isEnabled(USE_REDIS)
 
 const namespaces = {
   pending_req,
-  ban: new Keyv({ store: keyvMongo, namespace: 'bans', duration }),
+  ban: new Keyv({ store: keyvMongo, namespace: 'bans', ttl: duration }),
   general: new Keyv({ store: logFile, namespace: 'violations' }),
   concurrent: createViolationInstance('concurrent'),
   non_browser: createViolationInstance('non_browser'),
