@@ -12,7 +12,7 @@ if (!process.stdin.isTTY) {
 }
 
 // If we are in CI env, lets exit
-if (process.env.NODE_ENV === 'ci') {
+if (process.env.NODE_ENV === 'CI') {
   console.log('Note: we are in a CI environment, skipping install script.');
   exit(0);
 }

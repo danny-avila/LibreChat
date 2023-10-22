@@ -16,7 +16,8 @@ const config: PlaywrightTestConfig = {
     env: {
       ...process.env,
       SEARCH: 'false',
-      NODE_ENV: 'development',
+      NODE_ENV: 'CI',
+      TITLE_CONVO: 'false',
       SESSION_EXPIRY: '60000',
       REFRESH_TOKEN_EXPIRY: '300000',
     },
