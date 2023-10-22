@@ -101,7 +101,7 @@ export const searchConversations = async (
   return request.get(endpoints.search(q, pageNumber));
 };
 
-export const getAIEndpoints = () => {
+export const getAIEndpoints = (): Promise<t.TEndpointsConfig> => {
   return request.get(endpoints.aiEndpoints());
 };
 
@@ -125,7 +125,7 @@ export const register = (payload: t.TRegisterUser) => {
   return request.post(endpoints.register(), payload);
 };
 
-export const refreshToken = () => request.post(endpoints.refreshToken());
+export const refreshToken = (retry?: boolean) => request.post(endpoints.refreshToken(retry));
 
 export const userKeyQuery = (name: string): Promise<t.TCheckUserKeyResponse> =>
   request.get(endpoints.userKeyQuery(name));
