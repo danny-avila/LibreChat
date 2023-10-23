@@ -49,7 +49,7 @@ if (!String.prototype.format) {
 // input: language code in string
 // returns an object of translated strings in the language
 export const getTranslations = (langCode: string) => {
-  const language = languageMap[langCode] || English;
+  const language = languageMap[langCode] || Chinese;
   return language;
 };
 
