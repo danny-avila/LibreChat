@@ -57,7 +57,7 @@ export const getTranslations = (langCode: string) => {
 // returns an corresponding phrase value in string
 export const localize = (langCode: string, phraseKey: string, ...values: string[]) => {
   const lang = getTranslations(langCode);
-  const phrase = lang[phraseKey] || English[phraseKey] || 'zh-CN';
+  const phrase = lang[phraseKey] || English[phraseKey] || '';
 
   return phrase.format(...values);
 };
