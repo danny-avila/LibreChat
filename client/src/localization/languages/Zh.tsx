@@ -192,6 +192,7 @@ export default {
   com_nav_confirm_clear: '确认清空',
   com_nav_close_sidebar: '关闭侧边栏',
   com_nav_open_sidebar: '打开侧边栏',
+  com_nav_auto_scroll: '打开时自动滚动到最新内容',
   com_nav_log_out: '注销',
   com_nav_user: '默认用户',
   com_nav_clear_conversation: '清空对话',

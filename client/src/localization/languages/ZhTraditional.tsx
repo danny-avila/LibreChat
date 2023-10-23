@@ -79,6 +79,7 @@ export default {
   com_auth_password_not_match: '密碼不符',
   com_auth_continue: '繼續',
   com_auth_create_account: '建立您的帳號',
+  com_nav_auto_scroll:'開啟時自動捲動至最新內容',
   com_auth_error_create:
     '嘗試註冊您的帳號時發生錯誤。請重試。',
   com_auth_full_name: '全名',
