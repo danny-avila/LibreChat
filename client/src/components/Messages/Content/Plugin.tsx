@@ -31,7 +31,7 @@ type PluginProps = {
 };
 
 const Plugin: React.FC<PluginProps> = ({ plugin }) => {
-  const { data: plugins } = useGetEndpointsQuery({
+  const { data: plugins = {} } = useGetEndpointsQuery({
     select: (data) => data?.gptPlugins?.plugins,
   });
 
