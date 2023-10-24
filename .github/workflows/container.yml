@@ -5,6 +5,7 @@ on:
   push:
     tags:
       - "*"
+  workflow_dispatch:  # This line allows manual triggering
 
 jobs:
   build:
