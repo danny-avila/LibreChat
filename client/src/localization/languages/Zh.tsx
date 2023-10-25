@@ -1,8 +1,8 @@
 // Chinese phrases
 
 export default {
-  com_ui_examples: '例子',
-  com_ui_new_chat: '建立新对话',
+  com_ui_examples: '示例',
+  com_ui_new_chat: '创建新对话',
   com_ui_example_quantum_computing: '如何给7岁小孩讲解量子计算？',
   com_ui_example_10_year_old_b_day: '如何举办生日宴才能耳目一新？',
   com_ui_example_http_in_js: '如何在Python中实现HTTP请求？',
@@ -13,7 +13,7 @@ export default {
   com_ui_limitations: '局限性',
   com_ui_limitation_incorrect_info: '可能会不时出现错误信息',
   com_ui_limitation_harmful_biased: '可能会提供有害指示或者偏见',
-  com_ui_limitation_limited_2021: '训练基于2021年以前信息',
+  com_ui_limitation_limited_2021: '基于2021年以前信息训练',
   com_ui_input: '输入',
   com_ui_close: '关闭',
   com_ui_clear: '清除',
@@ -34,7 +34,7 @@ export default {
   com_ui_delete_conversation_confirm: '这将删除',
   com_ui_revoke: '撤销',
   com_ui_submit: '提交',
-  com_ui_revoke_info: '撤销所有用户提供的凭据。',
+  com_ui_revoke_info: '撤销所有用户提供的凭据',
   com_auth_error_login: '无法登录，请确认提供的账户密码正确，并重新尝试。',
   com_auth_no_account: '新用户注册',
   com_auth_sign_up: '注册',
@@ -104,16 +104,16 @@ export default {
   com_endpoint_google_temp:
     '值越高表示输出越随机，值越低表示输出越确定。建议不要同时改变此值和Top P。',
   com_endpoint_google_topp:
-    'Top-p changes how the model selects tokens for output. Tokens are selected from most K (see topK parameter) probable to least until the sum of their probabilities equals the top-p value.',
+    'Top-p（核采样）改变了模型选择输出标记的方式。从最可能的K个（参见topK参数）标记开始，直到它们的概率之和等于top-p值。',
   com_endpoint_google_topk:
-    'Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model\'s vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).',
+    'Top-k 改变了模型选择输出标记的方式。Top-k为1意味着所选标记在模型的所有词汇中最可能出现（也称为贪婪解码），而top-k为3则意味着下一个标记是从最可能的3个标记中选择的（使用随机性）。',
   com_endpoint_google_maxoutputtokens:
     ' 	响应生成中可以使用的最大令牌数。指定较低的值会得到更短的响应，而指定较高的值则会得到更长的响应。',
   com_endpoint_google_custom_name_placeholder: '为PaLM2设置一个名称',
   com_endpoint_google_prompt_prefix_placeholder: '自定义指令和上下文，默认为空。',
   com_endpoint_custom_name: '自定义名称',
   com_endpoint_prompt_prefix: '对话前缀',
-  com_endpoint_temperature: '温度',
+  com_endpoint_temperature: '随机性',
   com_endpoint_default: '初始值',
   com_endpoint_top_p: 'Top P',
   com_endpoint_top_k: 'Top K',
@@ -122,7 +122,7 @@ export default {
     '值越高表示输出越随机，值越低表示输出越确定。建议不要同时改变此值和Top P。',
   com_endpoint_openai_max: '最大生成词元数。输入词元长度由模型的上下文长度决定。',
   com_endpoint_openai_topp:
-    '相较于温度的另一个取样方法，称为核采样，模型选取输出词元中大于P值（概率密度在整个概率分布中的比例）的结果。比如 top_p=0.1 表示只有概率占比为前10%的词元才会被考虑作为输出。建议不要同时改变此值和温度。',
+    '相较于随机性的另一个取样方法，称为核采样，模型选取输出词元中大于P值（概率密度在整个概率分布中的比例）的结果。比如 top_p=0.1 表示只有概率占比为前10%的词元才会被考虑作为输出。建议不要同时改变此值和随机性。',
   com_endpoint_openai_freq:
     '值介于-2.0到2.0之间。正值表示根据已有词元的频率惩罚重复词元结果, 从而减少模型输出重复词。',
   com_endpoint_openai_pres:
@@ -184,7 +184,7 @@ export default {
   com_nav_export_recursive: '递归',
   com_nav_export_conversation: '导出对话',
   com_nav_theme: '主题',
-  com_nav_theme_system: '追随系统设置',
+  com_nav_theme_system: '跟随系统设置',
   com_nav_theme_dark: '暗色主题',
   com_nav_theme_light: '亮色主题',
   com_nav_clear: '清空',
@@ -196,10 +196,10 @@ export default {
   com_nav_log_out: '注销',
   com_nav_user: '默认用户',
   com_nav_clear_conversation: '清空对话',
-  com_nav_clear_conversation_confirm_message: '请确认是否清空所有对话？此操作无法撤回。',
+  com_nav_clear_conversation_confirm_message: '请是否清空所有对话？该操作无法撤销',
   com_nav_help_faq: '帮助',
   com_nav_settings: '设置',
-  com_nav_search_placeholder: '文本搜索',
+  com_nav_search_placeholder: '搜索对话及对话内容',
   com_nav_setting_general: '通用',
-  com_nav_setting_data:'数据管理',
+  com_nav_setting_data: '数据管理',
 };
