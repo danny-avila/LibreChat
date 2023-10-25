@@ -181,6 +181,7 @@ export type TStartupConfig = {
   socialLoginEnabled: boolean;
   emailEnabled: boolean;
   checkBalance: boolean;
+  customFooter?: string;
 };
 
 export type TRefreshTokenResponse = {
