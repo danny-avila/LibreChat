@@ -81,7 +81,6 @@ class AnthropicClient extends BaseClient {
   }
 
   getClient() {
-    console.log(this.baseURL)
     if (this.baseURL) {
       return new Anthropic({
         apiKey: this.apiKey,
