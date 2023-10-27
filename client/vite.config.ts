@@ -11,11 +11,13 @@ export default defineConfig({
     strictPort: false,
     proxy: {
       '/api': {
-        target: 'http://localhost:3080',
+        target: 'http://localhost:3080', // for local
+        // target: 'https://qimagpt-dev.qima.com/',
         changeOrigin: true,
       },
       '/oauth': {
-        target: 'http://localhost:3080',
+        target: 'http://localhost:3080', // for local
+        // target: 'https://qimagpt-dev.qima.com/',
         changeOrigin: true,
       },
     },
