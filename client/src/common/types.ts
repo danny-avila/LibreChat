@@ -28,6 +28,12 @@ export enum NotificationSeverity {
   ERROR = 'error',
 }
 
+export type TShowToast = {
+  message: string;
+  severity?: NotificationSeverity;
+  showIcon?: boolean;
+};
+
 export type TBaseSettingsProps = {
   conversation: TConversation | TPreset | null;
   className?: string;
