@@ -1,5 +1,6 @@
-import { useRef, useEffect } from 'react';
 import { useRecoilState } from 'recoil';
+import { useRef, useEffect } from 'react';
+import type { TShowToast } from '~/common';
 import { NotificationSeverity } from '~/common';
 import store from '~/store';
 
@@ -14,12 +15,6 @@ export default function useToast(timeoutDuration = 100) {
       }
     };
   }, []);
-
-  type TShowToast = {
-    message: string;
-    severity?: NotificationSeverity;
-    showIcon?: boolean;
-  };
 
   const showToast = ({
     message,
