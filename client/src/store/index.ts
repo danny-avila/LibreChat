@@ -4,6 +4,7 @@ import endpoints from './endpoints';
 import models from './models';
 import user from './user';
 import text from './text';
+import toast from './toast';
 import submission from './submission';
 import search from './search';
 import preset from './preset';
@@ -17,6 +18,7 @@ export default {
   ...models,
   ...user,
   ...text,
+  ...toast,
   ...submission,
   ...search,
   ...preset,

@@ -21,6 +21,13 @@ export enum ESide {
   Left = 'left',
 }
 
+export enum NotificationSeverity {
+  INFO = 'info',
+  SUCCESS = 'success',
+  WARNING = 'warning',
+  ERROR = 'error',
+}
+
 export type TBaseSettingsProps = {
   conversation: TConversation | TPreset | null;
   className?: string;
