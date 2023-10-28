@@ -1,15 +1,16 @@
 const { matchModelName } = require('../utils');
-const defaultRate = 6;
+const defaultRate = 3;
 
 /**
  * Mapping of model token sizes to their respective multipliers for prompt and completion.
  * @type {Object.<string, {prompt: number, completion: number}>}
  */
+
 const tokenValues = {
-  '8k': { prompt: 30, completion: 60 },
-  '32k': { prompt: 60, completion: 120 },
-  '4k': { prompt: 1.5, completion: 2 },
-  '16k': { prompt: 3, completion: 4 },
+  '8k': { prompt: 10, completion: 20 },
+  '32k': { prompt: 30, completion: 60 },
+  '4k': { prompt: 0.75, completion: 1 },
+  '16k': { prompt: 1.5, completion: 2 },
 };
 
 /**
