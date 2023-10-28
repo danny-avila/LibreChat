@@ -65,7 +65,7 @@ export default function NavLinks() {
                 <div className="flex items-center">
                   <span
                     data-tooltip-id="token-explain"
-                    data-tooltip-html="GPT-4 burns tokens at a <br /> rate 30x that of GPT-3.5."
+                    data-tooltip-html="GPT-4 burns tokens at a <br /> rate 20x that of GPT-3.5."
                   >
                     {`Tokens Remaining: ${formatTokenCount(balanceQuery.data)}`}
 
