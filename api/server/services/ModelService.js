@@ -29,7 +29,7 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
 
   if (OPENROUTER_API_KEY) {
     reverseProxyUrl = 'https://openrouter.ai/api/v1';
-    apiKey = OPENROUTER_API_KEY
+    apiKey = OPENROUTER_API_KEY;
   }
 
   if (reverseProxyUrl) {
