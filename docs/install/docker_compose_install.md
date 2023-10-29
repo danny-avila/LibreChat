@@ -44,6 +44,28 @@ That's it! If you need more detailed information on configuring your compose fil
 ## Updating LibreChat
 - Run `npm run update` from the project directory for a clean installation.
 
+If you're having issues running this command, you can try running what the script does manually:
+
+Prefix commands with `sudo` according to your environment permissions.
+
+```bash
+# Fetch the latest changes from Github
+git fetch origin
+# Switch to the repo's main branch
+git checkout main
+# Pull the latest changes to the main branch from Github
+git pull origin main
+# Prune all LibreChat Docker images
+docker rmi librechat:latest
+# Remove all unused dangling Docker images
+docker image prune -f
+# Building a new LibreChat image
+docker-compose build
+
+# Start LibreChat
+docker-compose up
+```
+
 ## Advanced Settings
 
 ### Config notes for docker-compose.yml file

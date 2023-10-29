@@ -90,6 +90,75 @@ npm run backend
 
 - Run `npm run update` from the project directory for a clean installation.
 
+If you're having issues running this command, you can try running what the script does manually:
+
+### Docker
+
+```bash
+# Fetch the latest changes from Github
+git fetch origin
+# Switch to the repo's main branch
+git checkout main
+# Pull the latest changes to the main branch from Github
+git pull origin main
+# Prune all LibreChat Docker images
+docker rmi librechat:latest
+# Remove all unused dangling Docker images
+docker image prune -f
+# Building a new LibreChat image
+docker-compose build
+
+# Start LibreChat
+docker-compose up
+```
+
+### Local (npm)
+
+```bash
+# Terminal on macOS, prefix commands with `sudo` as needed
+
+# Step 1: Get the latest changes
+
+# Fetch the latest changes from Github
+git fetch origin
+# Switch to the repo's main branch
+git checkout main
+# Pull the latest changes to the main branch from Github
+git pull origin main
+
+# Step 2: Delete all node_modules directories
+# Define the list of directories we will delete
+directories=(
+    "."
+    "./packages/data-provider"
+    "./client"
+    "./api"
+)
+
+# Loop over each directory and delete the node_modules folder if it exists
+for dir in "${directories[@]}"; do
+    nodeModulesPath="$dir/node_modules"
+    if [ -d "$nodeModulesPath" ]; then
+        echo "Deleting node_modules in $dir"
+        rm -rf "$nodeModulesPath"
+    fi
+done
+
+# Step 3: Clean the npm cache
+npm cache clean --force
+
+# Step 4: Install dependencies
+npm ci
+
+# Step 5: Build client-side (frontend) code
+npm run frontend
+
+# Start LibreChat
+npm run backend
+```
+
+The above assumes that you're using the default Terminal application on macOS and are executing the commands from the project directory. The commands are written in Bash, which is the default shell for macOS (though newer versions use `zsh` by default, but these commands should work there as well).
+
 ---
 
 >⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
