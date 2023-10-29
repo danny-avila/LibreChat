@@ -1,4 +1,5 @@
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const ChatGPTClient = require('./ChatGPTClient');
 const BaseClient = require('./BaseClient');
 const { getModelMaxTokens, genAzureChatCompletion } = require('../../utils');
@@ -459,6 +460,11 @@ If your reverse proxy is compatible to OpenAI specs in every other way, it may s
           'X-Title': 'LibreChat',
         },
       };
+    }
+
+    if (this.options.proxy) {
+      configOptions.httpAgent = new HttpsProxyAgent(this.options.proxy);
+      configOptions.httpsAgent = new HttpsProxyAgent(this.options.proxy);
     }
 
     const { req, res, debug } = this.options;
