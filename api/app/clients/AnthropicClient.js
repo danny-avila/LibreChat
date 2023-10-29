@@ -9,12 +9,12 @@ const AI_PROMPT = '\n\nAssistant:';
 const tokenizersCache = {};
 
 class AnthropicClient extends BaseClient {
-  constructor(apiKey, options = {}, cacheOptions = {},baseURL) {
+  constructor(apiKey, options = {}, cacheOptions = {}, baseURL) {
     super(apiKey, options, cacheOptions);
     this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
     this.sender = 'Anthropic';
     if (baseURL) {
-      this.baseURL = baseURL
+      this.baseURL = baseURL;
     }
     this.userLabel = HUMAN_PROMPT;
     this.assistantLabel = AI_PROMPT;

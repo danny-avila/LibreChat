@@ -2,30 +2,31 @@ const { AnthropicClient } = require('../../../../app');
 const { getUserKey, checkUserKeyExpiry } = require('../../../services/UserService');
 
 const initializeClient = async ({ req, res }) => {
-  const { ANTHROPIC_API_KEY } = process.env;
-  const { key: expiresAt } = req.body;
+  const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+  const expiresAt = req.body.key;
   const isUserProvided = ANTHROPIC_API_KEY === 'user_provided';
 
-  let key = null;
+  let anthropicApiKey = isUserProvided ? await getAnthropicUserKey(req.user.id) : ANTHROPIC_API_KEY;
+  let Reverse_Proxy = process.env.ANTHROPIC_REVERSE_PROXY || undefined;
+  console.log('ANTHROPIC_REVERSE_PROXY', Reverse_Proxy);
+
   if (expiresAt && isUserProvided) {
     checkUserKeyExpiry(
       expiresAt,
       'Your ANTHROPIC_API_KEY has expired. Please provide your API key again.',
     );
-    key = await getUserKey({ userId: req.user.id, name: 'anthropic' });
   }
-  let ANTHROPIC_REVERSE_PROXY = process.env.ANTHROPIC_REVERSE_PROXY
-  let anthropicApiKey = isUserProvided ? key : ANTHROPIC_API_KEY;
-  if (typeof ANTHROPIC_REVERSE_PROXY === 'undefined') {
-    Reverse_Proxy = undefined;
-  } else {
-    Reverse_Proxy = ANTHROPIC_REVERSE_PROXY;
-  }
-  const client = new AnthropicClient(anthropicApiKey, { req, res},{},Reverse_Proxy);
+
+  const client = new AnthropicClient(anthropicApiKey, { req, res }, {}, Reverse_Proxy);
+
   return {
     client,
     anthropicApiKey,
   };
+};
+
+const getAnthropicUserKey = async (userId) => {
+  return await getUserKey({ userId, name: 'anthropic' });
 };
 
 module.exports = initializeClient;
