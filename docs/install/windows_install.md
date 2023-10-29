@@ -104,6 +104,75 @@ Using the command line (in the root directory)
 
 - Run `npm run update` from the project directory for a clean installation.
 
+If you're having issues running this command, you can try running what the script does manually:
+
+### Docker
+
+```bash
+# Fetch the latest changes from Github
+git fetch origin
+# Switch to the repo's main branch
+git checkout main
+# Pull the latest changes to the main branch from Github
+git pull origin main
+# Prune all LibreChat Docker images
+docker rmi librechat:latest
+# Remove all unused dangling Docker images
+docker image prune -f
+# Building a new LibreChat image
+docker-compose build
+
+# Start LibreChat
+docker-compose up
+```
+
+### Local (npm)
+
+```powershell
+# Windows PowerShell terminal 
+
+# Step 1: Get the latest changes
+
+# Fetch the latest changes from Github
+git fetch origin
+# Switch to the repo's main branch
+git checkout main
+# Pull the latest changes to the main branch from Github
+git pull origin main
+
+# Step 2: Delete all node_modules directories
+# Define he list of directories we will delete
+$directories = @(
+    ".",
+    ".\packages\data-provider",
+    ".\client",
+    ".\api"
+)
+
+# Loop over each directory and delete the node_modules folder if it exists
+foreach ($dir in $directories) {
+    $nodeModulesPath = Join-Path -Path $dir -ChildPath "node_modules"
+    if (Test-Path $nodeModulesPath) {
+        Write-Host "Deleting node_modules in $dir"
+        Remove-Item -Recurse -Force $nodeModulesPath
+    }
+}
+
+# Step 3: Clean the npm cache
+npm cache clean --force
+
+# Step 4: Install dependencies
+npm ci
+
+# Step 5: Build client-side (frontend) code
+npm run frontend
+
+# Start LibreChat
+npm run backend
+```
+
+The above assumes that you're using the Windows PowerShell application on a Windows system and are executing the commands from the project directory. The commands are tailored for PowerShell, which is a powerful scripting environment native to Windows. While Windows also offers the Command Prompt and newer versions have the Windows Subsystem for Linux (WSL), the provided instructions are specifically designed for PowerShell.
+
 ---
 
 >⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
