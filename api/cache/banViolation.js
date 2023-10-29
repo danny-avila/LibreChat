@@ -55,7 +55,6 @@ const banViolation = async (req, res, errorMessage) => {
 
   req.ip = removePorts(req);
   console.log(`[BAN] Banning user ${user_id} @ ${req.ip} for ${duration / 1000 / 60} minutes`);
-  console.log('banLogs.opts.ttl:', banLogs.opts.ttl);
 
   const expiresAt = Date.now() + duration;
   await banLogs.set(user_id, { type, violation_count, duration, expiresAt });

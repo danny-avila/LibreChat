@@ -43,7 +43,7 @@ const User = require('@librechat/backend/models/User');
     console.purple(`Found user: ${user.email}`);
   }
 
-  const req = {}; // Create a request object
+  const req = {};
   const res = {
     clearCookie: () => {},
     status: function () {
