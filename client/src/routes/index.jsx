@@ -3,6 +3,7 @@ import Root from './Root';
 import Chat from './Chat';
 import Search from './Search';
 import Profile from '../components/Profile';
+import Subscription from '../components/Subscription';
 import { Login, Registration, RequestPasswordReset, ResetPassword } from '../components/Auth';
 import { AuthContextProvider } from '../hooks/AuthContext';
 import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
@@ -68,6 +69,10 @@ export const router = createBrowserRouter([
           {
             path: 'profile/:userId?',
             element: <Profile />
+          },
+          {
+            path: 'subscription/:userId?',
+            element: <Subscription />
           }
         ]
       }

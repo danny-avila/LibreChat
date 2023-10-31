@@ -24,6 +24,7 @@ export default {
   com_ui_public: '公开',
   com_ui_private: '私密',
   com_ui_homepage: '我的主页',
+  com_ui_subscriptionpage: '我的付费计划',
   com_ui_others_homepage: '{0}的主页',
   com_ui_register_before_like: '需注册账号后才能点赞哦',
   com_ui_number_of_likes: '赞 {0}',

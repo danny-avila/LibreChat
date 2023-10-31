@@ -24,6 +24,7 @@ export default {
   com_ui_public: 'Public',
   com_ui_private: 'Private',
   com_ui_homepage: 'My Profile',
+  com_ui_subscriptionpage: 'My Plan',
   com_ui_others_homepage: '{0}\'s Profile',
   com_ui_register_before_like: 'Let\'s make yourself an account',
   com_ui_number_of_likes: '{0} Likes',
