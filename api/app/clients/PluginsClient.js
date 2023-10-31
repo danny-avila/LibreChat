@@ -357,6 +357,7 @@ If your reverse proxy is compatible to OpenAI specs in every other way, it may s
       const trimmedPartial = opts.getPartialText().replaceAll(':::plugin:::\n', '');
       responseMessage.text =
         trimmedPartial.length === 0 ? `${partialText}${this.result.output}` : partialText;
+      addImages(this.result.intermediateSteps, responseMessage);
       await this.generateTextStream(this.result.output, opts.onProgress, { delay: 5 });
       return await this.handleResponseMessage(responseMessage, saveOptions, user);
     }

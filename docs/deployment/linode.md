@@ -30,8 +30,8 @@ if you want, you can use NGINX, Apache, or any other proxy manager.
 - create a folder
 
   ```
-  mkdir ngnix-proxy-manager
-  cd ngnix-proxy-manager
+  mkdir nginix-proxy-manager
+  cd nginix-proxy-manager
   ```
 
 - Create a file named `docker-compose.yml` by running `nano docker-compose.yml`.
