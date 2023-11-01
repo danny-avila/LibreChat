@@ -19,6 +19,24 @@ function SubscriptionContent() {
     }
   }, [getUserByIdQuery.isSuccess, getUserByIdQuery.data]);
 
+  async function handleSubscription() {
+    console.log('handleSubscription function called');
+    try {
+      const response = await fetch('/api/payments/create-payment', { method: 'POST' });
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+      const data = await response.json();
+      if (data && data.approval_url) {
+        window.location.href = data.approval_url;
+      } else {
+        console.error('Failed to get approval URL');
+      }
+    } catch (error) {
+      console.error(`An error occurred: ${error}`);
+    }
+  }
+
   return (
     <>
       <button
@@ -32,11 +50,17 @@ function SubscriptionContent() {
         <div className="relative flex items-center justify-center mr-2 text-xl dark:text-gray-200">
           {`${subscriptionUser?.name}'s plan`}
         </div>
-
       </div>
 
-      <div className="flex h-screen justify-center mt-20">
-        {/* Other content can go here */}
+      <div className="flex justify-center mt-20">
+        <button
+          // onClick={() => alert('Button Clicked!')}
+          onClick={handleSubscription}
+          className="px-6 py-3 bg-blue-500 text-white rounded hover:bg-blue-600"
+        >
+          Subscribe with PayPal
+        </button>
+
       </div>
     </>
   );

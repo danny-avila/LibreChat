@@ -39,14 +39,18 @@
   },
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "dependencies": {
+    "@paypal/checkout-server-sdk": "^1.0.3",
     "axios": "^1.4.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
     "express-session": "^1.17.3",
     "langchain": "^0.0.91",
     "mongodb": "5.2",
-    "react-ga": "^3.3.1",
+    "nodemailer": "^6.9.3",
     "passport": "^0.6.0",
     "passport-github2": "^0.1.12",
-    "nodemailer": "^6.9.3"
+    "paypal-rest-sdk": "^1.8.1",
+    "react-ga": "^3.3.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.32.1",
