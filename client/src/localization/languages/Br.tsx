@@ -225,6 +225,7 @@ export default {
   com_endpoint_config_key_google_service_account: 'Criar uma Conta de Serviço',
   com_endpoint_config_key_google_vertex_api_role:
     'Certifique-se de clicar em \'Criar e Continuar\' para atribuir pelo menos a função de \'Usuário Vertex AI\'. Por fim, crie uma chave JSON para importar aqui.',
+  com_nav_auto_scroll: 'Ir para última mensagem ao abrir',
   com_nav_plugin_store: 'Loja de plugins',
   com_nav_plugin_search: 'Buscar plugins',
   com_nav_plugin_auth_error:
@@ -258,5 +259,6 @@ export default {
   com_nav_search_placeholder: 'Procurar mensagens',
   com_nav_setting_general: 'Geral',
   com_nav_setting_data: 'Controle de Dados',
+  com_nav_lang_auto: 'Auto detectar',
   com_nav_lang_brazilian_portuguese: 'Português Brasileiro',
 };
