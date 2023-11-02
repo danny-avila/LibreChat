@@ -25,9 +25,9 @@ In this video we're going to install LibreChat on Windows 11 using Docker and Gi
   - Git: https://git-scm.com/download/win
 - Follow the steps in the video to install and run Docker desktop and Git.
 - Open a terminal in the root of the C drive and enter these commands:
-  - `git clone https://github.com/danny-avila/LibreC...`
+  - `git clone https://github.com/danny-avila/LibreChat`
   - `cd LibreChat`
-  - `cp .env.example .env`
+  - `copy .env.example .env`
   - `docker-compose up`
 - Visit http://localhost:3080/ to access LibreChat. Create an account and start chatting.
 
