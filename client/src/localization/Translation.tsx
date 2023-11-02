@@ -16,7 +16,7 @@ import TraditionalChinese from './languages/ZhTraditional';
 
 const languageMap: { [key: string]: unknown } = {
   'en-US': English,
-  'vi_VN': Vietnamese,
+  'vi-VN': Vietnamese,
   'zh-CN': Chinese,
   'de-DE': German,
   'es-ES': Spanish,
