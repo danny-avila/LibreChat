@@ -1,4 +1,5 @@
 import English from './languages/Eng';
+import Vietnamese from './languages/Vi';
 import Chinese from './languages/Zh';
 import German from './languages/De';
 import Italian from './languages/It';
@@ -15,6 +16,7 @@ import TraditionalChinese from './languages/ZhTraditional';
 
 const languageMap: { [key: string]: unknown } = {
   'en-US': English,
+  'vi_VN': Vietnamese,
   'zh-CN': Chinese,
   'de-DE': German,
   'es-ES': Spanish,
