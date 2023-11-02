@@ -46,21 +46,47 @@ function SubscriptionContent() {
         ← {localize(lang, 'com_ui_back')}
       </button>
 
-      <div className="absolute top-0 left-0 right-0 flex justify-center items-center py-4">
+      <div className="absolute top-24 left-0 right-0 flex justify-center items-center py-4">
         <div className="relative flex items-center justify-center mr-2 text-xl dark:text-gray-200">
-          {`${subscriptionUser?.name}'s plan`}
+          {`${subscriptionUser?.name}'s Plan Management`}
         </div>
       </div>
 
-      <div className="flex justify-center mt-20">
-        <button
-          // onClick={() => alert('Button Clicked!')}
-          onClick={handleSubscription}
-          className="px-6 py-3 bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          Subscribe with PayPal
-        </button>
+      <div className="mt-10 mx-auto border rounded" style={{ width: '900px', marginTop: '200px' }}>
+        {/* Row 1 */}
+        <div className="flex w-full">
+          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">Pre-paid Plan Options</div>
+          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">Payment Option</div>
+          <div className="w-1/3 p-2 border bg-green-500 flex items-center justify-center">Plan Due Date</div>
+        </div>
 
+        {/* Row 2 */}
+        <div className="flex w-full">
+          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">by Month: 30$/Month</div>
+          <div className="w-1/3 p-2 border border-r flex items-center justify-center bg-green-500 hover:bg-blue-600"> {/* Flex centering added */}
+            <button
+              onClick={handleSubscription}
+              className="w-full h-full text-white rounded hover:bg-blue-600"
+            >
+              PayPal
+            </button>
+          </div>
+          <div className="w-1/3 p-2 border bg-green-500 flex items-center justify-center">Plan Due Date</div>
+        </div>
+
+        {/* Row 3 */}
+        <div className="flex w-full">
+          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">by Quater: 28$/Month x 3 </div>
+          <div className="w-1/3 p-2 border border-r bg-green-500 hover:bg-blue-600 flex items-center justify-center">Box 1</div>
+          <div className="w-1/3 p-2 border bg-green-500 flex items-center justify-center">Plan Due Date</div>
+        </div>
+
+        {/* Row 4 */}
+        <div className="flex w-full">
+          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">by Year: 25$/Month x 12</div>
+          <div className="w-1/3 p-2 border border-r bg-green-500 hover:bg-blue-600 flex items-center justify-center">Box 2</div>
+          <div className="w-1/3 p-2 border bg-green-500 flex items-center justify-center">Plan Due Date</div>
+        </div>
       </div>
     </>
   );
