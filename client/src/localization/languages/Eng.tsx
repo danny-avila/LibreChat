@@ -275,5 +275,6 @@ export default {
   com_nav_lang_japanese: '日本語',
   com_nav_lang_swedish: 'Svenska',
   com_nav_lang_korean: '한국어',
+  com_nav_lang_vietnamese: 'Tiếng Việt',
   com_nav_lang_traditionalchinese: '繁體中文',
 };
