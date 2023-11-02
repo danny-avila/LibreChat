@@ -12,6 +12,7 @@ import Japanese from './languages/Jp';
 import Swedish from './languages/Sv';
 import Korean from './languages/Ko';
 import TraditionalChinese from './languages/ZhTraditional';
+import TraditionalVietnamese from './languages/ViTraditional';
 // === import additional language files here === //
 
 const languageMap: { [key: string]: unknown } = {
