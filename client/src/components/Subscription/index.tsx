@@ -62,29 +62,16 @@ function SubscriptionContent() {
 
         {/* Row 2 */}
         <div className="flex w-full">
-          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">by Month: 30$/Month</div>
-          <div className="w-1/3 p-2 border border-r flex items-center justify-center bg-green-500 hover:bg-blue-600"> {/* Flex centering added */}
+          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">by Month: 150 RMB/Month</div>
+          <div className="w-1/6 p-2 border border-r flex items-center justify-center bg-green-500"> {/* Flex centering added */}
             <button
               onClick={handleSubscription}
-              className="w-full h-full text-white rounded hover:bg-blue-600"
+              className="w-full h-full text-white rounded bg-blue-600"
             >
               PayPal
             </button>
           </div>
-          <div className="w-1/3 p-2 border bg-green-500 flex items-center justify-center">Plan Due Date</div>
-        </div>
-
-        {/* Row 3 */}
-        <div className="flex w-full">
-          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">by Quater: 28$/Month x 3 </div>
-          <div className="w-1/3 p-2 border border-r bg-green-500 hover:bg-blue-600 flex items-center justify-center">Box 1</div>
-          <div className="w-1/3 p-2 border bg-green-500 flex items-center justify-center">Plan Due Date</div>
-        </div>
-
-        {/* Row 4 */}
-        <div className="flex w-full">
-          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">by Year: 25$/Month x 12</div>
-          <div className="w-1/3 p-2 border border-r bg-green-500 hover:bg-blue-600 flex items-center justify-center">Box 2</div>
+          <div className="w-1/6 p-2 border bg-green-500 flex items-center justify-center">Coming Soon</div>
           <div className="w-1/3 p-2 border bg-green-500 flex items-center justify-center">Plan Due Date</div>
         </div>
       </div>
