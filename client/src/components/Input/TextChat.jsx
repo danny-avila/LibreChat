@@ -1,4 +1,4 @@
-import React, { useEffect, useContext, useRef, useState } from 'react';
+import React, { useEffect, useContext, useRef } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
 import SubmitButton from './SubmitButton';
@@ -25,7 +25,7 @@ export default function TextChat({ isSearchView = false }) {
 
   const isNotAppendable = latestMessage?.unfinished & !isSubmitting || latestMessage?.error;
   const { conversationId, jailbreak } = conversation || {};
-  const { isSpeechSupported, isListening, text: speechText } = useSpeechRecognition(ask);
+  const { isListening, text: speechText } = useSpeechRecognition(ask);
 
   useEffect(() => {
     if (isListening && speechText) {
@@ -35,7 +35,7 @@ export default function TextChat({ isSearchView = false }) {
       // setText('');
     }
   }, [speechText, isListening, setText]);
-  
+
   // auto focus to input, when enter a conversation.
   useEffect(() => {
     if (!conversationId) {
@@ -79,7 +79,6 @@ export default function TextChat({ isSearchView = false }) {
     if (e.key === 'Enter' && !e.shiftKey && !isComposing?.current) {
       submitMessage();
     }
-
   };
 
   const handleKeyUp = (e) => {

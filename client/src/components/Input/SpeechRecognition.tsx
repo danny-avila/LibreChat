@@ -10,7 +10,7 @@ const useSpeechRecognition = (ask) => {
     if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
       setIsSpeechSupported(true);
     } else {
-      console.log("Browser does not support SpeechRecognition");
+      console.log('Browser does not support SpeechRecognition');
       setIsSpeechSupported(false);
       return;
     }
@@ -19,7 +19,7 @@ const useSpeechRecognition = (ask) => {
     const recognition = new SpeechRecognition();
 
     recognition.onstart = () => {
-      console.log("Speech recognition started");
+      console.log('Speech recognition started');
     };
 
     recognition.interimResults = true;
@@ -86,7 +86,7 @@ const useSpeechRecognition = (ask) => {
 
   useEffect(() => {
     console.log('Setting up hotkeys');
-    hotkeys('shift+alt+l', function(event, handler){
+    hotkeys('shift+alt+l', function (event, handler) {
       event.preventDefault();
       if (isSpeechSupported) {
         console.log('hotkeys pressed');
@@ -96,7 +96,7 @@ const useSpeechRecognition = (ask) => {
     //Cleanup function (runs on unmount)
     return () => {
       hotkeys.unbind('shift+alt+l');
-    }
+    };
   }, []);
 
   return { isSpeechSupported, isListening, text, toggleListening };
