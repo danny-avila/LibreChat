@@ -1,4 +1,5 @@
 const { ChatOpenAI } = require('langchain/chat_models/openai');
+const { sanitizeModelName } = require('../../../utils');
 
 function createLLM({
   modelOptions,
@@ -13,9 +14,12 @@ function createLLM({
     apiKey: openAIApiKey,
   };
 
+  let azureOptions = {};
   if (azure) {
     credentials = {};
     configuration = {};
+    azureOptions = azure;
+    azureOptions.azureOpenAIApiDeploymentName = sanitizeModelName(modelOptions.modelName);
   }
 
   // console.debug('createLLM: configOptions');
@@ -27,7 +31,7 @@ function createLLM({
       verbose: true,
       credentials,
       configuration,
-      ...azure,
+      ...azureOptions,
       ...modelOptions,
       callbacks,
     },
