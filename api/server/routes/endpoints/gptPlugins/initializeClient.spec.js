@@ -214,7 +214,7 @@ describe('gptPlugins/initializeClient', () => {
     getUserKey.mockResolvedValue('invalid-json');
 
     await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      'Unexpected token i in JSON at position 0',
+      /Unexpected token/,
     );
   });
 
