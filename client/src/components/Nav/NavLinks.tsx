@@ -71,9 +71,13 @@ export default function NavLinks() {
                   />
                 </div>
               </div>
-              <div className="grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-white">
+              <div
+                className="grow overflow-hidden text-ellipsis whitespace-nowrap text-left font-bold text-white"
+                style={{ marginTop: '-4px', marginLeft: '2px' }}
+              >
                 {user?.name || localize('com_nav_user')}
               </div>
+
               <div style={{ marginBottom: '5px' }}>
                 <DotsIcon />
               </div>
