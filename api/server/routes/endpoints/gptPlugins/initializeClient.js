@@ -25,7 +25,9 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     ...endpointOption,
   };
 
-  const isUserProvided = PLUGINS_USE_AZURE
+  const useAzure = isEnabled(PLUGINS_USE_AZURE);
+
+  const isUserProvided = useAzure
     ? AZURE_API_KEY === 'user_provided'
     : OPENAI_API_KEY === 'user_provided';
 
@@ -37,13 +39,13 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     );
     userKey = await getUserKey({
       userId: req.user.id,
-      name: PLUGINS_USE_AZURE ? 'azureOpenAI' : 'openAI',
+      name: useAzure ? 'azureOpenAI' : 'openAI',
     });
   }
 
   let apiKey = isUserProvided ? userKey : OPENAI_API_KEY;
 
-  if (PLUGINS_USE_AZURE || (apiKey && apiKey.includes('azure') && !clientOptions.azure)) {
+  if (useAzure || (apiKey && apiKey.includes('azure') && !clientOptions.azure)) {
     clientOptions.azure = isUserProvided ? JSON.parse(userKey) : getAzureCredentials();
     clientOptions.azure.azureOpenAIApiDeploymentName = sanitizeModelName(
       clientOptions.modelOptions.model,
