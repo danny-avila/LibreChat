@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import TrashIcon from '../svg/TrashIcon';
 import CrossIcon from '../svg/CrossIcon';
 import { useRecoilValue } from 'recoil';
@@ -13,24 +12,25 @@ export default function DeleteButton({ conversationId, renaming, retainView, tit
   const currentConversation = useRecoilValue(store.conversation) || {};
   const { newConversation } = useConversation();
   const { refreshConversations } = useConversations();
-
-  const confirmDelete = () => {
-    deleteConvoMutation.mutate({ conversationId, source: 'button' });
-  };
-
   const deleteConvoMutation = useDeleteConversationMutation(conversationId);
 
-  useEffect(() => {
-    if (deleteConvoMutation.isSuccess) {
-      if ((currentConversation as { conversationId?: string }).conversationId == conversationId) {
-        newConversation();
-      }
+  const confirmDelete = () => {
+    deleteConvoMutation.mutate(
+      { conversationId, source: 'button' },
+      {
+        onSuccess: () => {
+          if (
+            (currentConversation as { conversationId?: string }).conversationId == conversationId
+          ) {
+            newConversation();
+          }
 
-      refreshConversations();
-      retainView();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deleteConvoMutation.isSuccess]);
+          refreshConversations();
+          retainView();
+        },
+      },
+    );
+  };
 
   return (
     <Dialog>
