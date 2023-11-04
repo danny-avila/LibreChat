@@ -47,7 +47,7 @@ const banViolation = async (req, res, errorMessage) => {
   res.clearCookie('refreshToken');
 
   const banLogs = getLogStores('ban');
-  const duration = banLogs.opts.ttl;
+  const duration = errorMessage.duration || banLogs.opts.ttl;
 
   if (duration <= 0) {
     return;
@@ -55,6 +55,7 @@ const banViolation = async (req, res, errorMessage) => {
 
   req.ip = removePorts(req);
   console.log(`[BAN] Banning user ${user_id} @ ${req.ip} for ${duration / 1000 / 60} minutes`);
+
   const expiresAt = Date.now() + duration;
   await banLogs.set(user_id, { type, violation_count, duration, expiresAt });
   await banLogs.set(req.ip, { type, user_id, violation_count, duration, expiresAt });
