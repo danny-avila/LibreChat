@@ -52,7 +52,7 @@ export default function NavLinks() {
             )}
             <Menu.Button
               className={cn(
-                'group-ui-open:bg-gray-800 flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors duration-200 hover:bg-gray-800',
+                'group-ui-open:bg-gray-800 rounded-sd flex w-full items-center gap-2.5 px-3 py-2 text-sm transition-colors duration-200 hover:bg-gray-800',
                 open ? 'bg-gray-800' : '',
               )}
               data-testid="nav-user"
