@@ -16,6 +16,7 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
   let models = _models.slice() ?? [];
   let apiKey = openAIApiKey;
   let basePath = 'https://api.openai.com/v1';
+  let reverseProxyUrl = OPENAI_REVERSE_PROXY;
   if (opts.azure) {
     return models;
     // const azure = getAzureCredentials();
@@ -23,11 +24,7 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
     //   .split('/deployments')[0]
     //   .concat(`/models?api-version=${azure.azureOpenAIApiVersion}`);
     // apiKey = azureOpenAIApiKey;
-  }
-
-  let reverseProxyUrl = OPENAI_REVERSE_PROXY;
-
-  if (OPENROUTER_API_KEY) {
+  } else if (OPENROUTER_API_KEY) {
     reverseProxyUrl = 'https://openrouter.ai/api/v1';
     apiKey = OPENROUTER_API_KEY;
   }
