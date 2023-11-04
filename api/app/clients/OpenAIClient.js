@@ -517,6 +517,9 @@ If your reverse proxy is compatible to OpenAI specs in every other way, it may s
       console.log('There was an issue generating title with LangChain, trying the old method...');
       this.options.debug && console.error(e.message, e);
       modelOptions.model = OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
+      if (this.azure) {
+        this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model);
+      }
       const instructionsPayload = [
         {
           role: 'system',
