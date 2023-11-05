@@ -41,9 +41,11 @@
   "dependencies": {
     "@paypal/checkout-server-sdk": "^1.0.3",
     "axios": "^1.4.0",
+    "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "express-session": "^1.17.3",
+    "helmet": "^7.0.0",
     "langchain": "^0.0.91",
     "mongodb": "5.2",
     "nodemailer": "^6.9.3",

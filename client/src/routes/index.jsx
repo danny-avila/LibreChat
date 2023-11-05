@@ -10,6 +10,9 @@ import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
 import Leaderboard from '~/components/ui/Leaderboard';
 import SharedConvo from '~/components/ui/SharedConvo';
 import Recommendations from '~/components/ui/Recommendations';
+import PaymentSuccess from '../components/Subscription/PaymentSuccess';
+import PaymentFailed from '../components/Subscription/PaymentFailed';
+import PaypalReturnHandler from '../components/Subscription/PaypalReturnHandler';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -71,9 +74,31 @@ export const router = createBrowserRouter([
             element: <Profile />
           },
           {
-            path: 'subscription/:userId?',
-            element: <Subscription />
-          }
+            path: 'subscription',
+            element: <Outlet />,
+            children: [
+              {
+                index: true,
+                element: <Navigate to="/" replace={true} />
+              },
+              {
+                path: ':userId?',
+                element: <Subscription />
+              },
+              {
+                path: 'paypal-return',
+                element: <PaypalReturnHandler />
+              },
+              {
+                path: ':userId/payment-success',
+                element: <PaymentSuccess />
+              },
+              {
+                path: ':userId/payment-failed',
+                element: <PaymentFailed />
+              }
+            ]
+          },
         ]
       }
     ]

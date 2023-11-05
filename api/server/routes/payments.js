@@ -1,8 +1,37 @@
 const express = require('express');
 const router = express.Router();
-const paypal = require('../../../config/paypal'); // adjust the path according to your structure
+const paypal = require('../../../config/paypal');
+const Payment = require('../../models/schema/paymentSchema.js');
+// const cors = require('cors');
+// const helmet = require('helmet');
+
+// // Apply CORS to this router only
+// router.use(cors({
+//   origin: 'http://localhost:3090',
+//   credentials: true,
+// }));
+
+// // CSP Middleware for PayPal routes
+// const paypalCsp = helmet.contentSecurityPolicy({
+//   directives: {
+//     ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+//     'script-src': [
+//       "'self'",
+//       "https://*.paypal.com",
+//       "'unsafe-inline'", // Add this line to allow inline scripts if needed
+//       "'unsafe-eval'" // Be cautious with 'unsafe-eval' which can be a security risk
+//     ],
+//     // Add other directives as needed
+//   },
+// });
+
+// // Apply the CSP middleware only to the PayPal-related routes
+// router.use('/create-payment', paypalCsp);
+// router.use('/success', paypalCsp);
+// router.use('/cancel', paypalCsp);
 
 router.post('/create-payment', async (req, res) => {
+  console.log('Attempting to create a payment...'); // Debug log
   try {
     const payment = {
       intent: 'sale',
@@ -10,88 +39,87 @@ router.post('/create-payment', async (req, res) => {
         payment_method: 'paypal'
       },
       redirect_urls: {
-        return_url: 'http://localhost:3090/success',
-        cancel_url: 'http://localhost:3090/cancel'
+        // Make sure to change these URLs to your actual success and cancel endpoints
+        return_url: 'http://localhost:3090/subscription/paypal-return',
+        cancel_url: 'http://localhost:3090/subscription/payment-cancelled' // need to be updated about payment-cancelled
       },
       transactions: [{
         description: 'LibreChat Subscription',
         amount: {
           currency: 'USD',
-          total: '10.00' // You can change this to the desired amount.
+          total: '10.00' // This should match the amount in the success endpoint.
         }
       }]
     };
 
     paypal.payment.create(payment, (error, payment) => {
       if (error) {
-        console.warn(error);
+        console.warn('Payment creation encountered an error:', error); // Debug log
         res.status(500).json({ error: error.toString() });
       } else {
-        for(let i = 0; i < payment.links.length; i++) {
-          if(payment.links[i].rel === 'approval_url') {
-            res.json({ approval_url: payment.links[i].href });
-          }
+        let approvalUrl = payment.links.find(link => link.rel === 'approval_url');
+        if (approvalUrl) {
+          console.log('Payment created successfully, approval URL:', approvalUrl.href); // Debug log
+          res.json({ approval_url: approvalUrl.href });
+        } else {
+          console.warn('No approval URL found after payment creation'); // Debug log
+          res.status(500).json({ error: 'No approval URL found' });
         }
       }
     });
 
   } catch (error) {
-    res.status(500).send({ error: 'An error occurred while creating payment.' });
+    console.error('An exception occurred in create-payment:', error); // Debug log
+    res.status(500).json({ error: 'An error occurred while creating payment.' });
   }
 });
 
-router.get('/success', (req, res) => {
-  const payerId = req.query.PayerID;
-  const paymentId = req.query.paymentId;
+router.get('/success', async (req, res) => {
+  console.log('Payment success route called with query:', req.query); // Debug log
+  const { PayerID, paymentId } = req.query;
+  const userID = req.user.id;
 
   const execute_payment = {
-    payer_id: payerId,
+    payer_id: PayerID,
     transactions: [{
       amount: {
         currency: 'USD',
-        total: '10.00' // must match the amount set previously
+        total: '10.00' // This should match the amount in the payment creation.
       }
     }]
   };
 
-  paypal.payment.execute(paymentId, execute_payment, (error, payment) => {
-    if (error) {
-      console.error(error);
-      res.sendStatus(500);
-    } else {
-      res.json({ status: 'success', payment });
-    }
-  });
+  try {
+    let executedPayment = await paypal.payment.execute(paymentId, execute_payment);
+    console.log('Payment executed successfully:', executedPayment); // Debug log
+
+    // Create payment record in MongoDB
+    const paymentRecord = new Payment({
+      // Make sure to handle the user ID appropriately depending on your authentication mechanism
+      userId: userID, // This is system's user ID
+      payerId: PayerID, // This is PayPal's payer ID
+      amount: executedPayment.transactions[0].amount.total,
+      currency: executedPayment.transactions[0].amount.currency,
+      paymentId: paymentId,
+      paymentStatus: executedPayment.state // or any other field that indicates the payment status
+    });
+
+    await paymentRecord.save();
+    console.log('Payment record saved to MongoDB:', paymentRecord); // Debug log
+
+    // Adjust to a success handler or a success page
+    res.redirect(`http://localhost:3090/subscription/payment-success?paymentId=${paymentId}`);
+  } catch (error) {
+    console.error('Payment execution failed:', error);
+    // If something goes wrong, redirect or inform the frontend accordingly
+    res.redirect(`http://localhost:3090/subscription/payment-failed?paymentId=${paymentId}&error=${error.message}`);
+  }
 });
 
 router.get('/cancel', (req, res) => {
-  res.json({ status: 'payment canceled' });
-});
-
-router.get('/success', (req, res) => {
-  const payerId = req.query.PayerID;
-  const paymentId = req.query.paymentId;
-
-  const execute_payment = {
-    payer_id: payerId,
-    transactions: [{
-      amount: {
-        currency: 'USD',
-        total: '10.00' // must match the amount set previously
-      }
-    }]
-  };
-
-  paypal.payment.execute(paymentId, execute_payment, (error) => {
-    if (error) {
-      console.error(error);
-      // Possibly redirect to an error page on the frontend
-      res.redirect('http://localhost:3090/error');
-    } else {
-      // Redirect to a success page on the frontend
-      res.redirect('http://localhost:3090/success');
-    }
-  });
+  console.log('Payment canceled by user.'); // Debug log
+  // This should redirect to your cancel page or handle the cancellation process
+  res.redirect('http://localhost:3090/subscription/payment-cancelled');
 });
 
 module.exports = router;
