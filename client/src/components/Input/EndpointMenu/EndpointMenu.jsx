@@ -100,7 +100,7 @@ export default function NewConversationMenu() {
     if (!newEndpoint) {
       return;
     } else {
-      newConversation({}, { endpoint: newEndpoint });
+      newConversation(null, { endpoint: newEndpoint });
     }
   };
 
