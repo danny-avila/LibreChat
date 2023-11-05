@@ -259,6 +259,5 @@ export default {
   com_nav_search_placeholder: 'Procurar mensagens',
   com_nav_setting_general: 'Geral',
   com_nav_setting_data: 'Controle de Dados',
-  com_nav_lang_auto: 'Auto detectar',
   com_nav_lang_brazilian_portuguese: 'Português Brasileiro',
 };

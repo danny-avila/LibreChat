@@ -25,18 +25,16 @@ export const ThemeSelector = ({
 }) => {
   const localize = useLocalize();
 
+  const themeOptions = [
+    { value: 'system', display: localize('com_nav_theme_system') },
+    { value: 'dark', display: localize('com_nav_theme_dark') },
+    { value: 'light', display: localize('com_nav_theme_light') },
+  ];
+
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_nav_theme')}</div>
-      <select
-        className="w-24 rounded border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20 dark:bg-gray-900"
-        onChange={(e) => onChange(e.target.value)}
-        value={theme}
-      >
-        <option value="system">{localize('com_nav_theme_system')}</option>
-        <option value="dark">{localize('com_nav_theme_dark')}</option>
-        <option value="light">{localize('com_nav_theme_light')}</option>
-      </select>
+      <div style={{ color: '#EBEBF1' }}>{localize('com_nav_theme')}</div>
+      <Dropdown value={theme} onChange={onChange} options={themeOptions} width={150} />
     </div>
   );
 };
@@ -98,8 +96,8 @@ export const LangSelector = ({
 
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_nav_language')}</div>
-      <Dropdown value={langcode} onChange={onChange} options={languageOptions} className="w-40" />
+      <div style={{ color: '#EBEBF1' }}>{localize('com_nav_language')}</div>
+      <Dropdown value={langcode} onChange={onChange} options={languageOptions} />
     </div>
   );
 };
