@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { Dialog } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { ClearChatsButton } from './SettingsTabs/';
@@ -13,23 +13,23 @@ const ClearConvos = ({ open, onOpenChange }) => {
   const localize = useLocalize();
 
   // Clear all conversations
-  const clearConvos = useCallback(() => {
+  const clearConvos = () => {
     if (confirmClear) {
       console.log('Clearing conversations...');
-      clearConvosMutation.mutate({});
+      clearConvosMutation.mutate(
+        {},
+        {
+          onSuccess: () => {
+            newConversation();
+            refreshConversations();
+          },
+        },
+      );
       setConfirmClear(false);
     } else {
       setConfirmClear(true);
     }
-  }, [confirmClear, clearConvosMutation]);
-
-  // Refresh conversations after clearing
-  useEffect(() => {
-    if (clearConvosMutation.isSuccess) {
-      refreshConversations();
-      newConversation();
-    }
-  }, [clearConvosMutation.isSuccess, newConversation, refreshConversations]);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

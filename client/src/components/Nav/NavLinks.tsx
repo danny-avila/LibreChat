@@ -5,7 +5,6 @@ import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider'
 import type { TConversation } from 'librechat-data-provider';
 import { Menu, Transition } from '@headlessui/react';
 import { ExportModel } from './ExportConversation';
-import ClearConvos from './ClearConvos';
 import Settings from './Settings';
 import NavLink from './NavLink';
 import Logout from './Logout';
@@ -23,7 +22,6 @@ export default function NavLinks() {
     enabled: !!isAuthenticated && startupConfig?.checkBalance,
   });
   const [showExports, setShowExports] = useState(false);
-  const [showClearConvos, setShowClearConvos] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const localize = useLocalize();
 
@@ -125,7 +123,6 @@ export default function NavLinks() {
         )}
       </Menu>
       {showExports && <ExportModel open={showExports} onOpenChange={setShowExports} />}
-      {showClearConvos && <ClearConvos open={showClearConvos} onOpenChange={setShowClearConvos} />}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
     </>
   );
