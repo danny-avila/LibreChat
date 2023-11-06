@@ -33,7 +33,7 @@ export const ThemeSelector = ({
 
   return (
     <div className="flex items-center justify-between">
-      <div style={{ color: '#EBEBF1' }}>{localize('com_nav_theme')}</div>
+      <div> {localize('com_nav_theme')} </div>
       <Dropdown value={theme} onChange={onChange} options={themeOptions} width={150} />
     </div>
   );
@@ -96,7 +96,7 @@ export const LangSelector = ({
 
   return (
     <div className="flex items-center justify-between">
-      <div style={{ color: '#EBEBF1' }}>{localize('com_nav_language')}</div>
+      <div> {localize('com_nav_language')} </div>
       <Dropdown value={langcode} onChange={onChange} options={languageOptions} />
     </div>
   );
