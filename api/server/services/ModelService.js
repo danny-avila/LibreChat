@@ -38,7 +38,7 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
     return cachedModels;
   }
 
-  if (basePath.includes('v1') || opts.azure) {
+  if (basePath?.includes('v1') || opts.azure) {
     try {
       const res = await axios.get(`${basePath}${opts.azure ? '' : '/models'}`, {
         headers: {
