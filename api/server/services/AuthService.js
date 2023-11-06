@@ -91,7 +91,7 @@ const registerUser = async (user) => {
     const salt = bcrypt.genSaltSync(10);
     const hash = bcrypt.hashSync(newUser.password, salt);
     newUser.password = hash;
-    newUser.save();
+    await newUser.save();
 
     return { status: 200, user: newUser };
   } catch (err) {
@@ -117,7 +117,7 @@ const requestPasswordReset = async (email) => {
   }
 
   let resetToken = crypto.randomBytes(32).toString('hex');
-  const hash = await bcrypt.hashSync(resetToken, 10);
+  const hash = bcrypt.hashSync(resetToken, 10);
 
   await new Token({
     userId: user._id,
