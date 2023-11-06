@@ -28,11 +28,20 @@ const Dropdown: FC<DropdownProps> = ({
   const { theme } = useContext(ThemeContext);
 
   const themeStyles = {
-    light: 'bg-white text-gray-700 hover:bg-gray-200 border-gray-300', // Light theme styles
+    light: 'bg-white text-gray-700 hover:bg-gray-200 border-gray-300',
     dark: 'bg-[#202123] text-white hover:bg-[#323236] border-gray-600',
   };
 
-  const currentThemeStyle = themeStyles[theme] || themeStyles.light;
+  const isSystemDark =
+    window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const currentThemeStyle =
+    theme === 'system'
+      ? isSystemDark
+        ? themeStyles.dark
+        : themeStyles.light
+      : themeStyles[theme] || themeStyles.light;
+
+  const borderColor = theme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
 
   return (
     <div className={cn('relative', className)}>
@@ -77,7 +86,7 @@ const Dropdown: FC<DropdownProps> = ({
               )}
               style={{
                 borderWidth: '0.5px',
-                borderColor: theme === 'dark' ? '#343541' : '#F7F7F8',
+                borderColor: borderColor,
                 opacity: open ? 1 : 0,
                 width: width ? `${width}px` : 'auto',
               }}
