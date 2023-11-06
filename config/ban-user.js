@@ -1,7 +1,7 @@
-const connectDb = require('@librechat/backend/lib/db/connectDb');
+const connectDb = require('../api/lib/db/connectDb');
 const { askQuestion, silentExit } = require('./helpers');
 const banViolation = require('../api/cache/banViolation');
-const User = require('@librechat/backend/models/User');
+const User = require('../api/models/User');
 
 (async () => {
   /**
@@ -97,3 +97,16 @@ const User = require('@librechat/backend/models/User');
 
   silentExit(0);
 })();
+
+process.on('uncaughtException', (err) => {
+  if (!err.message.includes('fetch failed')) {
+    console.error('There was an uncaught error:');
+    console.error(err);
+  }
+
+  if (err.message.includes('fetch failed')) {
+    return;
+  } else {
+    process.exit(1);
+  }
+});
