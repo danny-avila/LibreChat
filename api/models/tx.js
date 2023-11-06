@@ -10,6 +10,8 @@ const tokenValues = {
   '32k': { prompt: 60, completion: 120 },
   '4k': { prompt: 1.5, completion: 2 },
   '16k': { prompt: 3, completion: 4 },
+  'gpt-3.5-turbo-1106': { prompt: 1, completion: 2 },
+  'gpt-4-1106': { prompt: 10, completion: 30 },
 };
 
 /**
@@ -26,8 +28,12 @@ const getValueKey = (model) => {
 
   if (modelName.includes('gpt-3.5-turbo-16k')) {
     return '16k';
+  } else if (modelName.includes('gpt-3.5-turbo-1106')) {
+    return 'gpt-3.5-turbo-1106';
   } else if (modelName.includes('gpt-3.5')) {
     return '4k';
+  } else if (modelName.includes('gpt-4-1106')) {
+    return 'gpt-4-1106';
   } else if (modelName.includes('gpt-4-32k')) {
     return '32k';
   } else if (modelName.includes('gpt-4')) {

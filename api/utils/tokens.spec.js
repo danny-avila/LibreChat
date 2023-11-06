@@ -36,6 +36,26 @@ describe('getModelMaxTokens', () => {
   test('should return undefined for number input', () => {
     expect(getModelMaxTokens(123)).toBeUndefined();
   });
+
+  // 11/06 Update
+  test('should return correct tokens for gpt-3.5-turbo-1106 exact match', () => {
+    expect(getModelMaxTokens('gpt-3.5-turbo-1106')).toBe(15999);
+  });
+
+  test('should return correct tokens for gpt-4-1106 exact match', () => {
+    expect(getModelMaxTokens('gpt-4-1106')).toBe(127999);
+  });
+
+  test('should return correct tokens for gpt-3.5-turbo-1106 partial match', () => {
+    expect(getModelMaxTokens('something-/gpt-3.5-turbo-1106')).toBe(15999);
+    expect(getModelMaxTokens('gpt-3.5-turbo-1106/something-/')).toBe(15999);
+  });
+
+  test('should return correct tokens for gpt-4-1106 partial match', () => {
+    expect(getModelMaxTokens('gpt-4-1106/something')).toBe(127999);
+    expect(getModelMaxTokens('gpt-4-1106-preview')).toBe(127999);
+    expect(getModelMaxTokens('gpt-4-1106-vision-preview')).toBe(127999);
+  });
 });
 
 describe('matchModelName', () => {
@@ -56,5 +76,25 @@ describe('matchModelName', () => {
     expect(matchModelName(null)).toBeUndefined();
     expect(matchModelName(123)).toBeUndefined();
     expect(matchModelName({})).toBeUndefined();
+  });
+
+  // 11/06 Update
+  it('should return the exact model name for gpt-3.5-turbo-1106 if it exists in maxTokensMap', () => {
+    expect(matchModelName('gpt-3.5-turbo-1106')).toBe('gpt-3.5-turbo-1106');
+  });
+
+  it('should return the exact model name for gpt-4-1106 if it exists in maxTokensMap', () => {
+    expect(matchModelName('gpt-4-1106')).toBe('gpt-4-1106');
+  });
+
+  it('should return the closest matching key for gpt-3.5-turbo-1106 partial matches', () => {
+    expect(matchModelName('gpt-3.5-turbo-1106/something')).toBe('gpt-3.5-turbo-1106');
+    expect(matchModelName('something/gpt-3.5-turbo-1106')).toBe('gpt-3.5-turbo-1106');
+  });
+
+  it('should return the closest matching key for gpt-4-1106 partial matches', () => {
+    expect(matchModelName('something/gpt-4-1106')).toBe('gpt-4-1106');
+    expect(matchModelName('gpt-4-1106-preview')).toBe('gpt-4-1106');
+    expect(matchModelName('gpt-4-1106-vision-preview')).toBe('gpt-4-1106');
   });
 });
