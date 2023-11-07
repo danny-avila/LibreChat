@@ -58,7 +58,7 @@ Guidelines:
   replaceUnwantedChars(inputString) {
     return inputString
       .replace(/\r\n|\r|\n/g, ' ')
-      .replace('"', '')
+      .replace(/"/g, '')
       .trim();
   }
 
