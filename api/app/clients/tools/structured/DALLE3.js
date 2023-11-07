@@ -1,12 +1,12 @@
 // From https://platform.openai.com/docs/guides/images/usage?context=node
 // To use this tool, you must pass in a configured OpenAIApi object.
 const fs = require('fs');
+const path = require('path');
 const { z } = require('zod');
 const OpenAI = require('openai');
 const { Tool } = require('langchain/tools');
 const saveImageFromUrl = require('../saveImageFromUrl');
-const path = require('path');
-
+const { DALLE3_SYSTEM_PROMPT } = process.env;
 class DALLE3 extends Tool {
   constructor(fields = {}) {
     super();
@@ -17,11 +17,13 @@ class DALLE3 extends Tool {
     this.name = 'dalle';
     this.description = `Use DALLE to create images from text descriptions.
     - It requires prompts to be in English, detailed, and to specify image type and human features for diversity.
-    - Only one image is produced per call, without repeating or listing descriptions outside the "prompts" field.
+    - Create only one image, without repeating or listing descriptions outside the "prompts" field.
     - Maintains the original intent of the description, with parameters for image style, quality, and size to tailor the output.`;
-    this.description_for_model = `// Whenever a description of an image is given, generate prompts (following these rules), and use dalle to create the image. If the user does not ask for a specific number of images, default to creating 2 prompts to send to dalle that are written to be as diverse as possible. All prompts sent to dalle must abide by the following policies:
+    this.description_for_model =
+      DALLE3_SYSTEM_PROMPT ??
+      `// Whenever a description of an image is given, generate prompts (following these rules), and use dalle to create the image. If the user does not ask for a specific number of images, default to creating 2 prompts to send to dalle that are written to be as diverse as possible. All prompts sent to dalle must abide by the following policies:
     // 1. Prompts must be in English. Translate to English if needed.
-    // 2. Only one image can be created per function call.
+    // 2. One image per function call. Create only 1 image per request unless explicitly told to generate more than 1 image.
     // 3. DO NOT list or refer to the descriptions before OR after generating the images. They should ONLY ever be written out ONCE, in the \`"prompts"\` field of the request. You do not need to ask for permission to generate, just do it!
     // 4. Always mention the image type (photo, oil painting, watercolor painting, illustration, cartoon, drawing, vector, render, etc.) at the beginning of the caption. Unless the captions suggests otherwise, make one of the images a photo.
     // 5. Diversify depictions of ALL images with people to always include always DESCENT and GENDER for EACH person using direct terms. Adjust only human descriptions.
@@ -65,7 +67,7 @@ class DALLE3 extends Tool {
   replaceUnwantedChars(inputString) {
     return inputString
       .replace(/\r\n|\r|\n/g, ' ')
-      .replace('"', '')
+      .replace(/"/g, '')
       .trim();
   }
 
