@@ -15,10 +15,10 @@ class DALLE3 extends Tool {
     let config = { apiKey };
     this.openai = new OpenAI(config);
     this.name = 'dalle';
-    this.description = `Use DALLE to create images from text descriptions:
-.
-    - Ensure prompts are detailed and specify the image type and size.
-    - Describe human features explicitly to promote diversity without bias.`;
+    this.description = `Use DALLE to create images from text descriptions.
+    - It requires prompts to be in English, detailed, and to specify image type and human features for diversity.
+    - Only one image is produced per call, without repeating or listing descriptions outside the "prompts" field.
+    - Maintains the original intent of the description, with parameters for image style, quality, and size to tailor the output.`;
     this.description_for_model = `// Whenever a description of an image is given, generate prompts (following these rules), and use dalle to create the image. If the user does not ask for a specific number of images, default to creating 2 prompts to send to dalle that are written to be as diverse as possible. All prompts sent to dalle must abide by the following policies:
     // 1. Prompts must be in English. Translate to English if needed.
     // 2. Only one image can be created per function call.
@@ -29,8 +29,6 @@ class DALLE3 extends Tool {
     // - Your choices should be grounded in reality. For example, all of a given OCCUPATION should not be the same gender or race. Additionally, focus on creating diverse, inclusive, and exploratory scenes via the properties you choose during rewrites.  Make choices that may be insightful or unique sometimes.
     // - Use "various" or "diverse" ONLY IF the description refers to groups of more than 3 people. Do not change the number of people requested in the original description.
     // - Don't alter memes, fictional character origins, or unseen people. Maintain the original prompt's intent and prioritize quality.
-    // - Do not create any imagery that would be offensive.
-    // - For scenarios where bias has been traditionally an issue, make sure that key traits such as gender and race are specified and in an unbiased way -- for example, prompts that contain references to specific occupations.
     // The prompt must intricately describe every part of the image in concrete, objective detail. THINK about what the end goal of the description is, and extrapolate that to what would make satisfying images.
     // All descriptions sent to dalle should be a paragraph of text that is extremely descriptive and detailed. Each should be more than 3 sentences long.`;
     this.schema = z.object({
@@ -39,6 +37,11 @@ class DALLE3 extends Tool {
         .max(4000)
         .describe(
           'A text description of the desired image, following the rules, up to 4000 characters.',
+        ),
+      style: z
+        .enum(['vivid', 'natural'])
+        .describe(
+          'Must be one of `vivid` or `natural`. `vivid` generates hyper-real and dramatic images, `natural` produces more natural, less hyper-real looking images',
         ),
       quality: z
         .enum(['hd', 'standard'])
@@ -75,13 +78,14 @@ class DALLE3 extends Tool {
   }
 
   async _call(data) {
-    const { prompt, quality = 'standard', size = '1024x1024' } = data;
+    const { prompt, quality = 'standard', size = '1024x1024', style = 'vivid' } = data;
     if (!prompt) {
       throw new Error('Missing required field: prompt');
     }
     const resp = await this.openai.images.generate({
       model: 'dall-e-3',
       quality,
+      style,
       size,
       prompt: this.replaceUnwantedChars(prompt),
       n: 1,
