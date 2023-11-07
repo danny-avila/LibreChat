@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { StopGeneratingIcon } from '~/components';
 import { Settings } from 'lucide-react';
 import { SetKeyDialog } from './SetKeyDialog';
-import { useUserKey, useLocalize } from '~/hooks';
+import { useUserKey, useLocalize, useMediaQuery } from '~/hooks';
 
 export default function SubmitButton({
   conversation,
@@ -18,6 +18,16 @@ export default function SubmitButton({
   const [isKeyProvided, setKeyProvided] = useState(userProvidesKey ? checkExpiry() : true);
   const isKeyActive = checkExpiry();
   const localize = useLocalize();
+  const dots = ['·', '··', '···'];
+  const [dotIndex, setDotIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDotIndex((prevDotIndex) => (prevDotIndex + 1) % dots.length);
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [dots.length]);
 
   useEffect(() => {
     if (userProvidesKey) {
@@ -39,7 +49,9 @@ export default function SubmitButton({
     setDialogOpen(true);
   }, []);
 
-  if (isSubmitting) {
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+
+  if (isSubmitting && isSmallScreen) {
     return (
       <button
         onClick={handleStopGenerating}
@@ -50,6 +62,17 @@ export default function SubmitButton({
           <StopGeneratingIcon />
         </div>
       </button>
+    );
+  } else if (isSubmitting) {
+    return (
+      <div className="relative flex h-full">
+        <div
+          className="absolute text-2xl"
+          style={{ top: '50%', transform: 'translateY(-20%) translateX(-33px)' }}
+        >
+          {dots[dotIndex]}
+        </div>
+      </div>
     );
   } else if (!isKeyProvided) {
     return (
@@ -87,7 +110,7 @@ export default function SubmitButton({
             viewBox="0 0 24 24"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="mr-1 h-4 w-4 "
+            className="mr-1 h-4 w-4"
             height="1em"
             width="1em"
             xmlns="http://www.w3.org/2000/svg"
@@ -99,8 +122,4 @@ export default function SubmitButton({
       </button>
     );
   }
-}
-
-{
-  /* <div class="text-2xl"><span class="">·</span><span class="">·</span><span class="invisible">·</span></div> */
 }
