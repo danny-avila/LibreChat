@@ -1,8 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import type {
   UseQueryOptions,
   UseMutationResult,
   QueryObserverResult,
+  UseInfiniteQueryOptions,
 } from '@tanstack/react-query';
 import * as t from './types';
 import * as dataService from './data-service';
@@ -11,18 +12,42 @@ import { QueryKeys } from './query-keys';
 /**
  * Hook for listing all assistants, with optional parameters provided for pagination and sorting
  */
-export const useListAssistantsQuery = (
+export const useListAssistantsQuery = <TData = t.AssistantListResponse>(
   params?: t.AssistantListParams,
-  config?: UseQueryOptions<t.Assistant[]>,
-): QueryObserverResult<t.Assistant[]> => {
-  return useQuery<t.Assistant[]>(
+  config?: UseQueryOptions<t.AssistantListResponse, unknown, TData>,
+): QueryObserverResult<TData> => {
+  return useQuery<t.AssistantListResponse, unknown, TData>(
     [QueryKeys.assistants, params],
     () => dataService.listAssistants(params),
     {
+      // Example selector to sort them by created_at
+      // select: (res) => {
+      //   return res.data.sort((a, b) => a.created_at - b.created_at);
+      // },
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
       retry: false,
+      ...config,
+    },
+  );
+};
+
+export const useListAssistantsInfiniteQuery = (
+  params?: t.AssistantListParams,
+  config?: UseInfiniteQueryOptions<t.AssistantListResponse, Error>,
+) => {
+  return useInfiniteQuery<t.AssistantListResponse, Error>(
+    ['assistantsList', params],
+    ({ pageParam = '' }) => dataService.listAssistants({ ...params, after: pageParam }),
+    {
+      getNextPageParam: (lastPage) => {
+        // lastPage is of type AssistantListResponse, you can use the has_more and last_id from it directly
+        if (lastPage.has_more) {
+          return lastPage.last_id;
+        }
+        return undefined;
+      },
       ...config,
     },
   );

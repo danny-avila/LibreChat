@@ -175,6 +175,8 @@ export const deleteAssistant = (assistantId: string): Promise<void> => {
   return request.delete(endpoints.assistants(assistantId));
 };
 
-export const listAssistants = (params?: t.AssistantListParams): Promise<Array<t.Assistant>> => {
+export const listAssistants = (
+  params?: t.AssistantListParams,
+): Promise<t.AssistantListResponse> => {
   return request.get(endpoints.assistants(), { params });
 };

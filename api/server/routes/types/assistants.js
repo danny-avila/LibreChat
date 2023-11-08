@@ -1,4 +1,22 @@
 /**
+ * Enum for the possible tools that can be enabled on an assistant.
+ * @readonly
+ * @enum {string}
+ */
+// eslint-disable-next-line no-unused-vars
+const Tools = {
+  code_interpreter: 'code_interpreter',
+  retrieval: 'retrieval',
+  function: 'function',
+};
+
+/**
+ * Represents a tool with its type.
+ * @typedef {Object} Tool
+ * @property {Tools} toolName - The name of the tool and its corresponding type from the Tools enum.
+ */
+
+/**
  * @typedef {Object} Assistant
  * @property {string} id - The identifier, which can be referenced in API endpoints.
  * @property {number} created_at - The Unix timestamp (in seconds) for when the assistant was created.
@@ -9,7 +27,7 @@
  * @property {string} model - ID of the model to use.
  * @property {string|null} name - The name of the assistant. The maximum length is 256 characters.
  * @property {string} object - The object type, which is always 'assistant'.
- * @property {Array<Object>} tools - A list of tools enabled on the assistant.
+ * @property {Tool[]} tools - A list of tools enabled on the assistant.
  */
 
 /**
@@ -20,7 +38,7 @@
  * @property {string|null} [instructions] - The system instructions that the assistant uses.
  * @property {Object|null} [metadata] - Set of 16 key-value pairs that can be attached to an object.
  * @property {string|null} [name] - The name of the assistant.
- * @property {Array<Object>} [tools] - A list of tools enabled on the assistant.
+ * @property {Tool[]} tools - A list of tools enabled on the assistant.
  */
 
 /**

@@ -2,8 +2,14 @@ export type Metadata = {
   [key: string]: unknown;
 };
 
+export enum Tools {
+  code_interpreter = 'code_interpreter',
+  retrieval = 'retrieval',
+  function = 'function',
+}
+
 export type Tool = {
-  [key: string]: unknown;
+  [type: string]: Tools;
 };
 
 export type Assistant = {
@@ -40,6 +46,16 @@ export type AssistantUpdateParams = {
 };
 
 export type AssistantListParams = {
+  limit?: number;
   before?: string | null;
+  after?: string | null;
   order?: 'asc' | 'desc';
+};
+
+export type AssistantListResponse = {
+  object: string;
+  data: Assistant[];
+  first_id: string;
+  last_id: string;
+  has_more: boolean;
 };

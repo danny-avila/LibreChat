@@ -1,34 +1,45 @@
 import React from 'react';
-import { useForm, Controller } from 'react-hook-form';
-import { Switch } from '~/components/ui/Switch';
+import { Controller } from 'react-hook-form';
+import type { Tool } from 'librechat-data-provider';
+import type { CreationForm, Actions } from '~/common';
+import { useCreateAssistantMutation, Tools } from 'librechat-data-provider';
 import { Separator } from '~/components/ui/Separator';
-
-type Actions = {
-  functions: boolean;
-  codeInterpreter: boolean;
-  retrieval: boolean;
-};
-
-type CreationForm = {
-  name: string;
-  instructions: string;
-  model: string;
-  tools: string[];
-} & Actions;
+import { useAssistantsContext } from '~/Providers';
+import { Switch } from '~/components/ui/Switch';
+import CreationHeader from './CreationHeader';
 
 export default function CreationPanel() {
-  // const { control, handleSubmit, watch, register } = useForm<CreationForm>({
-  const { control, handleSubmit } = useForm<CreationForm>({
-    defaultValues: {
-      name: 'Assistant GPT',
-      instructions: 'The coolest assistant, stock trader!',
-      model: 'gpt-3.5-turbo-1106',
-      tools: ['get_stock_price', 'code_interpreter', 'retrieval'], // Assuming these are the tools available
-    },
-  });
+  const create = useCreateAssistantMutation();
+  const { control, handleSubmit, reset } = useAssistantsContext();
 
   const onSubmit = (data: CreationForm) => {
+    const tools: Tool[] = [];
     console.log(data);
+    if (data.function) {
+      tools.push({ type: Tools.function });
+    }
+    if (data.code_interpreter) {
+      tools.push({ type: Tools.code_interpreter });
+    }
+    if (data.retrieval) {
+      tools.push({ type: Tools.retrieval });
+    }
+
+    const {
+      name,
+      description,
+      instructions,
+      model,
+      // file_ids,
+    } = data;
+
+    create.mutate({
+      name,
+      description,
+      instructions,
+      model,
+      tools,
+    });
   };
 
   // Render function for the Switch component
@@ -50,6 +61,7 @@ export default function CreationPanel() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="container mx-auto px-4 py-2">
+      <CreationHeader reset={reset} />
       <div className="mb-4 rounded bg-white px-8 pb-8 pt-6 shadow-md">
         {/* Name */}
         <div className="mb-4">
@@ -62,14 +74,43 @@ export default function CreationPanel() {
             render={({ field }) => (
               <input
                 {...field}
-                className="focus:shadow-outline w-full appearance-none rounded border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:outline-none"
+                value={field.value ?? ''}
+                {...{ max: 256 }}
+                className="focus:shadow-outline w-full appearance-none rounded border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0"
                 id="name"
                 type="text"
-                placeholder="Assistant GPT"
+                placeholder="Optional: The name of the assistant"
               />
             )}
           />
-          <p className="text-xs italic text-gray-600">asst_qXrYBwdKPSTyABTRr1c3vSNF</p>
+          <Controller
+            name="id"
+            control={control}
+            render={({ field }) => (
+              <p className="h-3 text-xs italic text-gray-600">{field.value ?? ''}</p>
+            )}
+          />
+        </div>
+        {/* Description */}
+        <div className="mb-4">
+          <label className="mb-2 block text-xs font-bold text-gray-700" htmlFor="description">
+            Description
+          </label>
+          <Controller
+            name="description"
+            control={control}
+            render={({ field }) => (
+              <input
+                {...field}
+                value={field.value ?? ''}
+                {...{ max: 512 }}
+                className="focus:shadow-outline w-full appearance-none rounded border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0"
+                id="description"
+                type="text"
+                placeholder="Optional: Describe your Assistant here"
+              />
+            )}
+          />
         </div>
 
         {/* Instructions */}
@@ -83,9 +124,11 @@ export default function CreationPanel() {
             render={({ field }) => (
               <textarea
                 {...field}
-                className="focus:shadow-outline w-full resize-none appearance-none rounded border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:outline-none"
+                value={field.value ?? ''}
+                {...{ max: 32768 }}
+                className="focus:shadow-outline w-full resize-none appearance-none rounded border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0"
                 id="instructions"
-                placeholder="The coolest assistant, stock trader!"
+                placeholder="The system instructions that the assistant uses"
                 rows={3}
               />
             )}
@@ -103,7 +146,7 @@ export default function CreationPanel() {
             render={({ field }) => (
               <select
                 {...field}
-                className="focus:shadow-outline  block w-full appearance-none rounded border border-gray-400 bg-white px-4 py-2 pr-8 text-sm leading-tight shadow hover:border-gray-500 focus:outline-none"
+                className="focus:shadow-outline block w-full appearance-none rounded border border-gray-200 bg-white px-4 py-2 pr-8 text-sm leading-tight shadow hover:border-gray-100 focus:border-green-500 focus:outline-none focus:ring-0"
                 id="model"
               >
                 <option value="gpt-3.5-turbo-1106">gpt-3.5-turbo-1106</option>
@@ -117,15 +160,15 @@ export default function CreationPanel() {
         <div className="mb-6">
           <label className="mb-2 block text-xs font-bold text-gray-700">Tools</label>
           <div className="flex flex-col space-y-4">
-            {/* <Separator orientation="horizontal" className='bg-gray-100/50' />
+            <Separator orientation="horizontal" className="bg-gray-100/50" />
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-gray-700">Functions</span>
-              {renderSwitch('functions')}
-            </div> */}
+              {renderSwitch('function')}
+            </div>
             <Separator orientation="horizontal" className="bg-gray-100/50" />
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-gray-700">Code Interpreter</span>
-              {renderSwitch('codeInterpreter')}
+              {renderSwitch('code_interpreter')}
             </div>
             <Separator orientation="horizontal" className="bg-gray-100/50" />
             <div className="flex items-center justify-between">
@@ -139,7 +182,7 @@ export default function CreationPanel() {
         {/* Submit Button */}
         <div className="flex items-center justify-end">
           <button
-            className="focus:shadow-outline rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700 focus:outline-none"
+            className="focus:shadow-outline rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
             type="submit"
           >
             Save

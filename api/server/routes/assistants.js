@@ -1,8 +1,9 @@
 const OpenAI = require('openai');
 const express = require('express');
 const router = express.Router();
-// const { requireJwtAuth } = require('../middleware/');
-// router.get('/', requireJwtAuth, controller);
+const { requireJwtAuth } = require('../middleware/');
+
+router.use(requireJwtAuth);
 
 /**
  * Create an assistant.
@@ -10,11 +11,12 @@ const router = express.Router();
  * @param {AssistantCreateParams} req.body - The assistant creation parameters.
  * @returns {Assistant} 201 - success response - application/json
  */
-router.post('/assistants', async (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const openai = new OpenAI(process.env.OPENAI_API_KEY);
-    const assistantData = req.body; // Your client should send the relevant data in the request body
+    const assistantData = req.body;
     const assistant = await openai.beta.assistants.create(assistantData);
+    console.log(assistant);
     res.status(201).json(assistant);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -27,7 +29,7 @@ router.post('/assistants', async (req, res) => {
  * @param {string} req.params.id - Assistant identifier.
  * @returns {Assistant} 200 - success response - application/json
  */
-router.get('/assistants/:id', async (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
     const openai = new OpenAI(process.env.OPENAI_API_KEY);
     const assistantId = req.params.id;
@@ -45,7 +47,7 @@ router.get('/assistants/:id', async (req, res) => {
  * @param {AssistantUpdateParams} req.body - The assistant update parameters.
  * @returns {Assistant} 200 - success response - application/json
  */
-router.patch('/assistants/:id', async (req, res) => {
+router.patch('/:id', async (req, res) => {
   try {
     const openai = new OpenAI(process.env.OPENAI_API_KEY);
     const assistantId = req.params.id;
@@ -63,7 +65,7 @@ router.patch('/assistants/:id', async (req, res) => {
  * @param {string} req.params.id - Assistant identifier.
  * @returns {Assistant} 200 - success response - application/json
  */
-router.delete('/assistants/:id', async (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const openai = new OpenAI(process.env.OPENAI_API_KEY);
     const assistantId = req.params.id;
@@ -80,13 +82,15 @@ router.delete('/assistants/:id', async (req, res) => {
  * @param {AssistantListParams} req.query - The assistant list parameters for pagination and sorting.
  * @returns {Array<Assistant>} 200 - success response - application/json
  */
-router.get('/assistants', async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const openai = new OpenAI(process.env.OPENAI_API_KEY);
-    const { limit, order } = req.query;
+    const { limit, order, after, before } = req.query;
     const assistants = await openai.beta.assistants.list({
       limit,
       order,
+      after,
+      before,
     });
     res.json(assistants);
   } catch (error) {
