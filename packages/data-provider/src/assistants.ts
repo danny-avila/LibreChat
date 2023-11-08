@@ -6,11 +6,7 @@ import type {
 } from '@tanstack/react-query';
 import * as t from './types';
 import * as dataService from './data-service';
-
-export enum QueryKeys {
-  assistants = 'assistants',
-  assistant = 'assistant',
-}
+import { QueryKeys } from './query-keys';
 
 /**
  * Hook for listing all assistants, with optional parameters provided for pagination and sorting
