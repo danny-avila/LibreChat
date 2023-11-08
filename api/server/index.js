@@ -64,6 +64,7 @@ const startServer = async () => {
   app.use('/api/models', routes.models);
   app.use('/api/plugins', routes.plugins);
   app.use('/api/config', routes.config);
+  app.use('/api/assistants', routes.assistants);
 
   // Static files
   app.get('/*', function (req, res) {
