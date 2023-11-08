@@ -201,3 +201,8 @@ export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model' | 'error'> &
     className?: string;
     endpoint?: string | null;
   };
+
+export type Option = Record<string, unknown> & {
+  label?: string;
+  value: string | number | null;
+};
