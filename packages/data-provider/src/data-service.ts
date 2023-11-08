@@ -155,3 +155,26 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
 export const getStartupConfig = (): Promise<t.TStartupConfig> => {
   return request.get(endpoints.config());
 };
+
+export const createAssistant = (data: t.AssistantCreateParams): Promise<t.Assistant> => {
+  return request.post(endpoints.assistants(), data);
+};
+
+export const getAssistantById = (assistantId: string): Promise<t.Assistant> => {
+  return request.get(endpoints.assistants(assistantId));
+};
+
+export const updateAssistant = (
+  assistantId: string,
+  data: t.AssistantUpdateParams,
+): Promise<t.Assistant> => {
+  return request.patch(endpoints.assistants(assistantId), data);
+};
+
+export const deleteAssistant = (assistantId: string): Promise<void> => {
+  return request.delete(endpoints.assistants(assistantId));
+};
+
+export const listAssistants = (params?: t.AssistantListParams): Promise<Array<t.Assistant>> => {
+  return request.get(endpoints.assistants(), { params });
+};
