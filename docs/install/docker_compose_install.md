@@ -49,7 +49,7 @@ If you're having issues running this command, you can try running what the scrip
 Prefix commands with `sudo` according to your environment permissions.
 
 ```bash
-#Stop currently running container
+# Stop the container (if running)
 docker-compose down
 # Fetch the latest changes from Github
 git fetch origin
