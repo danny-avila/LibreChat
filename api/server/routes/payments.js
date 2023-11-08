@@ -1,124 +1,103 @@
 const express = require('express');
+const cors = require('cors');
 const router = express.Router();
-const paypal = require('../../../config/paypal');
+const paypal = require('../../../config/paypal.js');
 const Payment = require('../../models/schema/paymentSchema.js');
-// const cors = require('cors');
-// const helmet = require('helmet');
+const requireJwtAuth = require('../../middleware/requireJwtAuth');
+const util = require('util'); // Added to use promisify
 
-// // Apply CORS to this router only
-// router.use(cors({
-//   origin: 'http://localhost:3090',
-//   credentials: true,
-// }));
+// Convert callback-based functions to promises
+const createPayment = util.promisify(paypal.payment.create).bind(paypal.payment);
+const executePayment = util.promisify(paypal.payment.execute).bind(paypal.payment);
 
-// // CSP Middleware for PayPal routes
-// const paypalCsp = helmet.contentSecurityPolicy({
-//   directives: {
-//     ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-//     'script-src': [
-//       "'self'",
-//       "https://*.paypal.com",
-//       "'unsafe-inline'", // Add this line to allow inline scripts if needed
-//       "'unsafe-eval'" // Be cautious with 'unsafe-eval' which can be a security risk
-//     ],
-//     // Add other directives as needed
-//   },
-// });
+// Define CORS options for this router
+const corsOptions = {
+  origin: 'http://localhost:3090',
+  credentials: true,
+};
+router.use(cors(corsOptions));
+router.options('*', cors(corsOptions));
 
-// // Apply the CSP middleware only to the PayPal-related routes
-// router.use('/create-payment', paypalCsp);
-// router.use('/success', paypalCsp);
-// router.use('/cancel', paypalCsp);
-
-router.post('/create-payment', async (req, res) => {
-  console.log('Attempting to create a payment...'); // Debug log
+router.post('/create-payment', requireJwtAuth, async (req, res) => {
+  console.log('Attempting to create a payment...');
   try {
-    const payment = {
+    const paymentDetails = {
       intent: 'sale',
       payer: {
         payment_method: 'paypal'
       },
       redirect_urls: {
-        // Make sure to change these URLs to your actual success and cancel endpoints
         return_url: 'http://localhost:3090/subscription/paypal-return',
-        cancel_url: 'http://localhost:3090/subscription/payment-cancelled' // need to be updated about payment-cancelled
+        cancel_url: 'http://localhost:3090/subscription/payment-cancelled'
       },
       transactions: [{
         description: 'LibreChat Subscription',
         amount: {
           currency: 'USD',
-          total: '10.00' // This should match the amount in the success endpoint.
+          total: '10.00'
         }
       }]
     };
 
-    paypal.payment.create(payment, (error, payment) => {
-      if (error) {
-        console.warn('Payment creation encountered an error:', error); // Debug log
-        res.status(500).json({ error: error.toString() });
-      } else {
-        let approvalUrl = payment.links.find(link => link.rel === 'approval_url');
-        if (approvalUrl) {
-          console.log('Payment created successfully, approval URL:', approvalUrl.href); // Debug log
-          res.json({ approval_url: approvalUrl.href });
-        } else {
-          console.warn('No approval URL found after payment creation'); // Debug log
-          res.status(500).json({ error: 'No approval URL found' });
-        }
-      }
-    });
-
+    const paymentResult = await createPayment(paymentDetails);
+    let approvalUrl = paymentResult.links.find(link => link.rel === 'approval_url');
+    if (approvalUrl) {
+      console.log('Payment created successfully, approval URL:', approvalUrl.href);
+      res.json({ approval_url: approvalUrl.href });
+    } else {
+      console.warn('No approval URL found after payment creation');
+      res.status(500).json({ error: 'No approval URL found' });
+    }
   } catch (error) {
-    console.error('An exception occurred in create-payment:', error); // Debug log
-    res.status(500).json({ error: 'An error occurred while creating payment.' });
+    console.error('An exception occurred in create-payment:', error);
+    res.status(500).json({ error: error.toString() });
   }
 });
 
-router.get('/success', async (req, res) => {
-  console.log('Payment success route called with query:', req.query); // Debug log
+router.get('/success', requireJwtAuth, async (req, res) => {
+  console.log('Logged in user:', req.user);
+  console.log('Payment success route called with query:', req.query);
   const { PayerID, paymentId } = req.query;
-  const userID = req.user.id;
 
-  const execute_payment = {
+  const execute_payment_json = {
     payer_id: PayerID,
     transactions: [{
       amount: {
         currency: 'USD',
-        total: '10.00' // This should match the amount in the payment creation.
+        total: '10.00'
       }
     }]
   };
 
   try {
-    let executedPayment = await paypal.payment.execute(paymentId, execute_payment);
-    console.log('Payment executed successfully:', executedPayment); // Debug log
+    const userID = req.user.id;
+    const executedPayment = await executePayment(paymentId, execute_payment_json);
+    console.log('Payment executed successfully:', JSON.stringify(executedPayment, null, 2));
 
-    // Create payment record in MongoDB
+    const transaction = executedPayment.transactions[0];
+    const sale = transaction.related_resources[0].sale;
+
     const paymentRecord = new Payment({
-      // Make sure to handle the user ID appropriately depending on your authentication mechanism
-      userId: userID, // This is system's user ID
-      payerId: PayerID, // This is PayPal's payer ID
-      amount: executedPayment.transactions[0].amount.total,
-      currency: executedPayment.transactions[0].amount.currency,
+      userId: userID,
+      payerId: PayerID,
+      amount: sale.amount.total,
+      currency: sale.amount.currency,
       paymentId: paymentId,
-      paymentStatus: executedPayment.state // or any other field that indicates the payment status
+      paymentStatus: executedPayment.state
     });
 
     await paymentRecord.save();
-    console.log('Payment record saved to MongoDB:', paymentRecord); // Debug log
+    console.log('Payment record saved to MongoDB:', paymentRecord);
 
-    // Adjust to a success handler or a success page
     res.redirect(`http://localhost:3090/subscription/payment-success?paymentId=${paymentId}`);
   } catch (error) {
-    console.error('Payment execution failed:', error);
-    // If something goes wrong, redirect or inform the frontend accordingly
+    console.error('Payment execution failed:', error, 'Response:', error.response);
     res.redirect(`http://localhost:3090/subscription/payment-failed?paymentId=${paymentId}&error=${error.message}`);
   }
 });
 
 router.get('/cancel', (req, res) => {
-  console.log('Payment canceled by user.'); // Debug log
-  // This should redirect to your cancel page or handle the cancellation process
+  console.log('Payment canceled by user.');
   res.redirect('http://localhost:3090/subscription/payment-cancelled');
 });
 

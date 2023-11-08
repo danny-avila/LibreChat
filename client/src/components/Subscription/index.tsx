@@ -4,6 +4,7 @@ import { TUser, useGetUserByIdQuery } from '@librechat/data-provider';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
+import Cookies from 'js-cookie';
 
 function SubscriptionContent() {
   const [subscriptionUser, setSubscriptionUser] = useState<TUser | null>(null);
@@ -33,65 +34,70 @@ function SubscriptionContent() {
   }, [searchParams, userId]);
 
   async function handleSubscription() {
-    console.log('handleSubscription function called');
-    setError(''); // Clear any existing errors
+    console.log('handleSubscription function called with userId:', userId);
+    setError('');
     try {
+      const body = JSON.stringify({ userId });
+
+      const token = Cookies.get('token'); // Retrieve the token from the cookies
+
       const response = await fetch('/api/payments/create-payment', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`, // Include the token in the header
         },
+        body
       });
 
+      const data = await response.json();
+      console.log('Received response from /create-payment:', data);
+
       if (!response.ok) {
-        // If the HTTP status code is not successful, throw an error
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const data = await response.json();
-
       if (data && data.approval_url) {
-        // Debugging line: console log the approval URL
         console.log('Approval URL received:', data.approval_url);
         window.location.href = data.approval_url;
       } else {
-        // Handle case where no approval URL is present
         console.error('Failed to get approval URL');
         setError('Failed to initiate payment. Please try again.');
       }
     } catch (error) {
-      console.error(`An error occurred: ${error}`);
+      console.error(`An error occurred in handleSubscription: ${error}`);
       setError(`An error occurred: ${error.message}`);
     }
   }
 
-  async function handlePaymentConfirmation(userId, paymentId, payerId) {
-    // Perform server-side validation to confirm the payment status
-    // This is a critical step to ensure security and correctness
+  async function handlePaymentConfirmation(paymentStatus, userId, paymentId, payerId) {
+    console.log(`handlePaymentConfirmation called with paymentStatus: ${paymentStatus}, userId: ${userId}, paymentId: ${paymentId}, payerId: ${payerId}`);
+
     try {
-      // Construct the body with necessary information for the server to validate
       const body = JSON.stringify({
+        userId, // Include userId in the body for backend processing
         paymentId,
-        payerId, // PayPal sends a PayerID on successful payment
+        payerId,
       });
 
-      // Call your server-side API to validate the payment
+      const token = Cookies.get('token');
+
       const response = await fetch('/api/payments/execute-payment', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
-        body,
+        body
       });
 
+      const confirmationResult = await response.json();
+      console.log('Received response from /execute-payment:', confirmationResult);
+
       if (!response.ok) {
-        // If the HTTP status code is not successful, throw an error
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const confirmationResult = await response.json();
-
-      // Handle the response based on the confirmation result from your server
       if (confirmationResult.success) {
         console.log('Payment was successfully confirmed.');
         navigate(`/subscription/${userId}/payment-success`);
@@ -157,23 +163,4 @@ function Subscription() {
   return <SubscriptionContent key={userId} />;
 }
 
-export default Subscription;', can you add this code block to it '// Example frontend code to initiate a payment
-function initiatePayment(userId) {
-  // Send the userId to your backend
-  fetch('http://localhost:3080/api/paypal/create-payment', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ userId })
-  })
-  // Handle the response from your server
-    .then(response => response.json())
-    .then(data => {
-      if (data.approvalUrl) {
-      // Redirect user to PayPal approval URL
-        window.location.href = data.approvalUrl;
-      }
-    })
-    .catch(error => console.error('Error:', error));
-}
+export default Subscription;
