@@ -38,7 +38,8 @@ export default function Root() {
   useEffect(() => {
     if (modelsQuery.data) {
       setModelsConfig(modelsQuery.data);
-      newConversation(modelsQuery.data);
+      // Note: passing modelsQuery.data prevents navigation
+      newConversation({}, undefined, modelsQuery.data);
     } else if (modelsQuery.isError) {
       console.error('Failed to get models', modelsQuery.error);
     }
