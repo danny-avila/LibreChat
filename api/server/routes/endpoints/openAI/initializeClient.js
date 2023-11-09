@@ -44,9 +44,15 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   if (endpoint === 'azureOpenAI') {
     clientOptions.azure = isUserProvided ? JSON.parse(userKey) : getAzureCredentials();
-    clientOptions.azure.azureOpenAIApiDeploymentName = sanitizeModelName(
-      clientOptions.modelOptions.model,
-    );
+
+    // Make sure the deployment name is taken from the environment variables or configuration
+    // Ensure that AZURE_OPENAI_API_DEPLOYMENT_NAME is set in your environment variables
+    clientOptions.azure.azureOpenAIApiDeploymentName = process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME;
+
+    if (!clientOptions.azure.azureOpenAIApiDeploymentName) {
+      throw new Error('Azure OpenAI API deployment name not provided.');
+    }
+
     apiKey = clientOptions.azure.azureOpenAIApiKey;
   }
 
