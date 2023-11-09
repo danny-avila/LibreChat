@@ -51,7 +51,7 @@ const useConversation = () => {
         setSubmission({} as TSubmission);
         resetLatestMessage();
 
-        if (conversation.conversationId === 'new') {
+        if (conversation.conversationId === 'new' && !modelsData) {
           navigate('/chat/new');
         }
       },
