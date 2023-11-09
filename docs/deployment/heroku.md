@@ -19,6 +19,7 @@ FROM node:19-alpine AS base
 WORKDIR /api
 COPY /api/package*.json /api/
 WORKDIR /
+COPY /config/ /config/
 COPY /package*.json /
 RUN npm ci
 
