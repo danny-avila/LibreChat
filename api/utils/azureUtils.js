@@ -8,11 +8,30 @@ const axios = require('axios').default;
  * @property {string} azureOpenAIApiVersion - The Azure OpenAI API version.
  */
 
+const genAzureEndpoint = ({ azureOpenAIApiInstanceName, azureOpenAIApiDeploymentName }) => {
+  if (!azureOpenAIApiDeploymentName) {
+    throw new Error('Deployment name must be provided.');
+  }
+  
+  return `https://${azureOpenAIApiInstanceName}.openai.azure.com/openai/deployments/${azureOpenAIApiDeploymentName}`;
+};
+
+/**
+ * Sanitizes the model name to be used in the URL by removing or replacing disallowed characters.
+ * @param {string} modelName - The model name to be sanitized.
+ * @returns {string} The sanitized model name.
+ */
+const sanitizeModelName = (modelName) => {
+  // Replace periods with empty strings and other disallowed characters as needed
+  return modelName.replace(/\./g, '');
+};
+
 /**
  * Generates the Azure OpenAI API chat completion endpoint URL.
  * @param {AzureCredentials} credentials - The Azure credentials.
  * @returns {string} The complete chat completion endpoint URL for the Azure OpenAI API.
  */
+
 
 const genAzureChatCompletion = (credentials) => {
   const { azureOpenAIApiInstanceName, azureOpenAIApiDeploymentName, azureOpenAIApiVersion } = credentials;
@@ -90,18 +109,9 @@ const sendChatMessage = async (message) => {
   }
 };
 
-/**
- * Sanitizes the model name to be used in the URL by removing or replacing disallowed characters.
- * @param {string} modelName - The model name to be sanitized.
- * @returns {string} The sanitized model name.
- */
-const sanitizeModelName = (modelName) => {
-  // Replace periods with empty strings and other disallowed characters as needed
-  return modelName.replace(/\./g, '');
-};
-
 module.exports = {
   sanitizeModelName,
+  genAzureEndpoint,
   genAzureChatCompletion,
   getAzureCredentials,
   sendChatMessage,
