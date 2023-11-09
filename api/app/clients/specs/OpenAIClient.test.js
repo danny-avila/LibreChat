@@ -86,7 +86,7 @@ describe('OpenAIClient', () => {
 
       client.setOptions({ reverseProxyUrl: 'https://example.com/completions' });
       expect(client.completionsUrl).toBe('https://example.com/completions');
-      expect(client.langchainProxy).toBeUndefined();
+      expect(client.langchainProxy).toBe(null);
     });
   });
 
