@@ -40,6 +40,7 @@ FROM node:19-alpine AS base
 WORKDIR /client
 COPY /client/package*.json /client/
 WORKDIR /
+COPY /config/ /config/
 COPY /package*.json /
 RUN npm ci
 
