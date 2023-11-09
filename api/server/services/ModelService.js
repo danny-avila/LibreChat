@@ -1,6 +1,7 @@
 const Keyv = require('keyv');
 const axios = require('axios');
 const { isEnabled } = require('../utils');
+const { extractBaseURL } = require('../../utils');
 const keyvRedis = require('../../cache/keyvRedis');
 // const { getAzureCredentials, genAzureChatCompletion } = require('../../utils/');
 const { openAIApiKey, userProvidedOpenAI } = require('./EndpointService').config;
@@ -30,7 +31,7 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
   }
 
   if (reverseProxyUrl) {
-    basePath = reverseProxyUrl.match(/.*v1/)?.[0];
+    basePath = extractBaseURL(reverseProxyUrl);
   }
 
   const cachedModels = await modelsCache.get(basePath);
