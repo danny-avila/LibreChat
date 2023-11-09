@@ -83,7 +83,8 @@ class OpenAIClient extends BaseClient {
 
     const { reverseProxyUrl: reverseProxy } = this.options;
     this.FORCE_PROMPT =
-      isEnabled(OPENAI_FORCE_PROMPT) || (reverseProxy && extractBaseURL(reverseProxy) === null);
+      isEnabled(OPENAI_FORCE_PROMPT) ||
+      (reverseProxy && reverseProxy.includes('completions') && !reverseProxy.includes('chat'));
 
     const { model } = this.modelOptions;
 
