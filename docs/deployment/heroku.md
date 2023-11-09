@@ -42,6 +42,12 @@ COPY /client/package*.json /client/
 WORKDIR /
 COPY /config/ /config/
 COPY /package*.json /
+
+WORKDIR /packages/data-provider
+COPY /packages/data-provider ./
+RUN npm install && npm run build
+
+WORKDIR /
 RUN npm ci
 
 # React client build
