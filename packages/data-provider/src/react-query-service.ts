@@ -40,11 +40,11 @@ export const useGetUserQuery = (
   });
 };
 
-export const useGetMessagesByConvoId = (
+export const useGetMessagesByConvoId = <TData = s.TMessage[]>(
   id: string,
-  config?: UseQueryOptions<s.TMessage[]>,
-): QueryObserverResult<s.TMessage[]> => {
-  return useQuery<s.TMessage[]>(
+  config?: UseQueryOptions<s.TMessage[], unknown, TData>,
+): QueryObserverResult<TData> => {
+  return useQuery<s.TMessage[], unknown, TData>(
     [QueryKeys.messages, id],
     () => dataService.getMessagesByConvoId(id),
     {

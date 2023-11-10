@@ -60,9 +60,12 @@ export default function CreationPanel() {
   );
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="container mx-auto px-4 py-2">
+    <form
+      onSubmit={handleSubmit(onSubmit)}
+      className="w-1/3 flex-shrink-0 overflow-x-hidden bg-gray-900"
+    >
       <CreationHeader reset={reset} />
-      <div className="mb-4 rounded bg-white px-8 pb-8 pt-6 shadow-md">
+      <div className="mb-4 h-full rounded bg-white px-8 pb-8 pt-6 shadow-md">
         {/* Name */}
         <div className="mb-4">
           <label className="mb-2 block text-xs font-bold text-gray-700" htmlFor="name">
