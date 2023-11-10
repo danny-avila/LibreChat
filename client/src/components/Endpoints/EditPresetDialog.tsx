@@ -13,6 +13,31 @@ import EndpointSettings from './EndpointSettings';
 import { cn, defaultTextProps, removeFocusOutlines, cleanupPreset, mapEndpoints } from '~/utils/';
 import store from '~/store';
 
+export const EndpointSelector = ({
+  endpoint,
+  onChange,
+  availableEndpoints,
+  localize,
+}: {
+  endpoint: string;
+  onChange: (value: string) => void;
+  availableEndpoints: { value: string; display: string }[];
+  localize: (key: string) => string;
+}) => {
+  // Mappatura degli endpoint disponibili per creare le opzioni del Dropdown
+  const endpointOptions = availableEndpoints.map((ep) => ({
+    value: ep.value,
+    display: localize(ep.display),
+  }));
+
+  return (
+    <div className="flex items-center">
+      <div> {localize('com_nav_endpoint')} </div>
+      <Dropdown value={endpoint || ''} onChange={onChange} options={endpointOptions} />
+    </div>
+  );
+};
+
 const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditPresetProps) => {
   const [preset, setPreset] = useRecoilState(store.preset);
   const setPresets = useSetRecoilState(store.presets);
@@ -89,16 +114,11 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditP
                   <Label htmlFor="endpoint" className="mb-1 text-left text-sm font-medium">
                     {localize('com_endpoint')}
                   </Label>
-                  <Dropdown
-                    value={endpoint || ''}
+                  <EndpointSelector
+                    endpoint={endpoint}
                     onChange={setOption('endpoint')}
-                    options={availableEndpoints}
-                    className={cn(
-                      defaultTextProps,
-                      'flex h-10 max-h-10 w-full resize-none ',
-                      removeFocusOutlines,
-                    )}
-                    containerClassName="flex w-full resize-none z-[51]"
+                    availableEndpoints={availableEndpoints}
+                    localize={localize}
                   />
                 </div>
               </div>
