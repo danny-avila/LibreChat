@@ -55,8 +55,9 @@ const Dropdown: FC<DropdownProps> = ({
           >
             <span className="block truncate font-medium">
               {label}
-              {options.find((o) => (typeof o === 'string' ? o === value : o.value === value))
-                ?.display || value}
+              {options
+                .map((o) => (typeof o === 'string' ? { value: o, display: o } : o))
+                .find((o) => o.value === value)?.display || value}
             </span>
             <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
               <svg
@@ -95,7 +96,7 @@ const Dropdown: FC<DropdownProps> = ({
                 style={{ width: width ? `${width}px` : 'auto' }}
               >
                 <span className="block truncate">
-                  {typeof item === 'string' ? item : item.display}
+                  {typeof item === 'string' ? item : (item as OptionType).display}
                 </span>
               </Listbox.Option>
             ))}
