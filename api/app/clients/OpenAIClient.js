@@ -30,9 +30,6 @@ class OpenAIClient extends BaseClient {
       : 'discard';
     this.shouldSummarize = this.contextStrategy === 'summarize';
     this.azure = options.azure || false;
-    if (this.azure) {
-      this.azureEndpoint = genAzureChatCompletion(this.azure);
-    }
     this.setOptions(options);
   }
 
@@ -85,6 +82,13 @@ class OpenAIClient extends BaseClient {
     this.FORCE_PROMPT =
       isEnabled(OPENAI_FORCE_PROMPT) ||
       (reverseProxy && reverseProxy.includes('completions') && !reverseProxy.includes('chat'));
+
+    if (this.azure && process.env.AZURE_OPENAI_DEFAULT_MODEL) {
+      this.azureEndpoint = genAzureChatCompletion(this.azure, this.modelOptions.model);
+      this.modelOptions.model = process.env.AZURE_OPENAI_DEFAULT_MODEL;
+    } else if (this.azure) {
+      this.azureEndpoint = genAzureChatCompletion(this.azure, this.modelOptions.model);
+    }
 
     const { model } = this.modelOptions;
 
@@ -363,7 +367,7 @@ If your reverse proxy is compatible to OpenAI specs in every other way, it may s
     let streamResult = null;
     this.modelOptions.user = this.user;
     const invalidBaseUrl = this.completionsUrl && extractBaseURL(this.completionsUrl) === null;
-    const useOldMethod = !!(this.azure || invalidBaseUrl);
+    const useOldMethod = !!(this.azure || invalidBaseUrl || !this.isChatCompletion);
     if (typeof opts.onProgress === 'function' && useOldMethod) {
       await this.getCompletion(
         payload,
@@ -533,6 +537,7 @@ If your reverse proxy is compatible to OpenAI specs in every other way, it may s
       this.options.debug && console.error(e.message, e);
       modelOptions.model = OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
       if (this.azure) {
+        modelOptions.model = process.env.AZURE_OPENAI_DEFAULT_MODEL ?? modelOptions.model;
         this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model);
       }
       const instructionsPayload = [
@@ -697,9 +702,10 @@ ${convo}
       if (typeof onProgress === 'function') {
         modelOptions.stream = true;
       }
-      if (this.isChatGptModel) {
+      if (this.isChatCompletion) {
         modelOptions.messages = payload;
       } else {
+        // TODO: unreachable code. Need to implement completions call for non-chat models
         modelOptions.prompt = payload;
       }
 
