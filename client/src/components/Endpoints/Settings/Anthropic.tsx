@@ -40,7 +40,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             setValue={setModel}
             availableValues={models}
             disabled={readonly}
-            className={cn(defaultTextProps, 'z-50 flex w-full resize-none', removeFocusOutlines)}
+            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
             containerClassName="flex w-full resize-none"
           />
         </div>
