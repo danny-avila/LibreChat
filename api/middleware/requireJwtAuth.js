@@ -6,6 +6,11 @@ const requireJwtAuth = (req, res, next) => {
       console.log(err);
     }
 
+    if (err) {
+      console.log(err);
+      return res.status(500).json({ error: 'An error occurred during authentication' });
+    }
+
     if (!user) {
       req.user = false; // Assigns false to req.user if no user logged in
     } else {

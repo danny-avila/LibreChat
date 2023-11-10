@@ -8,48 +8,38 @@ const PaypalReturnHandler = () => {
   useEffect(() => {
     const paymentId = searchParams.get('paymentId');
     const PayerID = searchParams.get('PayerID');
-    console.log('Payment ID:', paymentId); // Log the paymentId
-    console.log('Payer ID:', PayerID); // Log the PayerID
-    // 'userId' is removed from the client-side logic to prevent security risks.
+    const paymentReference = searchParams.get('paymentReference');
 
-    if (paymentId && PayerID) {
-      // Only PayerID and paymentId are included in the request to the backend
-      const queryParams = new URLSearchParams({ PayerID, paymentId }).toString();
+    console.log(`[PaypalReturnHandler] Payment ID: ${paymentId}, Payer ID: ${PayerID}, Payment Reference: ${paymentReference}`);
 
-      // Call your backend to finalize the payment
+    if (paymentId && PayerID && paymentReference) {
+      const queryParams = new URLSearchParams({ PayerID, paymentId, paymentReference }).toString();
+
       fetch(`/api/payments/success?${queryParams}`, {
         method: 'GET',
-        credentials: 'include', // Necessary for including session cookies
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          // Additional headers can be added here if needed
         },
       })
-        .then(response => {
-          if (!response.ok) {
-            throw new Error(`Network response was not ok: ${response.statusText}`);
-          }
-          return response.json();
-        })
+        .then(response => response.json())
         .then(data => {
-        // Since 'userId' is no longer in the URL, you should retrieve it from 'data' if needed
-          console.debug('Payment processed successfully:', data);
-          // Navigate to a success page, using route parameters or state to pass any needed data
-          navigate('/subscription/payment-success', { state: { paymentDetails: data } });
+          if (data.status === 'success') {
+            navigate(`/subscription/${data.userId}/payment-success?paymentId=${data.paymentId}`);
+          } else {
+            navigate(`/subscription/${data.userId}/payment-failed?error=${data.error}`);
+          }
         })
         .catch(error => {
-          console.error('Error processing payment:', error);
-          // Handle errors by navigating to an error page and passing error details
+          console.error('[PaypalReturnHandler] Error processing payment:', error);
           navigate('/subscription/payment-error', { state: { error: error.message } });
         });
     } else {
-      console.error('Payment ID or Payer ID is missing.');
-      // Navigate to an error page if necessary information is missing
+      console.error('[PaypalReturnHandler] Missing payment information.');
       navigate('/subscription/payment-error', { state: { error: 'Missing payment information.' } });
     }
   }, [searchParams, navigate]);
 
-  // Render a loading state or any other UI feedback while the payment is being processed
   return <div>Processing your payment...</div>;
 };
 

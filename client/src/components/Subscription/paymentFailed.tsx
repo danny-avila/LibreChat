@@ -1,27 +1,20 @@
 import React, { useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-
-interface RouteParams {
-  [key: string]: string | undefined;
-  userId: string;
-}
+import { useParams, useSearchParams } from 'react-router-dom';
 
 const PaymentFailed = () => {
-  // Retrieve the user ID from the URL.
-  const { userId } = useParams<RouteParams>();
+  const { userId } = useParams();
+  const [searchParams] = useSearchParams();
+  const error = searchParams.get('error');
 
   useEffect(() => {
-    // Here you could dispatch an action to log the failed payment attempt,
-    // send a report, or enable the user to try the payment process again.
-    console.log(`Payment failed for user ID: ${userId}`);
-    // Make sure to handle any cleanup or retries necessary when payment fails.
-  }, [userId]);
+    console.log(`Payment failed for user ID: ${userId}. Error: ${error}`);
+    // Additional failure handling logic here
+  }, [userId, error]);
 
   return (
     <div className="payment-failed">
       <h1>Payment Failed</h1>
-      <p>We encountered an issue processing your payment.</p>
-      {/* Display the user ID in your message if needed */}
+      <p>We encountered an issue processing your payment: {error}</p>
       <p>User {userId}, please try again or contact support for assistance.</p>
     </div>
   );

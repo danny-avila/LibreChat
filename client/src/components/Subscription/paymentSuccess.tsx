@@ -1,29 +1,21 @@
 import React, { useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-
-interface RouteParams {
-  [key: string]: string | undefined;
-  userId: string;
-}
+import { useParams, useSearchParams } from 'react-router-dom';
 
 const PaymentSuccess = () => {
-  // Retrieve the user ID from the URL.
-  const { userId } = useParams<RouteParams>();
+  const { userId } = useParams();
+  const [searchParams] = useSearchParams();
+  const paymentId = searchParams.get('paymentId');
 
   useEffect(() => {
-    // Here you could dispatch an action to update the user's subscription status,
-    // Or perform any side effects related to the successful payment.
-    console.log(`Payment successful for user ID: ${userId}`);
-    // Make sure to include any dependencies for the effect here.
-    // If there are none other than userId, then it's not necessary to include anything else.
-  }, [userId]);
+    console.log(`Payment successful for user ID: ${userId} with Payment ID: ${paymentId}`);
+    // Additional success logic here
+  }, [userId, paymentId]);
 
   return (
     <div className="payment-success">
       <h1>Payment Successful!</h1>
       <p>Your payment has been processed successfully.</p>
-      {/* Display the user ID in your message */}
-      <p>Thank you, user {userId}, for your subscription.</p>
+      <p>Thank you, user {userId}, for your subscription. Your payment ID is {paymentId}.</p>
     </div>
   );
 };

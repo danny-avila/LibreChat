@@ -1,37 +1,37 @@
 const express = require('express');
-const cors = require('cors');
 const router = express.Router();
 const paypal = require('../../../config/paypal.js');
-const Payment = require('../../models/schema/paymentSchema.js');
+const Payment = require('../../models/payments.js');
+const PaymentRefUserId = require('../../models/paymentReference.js'); // Store paymentreference and userID
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
-const util = require('util'); // Added to use promisify
+const util = require('util');
 
 // Convert callback-based functions to promises
 const createPayment = util.promisify(paypal.payment.create).bind(paypal.payment);
 const executePayment = util.promisify(paypal.payment.execute).bind(paypal.payment);
 
-// Define CORS options for this router
-const corsOptions = {
-  origin: 'http://localhost:3090',
-  credentials: true,
-};
-router.use(cors(corsOptions));
-router.options('*', cors(corsOptions));
-
 router.post('/create-payment', requireJwtAuth, async (req, res) => {
-  console.log('Attempting to create a payment...');
+  const paymentReference = req.body.paymentReference;
+  console.log(`[Create Payment] Starting - User ID: ${req.user._id}, Payment Reference: ${paymentReference}`);
+
   try {
+    await PaymentRefUserId.savePaymentRefUserId({
+      paymentReference,
+      userId: req.user._id
+    });
+
     const paymentDetails = {
       intent: 'sale',
       payer: {
         payment_method: 'paypal'
       },
       redirect_urls: {
-        return_url: 'http://localhost:3090/subscription/paypal-return',
+        return_url: `http://localhost:3090/subscription/paypal-return?paymentReference=${paymentReference}`,
         cancel_url: 'http://localhost:3090/subscription/payment-cancelled'
       },
       transactions: [{
         description: 'LibreChat Subscription',
+        custom: paymentReference,
         amount: {
           currency: 'USD',
           total: '10.00'
@@ -42,63 +42,81 @@ router.post('/create-payment', requireJwtAuth, async (req, res) => {
     const paymentResult = await createPayment(paymentDetails);
     let approvalUrl = paymentResult.links.find(link => link.rel === 'approval_url');
     if (approvalUrl) {
-      console.log('Payment created successfully, approval URL:', approvalUrl.href);
+      console.log(`[Create Payment] Successful - Approval URL: ${approvalUrl.href}`);
+      console.log(`[requireJwtAuth] Authentication successful for user after Approval URL: ${req.user.id}`);
       res.json({ approval_url: approvalUrl.href });
     } else {
-      console.warn('No approval URL found after payment creation');
+      console.warn('[Create Payment] No approval URL found after payment creation');
       res.status(500).json({ error: 'No approval URL found' });
     }
   } catch (error) {
-    console.error('An exception occurred in create-payment:', error);
+    console.error(`[Create Payment] Exception occurred: ${error}`);
     res.status(500).json({ error: error.toString() });
   }
 });
 
-router.get('/success', requireJwtAuth, async (req, res) => {
-  console.log('Logged in user:', req.user);
-  console.log('Payment success route called with query:', req.query);
-  const { PayerID, paymentId } = req.query;
-
-  const execute_payment_json = {
-    payer_id: PayerID,
-    transactions: [{
-      amount: {
-        currency: 'USD',
-        total: '10.00'
-      }
-    }]
-  };
+router.get('/success', async (req, res) => {
+  console.log(`[Payment Success] Called with query: ${JSON.stringify(req.query)}`);
+  const { PayerID, paymentId, paymentReference } = req.query;
 
   try {
-    const userID = req.user.id;
-    const executedPayment = await executePayment(paymentId, execute_payment_json);
-    console.log('Payment executed successfully:', JSON.stringify(executedPayment, null, 2));
+    const userSession = await getUserSessionFromReference(paymentReference);
+    console.log('check userSession:', userSession);
+    if (!userSession || !userSession.userId) {
+      console.error('[Payment Success] User session not found');
+      return res.redirect('http://localhost:3090/subscription/payment-failed');
+    }
 
+    const execute_payment_json = {
+      payer_id: PayerID,
+      transactions: [{
+        amount: {
+          currency: 'USD',
+          total: '10.00'
+        }
+      }]
+    };
+
+    const executedPayment = await executePayment(paymentId, execute_payment_json);
     const transaction = executedPayment.transactions[0];
     const sale = transaction.related_resources[0].sale;
 
+    // console.log(`userSession before saving paymentRecord: ${JSON.stringify(userSession)}`);
     const paymentRecord = new Payment({
-      userId: userID,
+      userId: userSession.userId,
       payerId: PayerID,
       amount: sale.amount.total,
       currency: sale.amount.currency,
       paymentId: paymentId,
-      paymentStatus: executedPayment.state
+      paymentStatus: executedPayment.state,
+      paymentReference: paymentReference
     });
 
     await paymentRecord.save();
-    console.log('Payment record saved to MongoDB:', paymentRecord);
-
-    res.redirect(`http://localhost:3090/subscription/payment-success?paymentId=${paymentId}`);
+    res.json({ status: 'success', paymentId: paymentId, userId: userSession.userId });
   } catch (error) {
-    console.error('Payment execution failed:', error, 'Response:', error.response);
-    res.redirect(`http://localhost:3090/subscription/payment-failed?paymentId=${paymentId}&error=${error.message}`);
+    console.error(`[Payment Success] Execution failed: ${error}, Response: ${error.response}`);
   }
 });
 
 router.get('/cancel', (req, res) => {
-  console.log('Payment canceled by user.');
+  console.log('[Payment Cancelled] Payment cancelled by user.');
   res.redirect('http://localhost:3090/subscription/payment-cancelled');
 });
+
+async function getUserSessionFromReference(paymentReference) {
+  try {
+    const paymentRefUserId = await PaymentRefUserId.findPaymentRefUserId({ paymentReference });
+    if (paymentRefUserId) {
+      return { userId: paymentRefUserId.userId };
+    } else {
+      console.error('[getUserSessionFromReference] Payment reference not found.');
+      return null;
+    }
+  } catch (err) {
+    console.error(`[getUserSessionFromReference] Error: ${err}`);
+    throw err;
+  }
+}
 
 module.exports = router;

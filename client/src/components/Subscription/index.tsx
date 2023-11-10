@@ -5,6 +5,7 @@ import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
 import Cookies from 'js-cookie';
+import { v4 as uuidv4 } from 'uuid';
 
 function SubscriptionContent() {
   const [subscriptionUser, setSubscriptionUser] = useState<TUser | null>(null);
@@ -36,10 +37,17 @@ function SubscriptionContent() {
   async function handleSubscription() {
     console.log('handleSubscription function called with userId:', userId);
     setError('');
+
+    const paymentReference = uuidv4(); // Generate a unique payment reference
+
     try {
-      const body = JSON.stringify({ userId });
+      const body = JSON.stringify({
+        userId, // Include userId for backend processing
+        paymentReference, // Include the generated payment reference
+      });
 
       const token = Cookies.get('token'); // Retrieve the token from the cookies
+      console.log('token:', token)
 
       const response = await fetch('/api/payments/create-payment', {
         method: 'POST',
