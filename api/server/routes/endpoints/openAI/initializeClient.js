@@ -1,6 +1,6 @@
 const { OpenAIClient } = require('../../../../app');
 const { isEnabled } = require('../../../utils');
-const { getAzureCredentials, sanitizeModelName } = require('../../../../utils');
+const { getAzureCredentials } = require('../../../../utils');
 const { getUserKey, checkUserKeyExpiry } = require('../../../services/UserService');
 
 const initializeClient = async ({ req, res, endpointOption }) => {
@@ -44,9 +44,6 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   if (endpoint === 'azureOpenAI') {
     clientOptions.azure = isUserProvided ? JSON.parse(userKey) : getAzureCredentials();
-    clientOptions.azure.azureOpenAIApiDeploymentName = sanitizeModelName(
-      clientOptions.modelOptions.model,
-    );
     apiKey = clientOptions.azure.azureOpenAIApiKey;
   }
 

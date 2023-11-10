@@ -41,7 +41,12 @@ describe('initializeClient', () => {
 
   test('should initialize client with Azure credentials when endpoint is azureOpenAI', async () => {
     process.env.AZURE_API_KEY = 'test-azure-api-key';
-    process.env.OPENAI_API_KEY = 'test-openai-api-key';
+    (process.env.AZURE_OPENAI_API_INSTANCE_NAME = 'some-value'),
+    (process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME = 'some-value'),
+    (process.env.AZURE_OPENAI_API_VERSION = 'some-value'),
+    (process.env.AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME = 'some-value'),
+    (process.env.AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME = 'some-value'),
+    (process.env.OPENAI_API_KEY = 'test-openai-api-key');
     process.env.DEBUG_OPENAI = 'false';
     process.env.OPENAI_SUMMARIZE = 'false';
 
@@ -190,22 +195,5 @@ describe('initializeClient', () => {
     await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
       /Your OpenAI API key has expired/,
     );
-  });
-
-  test('should sanitize model name for Azure when modelOptions is provided', async () => {
-    const modelName = 'test-3.5-model';
-    const sanitizedModelName = 'test-35-model';
-    const req = {
-      body: { key: new Date(Date.now() + 10000).toISOString(), endpoint: 'azureOpenAI' },
-      user: { id: '123' },
-    };
-    const res = {};
-    const endpointOption = { modelOptions: { model: modelName } };
-    process.env.AZURE_API_KEY = 'azure-provided-api-key';
-    getUserKey.mockResolvedValue('test-user-provided-openai-api-key');
-
-    const result = await initializeClient({ req, res, endpointOption });
-
-    expect(result.client.options.azure.azureOpenAIApiDeploymentName).toBe(sanitizedModelName);
   });
 });
