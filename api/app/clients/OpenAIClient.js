@@ -367,7 +367,7 @@ If your reverse proxy is compatible to OpenAI specs in every other way, it may s
     let streamResult = null;
     this.modelOptions.user = this.user;
     const invalidBaseUrl = this.completionsUrl && extractBaseURL(this.completionsUrl) === null;
-    const useOldMethod = !!(this.azure || invalidBaseUrl);
+    const useOldMethod = !!(this.azure || invalidBaseUrl || !this.isChatCompletion);
     if (typeof opts.onProgress === 'function' && useOldMethod) {
       await this.getCompletion(
         payload,
@@ -702,9 +702,10 @@ ${convo}
       if (typeof onProgress === 'function') {
         modelOptions.stream = true;
       }
-      if (this.isChatGptModel) {
+      if (this.isChatCompletion) {
         modelOptions.messages = payload;
       } else {
+        // TODO: unreachable code. Need to implement completions call for non-chat models
         modelOptions.prompt = payload;
       }
 
