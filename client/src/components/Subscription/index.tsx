@@ -24,16 +24,6 @@ function SubscriptionContent() {
     }
   }, [getUserByIdQuery.isSuccess, getUserByIdQuery.data]);
 
-  // Effect for handling payment status confirmation
-  useEffect(() => {
-    const paymentStatus = searchParams.get('paymentStatus');
-    const paymentId = searchParams.get('paymentId'); // or whatever the parameter is
-    const payerId = searchParams.get('PayerID'); // PayPal often returns a PayerID
-    if (paymentStatus) {
-      handlePaymentConfirmation(paymentStatus, userId, paymentId, payerId);
-    }
-  }, [searchParams, userId]);
-
   async function handleSubscription() {
     console.log('handleSubscription function called with userId:', userId);
     setError('');
@@ -75,49 +65,6 @@ function SubscriptionContent() {
     } catch (error) {
       console.error(`An error occurred in handleSubscription: ${error}`);
       setError(`An error occurred: ${error.message}`);
-    }
-  }
-
-  async function handlePaymentConfirmation(paymentStatus, userId, paymentId, payerId) {
-    console.log(`handlePaymentConfirmation called with paymentStatus: ${paymentStatus}, userId: ${userId}, paymentId: ${paymentId}, payerId: ${payerId}`);
-
-    try {
-      const body = JSON.stringify({
-        userId, // Include userId in the body for backend processing
-        paymentId,
-        payerId,
-      });
-
-      const token = Cookies.get('token');
-
-      const response = await fetch('/api/payments/execute-payment', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body
-      });
-
-      const confirmationResult = await response.json();
-      console.log('Received response from /execute-payment:', confirmationResult);
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      if (confirmationResult.success) {
-        console.log('Payment was successfully confirmed.');
-        navigate(`/subscription/${userId}/payment-success`);
-      } else {
-        console.log('Payment failed to confirm.');
-        setError('Payment confirmation failed. Please try again.');
-        navigate(`/subscription/${userId}/payment-failed`);
-      }
-    } catch (error) {
-      console.error(`An error occurred during payment confirmation: ${error}`);
-      setError(`An error occurred: ${error.message}`);
-      navigate(`/subscription/${userId}/payment-failed`);
     }
   }
 

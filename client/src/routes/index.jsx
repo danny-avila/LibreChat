@@ -86,17 +86,17 @@ export const router = createBrowserRouter([
                 element: <Subscription />
               },
               {
-                path: 'paypal-return',
-                element: <PaypalReturnHandler />
-              },
-              {
-                path: ':userId/payment-success',
+                path: ':paymentId/payment-success',
                 element: <PaymentSuccess />
               },
               {
-                path: ':userId/payment-failed',
-                element: <PaymentFailed />
-              }
+                path: 'payment-error',
+                element: <PaymentFailed /> // or <PaymentError /> if you create a new component
+              },
+              {
+                path: 'paypal-return',
+                element: <PaypalReturnHandler />
+              },
             ]
           },
         ]

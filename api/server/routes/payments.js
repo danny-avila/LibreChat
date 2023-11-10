@@ -93,6 +93,7 @@ router.get('/success', async (req, res) => {
     });
 
     await paymentRecord.save();
+    console.log('Payment record saved to MongoDB:', paymentRecord);
     res.json({ status: 'success', paymentId: paymentId, userId: userSession.userId });
   } catch (error) {
     console.error(`[Payment Success] Execution failed: ${error}, Response: ${error.response}`);
