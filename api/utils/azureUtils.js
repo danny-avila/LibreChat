@@ -6,6 +6,8 @@
  * @property {string} azureOpenAIApiVersion - The Azure OpenAI API version.
  */
 
+const { isEnabled } = require('../server/utils');
+
 /**
  * Sanitizes the model name to be used in the URL by removing or replacing disallowed characters.
  * @param {string} modelName - The model name to be sanitized.
@@ -44,7 +46,7 @@ const genAzureChatCompletion = (
 ) => {
   // Determine the deployment segment of the URL based on provided modelName or azureOpenAIApiDeploymentName
   let deploymentSegment;
-  if (modelName) {
+  if (isEnabled(process.env.AZURE_USE_MODEL_AS_DEPLOYMENT_NAME) && modelName) {
     const sanitizedModelName = sanitizeModelName(modelName);
     deploymentSegment = `${sanitizedModelName}`;
   } else if (azureOpenAIApiDeploymentName) {

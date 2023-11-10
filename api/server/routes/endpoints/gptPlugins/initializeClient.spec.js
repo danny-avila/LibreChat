@@ -174,31 +174,6 @@ describe('gptPlugins/initializeClient', () => {
     );
   });
 
-  test('should sanitize model name for Azure when modelOptions is provided', async () => {
-    process.env.AZURE_API_KEY = 'azure-provided-api-key';
-    process.env.PLUGINS_USE_AZURE = 'true';
-
-    const modelName = 'test-3.5-model';
-    const sanitizedModelName = 'test-35-model';
-    const req = {
-      body: { key: new Date(Date.now() + 10000).toISOString() },
-      user: { id: '123' },
-    };
-    const res = {};
-    const endpointOption = { modelOptions: { model: modelName } };
-
-    getUserKey.mockResolvedValue(
-      JSON.stringify({
-        azureOpenAIApiKey: 'test-user-provided-azure-api-key',
-        azureOpenAIApiDeploymentName: modelName,
-      }),
-    );
-
-    const { azure } = await initializeClient({ req, res, endpointOption });
-
-    expect(azure.azureOpenAIApiDeploymentName).toBe(sanitizedModelName);
-  });
-
   test('should throw an error if the user-provided Azure key is invalid JSON', async () => {
     process.env.AZURE_API_KEY = 'user_provided';
     process.env.PLUGINS_USE_AZURE = 'true';
