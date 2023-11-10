@@ -2,6 +2,7 @@ export * from './AuthContext';
 export * from './ThemeContext';
 export * from './ScreenshotContext';
 export * from './ApiErrorBoundaryContext';
+export { default as useToast } from './useToast';
 export { default as useTimeout } from './useTimeout';
 export { default as useUserKey } from './useUserKey';
 export { default as useDebounce } from './useDebounce';

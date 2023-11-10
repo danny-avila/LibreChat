@@ -90,7 +90,7 @@ const refreshController = async (req, res) => {
       return res.status(401).redirect('/login');
     }
 
-    if (process.env.NODE_ENV === 'development') {
+    if (process.env.NODE_ENV === 'CI') {
       const token = await setAuthTokens(userId, res);
       const userObj = user.toJSON();
       return res.status(200).send({ token, user: userObj });
@@ -106,13 +106,18 @@ const refreshController = async (req, res) => {
       const token = await setAuthTokens(userId, res, session._id);
       const userObj = user.toJSON();
       res.status(200).send({ token, user: userObj });
+    } else if (req?.query?.retry) {
+      // Retrying from a refresh token request that failed (401)
+      res.status(403).send('No session found');
     } else if (payload.exp < Date.now() / 1000) {
       res.status(403).redirect('/login');
     } else {
       res.status(401).send('Refresh token expired or not found for this user');
     }
   } catch (err) {
-    res.status(401).send('Invalid refresh token');
+    console.error('Refresh token error', refreshToken);
+    console.error(err);
+    res.status(403).send('Invalid refresh token');
   }
 };
 

@@ -7,6 +7,25 @@
   </a>
 </p>
 
+<p align="center">
+  <a href="https://discord.gg/NGaa9RPCft"> 
+    <img
+      src="https://img.shields.io/discord/1086345563026489514?label=&logo=discord&style=for-the-badge&logoWidth=20&logoColor=white&labelColor=000000&color=blueviolet">
+  </a>
+  <a href="https://www.youtube.com/@LibreChat"> 
+    <img
+      src="https://img.shields.io/badge/YOUTUBE-red.svg?style=for-the-badge&logo=youtube&logoColor=white&labelColor=000000&logoWidth=20">
+  </a>
+  <a href="https://docs.librechat.ai"> 
+    <img
+      src="https://img.shields.io/badge/DOCS-blue.svg?style=for-the-badge&logo=read-the-docs&logoColor=white&labelColor=000000&logoWidth=20">
+  </a>
+  <a aria-label="Sponsors" href="#sponsors">
+    <img
+      src="https://img.shields.io/badge/SPONSORS-brightgreen.svg?style=for-the-badge&logo=github-sponsors&logoColor=white&labelColor=000000&logoWidth=20">
+  </a>
+</p>
+
 ## All-In-One AI Conversations with LibreChat ##
 LibreChat brings together the future of assistant AIs with the revolutionary technology of OpenAI's ChatGPT. Celebrating the original styling, LibreChat gives you the ability to integrate multiple AI models. It also integrates and enhances original client features such as conversation and message search, prompt templates and plugins.
 
@@ -81,6 +100,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Third-Party Tools](docs/features/third_party.md)
   * [Proxy](docs/features/proxy.md)
   * [Bing Jailbreak](docs/features/bing_jailbreak.md)
+  * [Token Usage](docs/features/token_usage.md)
 </details>
 
 <details>
@@ -93,6 +113,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Ngrok](docs/deployment/ngrok.md)
   * [HuggingFace](docs/deployment/huggingface.md)
   * [Render](docs/deployment/render.md)
+  * [Meilisearch in Render](docs/deployment/meilisearch_in_render.md)
   * [Hetzner](docs/deployment/hetzner_ubuntu.md)
   * [Heroku](docs/deployment/heroku.md)
 </details>
@@ -114,7 +135,9 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date)](https://star-history.com/#danny-avila/LibreChat&Date)
+<a href="https://star-history.com/#danny-avila/LibreChat&Date">
+  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date&theme=dark" onerror="this.src='https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date'" />
+</a>
 
 ---
 

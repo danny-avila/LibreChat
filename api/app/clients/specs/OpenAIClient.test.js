@@ -86,7 +86,7 @@ describe('OpenAIClient', () => {
 
       client.setOptions({ reverseProxyUrl: 'https://example.com/completions' });
       expect(client.completionsUrl).toBe('https://example.com/completions');
-      expect(client.langchainProxy).toBeUndefined();
+      expect(client.langchainProxy).toBe(null);
     });
   });
 
@@ -221,7 +221,7 @@ describe('OpenAIClient', () => {
         isChatCompletion: true,
       });
       const hasUserWithName = result.prompt.some(
-        (item) => item.role === 'user' && item.name === 'Test User',
+        (item) => item.role === 'user' && item.name === 'Test_User',
       );
       expect(hasUserWithName).toBe(true);
     });

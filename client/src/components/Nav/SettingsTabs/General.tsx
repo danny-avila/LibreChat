@@ -1,6 +1,6 @@
 import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
-import React, { useState, useContext, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useContext, useCallback, useRef } from 'react';
 import { useClearConversationsMutation } from 'librechat-data-provider';
 import {
   ThemeContext,
@@ -8,11 +8,12 @@ import {
   useOnClickOutside,
   useConversation,
   useConversations,
+  useLocalStorage,
 } from '~/hooks';
 import type { TDangerButtonProps } from '~/common';
+import AutoScrollSwitch from './AutoScrollSwitch';
 import DangerButton from './DangerButton';
 import store from '~/store';
-import useLocalStorage from '~/hooks/useLocalStorage';
 
 export const ThemeSelector = ({
   theme,
@@ -27,7 +28,7 @@ export const ThemeSelector = ({
     <div className="flex items-center justify-between">
       <div>{localize('com_nav_theme')}</div>
       <select
-        className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20 dark:bg-gray-900"
+        className="w-24 rounded border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20 dark:bg-gray-900"
         onChange={(e) => onChange(e.target.value)}
         value={theme}
       >
@@ -79,7 +80,7 @@ export const LangSelector = ({
     <div className="flex items-center justify-between">
       <div>{localize('com_nav_language')}</div>
       <select
-        className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20 dark:bg-gray-900"
+        className="w-24 rounded border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20 dark:bg-gray-900"
         onChange={(e) => onChange(e.target.value)}
         value={langcode}
       >
@@ -97,6 +98,7 @@ export const LangSelector = ({
         <option value="ja-JP">{localize('com_nav_lang_japanese')}</option>
         <option value="sv-SE">{localize('com_nav_lang_swedish')}</option>
         <option value="ko-KR">{localize('com_nav_lang_korean')}</option>
+        <option value="vi-VN">{localize('com_nav_lang_vietnamese')}</option>
       </select>
     </div>
   );
@@ -114,22 +116,23 @@ function General() {
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
 
-  useEffect(() => {
-    if (clearConvosMutation.isSuccess) {
-      newConversation();
-      refreshConversations();
-    }
-  }, [clearConvosMutation.isSuccess, newConversation, refreshConversations]);
-
-  const clearConvos = useCallback(() => {
+  const clearConvos = () => {
     if (confirmClear) {
       console.log('Clearing conversations...');
-      clearConvosMutation.mutate({});
       setConfirmClear(false);
+      clearConvosMutation.mutate(
+        {},
+        {
+          onSuccess: () => {
+            newConversation();
+            refreshConversations();
+          },
+        },
+      );
     } else {
       setConfirmClear(true);
     }
-  }, [confirmClear, clearConvosMutation]);
+  };
 
   const changeTheme = useCallback(
     (value: string) => {
@@ -174,6 +177,9 @@ function General() {
             showText={true}
             mutation={clearConvosMutation}
           />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <AutoScrollSwitch />
         </div>
       </div>
     </Tabs.Content>

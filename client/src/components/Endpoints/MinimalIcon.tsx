@@ -31,7 +31,7 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     default: { icon: <OpenAIMinimalIcon />, name: 'UNKNOWN' },
   };
 
-  const { icon, name } = endpointIcons[endpoint];
+  const { icon, name } = endpointIcons[endpoint] ?? endpointIcons.default;
 
   return (
     <div

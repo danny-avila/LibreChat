@@ -11,7 +11,7 @@ import * as s from './schemas';
 import * as dataService from './data-service';
 
 export enum QueryKeys {
-  messages = 'messsages',
+  messages = 'messages',
   allConversations = 'allConversations',
   conversation = 'conversation',
   searchEnabled = 'searchEnabled',
@@ -230,11 +230,29 @@ export const useGetSearchEnabledQuery = (
   });
 };
 
-export const useGetEndpointsQuery = (): QueryObserverResult<t.TEndpointsConfig> => {
-  return useQuery([QueryKeys.endpoints], () => dataService.getAIEndpoints(), {
+export const useGetEndpointsQuery = <TData = t.TEndpointsConfig>(
+  config?: UseQueryOptions<t.TEndpointsConfig, unknown, TData>,
+): QueryObserverResult<TData> => {
+  return useQuery<t.TEndpointsConfig, unknown, TData>(
+    [QueryKeys.endpoints],
+    () => dataService.getAIEndpoints(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
+export const useGetModelsQuery = (
+  config?: UseQueryOptions<t.TModelsConfig>,
+): QueryObserverResult<t.TModelsConfig> => {
+  return useQuery<t.TModelsConfig>([QueryKeys.models], () => dataService.getModels(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
+    ...config,
   });
 };
 

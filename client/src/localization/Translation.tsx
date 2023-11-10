@@ -11,6 +11,7 @@ import Japanese from './languages/Jp';
 import Swedish from './languages/Sv';
 import Korean from './languages/Ko';
 import TraditionalChinese from './languages/ZhTraditional';
+import Vietnamese from './languages/Vi';
 // === import additional language files here === //
 
 const languageMap: { [key: string]: unknown } = {
@@ -27,6 +28,7 @@ const languageMap: { [key: string]: unknown } = {
   'sv-SE': Swedish,
   'ko-KR': Korean,
   'zh-TC': TraditionalChinese,
+  'vi-VN': Vietnamese,
   // Add additional language mappings here
 };
 
@@ -56,25 +58,8 @@ export const getTranslations = (langCode: string) => {
 // input: language code in string & phrase key in string
 // returns an corresponding phrase value in string
 export const localize = (langCode: string, phraseKey: string, ...values: string[]) => {
-  const lang = getTranslationsQima(langCode);
+  const lang = getTranslations(langCode);
   const phrase = lang[phraseKey] || English[phraseKey] || '';
 
   return phrase.format(...values);
-};
-
-export const getTranslationsQima = (langCode: string) => {
-  const language = languageMap[langCode] || English;
-  return {
-    ...language,
-    // QIMA phraseKeys, only English
-    com_ui_example_quantum_computing:
-      'Can you write a pitch of 3 sentences to explain to a client the difference between a pre-shipment inspection and an inline inspection?',
-    com_ui_example_10_year_old_b_day:
-      'Create an automated response for incoming food related emails.',
-    com_ui_example_http_in_js:
-      'Can you summarize in 5 bullet points the key insights from this skin research report.',
-    com_ui_limitation_limited_2021:
-      'WARNING: Data is not trained on QIMA specific information and has limited knowledge of the world and events after 2021.',
-    com_auth_welcome_back: 'Welcome back to QimaGPT',
-  };
 };

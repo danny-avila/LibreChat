@@ -1,6 +1,6 @@
 import { TPreset } from 'librechat-data-provider';
 import type { TSetOptionsPayload, TSetExample, TSetOption } from '~/common';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilState } from 'recoil';
 import { cleanupPreset } from '~/utils';
 import store from '~/store';
 
@@ -8,7 +8,7 @@ type TUsePresetOptions = (preset?: TPreset | boolean | null) => TSetOptionsPaylo
 
 const usePresetOptions: TUsePresetOptions = (_preset) => {
   const [preset, setPreset] = useRecoilState(store.preset);
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
+
   if (!_preset) {
     return false;
   }

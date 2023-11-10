@@ -35,6 +35,25 @@ const showPopover = atom<boolean>({
   default: false,
 });
 
+const autoScroll = atom<boolean>({
+  key: 'autoScroll',
+  default: localStorage.getItem('autoScroll') === 'true',
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('autoScroll');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('autoScroll', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
 export default {
   abortScroll,
   optionSettings,
@@ -42,4 +61,5 @@ export default {
   showAgentSettings,
   showBingToneSetting,
   showPopover,
+  autoScroll,
 };

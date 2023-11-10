@@ -32,12 +32,41 @@ How to set up the user/auth system and Google login.
 ### Running LibreChat
 Once you have completed all the setup, you can start the LibreChat application by running the command `docker-compose up` in your terminal. After running this command, you can access the LibreChat application at `http://localhost:3080`.
 
+If you build your own containers out of the git checkout with `docker-compose up --build` you should pre-create the mount points for the volumes. This avoids occasional trouble with directory permissions when rebuilding:
+```
+mkdir meili_data images .env.production .env.development data-node
+```
+
 **Note:** MongoDB does not support older ARM CPUs like those found in Raspberry Pis. However, you can make it work by setting MongoDB’s version to mongo:4.4.18 in docker-compose.yml, the most recent version compatible with
 
 That's it! If you need more detailed information on configuring your compose file, see my notes below.
 
 ## Updating LibreChat
 - Run `npm run update` from the project directory for a clean installation.
+
+If you're having issues running this command, you can try running what the script does manually:
+
+Prefix commands with `sudo` according to your environment permissions.
+
+```bash
+# Stop the container (if running)
+docker-compose down
+# Fetch the latest changes from Github
+git fetch origin
+# Switch to the repo's main branch
+git checkout main
+# Pull the latest changes to the main branch from Github
+git pull origin main
+# Prune all LibreChat Docker images
+docker rmi librechat:latest
+# Remove all unused dangling Docker images
+docker image prune -f
+# Building a new LibreChat image
+docker-compose build
+
+# Start LibreChat
+docker-compose up
+```
 
 ## Advanced Settings
 

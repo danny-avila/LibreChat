@@ -1,6 +1,7 @@
 const Keyv = require('keyv');
 const axios = require('axios');
 const { isEnabled } = require('../utils');
+const { extractBaseURL } = require('../../utils');
 const keyvRedis = require('../../cache/keyvRedis');
 // const { getAzureCredentials, genAzureChatCompletion } = require('../../utils/');
 const { openAIApiKey, userProvidedOpenAI } = require('./EndpointService').config;
@@ -16,6 +17,7 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
   let models = _models.slice() ?? [];
   let apiKey = openAIApiKey;
   let basePath = 'https://api.openai.com/v1';
+  let reverseProxyUrl = OPENAI_REVERSE_PROXY;
   if (opts.azure) {
     return models;
     // const azure = getAzureCredentials();
@@ -23,16 +25,13 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
     //   .split('/deployments')[0]
     //   .concat(`/models?api-version=${azure.azureOpenAIApiVersion}`);
     // apiKey = azureOpenAIApiKey;
-  }
-
-  let reverseProxyUrl = OPENAI_REVERSE_PROXY;
-
-  if (OPENROUTER_API_KEY) {
+  } else if (OPENROUTER_API_KEY) {
     reverseProxyUrl = 'https://openrouter.ai/api/v1';
+    apiKey = OPENROUTER_API_KEY;
   }
 
   if (reverseProxyUrl) {
-    basePath = reverseProxyUrl.match(/.*v1/)?.[0];
+    basePath = extractBaseURL(reverseProxyUrl);
   }
 
   const cachedModels = await modelsCache.get(basePath);
@@ -40,7 +39,7 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
     return cachedModels;
   }
 
-  if (basePath.includes('v1') || opts.azure) {
+  if (basePath?.includes('v1') || opts.azure) {
     try {
       const res = await axios.get(`${basePath}${opts.azure ? '' : '/models'}`, {
         headers: {

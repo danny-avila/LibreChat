@@ -1,7 +1,7 @@
 name: Playwright Tests
 on:
   pull_request:
-    branches: 
+    branches:
       - main
       - dev
       - release/*
@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
-      NODE_ENV: ci
+      NODE_ENV: CI
       CI: true
       SEARCH: false
       BINGAI_TOKEN: user_provided

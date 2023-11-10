@@ -21,7 +21,7 @@ jobs:
       BAN_VIOLATIONS: ${{ secrets.BAN_VIOLATIONS }}
       BAN_DURATION: ${{ secrets.BAN_DURATION }}
       BAN_INTERVAL: ${{ secrets.BAN_INTERVAL }}
-      NODE_ENV: ci
+      NODE_ENV: CI
     steps:
       - uses: actions/checkout@v2
       - name: Use Node.js 20.x

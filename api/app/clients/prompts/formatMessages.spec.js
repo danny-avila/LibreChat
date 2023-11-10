@@ -18,6 +18,36 @@ describe('formatMessage', () => {
     });
   });
 
+  it('sanitizes the name by replacing invalid characters (per OpenAI)', () => {
+    const input = {
+      message: {
+        sender: 'user',
+        text: 'Hello',
+      },
+      userName: ' John$Doe@Example! ',
+    };
+    const result = formatMessage(input);
+    expect(result).toEqual({
+      role: 'user',
+      content: 'Hello',
+      name: '_John_Doe_Example__',
+    });
+  });
+
+  it('trims the name to a maximum length of 64 characters', () => {
+    const longName = 'a'.repeat(100);
+    const input = {
+      message: {
+        sender: 'user',
+        text: 'Hello',
+      },
+      userName: longName,
+    };
+    const result = formatMessage(input);
+    expect(result.name.length).toBe(64);
+    expect(result.name).toBe('a'.repeat(64));
+  });
+
   it('formats a realistic user message', () => {
     const input = {
       message: {

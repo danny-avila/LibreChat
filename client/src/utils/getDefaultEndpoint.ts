@@ -6,8 +6,8 @@ type TConvoSetup = Partial<TPreset> | Partial<TConversation>;
 type TDefaultEndpoint = { convoSetup: TConvoSetup; endpointsConfig: TEndpointsConfig };
 
 const defaultEndpoints = [
-  'azureOpenAI',
   'openAI',
+  'azureOpenAI',
   'bingAI',
   'chatGPTBrowser',
   'gptPlugins',
