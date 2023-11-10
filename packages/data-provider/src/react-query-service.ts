@@ -31,7 +31,7 @@ export const useAbortRequestWithMessage = (): UseMutationResult<
   void,
   Error,
   { endpoint: string; abortKey: string; message: string }
-> => {
+  > => {
   const queryClient = useQueryClient();
   return useMutation(
     ({ endpoint, abortKey, message }) =>
@@ -118,7 +118,7 @@ export const useUpdateConversationMutation = (
   unknown,
   t.TUpdateConversationRequest,
   unknown
-> => {
+  > => {
   const queryClient = useQueryClient();
   return useMutation(
     (payload: t.TUpdateConversationRequest) => dataService.updateConversation(payload),
@@ -147,7 +147,7 @@ export const useUpdateUserKeysMutation = (): UseMutationResult<
   unknown,
   t.TUpdateUserKeyRequest,
   unknown
-> => {
+  > => {
   const queryClient = useQueryClient();
   return useMutation((payload: t.TUpdateUserKeyRequest) => dataService.updateUserKey(payload), {
     onSuccess: () => {
@@ -163,7 +163,7 @@ export const useDeleteConversationMutation = (
   unknown,
   t.TDeleteConversationRequest,
   unknown
-> => {
+  > => {
   const queryClient = useQueryClient();
   return useMutation(
     (payload: t.TDeleteConversationRequest) => dataService.deleteConversation(payload),
@@ -256,23 +256,12 @@ export const useGetModelsQuery = (
   });
 };
 
-export const useGetModelsQuery = (
-  config?: UseQueryOptions<t.TModelsConfig>,
-): QueryObserverResult<t.TModelsConfig> => {
-  return useQuery<t.TModelsConfig>([QueryKeys.models], () => dataService.getModels(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    ...config,
-  });
-};
-
 export const useCreatePresetMutation = (): UseMutationResult<
   s.TPreset[],
   unknown,
   s.TPreset,
   unknown
-> => {
+  > => {
   const queryClient = useQueryClient();
   return useMutation((payload: s.TPreset) => dataService.createPreset(payload), {
     onSuccess: () => {
@@ -286,7 +275,7 @@ export const useUpdatePresetMutation = (): UseMutationResult<
   unknown,
   s.TPreset,
   unknown
-> => {
+  > => {
   const queryClient = useQueryClient();
   return useMutation((payload: s.TPreset) => dataService.updatePreset(payload), {
     onSuccess: () => {
@@ -311,7 +300,7 @@ export const useDeletePresetMutation = (): UseMutationResult<
   unknown,
   s.TPreset | object,
   unknown
-> => {
+  > => {
   const queryClient = useQueryClient();
   return useMutation((payload: s.TPreset | object) => dataService.deletePreset(payload), {
     onSuccess: () => {
@@ -342,7 +331,7 @@ export const useUpdateTokenCountMutation = (): UseMutationResult<
   unknown,
   { text: string },
   unknown
-> => {
+  > => {
   const queryClient = useQueryClient();
   return useMutation(({ text }: { text: string }) => dataService.updateTokenCount(text), {
     onSuccess: () => {
@@ -356,7 +345,7 @@ export const useLoginUserMutation = (): UseMutationResult<
   unknown,
   t.TLoginUser,
   unknown
-> => {
+  > => {
   const queryClient = useQueryClient();
   return useMutation((payload: t.TLoginUser) => dataService.login(payload), {
     onSuccess: () => {
@@ -373,7 +362,7 @@ export const useRegisterUserMutation = (): UseMutationResult<
   unknown,
   t.TRegisterUser,
   unknown
-> => {
+  > => {
   const queryClient = useQueryClient();
   return useMutation((payload: t.TRegisterUser) => dataService.register(payload), {
     onSuccess: () => {
@@ -396,7 +385,7 @@ export const useRefreshTokenMutation = (): UseMutationResult<
   unknown,
   unknown,
   unknown
-> => {
+  > => {
   const queryClient = useQueryClient();
   return useMutation(() => dataService.refreshToken(), {
     onMutate: () => {
@@ -432,7 +421,7 @@ export const useRequestPasswordResetMutation = (): UseMutationResult<
   unknown,
   t.TRequestPasswordReset,
   unknown
-> => {
+  > => {
   return useMutation((payload: t.TRequestPasswordReset) =>
     dataService.requestPasswordReset(payload),
   );
@@ -443,7 +432,7 @@ export const useResetPasswordMutation = (): UseMutationResult<
   unknown,
   t.TResetPassword,
   unknown
-> => {
+  > => {
   return useMutation((payload: t.TResetPassword) => dataService.resetPassword(payload));
 };
 
@@ -464,7 +453,7 @@ export const useUpdateUserPluginsMutation = (): UseMutationResult<
   unknown,
   t.TUpdateUserPlugins,
   unknown
-> => {
+  > => {
   const queryClient = useQueryClient();
   return useMutation((payload: t.TUpdateUserPlugins) => dataService.updateUserPlugins(payload), {
     onSuccess: () => {
