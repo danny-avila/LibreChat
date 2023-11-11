@@ -46,6 +46,7 @@ const Dropdown: FC<DropdownProps> = ({
       <Listbox value={value} onChange={onChange}>
         <div className={cn('relative', className)}>
           <Listbox.Button
+            data-testid="dropdown-menu"
             className={cn(
               'relative inline-flex items-center justify-between rounded-md py-2 pl-3 pr-10',
               currentThemeStyle,
