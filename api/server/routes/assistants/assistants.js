@@ -1,9 +1,6 @@
 const OpenAI = require('openai');
 const express = require('express');
 const router = express.Router();
-const { requireJwtAuth } = require('../middleware/');
-
-router.use(requireJwtAuth);
 
 /**
  * Create an assistant.
