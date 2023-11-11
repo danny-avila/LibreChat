@@ -5,7 +5,7 @@ const Payment = require('../../models/payments.js');
 const PaymentRefUserId = require('../../models/paymentReference.js'); // Store paymentreference and userID
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 const util = require('util');
-const singlePaymentTimeTracker = require('../../paymentCalculation/singlePaymentTimeTracker');
+const singlePaymentTimeTracker = require('../../subscriptionManagement/singlePaymentTimeTracker.js');
 const moment = require('moment-timezone');
 
 // Convert callback-based functions to promises
@@ -36,7 +36,7 @@ router.post('/create-payment', requireJwtAuth, async (req, res) => {
         custom: paymentReference,
         amount: {
           currency: 'USD',
-          total: '10.00'
+          total: '20.00'
         }
       }]
     };
@@ -72,7 +72,7 @@ router.get('/success', async (req, res) => {
       transactions: [{
         amount: {
           currency: 'USD',
-          total: '10.00'
+          total: '20.00'
         }
       }]
     };
@@ -110,6 +110,27 @@ router.get('/success', async (req, res) => {
     });
   } catch (error) {
     console.error(`[Payment Success] Execution failed: ${error}, Response: ${error.response}`);
+  }
+});
+
+// endpoint to get the latest subscription end time for a user
+router.get('/subscription-endtime/:userId', requireJwtAuth, async (req, res) => {
+  try {
+    const userId = req.params.userId;
+
+    // Find the latest payment for this user
+    const latestPayment = await Payment.findOne({ userId: userId }).sort({ endTime: -1 });
+
+    if (!latestPayment) {
+      return res.status(404).json({ message: 'No subscription found for this user.' });
+    }
+
+    const subscriptionDueDime = moment(latestPayment.endTime).format('MMM D, YYYY HH:mm:ss');
+
+    // Send back the subscription end time
+    res.json({ dueTime: subscriptionDueDime });
+  } catch (error) {
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 

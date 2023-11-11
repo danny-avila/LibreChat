@@ -14,6 +14,7 @@ function SubscriptionContent() {
   const [searchParams] = useSearchParams();
   const lang = useRecoilValue(store.lang);
   const navigate = useNavigate();
+  const [subscriptionDueDate, setSubscriptionDueDate] = useState('');
 
   const getUserByIdQuery = useGetUserByIdQuery(userId);
 
@@ -121,6 +122,29 @@ function SubscriptionContent() {
     }
   }
 
+  // Fetching subscription data
+  useEffect(() => {
+    const fetchSubscriptionData = async () => {
+      try {
+        const response = await fetch(`/api/payments/subscription-endtime/${userId}`, {
+          headers: {
+            'Authorization': `Bearer ${Cookies.get('token')}`,
+          },
+        });
+        const data = await response.json();
+        if (response.ok) {
+          setSubscriptionDueDate(data.dueTime);
+        } else {
+          setError(data.message);
+        }
+      } catch (error) {
+        setError('Failed to fetch subscription data');
+      }
+    };
+
+    fetchSubscriptionData();
+  }, [userId]);
+
   return (
     <>
       <button
@@ -136,21 +160,20 @@ function SubscriptionContent() {
         </div>
       </div>
 
-      {/* Display error message if there's an error */}
       {error && <div className="error-message text-red-500">{error}</div>}
 
       <div className="mt-10 mx-auto border rounded" style={{ width: '900px', marginTop: '200px' }}>
         {/* Row 1 */}
         <div className="flex w-full">
-          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">Pre-paid Plan Options</div>
-          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">Payment Option</div>
-          <div className="w-1/3 p-2 border bg-green-500 flex items-center justify-center">Plan Due Date</div>
+          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">Pre-paid Plan Option</div>
+          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">Payment Option Buttons</div>
+          <div className="w-1/3 p-2 border bg-green-500 flex items-center justify-center">Plan Due Time</div>
         </div>
 
         {/* Row 2 */}
         <div className="flex w-full">
-          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">by Month: 10 USD/Month</div>
-          <div className="w-1/6 p-2 border border-r flex items-center justify-center bg-green-500"> {/* Flex centering added */}
+          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">20 USD/Month</div>
+          <div className="w-1/6 p-2 border border-r flex items-center justify-center bg-green-500">
             <button
               onClick={handleSubscription}
               className="w-full h-full text-white rounded bg-blue-600"
@@ -159,7 +182,9 @@ function SubscriptionContent() {
             </button>
           </div>
           <div className="w-1/6 p-2 border bg-green-500 flex items-center justify-center">Coming Soon</div>
-          <div className="w-1/3 p-2 border bg-green-500 flex items-center justify-center">Plan Due Date</div>
+          <div className="w-1/3 p-2 border bg-green-500 flex items-center justify-center">
+            {subscriptionDueDate ? `${subscriptionDueDate}` : 'Loading subscription due date...'}
+          </div>
         </div>
       </div>
     </>
