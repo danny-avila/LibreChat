@@ -4,6 +4,7 @@ import { Settings } from 'lucide-react';
 import { SetKeyDialog } from './SetKeyDialog';
 import { useUserKey, useLocalize, useMediaQuery } from '~/hooks';
 import { SendMessageIcon } from '~/components/svg';
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/';
 
 export default function SubmitButton({
   conversation,
@@ -55,7 +56,7 @@ export default function SubmitButton({
 
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
-  const iconContainerClass = `m-1 mr-0 rounded-md pb-[5px] pl-[5px] pr-[5px] pt-[5px] ${
+  const iconContainerClass = `m-1 mr-0 rounded-md pb-[5px] pl-[6px] pr-[4px] pt-[5px] ${
     hasText ? (isSquareGreen ? 'bg-green-500' : '') : ''
   } group-hover:bg-19C37D group-disabled:hover:bg-transparent dark:${
     hasText ? (isSquareGreen ? 'bg-green-500' : '') : ''
@@ -106,22 +107,31 @@ export default function SubmitButton({
     );
   } else {
     return (
-      <button
-        onClick={clickHandler}
-        disabled={disabled}
-        data-testid="submit-button"
-        className="group absolute bottom-0 right-0 z-[101] flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500"
-      >
-        <div className={iconContainerClass}>
-          {hasText ? (
-            <div className="bg-19C37D flex h-[24px] w-[24px] items-center justify-center rounded-full text-white">
-              <SendMessageIcon />
-            </div>
-          ) : (
-            <SendMessageIcon />
-          )}
-        </div>
-      </button>
+      <TooltipProvider delayDuration={50}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={clickHandler}
+              disabled={disabled}
+              data-testid="submit-button"
+              className="group absolute bottom-0 right-0 z-[101] flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500"
+            >
+              <div className={iconContainerClass}>
+                {hasText ? (
+                  <div className="bg-19C37D flex h-[24px] w-[24px] items-center justify-center rounded-full text-white">
+                    <SendMessageIcon />
+                  </div>
+                ) : (
+                  <SendMessageIcon />
+                )}
+              </div>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={-5}>
+            {localize('com_nav_send_message')}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     );
   }
 }

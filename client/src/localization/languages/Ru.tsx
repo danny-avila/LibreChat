@@ -194,6 +194,7 @@ export default {
   com_nav_confirm_clear: 'Подтвердить очистку',
   com_nav_close_sidebar: 'Закрыть боковую панель',
   com_nav_open_sidebar: 'Открыть боковую панель',
+  com_nav_send_message: 'Отправить сообщение',
   com_nav_log_out: 'Выйти',
   com_nav_user: 'ПОЛЬЗОВАТЕЛЬ',
   com_nav_clear_conversation: 'Очистить разговоры',
