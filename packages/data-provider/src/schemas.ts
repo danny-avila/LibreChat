@@ -357,7 +357,7 @@ const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
   gptPlugins: gptPluginsSchema,
 };
 
-function getFirstDefinedValue(possibleValues: string[]) {
+export function getFirstDefinedValue(possibleValues: string[]) {
   let returnValue;
   for (const value of possibleValues) {
     if (value) {
@@ -368,7 +368,7 @@ function getFirstDefinedValue(possibleValues: string[]) {
   return returnValue;
 }
 
-type TPossibleValues = {
+export type TPossibleValues = {
   models: string[];
   secondaryModels?: string[];
 };
@@ -429,4 +429,85 @@ export const getResponseSender = (endpointOption: TEndpointOption): string => {
   }
 
   return '';
+};
+
+export const compactOpenAISchema = tConversationSchema
+  .pick({
+    model: true,
+    chatGptLabel: true,
+    promptPrefix: true,
+    temperature: true,
+    top_p: true,
+    presence_penalty: true,
+    frequency_penalty: true,
+  })
+  .transform((obj: Partial<TConversation>) => {
+    const newObj: Partial<TConversation> = { ...obj };
+    if (newObj.model === 'gpt-3.5-turbo') {
+      delete newObj.model;
+    }
+    if (newObj.temperature === 1) {
+      delete newObj.temperature;
+    }
+    if (newObj.top_p === 1) {
+      delete newObj.top_p;
+    }
+    if (newObj.presence_penalty === 0) {
+      delete newObj.presence_penalty;
+    }
+    if (newObj.frequency_penalty === 0) {
+      delete newObj.frequency_penalty;
+    }
+
+    (Object.keys(newObj) as Array<keyof TConversation>).forEach((key) => {
+      const value = newObj[key];
+      if (value === undefined || value === null) {
+        delete newObj[key];
+      }
+    });
+    return newObj;
+  })
+  .catch(() => ({}));
+
+type CompactEndpointSchema = typeof compactOpenAISchema;
+// | typeof googleSchema
+// | typeof bingAISchema
+// | typeof anthropicSchema
+// | typeof chatGPTBrowserSchema
+// | typeof gptPluginsSchema;
+
+const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
+  openAI: compactOpenAISchema,
+  // azureOpenAI: openAISchema,
+  // google: googleSchema,
+  // bingAI: bingAISchema,
+  // anthropic: anthropicSchema,
+  // chatGPTBrowser: chatGPTBrowserSchema,
+  // gptPlugins: gptPluginsSchema,
+};
+
+export const parseCompactConvo = (
+  endpoint: EModelEndpoint,
+  conversation: Partial<TConversation | TPreset>,
+  possibleValues?: TPossibleValues,
+) => {
+  const schema = compactEndpointSchemas[endpoint];
+
+  if (!schema) {
+    throw new Error(`Unknown endpoint: ${endpoint}`);
+  }
+
+  const convo = schema.parse(conversation) as TConversation;
+  // const { models, secondaryModels } = possibleValues ?? {};
+  const { models } = possibleValues ?? {};
+
+  if (models && convo) {
+    convo.model = getFirstDefinedValue(models) ?? convo.model;
+  }
+
+  // if (secondaryModels && convo.agentOptions) {
+  //   convo.agentOptionmodel = getFirstDefinedValue(secondaryModels) ?? convo.agentOptionmodel;
+  // }
+
+  return convo;
 };

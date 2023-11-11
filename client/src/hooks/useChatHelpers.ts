@@ -5,7 +5,7 @@ import { useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState 
 import {
   QueryKeys,
   useGetMessagesByConvoId,
-  parseConvo,
+  parseCompactConvo,
   getResponseSender,
 } from 'librechat-data-provider';
 import type {
@@ -92,7 +92,7 @@ export default function useChatHelpers(index = 0) {
     const isEditOrContinue = isEdited || isContinued;
 
     // set the endpoint option
-    const convo = parseConvo(endpoint, currentConversation);
+    const convo = parseCompactConvo(endpoint, currentConversation);
     const endpointOption = {
       ...convo,
       endpoint,

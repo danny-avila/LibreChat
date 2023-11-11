@@ -1,6 +1,10 @@
 import { v4 } from 'uuid';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
-import { parseConvo, getResponseSender, useGetEndpointsQuery } from 'librechat-data-provider';
+import {
+  parseCompactConvo,
+  getResponseSender,
+  useGetEndpointsQuery,
+} from 'librechat-data-provider';
 import type { TMessage, TSubmission, TEndpointOption } from 'librechat-data-provider';
 import type { TAskFunction } from '~/common';
 import useUserKey from './useUserKey';
@@ -52,7 +56,7 @@ const useMessageHandler = () => {
     const isEditOrContinue = isEdited || isContinued;
 
     // set the endpoint option
-    const convo = parseConvo(endpoint, currentConversation);
+    const convo = parseCompactConvo(endpoint, currentConversation);
     const endpointOption = {
       ...convo,
       endpoint,
