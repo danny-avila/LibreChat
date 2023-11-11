@@ -10,7 +10,11 @@ import { useMessageHandler, ThemeContext } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
-export default function TextChat({ isSearchView = false }) {
+interface TextChatProps {
+  isSearchView?: boolean;
+}
+
+export default function TextChat({ isSearchView = false }: TextChatProps) {
   const { ask, isSubmitting, handleStopGenerating, latestMessage, endpointsConfig } =
     useMessageHandler();
   const conversation = useRecoilValue(store.conversation);
@@ -18,22 +22,22 @@ export default function TextChat({ isSearchView = false }) {
   const [text, setText] = useRecoilState(store.text);
   const { theme } = useContext(ThemeContext);
   const isComposing = useRef(false);
-  const inputRef = useRef(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [hasText, setHasText] = useState(false);
 
   // TODO: do we need this?
   const disabled = false;
 
-  const isNotAppendable = latestMessage?.unfinished & !isSubmitting || latestMessage?.error;
+  const isNotAppendable = (latestMessage?.unfinished && !isSubmitting) || latestMessage?.error;
   const { conversationId, jailbreak } = conversation || {};
 
-  // auto focus to input, when enter a conversation.
+  // auto focus to input, when entering a conversation.
   useEffect(() => {
     if (!conversationId) {
       return;
     }
 
-    // Prevents Settings from not showing on new conversation, also prevents showing toneStyle change without jailbreak
+    // Prevents Settings from not showing on a new conversation, also prevents showing toneStyle change without jailbreak
     if (conversationId === 'new' || !jailbreak) {
       setShowBingToneSetting(false);
     }
@@ -59,7 +63,7 @@ export default function TextChat({ isSearchView = false }) {
     setHasText(false);
   };
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && isSubmitting) {
       return;
     }
@@ -73,9 +77,9 @@ export default function TextChat({ isSearchView = false }) {
     }
   };
 
-  const handleKeyUp = (e) => {
-    if (e.keyCode === 8 && e.target.value.trim() === '') {
-      setText(e.target.value);
+  const handleKeyUp = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.keyCode === 8 && e.currentTarget.value.trim() === '') {
+      setText(e.currentTarget.value);
     }
 
     if (e.key === 'Enter' && e.shiftKey) {
@@ -95,7 +99,7 @@ export default function TextChat({ isSearchView = false }) {
     isComposing.current = false;
   };
 
-  const changeHandler = (e) => {
+  const changeHandler = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const { value } = e.target;
 
     setText(value);
@@ -103,8 +107,8 @@ export default function TextChat({ isSearchView = false }) {
   };
 
   const updateHasText = useCallback(
-    (text) => {
-      setHasText(!!text.trim() || latestMessage?.error);
+    (text: string) => {
+      setHasText(!!text.trim() || !!latestMessage?.error);
     },
     [setHasText, latestMessage],
   );
@@ -168,11 +172,11 @@ export default function TextChat({ isSearchView = false }) {
                 <TextareaAutosize
                   // set test id for e2e testing
                   data-testid="text-input"
-                  tabIndex="0"
+                  tabIndex={0}
                   autoFocus
                   ref={inputRef}
                   // style={{maxHeight: '200px', height: '24px', overflowY: 'hidden'}}
-                  rows="1"
+                  rows={1}
                   value={disabled || isNotAppendable ? '' : text}
                   onKeyUp={handleKeyUp}
                   onKeyDown={handleKeyDown}
@@ -189,7 +193,11 @@ export default function TextChat({ isSearchView = false }) {
                   handleStopGenerating={handleStopGenerating}
                   disabled={disabled || isNotAppendable}
                   isSubmitting={isSubmitting}
-                  userProvidesKey={endpointsConfig?.[conversation.endpoint]?.userProvide}
+                  userProvidesKey={
+                    conversation?.endpoint
+                      ? endpointsConfig?.[conversation.endpoint]?.userProvide
+                      : undefined
+                  }
                   hasText={hasText}
                 />
               </div>
