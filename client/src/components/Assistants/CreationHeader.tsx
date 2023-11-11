@@ -23,10 +23,12 @@ export default function CreationHeader({ reset }: { reset: UseFormReset<Creation
   const [assistantOption, setAssistant] = useState<string | Option>('Create Assistant');
 
   const onSelect = (value: string) => {
-    if (!value || value === 'Create Assistant') {
+    const assistant = assistants.data?.find((assistant) => assistant.id === value);
+    if (!assistant) {
+      reset({ id: '' });
+      setAssistant('Create Assistant');
       return;
     }
-    const assistant = assistants.data?.find((assistant) => assistant.id === value);
     setAssistant({
       ...assistant,
       label: assistant?.name ?? '',
@@ -75,15 +77,7 @@ export default function CreationHeader({ reset }: { reset: UseFormReset<Creation
         'z-50 flex h-[40px] w-full flex-none items-center justify-center px-4 hover:cursor-pointer hover:border-green-500 focus:border-green-500',
       )}
       renderOption={() => (
-        <span
-          className="flex items-center gap-1.5 truncate"
-          onClick={() => {
-            reset({
-              id: '',
-            });
-            setAssistant('Create Assistant');
-          }}
-        >
+        <span className="flex items-center gap-1.5 truncate">
           <span className="absolute inset-y-0 left-0 flex items-center pl-2 text-gray-800 dark:text-gray-100">
             <Plus className="w-[16px]" />
           </span>
