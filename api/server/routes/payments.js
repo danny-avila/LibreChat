@@ -5,6 +5,8 @@ const Payment = require('../../models/payments.js');
 const PaymentRefUserId = require('../../models/paymentReference.js'); // Store paymentreference and userID
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 const util = require('util');
+const singlePaymentTimeTracker = require('../../paymentCalculation/singlePaymentTimeTracker');
+const moment = require('moment-timezone');
 
 // Convert callback-based functions to promises
 const createPayment = util.promisify(paypal.payment.create).bind(paypal.payment);
@@ -61,7 +63,6 @@ router.get('/success', async (req, res) => {
 
   try {
     const userSession = await getUserSessionFromReference(paymentReference);
-    console.log('check userSession:', userSession);
     if (!userSession || !userSession.userId) {
       console.error('[Payment Success] User session not found');
       return res.redirect('http://localhost:3090/subscription/payment-failed');
@@ -80,6 +81,10 @@ router.get('/success', async (req, res) => {
     const executedPayment = await executePayment(paymentId, execute_payment_json);
     const transaction = executedPayment.transactions[0];
     const sale = transaction.related_resources[0].sale;
+    // Get the start and end times for the successful payment
+    const { startTime, endTime } = singlePaymentTimeTracker();
+    const formattedStartTime = moment(startTime).format('MMM D, YYYY');
+    const formattedEndTime = moment(endTime).format('MMM D, YYYY');
 
     // console.log(`userSession before saving paymentRecord: ${JSON.stringify(userSession)}`);
     const paymentRecord = new Payment({
@@ -89,11 +94,20 @@ router.get('/success', async (req, res) => {
       currency: sale.amount.currency,
       paymentId: paymentId,
       paymentStatus: executedPayment.state,
-      paymentReference: paymentReference
+      paymentReference: paymentReference,
+      startTime: formattedStartTime, // Added start time
+      endTime: formattedEndTime// Added end time
     });
 
     await paymentRecord.save();
-    res.json({ status: 'success', paymentId: paymentId, userId: userSession.userId });
+
+    res.json({
+      status: 'success',
+      paymentId: paymentId,
+      userId: userSession.userId,
+      startTime: formattedStartTime,
+      endTime: formattedEndTime
+    });
   } catch (error) {
     console.error(`[Payment Success] Execution failed: ${error}, Response: ${error.response}`);
   }

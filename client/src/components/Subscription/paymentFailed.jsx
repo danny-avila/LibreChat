@@ -17,7 +17,7 @@ const PaymentFailed = () => {
       <div className="payment-message payment-failed"></div>
       <h1>Payment Failed</h1>
       <p>We encountered an issue processing your payment: {error}</p>
-      <p>User {userId}, please try again or contact support for assistance.</p>
+      <p>Please try again or contact support for assistance.</p>
     </div>
   );
 };
