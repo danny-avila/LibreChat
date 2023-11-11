@@ -58,7 +58,6 @@ router.post('/create-payment', requireJwtAuth, async (req, res) => {
 });
 
 router.get('/success', async (req, res) => {
-  console.log(`[Payment Success] Called with query: ${JSON.stringify(req.query)}`);
   const { PayerID, paymentId, paymentReference } = req.query;
 
   try {
@@ -83,8 +82,6 @@ router.get('/success', async (req, res) => {
     const sale = transaction.related_resources[0].sale;
     // Get the start and end times for the successful payment
     const { startTime, endTime } = singlePaymentTimeTracker();
-    const formattedStartTime = moment(startTime).format('MMM D, YYYY');
-    const formattedEndTime = moment(endTime).format('MMM D, YYYY');
 
     // console.log(`userSession before saving paymentRecord: ${JSON.stringify(userSession)}`);
     const paymentRecord = new Payment({
@@ -95,11 +92,14 @@ router.get('/success', async (req, res) => {
       paymentId: paymentId,
       paymentStatus: executedPayment.state,
       paymentReference: paymentReference,
-      startTime: formattedStartTime, // Added start time
-      endTime: formattedEndTime// Added end time
+      startTime: startTime, // Added start time
+      endTime: endTime// Added end time
     });
 
     await paymentRecord.save();
+
+    const formattedStartTime = moment(startTime).format('MMM D, YYYY HH:mm:ss');
+    const formattedEndTime = moment(endTime).format('MMM D, YYYY HH:mm:ss');
 
     res.json({
       status: 'success',
