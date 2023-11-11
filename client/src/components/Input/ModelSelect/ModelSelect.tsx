@@ -7,6 +7,7 @@ import ChatGPT from './ChatGPT';
 import Anthropic from './Anthropic';
 import { useRecoilValue } from 'recoil';
 import type { TConversation } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import type { TSetOption, TModelSelectProps } from '~/common';
 import store from '~/store';
 
@@ -22,13 +23,13 @@ type TSelectProps = {
 };
 
 const optionComponents: { [key: string]: React.FC<TModelSelectProps> } = {
-  openAI: OpenAI,
-  azureOpenAI: OpenAI,
-  bingAI: BingAI,
-  google: Google,
-  gptPlugins: Plugins,
-  anthropic: Anthropic,
-  chatGPTBrowser: ChatGPT,
+  [EModelEndpoint.openAI]: OpenAI,
+  [EModelEndpoint.azureOpenAI]: OpenAI,
+  [EModelEndpoint.bingAI]: BingAI,
+  [EModelEndpoint.google]: Google,
+  [EModelEndpoint.gptPlugins]: Plugins,
+  [EModelEndpoint.anthropic]: Anthropic,
+  [EModelEndpoint.chatGPTBrowser]: ChatGPT,
 };
 
 export default function ModelSelect({ conversation, setOption }: TSelectProps) {

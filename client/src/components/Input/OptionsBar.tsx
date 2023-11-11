@@ -1,7 +1,7 @@
 import { Settings2 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
-import { tPresetSchema } from 'librechat-data-provider';
+import { tPresetSchema, EModelEndpoint } from 'librechat-data-provider';
 import { PluginStoreDialog } from '~/components';
 import {
   EndpointSettings,
@@ -40,8 +40,8 @@ export default function OptionsBar() {
 
   const noSettings = useMemo<{ [key: string]: boolean }>(
     () => ({
-      chatGPTBrowser: true,
-      bingAI: jailbreak ? false : conversationId !== 'new',
+      [EModelEndpoint.chatGPTBrowser]: true,
+      [EModelEndpoint.bingAI]: jailbreak ? false : conversationId !== 'new',
     }),
     [jailbreak, conversationId],
   );

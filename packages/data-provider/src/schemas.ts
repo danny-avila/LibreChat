@@ -8,7 +8,19 @@ export enum EModelEndpoint {
   google = 'google',
   gptPlugins = 'gptPlugins',
   anthropic = 'anthropic',
+  assistant = 'assistant',
 }
+
+export const EndpointURLs: { [key in EModelEndpoint]: string } = {
+  [EModelEndpoint.azureOpenAI]: '/api/ask/azureOpenAI',
+  [EModelEndpoint.openAI]: '/api/ask/openAI',
+  [EModelEndpoint.bingAI]: '/api/ask/bingAI',
+  [EModelEndpoint.chatGPTBrowser]: '/api/ask/chatGPTBrowser',
+  [EModelEndpoint.google]: '/api/ask/google',
+  [EModelEndpoint.gptPlugins]: '/api/ask/gptPlugins',
+  [EModelEndpoint.anthropic]: '/api/ask/anthropic',
+  [EModelEndpoint.assistant]: '/api/assistants/chat',
+};
 
 export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
@@ -134,6 +146,9 @@ export const tConversationSchema = z.object({
   toneStyle: z.string().nullable().optional(),
   maxOutputTokens: z.number().optional(),
   agentOptions: tAgentOptionsSchema.nullable().optional(),
+  /* assistant */
+  assistant_id: z.string().optional(),
+  thread_id: z.string().optional(),
 });
 
 export type TConversation = z.infer<typeof tConversationSchema>;
@@ -339,22 +354,42 @@ export const gptPluginsSchema = tConversationSchema
     },
   }));
 
+export const assistantSchema = tConversationSchema
+  .pick({
+    model: true,
+    assistant_id: true,
+    thread_id: true,
+  })
+  .transform((obj: Partial<TConversation>) => {
+    const newObj: Partial<TConversation> = { ...obj };
+    (Object.keys(newObj) as Array<keyof TConversation>).forEach((key) => {
+      const value = newObj[key];
+      if (value === undefined || value === null) {
+        delete newObj[key];
+      }
+    });
+    return newObj;
+  })
+  .catch(() => ({}));
+
 type EndpointSchema =
   | typeof openAISchema
   | typeof googleSchema
   | typeof bingAISchema
   | typeof anthropicSchema
   | typeof chatGPTBrowserSchema
-  | typeof gptPluginsSchema;
+  | typeof gptPluginsSchema
+  | typeof assistantSchema;
 
 const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
-  openAI: openAISchema,
-  azureOpenAI: openAISchema,
-  google: googleSchema,
-  bingAI: bingAISchema,
-  anthropic: anthropicSchema,
-  chatGPTBrowser: chatGPTBrowserSchema,
-  gptPlugins: gptPluginsSchema,
+  [EModelEndpoint.openAI]: openAISchema,
+  [EModelEndpoint.azureOpenAI]: openAISchema,
+  [EModelEndpoint.google]: googleSchema,
+  [EModelEndpoint.bingAI]: bingAISchema,
+  [EModelEndpoint.anthropic]: anthropicSchema,
+  [EModelEndpoint.chatGPTBrowser]: chatGPTBrowserSchema,
+  [EModelEndpoint.gptPlugins]: gptPluginsSchema,
+  [EModelEndpoint.assistant]: assistantSchema,
 };
 
 export function getFirstDefinedValue(possibleValues: string[]) {
@@ -412,19 +447,26 @@ export type TEndpointOption = {
 export const getResponseSender = (endpointOption: TEndpointOption): string => {
   const { endpoint, chatGptLabel, modelLabel, jailbreak } = endpointOption;
 
-  if (['openAI', 'azureOpenAI', 'gptPlugins', 'chatGPTBrowser'].includes(endpoint)) {
+  if (
+    [
+      EModelEndpoint.openAI,
+      EModelEndpoint.azureOpenAI,
+      EModelEndpoint.gptPlugins,
+      EModelEndpoint.chatGPTBrowser,
+    ].includes(endpoint)
+  ) {
     return chatGptLabel ?? 'ChatGPT';
   }
 
-  if (endpoint === 'bingAI') {
+  if (endpoint === EModelEndpoint.bingAI) {
     return jailbreak ? 'Sydney' : 'BingAI';
   }
 
-  if (endpoint === 'anthropic') {
+  if (endpoint === EModelEndpoint.anthropic) {
     return modelLabel ?? 'Anthropic';
   }
 
-  if (endpoint === 'google') {
+  if (endpoint === EModelEndpoint.google) {
     return modelLabel ?? 'PaLM2';
   }
 

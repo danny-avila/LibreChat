@@ -41,7 +41,7 @@ const showPopoverFamily = atomFamily({
   default: false,
 });
 
-const latestMessageFamily = atomFamily<TMessage | null, string | number>({
+const latestMessageFamily = atomFamily<TMessage | null, string | number | null>({
   key: 'latestMessageByIndex',
   default: null,
 });
