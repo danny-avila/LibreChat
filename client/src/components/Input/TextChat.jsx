@@ -1,7 +1,8 @@
-import React, { useEffect, useContext, useRef } from 'react';
+import React, { useEffect, useContext, useRef, useState, useCallback } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
 import SubmitButton from './SubmitButton';
+
 import OptionsBar from './OptionsBar';
 import { EndpointMenu } from './EndpointMenu';
 import Footer from './Footer';
@@ -18,6 +19,7 @@ export default function TextChat({ isSearchView = false }) {
   const { theme } = useContext(ThemeContext);
   const isComposing = useRef(false);
   const inputRef = useRef(null);
+  const [hasText, setHasText] = useState(false);
 
   // TODO: do we need this?
   const disabled = false;
@@ -54,6 +56,7 @@ export default function TextChat({ isSearchView = false }) {
   const submitMessage = () => {
     ask({ text });
     setText('');
+    setHasText(false);
   };
 
   const handleKeyDown = (e) => {
@@ -96,7 +99,19 @@ export default function TextChat({ isSearchView = false }) {
     const { value } = e.target;
 
     setText(value);
+    updateHasText(value);
   };
+
+  const updateHasText = useCallback(
+    (text) => {
+      setHasText(!!text.trim() || latestMessage?.error);
+    },
+    [setHasText, latestMessage],
+  );
+
+  useEffect(() => {
+    updateHasText(text);
+  }, [text, latestMessage, updateHasText]);
 
   const getPlaceholderText = () => {
     if (isSearchView) {
@@ -175,6 +190,7 @@ export default function TextChat({ isSearchView = false }) {
                   disabled={disabled || isNotAppendable}
                   isSubmitting={isSubmitting}
                   userProvidesKey={endpointsConfig?.[conversation.endpoint]?.userProvide}
+                  hasText={hasText}
                 />
               </div>
             </div>

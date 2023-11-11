@@ -3,6 +3,7 @@ import { StopGeneratingIcon } from '~/components';
 import { Settings } from 'lucide-react';
 import { SetKeyDialog } from './SetKeyDialog';
 import { useUserKey, useLocalize, useMediaQuery } from '~/hooks';
+import { SendMessageIcon } from '~/components/svg';
 
 export default function SubmitButton({
   conversation,
@@ -11,6 +12,7 @@ export default function SubmitButton({
   disabled,
   isSubmitting,
   userProvidesKey,
+  hasText,
 }) {
   const { endpoint } = conversation;
   const [isDialogOpen, setDialogOpen] = useState(false);
@@ -45,19 +47,27 @@ export default function SubmitButton({
     [submitMessage],
   );
 
+  const [isSquareGreen, setIsSquareGreen] = useState(false);
+
   const setKey = useCallback(() => {
     setDialogOpen(true);
   }, []);
 
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
+  const iconContainerClass = `m-1 mr-0 rounded-md pb-[5px] pl-[5px] pr-[5px] pt-[5px] ${
+    hasText ? (isSquareGreen ? 'bg-green-500' : '') : ''
+  } group-hover:bg-19C37D group-disabled:hover:bg-transparent dark:${
+    hasText ? (isSquareGreen ? 'bg-green-500' : '') : ''
+  } dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent`;
+
+  useEffect(() => {
+    setIsSquareGreen(hasText);
+  }, [hasText]);
+
   if (isSubmitting && isSmallScreen) {
     return (
-      <button
-        onClick={handleStopGenerating}
-        type="button"
-        className="group absolute bottom-0 right-0 z-[101] flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500"
-      >
+      <button onClick={handleStopGenerating} type="button">
         <div className="m-1 mr-0 rounded-md p-2 pb-[10px] pt-[10px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
           <StopGeneratingIcon />
         </div>
@@ -102,22 +112,14 @@ export default function SubmitButton({
         data-testid="submit-button"
         className="group absolute bottom-0 right-0 z-[101] flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500"
       >
-        <div className="m-1 mr-0 rounded-md pb-[9px] pl-[9.5px] pr-[7px] pt-[11px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
-          <svg
-            stroke="currentColor"
-            fill="none"
-            strokeWidth="2"
-            viewBox="0 0 24 24"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="mr-1 h-4 w-4"
-            height="1em"
-            width="1em"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <line x1="22" y1="2" x2="11" y2="13" />
-            <polygon points="22 2 15 22 11 13 2 9 22 2" />
-          </svg>
+        <div className={iconContainerClass}>
+          {hasText ? (
+            <div className="bg-19C37D flex h-[24px] w-[24px] items-center justify-center rounded-full text-white">
+              <SendMessageIcon />
+            </div>
+          ) : (
+            <SendMessageIcon />
+          )}
         </div>
       </button>
     );
