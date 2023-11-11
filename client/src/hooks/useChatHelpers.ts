@@ -35,7 +35,9 @@ export default function useChatHelpers(index = 0) {
   const [isSubmitting, setIsSubmitting] = useRecoilState(store.isSubmittingFamily(index));
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
   const [latestMessage, setLatestMessage] = useRecoilState(store.latestMessageFamily(index));
-  const setSiblingIdx = useSetRecoilState(store.messagesSiblingIdxFamily(index));
+  const setSiblingIdx = useSetRecoilState(
+    store.messagesSiblingIdxFamily(latestMessage?.parentMessageId ?? null),
+  );
 
   const setMessages = useCallback(
     (messages: TMessage[]) => {

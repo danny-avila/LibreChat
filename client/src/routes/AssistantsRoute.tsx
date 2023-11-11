@@ -8,7 +8,7 @@ import {
 } from 'librechat-data-provider';
 import { useAuthContext, useNewConvo } from '~/hooks';
 import { buildTree } from '~/utils';
-import ChatView from './SingleChatView';
+import ChatView from '~/components/Assistants/SingleChatView';
 import store from '~/store';
 
 export default function AssistantsRoute() {

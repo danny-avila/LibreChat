@@ -62,10 +62,10 @@ export default function CreationPanel() {
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="w-1/3 flex-shrink-0 overflow-x-hidden bg-gray-900"
+      className="h-auto w-1/3 flex-shrink-0 overflow-x-hidden"
     >
       <CreationHeader reset={reset} />
-      <div className="mb-4 h-full rounded bg-white px-8 pb-8 pt-6 shadow-md">
+      <div className="h-auto bg-white px-8 pb-8 pt-6">
         {/* Name */}
         <div className="mb-4">
           <label className="mb-2 block text-xs font-bold text-gray-700" htmlFor="name">

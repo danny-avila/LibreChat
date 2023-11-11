@@ -3,15 +3,9 @@ import { useRecoilState } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import MessagesView from '~/components/Assistants/Messages/MessagesView';
 import CreationPanel from '~/components/Assistants/CreationPanel';
-import { ChatContext, useChatContext } from '~/Providers';
+import { ChatContext } from '~/Providers';
 import { useChatHelpers } from '~/hooks';
 import store from '~/store';
-
-const ChatContainer = ({ children, index }) => {
-  const chatHelpers = useChatHelpers(index);
-
-  return <ChatContext.Provider value={chatHelpers}>{children}</ChatContext.Provider>;
-};
 
 function ChatView({
   messagesTree,
@@ -22,15 +16,20 @@ function ChatView({
 }) {
   const [text, setText] = useRecoilState(store.textByIndex(index));
 
-  const { ask } = useChatContext();
+  const { ask, ...rest } = useChatHelpers(index);
   const submitMessage = () => {
     ask({ text });
     setText('');
   };
 
   return (
-    <ChatContainer index={index}>
-      <div className="flex h-full w-full flex-1 bg-gray-50">
+    <ChatContext.Provider
+      value={{
+        ask,
+        ...rest,
+      }}
+    >
+      <div className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800">
         <CreationPanel />
         <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-white pt-10 dark:bg-gray-800 md:pt-0">
           <div className="flex h-full flex-col" role="presentation" tabIndex={0}>
@@ -60,7 +59,7 @@ function ChatView({
                         className="gizmo:md:py-3.5 gizmo:placeholder-black/50 gizmo:dark:placeholder-white/50 gizmo:pl-10 gizmo:md:pl-[55px] m-0 w-full resize-none border-0 bg-transparent py-[10px] pl-12 pr-10 focus:ring-0 focus-visible:ring-0 dark:bg-transparent md:py-4 md:pl-[46px] md:pr-12"
                       ></textarea>
 
-                      {/* <button type="submit">Send</button> */}
+                      <button type="submit">Send</button>
                     </div>
                   </div>
                 </div>
@@ -69,7 +68,7 @@ function ChatView({
           </div>
         </div>
       </div>
-    </ChatContainer>
+    </ChatContext.Provider>
   );
 }
 
