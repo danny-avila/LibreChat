@@ -1,15 +1,13 @@
+const crypto = require('crypto');
+const cookies = require('cookie');
+const jwt = require('jsonwebtoken');
+const { Session, User } = require('../../models');
 const {
   registerUser,
   requestPasswordReset,
   resetPassword,
   setAuthTokens,
 } = require('../services/AuthService');
-const jose = require('jose');
-const jwt = require('jsonwebtoken');
-const Session = require('../../models/Session');
-const User = require('../../models/User');
-const crypto = require('crypto');
-const cookies = require('cookie');
 
 const registrationController = async (req, res) => {
   try {
@@ -78,12 +76,7 @@ const refreshController = async (req, res) => {
 
   try {
     let payload;
-    if (typeof Bun !== 'undefined') {
-      const secret = new TextEncoder().encode(process.env.JWT_REFRESH_SECRET);
-      ({ payload } = await jose.jwtVerify(refreshToken, secret));
-    } else {
-      payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    }
+    payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
     const userId = payload.id;
     const user = await User.findOne({ _id: userId });
     if (!user) {
