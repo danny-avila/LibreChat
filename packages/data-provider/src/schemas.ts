@@ -354,22 +354,25 @@ export const gptPluginsSchema = tConversationSchema
     },
   }));
 
+export function removeNullishValues<T extends object>(obj: T): T {
+  const newObj: Partial<T> = { ...obj };
+
+  (Object.keys(newObj) as Array<keyof T>).forEach((key) => {
+    if (newObj[key] === undefined || newObj[key] === null || newObj[key] === '') {
+      delete newObj[key];
+    }
+  });
+
+  return newObj as T;
+}
+
 export const assistantSchema = tConversationSchema
   .pick({
     model: true,
     assistant_id: true,
     thread_id: true,
   })
-  .transform((obj: Partial<TConversation>) => {
-    const newObj: Partial<TConversation> = { ...obj };
-    (Object.keys(newObj) as Array<keyof TConversation>).forEach((key) => {
-      const value = newObj[key];
-      if (value === undefined || value === null) {
-        delete newObj[key];
-      }
-    });
-    return newObj;
-  })
+  .transform(removeNullishValues)
   .catch(() => ({}));
 
 type EndpointSchema =
@@ -435,7 +438,7 @@ export const parseConvo = (
 
 export type TEndpointOption = {
   endpoint: EModelEndpoint;
-  model?: string;
+  model?: string | null;
   promptPrefix?: string;
   temperature?: number;
   chatGptLabel?: string | null;
@@ -511,7 +514,7 @@ export const compactOpenAISchema = tConversationSchema
   })
   .catch(() => ({}));
 
-type CompactEndpointSchema = typeof compactOpenAISchema;
+type CompactEndpointSchema = typeof compactOpenAISchema | typeof assistantSchema;
 // | typeof googleSchema
 // | typeof bingAISchema
 // | typeof anthropicSchema
@@ -520,6 +523,7 @@ type CompactEndpointSchema = typeof compactOpenAISchema;
 
 const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
   openAI: compactOpenAISchema,
+  assistant: assistantSchema,
   // azureOpenAI: openAISchema,
   // google: googleSchema,
   // bingAI: bingAISchema,

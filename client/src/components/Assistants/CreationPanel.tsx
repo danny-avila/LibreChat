@@ -2,13 +2,15 @@ import React from 'react';
 import { Controller } from 'react-hook-form';
 import type { Tool } from 'librechat-data-provider';
 import type { CreationForm, Actions } from '~/common';
-import { useCreateAssistantMutation, Tools } from 'librechat-data-provider';
+import { useCreateAssistantMutation, Tools, EModelEndpoint } from 'librechat-data-provider';
 import { Separator } from '~/components/ui/Separator';
 import { useAssistantsContext } from '~/Providers';
 import { Switch } from '~/components/ui/Switch';
+import { useNewConvo } from '~/hooks';
 import CreationHeader from './CreationHeader';
 
-export default function CreationPanel() {
+export default function CreationPanel({ index = 0 }) {
+  const { switchToConversation } = useNewConvo(index);
   const create = useCreateAssistantMutation();
   const { control, handleSubmit, reset } = useAssistantsContext();
 
@@ -181,9 +183,25 @@ export default function CreationPanel() {
             <Separator orientation="horizontal" className="bg-gray-100/50" />
           </div>
         </div>
-
-        {/* Submit Button */}
         <div className="flex items-center justify-end">
+          {/* Use Button */}
+          <button
+            className="focus:shadow-outline mx-2 rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              switchToConversation({
+                endpoint: EModelEndpoint.assistant,
+                conversationId: 'new',
+                title: null,
+                createdAt: '',
+                updatedAt: '',
+              });
+            }}
+          >
+            Use
+          </button>
+          {/* Submit Button */}
           <button
             className="focus:shadow-outline rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
             type="submit"

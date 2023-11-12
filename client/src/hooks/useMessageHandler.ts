@@ -75,9 +75,8 @@ const useMessageHandler = () => {
       conversationId = null;
     }
     const currentMsg: TMessage = {
-      sender: 'User',
       text,
-      current: true,
+      sender: 'User',
       isCreatedByUser: true,
       parentMessageId,
       conversationId,

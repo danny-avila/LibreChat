@@ -115,9 +115,8 @@ export default function useChatHelpers(index = 0) {
       conversationId = null;
     }
     const currentMsg: TMessage = {
-      sender: 'User',
       text,
-      current: true,
+      sender: 'User',
       isCreatedByUser: true,
       parentMessageId,
       conversationId,

@@ -7,6 +7,8 @@ import {
   tMessageSchema,
   tConversationSchema,
   useGetStartupConfig,
+  EModelEndpoint,
+  removeNullishValues,
 } from 'librechat-data-provider';
 import type { TResPlugin, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import useChatHelpers from './useChatHelpers';
@@ -223,9 +225,13 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     let { message } = submission;
 
-    const { server, payload } = createPayload(submission);
+    const payloadData = createPayload(submission);
+    let { payload } = payloadData;
+    if (payload.endpoint === EModelEndpoint.assistant) {
+      payload = removeNullishValues(payload);
+    }
 
-    const events = new SSE(server, {
+    const events = new SSE(payloadData.server, {
       payload: JSON.stringify(payload),
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
