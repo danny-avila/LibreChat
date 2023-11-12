@@ -21,3 +21,4 @@ export { default as useServerStream } from './useServerStream';
 export { default as useConversations } from './useConversations';
 export { default as useOnClickOutside } from './useOnClickOutside';
 export { default as useMessageHandler } from './useMessageHandler';
+export { default as useNavigateToConvo } from './useNavigateToConvo';
