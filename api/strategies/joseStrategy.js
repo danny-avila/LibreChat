@@ -1,4 +1,6 @@
-const jose = require('jose');
+/* const jose = require('jose');
+* No longer using this strategy as Bun now supports JWTs natively.
+
 const passportCustom = require('passport-custom');
 const CustomStrategy = passportCustom.Strategy;
 const User = require('../models/User');
@@ -36,3 +38,4 @@ const joseLogin = async () =>
   });
 
 module.exports = joseLogin;
+*/
