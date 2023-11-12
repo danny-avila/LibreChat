@@ -192,7 +192,7 @@ export const useGetConversationsQuery = (
   config?: UseQueryOptions<t.TGetConversationsResponse>,
 ): QueryObserverResult<t.TGetConversationsResponse> => {
   return useQuery<t.TGetConversationsResponse>(
-    [QueryKeys.allConversations, pageNumber],
+    [QueryKeys.allConversations, { pageNumber, active: true }],
     () => dataService.getConversations(pageNumber),
     {
       refetchOnReconnect: false,
