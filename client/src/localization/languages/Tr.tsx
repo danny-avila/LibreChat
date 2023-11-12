@@ -237,6 +237,4 @@ export default {
   com_nav_search_placeholder: 'Mesajları ara',
   com_nav_setting_general: 'Genel',
   com_nav_setting_data: 'Veri kontrolleri',
-  com_nav_language: 'Dil',
-  com_nav_lang_auto: 'Otomatik algıla',
 };
