@@ -11,6 +11,7 @@ const {
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 const checkSubscription = require('../../../middleware/checkSubscription.js');
 const trieSensitive = require('../../../utils/trieSensitive');
+const { getMessagesCount } = require('../../../models/Message');
 
 const abortControllers = new Map();
 
@@ -151,6 +152,23 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
     }
 
     const client = new OpenAIClient(oaiApiKey, clientOptions);
+
+    let someTimeAgo = new Date();
+    someTimeAgo.setSeconds(someTimeAgo.getSeconds() - 60 * 60 * 24); // 24 hours
+
+    let quota = JSON.parse(process.env['CHAT_QUOTA_PER_SECOND']);
+    if (endpointOption.model in quota) {
+      let messagesCount = await getMessagesCount({
+        senderId: req.user.id,
+        model: endpointOption.model,
+        updatedAt: { $gte: someTimeAgo },
+      });
+      let dailyQuota = (quota[endpointOption.model] * 60 * 60 * 24).toFixed(0);
+      if (messagesCount >= dailyQuota) {
+        // throw new Error("Exceed daily quota! Please contact 615547 to purchase more quota via Wechat");
+        throw new Error(`超出了您的使用额度(${endpointOption.model}每天${dailyQuota}条消息)，请休息一下吧`);
+      }
+    }
 
     let response = await client.sendMessage(text, {
       user,
