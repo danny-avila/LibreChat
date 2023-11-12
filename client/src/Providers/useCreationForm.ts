@@ -5,6 +5,7 @@ import type { CreationForm } from '~/common';
 export default function useViewPromptForm() {
   return useForm<CreationForm>({
     defaultValues: {
+      assistant: '',
       id: '',
       name: '',
       description: '',

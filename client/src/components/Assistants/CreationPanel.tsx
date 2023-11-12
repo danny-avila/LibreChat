@@ -1,18 +1,17 @@
-import React from 'react';
-import { Controller } from 'react-hook-form';
+import { Controller, useWatch } from 'react-hook-form';
 import type { Tool } from 'librechat-data-provider';
 import type { CreationForm, Actions } from '~/common';
 import { useCreateAssistantMutation, Tools, EModelEndpoint } from 'librechat-data-provider';
 import { Separator } from '~/components/ui/Separator';
 import { useAssistantsContext } from '~/Providers';
 import { Switch } from '~/components/ui/Switch';
-import { useNewConvo } from '~/hooks';
 import CreationHeader from './CreationHeader';
+import { useNewConvo } from '~/hooks';
 
 export default function CreationPanel({ index = 0 }) {
   const { switchToConversation } = useNewConvo(index);
   const create = useCreateAssistantMutation();
-  const { control, handleSubmit, reset } = useAssistantsContext();
+  const { control, handleSubmit, reset, setValue } = useAssistantsContext();
 
   const onSubmit = (data: CreationForm) => {
     const tools: Tool[] = [];
@@ -44,6 +43,8 @@ export default function CreationPanel({ index = 0 }) {
     });
   };
 
+  const assistant_id = useWatch({ control, name: 'id' });
+
   // Render function for the Switch component
   const renderSwitch = (name: keyof Actions) => (
     <Controller
@@ -66,7 +67,18 @@ export default function CreationPanel({ index = 0 }) {
       onSubmit={handleSubmit(onSubmit)}
       className="h-auto w-1/3 flex-shrink-0 overflow-x-hidden"
     >
-      <CreationHeader reset={reset} />
+      <Controller
+        name="assistant"
+        control={control}
+        render={({ field }) => (
+          <CreationHeader
+            reset={reset}
+            value={field.value}
+            onChange={field.onChange}
+            setValue={setValue}
+          />
+        )}
+      />
       <div className="h-auto bg-white px-8 pb-8 pt-6">
         {/* Name */}
         <div className="mb-4">
@@ -193,6 +205,7 @@ export default function CreationPanel({ index = 0 }) {
               switchToConversation({
                 endpoint: EModelEndpoint.assistant,
                 conversationId: 'new',
+                assistant_id: assistant_id,
                 title: null,
                 createdAt: '',
                 updatedAt: '',

@@ -1,12 +1,27 @@
-import { useState } from 'react';
+// import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useListAssistantsQuery } from 'librechat-data-provider';
-import type { UseFormReset } from 'react-hook-form';
+import type { Assistant } from 'librechat-data-provider';
+import type { UseFormReset, UseFormSetValue } from 'react-hook-form';
 import type { CreationForm, Actions, Option } from '~/common';
 import SelectDropDown from '~/components/ui/SelectDropDown';
 import { cn } from '~/utils/';
 
-export default function CreationHeader({ reset }: { reset: UseFormReset<CreationForm> }) {
+const keys = new Set(['name', 'id', 'description', 'instructions', 'model']);
+
+type TAssistantOption = string | (Option & Assistant);
+
+export default function CreationHeader({
+  reset,
+  value,
+  onChange,
+  setValue,
+}: {
+  reset: UseFormReset<CreationForm>;
+  value: TAssistantOption;
+  onChange: (value: TAssistantOption) => void;
+  setValue: UseFormSetValue<CreationForm>;
+}) {
   const assistants = useListAssistantsQuery(
     {
       order: 'asc',
@@ -20,16 +35,14 @@ export default function CreationHeader({ reset }: { reset: UseFormReset<Creation
         })),
     },
   );
-  const [assistantOption, setAssistant] = useState<string | Option>('Create Assistant');
 
   const onSelect = (value: string) => {
     const assistant = assistants.data?.find((assistant) => assistant.id === value);
     if (!assistant) {
-      reset({ id: '' });
-      setAssistant('Create Assistant');
+      reset();
       return;
     }
-    setAssistant({
+    onChange({
       ...assistant,
       label: assistant?.name ?? '',
       value: assistant?.id ?? '',
@@ -44,15 +57,24 @@ export default function CreationHeader({ reset }: { reset: UseFormReset<Creation
       .forEach((tool) => {
         actions[tool] = true;
       });
-    reset({
-      ...assistant,
-      ...actions,
+
+    Object.entries(assistant).forEach(([name, value]) => {
+      if (typeof value === 'number') {
+        return;
+      } else if (typeof value === 'object') {
+        return;
+      }
+      if (keys.has(name)) {
+        setValue(name as keyof CreationForm, value);
+      }
     });
+
+    Object.entries(actions).forEach(([name, value]) => setValue(name as keyof Actions, value));
   };
 
   return (
     <SelectDropDown
-      value={assistantOption}
+      value={!value ? 'Create Assistant' : value}
       setValue={onSelect}
       availableValues={
         assistants.data ?? [
@@ -70,7 +92,7 @@ export default function CreationHeader({ reset }: { reset: UseFormReset<Creation
       optionsListClass="rounded-lg shadow-lg"
       currentValueClass={cn(
         'text-md font-semibold text-gray-900 dark:text-gray-100',
-        assistantOption === 'Create Assistant' ? 'text-gray-500' : '',
+        value === '' ? 'text-gray-500' : '',
       )}
       className={cn(
         'rounded-none',
