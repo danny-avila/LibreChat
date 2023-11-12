@@ -160,19 +160,19 @@ export const createAssistant = (data: t.AssistantCreateParams): Promise<t.Assist
   return request.post(endpoints.assistants(), data);
 };
 
-export const getAssistantById = (assistantId: string): Promise<t.Assistant> => {
-  return request.get(endpoints.assistants(assistantId));
+export const getAssistantById = (assistant_id: string): Promise<t.Assistant> => {
+  return request.get(endpoints.assistants(assistant_id));
 };
 
 export const updateAssistant = (
-  assistantId: string,
+  assistant_id: string,
   data: t.AssistantUpdateParams,
 ): Promise<t.Assistant> => {
-  return request.patch(endpoints.assistants(assistantId), data);
+  return request.patch(endpoints.assistants(assistant_id), data);
 };
 
-export const deleteAssistant = (assistantId: string): Promise<void> => {
-  return request.delete(endpoints.assistants(assistantId));
+export const deleteAssistant = (assistant_id: string): Promise<void> => {
+  return request.delete(endpoints.assistants(assistant_id));
 };
 
 export const listAssistants = (

@@ -10,13 +10,13 @@ const {
 } = require('../../middleware');
 
 const assistants = require('./assistants');
-// const chat = require('./chat');
+const chat = require('./chat');
 
 router.use(requireJwtAuth);
 router.use(checkBan);
 router.use(uaParser);
 
 router.use('/', assistants);
-// router.use('/chat', chat);
+router.use('/chat', chat);
 
 module.exports = router;

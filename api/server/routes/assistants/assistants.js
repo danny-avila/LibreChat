@@ -29,8 +29,8 @@ router.post('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const openai = new OpenAI(process.env.OPENAI_API_KEY);
-    const assistantId = req.params.id;
-    const assistant = await openai.beta.assistants.retrieve(assistantId);
+    const assistant_id = req.params.id;
+    const assistant = await openai.beta.assistants.retrieve(assistant_id);
     res.json(assistant);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -47,9 +47,9 @@ router.get('/:id', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   try {
     const openai = new OpenAI(process.env.OPENAI_API_KEY);
-    const assistantId = req.params.id;
+    const assistant_id = req.params.id;
     const updateData = req.body;
-    const updatedAssistant = await openai.beta.assistants.update(assistantId, updateData);
+    const updatedAssistant = await openai.beta.assistants.update(assistant_id, updateData);
     res.json(updatedAssistant);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -65,8 +65,8 @@ router.patch('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const openai = new OpenAI(process.env.OPENAI_API_KEY);
-    const assistantId = req.params.id;
-    const deletionStatus = await openai.beta.assistants.del(assistantId);
+    const assistant_id = req.params.id;
+    const deletionStatus = await openai.beta.assistants.del(assistant_id);
     res.json(deletionStatus);
   } catch (error) {
     res.status(500).json({ error: error.message });

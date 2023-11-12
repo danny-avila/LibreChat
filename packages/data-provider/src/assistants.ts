@@ -77,14 +77,14 @@ export const useCreateAssistantMutation = (): UseMutationResult<
  * Hook for retrieving details about a single assistant
  */
 export const useGetAssistantByIdQuery = (
-  assistantId: string,
+  assistant_id: string,
   config?: UseQueryOptions<t.Assistant>,
 ): QueryObserverResult<t.Assistant> => {
   return useQuery<t.Assistant>(
-    [QueryKeys.assistant, assistantId],
-    () => dataService.getAssistantById(assistantId),
+    [QueryKeys.assistant, assistant_id],
+    () => dataService.getAssistantById(assistant_id),
     {
-      enabled: !!assistantId, // Query will not execute until the assistantId exists
+      enabled: !!assistant_id, // Query will not execute until the assistant_id exists
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
@@ -100,16 +100,16 @@ export const useGetAssistantByIdQuery = (
 export const useUpdateAssistantMutation = (): UseMutationResult<
   t.Assistant,
   Error,
-  { assistantId: string; data: t.AssistantUpdateParams }
+  { assistant_id: string; data: t.AssistantUpdateParams }
 > => {
   const queryClient = useQueryClient();
   return useMutation(
-    ({ assistantId, data }: { assistantId: string; data: t.AssistantUpdateParams }) =>
-      dataService.updateAssistant(assistantId, data),
+    ({ assistant_id, data }: { assistant_id: string; data: t.AssistantUpdateParams }) =>
+      dataService.updateAssistant(assistant_id, data),
     {
-      onSuccess: (_, { assistantId }) => {
+      onSuccess: (_, { assistant_id }) => {
         // Invalidate and refetch assistant details query
-        queryClient.invalidateQueries([QueryKeys.assistant, assistantId]);
+        queryClient.invalidateQueries([QueryKeys.assistant, assistant_id]);
         // Optionally invalidate and refetch list of assistants
         queryClient.invalidateQueries([QueryKeys.assistants]);
       },
@@ -123,11 +123,11 @@ export const useUpdateAssistantMutation = (): UseMutationResult<
 export const useDeleteAssistantMutation = (): UseMutationResult<
   void,
   Error,
-  { assistantId: string }
+  { assistant_id: string }
 > => {
   const queryClient = useQueryClient();
   return useMutation(
-    ({ assistantId }: { assistantId: string }) => dataService.deleteAssistant(assistantId),
+    ({ assistant_id }: { assistant_id: string }) => dataService.deleteAssistant(assistant_id),
     {
       onSuccess: () => {
         // Invalidate and refetch assistant list query
