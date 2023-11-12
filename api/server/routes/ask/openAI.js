@@ -9,6 +9,7 @@ const {
   createOnProgress,
 } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
+const checkSubscription = require('../../../middleware/checkSubscription.js');
 const trieSensitive = require('../../../utils/trieSensitive');
 
 const abortControllers = new Map();
@@ -17,7 +18,7 @@ router.post('/abort', requireJwtAuth, async (req, res) => {
   return await abortMessage(req, res, abortControllers);
 });
 
-router.post('/', requireJwtAuth, async (req, res) => {
+router.post('/', requireJwtAuth, checkSubscription, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   const isOpenAI = endpoint === 'openAI' || endpoint === 'azureOpenAI';
