@@ -1,4 +1,3 @@
-const jose = require('jose');
 const jwt = require('jsonwebtoken');
 
 /**
@@ -21,15 +20,6 @@ const jwt = require('jsonwebtoken');
  * });
  */
 async function signPayload({ payload, secret, expirationTime }) {
-  if (typeof Bun !== 'undefined') {
-    // this code will only run when the file is run with Bun
-    const encodedSecret = new TextEncoder().encode(secret);
-    return await new jose.SignJWT(payload)
-      .setProtectedHeader({ alg: 'HS256' })
-      .setExpirationTime(expirationTime + 's')
-      .sign(encodedSecret);
-  }
-
   return jwt.sign(payload, secret, { expiresIn: expirationTime });
 }
 

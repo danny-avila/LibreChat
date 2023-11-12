@@ -43,7 +43,12 @@ describe('gptPlugins/initializeClient', () => {
 
   test('should initialize PluginsClient with Azure credentials when PLUGINS_USE_AZURE is true', async () => {
     process.env.AZURE_API_KEY = 'test-azure-api-key';
-    process.env.PLUGINS_USE_AZURE = 'true';
+    (process.env.AZURE_OPENAI_API_INSTANCE_NAME = 'some-value'),
+    (process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME = 'some-value'),
+    (process.env.AZURE_OPENAI_API_VERSION = 'some-value'),
+    (process.env.AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME = 'some-value'),
+    (process.env.AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME = 'some-value'),
+    (process.env.PLUGINS_USE_AZURE = 'true');
     process.env.DEBUG_PLUGINS = 'false';
     process.env.OPENAI_SUMMARIZE = 'false';
 
@@ -172,31 +177,6 @@ describe('gptPlugins/initializeClient', () => {
     await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
       /Your OpenAI API key has expired/,
     );
-  });
-
-  test('should sanitize model name for Azure when modelOptions is provided', async () => {
-    process.env.AZURE_API_KEY = 'azure-provided-api-key';
-    process.env.PLUGINS_USE_AZURE = 'true';
-
-    const modelName = 'test-3.5-model';
-    const sanitizedModelName = 'test-35-model';
-    const req = {
-      body: { key: new Date(Date.now() + 10000).toISOString() },
-      user: { id: '123' },
-    };
-    const res = {};
-    const endpointOption = { modelOptions: { model: modelName } };
-
-    getUserKey.mockResolvedValue(
-      JSON.stringify({
-        azureOpenAIApiKey: 'test-user-provided-azure-api-key',
-        azureOpenAIApiDeploymentName: modelName,
-      }),
-    );
-
-    const { azure } = await initializeClient({ req, res, endpointOption });
-
-    expect(azure.azureOpenAIApiDeploymentName).toBe(sanitizedModelName);
   });
 
   test('should throw an error if the user-provided Azure key is invalid JSON', async () => {

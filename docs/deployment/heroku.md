@@ -19,6 +19,7 @@ FROM node:19-alpine AS base
 WORKDIR /api
 COPY /api/package*.json /api/
 WORKDIR /
+COPY /config/ /config/
 COPY /package*.json /
 RUN npm ci
 
@@ -39,7 +40,14 @@ FROM node:19-alpine AS base
 WORKDIR /client
 COPY /client/package*.json /client/
 WORKDIR /
+COPY /config/ /config/
 COPY /package*.json /
+
+WORKDIR /packages/data-provider
+COPY /packages/data-provider ./
+RUN npm install && npm run build
+
+WORKDIR /
 RUN npm ci
 
 # React client build
