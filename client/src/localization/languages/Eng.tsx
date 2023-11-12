@@ -80,7 +80,6 @@ export default {
   com_auth_password_not_match: 'Passwords do not match',
   com_auth_continue: 'Continue',
   com_auth_create_account: 'Create your account',
-  com_auth_description_create_account: 'Note that phone verification may be required for signup. Your number will only be used to verify your identity for security purposes.',
   com_auth_error_create:
     'There was an error attempting to register your account. Please try again.',
   com_auth_full_name: 'Full name',
