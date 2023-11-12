@@ -41,7 +41,6 @@
     "handlebars": "^4.7.7",
     "html": "^1.0.0",
     "ioredis": "^5.3.2",
-    "jose": "^4.15.2",
     "js-yaml": "^4.1.0",
     "jsonwebtoken": "^9.0.0",
     "keyv": "^4.5.4",
