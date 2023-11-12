@@ -25,17 +25,22 @@ export default function MultiMessage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messagesTree?.length]);
 
-  // if (!messageList?.length) return null;
+  useEffect(() => {
+    if (messagesTree?.length && siblingIdx >= messagesTree?.length) {
+      setSiblingIdx(0);
+    }
+  }, [siblingIdx, messagesTree?.length, setSiblingIdx]);
+
   if (!(messagesTree && messagesTree?.length)) {
     return null;
   }
 
-  if (siblingIdx >= messagesTree?.length) {
-    setSiblingIdx(0);
+  const message = messagesTree[messagesTree.length - siblingIdx - 1];
+
+  if (!message) {
     return null;
   }
 
-  const message = messagesTree[messagesTree.length - siblingIdx - 1];
   return (
     <Message
       key={message.messageId}
