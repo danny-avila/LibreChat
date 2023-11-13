@@ -11,7 +11,7 @@ export default function ChatRoute() {
   const { conversationId } = useParams();
   const conversation = useRecoilValue(store.conversationByIndex(index));
 
-  const { data: messagesTree = null } = useGetMessagesByConvoId(conversationId ?? '', {
+  const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(conversationId ?? '', {
     enabled: !!(conversationId && conversationId !== 'new'),
     select: (data) => {
       const dataTree = buildTree(data, false);
@@ -38,5 +38,11 @@ export default function ChatRoute() {
     return null;
   }
 
-  return <ChatView index={index} messagesTree={messagesTree} />;
+  return (
+    <ChatView
+      index={index}
+      messagesTree={messagesTree}
+      isLoading={isLoading && conversationId !== 'new'}
+    />
+  );
 }

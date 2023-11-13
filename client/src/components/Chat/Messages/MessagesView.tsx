@@ -6,7 +6,6 @@ import { CSSTransition } from 'react-transition-group';
 import { useChatContext } from '~/Providers';
 import MultiMessage from './MultiMessage';
 import { useScrollToRef } from '~/hooks';
-import { Spinner } from '~/components';
 
 export default function MessagesView({
   messagesTree: _messagesTree,
@@ -75,11 +74,7 @@ export default function MessagesView({
     >
       <div className="dark:gpt-dark-gray mb-32 h-auto md:mb-48">
         <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
-          {_messagesTree === null ? (
-            <div className="flex h-screen items-center justify-center">
-              <Spinner />
-            </div>
-          ) : _messagesTree?.length == 0 ? (
+          {(_messagesTree && _messagesTree?.length == 0) || _messagesTree === null ? (
             <div className="flex w-full items-center justify-center gap-1 bg-gray-50 p-3 text-sm text-gray-500 dark:border-gray-900/50 dark:bg-gray-800 dark:text-gray-300">
               Nothing found
             </div>

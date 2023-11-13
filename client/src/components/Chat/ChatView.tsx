@@ -5,14 +5,17 @@ import OptionsBar from './Input/OptionsBar';
 import { ChatContext } from '~/Providers';
 import { useChatHelpers } from '~/hooks';
 import ChatForm from './Input/ChatForm';
+import { Spinner } from '~/components';
 import Landing from './Landing';
 import Header from './Header';
 
 function ChatView({
   messagesTree,
+  isLoading,
   index = 0,
 }: {
   messagesTree?: TMessage[] | null;
+  isLoading: boolean;
   index?: number;
 }) {
   return (
@@ -20,7 +23,11 @@ function ChatView({
       <div className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800">
         <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-white pt-10 dark:bg-gray-800 md:pt-0">
           <div className="flex h-full flex-col" role="presentation" tabIndex={0}>
-            {messagesTree && messagesTree.length !== 0 ? (
+            {isLoading ? (
+              <div className="flex h-screen items-center justify-center">
+                <Spinner className="dark:text-white" />
+              </div>
+            ) : messagesTree && messagesTree.length !== 0 ? (
               <MessagesView messagesTree={messagesTree} Header={<Header />} />
             ) : (
               <Landing />
