@@ -69,14 +69,7 @@ router.post('/', setHeaders, async (req, res) => {
     });
     const response = await handleRun({ openai, thread_id, run_id: run.id });
 
-    // const run = await openai.beta.threads.runs.retrieve(
-    //   thread.id,
-    //   run.id,
-    // );
-
-    // const messages = await openai.beta.threads.messages.list(
-    //   thread.id,
-    // );
+    // TODO: parse responses, save to db, send to user
 
     sendMessage(res, {
       title: 'New Chat',

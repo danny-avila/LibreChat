@@ -14,7 +14,6 @@
  * @property {Object.<string, Promise>} lastStepPromiseByStatus - Last processed step's promise by run status.
  * @property {Function} fetchRunSteps - Fetches run steps based on run status.
  * @property {Function} handleStep - Handles a run step based on its status.
- * @property {Function} getStepsByStatus - Retrieves the organized steps by status after resolving all promises.
  */
 
 /**
@@ -42,7 +41,9 @@ class RunManager {
    * @param {boolean} [params.final] - The end of the run polling loop, due to `requires_action`, `cancelling`, `cancelled`, `failed`, `completed`, or `expired` statuses.
    */
   async fetchRunSteps({ openai, thread_id, run_id, runStatus, final = false }) {
-    const steps = await openai.beta.threads.runs.steps.list(thread_id, run_id);
+    // const { data: steps, first_id, last_id, has_more } = await openai.beta.threads.runs.steps.list(thread_id, run_id);
+    const { data: _steps } = await openai.beta.threads.runs.steps.list(thread_id, run_id);
+    const steps = _steps.sort((a, b) => a.created_at - b.created_at);
     for (const [i, step] of steps.entries()) {
       if (this.seenSteps.has(step.id)) {
         continue;
@@ -58,7 +59,7 @@ class RunManager {
       })();
 
       if (final && isLast) {
-        return;
+        return await currentStepPromise;
       }
 
       this.lastStepPromiseByStatus[runStatus] = currentStepPromise;
@@ -80,33 +81,12 @@ class RunManager {
     }
 
     if (final && isLast && this.handlers['final']) {
-      return this.handlers['final']({ step });
+      return await this.handlers['final']({ step, runStatus, stepsByStatus: this.stepsByStatus });
     }
 
-    console.log(`Default handler for step ${step.id} with status ${runStatus}`);
+    console.log(`Default handler for ${step.id} with status \`${runStatus}\``);
     console.dir({ step, runStatus, final, isLast }, { depth: null });
-    return;
-  }
-
-  /**
-   * Retrieves the organized steps by status after resolving all promises concurrently.
-   * @return {Promise<Object.<string, RunStep[]>>} The steps organized by status after promise resolution.
-   */
-  async getStepsByStatus() {
-    const resolvedStepsByStatus = {};
-    const promiseResolutions = [];
-
-    for (const [status, stepsPromises] of Object.entries(this.stepsByStatus)) {
-      const resolvedPromise = Promise.all(stepsPromises).then((resolvedSteps) => {
-        resolvedStepsByStatus[status] = resolvedSteps;
-      });
-      promiseResolutions.push(resolvedPromise);
-    }
-
-    // Wait for all promise resolutions to complete
-    await Promise.all(promiseResolutions);
-
-    return resolvedStepsByStatus;
+    return step;
   }
 }
 

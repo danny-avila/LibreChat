@@ -18,10 +18,22 @@ const RunManager = require('./Runs/RunMananger');
 
 /**
  * @typedef {Object} Message
- * @property {string} role - The role of the entity creating the message. Currently, only "user" is supported.
- * @property {string} content - The content of the message.
+ * @property {string} id - The identifier of the message.
+ * @property {string} object - The object type, always 'thread.message'.
+ * @property {number} created_at - The Unix timestamp (in seconds) for when the message was created.
+ * @property {string} thread_id - The thread ID that this message belongs to.
+ * @property {string} role - The entity that produced the message. One of 'user' or 'assistant'.
+ * @property {Object[]} content - The content of the message in an array of text and/or images.
+ * @property {string} content[].type - The type of content, either 'text' or 'image_file'.
+ * @property {Object} [content[].text] - The text content, present if type is 'text'.
+ * @property {string} content[].text.value - The data that makes up the text.
+ * @property {Object[]} [content[].text.annotations] - Annotations for the text content.
+ * @property {Object} [content[].image_file] - The image file content, present if type is 'image_file'.
+ * @property {string} content[].image_file.file_id - The File ID of the image in the message content.
  * @property {string[]} [file_ids] - Optional list of File IDs for the message.
- * @property {Object} [metadata] - Optional metadata for the message.
+ * @property {string|null} [assistant_id] - If applicable, the ID of the assistant that authored this message.
+ * @property {string|null} [run_id] - If applicable, the ID of the run associated with the authoring of this message.
+ * @property {Object} [metadata] - Optional metadata for the message, a map of key-value pairs.
  */
 
 /**
@@ -73,6 +85,28 @@ const RunManager = require('./Runs/RunMananger');
 
 /**
  * @typedef {Object} RunStep
+ * @property {string} id - The identifier of the run step.
+ * @property {string} object - The object type, always 'thread.run.step'.
+ * @property {number} created_at - The Unix timestamp (in seconds) for when the run step was created.
+ * @property {string} assistant_id - The ID of the assistant associated with the run step.
+ * @property {string} thread_id - The ID of the thread that was run.
+ * @property {string} run_id - The ID of the run that this run step is a part of.
+ * @property {string} type - The type of run step, either 'message_creation' or 'tool_calls'.
+ * @property {string} status - The status of the run step, can be 'in_progress', 'cancelled', 'failed', 'completed', or 'expired'.
+ * @property {Object} step_details - The details of the run step.
+ * @property {Object} [last_error] - The last error associated with this run step.
+ * @property {string} last_error.code - One of 'server_error' or 'rate_limit_exceeded'.
+ * @property {string} last_error.message - A human-readable description of the error.
+ * @property {number} [expired_at] - The Unix timestamp (in seconds) for when the run step expired.
+ * @property {number} [cancelled_at] - The Unix timestamp (in seconds) for when the run step was cancelled.
+ * @property {number} [failed_at] - The Unix timestamp (in seconds) for when the run step failed.
+ * @property {number} [completed_at] - The Unix timestamp (in seconds) for when the run step completed.
+ * @property {Object} [metadata] - Metadata associated with this run step, a map of up to 16 key-value pairs.
+ */
+
+/**
+ * @typedef {Object} StepMessage
+ * @property {Message} message - The complete message object created by the step.
  * @property {string} id - The identifier of the run step.
  * @property {string} object - The object type, always 'thread.run.step'.
  * @property {number} created_at - The Unix timestamp (in seconds) for when the run step was created.
@@ -187,23 +221,24 @@ async function waitForRun({ openai, run_id, thread_id, runManager, pollIntervalM
     run = await openai.beta.threads.runs.retrieve(thread_id, run_id);
     console.log(`Run status: ${run.status}`);
 
-    runManager.fetchRunSteps({
-      openai,
-      thread_id: thread_id,
-      run_id: run_id,
-      runStatus: run.status,
-    });
-
     if (!['in_progress', 'queued'].includes(run.status)) {
-      runManager.fetchRunSteps({
+      await runManager.fetchRunSteps({
         openai,
         thread_id: thread_id,
         run_id: run_id,
         runStatus: run.status,
         final: true,
       });
-      break; // Break loop if run is no longer active
+      break;
     }
+
+    // may use in future
+    // await runManager.fetchRunSteps({
+    //   openai,
+    //   thread_id: thread_id,
+    //   run_id: run_id,
+    //   runStatus: run.status,
+    // });
 
     await sleep(pollIntervalMs);
     timeElapsed += pollIntervalMs;
@@ -293,8 +328,8 @@ async function handleRun({ openai, run_id, thread_id }) {
     // 'queued': async ({ step, final, isLast }) => {
     //   // Define logic for handling steps with 'queued' status
     // },
-    final: async ({ step, runStatus }) => {
-      console.log(`Final step for run ${run_id} with status ${runStatus}`);
+    final: async ({ step, runStatus, stepsByStatus }) => {
+      console.log(`Final step for ${run_id} with status ${runStatus}`);
       console.dir(step, { depth: null });
 
       const promises = [];
@@ -303,11 +338,22 @@ async function handleRun({ openai, run_id, thread_id }) {
           order: 'asc',
         }),
       );
-      promises.push(RunManager.getStepsByStatus());
 
-      const [res, stepsByStatus] = await Promise.all(promises);
+      const finalSteps = stepsByStatus[runStatus];
+
+      // loop across all statuses, may use in the future
+      // for (const [_status, stepsPromises] of Object.entries(stepsByStatus)) {
+      //   promises.push(...stepsPromises);
+      // }
+      for (const stepPromise of finalSteps) {
+        promises.push(stepPromise);
+      }
+
+      const resolved = await Promise.all(promises);
+      const res = resolved.shift();
       messages = res.data.filter((msg) => msg.run_id === run_id);
-      steps = stepsByStatus;
+      resolved.push(step);
+      steps = resolved;
     },
   });
 
@@ -316,10 +362,37 @@ async function handleRun({ openai, run_id, thread_id }) {
   return { run, steps, messages };
 }
 
+/**
+ * Maps messages to their corresponding steps. Steps with message creation will be paired with their messages,
+ * while steps without message creation will be returned as is.
+ *
+ * @param {RunStep[]} steps - An array of steps from the run.
+ * @param {Message[]} messages - An array of message objects.
+ * @returns {(StepMessage | RunStep)[]} An array where each element is either a step with its corresponding message (StepMessage) or a step without a message (RunStep).
+ */
+function mapMessagesToSteps(steps, messages) {
+  // Create a map of messages indexed by their IDs for efficient lookup
+  const messageMap = messages.reduce((acc, msg) => {
+    acc[msg.id] = msg;
+    return acc;
+  }, {});
+
+  // Map each step to its corresponding message, or return the step as is if no message ID is present
+  return steps.map((step) => {
+    const messageId = step.step_details?.message_creation?.message_id;
+
+    if (messageId && messageMap[messageId]) {
+      return { step, message: messageMap[messageId] };
+    }
+    return step;
+  });
+}
+
 module.exports = {
   initThread,
   createRun,
   waitForRun,
   getResponse,
   handleRun,
+  mapMessagesToSteps,
 };

@@ -205,7 +205,7 @@ export default function CreationPanel({ index = 0 }) {
               switchToConversation({
                 endpoint: EModelEndpoint.assistant,
                 conversationId: 'new',
-                assistant_id: assistant_id,
+                assistant_id,
                 title: null,
                 createdAt: '',
                 updatedAt: '',
