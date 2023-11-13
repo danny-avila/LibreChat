@@ -1,7 +1,7 @@
-const connectDb = require('@librechat/backend/lib/db/connectDb');
+const connectDb = require('../api/lib/db/connectDb');
 const { askQuestion, silentExit } = require('./helpers');
-const User = require('@librechat/backend/models/User');
-const Transaction = require('@librechat/backend/models/Transaction');
+const User = require('../api/models/User');
+const Transaction = require('../api/models/Transaction');
 
 (async () => {
   /**

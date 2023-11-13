@@ -1,4 +1,4 @@
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent } from 'test/layout-test-utils';
 import Stop from '../Stop';
 
 describe('Stop', () => {

@@ -222,3 +222,6 @@ If you previously implemented your own user system using the original scaffoldin
 
 When the first account is registered, the application will automatically migrate any conversations and presets that you created before the user system was implemented to that account. 
 if you use login for the first time with a social login account (eg. Google, facebook, etc.), the conversations and presets that you created before the user system was implemented will NOT be migrated to that account.
+
+## **Manual User Registration**
+You can use `npm run create-user` to create a user. If you can't get npm to work, try `sudo docker exec -ti LibreChat sh` first to "ssh" into the container.

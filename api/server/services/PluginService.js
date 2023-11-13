@@ -58,7 +58,7 @@ const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
         value: encryptedValue,
         pluginKey,
       });
-      newPluginAuth.save();
+      await newPluginAuth.save();
       return newPluginAuth;
     }
   } catch (err) {

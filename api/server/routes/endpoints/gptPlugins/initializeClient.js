@@ -25,38 +25,40 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     ...endpointOption,
   };
 
-  const isUserProvided = PLUGINS_USE_AZURE
+  const useAzure = isEnabled(PLUGINS_USE_AZURE);
+
+  const isUserProvided = useAzure
     ? AZURE_API_KEY === 'user_provided'
     : OPENAI_API_KEY === 'user_provided';
 
-  let key = null;
+  let userKey = null;
   if (expiresAt && isUserProvided) {
     checkUserKeyExpiry(
       expiresAt,
       'Your OpenAI API key has expired. Please provide your API key again.',
     );
-    key = await getUserKey({
+    userKey = await getUserKey({
       userId: req.user.id,
-      name: PLUGINS_USE_AZURE ? 'azureOpenAI' : 'openAI',
+      name: useAzure ? 'azureOpenAI' : 'openAI',
     });
   }
 
-  let openAIApiKey = isUserProvided ? key : OPENAI_API_KEY;
+  let apiKey = isUserProvided ? userKey : OPENAI_API_KEY;
 
-  if (PLUGINS_USE_AZURE) {
-    clientOptions.azure = isUserProvided ? JSON.parse(key) : getAzureCredentials();
-    openAIApiKey = clientOptions.azure.azureOpenAIApiKey;
+  if (useAzure || (apiKey && apiKey.includes('azure') && !clientOptions.azure)) {
+    clientOptions.azure = isUserProvided ? JSON.parse(userKey) : getAzureCredentials();
+    apiKey = clientOptions.azure.azureOpenAIApiKey;
   }
 
-  if (openAIApiKey && openAIApiKey.includes('azure') && !clientOptions.azure) {
-    clientOptions.azure = isUserProvided ? JSON.parse(key) : getAzureCredentials();
-    openAIApiKey = clientOptions.azure.azureOpenAIApiKey;
+  if (!apiKey) {
+    throw new Error('API key not provided.');
   }
-  const client = new PluginsClient(openAIApiKey, clientOptions);
+
+  const client = new PluginsClient(apiKey, clientOptions);
   return {
     client,
     azure: clientOptions.azure,
-    openAIApiKey,
+    openAIApiKey: apiKey,
   };
 };
 
