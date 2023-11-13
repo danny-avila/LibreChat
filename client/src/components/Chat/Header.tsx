@@ -1,13 +1,14 @@
 export default function Header() {
   return (
-    <div className="sticky top-0 z-10 flex h-14 w-full items-center justify-between bg-white/95 p-2 font-semibold dark:bg-gray-800/90">
+    <div className="sticky top-0 z-10 flex h-14 w-full items-center justify-between bg-white/95 p-2 font-semibold dark:bg-gray-800/90 dark:text-white">
       <div className="flex items-center gap-2">
         <div
           className="group flex cursor-pointer items-center gap-1 rounded-xl px-3 py-2 text-lg font-medium hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-black/10 dark:radix-state-open:bg-black/20"
           // type="button"
         >
           <div>
-            ChatGPT <span className="text-token-text-secondary">4</span>
+            {/* ChatGPT <span className="text-token-text-secondary">4</span> */}
+            OpenAI
           </div>
           <svg
             width="16"
@@ -22,7 +23,7 @@ export default function Header() {
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-            ></path>
+            />
           </svg>
         </div>
       </div>
