@@ -1,13 +1,13 @@
 import { useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useSetRecoilState, useResetRecoilState, useRecoilCallback } from 'recoil';
 import { useGetEndpointsQuery } from 'librechat-data-provider';
 import type { TConversation, TSubmission, TPreset, TModelsConfig } from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint } from '~/utils';
+import useOriginNavigate from './useOriginNavigate';
 import store from '~/store';
 
 const useNewConvo = (index = 0) => {
-  const navigate = useNavigate();
+  const navigate = useOriginNavigate();
   const setConversation = useSetRecoilState(store.conversationByIndex(index));
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
@@ -43,7 +43,7 @@ const useNewConvo = (index = 0) => {
         resetLatestMessage();
 
         if (conversation.conversationId === 'new' && !modelsData) {
-          navigate('/a/new');
+          navigate('new');
         }
       },
     [endpointsConfig],
