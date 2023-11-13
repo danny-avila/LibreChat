@@ -11,7 +11,7 @@ import {
 import type {
   TMessage,
   TSubmission,
-  TConversation,
+  // TConversation,
   TEndpointOption,
 } from 'librechat-data-provider';
 import type { TAskFunction } from '~/common';
@@ -24,16 +24,17 @@ export default function useChatHelpers(index = 0) {
   const conversation = useRecoilValue(store.conversationByIndex(index)) || {
     endpoint: null,
     conversationId: null,
+    jailbreak: false,
   };
-  const { conversationId } = conversation;
+  const { conversationId, endpoint } = conversation;
 
   /* Messages */
   const { data: messages } = useGetMessagesByConvoId(conversationId ?? '', {
     enabled: !!(conversationId && conversationId !== 'new'),
   });
 
-  const [isSubmitting, setIsSubmitting] = useRecoilState(store.isSubmittingFamily(index));
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
+  const [isSubmitting, setIsSubmitting] = useRecoilState(store.isSubmittingFamily(index));
   const [latestMessage, setLatestMessage] = useRecoilState(store.latestMessageFamily(index));
   const setSiblingIdx = useSetRecoilState(
     store.messagesSiblingIdxFamily(latestMessage?.parentMessageId ?? null),
@@ -51,11 +52,23 @@ export default function useChatHelpers(index = 0) {
   }, [conversationId, queryClient]);
 
   /* Conversation */
+  // const setActiveConvos = useSetRecoilState(store.activeConversations);
   const setConversation = useSetRecoilState(store.conversationByIndex(index));
-  const currentConversation = useRecoilValue(store.conversationByIndex(index)) || {
-    endpoint: null,
-  };
-  const { endpoint } = currentConversation;
+  // const setConversation = useCallback(
+  //   (convoUpdate: TConversation) => {
+  //     _setConversation(prev => {
+  //       const { conversationId: convoId } = prev ?? { conversationId: null };
+  //       const { conversationId: currentId } = convoUpdate;
+  //       if (currentId && convoId && convoId !== 'new' && convoId !== currentId) {
+  //         // for now, we delete the prev convoId from activeConversations
+  //         const newActiveConvos = { [currentId]: true };
+  //         setActiveConvos(newActiveConvos);
+  //       }
+  //       return convoUpdate;
+  //     });
+  //   },
+  //   [_setConversation, setActiveConvos],
+  // );
   const { getExpiry } = useUserKey(endpoint ?? '');
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
 
@@ -78,7 +91,7 @@ export default function useChatHelpers(index = 0) {
       return;
     }
 
-    conversationId = conversationId ?? currentConversation?.conversationId;
+    conversationId = conversationId ?? conversation?.conversationId;
     if (conversationId == 'search') {
       console.error('cannot send any message under search view!');
       return;
@@ -92,7 +105,7 @@ export default function useChatHelpers(index = 0) {
     const isEditOrContinue = isEdited || isContinued;
 
     // set the endpoint option
-    const convo = parseCompactConvo(endpoint, currentConversation);
+    const convo = parseCompactConvo(endpoint, conversation);
     const endpointOption = {
       ...convo,
       endpoint,
@@ -150,7 +163,7 @@ export default function useChatHelpers(index = 0) {
 
     const submission: TSubmission = {
       conversation: {
-        ...currentConversation,
+        ...conversation,
         conversationId,
       },
       endpointOption,
@@ -247,7 +260,7 @@ export default function useChatHelpers(index = 0) {
 
   return {
     messages,
-    conversation: currentConversation as TConversation,
+    conversation,
     setConversation,
     isSubmitting,
     setIsSubmitting,

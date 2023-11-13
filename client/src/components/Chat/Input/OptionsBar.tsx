@@ -34,7 +34,7 @@ export default function OptionsBar({ messagesTree }) {
   } = useChatContext();
   const { setOption } = useSetIndexOptions();
 
-  const { endpoint, conversationId, jailbreak } = conversation ?? {};
+  const { endpoint, conversationId, jailbreak } = conversation;
 
   const altConditions: { [key: string]: boolean } = {
     bingAI: !!(latestMessage && conversation?.jailbreak && endpoint === 'bingAI'),
