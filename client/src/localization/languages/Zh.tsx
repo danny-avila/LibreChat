@@ -185,7 +185,7 @@ export default {
   com_endpoint_examples: ' 预设',
   com_endpoint_completion: '补全',
   com_endpoint_agent: '代理',
-  com_endpoint_show_what_settings: '显示{0}的设置',
+  com_endpoint_show_what_settings: '显示{0}设置',
   com_endpoint_save: '保存',
   com_endpoint_export: '导出',
   com_endpoint_save_as_preset: '保存为预设',
