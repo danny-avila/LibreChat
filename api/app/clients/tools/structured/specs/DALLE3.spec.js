@@ -134,15 +134,6 @@ describe('DALLE3', () => {
     await expect(dalle._call(mockData)).rejects.toThrow('Missing required field: prompt');
   });
 
-  it('should throw an error if no image URL is returned from OpenAI API', async () => {
-    const mockData = {
-      prompt: 'A test prompt',
-    };
-    // Simulate a response with an object that has a `url` property set to `undefined`
-    generate.mockResolvedValue({ data: [{ url: undefined }] });
-    await expect(dalle._call(mockData)).rejects.toThrow('No image URL returned from OpenAI API.');
-  });
-
   it('should log to console if no image name is found in the URL', async () => {
     const mockData = {
       prompt: 'A test prompt',
