@@ -1,33 +1,32 @@
+import { useRecoilState } from 'recoil';
 import { Settings2 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
-import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
 import { tPresetSchema, EModelEndpoint } from 'librechat-data-provider';
 import { PluginStoreDialog } from '~/components';
 import {
-  PopoverButtons,
   EndpointSettings,
   SaveAsPresetDialog,
   EndpointOptionsPopover,
 } from '~/components/Endpoints';
+import { ModelSelect } from '~/components/Input/ModelSelect';
+import GenerationButtons from './GenerationButtons';
+import PopoverButtons from './PopoverButtons';
+import { useSetIndexOptions } from '~/hooks';
+import { useChatContext } from '~/Providers';
 import { Button } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
-import { useSetOptions } from '~/hooks';
-import { ModelSelect } from './ModelSelect';
-import { GenerationButtons } from './Generations';
 import store from '~/store';
 
-export default function OptionsBar() {
-  const conversation = useRecoilValue(store.conversation);
-  const messagesTree = useRecoilValue(store.messagesTree);
-  const latestMessage = useRecoilValue(store.latestMessage);
-  const setShowBingToneSetting = useSetRecoilState(store.showBingToneSetting);
+export default function OptionsBar({ messagesTree }) {
+  const [opacityClass, setOpacityClass] = useState('full-opacity');
+  const [saveAsDialogShow, setSaveAsDialogShow] = useState<boolean>(false);
   const [showPluginStoreDialog, setShowPluginStoreDialog] = useRecoilState(
     store.showPluginStoreDialog,
   );
-  const [saveAsDialogShow, setSaveAsDialogShow] = useState<boolean>(false);
-  const [showPopover, setShowPopover] = useRecoilState(store.showPopover);
-  const [opacityClass, setOpacityClass] = useState('full-opacity');
-  const { setOption } = useSetOptions();
+
+  const { showPopover, conversation, latestMessage, setShowPopover, setShowBingToneSetting } =
+    useChatContext();
+  const { setOption } = useSetIndexOptions();
 
   const { endpoint, conversationId, jailbreak } = conversation ?? {};
 
@@ -76,7 +75,7 @@ export default function OptionsBar() {
     ? altSettings[endpoint]
     : () => setShowPopover((prev) => !prev);
   return (
-    <div className="relative py-2 last:mb-2 md:mx-4 md:mb-[-16px] md:py-4 md:pt-2 md:last:mb-6 lg:mx-auto lg:mb-[-32px] lg:max-w-2xl lg:pt-6 xl:max-w-3xl">
+    <div className="relative mb-2 last:mb-2 md:mx-4 md:last:mb-6 lg:mx-auto lg:max-w-2xl xl:max-w-3xl">
       <GenerationButtons
         endpoint={endpoint}
         showPopover={showPopover}
@@ -119,7 +118,7 @@ export default function OptionsBar() {
             setOpacityClass('show');
           }}
         >
-          <ModelSelect conversation={conversation} setOption={setOption} />
+          <ModelSelect conversation={conversation} setOption={setOption} isMultiChat={true} />
           {!noSettings[endpoint] && (
             <Button
               type="button"
@@ -140,7 +139,11 @@ export default function OptionsBar() {
           PopoverButtons={<PopoverButtons endpoint={endpoint} />}
         >
           <div className="px-4 py-4">
-            <EndpointSettings conversation={conversation} setOption={setOption} />
+            <EndpointSettings
+              conversation={conversation}
+              setOption={setOption}
+              isMultiChat={true}
+            />
           </div>
         </EndpointOptionsPopover>
         <SaveAsPresetDialog

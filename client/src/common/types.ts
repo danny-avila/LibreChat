@@ -206,3 +206,8 @@ export type Option = Record<string, unknown> & {
   label?: string;
   value: string | number | null;
 };
+
+export type TOptionSettings = {
+  showExamples?: boolean;
+  isCodeChat?: boolean;
+};

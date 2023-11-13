@@ -232,9 +232,17 @@ export default function useChatHelpers(index = 0) {
     setSiblingIdx(0);
   };
 
+  const [showBingToneSetting, setShowBingToneSetting] = useRecoilState(
+    store.showBingToneSettingFamily(index),
+  );
   const [showPopover, setShowPopover] = useRecoilState(store.showPopoverFamily(index));
   const [abortScroll, setAbortScroll] = useRecoilState(store.abortScrollFamily(index));
   const [autoScroll, setAutoScroll] = useRecoilState(store.autoScrollFamily(index));
+  const [preset, setPreset] = useRecoilState(store.presetByIndex(index));
+  const [optionSettings, setOptionSettings] = useRecoilState(store.optionSettingsFamily(index));
+  const [showAgentSettings, setShowAgentSettings] = useRecoilState(
+    store.showAgentSettingsFamily(index),
+  );
 
   return {
     messages,
@@ -261,5 +269,13 @@ export default function useChatHelpers(index = 0) {
     setAbortScroll,
     autoScroll,
     setAutoScroll,
+    showBingToneSetting,
+    setShowBingToneSetting,
+    preset,
+    setPreset,
+    optionSettings,
+    setOptionSettings,
+    showAgentSettings,
+    setShowAgentSettings,
   };
 }

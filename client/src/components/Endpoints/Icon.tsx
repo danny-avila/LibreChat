@@ -1,8 +1,8 @@
 import { EModelEndpoint } from 'librechat-data-provider';
 import { Plugin, GPTIcon, AnthropicIcon, AzureMinimalIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks';
-import { cn } from '~/utils';
 import { IconProps } from '~/common';
+import { cn } from '~/utils';
 
 const Icon: React.FC<IconProps> = (props) => {
   const { size = 30, isCreatedByUser, button, model = true, endpoint, error, jailbreak } = props;

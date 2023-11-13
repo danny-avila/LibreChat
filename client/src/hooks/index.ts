@@ -22,3 +22,5 @@ export { default as useConversations } from './useConversations';
 export { default as useOnClickOutside } from './useOnClickOutside';
 export { default as useMessageHandler } from './useMessageHandler';
 export { default as useNavigateToConvo } from './useNavigateToConvo';
+export { default as useSetIndexOptions } from './useSetIndexOptions';
+export { default as useGenerationsByLatest } from './useGenerationsByLatest';

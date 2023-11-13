@@ -1,8 +1,14 @@
 import { atomFamily } from 'recoil';
-import type { TMessage, TConversation, TSubmission } from 'librechat-data-provider';
+import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
+import type { TOptionSettings } from '~/common';
 
 const conversationByIndex = atomFamily<TConversation | null, string | number>({
   key: 'conversationByIndex',
+  default: null,
+});
+
+const presetByIndex = atomFamily<TPreset | null, string | number>({
+  key: 'presetByIndex',
   default: null,
 });
 
@@ -22,17 +28,22 @@ const abortScrollFamily = atomFamily({
 });
 
 const isSubmittingFamily = atomFamily({
-  key: 'isSubmittingById',
+  key: 'isSubmittingByIndex',
   default: false,
 });
 
+const optionSettingsFamily = atomFamily<TOptionSettings, string | number>({
+  key: 'optionSettingsByIndex',
+  default: {},
+});
+
 const showAgentSettingsFamily = atomFamily({
-  key: 'showAgentSettingsById',
+  key: 'showAgentSettingsByIndex',
   default: false,
 });
 
 const showBingToneSettingFamily = atomFamily({
-  key: 'showBingToneSettingById',
+  key: 'showBingToneSettingByIndex',
   default: false,
 });
 
@@ -66,11 +77,13 @@ const autoScrollFamily = atomFamily({
 });
 
 export default {
-  textByIndex,
-  submissionByIndex,
   conversationByIndex,
+  presetByIndex,
+  submissionByIndex,
+  textByIndex,
   abortScrollFamily,
   isSubmittingFamily,
+  optionSettingsFamily,
   showAgentSettingsFamily,
   showBingToneSettingFamily,
   showPopoverFamily,

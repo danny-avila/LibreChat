@@ -1,13 +1,12 @@
 import { TPreset } from 'librechat-data-provider';
 import type { TSetOptionsPayload, TSetExample, TSetOption } from '~/common';
-import { useRecoilState } from 'recoil';
+import { useChatContext } from '~/Providers/ChatContext';
 import { cleanupPreset } from '~/utils';
-import store from '~/store';
 
 type TUsePresetOptions = (preset?: TPreset | boolean | null) => TSetOptionsPayload | boolean;
 
 const usePresetOptions: TUsePresetOptions = (_preset) => {
-  const [preset, setPreset] = useRecoilState(store.preset);
+  const { preset, setPreset } = useChatContext();
 
   if (!_preset) {
     return false;
