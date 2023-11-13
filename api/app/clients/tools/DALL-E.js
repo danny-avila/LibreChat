@@ -7,7 +7,7 @@ const OpenAI = require('openai');
 const { Tool } = require('langchain/tools');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const saveImageFromUrl = require('./saveImageFromUrl');
-const { extractBaseURL } = require('../../../utils');
+const extractBaseURL = require('../../../utils/extractBaseURL');
 const { DALLE_REVERSE_PROXY, PROXY } = process.env;
 
 class OpenAICreateImage extends Tool {
