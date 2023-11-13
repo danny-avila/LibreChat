@@ -27,6 +27,8 @@ export default function ChatForm({ index = 0 }) {
             <Textarea
               value={text}
               onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value)}
+              setText={setText}
+              submitMessage={submitMessage}
             />
             <SendButton text={text} />
           </div>
