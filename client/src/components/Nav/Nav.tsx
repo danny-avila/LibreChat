@@ -4,24 +4,17 @@ import {
   useSearchQuery,
   TSearchResults,
 } from 'librechat-data-provider';
-import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import NewChat from './NewChat';
-import SearchBar from './SearchBar';
-import NavLinks from './NavLinks';
-import { Panel, Spinner } from '~/components';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useAuthContext, useMediaQuery, useConversation, useConversations } from '~/hooks';
+import { TooltipProvider, Tooltip } from '~/components/ui/';
 import { Conversations, Pages } from '../Conversations';
-import {
-  useAuthContext,
-  useMediaQuery,
-  useLocalize,
-  useConversation,
-  useConversations,
-} from '~/hooks';
-import { cn } from '~/utils/';
+import { Spinner } from '~/components';
+import SearchBar from './SearchBar';
+import NavToggle from './NavToggle';
+import NavLinks from './NavLinks';
+import NewChat from './NewChat';
 import store from '~/store';
-
-import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/';
 
 export default function Nav({ navVisible, setNavVisible }) {
   const [isHovering, setIsHovering] = useState(false);
@@ -29,7 +22,6 @@ export default function Nav({ navVisible, setNavVisible }) {
   const { isAuthenticated } = useAuthContext();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollPositionRef = useRef<number | null>(null);
-  const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   useEffect(() => {
@@ -174,21 +166,6 @@ export default function Nav({ navVisible, setNavVisible }) {
                 <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
                   <div className="mb-1 flex h-11 flex-row">
                     <NewChat />
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className={cn(
-                          'nav-close-button inline-flex h-11 w-11 items-center justify-center rounded-md border border-white/20 text-white hover:bg-gray-500/10',
-                        )}
-                        onClick={toggleNavVisible}
-                      >
-                        <span className="sr-only">{localize('com_nav_close_sidebar')}</span>
-                        <Panel open={false} />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" sideOffset={17}>
-                      {localize('com_nav_close_menu')}
-                    </TooltipContent>
                   </div>
                   {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                   <div
@@ -220,27 +197,8 @@ export default function Nav({ navVisible, setNavVisible }) {
             </div>
           </div>
         </div>
-        {!navVisible && (
-          <div className="absolute left-2 top-2 z-20 hidden md:inline-block">
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="nav-open-button flex h-11 cursor-pointer items-center gap-3 rounded-md border border-black/10 bg-white p-3 text-sm text-black transition-colors duration-200 hover:bg-gray-50 dark:border-white/20 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
-                onClick={toggleNavVisible}
-              >
-                <div className="flex items-center justify-center">
-                  <span className="sr-only">{localize('com_nav_open_sidebar')}</span>
-                  <Panel open={true} />
-                </div>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={17}>
-              {localize('com_nav_open_menu')}
-            </TooltipContent>
-          </div>
-        )}
-
-        <div className={`nav-mask${navVisible ? ' active' : ''}`} onClick={toggleNavVisible}></div>
+        <NavToggle onToggle={toggleNavVisible} navVisible={navVisible} />
+        <div className={`nav-mask${navVisible ? ' active' : ''}`} onClick={toggleNavVisible} />
       </Tooltip>
     </TooltipProvider>
   );
