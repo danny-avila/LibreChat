@@ -1593,6 +1593,3 @@ button.scroll-convo {
     opacity:0
   }
 }
-.transition-opacity {
-  transition: opacity 0.2s ease-in-out; /* Personalizza la durata e l'effetto di transizione a tuo piacimento */
-}
