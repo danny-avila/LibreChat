@@ -99,6 +99,7 @@ export const LangSelector = ({
         <option value="sv-SE">{localize('com_nav_lang_swedish')}</option>
         <option value="ko-KR">{localize('com_nav_lang_korean')}</option>
         <option value="vi-VN">{localize('com_nav_lang_vietnamese')}</option>
+        <option value="tr-TR">{localize('com_nav_lang_turkish')}</option>
       </select>
     </div>
   );
