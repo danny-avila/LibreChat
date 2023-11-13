@@ -1,11 +1,9 @@
-import { useState } from 'react';
 import { TooltipTrigger, TooltipContent } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-export default function NavToggle({ onToggle, navVisible }) {
+export default function NavToggle({ onToggle, navVisible, isHovering, setIsHovering }) {
   const localize = useLocalize();
-  const [isHovering, setIsHovering] = useState(false);
   const transition = {
     transition: 'transform 0.3s ease, opacity 0.2s ease',
   };
@@ -46,7 +44,7 @@ export default function NavToggle({ onToggle, navVisible }) {
                 />
               </div>
             </div>
-            <TooltipContent side="right" sideOffset={8}>
+            <TooltipContent side="right" sideOffset={4}>
               {navVisible ? localize('com_nav_close_menu') : localize('com_nav_open_menu')}
             </TooltipContent>
           </span>

@@ -14,9 +14,11 @@ import SearchBar from './SearchBar';
 import NavToggle from './NavToggle';
 import NavLinks from './NavLinks';
 import NewChat from './NewChat';
+import { cn } from '~/utils';
 import store from '~/store';
 
 export default function Nav({ navVisible, setNavVisible }) {
+  const [isToggleHovering, setIsToggleHovering] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
   const [navWidth, setNavWidth] = useState('260px');
   const { isAuthenticated } = useAuthContext();
@@ -148,7 +150,7 @@ export default function Nav({ navVisible, setNavVisible }) {
       : 'flex flex-col gap-2 text-gray-100 text-sm';
 
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delayDuration={150}>
       <Tooltip>
         <div
           className={
@@ -162,7 +164,12 @@ export default function Nav({ navVisible, setNavVisible }) {
         >
           <div className="h-full w-[320px] md:w-[260px]">
             <div className="flex h-full min-h-0 flex-col">
-              <div className="scrollbar-trigger relative flex h-full w-full flex-1 items-start border-white/20">
+              <div
+                className={cn(
+                  'scrollbar-trigger relative flex h-full w-full flex-1 items-start border-white/20 transition-opacity',
+                  isToggleHovering ? 'opacity-50' : 'opacity-100',
+                )}
+              >
                 <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
                   <div className="mb-1 flex h-11 flex-row">
                     <NewChat />
@@ -197,7 +204,12 @@ export default function Nav({ navVisible, setNavVisible }) {
             </div>
           </div>
         </div>
-        <NavToggle onToggle={toggleNavVisible} navVisible={navVisible} />
+        <NavToggle
+          isHovering={isToggleHovering}
+          setIsHovering={setIsToggleHovering}
+          onToggle={toggleNavVisible}
+          navVisible={navVisible}
+        />
         <div className={`nav-mask${navVisible ? ' active' : ''}`} onClick={toggleNavVisible} />
       </Tooltip>
     </TooltipProvider>
