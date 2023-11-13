@@ -1,16 +1,14 @@
-import { useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useGetMessagesByConvoId } from 'librechat-data-provider';
-import { useAuthContext } from '~/hooks';
+import ChatView from '~/components/Chat/SingleChatView';
+import useAuthRedirect from './useAuthRedirect';
 import { buildTree } from '~/utils';
-import ChatView from '~/components/Assistants/SingleChatView';
 import store from '~/store';
 
 export default function AssistantsRoute() {
   const index = 0;
   const { conversationId } = useParams();
-  const { isAuthenticated } = useAuthContext();
   const conversation = useRecoilValue(store.conversationByIndex(index));
 
   const { data: messagesTree = null } = useGetMessagesByConvoId(conversationId ?? '', {
@@ -21,19 +19,7 @@ export default function AssistantsRoute() {
     },
   });
 
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      if (!isAuthenticated) {
-        navigate('/login', { replace: true });
-      }
-    }, 300);
-
-    return () => {
-      clearTimeout(timeout);
-    };
-  }, [isAuthenticated, navigate]);
+  const { isAuthenticated } = useAuthRedirect();
 
   if (!isAuthenticated) {
     return null;
