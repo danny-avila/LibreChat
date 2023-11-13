@@ -57,6 +57,11 @@ const latestMessageFamily = atomFamily<TMessage | null, string | number | null>(
   default: null,
 });
 
+const textareaHeightFamily = atomFamily<number, string | number>({
+  key: 'textareaHeightByIndex',
+  default: 56,
+});
+
 const autoScrollFamily = atomFamily({
   key: 'autoScrollByIndex',
   default: localStorage.getItem('autoScroll') === 'true',
@@ -89,4 +94,5 @@ export default {
   showPopoverFamily,
   autoScrollFamily,
   latestMessageFamily,
+  textareaHeightFamily,
 };

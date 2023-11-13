@@ -8,6 +8,7 @@ export default function Textarea({ value, onChange, setText, submitMessage }) {
     handleKeyUp,
     handleCompositionStart,
     handleCompositionEnd,
+    onHeightChange,
     placeholder,
   } = useTextarea({ setText, submitMessage });
 
@@ -21,6 +22,7 @@ export default function Textarea({ value, onChange, setText, submitMessage }) {
       onKeyDown={handleKeyDown}
       onCompositionStart={handleCompositionStart}
       onCompositionEnd={handleCompositionEnd}
+      onHeightChange={onHeightChange}
       id="prompt-textarea"
       tabIndex={0}
       data-testid="text-input"

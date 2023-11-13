@@ -70,7 +70,7 @@ export default function GenerationButtons({
   }
 
   return (
-    <div className="absolute bottom-0 right-[-260px] z-[62]">
+    <div className="absolute bottom-0 right-0 z-[62]">
       <div className="grow" />
       <div className="flex items-center md:items-end">
         <div

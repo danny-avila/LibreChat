@@ -1,4 +1,5 @@
 import { useLayoutEffect, useState, useRef, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
 import { CSSTransition } from 'react-transition-group';
@@ -9,9 +10,10 @@ import { Spinner } from '~/components';
 
 export default function MessagesView({
   messagesTree: _messagesTree,
+  Header,
 }: {
   messagesTree?: TMessage[] | null;
-  index: number;
+  Header?: ReactNode;
 }) {
   const scrollableRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -83,6 +85,7 @@ export default function MessagesView({
             </div>
           ) : (
             <>
+              {Header && Header}
               <MultiMessage
                 key={conversationId} // avoid internal state mixture
                 messageId={conversationId ?? null}

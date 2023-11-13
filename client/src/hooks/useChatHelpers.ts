@@ -239,6 +239,7 @@ export default function useChatHelpers(index = 0) {
   const [abortScroll, setAbortScroll] = useRecoilState(store.abortScrollFamily(index));
   const [autoScroll, setAutoScroll] = useRecoilState(store.autoScrollFamily(index));
   const [preset, setPreset] = useRecoilState(store.presetByIndex(index));
+  const [textareaHeight, setTextareaHeight] = useRecoilState(store.textareaHeightFamily(index));
   const [optionSettings, setOptionSettings] = useRecoilState(store.optionSettingsFamily(index));
   const [showAgentSettings, setShowAgentSettings] = useRecoilState(
     store.showAgentSettingsFamily(index),
@@ -277,5 +278,7 @@ export default function useChatHelpers(index = 0) {
     setOptionSettings,
     showAgentSettings,
     setShowAgentSettings,
+    textareaHeight,
+    setTextareaHeight,
   };
 }

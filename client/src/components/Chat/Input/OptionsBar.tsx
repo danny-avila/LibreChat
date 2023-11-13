@@ -24,8 +24,14 @@ export default function OptionsBar({ messagesTree }) {
     store.showPluginStoreDialog,
   );
 
-  const { showPopover, conversation, latestMessage, setShowPopover, setShowBingToneSetting } =
-    useChatContext();
+  const {
+    showPopover,
+    conversation,
+    latestMessage,
+    setShowPopover,
+    setShowBingToneSetting,
+    textareaHeight,
+  } = useChatContext();
   const { setOption } = useSetIndexOptions();
 
   const { endpoint, conversationId, jailbreak } = conversation ?? {};
@@ -75,7 +81,12 @@ export default function OptionsBar({ messagesTree }) {
     ? altSettings[endpoint]
     : () => setShowPopover((prev) => !prev);
   return (
-    <div className="relative mb-2 last:mb-2 md:mx-4 md:last:mb-6 lg:mx-auto lg:max-w-2xl xl:max-w-3xl">
+    <div
+      className="absolute left-0 right-0 mx-auto mb-2 last:mb-2 md:mx-4 md:last:mb-6 lg:mx-auto lg:max-w-2xl xl:max-w-3xl"
+      style={{
+        bottom: `${80 + (textareaHeight - 56)}px`,
+      }}
+    >
       <GenerationButtons
         endpoint={endpoint}
         showPopover={showPopover}

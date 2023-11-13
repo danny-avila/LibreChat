@@ -5,7 +5,14 @@ import { useChatContext } from '~/Providers/ChatContext';
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
 export default function useTextarea({ setText, submitMessage }) {
-  const { conversation, isSubmitting, latestMessage, setShowBingToneSetting } = useChatContext();
+  const {
+    conversation,
+    isSubmitting,
+    latestMessage,
+    setShowBingToneSetting,
+    textareaHeight,
+    setTextareaHeight,
+  } = useChatContext();
   const isComposing = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -84,6 +91,16 @@ export default function useTextarea({ setText, submitMessage }) {
     return 'Message ChatGPT…';
   };
 
+  const onHeightChange = (height: number) => {
+    if (height > 208 && textareaHeight < 208) {
+      setTextareaHeight(Math.min(height, 208));
+    } else if (height > 208) {
+      return;
+    } else {
+      setTextareaHeight(height);
+    }
+  };
+
   return {
     inputRef,
     handleKeyDown,
@@ -91,5 +108,6 @@ export default function useTextarea({ setText, submitMessage }) {
     handleCompositionStart,
     handleCompositionEnd,
     placeholder: getPlaceholderText(),
+    onHeightChange,
   };
 }

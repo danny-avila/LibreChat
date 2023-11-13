@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useRecoilState, useSetRecoilState } from 'recoil';
 import { useUpdateConversationMutation } from 'librechat-data-provider';
-import { useConversations, useConversation } from '~/hooks';
+import { useConversations, useNavigateToConvo } from '~/hooks';
 import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
@@ -15,7 +15,7 @@ export default function Conversation({ conversation, retainView }) {
   const setSubmission = useSetRecoilState(store.submission);
 
   const { refreshConversations } = useConversations();
-  const { switchToConversation } = useConversation();
+  const { navigateToConvo } = useNavigateToConvo();
 
   const updateConvoMutation = useUpdateConversationMutation(currentConversation?.conversationId);
 
@@ -40,9 +40,9 @@ export default function Conversation({ conversation, retainView }) {
     // set conversation to the new conversation
     if (conversation?.endpoint === 'gptPlugins') {
       const lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools')) || [];
-      switchToConversation({ ...conversation, tools: lastSelectedTools });
+      navigateToConvo({ ...conversation, tools: lastSelectedTools });
     } else {
-      switchToConversation(conversation);
+      navigateToConvo(conversation);
     }
   };
 
