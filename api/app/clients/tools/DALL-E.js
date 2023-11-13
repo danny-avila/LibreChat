@@ -1,19 +1,30 @@
 // From https://platform.openai.com/docs/api-reference/images/create
 // To use this tool, you must pass in a configured OpenAIApi object.
 const fs = require('fs');
+const path = require('path');
 const OpenAI = require('openai');
 // const { genAzureEndpoint } = require('../../../utils/genAzureEndpoints');
 const { Tool } = require('langchain/tools');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const saveImageFromUrl = require('./saveImageFromUrl');
-const path = require('path');
+const extractBaseURL = require('../../../utils/extractBaseURL');
+const { DALLE_REVERSE_PROXY, PROXY } = process.env;
 
 class OpenAICreateImage extends Tool {
   constructor(fields = {}) {
     super();
 
     let apiKey = fields.DALLE_API_KEY || this.getApiKey();
+    const config = { apiKey };
+    if (DALLE_REVERSE_PROXY) {
+      config.baseURL = extractBaseURL(DALLE_REVERSE_PROXY);
+    }
+
+    if (PROXY) {
+      config.httpAgent = new HttpsProxyAgent(PROXY);
+    }
+
     // let azureKey = fields.AZURE_API_KEY || process.env.AZURE_API_KEY;
-    let config = { apiKey };
 
     // if (azureKey) {
     //   apiKey = azureKey;
