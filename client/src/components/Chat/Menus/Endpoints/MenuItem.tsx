@@ -37,6 +37,9 @@ const MenuItem: FC<MenuItemProps> = ({
     if (!newEndpoint) {
       return;
     } else {
+      if (!expiryTime) {
+        setDialogOpen(true);
+      }
       newConversation({ template: { endpoint: newEndpoint } });
       navigate('new');
     }
@@ -49,9 +52,7 @@ const MenuItem: FC<MenuItemProps> = ({
         className="group m-1.5 flex cursor-pointer gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"
         tabIndex={-1}
         {...rest}
-        onClick={() => {
-          onSelectEndpoint(endpoint);
-        }}
+        onClick={() => onSelectEndpoint(endpoint)}
       >
         <div className="flex grow items-center justify-between gap-2">
           <div>

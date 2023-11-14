@@ -12,7 +12,6 @@ export default function ChatRoute() {
   const conversation = useRecoilValue(store.conversationByIndex(index));
 
   const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(conversationId ?? '', {
-    enabled: !!(conversationId && conversationId !== 'new'),
     select: (data) => {
       const dataTree = buildTree(data, false);
       return dataTree?.length === 0 ? null : dataTree ?? null;

@@ -35,6 +35,9 @@ export function revokeAllUserKeys(): Promise<unknown> {
 }
 
 export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
+  if (conversationId === 'new') {
+    return Promise.resolve([]);
+  }
   return request.get(endpoints.messages(conversationId));
 }
 
