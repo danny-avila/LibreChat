@@ -44,6 +44,7 @@ export const languages = [
 
 export const alternateName = {
   [EModelEndpoint.openAI]: 'OpenAI',
+  [EModelEndpoint.assistant]: 'Assistants',
   [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
   [EModelEndpoint.bingAI]: 'Bing',
   [EModelEndpoint.chatGPTBrowser]: 'ChatGPT',

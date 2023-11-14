@@ -1,6 +1,6 @@
-import React from 'react';
+import type { FC } from 'react';
 
-const MenuSeparator: React.FC = () => (
+const MenuSeparator: FC = () => (
   <div
     role="separator"
     aria-orientation="horizontal"

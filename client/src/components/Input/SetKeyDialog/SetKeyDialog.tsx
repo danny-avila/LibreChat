@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { EModelEndpoint } from 'librechat-data-provider';
 import type { TDialogProps } from '~/common';
 import { Dialog, Dropdown } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
@@ -11,10 +12,10 @@ import OtherConfig from './OtherConfig';
 import HelpText from './HelpText';
 
 const endpointComponents = {
-  google: GoogleConfig,
-  openAI: OpenAIConfig,
-  azureOpenAI: OpenAIConfig,
-  gptPlugins: OpenAIConfig,
+  [EModelEndpoint.google]: GoogleConfig,
+  [EModelEndpoint.openAI]: OpenAIConfig,
+  [EModelEndpoint.azureOpenAI]: OpenAIConfig,
+  [EModelEndpoint.gptPlugins]: OpenAIConfig,
   default: OtherConfig,
 };
 

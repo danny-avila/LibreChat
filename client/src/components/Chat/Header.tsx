@@ -1,14 +1,16 @@
-import { Root, Trigger, Portal } from '@radix-ui/react-popover';
+import { Root, Trigger } from '@radix-ui/react-popover';
 import { useGetEndpointsQuery } from 'librechat-data-provider';
 import NewEndpointMenu from './Menus/NewEndpointMenu';
 import { useChatContext } from '~/Providers';
-import { mapEndpoints } from '~/utils';
+import { mapEndpoints, alternateName } from '~/utils';
 
 export default function Header() {
   const { conversation } = useChatContext();
   const { data: endpoints = [] } = useGetEndpointsQuery({
     select: mapEndpoints,
   });
+
+  const currentEndpoint = conversation.endpoint ?? '';
 
   return (
     <Root>
@@ -20,7 +22,8 @@ export default function Header() {
               // type="button"
             >
               <div>
-                OpenAI {/* <span className="text-token-text-secondary">Secondary Text</span> */}
+                {alternateName[currentEndpoint]}{' '}
+                {/* <span className="text-token-text-secondary">Secondary Text</span> */}
               </div>
               <svg
                 width="16"
@@ -40,9 +43,7 @@ export default function Header() {
             </div>
           </Trigger>
         </div>
-        <Portal>
-          <NewEndpointMenu endpoints={endpoints} selected={conversation.endpoint ?? ''} />
-        </Portal>
+        <NewEndpointMenu endpoints={endpoints} selected={conversation.endpoint ?? ''} />
       </div>
     </Root>
   );

@@ -64,7 +64,7 @@ export type TSetOptionsPayload = {
   addExample: () => void;
   removeExample: () => void;
   setAgentOption: TSetOption;
-  getConversation: () => TConversation | TPreset | null;
+  // getConversation: () => TConversation | TPreset | null;
   checkPluginSelection: (value: string) => boolean;
   setTools: (newValue: string) => void;
 };

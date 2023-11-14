@@ -1,8 +1,9 @@
-import { TConversation, TPreset, TPlugin, tConversationSchema } from 'librechat-data-provider';
+import { TPreset, TPlugin, tConversationSchema, EModelEndpoint } from 'librechat-data-provider';
 import type { TSetExample, TSetOption, TSetOptionsPayload } from '~/common';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useChatContext } from '~/Providers/ChatContext';
 import usePresetOptions from './usePresetOptions';
+import useLocalStorage from './useLocalStorage';
 import store from '~/store';
 
 type TUseSetOptions = (preset?: TPreset | boolean | null) => TSetOptionsPayload;
@@ -11,6 +12,11 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
   const setShowPluginStoreDialog = useSetRecoilState(store.showPluginStoreDialog);
   const availableTools = useRecoilValue(store.availableTools);
   const { conversation, setConversation } = useChatContext();
+  const [lastBingSettings, setLastBingSettings] = useLocalStorage('lastBingSettings', {});
+  const [lastModel, setLastModel] = useLocalStorage('lastSelectedModel', {
+    primaryModel: '',
+    secondaryModel: '',
+  });
 
   const result = usePresetOptions(preset);
 
@@ -19,8 +25,17 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
   }
 
   const setOption: TSetOption = (param) => (newValue) => {
+    const { endpoint } = conversation;
     const update = {};
     update[param] = newValue;
+
+    if (param === 'model' && endpoint) {
+      const lastModelUpdate = { ...lastModel, [endpoint]: newValue };
+      setLastModel(lastModelUpdate);
+    } else if (param === 'jailbreak' && endpoint) {
+      setLastBingSettings({ ...lastBingSettings, jailbreak: newValue });
+    }
+
     setConversation((prevState) =>
       tConversationSchema.parse({
         ...prevState,
@@ -80,8 +95,6 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
     );
   };
 
-  const getConversation: () => TConversation | null = () => conversation;
-
   function checkPluginSelection(value: string) {
     if (!conversation?.tools) {
       return false;
@@ -94,6 +107,12 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
     const convo = JSON.parse(editableConvo);
     const { agentOptions } = convo;
     agentOptions[param] = newValue;
+    console.log('agentOptions', agentOptions, param, newValue);
+    if (param === 'model' && typeof newValue === 'string') {
+      const lastModelUpdate = { ...lastModel, [EModelEndpoint.gptPlugins]: newValue };
+      lastModelUpdate.secondaryModel = newValue;
+      setLastModel(lastModelUpdate);
+    }
     setConversation((prevState) =>
       tConversationSchema.parse({
         ...prevState,
@@ -134,7 +153,6 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
     addExample,
     removeExample,
     setAgentOption,
-    getConversation,
     checkPluginSelection,
     setTools,
   };

@@ -102,6 +102,8 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     //   }, 5000);
     // }
 
+    // TODO: setStorage here
+
     setConversation((prevState) => ({
       ...prevState,
       ...conversation,
@@ -135,6 +137,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     }
 
     const { conversationId } = message;
+    // TODO: setStorage here
     setConversation((prevState) =>
       tConversationSchema.parse({
         ...prevState,
@@ -168,6 +171,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     //   }, 5000);
     // }
 
+    // TODO: setStorage here
     setConversation((prevState) => ({
       ...prevState,
       ...conversation,

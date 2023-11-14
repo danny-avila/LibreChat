@@ -30,7 +30,7 @@ function ChatView({
             ) : messagesTree && messagesTree.length !== 0 ? (
               <MessagesView messagesTree={messagesTree} Header={<Header />} />
             ) : (
-              <Landing />
+              <Landing Header={<Header />} />
             )}
             <OptionsBar messagesTree={messagesTree} />
             <div className="gizmo:border-t-0 gizmo:pl-0 gizmo:md:pl-0 w-full border-t pt-2 dark:border-white/20 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-2 md:pt-0 md:dark:border-transparent">

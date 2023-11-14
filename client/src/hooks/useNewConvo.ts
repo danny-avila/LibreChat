@@ -4,9 +4,11 @@ import { useGetEndpointsQuery } from 'librechat-data-provider';
 import type { TConversation, TSubmission, TPreset, TModelsConfig } from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint } from '~/utils';
 import useOriginNavigate from './useOriginNavigate';
+import useSetStorage from './useSetStorage';
 import store from '~/store';
 
 const useNewConvo = (index = 0) => {
+  const setStorage = useSetStorage();
   const navigate = useOriginNavigate();
   const setConversation = useSetRecoilState(store.conversationByIndex(index));
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
@@ -19,11 +21,12 @@ const useNewConvo = (index = 0) => {
         conversation: TConversation,
         preset: TPreset | null = null,
         modelsData?: TModelsConfig,
+        buildDefault?: boolean,
       ) => {
         const modelsConfig = modelsData ?? snapshot.getLoadable(store.modelsConfig).contents;
         const { endpoint = null } = conversation;
 
-        if (endpoint === null) {
+        if (endpoint === null || buildDefault) {
           const defaultEndpoint = getDefaultEndpoint({
             convoSetup: preset ?? conversation,
             endpointsConfig,
@@ -38,6 +41,7 @@ const useNewConvo = (index = 0) => {
           });
         }
 
+        setStorage(conversation);
         setConversation(conversation);
         setSubmission({} as TSubmission);
         resetLatestMessage();
@@ -63,13 +67,14 @@ const useNewConvo = (index = 0) => {
         {
           conversationId: 'new',
           title: 'New Chat',
-          ...template,
           endpoint: null,
+          ...template,
           createdAt: '',
           updatedAt: '',
         },
         preset,
         modelsData,
+        !!template.endpoint,
       );
     },
     [switchToConversation],

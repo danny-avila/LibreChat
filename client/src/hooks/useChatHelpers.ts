@@ -25,6 +25,8 @@ export default function useChatHelpers(index = 0) {
     endpoint: null,
     conversationId: null,
     jailbreak: false,
+    examples: [],
+    tools: [],
   };
   const { conversationId, endpoint } = conversation;
 
