@@ -1,14 +1,14 @@
 import React, { useRef } from 'react';
 
 type FileUploadProps = {
-  onFilesSelected: (files: FileList) => void;
+  handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onClick?: () => void;
   className?: string;
   children: React.ReactNode;
 };
 
 const FileUpload: React.FC<FileUploadProps> = ({
-  onFilesSelected,
+  handleFileChange,
   children,
   onClick,
   className = '',
@@ -20,12 +20,6 @@ const FileUpload: React.FC<FileUploadProps> = ({
       onClick();
     }
     fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files) {
-      onFilesSelected(event.target.files);
-    }
   };
 
   return (

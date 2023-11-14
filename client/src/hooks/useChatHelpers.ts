@@ -1,5 +1,5 @@
 import { v4 } from 'uuid';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import {
@@ -14,7 +14,7 @@ import type {
   // TConversation,
   TEndpointOption,
 } from 'librechat-data-provider';
-import type { TAskFunction } from '~/common';
+import type { TAskFunction, ExtendedFile } from '~/common';
 import useUserKey from './useUserKey';
 import store from '~/store';
 
@@ -260,6 +260,8 @@ export default function useChatHelpers(index = 0) {
     store.showAgentSettingsFamily(index),
   );
 
+  const [files, setFiles] = useState<ExtendedFile[]>([]);
+
   return {
     messages,
     conversation,
@@ -295,5 +297,7 @@ export default function useChatHelpers(index = 0) {
     setShowAgentSettings,
     textareaHeight,
     setTextareaHeight,
+    files,
+    setFiles,
   };
 }

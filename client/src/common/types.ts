@@ -211,3 +211,11 @@ export type TOptionSettings = {
   showExamples?: boolean;
   isCodeChat?: boolean;
 };
+
+export interface ExtendedFile {
+  file: File;
+  width?: number;
+  height?: number;
+  preview: string;
+  progress: number;
+}

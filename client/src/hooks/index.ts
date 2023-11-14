@@ -19,6 +19,7 @@ export { default as useLocalStorage } from './useLocalStorage';
 export { default as useConversation } from './useConversation';
 export { default as useDefaultConvo } from './useDefaultConvo';
 export { default as useServerStream } from './useServerStream';
+export { default as useFileHandling } from './useFileHandling';
 export { default as useConversations } from './useConversations';
 export { default as useOnClickOutside } from './useOnClickOutside';
 export { default as useMessageHandler } from './useMessageHandler';
