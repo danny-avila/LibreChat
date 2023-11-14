@@ -8,6 +8,7 @@ import ChatForm from './Input/ChatForm';
 import { Spinner } from '~/components';
 import Landing from './Landing';
 import Header from './Header';
+import Footer from './Footer';
 
 function ChatView({
   messagesTree,
@@ -35,6 +36,7 @@ function ChatView({
             <OptionsBar messagesTree={messagesTree} />
             <div className="gizmo:border-t-0 gizmo:pl-0 gizmo:md:pl-0 w-full border-t pt-2 dark:border-white/20 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-2 md:pt-0 md:dark:border-transparent">
               <ChatForm index={index} />
+              <Footer />
             </div>
           </div>
         </div>

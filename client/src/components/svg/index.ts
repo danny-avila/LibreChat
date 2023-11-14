@@ -9,6 +9,7 @@ export { default as CheckMark } from './CheckMark';
 export { default as CrossIcon } from './CrossIcon';
 export { default as LogOutIcon } from './LogOutIcon';
 export { default as LightningIcon } from './LightningIcon';
+export { default as AttachmentIcon } from './AttachmentIcon';
 export { default as MessagesSquared } from './MessagesSquared';
 export { default as StopGeneratingIcon } from './StopGeneratingIcon';
 export { default as RegenerateIcon } from './RegenerateIcon';

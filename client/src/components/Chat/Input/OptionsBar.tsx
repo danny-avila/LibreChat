@@ -84,7 +84,9 @@ export default function OptionsBar({ messagesTree }) {
     <div
       className="absolute left-0 right-0 mx-auto mb-2 last:mb-2 md:mx-4 md:last:mb-6 lg:mx-auto lg:max-w-2xl xl:max-w-3xl"
       style={{
-        bottom: `${80 + (textareaHeight - 56)}px`,
+        // TODO: option to hide footer and handle this
+        // bottom: `${80 + (textareaHeight - 56)}px`, // without footer
+        bottom: `${85 + (textareaHeight - 56)}px`, // with footer
       }}
     >
       <GenerationButtons

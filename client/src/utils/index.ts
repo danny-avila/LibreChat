@@ -53,6 +53,11 @@ export const alternateName = {
   [EModelEndpoint.anthropic]: 'Anthropic',
 };
 
+export const supportsFiles = {
+  [EModelEndpoint.openAI]: true,
+  [EModelEndpoint.assistant]: true,
+};
+
 export const removeFocusOutlines =
   'focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0';
 
