@@ -1673,3 +1673,39 @@ html {
   color:#8e8ea0;
   color:var(--text-tertiary)
 }
+
+.icon-xs {
+  stroke-width:1.5;
+  height:.75rem;
+  width:.75rem
+}
+.icon-sm {
+  stroke-width:2;
+  height:1rem;
+  width:1rem
+}
+.icon-md {
+  stroke-width:1.5;
+  height:1.25rem;
+  width:1.25rem
+}
+.icon-lg {
+  stroke-width:1.5;
+  height:1.5rem;
+  width:1.5rem
+}
+.icon-xl {
+  stroke-width:1.5;
+  height:1.75rem;
+  width:1.75rem
+}
+.icon-2xl {
+  stroke-width:1.5;
+  height:2rem;
+  width:2rem
+}
+.icon-cover {
+  stroke-width:1.5;
+  height:234px;
+  width:234px
+}
