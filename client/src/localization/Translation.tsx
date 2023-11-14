@@ -72,7 +72,7 @@ export const getTranslationsQima = (langCode: string) => {
     com_ui_example_10_year_old_b_day:
       'Create an automated response for incoming food related emails.',
     com_ui_example_http_in_js:
-      'Can you summarize in 5 bullet points the key insights from this skin research report.',
+      'Can you summarize in 5 bullet points the key insights from this skin research report?',
     com_ui_limitation_limited_2021:
       'WARNING: Data is not trained on QIMA specific information and has limited knowledge of the world and events after 2021.',
     com_auth_welcome_back: 'Welcome back to QimaGPT',
