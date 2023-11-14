@@ -47,6 +47,7 @@ export type TSettingsProps = TBaseSettingsProps & {
 
 export type TModels = {
   models: string[];
+  showAbove?: boolean;
 };
 
 export type TModelSelectProps = TSettingsProps & TModels;

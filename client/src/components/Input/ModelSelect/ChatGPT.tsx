@@ -2,7 +2,7 @@ import { SelectDropDown } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
 import type { TModelSelectProps } from '~/common';
 
-export default function ChatGPT({ conversation, setOption, models }: TModelSelectProps) {
+export default function ChatGPT({ conversation, setOption, models, showAbove }: TModelSelectProps) {
   if (!conversation) {
     return null;
   }
@@ -16,7 +16,7 @@ export default function ChatGPT({ conversation, setOption, models }: TModelSelec
       value={model ?? ''}
       setValue={setOption('model')}
       availableValues={models}
-      showAbove={true}
+      showAbove={showAbove}
       showLabel={false}
       className={cn(
         cardStyle,

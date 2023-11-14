@@ -2,13 +2,13 @@ import { SelectDropDown } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
 import type { TModelSelectProps } from '~/common';
 
-export default function Google({ conversation, setOption, models }: TModelSelectProps) {
+export default function Google({ conversation, setOption, models, showAbove }: TModelSelectProps) {
   return (
     <SelectDropDown
       value={conversation?.model ?? ''}
       setValue={setOption('model')}
       availableValues={models}
-      showAbove={true}
+      showAbove={showAbove}
       showLabel={false}
       className={cn(
         cardStyle,

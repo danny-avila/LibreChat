@@ -4,7 +4,7 @@ import { cn, cardStyle } from '~/utils/';
 import type { TModelSelectProps } from '~/common';
 import store from '~/store';
 
-export default function BingAI({ conversation, setOption, models }: TModelSelectProps) {
+export default function BingAI({ conversation, setOption, models, showAbove }: TModelSelectProps) {
   const showBingToneSetting = useRecoilValue(store.showBingToneSetting);
   if (!conversation) {
     return null;
@@ -30,7 +30,7 @@ export default function BingAI({ conversation, setOption, models }: TModelSelect
         data-testid="bing-select-dropdown"
         setValue={(value) => setOption('jailbreak')(value === 'Sydney')}
         availableValues={models}
-        showAbove={true}
+        showAbove={showAbove}
         showLabel={false}
         className={cn(
           cardStyle,

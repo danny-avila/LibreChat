@@ -1,8 +1,9 @@
 import { Root, Trigger } from '@radix-ui/react-popover';
 import { useGetEndpointsQuery } from 'librechat-data-provider';
 import NewEndpointMenu from './Menus/NewEndpointMenu';
-import { useChatContext } from '~/Providers';
 import { mapEndpoints, alternateName } from '~/utils';
+import HeaderOptions from './Input/HeaderOptions';
+import { useChatContext } from '~/Providers';
 
 export default function Header() {
   const { conversation } = useChatContext();
@@ -13,8 +14,8 @@ export default function Header() {
   const currentEndpoint = conversation.endpoint ?? '';
 
   return (
-    <Root>
-      <div className="sticky top-0 z-10 flex h-14 w-full items-center justify-between bg-white/95 p-2 font-semibold dark:bg-gray-800/90 dark:text-white">
+    <div className="sticky top-0 z-10 flex h-14 w-full items-center justify-between bg-white/95 p-2 font-semibold dark:bg-gray-800/90 dark:text-white">
+      <Root>
         <div className="flex items-center gap-2">
           <Trigger asChild>
             <div
@@ -44,7 +45,10 @@ export default function Header() {
           </Trigger>
         </div>
         <NewEndpointMenu endpoints={endpoints} selected={conversation.endpoint ?? ''} />
-      </div>
-    </Root>
+      </Root>
+      <HeaderOptions />
+      {/* Empty div for spacing */}
+      <div />
+    </div>
   );
 }

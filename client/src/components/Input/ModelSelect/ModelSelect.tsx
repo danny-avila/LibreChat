@@ -14,12 +14,14 @@ type TSelectProps = {
   setOption: TSetOption;
   extraProps?: TGoogleProps;
   isMultiChat?: boolean;
+  showAbove?: boolean;
 };
 
 export default function ModelSelect({
   conversation,
   setOption,
   isMultiChat = false,
+  showAbove = true,
 }: TSelectProps) {
   const modelsConfig = useRecoilValue(store.modelsConfig);
   if (!conversation?.endpoint) {
@@ -34,5 +36,12 @@ export default function ModelSelect({
     return null;
   }
 
-  return <OptionComponent conversation={conversation} setOption={setOption} models={models} />;
+  return (
+    <OptionComponent
+      conversation={conversation}
+      setOption={setOption}
+      models={models}
+      showAbove={showAbove}
+    />
+  );
 }

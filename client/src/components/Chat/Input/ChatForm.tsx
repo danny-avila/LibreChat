@@ -34,7 +34,7 @@ export default function ChatForm({ index = 0 }) {
               submitMessage={submitMessage}
               endpoint={conversation.endpoint}
             />
-            <AttachFile />
+            <AttachFile endpoint={conversation.endpoint ?? ''} />
             <SendButton text={text} />
           </div>
         </div>

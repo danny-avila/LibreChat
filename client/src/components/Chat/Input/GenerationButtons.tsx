@@ -9,14 +9,14 @@ import { cn } from '~/utils';
 
 type GenerationButtonsProps = {
   endpoint: string;
-  showPopover: boolean;
-  opacityClass: string;
+  showPopover?: boolean;
+  opacityClass?: string;
 };
 
 export default function GenerationButtons({
   endpoint,
-  showPopover,
-  opacityClass,
+  showPopover = false,
+  opacityClass = 'full-opacity',
 }: GenerationButtonsProps) {
   const {
     messages,

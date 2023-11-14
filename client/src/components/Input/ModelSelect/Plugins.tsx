@@ -18,7 +18,7 @@ const pluginStore: TPlugin = {
   authenticated: false,
 };
 
-export default function Plugins({ conversation, setOption, models }: TModelSelectProps) {
+export default function Plugins({ conversation, setOption, models, showAbove }: TModelSelectProps) {
   const { data: allPlugins } = useAvailablePluginsQuery();
   const [visible, setVisibility] = useState<boolean>(true);
   const [availableTools, setAvailableTools] = useRecoilState(store.availableTools);
@@ -91,7 +91,7 @@ export default function Plugins({ conversation, setOption, models }: TModelSelec
         value={conversation.model ?? ''}
         setValue={setOption('model')}
         availableValues={models}
-        showAbove={true}
+        showAbove={showAbove}
         className={cn(cardStyle, 'min-w-60 z-40 flex w-64 sm:w-48', visible ? '' : 'hidden')}
       />
       <MultiSelectDropDown
@@ -100,7 +100,7 @@ export default function Plugins({ conversation, setOption, models }: TModelSelec
         setSelected={setTools}
         availableValues={availableTools}
         optionValueKey="pluginKey"
-        showAbove={true}
+        showAbove={showAbove}
         className={cn(cardStyle, 'min-w-60 z-50 w-64 sm:w-48', visible ? '' : 'hidden')}
       />
     </>

@@ -1,7 +1,8 @@
 import { memo } from 'react';
 import type { TMessage } from 'librechat-data-provider';
+// import GenerationButtons from './Input/GenerationButtons';
 import MessagesView from './Messages/MessagesView';
-import OptionsBar from './Input/OptionsBar';
+// import OptionsBar from './Input/OptionsBar';
 import { ChatContext } from '~/Providers';
 import { useChatHelpers } from '~/hooks';
 import ChatForm from './Input/ChatForm';
@@ -19,8 +20,9 @@ function ChatView({
   isLoading: boolean;
   index?: number;
 }) {
+  const chatHelpers = useChatHelpers(index);
   return (
-    <ChatContext.Provider value={useChatHelpers(index)}>
+    <ChatContext.Provider value={chatHelpers}>
       <div className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800">
         <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-white pt-10 dark:bg-gray-800 md:pt-0">
           <div className="flex h-full flex-col" role="presentation" tabIndex={0}>
@@ -33,7 +35,8 @@ function ChatView({
             ) : (
               <Landing Header={<Header />} />
             )}
-            <OptionsBar messagesTree={messagesTree} />
+            {/* <OptionsBar messagesTree={messagesTree} /> */}
+            {/* <GenerationButtons endpoint={chatHelpers.conversation.endpoint ?? ''} /> */}
             <div className="gizmo:border-t-0 gizmo:pl-0 gizmo:md:pl-0 w-full border-t pt-2 dark:border-white/20 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-2 md:pt-0 md:dark:border-transparent">
               <ChatForm index={index} />
               <Footer />
