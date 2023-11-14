@@ -1,4 +1,4 @@
-import React, { FC, useContext } from 'react';
+import React, { FC, useContext, useState } from 'react';
 import { Listbox } from '@headlessui/react';
 import { cn } from '~/utils/';
 import { ThemeContext } from '~/hooks';
@@ -15,17 +15,20 @@ interface DropdownProps {
   options: (string | OptionType)[];
   className?: string;
   width?: number;
+  testId?: string;
 }
 
 const Dropdown: FC<DropdownProps> = ({
-  value,
+  value: initialValue,
   label = '',
   onChange,
   options,
   className = '',
   width,
+  testId = 'dropdown-menu',
 }) => {
   const { theme } = useContext(ThemeContext);
+  const [selectedValue, setSelectedValue] = useState(initialValue);
 
   const themeStyles = {
     light: 'bg-white text-gray-700 hover:bg-gray-200 border-gray-300',
@@ -43,10 +46,16 @@ const Dropdown: FC<DropdownProps> = ({
 
   return (
     <div className={cn('relative', className)}>
-      <Listbox value={value} onChange={onChange}>
+      <Listbox
+        value={selectedValue}
+        onChange={(newValue) => {
+          setSelectedValue(newValue);
+          onChange(newValue);
+        }}
+      >
         <div className={cn('relative', className)}>
           <Listbox.Button
-            data-testid="dropdown-menu"
+            data-testid={testId}
             className={cn(
               'relative inline-flex items-center justify-between rounded-md py-2 pl-3 pr-10',
               currentThemeStyle,
@@ -58,7 +67,7 @@ const Dropdown: FC<DropdownProps> = ({
               {label}
               {options
                 .map((o) => (typeof o === 'string' ? { value: o, display: o } : o))
-                .find((o) => o.value === value)?.display || value}
+                .find((o) => o.value === selectedValue)?.display || selectedValue}
             </span>
             <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
               <svg
@@ -95,6 +104,7 @@ const Dropdown: FC<DropdownProps> = ({
                   currentThemeStyle,
                 )}
                 style={{ width: width ? `${width}px` : 'auto' }}
+                data-theme={typeof item === 'string' ? item : (item as OptionType).value}
               >
                 <span className="block truncate">
                   {typeof item === 'string' ? item : (item as OptionType).display}

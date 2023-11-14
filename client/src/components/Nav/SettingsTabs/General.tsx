@@ -34,7 +34,13 @@ export const ThemeSelector = ({
   return (
     <div className="flex items-center justify-between">
       <div> {localize('com_nav_theme')} </div>
-      <Dropdown value={theme} onChange={onChange} options={themeOptions} width={150} />
+      <Dropdown
+        value={theme}
+        onChange={onChange}
+        options={themeOptions}
+        width={150}
+        testId="theme-selector"
+      />
     </div>
   );
 };

@@ -33,7 +33,7 @@ describe('ThemeSelector', () => {
     expect(getByText('Theme')).toBeInTheDocument();
 
     // Find the dropdown button by data-testid
-    const dropdownButton = getByTestId('dropdown-menu');
+    const dropdownButton = getByTestId('theme-selector');
 
     // Open the dropdown
     fireEvent.click(dropdownButton);
