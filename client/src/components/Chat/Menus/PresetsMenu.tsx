@@ -8,7 +8,7 @@ import {
 } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
 import { Content, Portal, Root } from '@radix-ui/react-popover';
-import { useLocalize, useDefaultConvo, useNewConvo } from '~/hooks';
+import { useLocalize, useDefaultConvo, useNewConvo, useNavigateToConvo } from '~/hooks';
 import { EditPresetDialog, PresetItems } from './Presets';
 import { useChatContext } from '~/Providers';
 import TitleButton from './UI/TitleButton';
@@ -19,6 +19,7 @@ const PresetsMenu: FC = () => {
   const localize = useLocalize();
   const { conversation } = useChatContext();
   const { newConversation } = useNewConvo();
+  const { navigateToConvo } = useNavigateToConvo();
   const getDefaultConversation = useDefaultConvo();
 
   const [preset, setPreset] = useState<TPreset | null>(null);
@@ -63,12 +64,12 @@ const PresetsMenu: FC = () => {
         preset: newPreset,
       });
 
-      // TODO: switchToConvo
-      // setMessages(messages);
-      newConversation({ template: currentConvo, preset: newPreset });
+      /* We don't reset the latest message, only when changing settings mid-converstion */
+      navigateToConvo(currentConvo, false);
       return;
     }
 
+    console.log('preset', newPreset, endpoint);
     newConversation({ preset: newPreset });
   };
 

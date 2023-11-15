@@ -64,7 +64,7 @@ const PresetItems: FC<{
           if (!preset) {
             return null;
           }
-          console.log('preset', preset);
+
           return (
             <Close asChild key={`preset-${preset.presetId}`}>
               <div key={`preset-${preset.presetId}`}>
