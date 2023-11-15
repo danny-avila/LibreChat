@@ -17,7 +17,8 @@ const PaymentSuccess = () => {
   return (
     <div className="payment-message-container">
       <div className="payment-message payment-success">
-        <h1>🎉 Success! Your Payment is Confirmed!</h1>
+        <h1 className="title">🎉 Success! Your Payment is Confirmed!</h1>
+        <p></p>
         <p>Heartfelt thanks for subscribing! We&apos;ve successfully processed your payment.</p>
         <p>Delight in your AITok access, available from {startTime} until {endTime}.</p>
         <p>For uninterrupted enjoyment, kindly renew your subscription by {endTime}.</p>

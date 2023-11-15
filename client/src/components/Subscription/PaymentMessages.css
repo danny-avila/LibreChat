@@ -17,16 +17,46 @@
   border-radius: 10px;
   box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
   width: fit-content;
+  background-color: #808080; /* Sets the background color of the text box to medium gray */
 }
 
-.payment-success {
-  border: 1px solid #155724;
-  background-color: #d4edda;
-  color: #155724;
+.title {
+  margin-bottom: 20px; /* Adjust the value to suit your design */
 }
 
-.payment-failed {
-  border: 1px solid #721c24;
-  background-color: #f8d7da;
-  color: #721c24;
+.title, .title + p, .title ~ p {
+  font-family: sans-serif;
+  color: white; 
 }
+
+
+/* Styles for light mode */
+@media (prefers-color-scheme: light) {
+  .payment-success {
+    border: 2px solid #f5f8f6;
+    background-color: #393a39; /* Light green background for success message */
+    color: #d4edda;
+  }
+
+  .payment-failed {
+    border: 2px solid #f5f8f6;
+    background-color: #393a39; /* Light red background for failed message */
+    color: #f8d7da;
+  }
+}
+
+/* Styles for dark mode */
+@media (prefers-color-scheme: dark) {
+  .payment-success {
+    border: 2px solid #f5f8f6;
+    background-color: #393a39; /* Darker green background for success message */
+    color: #d4edda;
+  }
+
+  .payment-failed {
+    border: 2px solid #f5f8f6;
+    background-color: #393a39; /* Darker red background for failed message */
+    color: #f8d7da;
+  }
+}
+

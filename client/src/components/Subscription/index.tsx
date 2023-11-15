@@ -8,10 +8,14 @@ import Cookies from 'js-cookie';
 import { v4 as uuidv4 } from 'uuid';
 
 function SubscriptionContent() {
+  // Moved the darkMode state inside the component
+  const [darkMode, setDarkMode] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
+
   const [subscriptionUser, setSubscriptionUser] = useState<TUser | null>(null);
   const [error, setError] = useState(''); // State to hold any error messages
-  const { userId = '' } = useParams();
+  // The useSearchParams hook should be inside the component
   const [searchParams] = useSearchParams();
+  const { userId = '' } = useParams();
   const lang = useRecoilValue(store.lang);
   const navigate = useNavigate();
   const [subscriptionDueDate, setSubscriptionDueDate] = useState('');
@@ -34,6 +38,16 @@ function SubscriptionContent() {
       handlePaymentConfirmation(paymentStatus, userId, paymentId, payerId);
     }
   }, [searchParams, userId]);
+
+  useEffect(() => {
+    // Moved inside the useEffect
+    const matcher = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = (e) => setDarkMode(e.matches);
+    matcher.addEventListener('change', onChange);
+    return () => {
+      matcher.removeEventListener('change', onChange);
+    };
+  }, []); // Added setDarkMode to the dependency array
 
   async function handleSubscription() {
     console.log('handleSubscription function called with userId:', userId);
@@ -145,6 +159,18 @@ function SubscriptionContent() {
     fetchSubscriptionData();
   }, [userId]);
 
+  const boxStyles = {
+    border: '2px solid #e0e0e0',
+    borderRadius: '6px',
+    padding: '20px',
+    maxWidth: '372px',
+    margin: 'auto',
+    backgroundColor: darkMode ? '#333' : '#ffffff',
+    color: darkMode ? '#ffffff' : '#000000',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    transition: 'background-color 0.3s, color 0.3s', // Smooth transition for color changes
+  };
+
   return (
     <>
       <button
@@ -154,37 +180,85 @@ function SubscriptionContent() {
         ← {localize(lang, 'com_ui_back')}
       </button>
 
-      <div className="absolute top-24 left-0 right-0 flex justify-center items-center py-4">
-        <div className="relative flex items-center justify-center mr-2 text-xl dark:text-gray-200">
-          {`${subscriptionUser?.name}'s Plan Management`}
-        </div>
-      </div>
-
-      {error && <div className="error-message text-red-500">{error}</div>}
-
-      <div className="mt-10 mx-auto border rounded" style={{ width: '900px', marginTop: '200px' }}>
-        {/* Row 1 */}
-        <div className="flex w-full">
-          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">Pre-paid Plan Option</div>
-          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">Payment Option Buttons</div>
-          <div className="w-1/3 p-2 border bg-green-500 flex items-center justify-center">Plan Due Time</div>
+      <div style={boxStyles}>
+        <div style={{ marginBottom: '1.5rem' }}>
+          <h2 style={{
+            fontSize: '1.5rem',
+            marginBottom: '0.5rem'
+          }}>Plan Subscription</h2>
+          <p style={{
+            marginBottom: '3rem'
+          }}></p>
         </div>
 
-        {/* Row 2 */}
-        <div className="flex w-full">
-          <div className="w-1/3 p-2 border border-r bg-green-500 flex items-center justify-center">20 USD/Month</div>
-          <div className="w-1/6 p-2 border border-r flex items-center justify-center bg-green-500">
-            <button
-              onClick={handleSubscription}
-              className="w-full h-full text-white rounded bg-blue-600"
-            >
-              PayPal
-            </button>
-          </div>
-          <div className="w-1/6 p-2 border bg-green-500 flex items-center justify-center">Coming Soon</div>
-          <div className="w-1/3 p-2 border bg-green-500 flex items-center justify-center">
-            {subscriptionDueDate ? `${subscriptionDueDate}` : 'Loading subscription due date...'}
-          </div>
+        <div style={{ marginBottom: '1.5rem' }}>
+          <h2 style={{
+            fontSize: '1.5rem',
+            marginBottom: '0.5rem'
+          }}>Pricing</h2>
+          <ul style={{
+            marginBottom: '0.5rem',
+            listStyleType: 'disc',
+            paddingLeft: '1.5rem',
+          }}>
+            <li>20 USD / month</li>
+          </ul>
+        </div>
+
+        <div style={{ marginBottom: '1.5rem' }}>
+          <h2 style={{
+            fontSize: '1.5rem',
+            marginBottom: '0.5rem'
+          }}>Expiration Date</h2>
+          <ul style={{
+            marginBottom: '0.5rem',
+            listStyleType: 'disc',
+            paddingLeft: '1.5rem',
+          }}>
+            <li>{subscriptionDueDate ? subscriptionDueDate : 'Loading subscription expiration date...'}</li>
+            <li>Please renew you subcription before or at the expiration day!</li>
+          </ul>
+        </div>
+
+        <div style={{ marginBottom: '1.5rem' }}>
+          <h2 style={{
+            fontSize: '1.5rem',
+            marginBottom: '0.5rem'
+          }}>
+
+          </h2>
+        </div>
+
+        <div style={{ marginBottom: '1.5rem' }}>
+          <h2 style={{
+            fontSize: '1.5rem',
+            marginBottom: '0rem'
+          }}>Payment Method</h2>
+        </div>
+
+        <div style={{
+          width: '90%',
+          padding: '2px',
+          border: '1px solid #e0e0e0',
+          borderRadius: '6px',
+          textAlign: 'center',
+          marginLeft: '6%',
+        }}>
+          <button
+            onClick={handleSubscription}
+            style={{
+              width: '100%',
+              padding: '5px 0',
+              backgroundColor: '#007bff',
+              color: 'white',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              border: 'none',
+              fontSize: '22px'
+            }}
+          >
+            PayPal
+          </button>
         </div>
       </div>
     </>
