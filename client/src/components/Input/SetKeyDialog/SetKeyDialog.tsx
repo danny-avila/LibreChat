@@ -75,7 +75,6 @@ const SetKeyDialog = ({
               value={expiresAtLabel}
               onChange={handleExpirationChange}
               options={expirationOptions.map((option) => option.display)}
-              className={cn()}
               width={185}
             />
             <EndpointComponent userKey={userKey} setUserKey={setUserKey} endpoint={endpoint} />
