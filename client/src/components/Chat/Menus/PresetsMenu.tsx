@@ -9,8 +9,7 @@ import {
 import type { TPreset } from 'librechat-data-provider';
 import { Content, Portal, Root } from '@radix-ui/react-popover';
 import { useLocalize, useDefaultConvo, useNewConvo } from '~/hooks';
-import { EditPresetDialog } from '~/components/Endpoints';
-import PresetItems from './Presets/PresetItems';
+import { EditPresetDialog, PresetItems } from './Presets';
 import { useChatContext } from '~/Providers';
 import TitleButton from './UI/TitleButton';
 import { cleanupPreset } from '~/utils';
@@ -120,7 +119,6 @@ const PresetsMenu: FC = () => {
           </Content>
         </div>
       </Portal>
-
       <EditPresetDialog
         open={presetModelVisible}
         onOpenChange={setPresetModelVisible}
