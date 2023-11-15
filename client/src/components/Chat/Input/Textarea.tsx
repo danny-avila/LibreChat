@@ -1,5 +1,5 @@
 import TextareaAutosize from 'react-textarea-autosize';
-import { supportsFiles } from '~/utils';
+import { supportsFiles } from '~/common';
 import { useTextarea } from '~/hooks';
 
 export default function Textarea({ value, onChange, setText, submitMessage, endpoint }) {

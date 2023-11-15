@@ -62,6 +62,7 @@ function SelectDropDownPop({
               className={cn(
                 'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
                 className ?? '',
+                'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-black/10 dark:radix-state-open:bg-black/20',
               )}
             >
               {' '}
@@ -76,9 +77,9 @@ function SelectDropDownPop({
                     currentValueClass ?? '',
                   )}
                 >
-                  {!showLabel && !emptyTitle && (
+                  {/* {!showLabel && !emptyTitle && (
                     <span className="text-xs text-gray-700 dark:text-gray-500">{title}:</span>
-                  )}
+                  )} */}
                   {typeof value !== 'string' && value ? value?.label ?? '' : value ?? ''}
                 </span>
               </span>
@@ -105,7 +106,7 @@ function SelectDropDownPop({
             <Content
               side="bottom"
               align="start"
-              className="bg-token-surface-primary mt-2 max-h-60 min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-100 bg-gray-900 shadow-lg dark:border-gray-700 dark:text-white"
+              className="mt-2 max-h-60 min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-white"
             >
               {availableValues.map((option) => {
                 return (

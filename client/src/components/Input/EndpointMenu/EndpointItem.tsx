@@ -4,9 +4,9 @@ import { Settings } from 'lucide-react';
 import { DropdownMenuRadioItem } from '~/components';
 import { Icon } from '~/components/Endpoints';
 import { SetKeyDialog } from '../SetKeyDialog';
+import { alternateName } from '~/common';
 import { useLocalize } from '~/hooks';
-
-import { cn, alternateName } from '~/utils';
+import { cn } from '~/utils';
 
 export default function ModelItem({
   endpoint,

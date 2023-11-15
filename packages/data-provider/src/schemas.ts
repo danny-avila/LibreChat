@@ -22,6 +22,13 @@ export const EndpointURLs: { [key in EModelEndpoint]: string } = {
   [EModelEndpoint.assistant]: '/api/assistants/chat',
 };
 
+export const modularEndpoints = new Set<EModelEndpoint | string>([
+  EModelEndpoint.gptPlugins,
+  EModelEndpoint.anthropic,
+  EModelEndpoint.google,
+  EModelEndpoint.openAI,
+]);
+
 export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
 export const tPluginAuthConfigSchema = z.object({

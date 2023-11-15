@@ -108,7 +108,7 @@ function SelectDropDownPop({
             <Content
               side="bottom"
               align="start"
-              className="bg-token-surface-primary mt-2 max-h-60 min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-100 bg-gray-900 shadow-lg dark:border-gray-700 dark:text-white"
+              className="mt-2 max-h-60 min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-100 bg-gray-900 bg-white shadow-lg dark:border-gray-700 dark:text-white"
             >
               {availableValues.map((option) => {
                 if (!option) {

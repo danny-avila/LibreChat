@@ -3,9 +3,10 @@ import { useRecoilValue } from 'recoil';
 import type { TPreset } from 'librechat-data-provider';
 import { EModelEndpoint } from 'librechat-data-provider';
 import EndpointOptionsDialog from '../Endpoints/EndpointOptionsDialog';
-import { cn, alternateName } from '~/utils/';
 import { Plugin } from '~/components/svg';
+import { alternateName } from '~/common';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 import store from '~/store';
 

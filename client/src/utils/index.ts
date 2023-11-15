@@ -1,6 +1,5 @@
-import { EModelEndpoint } from 'librechat-data-provider';
-
 export * from './json';
+export * from './presets';
 export * from './languages';
 export { default as cn } from './cn';
 export { default as buildTree } from './buildTree';
@@ -41,22 +40,6 @@ export const languages = [
   'perl',
   'pascal',
 ];
-
-export const alternateName = {
-  [EModelEndpoint.openAI]: 'OpenAI',
-  [EModelEndpoint.assistant]: 'Assistants',
-  [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
-  [EModelEndpoint.bingAI]: 'Bing',
-  [EModelEndpoint.chatGPTBrowser]: 'ChatGPT',
-  [EModelEndpoint.gptPlugins]: 'Plugins',
-  [EModelEndpoint.google]: 'PaLM',
-  [EModelEndpoint.anthropic]: 'Anthropic',
-};
-
-export const supportsFiles = {
-  [EModelEndpoint.openAI]: true,
-  [EModelEndpoint.assistant]: true,
-};
 
 export const removeFocusOutlines =
   'focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0';

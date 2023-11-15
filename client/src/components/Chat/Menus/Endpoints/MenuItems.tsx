@@ -1,10 +1,10 @@
 import type { FC } from 'react';
 import { EModelEndpoint, useGetEndpointsQuery } from 'librechat-data-provider';
-import MenuSeparator from './MenuSeparator';
-import { alternateName } from '~/utils';
+import MenuSeparator from '../UI/MenuSeparator';
+import { alternateName } from '~/common';
 import MenuItem from './MenuItem';
 
-const NewEndpointMenu: FC<{
+const EndpointItems: FC<{
   endpoints: EModelEndpoint[];
   selected: EModelEndpoint | '';
 }> = ({ endpoints, selected }) => {
@@ -38,4 +38,4 @@ const NewEndpointMenu: FC<{
   );
 };
 
-export default NewEndpointMenu;
+export default EndpointItems;
