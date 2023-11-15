@@ -23,6 +23,7 @@ export default {
   com_ui_use_prompt: 'Usa il prompt',
   com_ui_prev: 'Precedente',
   com_ui_next: 'Successivo',
+  com_ui_stop: 'Stop',
   com_ui_prompt_templates: 'Modelli di prompt',
   com_ui_hide_prompt_templates: 'Nascondi modelli di prompt',
   com_ui_showing: 'Visualizzazione',
