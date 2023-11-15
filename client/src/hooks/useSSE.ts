@@ -14,6 +14,7 @@ import {
 import type { TResPlugin, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import { useAuthContext } from './AuthContext';
 import useChatHelpers from './useChatHelpers';
+import useSetStorage from './useSetStorage';
 
 type TResData = {
   plugin: TResPlugin;
@@ -25,6 +26,7 @@ type TResData = {
 };
 
 export default function useSSE(submission: TSubmission | null, index = 0) {
+  const setStorage = useSetStorage();
   const { conversationId: paramId } = useParams();
   const { token, isAuthenticated } = useAuthContext();
   const { setMessages, setConversation, setIsSubmitting, resetLatestMessage, invalidateConvos } =
@@ -101,12 +103,15 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       }, 5000);
     }
 
-    // TODO: setStorage here
+    setConversation((prevState) => {
+      const update = {
+        ...prevState,
+        ...conversation,
+      };
 
-    setConversation((prevState) => ({
-      ...prevState,
-      ...conversation,
-    }));
+      setStorage(update);
+      return update;
+    });
   };
 
   const createdHandler = (data: TResData, submission: TSubmission) => {
@@ -136,13 +141,17 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     }
 
     const { conversationId } = message;
-    // TODO: setStorage here
-    setConversation((prevState) =>
-      tConversationSchema.parse({
+
+    setConversation((prevState) => {
+      const update = tConversationSchema.parse({
         ...prevState,
         conversationId,
-      }),
-    );
+      });
+
+      setStorage(update);
+      return update;
+    });
+
     resetLatestMessage();
   };
 
@@ -170,11 +179,15 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       }, 5000);
     }
 
-    // TODO: setStorage here
-    setConversation((prevState) => ({
-      ...prevState,
-      ...conversation,
-    }));
+    setConversation((prevState) => {
+      const update = {
+        ...prevState,
+        ...conversation,
+      };
+
+      setStorage(update);
+      return update;
+    });
   };
 
   const errorHandler = (data: TResData, submission: TSubmission) => {
