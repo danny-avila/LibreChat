@@ -99,7 +99,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
           </span>
         )}
       </div>
-      <a href="/forgot-password" className="text-sm text-green-500 hover:underline">
+      <a href="/forgot-password" className="text-sm font-medium text-green-500 hover:underline">
         {localize('com_auth_password_forgot')}
       </a>
       <div className="mt-6">
