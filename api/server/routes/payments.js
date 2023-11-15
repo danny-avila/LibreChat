@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const router = express.Router();
 const paypal = require('../../../config/paypal.js');
@@ -11,6 +12,7 @@ const moment = require('moment-timezone');
 // Convert callback-based functions to promises
 const createPayment = util.promisify(paypal.payment.create).bind(paypal.payment);
 const executePayment = util.promisify(paypal.payment.execute).bind(paypal.payment);
+const baseUrl = process.env.BASE_URL
 
 router.post('/create-payment', requireJwtAuth, async (req, res) => {
   const paymentReference = req.body.paymentReference;
@@ -28,8 +30,8 @@ router.post('/create-payment', requireJwtAuth, async (req, res) => {
         payment_method: 'paypal'
       },
       redirect_urls: {
-        return_url: `http://localhost:3090/subscription/paypal-return?paymentReference=${paymentReference}`,
-        cancel_url: 'http://localhost:3090/subscription/payment-cancelled'
+        return_url: `${baseUrl}/subscription/paypal-return?paymentReference=${paymentReference}`,
+        cancel_url: `${baseUrl}/subscription/payment-cancelled`
       },
       transactions: [{
         description: 'LibreChat Subscription',
@@ -64,7 +66,7 @@ router.get('/success', async (req, res) => {
     const userSession = await getUserSessionFromReference(paymentReference);
     if (!userSession || !userSession.userId) {
       console.error('[Payment Success] User session not found');
-      return res.redirect('http://localhost:3090/subscription/payment-failed');
+      return res.redirect(`${baseUrl}/subscription/payment-failed`);
     }
 
     const execute_payment_json = {
@@ -136,7 +138,7 @@ router.get('/subscription-endtime/:userId', requireJwtAuth, async (req, res) => 
 
 router.get('/cancel', (req, res) => {
   console.log('[Payment Cancelled] Payment cancelled by user.');
-  res.redirect('http://localhost:3090/subscription/payment-cancelled');
+  res.redirect(`${baseUrl}/subscription/payment-cancelled`);
 });
 
 async function getUserSessionFromReference(paymentReference) {
