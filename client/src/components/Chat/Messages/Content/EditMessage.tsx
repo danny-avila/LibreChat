@@ -14,7 +14,7 @@ const EditMessage = ({
   siblingIdx,
   setSiblingIdx,
 }: TEditProps) => {
-  const { messages, setMessages, conversation } = useChatContext();
+  const { getMessages, setMessages, conversation } = useChatContext();
 
   const textEditor = useRef<HTMLDivElement | null>(null);
   const { conversationId, parentMessageId, messageId } = message;
@@ -32,6 +32,7 @@ const EditMessage = ({
 
       setSiblingIdx((siblingIdx ?? 0) - 1);
     } else {
+      const messages = getMessages();
       const parentMessage = messages?.find((msg) => msg.messageId === parentMessageId);
 
       if (!parentMessage) {
@@ -54,6 +55,7 @@ const EditMessage = ({
   };
 
   const updateMessage = () => {
+    const messages = getMessages();
     if (!messages) {
       return;
     }

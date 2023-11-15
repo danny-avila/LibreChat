@@ -59,10 +59,12 @@ const useNewConvo = (index = 0) => {
       template = {},
       preset,
       modelsData,
+      buildDefault = true,
     }: {
       template?: Partial<TConversation>;
       preset?: TPreset;
       modelsData?: TModelsConfig;
+      buildDefault?: boolean;
     } = {}) => {
       switchToConversation(
         {
@@ -75,7 +77,7 @@ const useNewConvo = (index = 0) => {
         },
         preset,
         modelsData,
-        !!template.endpoint,
+        buildDefault,
       );
     },
     [switchToConversation],

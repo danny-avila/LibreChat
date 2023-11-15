@@ -1,27 +1,31 @@
-import { useRecoilValue } from 'recoil';
+import { useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { useGetMessagesByConvoId } from 'librechat-data-provider';
+import { useGetConvoIdQuery } from 'librechat-data-provider';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
-import { buildTree } from '~/utils';
-import { useSSE } from '~/hooks';
+import { useSetStorage } from '~/hooks';
 import store from '~/store';
 
 export default function ChatRoute() {
   const index = 0;
+  const setStorage = useSetStorage();
   const { conversationId } = useParams();
-  const { conversation } = store.useCreateConversationAtom(index);
-  const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
-  useSSE(submissionAtIndex);
+  const { conversation, setConversation } = store.useCreateConversationAtom(index);
+  const { isAuthenticated } = useAuthRedirect();
+  const hasSetConversation = useRef(false);
 
-  const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(conversationId ?? '', {
-    select: (data) => {
-      const dataTree = buildTree(data, false);
-      return dataTree?.length === 0 ? null : dataTree ?? null;
-    },
+  const initialConvoQuery = useGetConvoIdQuery(conversationId ?? '', {
+    enabled: isAuthenticated && conversationId !== 'new',
   });
 
-  const { isAuthenticated } = useAuthRedirect();
+  useEffect(() => {
+    if (initialConvoQuery.data && !hasSetConversation.current) {
+      setStorage(initialConvoQuery.data);
+      setConversation(initialConvoQuery.data);
+      hasSetConversation.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialConvoQuery.data]);
 
   if (!isAuthenticated) {
     return null;
@@ -40,11 +44,5 @@ export default function ChatRoute() {
     return null;
   }
 
-  return (
-    <ChatView
-      index={index}
-      messagesTree={messagesTree}
-      isLoading={isLoading && conversationId !== 'new'}
-    />
-  );
+  return <ChatView index={index} />;
 }

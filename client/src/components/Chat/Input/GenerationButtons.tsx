@@ -19,7 +19,7 @@ export default function GenerationButtons({
   opacityClass = 'full-opacity',
 }: GenerationButtonsProps) {
   const {
-    messages,
+    getMessages,
     isSubmitting,
     latestMessage,
     handleContinue,
@@ -35,6 +35,7 @@ export default function GenerationButtons({
   });
 
   const [userStopped, setUserStopped] = useState(false);
+  const messages = getMessages();
 
   const handleStop = (e: React.MouseEvent<HTMLButtonElement>) => {
     setUserStopped(true);

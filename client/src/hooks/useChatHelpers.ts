@@ -35,10 +35,15 @@ export default function useChatHelpers(index = 0, paramId) {
   const { conversation, setConversation } = useCreateConversationAtom(index);
   const { conversationId, endpoint } = conversation ?? {};
 
-  const queryParam = paramId === 'new' ? paramId : conversationId ?? '';
+  const queryParam = paramId === 'new' ? paramId : conversationId ?? paramId ?? '';
 
-  /* Messages */
-  const { data: messages } = useGetMessagesByConvoId(conversationId ?? '', {
+  // if (!queryParam && paramId && paramId !== 'new') {
+
+  // }
+
+  /* Messages: here simply to fetch, don't export and use `getMessages()` instead */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { data: _messages } = useGetMessagesByConvoId(conversationId ?? '', {
     enabled: isAuthenticated,
   });
 
@@ -240,6 +245,7 @@ export default function useChatHelpers(index = 0, paramId) {
   };
 
   const regenerate = ({ parentMessageId }) => {
+    const messages = getMessages();
     const parentMessage = messages?.find((element) => element.messageId == parentMessageId);
 
     if (parentMessage && parentMessage.isCreatedByUser) {
@@ -256,6 +262,8 @@ export default function useChatHelpers(index = 0, paramId) {
       console.error('Failed to regenerate the message: latestMessage not found.');
       return;
     }
+
+    const messages = getMessages();
 
     const parentMessage = messages?.find(
       (element) => element.messageId == latestMessage.parentMessageId,
@@ -311,7 +319,6 @@ export default function useChatHelpers(index = 0, paramId) {
   const [files, setFiles] = useState<ExtendedFile[]>([]);
 
   return {
-    messages,
     conversation,
     setConversation,
     addConvo,

@@ -83,6 +83,40 @@ export const useGetConversationByIdQuery = (
   );
 };
 
+/* like above, but first try the convos query data */
+export const useGetConvoIdQuery = (
+  id: string,
+  config?: UseQueryOptions<s.TConversation>,
+): QueryObserverResult<s.TConversation> => {
+  const queryClient = useQueryClient();
+  return useQuery<s.TConversation>(
+    [QueryKeys.conversation, id],
+    () => {
+      const defaultQuery = () => dataService.getConversationById(id);
+
+      const convosQueryKey = [QueryKeys.allConversations, { pageNumber: '1', active: true }];
+      const convosQuery = queryClient.getQueryData<t.TGetConversationsResponse>(convosQueryKey);
+
+      if (!convosQuery) {
+        return defaultQuery();
+      }
+
+      const convo = convosQuery.conversations?.find((c) => c.conversationId === id);
+      if (convo) {
+        return convo;
+      }
+
+      return defaultQuery();
+    },
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
 //This isn't ideal because its just a query and we're using mutation, but it was the only way
 //to make it work with how the Chat component is structured
 export const useGetConversationByIdMutation = (id: string): UseMutationResult<s.TConversation> => {

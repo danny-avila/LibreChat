@@ -511,13 +511,7 @@ export const compactOpenAISchema = tConversationSchema
       delete newObj.frequency_penalty;
     }
 
-    (Object.keys(newObj) as Array<keyof TConversation>).forEach((key) => {
-      const value = newObj[key];
-      if (value === undefined || value === null) {
-        delete newObj[key];
-      }
-    });
-    return newObj;
+    return removeNullishValues(newObj);
   })
   .catch(() => ({}));
 

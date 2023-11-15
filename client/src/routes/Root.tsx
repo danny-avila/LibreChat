@@ -9,7 +9,7 @@ import {
 } from 'librechat-data-provider';
 
 import { Nav, MobileNav } from '~/components/Nav';
-import { useAuthContext, useServerStream, useConversation, useNewConvo, useSSE } from '~/hooks';
+import { useAuthContext, useServerStream, useConversation, useNewConvo } from '~/hooks';
 import store from '~/store';
 
 export default function Root() {
