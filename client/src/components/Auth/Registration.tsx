@@ -90,7 +90,7 @@ function Registration() {
                   },
                 })}
                 aria-invalid={!!errors.name}
-                className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
+                className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
                 placeholder=" "
               ></input>
               <label
@@ -102,7 +102,7 @@ function Registration() {
             </div>
 
             {errors.name && (
-              <span role="alert" className="mt-1 text-sm text-red-600">
+              <span role="alert" className="mt-1 text-sm text-black">
                 {/* @ts-ignore not sure why*/}
                 {errors.name.message}
               </span>
@@ -126,7 +126,7 @@ function Registration() {
                   },
                 })}
                 aria-invalid={!!errors.username}
-                className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
+                className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
                 placeholder=" "
                 autoComplete="off"
               ></input>
@@ -139,7 +139,7 @@ function Registration() {
             </div>
 
             {errors.username && (
-              <span role="alert" className="mt-1 text-sm text-red-600">
+              <span role="alert" className="mt-1 text-sm text-black">
                 {/* @ts-ignore not sure why */}
                 {errors.username.message}
               </span>
@@ -168,7 +168,7 @@ function Registration() {
                   },
                 })}
                 aria-invalid={!!errors.email}
-                className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
+                className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
                 placeholder=" "
               ></input>
               <label
@@ -179,7 +179,7 @@ function Registration() {
               </label>
             </div>
             {errors.email && (
-              <span role="alert" className="mt-1 text-sm text-red-600">
+              <span role="alert" className="mt-1 text-sm text-black">
                 {/* @ts-ignore - Type 'string | FieldError | Merge<FieldError, FieldErrorsImpl<any>> | undefined' is not assignable to type 'ReactNode' */}
                 {errors.email.message}
               </span>
@@ -205,7 +205,7 @@ function Registration() {
                   },
                 })}
                 aria-invalid={!!errors.password}
-                className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
+                className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
                 placeholder=" "
               ></input>
               <label
@@ -217,7 +217,7 @@ function Registration() {
             </div>
 
             {errors.password && (
-              <span role="alert" className="mt-1 text-sm text-red-600">
+              <span role="alert" className="mt-1 text-sm text-black">
                 {/* @ts-ignore not sure why */}
                 {errors.password.message}
               </span>
@@ -240,7 +240,7 @@ function Registration() {
                     value === password || localize('com_auth_password_not_match'),
                 })}
                 aria-invalid={!!errors.confirm_password}
-                className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
+                className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
                 placeholder=" "
               ></input>
               <label
@@ -252,7 +252,7 @@ function Registration() {
             </div>
 
             {errors.confirm_password && (
-              <span role="alert" className="mt-1 text-sm text-red-600">
+              <span role="alert" className="mt-1 text-sm text-black">
                 {/* @ts-ignore not sure why */}
                 {errors.confirm_password.message}
               </span>
@@ -269,7 +269,7 @@ function Registration() {
               }
               type="submit"
               aria-label="Submit registration"
-              className="w-full transform rounded-sm bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-green-500"
+              className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-green-500"
             >
               {localize('com_auth_continue')}
             </button>
