@@ -25,7 +25,7 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
   }
 
   const setOption: TSetOption = (param) => (newValue) => {
-    const { endpoint } = conversation;
+    const { endpoint } = conversation ?? {};
     const update = {};
     update[param] = newValue;
 

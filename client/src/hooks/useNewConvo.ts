@@ -10,7 +10,8 @@ import store from '~/store';
 const useNewConvo = (index = 0) => {
   const setStorage = useSetStorage();
   const navigate = useOriginNavigate();
-  const setConversation = useSetRecoilState(store.conversationByIndex(index));
+  // const setConversation = useSetRecoilState(store.conversationByIndex(index));
+  const { setConversation } = store.useCreateConversationAtom(index);
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
   const { data: endpointsConfig = {} } = useGetEndpointsQuery();

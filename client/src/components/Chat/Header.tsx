@@ -11,7 +11,7 @@ export default function Header() {
     select: mapEndpoints,
   });
 
-  const currentEndpoint = conversation.endpoint ?? '';
+  const currentEndpoint = conversation?.endpoint ?? '';
 
   return (
     <div className="sticky top-0 z-10 flex h-14 w-full items-center justify-between bg-white/95 p-2 font-semibold dark:bg-gray-800/90 dark:text-white">
@@ -44,7 +44,7 @@ export default function Header() {
             </div>
           </Trigger>
         </div>
-        <NewEndpointMenu endpoints={endpoints} selected={conversation.endpoint ?? ''} />
+        <NewEndpointMenu endpoints={endpoints} selected={conversation?.endpoint ?? ''} />
       </Root>
       <HeaderOptions />
       {/* Empty div for spacing */}

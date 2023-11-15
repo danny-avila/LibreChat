@@ -10,7 +10,7 @@ import store from '~/store';
 export default function ChatRoute() {
   const index = 0;
   const { conversationId } = useParams();
-  const conversation = useRecoilValue(store.conversationByIndex(index));
+  const { conversation } = store.useCreateConversationAtom(index);
   const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
   useSSE(submissionAtIndex);
 

@@ -29,8 +29,14 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   const setStorage = useSetStorage();
   const { conversationId: paramId } = useParams();
   const { token, isAuthenticated } = useAuthContext();
-  const { setMessages, setConversation, setIsSubmitting, resetLatestMessage, invalidateConvos } =
-    useChatHelpers(index, paramId);
+  const {
+    addConvo,
+    setMessages,
+    setConversation,
+    setIsSubmitting,
+    resetLatestMessage,
+    invalidateConvos,
+  } = useChatHelpers(index, paramId);
 
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
@@ -142,8 +148,9 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     const { conversationId } = message;
 
+    let update = {} as TConversation;
     setConversation((prevState) => {
-      const update = tConversationSchema.parse({
+      update = tConversationSchema.parse({
         ...prevState,
         conversationId,
       });
@@ -151,7 +158,9 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       setStorage(update);
       return update;
     });
-
+    if (message.parentMessageId == '00000000-0000-0000-0000-000000000000') {
+      addConvo(update);
+    }
     resetLatestMessage();
   };
 

@@ -9,7 +9,7 @@ import store from '~/store';
 export default function AssistantsRoute() {
   const index = 0;
   const { conversationId } = useParams();
-  const conversation = useRecoilValue(store.conversationByIndex(index));
+  const { conversation } = store.useCreateConversationAtom(index);
 
   const { data: messagesTree = null } = useGetMessagesByConvoId(conversationId ?? '', {
     enabled: !!(conversationId && conversationId !== 'new'),

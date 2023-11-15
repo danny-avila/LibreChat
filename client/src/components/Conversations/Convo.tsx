@@ -1,3 +1,4 @@
+import { useRecoilValue } from 'recoil';
 import { useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useUpdateConversationMutation } from 'librechat-data-provider';
@@ -8,11 +9,13 @@ import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import DeleteButton from './DeleteButton';
 import RenameButton from './RenameButton';
+import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
-export default function Conversation({ conversation, retainView }) {
+export default function Conversation({ conversation, retainView, i }) {
   const { conversationId: currentConvoId } = useParams();
+  const activeConvos = useRecoilValue(store.allConversationsSelector);
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const { refreshConversations } = useConversations();
   const { navigateToConvo } = useNavigateToConvo();
@@ -94,7 +97,11 @@ export default function Conversation({ conversation, retainView }) {
       'animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-800 py-3 px-3 pr-14 hover:bg-gray-800',
   };
 
-  if (currentConvoId !== conversationId) {
+  const activeConvo =
+    currentConvoId === conversationId ||
+    (i === 0 && currentConvoId === 'new' && activeConvos[0] && activeConvos[0] !== 'new');
+
+  if (!activeConvo) {
     aProps.className =
       'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-gray-800 hover:pr-4';
   }
@@ -117,13 +124,13 @@ export default function Conversation({ conversation, retainView }) {
           title
         )}
       </div>
-      {currentConvoId === conversationId ? (
+      {activeConvo ? (
         <div className="visible absolute right-1 z-10 flex text-gray-300">
           <RenameButton renaming={renaming} onRename={onRename} renameHandler={renameHandler} />
           <DeleteButton
             conversationId={conversationId}
-            renaming={renaming}
             retainView={retainView}
+            renaming={renaming}
             title={title}
           />
         </div>

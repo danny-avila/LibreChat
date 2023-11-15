@@ -26,7 +26,7 @@ export type TSubmission = {
   isRegenerate?: boolean;
   conversationId?: string;
   initialResponse: TMessage;
-  conversation: TConversation;
+  conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;
 };
 

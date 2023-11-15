@@ -32,9 +32,9 @@ export default function ChatForm({ index = 0 }) {
               onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value)}
               setText={setText}
               submitMessage={submitMessage}
-              endpoint={conversation.endpoint}
+              endpoint={conversation?.endpoint}
             />
-            <AttachFile endpoint={conversation.endpoint ?? ''} />
+            <AttachFile endpoint={conversation?.endpoint ?? ''} />
             <SendButton text={text} />
           </div>
         </div>

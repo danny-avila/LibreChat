@@ -533,10 +533,14 @@ const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
 };
 
 export const parseCompactConvo = (
-  endpoint: EModelEndpoint,
+  endpoint: EModelEndpoint | undefined,
   conversation: Partial<TConversation | TPreset>,
   possibleValues?: TPossibleValues,
 ) => {
+  if (!endpoint) {
+    throw new Error(`undefined endpoint: ${endpoint}`);
+  }
+
   const schema = compactEndpointSchemas[endpoint];
 
   if (!schema) {

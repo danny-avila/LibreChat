@@ -18,9 +18,14 @@ export default function Conversations({
     <>
       {conversations &&
         conversations.length > 0 &&
-        conversations.map((convo: TConversation) => {
+        conversations.map((convo: TConversation, i) => {
           return (
-            <ConvoItem key={convo.conversationId} conversation={convo} retainView={moveToTop} />
+            <ConvoItem
+              key={convo.conversationId}
+              conversation={convo}
+              retainView={moveToTop}
+              i={i}
+            />
           );
         })}
     </>

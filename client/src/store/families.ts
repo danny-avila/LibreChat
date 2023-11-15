@@ -1,10 +1,31 @@
-import { atomFamily } from 'recoil';
+import {
+  atom,
+  atomFamily,
+  selector,
+  useRecoilState,
+  useRecoilValue,
+  useSetRecoilState,
+} from 'recoil';
 import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
 import type { TOptionSettings } from '~/common';
+import { useEffect } from 'react';
 
 const conversationByIndex = atomFamily<TConversation | null, string | number>({
   key: 'conversationByIndex',
   default: null,
+});
+
+const conversationKeysAtom = atom<(string | number)[]>({
+  key: 'conversationKeys',
+  default: [],
+});
+
+const allConversationsSelector = selector({
+  key: 'allConversationsSelector',
+  get: ({ get }) => {
+    const keys = get(conversationKeysAtom);
+    return keys.map((key) => get(conversationByIndex(key))).map((convo) => convo?.conversationId);
+  },
 });
 
 const presetByIndex = atomFamily<TPreset | null, string | number>({
@@ -81,6 +102,20 @@ const autoScrollFamily = atomFamily({
   ] as const,
 });
 
+function useCreateConversationAtom(key: string | number) {
+  const [keys, setKeys] = useRecoilState(conversationKeysAtom);
+  const setConversation = useSetRecoilState(conversationByIndex(key));
+  const conversation = useRecoilValue(conversationByIndex(key));
+
+  useEffect(() => {
+    if (!keys.includes(key)) {
+      setKeys([...keys, key]);
+    }
+  }, [key, keys, setKeys]);
+
+  return { conversation, setConversation };
+}
+
 export default {
   conversationByIndex,
   presetByIndex,
@@ -95,4 +130,6 @@ export default {
   autoScrollFamily,
   latestMessageFamily,
   textareaHeightFamily,
+  allConversationsSelector,
+  useCreateConversationAtom,
 };
