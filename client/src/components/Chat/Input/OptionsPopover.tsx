@@ -32,7 +32,7 @@ export default function OptionsPopover({
 
   return (
     <Portal>
-      <Content sideOffset={8} asChild>
+      <Content sideOffset={8} align="start" asChild>
         <div className="z-0 flex w-full flex-col items-center md:px-4">
           <div
             className={cn(

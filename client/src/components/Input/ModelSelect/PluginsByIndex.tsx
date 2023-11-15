@@ -3,7 +3,13 @@ import { useState, useEffect } from 'react';
 import { ChevronDownIcon } from 'lucide-react';
 import { useAvailablePluginsQuery, TPlugin } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
-import { SelectDropDown, MultiSelectDropDown, Button } from '~/components/ui';
+import {
+  SelectDropDown,
+  SelectDropDownPop,
+  MultiSelectDropDown,
+  MultiSelectPop,
+  Button,
+} from '~/components/ui';
 import { useSetIndexOptions, useAuthContext, useMediaQuery } from '~/hooks';
 import { cn, cardStyle } from '~/utils/';
 import store from '~/store';
@@ -18,7 +24,13 @@ const pluginStore: TPlugin = {
   authenticated: false,
 };
 
-export default function PluginsByIndex({ conversation, setOption, models }: TModelSelectProps) {
+export default function PluginsByIndex({
+  conversation,
+  setOption,
+  models,
+  showAbove,
+  popover = false,
+}: TModelSelectProps) {
   const { data: allPlugins } = useAvailablePluginsQuery();
   const [visible, setVisibility] = useState<boolean>(true);
   const [availableTools, setAvailableTools] = useRecoilState(store.availableTools);
@@ -70,6 +82,9 @@ export default function PluginsByIndex({ conversation, setOption, models }: TMod
     return null;
   }
 
+  const Menu = popover ? SelectDropDownPop : SelectDropDown;
+  const PluginsMenu = popover ? MultiSelectPop : MultiSelectDropDown;
+
   return (
     <>
       <Button
@@ -82,25 +97,27 @@ export default function PluginsByIndex({ conversation, setOption, models }: TMod
       >
         <ChevronDownIcon
           className={cn(
-            !visible ? 'rotate-180 transform' : '',
+            !visible ? '' : 'rotate-180 transform',
             'w-4 text-gray-600 dark:text-white',
           )}
         />
       </Button>
-      <SelectDropDown
+      <Menu
         value={conversation.model ?? ''}
         setValue={setOption('model')}
         availableValues={models}
-        showAbove={true}
-        className={cn(cardStyle, 'min-w-60 z-40 flex w-64 sm:w-48', visible ? '' : 'hidden')}
+        showAbove={showAbove}
+        showLabel={false}
+        className={cn(cardStyle, 'min-w-60 z-40 flex w-64 sm:w-48 ', visible ? '' : 'hidden')}
       />
-      <MultiSelectDropDown
+      <PluginsMenu
         value={conversation.tools || []}
         isSelected={checkPluginSelection}
         setSelected={setTools}
         availableValues={availableTools}
         optionValueKey="pluginKey"
-        showAbove={true}
+        showAbove={false}
+        showLabel={false}
         className={cn(cardStyle, 'min-w-60 z-50 w-64 sm:w-48', visible ? '' : 'hidden')}
       />
     </>

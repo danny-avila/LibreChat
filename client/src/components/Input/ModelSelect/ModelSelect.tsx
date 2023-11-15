@@ -42,6 +42,7 @@ export default function ModelSelect({
       setOption={setOption}
       models={models}
       showAbove={showAbove}
+      popover={isMultiChat}
     />
   );
 }

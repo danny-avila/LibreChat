@@ -1,10 +1,17 @@
 import { useRecoilValue } from 'recoil';
-import { SelectDropDown, Tabs, TabsList, TabsTrigger } from '~/components/ui';
+import { SelectDropDown, SelectDropDownPop, Tabs, TabsList, TabsTrigger } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
 import type { TModelSelectProps } from '~/common';
 import store from '~/store';
 
-export default function BingAI({ conversation, setOption, models, showAbove }: TModelSelectProps) {
+export default function BingAI({
+  conversation,
+  setOption,
+  models,
+  showAbove,
+  popover = false,
+}: TModelSelectProps) {
+  // TODO: index family bing tone settings, important for multiview
   const showBingToneSetting = useRecoilValue(store.showBingToneSetting);
   if (!conversation) {
     return null;
@@ -21,10 +28,11 @@ export default function BingAI({ conversation, setOption, models, showAbove }: T
     'font-medium data-[state=active]:text-white text-xs text-white',
   );
   const selectedClass = (val: string) => val + '-tab ' + defaultSelected;
+  const Menu = popover ? SelectDropDownPop : SelectDropDown;
 
   return (
     <>
-      <SelectDropDown
+      <Menu
         title="Mode"
         value={jailbreak ? 'Sydney' : 'BingAI'}
         data-testid="bing-select-dropdown"

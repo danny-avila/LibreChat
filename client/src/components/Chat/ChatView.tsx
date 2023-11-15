@@ -32,7 +32,7 @@ function ChatView({
         ref={drop}
         className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800"
       >
-        <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-white pt-10 dark:bg-gray-800 md:pt-0">
+        <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-white pt-0 dark:bg-gray-800">
           <div className="flex h-full flex-col" role="presentation" tabIndex={0}>
             {isLoading ? (
               <div className="flex h-screen items-center justify-center">

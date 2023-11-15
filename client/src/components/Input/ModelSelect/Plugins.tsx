@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { ChevronDownIcon } from 'lucide-react';
 import { useAvailablePluginsQuery, TPlugin } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
-import { SelectDropDown, MultiSelectDropDown, Button } from '~/components/ui';
+import { SelectDropDown, MultiSelectDropDown, SelectDropDownPop, Button } from '~/components/ui';
 import { useSetOptions, useAuthContext, useMediaQuery } from '~/hooks';
 import { cn, cardStyle } from '~/utils/';
 import store from '~/store';
@@ -18,13 +18,20 @@ const pluginStore: TPlugin = {
   authenticated: false,
 };
 
-export default function Plugins({ conversation, setOption, models, showAbove }: TModelSelectProps) {
+export default function Plugins({
+  conversation,
+  setOption,
+  models,
+  showAbove,
+  popover = false,
+}: TModelSelectProps) {
   const { data: allPlugins } = useAvailablePluginsQuery();
   const [visible, setVisibility] = useState<boolean>(true);
   const [availableTools, setAvailableTools] = useRecoilState(store.availableTools);
   const { checkPluginSelection, setTools } = useSetOptions();
   const { user } = useAuthContext();
   const isSmallScreen = useMediaQuery('(max-width: 640px)');
+  const Menu = popover ? SelectDropDownPop : SelectDropDown;
 
   useEffect(() => {
     if (isSmallScreen) {
@@ -87,7 +94,7 @@ export default function Plugins({ conversation, setOption, models, showAbove }: 
           )}
         />
       </Button>
-      <SelectDropDown
+      <Menu
         value={conversation.model ?? ''}
         setValue={setOption('model')}
         availableValues={models}
