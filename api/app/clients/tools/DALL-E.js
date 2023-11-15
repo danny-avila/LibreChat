@@ -48,7 +48,7 @@ class OpenAICreateImage extends Tool {
     //   };
     // }
     this.openai = new OpenAI(config);
-    this.name = 'dall-e';
+    this.name = 'sdxl';
     this.description = `You can generate images with 'dall-e'. This tool is exclusively for visual content.
 Guidelines:
 - Visually describe the moods, details, structures, styles, and/or proportions of the image. Remember, the focus is on visual attributes.
