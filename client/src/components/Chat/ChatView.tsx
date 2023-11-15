@@ -1,10 +1,11 @@
 import { memo } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 // import GenerationButtons from './Input/GenerationButtons';
+import DragDropOverlay from './Input/Files/DragDropOverlay';
+import { useChatHelpers, useDragHelpers } from '~/hooks';
 import MessagesView from './Messages/MessagesView';
 // import OptionsBar from './Input/OptionsBar';
 import { ChatContext } from '~/Providers';
-import { useChatHelpers } from '~/hooks';
 import ChatForm from './Input/ChatForm';
 import { Spinner } from '~/components';
 import Landing from './Landing';
@@ -21,9 +22,14 @@ function ChatView({
   index?: number;
 }) {
   const chatHelpers = useChatHelpers(index);
+  const { isOver, canDrop, drop } = useDragHelpers(chatHelpers.setFiles);
+  const isActive = canDrop && isOver;
   return (
     <ChatContext.Provider value={chatHelpers}>
-      <div className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800">
+      <div
+        ref={drop}
+        className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800"
+      >
         <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-white pt-10 dark:bg-gray-800 md:pt-0">
           <div className="flex h-full flex-col" role="presentation" tabIndex={0}>
             {isLoading ? (
@@ -41,6 +47,7 @@ function ChatView({
               <ChatForm index={index} />
               <Footer />
             </div>
+            {isActive && <DragDropOverlay />}
           </div>
         </div>
       </div>

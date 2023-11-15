@@ -1,9 +1,11 @@
+import { useDrop } from 'react-dnd';
+import { NativeTypes } from 'react-dnd-html5-backend';
+import type { DropTargetMonitor } from 'react-dnd';
 import type { ExtendedFile } from '~/common';
-import { useChatContext } from '~/Providers/ChatContext';
 
-const useFileHandling = () => {
-  const { files, setFiles } = useChatContext();
-
+export default function useDragHelpers(
+  setFiles: React.Dispatch<React.SetStateAction<ExtendedFile[]>>,
+) {
   const addFile = (newFile: ExtendedFile) => {
     setFiles((currentFiles) => [...currentFiles, newFile]);
   };
@@ -47,19 +49,35 @@ const useFileHandling = () => {
       }
     });
   };
+  const [{ canDrop, isOver }, drop] = useDrop(() => ({
+    accept: [NativeTypes.FILE],
+    drop(item: { files: File[] }) {
+      console.log('drop', item.files);
+      handleFiles(item.files);
+    },
+    canDrop() {
+      // console.log('canDrop', item.files, item.items);
+      return true;
+    },
+    // hover() {
+    //   // console.log('hover', item.files, item.items);
+    // },
+    collect: (monitor: DropTargetMonitor) => {
+      // const item = monitor.getItem() as File[];
+      // if (item) {
+      //   console.log('collect', item.files, item.items);
+      // }
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files) {
-      handleFiles(event.target.files);
-    }
-  };
+      return {
+        isOver: monitor.isOver(),
+        canDrop: monitor.canDrop(),
+      };
+    },
+  }));
 
   return {
-    handleFileChange,
-    handleFiles,
-    files,
-    setFiles,
+    canDrop,
+    isOver,
+    drop,
   };
-};
-
-export default useFileHandling;
+}

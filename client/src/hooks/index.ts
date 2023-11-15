@@ -14,6 +14,7 @@ export { default as useMediaQuery } from './useMediaQuery';
 export { default as useSetOptions } from './useSetOptions';
 export { default as useChatHelpers } from './useChatHelpers';
 export { default as useGenerations } from './useGenerations';
+export { default as useDragHelpers } from './useDragHelpers';
 export { default as useScrollToRef } from './useScrollToRef';
 export { default as useLocalStorage } from './useLocalStorage';
 export { default as useConversation } from './useConversation';
