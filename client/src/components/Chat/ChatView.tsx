@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { useParams } from 'react-router-dom';
 import type { TMessage } from 'librechat-data-provider';
 // import GenerationButtons from './Input/GenerationButtons';
 import DragDropOverlay from './Input/Files/DragDropOverlay';
@@ -21,7 +22,8 @@ function ChatView({
   isLoading: boolean;
   index?: number;
 }) {
-  const chatHelpers = useChatHelpers(index);
+  const { conversationId } = useParams();
+  const chatHelpers = useChatHelpers(index, conversationId);
   const { isOver, canDrop, drop } = useDragHelpers(chatHelpers.setFiles);
   const isActive = canDrop && isOver;
   return (

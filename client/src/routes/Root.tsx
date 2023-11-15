@@ -24,8 +24,6 @@ export default function Root() {
 
   const submission = useRecoilValue(store.submission);
   useServerStream(submission ?? null);
-  const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
-  useSSE(submissionAtIndex);
 
   const setPresets = useSetRecoilState(store.presets);
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);

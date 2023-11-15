@@ -17,5 +17,6 @@ export * from './Textarea';
 export * from './Tooltip';
 export { default as Dropdown } from './Dropdown';
 export { default as FileUpload } from './FileUpload';
+export { default as DelayedRender } from './DelayedRender';
 export { default as SelectDropDown } from './SelectDropDown';
 export { default as MultiSelectDropDown } from './MultiSelectDropDown';

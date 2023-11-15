@@ -1,9 +1,10 @@
-import { Fragment } from 'react';
+import { Fragment, Suspense } from 'react';
 import type { TResPlugin } from 'librechat-data-provider';
 import type { TMessageContent, TText, TDisplayProps } from '~/common';
 import Container from '~/components/Messages/Content/Container';
 import Plugin from '~/components/Messages/Content/Plugin';
 import Error from '~/components/Messages/Content/Error';
+import { DelayedRender } from '~/components/ui';
 import { useAuthContext } from '~/hooks';
 import EditMessage from './EditMessage';
 import Markdown from './Markdown';
@@ -114,7 +115,11 @@ const MessageContent = ({
             />
           ) : null}
           {!isSubmitting && unfinished && (
-            <UnfinishedMessage key={`unfinished-${messageId}-${idx}`} />
+            <Suspense>
+              <DelayedRender delay={250}>
+                <UnfinishedMessage key={`unfinished-${messageId}-${idx}`} />
+              </DelayedRender>
+            </Suspense>
           )}
         </Fragment>
       );

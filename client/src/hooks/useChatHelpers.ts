@@ -4,23 +4,26 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import {
   QueryKeys,
-  useGetMessagesByConvoId,
   parseCompactConvo,
   getResponseSender,
+  useGetMessagesByConvoId,
 } from 'librechat-data-provider';
 import type {
   TMessage,
   TSubmission,
-  // TConversation,
   TEndpointOption,
+  // TConversation,
+  // TGetConversationsResponse,
 } from 'librechat-data-provider';
 import type { TAskFunction, ExtendedFile } from '~/common';
+import { useAuthContext } from './AuthContext';
 import useUserKey from './useUserKey';
 import store from '~/store';
 
 // this to be set somewhere else
-export default function useChatHelpers(index = 0) {
+export default function useChatHelpers(index = 0, paramId) {
   const queryClient = useQueryClient();
+  const { isAuthenticated } = useAuthContext();
   const conversation = useRecoilValue(store.conversationByIndex(index)) || {
     endpoint: null,
     conversationId: null,
@@ -30,9 +33,11 @@ export default function useChatHelpers(index = 0) {
   };
   const { conversationId, endpoint } = conversation;
 
+  const queryParam = paramId === 'new' ? paramId : conversationId ?? '';
+
   /* Messages */
   const { data: messages } = useGetMessagesByConvoId(conversationId ?? '', {
-    enabled: !!(conversationId && conversationId !== 'new'),
+    enabled: isAuthenticated,
   });
 
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
@@ -44,14 +49,30 @@ export default function useChatHelpers(index = 0) {
 
   const setMessages = useCallback(
     (messages: TMessage[]) => {
-      queryClient.setQueryData<TMessage[]>([QueryKeys.messages, conversationId], messages);
+      queryClient.setQueryData<TMessage[]>([QueryKeys.messages, queryParam], messages);
     },
-    [conversationId, queryClient],
+    // [conversationId, queryClient],
+    [queryParam, queryClient],
   );
 
+  // const setConvos = useCallback(
+  //   (convos: TConversation[]) => {
+  //     queryClient.setQueryData<TConversation[]>([QueryKeys.allConversations, { pageNumber: '1', active: true }], convos);
+  //   },
+  //   [queryClient],
+  // );
+
+  // const getConvos = useCallback(() => {
+  //   return queryClient.getQueryData<TGetConversationsResponse>([QueryKeys.allConversations, { pageNumber: '1', active: true }]);
+  // }, [queryClient]);
+
+  const invalidateConvos = useCallback(() => {
+    queryClient.invalidateQueries([QueryKeys.allConversations, { active: true }]);
+  }, [queryClient]);
+
   const getMessages = useCallback(() => {
-    return queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationId]);
-  }, [conversationId, queryClient]);
+    return queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]);
+  }, [queryParam, queryClient]);
 
   /* Conversation */
   // const setActiveConvos = useSetRecoilState(store.activeConversations);
@@ -115,7 +136,7 @@ export default function useChatHelpers(index = 0) {
     } as TEndpointOption;
     const responseSender = getResponseSender(endpointOption);
 
-    let currentMessages: TMessage[] | null = messages ?? [];
+    let currentMessages: TMessage[] | null = getMessages() ?? [];
 
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
@@ -266,6 +287,8 @@ export default function useChatHelpers(index = 0) {
     messages,
     conversation,
     setConversation,
+    // getConvos,
+    // setConvos,
     isSubmitting,
     setIsSubmitting,
     getMessages,
@@ -299,5 +322,6 @@ export default function useChatHelpers(index = 0) {
     setTextareaHeight,
     files,
     setFiles,
+    invalidateConvos,
   };
 }

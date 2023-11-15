@@ -81,7 +81,7 @@ export default function Message(props: TMessageProps) {
     'w-full border-b text-gray-800 group border-black/10 dark:border-gray-900/50 dark:text-gray-100 dark:border-none';
   const uniqueClasses = isCreatedByUser
     ? 'bg-white dark:bg-gray-800 dark:text-gray-20'
-    : 'bg-gray-50 dark:bg-gray-900/10 dark:text-gray-70';
+    : 'bg-white dark:bg-gray-800 dark:text-gray-70';
 
   const messageProps = {
     className: cn(commonClasses, uniqueClasses),
@@ -96,9 +96,11 @@ export default function Message(props: TMessageProps) {
   });
 
   const regenerateMessage = () => {
-    if (!isSubmitting && !isCreatedByUser) {
-      regenerate(message);
+    if (isSubmitting && isCreatedByUser) {
+      return;
     }
+
+    regenerate(message);
   };
 
   const copyToClipboard = (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => {

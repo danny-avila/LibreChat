@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import {
   /* @ts-ignore */
   SSE,
@@ -11,8 +12,8 @@ import {
   removeNullishValues,
 } from 'librechat-data-provider';
 import type { TResPlugin, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
-import useChatHelpers from './useChatHelpers';
 import { useAuthContext } from './AuthContext';
+import useChatHelpers from './useChatHelpers';
 
 type TResData = {
   plugin: TResPlugin;
@@ -24,12 +25,10 @@ type TResData = {
 };
 
 export default function useSSE(submission: TSubmission | null, index = 0) {
+  const { conversationId: paramId } = useParams();
   const { token, isAuthenticated } = useAuthContext();
-  const { setMessages, setConversation, setIsSubmitting, resetLatestMessage } =
-    useChatHelpers(index);
-
-  // TODO: refresh with invalidation
-  // const { refreshConversations } = useConversations();
+  const { setMessages, setConversation, setIsSubmitting, resetLatestMessage, invalidateConvos } =
+    useChatHelpers(index, paramId);
 
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
@@ -91,16 +90,16 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     setIsSubmitting(false);
 
     // refresh title
-    // if (requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
-    //   setTimeout(() => {
-    //     refreshConversations();
-    //   }, 2000);
+    if (requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
+      setTimeout(() => {
+        invalidateConvos();
+      }, 2000);
 
-    //   // in case it takes too long.
-    //   setTimeout(() => {
-    //     refreshConversations();
-    //   }, 5000);
-    // }
+      // in case it takes too long.
+      setTimeout(() => {
+        invalidateConvos();
+      }, 5000);
+    }
 
     // TODO: setStorage here
 
@@ -160,16 +159,16 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     setIsSubmitting(false);
 
     // refresh title
-    // if (requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
-    //   setTimeout(() => {
-    //     refreshConversations();
-    //   }, 2000);
+    if (requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
+      setTimeout(() => {
+        invalidateConvos();
+      }, 1500);
 
-    //   // in case it takes too long.
-    //   setTimeout(() => {
-    //     refreshConversations();
-    //   }, 5000);
-    // }
+      // in case it takes too long.
+      setTimeout(() => {
+        invalidateConvos();
+      }, 5000);
+    }
 
     // TODO: setStorage here
     setConversation((prevState) => ({

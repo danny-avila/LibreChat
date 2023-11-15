@@ -72,7 +72,7 @@ export default function MessagesView({
       ref={scrollableRef}
       onScroll={debouncedHandleScroll}
     >
-      <div className="dark:gpt-dark-gray mb-32 h-auto pb-9">
+      <div className="dark:gpt-dark-gray h-full">
         <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
           {(_messagesTree && _messagesTree?.length == 0) || _messagesTree === null ? (
             <div className="flex w-full items-center justify-center gap-1 bg-gray-50 p-3 text-sm text-gray-500 dark:border-gray-900/50 dark:bg-gray-800 dark:text-gray-300">

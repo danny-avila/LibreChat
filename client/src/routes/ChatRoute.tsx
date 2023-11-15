@@ -4,12 +4,15 @@ import { useGetMessagesByConvoId } from 'librechat-data-provider';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
 import { buildTree } from '~/utils';
+import { useSSE } from '~/hooks';
 import store from '~/store';
 
 export default function ChatRoute() {
   const index = 0;
   const { conversationId } = useParams();
   const conversation = useRecoilValue(store.conversationByIndex(index));
+  const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
+  useSSE(submissionAtIndex);
 
   const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(conversationId ?? '', {
     select: (data) => {
