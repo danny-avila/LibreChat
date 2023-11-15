@@ -12,7 +12,7 @@ export default {
   com_ui_capability_decline_requests: '限制不当信息',
   com_ui_limitations: '局限性',
   com_ui_limitation_incorrect_info: '可能会不时出现错误信息',
-  com_ui_limitation_harmful_biased: 
+  com_ui_limitation_harmful_biased:
     '可能会提供有害指示或者偏见',
   com_ui_limitation_limited_2021: '基于2021年以前信息训练',
   com_ui_input: '输入',
@@ -22,6 +22,7 @@ export default {
   com_ui_use_prompt: '使用提示词',
   com_ui_prev: '上一页',
   com_ui_next: '下一页',
+  com_ui_stop: '停止',
   com_ui_prompt_templates: '对话模板',
   com_ui_hide_prompt_templates: '隐藏对话模板',
   com_ui_showing: '显示',
@@ -79,7 +80,7 @@ export default {
   com_auth_password_not_match: '密码不一致',
   com_auth_continue: '继续',
   com_auth_create_account: '创建账号',
-  com_auth_error_create: 
+  com_auth_error_create:
     '注册账户过程中出现错误，请重试。',
   com_auth_full_name: '姓名',
   com_auth_name_required: '姓名为必填项',
@@ -98,7 +99,7 @@ export default {
   com_auth_reset_password_link_sent: '重置密码链接已发送至邮箱',
   com_auth_reset_password_email_sent:
     '重置密码邮件已发送至邮箱',
-  com_auth_error_reset_password: 
+  com_auth_error_reset_password:
     '重置密码出现错误，未找到对应的邮箱地址，请重新输入。',
   com_auth_reset_password_success: '密码重置成功',
   com_auth_login_with_new_password: '现在你可以使用你的新密码登录。',
@@ -116,10 +117,10 @@ export default {
   com_endpoint_bing_system_message_placeholder:
     '警告：滥用此功能可能导致你被禁止使用必应！点击“系统消息”查看完整的使用指南，如果你忽略了默认消息，那么将会使用被视为安全的“Sydney”预设。',
   com_endpoint_system_message: '系统消息',
-  com_endpoint_default_blank: '初始值: 空',
-  com_endpoint_default_false: '初始值: false',
-  com_endpoint_default_creative: '初始值: creative',
-  com_endpoint_default_empty: '初始值: empty',
+  com_endpoint_default_blank: '初始值: 空白',
+  com_endpoint_default_false: '初始值: 否',
+  com_endpoint_default_creative: '初始值: 创意',
+  com_endpoint_default_empty: '初始值: 空',
   com_endpoint_default_with_num: '初始值: {0}',
   com_endpoint_context: '上下文',
   com_endpoint_tone_style: '语气',
@@ -134,7 +135,7 @@ export default {
   com_endpoint_google_maxoutputtokens:
     ' 	响应生成中可以使用的最大词元数。指定较低的值会得到更短的响应，而指定较高的值则会得到更长的响应。',
   com_endpoint_google_custom_name_placeholder: '为PaLM2设置一个名称',
-  com_endpoint_google_prompt_prefix_placeholder: '自定义指令和上下文，默认为空。',
+  com_endpoint_prompt_prefix_placeholder: '自定义提示词和上下文，默认为空',
   com_endpoint_custom_name: '自定义名称',
   com_endpoint_prompt_prefix: '对话前缀',
   com_endpoint_temperature: '随机性',
@@ -144,16 +145,16 @@ export default {
   com_endpoint_max_output_tokens: '最大输出词元数',
   com_endpoint_openai_temp:
     '值越高表示输出越随机，值越低表示输出越确定。建议不要同时改变此值和Top P。',
-  com_endpoint_openai_max: 
+  com_endpoint_openai_max:
     '最大生成词元数。输入词元长度由模型的上下文长度决定。',
   com_endpoint_openai_topp:
     '相较于随机性的另一个取样方法，称为核采样，模型选取输出词元中大于P值（概率密度在整个概率分布中的比例）的结果。比如 top_p=0.1 表示只有概率占比为前10%的词元才会被考虑作为输出。建议不要同时改变此值和随机性。',
   com_endpoint_openai_freq:
-    '值介于-2.0到2.0之间。正值表示根据已有词元的频率惩罚重复词元结果, 从而减少模型输出重复词。',
+    '值介于-2.0到2.0之间。正值将惩罚当前已频繁使用的词元，从而降低重复用词的可能性。',
   com_endpoint_openai_pres:
-    '值介于-2.0到2.0之间。正值表示根据出现词元惩罚重复词元结果, 从而增加模型提出新话题的可能性。',
+    '值介于-2.0到2.0之间。正值将惩罚当前已经使用的词元，从而增加讨论新话题的可能性。',
   com_endpoint_openai_custom_name_placeholder: '为ChatGPT设置一个名称',
-  com_endpoint_openai_prompt_prefix_placeholder: 
+  com_endpoint_openai_prompt_prefix_placeholder:
     '在消息开头添加系统级提示词，默认为空',
   com_endpoint_anthropic_temp:
     '值介于0到1之间。 对于分析性/选择性任务，值应更接近0；对于创造性和生成性任务，值应更接近1。我们建议更改该参数或Top-p，但不要同时更改这两个参数。',
@@ -184,7 +185,7 @@ export default {
   com_endpoint_examples: ' 预设',
   com_endpoint_completion: '补全',
   com_endpoint_agent: '代理',
-  com_endpoint_show_what_settings: '显示{0}的设置',
+  com_endpoint_show_what_settings: '显示{0}设置',
   com_endpoint_save: '保存',
   com_endpoint_export: '导出',
   com_endpoint_save_as_preset: '保存为预设',
@@ -199,7 +200,7 @@ export default {
   com_endpoint_agent_model: '代理模型 (推荐: GPT-3.5)',
   com_endpoint_completion_model: '补全模型 (推荐: GPT-4)',
   com_endpoint_func_hover: '将插件作为OpenAI函数使用',
-  com_endpoint_skip_hover: 
+  com_endpoint_skip_hover:
     '跳过补全步骤， 检查最终答案和生成步骤',
   com_endpoint_config_key: '设置API Key',
   com_endpoint_config_key_for: '设置API Key：',
@@ -224,12 +225,12 @@ export default {
   com_endpoint_config_key_google_vertex_ai: '在Google Cloud上启用Vertex AI',
   com_endpoint_config_key_google_vertex_api: 'API，然后',
   com_endpoint_config_key_google_service_account: '创建一个服务账号',
-  com_endpoint_config_key_google_vertex_api_role: 
+  com_endpoint_config_key_google_vertex_api_role:
     '确保单击“创建并继续”以至少授予“Vertex AI 用户”角色。最后，创建一个要在此处导入的JSON密钥。',
   com_nav_auto_scroll: '打开时自动滚动到最新内容',
   com_nav_plugin_store: '插件商店',
   com_nav_plugin_search: '搜索插件',
-  com_nav_plugin_auth_error: 
+  com_nav_plugin_auth_error:
     '尝试验证此插件时出错。请重试。',
   com_nav_close_menu: '关闭菜单',
   com_nav_open_menu: '打开菜单',
@@ -254,7 +255,7 @@ export default {
   com_nav_log_out: '注销',
   com_nav_user: '默认用户',
   com_nav_clear_conversation: '清空对话',
-  com_nav_clear_conversation_confirm_message: 
+  com_nav_clear_conversation_confirm_message:
     '请是否清空所有对话？该操作无法撤销',
   com_nav_help_faq: '帮助',
   com_nav_settings: '设置',
