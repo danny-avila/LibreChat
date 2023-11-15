@@ -86,6 +86,7 @@ const PresetItems: FC<{
                       className="m-0 h-full rounded-md px-4 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:p-2 sm:group-hover:visible"
                       onClick={(e) => {
                         e.preventDefault();
+                        e.stopPropagation();
                         onDeletePreset(preset);
                       }}
                     >

@@ -1,10 +1,11 @@
+import { useRef } from 'react';
 import { Save } from 'lucide-react';
 import { Portal, Content } from '@radix-ui/react-popover';
 import type { ReactNode } from 'react';
+import { useLocalize, useOnClickOutside } from '~/hooks';
 import { cn, removeFocusOutlines } from '~/utils';
 import { CrossIcon } from '~/components/svg';
 import { Button } from '~/components/ui';
-import { useLocalize } from '~/hooks';
 
 type TOptionsPopoverProps = {
   children: ReactNode;
@@ -22,6 +23,9 @@ export default function OptionsPopover({
   closePopover,
   PopoverButtons,
 }: TOptionsPopoverProps) {
+  const popoverRef = useRef(null);
+  useOnClickOutside(popoverRef, () => closePopover(), ['dialog-template-content']);
+
   const localize = useLocalize();
   const cardStyle =
     'shadow-xl rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white';
@@ -32,7 +36,7 @@ export default function OptionsPopover({
 
   return (
     <Portal>
-      <Content sideOffset={8} align="start" asChild>
+      <Content sideOffset={8} align="start" ref={popoverRef} asChild>
         <div className="z-0 flex w-full flex-col items-center md:px-4">
           <div
             className={cn(
