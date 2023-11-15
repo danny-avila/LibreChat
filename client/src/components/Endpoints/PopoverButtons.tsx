@@ -4,6 +4,7 @@ import { useRecoilState } from 'recoil';
 import { Button } from '~/components';
 import { cn } from '~/utils/';
 import store from '~/store';
+import { useLocalize } from '~/hooks';
 
 type TPopoverButton = {
   label: string;
@@ -21,6 +22,7 @@ export default function PopoverButtons({
   buttonClass?: string;
   iconClass?: string;
 }) {
+  const localize = useLocalize();
   const [optionSettings, setOptionSettings] = useRecoilState(store.optionSettings);
   const [showAgentSettings, setShowAgentSettings] = useRecoilState(store.showAgentSettings);
   const { showExamples, isCodeChat } = optionSettings;
@@ -30,7 +32,7 @@ export default function PopoverButtons({
   const buttons: { [key: string]: TPopoverButton[] } = {
     google: [
       {
-        label: (showExamples ? 'Hide' : 'Show') + ' Examples',
+        label: (showExamples ? localize('com_endpoint_hide') : localize('com_endpoint_show')) + localize('com_endpoint_examples'),
         buttonClass: isCodeChat ? 'disabled' : '',
         handler: triggerExamples,
         icon: <MessagesSquared className={cn('mr-1 w-[14px]', iconClass)} />,
@@ -38,7 +40,7 @@ export default function PopoverButtons({
     ],
     gptPlugins: [
       {
-        label: `Show ${showAgentSettings ? 'Completion' : 'Agent'} Settings`,
+        label: localize('com_endpoint_show_what_settings', showAgentSettings ? localize('com_endpoint_completion') : localize('com_endpoint_agent')),
         buttonClass: '',
         handler: () => setShowAgentSettings((prev) => !prev),
         icon: <GPTIcon className={cn('mr-1 mt-[2px] w-[14px]', iconClass)} size={14} />,
