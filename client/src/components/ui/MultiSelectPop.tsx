@@ -34,10 +34,6 @@ function SelectDropDownPop({
   optionValueKey = 'value',
 }: SelectDropDownProps) {
   // const localize = useLocalize();
-  const transitionProps = { className: 'top-full mt-3' };
-  if (showAbove) {
-    transitionProps.className = 'bottom-full mb-3';
-  }
 
   const title = _title;
   const excludeIds = ['select-plugin', 'plugins-label', 'selected-plugins'];
@@ -45,12 +41,12 @@ function SelectDropDownPop({
   return (
     <Root>
       <div className={cn('flex items-center justify-center gap-2', containerClassName ?? '')}>
-        <div className="relative w-full">
+        <div className="relative">
           <Trigger asChild>
             <button
               data-testid="select-dropdown-button"
               className={cn(
-                'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
+                'relative flex cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
                 className ?? '',
               )}
             >
@@ -58,28 +54,29 @@ function SelectDropDownPop({
               {showLabel && (
                 <label className="block text-xs text-gray-700 dark:text-gray-500 ">{title}</label>
               )}
-              <span className="inline-flex w-full truncate" id={excludeIds[2]}>
+              <span className="inline-flex" id={excludeIds[2]}>
                 <span
                   className={cn(
-                    'flex h-6 items-center gap-1 truncate text-sm text-gray-900 dark:text-white',
+                    'flex h-6 items-center gap-1 text-sm text-gray-900 dark:text-white',
                     !showLabel ? 'text-xs' : '',
                   )}
                 >
-                  {!showLabel && title.length > 0 && (
+                  {/* {!showLabel && title.length > 0 && (
                     <span className="text-xs text-gray-700 dark:text-gray-500">{title}:</span>
-                  )}
-                  <span className="flex h-6 items-center gap-1 truncate">
+                  )} */}
+                  <span className="flex items-center gap-1 ">
                     <div className="flex gap-1">
+                      {value.length === 0 && 'None selected'}
                       {value.map((v, i) => (
-                        <div key={i} className="relative" style={{ width: '16px', height: '16px' }}>
+                        <div key={i} className="relative">
                           {v.icon ? (
                             <img
                               src={v.icon}
                               alt={`${v} logo`}
-                              className="h-full w-full rounded-sm bg-white"
+                              className="icon-lg rounded-sm bg-white"
                             />
                           ) : (
-                            <Wrench className="h-full w-full rounded-sm bg-white" />
+                            <Wrench className="icon-lg rounded-sm bg-white" />
                           )}
                           <div className="absolute inset-0 rounded-sm ring-1 ring-inset ring-black/10" />
                         </div>

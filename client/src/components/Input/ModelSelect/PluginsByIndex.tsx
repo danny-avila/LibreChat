@@ -118,7 +118,7 @@ export default function PluginsByIndex({
         optionValueKey="pluginKey"
         showAbove={false}
         showLabel={false}
-        className={cn(cardStyle, 'min-w-60 z-50 w-64 sm:w-48', visible ? '' : 'hidden')}
+        className={cn(cardStyle, 'min-w-60 z-50 w-64 sm:w-48 ', visible ? '' : 'hidden')}
       />
     </>
   );
