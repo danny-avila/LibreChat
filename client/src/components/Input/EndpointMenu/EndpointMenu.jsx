@@ -37,7 +37,7 @@ export default function NewConversationMenu() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showPresets, setShowPresets] = useState(true);
   const [showEndpoints, setShowEndpoints] = useState(true);
-  const [presetModelVisible, setPresetModelVisible] = useState(false);
+  const [presetModalVisible, setPresetModalVisible] = useState(false);
   const [preset, setPreset] = useState(false);
   const [conversation, setConversation] = useRecoilState(store.conversation) ?? {};
   const [messages, setMessages] = useRecoilState(store.messages);
@@ -131,7 +131,7 @@ export default function NewConversationMenu() {
   };
 
   const onChangePreset = (preset) => {
-    setPresetModelVisible(true);
+    setPresetModalVisible(true);
     setPreset(preset);
   };
 
@@ -269,8 +269,8 @@ export default function NewConversationMenu() {
             </DropdownMenuContent>
           </DropdownMenu>
           <EditPresetDialog
-            open={presetModelVisible}
-            onOpenChange={setPresetModelVisible}
+            open={presetModalVisible}
+            onOpenChange={setPresetModalVisible}
             preset={preset}
           />
         </Dialog>

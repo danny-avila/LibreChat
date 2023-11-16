@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { useEffect } from 'react';
 import filenamify from 'filenamify';
 import { useSetRecoilState } from 'recoil';
 import exportFromJSON from 'export-from-json';
@@ -14,15 +13,15 @@ import { EndpointSettings } from '~/components/Endpoints';
 import { useChatContext } from '~/Providers';
 import store from '~/store';
 
-const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditPresetProps) => {
-  const { preset, setPreset } = useChatContext();
+const EditPresetDialog = ({ open, onOpenChange, title }: Omit<TEditPresetProps, 'preset'>) => {
+  const { preset } = useChatContext();
 
   // TODO: use React Query for presets data
   const setPresets = useSetRecoilState(store.presets);
   const { data: availableEndpoints = [] } = useGetEndpointsQuery({
     select: mapEndpoints,
   });
-  const { setOption } = useSetIndexOptions(_preset);
+  const { setOption } = useSetIndexOptions(preset);
   const localize = useLocalize();
 
   const submitPreset = () => {
@@ -50,11 +49,6 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditP
       exportType: exportFromJSON.types.json,
     });
   };
-
-  useEffect(() => {
-    setPreset(_preset);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
 
   const { endpoint } = preset || {};
   if (!endpoint) {
@@ -101,7 +95,6 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditP
                       'flex h-10 max-h-10 w-full resize-none ',
                       removeFocusOutlines,
                     )}
-                    containerClassName="flex w-full resize-none z-[51]"
                   />
                 </div>
               </div>

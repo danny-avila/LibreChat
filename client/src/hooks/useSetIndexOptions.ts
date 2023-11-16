@@ -1,8 +1,8 @@
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { TPreset, TPlugin, tConversationSchema, EModelEndpoint } from 'librechat-data-provider';
 import type { TSetExample, TSetOption, TSetOptionsPayload } from '~/common';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import usePresetIndexOptions from './usePresetIndexOptions';
 import { useChatContext } from '~/Providers/ChatContext';
-import usePresetOptions from './usePresetOptions';
 import useLocalStorage from './useLocalStorage';
 import store from '~/store';
 
@@ -18,7 +18,7 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
     secondaryModel: '',
   });
 
-  const result = usePresetOptions(preset);
+  const result = usePresetIndexOptions(preset);
 
   if (result && typeof result !== 'boolean') {
     return result;

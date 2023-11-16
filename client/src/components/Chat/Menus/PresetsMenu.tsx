@@ -8,7 +8,7 @@ import {
 } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
 import { Content, Portal, Root } from '@radix-ui/react-popover';
-import { useLocalize, useDefaultConvo, useNewConvo, useNavigateToConvo } from '~/hooks';
+import { useLocalize, useDefaultConvo, useNavigateToConvo } from '~/hooks';
 import { EditPresetDialog, PresetItems } from './Presets';
 import { useChatContext } from '~/Providers';
 import TitleButton from './UI/TitleButton';
@@ -17,13 +17,11 @@ import store from '~/store';
 
 const PresetsMenu: FC = () => {
   const localize = useLocalize();
-  const { conversation } = useChatContext();
-  const { newConversation } = useNewConvo();
+  const { conversation, newConversation, setPreset } = useChatContext();
   const { navigateToConvo } = useNavigateToConvo();
   const getDefaultConversation = useDefaultConvo();
 
-  const [preset, setPreset] = useState<TPreset | null>(null);
-  const [presetModelVisible, setPresetModelVisible] = useState(false);
+  const [presetModalVisible, setPresetModalVisible] = useState(false);
   // TODO: rely on react query for presets data
   const [presets, setPresets] = useRecoilState(store.presets);
 
@@ -74,8 +72,8 @@ const PresetsMenu: FC = () => {
   };
 
   const onChangePreset = (preset: TPreset) => {
-    setPresetModelVisible(true);
     setPreset(preset);
+    setPresetModalVisible(true);
   };
 
   const clearAllPresets = () => {
@@ -121,9 +119,9 @@ const PresetsMenu: FC = () => {
         </div>
       </Portal>
       <EditPresetDialog
-        open={presetModelVisible}
-        onOpenChange={setPresetModelVisible}
-        preset={preset as TPreset}
+        open={presetModalVisible}
+        onOpenChange={setPresetModalVisible}
+        // preset={preset as TPreset}
       />
     </Root>
   );
