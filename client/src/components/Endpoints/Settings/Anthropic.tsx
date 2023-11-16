@@ -122,10 +122,12 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">
-              {localize('com_endpoint_top_p')}{' '}
-              <small className="opacity-40">
-                ({localize('com_endpoint_default_with_num', '0.7')})
-              </small>
+            <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
+                {localize('com_endpoint_top_p')}{' '}
+                <small className="opacity-40">
+                  ({localize('com_endpoint_default_with_num', '0.7')})
+                </small>
+              </Label>
               <InputNumber
                 id="top-p-int"
                 disabled={readonly}
@@ -201,10 +203,12 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">
-              {localize('com_endpoint_max_output_tokens')}{' '}
-              <small className="opacity-40">
-                ({localize('com_endpoint_default_with_num', '4000')})
-              </small>
+              <Label htmlFor="max-tokens-int" className="text-left text-sm font-medium">
+                {localize('com_endpoint_max_output_tokens')}{' '}
+                <small className="opacity-40">
+                  ({localize('com_endpoint_default_with_num', '4000')})
+                </small>
+              </Label>
               <InputNumber
                 id="max-tokens-int"
                 disabled={readonly}
