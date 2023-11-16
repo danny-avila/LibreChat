@@ -296,7 +296,13 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       startupConfig?.checkBalance && balanceQuery.refetch();
       events.close();
 
-      const data = JSON.parse(e.data);
+      let data = {} as TResData;
+      try {
+        data = JSON.parse(e.data);
+      } catch (error) {
+        console.error(error);
+        console.log(e);
+      }
 
       errorHandler(data, { ...submission, message });
     };

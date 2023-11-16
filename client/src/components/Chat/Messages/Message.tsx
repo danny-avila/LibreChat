@@ -33,6 +33,7 @@ export default function Message(props: TMessageProps) {
     conversation,
     setAbortScroll,
     handleContinue,
+    latestMessage,
     setLatestMessage,
   } = useChatContext();
 
@@ -161,23 +162,26 @@ export default function Message(props: TMessageProps) {
                   />
                 </div>
               </div>
-              <SubRow classes="text-xs">
-                <SiblingSwitch
-                  siblingIdx={siblingIdx}
-                  siblingCount={siblingCount}
-                  setSiblingIdx={setSiblingIdx}
-                />
-                <HoverButtons
-                  isEditing={edit}
-                  isSubmitting={isSubmitting}
-                  message={message}
-                  conversation={conversation ?? null}
-                  enterEdit={enterEdit}
-                  regenerate={() => regenerateMessage()}
-                  handleContinue={handleContinue}
-                  copyToClipboard={copyToClipboard}
-                />
-              </SubRow>
+              {isLast && isSubmitting ? null : (
+                <SubRow classes="text-xs">
+                  <SiblingSwitch
+                    siblingIdx={siblingIdx}
+                    siblingCount={siblingCount}
+                    setSiblingIdx={setSiblingIdx}
+                  />
+                  <HoverButtons
+                    isEditing={edit}
+                    message={message}
+                    enterEdit={enterEdit}
+                    isSubmitting={isSubmitting}
+                    conversation={conversation ?? null}
+                    regenerate={() => regenerateMessage()}
+                    copyToClipboard={copyToClipboard}
+                    handleContinue={handleContinue}
+                    latestMessage={latestMessage}
+                  />
+                </SubRow>
+              )}
             </div>
           </div>
         </div>

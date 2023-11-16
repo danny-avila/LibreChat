@@ -2,6 +2,7 @@ import { useRecoilState } from 'recoil';
 import type { ChangeEvent } from 'react';
 import { useChatContext } from '~/Providers';
 import AttachFile from './Files/AttachFile';
+import StopButton from './StopButton';
 import SendButton from './SendButton';
 import Images from './Files/Images';
 import Textarea from './Textarea';
@@ -9,7 +10,9 @@ import store from '~/store';
 
 export default function ChatForm({ index = 0 }) {
   const [text, setText] = useRecoilState(store.textByIndex(index));
-  const { ask, conversation, files, setFiles } = useChatContext();
+  const { ask, files, setFiles, conversation, isSubmitting, handleStopGenerating } =
+    useChatContext();
+
   const submitMessage = () => {
     ask({ text });
     setText('');
@@ -35,7 +38,7 @@ export default function ChatForm({ index = 0 }) {
               endpoint={conversation?.endpoint}
             />
             <AttachFile endpoint={conversation?.endpoint ?? ''} />
-            <SendButton text={text} />
+            {isSubmitting ? <StopButton stop={handleStopGenerating} /> : <SendButton text={text} />}
           </div>
         </div>
       </div>

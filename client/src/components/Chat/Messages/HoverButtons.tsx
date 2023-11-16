@@ -13,6 +13,7 @@ type THoverButtons = {
   message: TMessage;
   regenerate: () => void;
   handleContinue: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  latestMessage: TMessage | null;
 };
 
 export default function HoverButtons({
@@ -24,6 +25,7 @@ export default function HoverButtons({
   message,
   regenerate,
   handleContinue,
+  latestMessage,
 }: THoverButtons) {
   const localize = useLocalize();
   const { endpoint } = conversation ?? {};
@@ -33,6 +35,7 @@ export default function HoverButtons({
     isSubmitting,
     message,
     endpoint: endpoint ?? '',
+    latestMessage,
   });
   if (!conversation) {
     return null;

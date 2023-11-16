@@ -8,6 +8,7 @@ type TUseGenerations = {
   message: TMessage;
   isSubmitting: boolean;
   isEditing?: boolean;
+  latestMessage?: TMessage | null;
 };
 
 export default function useGenerations({
@@ -15,8 +16,9 @@ export default function useGenerations({
   message,
   isSubmitting,
   isEditing = false,
+  latestMessage: _latestMessage,
 }: TUseGenerations) {
-  const latestMessage = useRecoilValue(store.latestMessage);
+  const latestMessage = useRecoilValue(store.latestMessage) ?? _latestMessage;
 
   const { error, messageId, searchResult, finish_reason, isCreatedByUser } = message ?? {};
   const isEditableEndpoint = !![
