@@ -515,22 +515,158 @@ export const compactOpenAISchema = tConversationSchema
   })
   .catch(() => ({}));
 
-type CompactEndpointSchema = typeof compactOpenAISchema | typeof assistantSchema;
-// | typeof googleSchema
-// | typeof bingAISchema
-// | typeof anthropicSchema
-// | typeof chatGPTBrowserSchema
-// | typeof gptPluginsSchema;
+export const compactGoogleSchema = tConversationSchema
+  .pick({
+    model: true,
+    modelLabel: true,
+    promptPrefix: true,
+    examples: true,
+    temperature: true,
+    maxOutputTokens: true,
+    topP: true,
+    topK: true,
+  })
+  .transform((obj) => {
+    const newObj: Partial<TConversation> = { ...obj };
+    if (newObj.model === 'chat-bison') {
+      delete newObj.model;
+    }
+    if (newObj.temperature === 0.2) {
+      delete newObj.temperature;
+    }
+    if (newObj.maxOutputTokens === 1024) {
+      delete newObj.maxOutputTokens;
+    }
+    if (newObj.topP === 0.95) {
+      delete newObj.topP;
+    }
+    if (newObj.topK === 40) {
+      delete newObj.topK;
+    }
+
+    return removeNullishValues(newObj);
+  })
+  .catch(() => ({}));
+
+export const compactAnthropicSchema = tConversationSchema
+  .pick({
+    model: true,
+    modelLabel: true,
+    promptPrefix: true,
+    temperature: true,
+    maxOutputTokens: true,
+    topP: true,
+    topK: true,
+  })
+  .transform((obj) => {
+    const newObj: Partial<TConversation> = { ...obj };
+    if (newObj.model === 'claude-1') {
+      delete newObj.model;
+    }
+    if (newObj.temperature === 1) {
+      delete newObj.temperature;
+    }
+    if (newObj.maxOutputTokens === 4000) {
+      delete newObj.maxOutputTokens;
+    }
+    if (newObj.topP === 0.7) {
+      delete newObj.topP;
+    }
+    if (newObj.topK === 5) {
+      delete newObj.topK;
+    }
+
+    return removeNullishValues(newObj);
+  })
+  .catch(() => ({}));
+
+export const compactChatGPTSchema = tConversationSchema
+  .pick({
+    model: true,
+  })
+  .transform((obj) => {
+    const newObj: Partial<TConversation> = { ...obj };
+    // model: obj.model ?? 'text-davinci-002-render-sha',
+    if (newObj.model === 'text-davinci-002-render-sha') {
+      delete newObj.model;
+    }
+
+    return removeNullishValues(newObj);
+  })
+  .catch(() => ({}));
+
+export const compactPluginsSchema = tConversationSchema
+  .pick({
+    model: true,
+    chatGptLabel: true,
+    promptPrefix: true,
+    temperature: true,
+    top_p: true,
+    presence_penalty: true,
+    frequency_penalty: true,
+    tools: true,
+    agentOptions: true,
+  })
+  .transform((obj) => {
+    const newObj: Partial<TConversation> = { ...obj };
+    if (newObj.model === 'gpt-3.5-turbo') {
+      delete newObj.model;
+    }
+    if (newObj.chatGptLabel === null) {
+      delete newObj.chatGptLabel;
+    }
+    if (newObj.promptPrefix === null) {
+      delete newObj.promptPrefix;
+    }
+    if (newObj.temperature === 0.8) {
+      delete newObj.temperature;
+    }
+    if (newObj.top_p === 1) {
+      delete newObj.top_p;
+    }
+    if (newObj.presence_penalty === 0) {
+      delete newObj.presence_penalty;
+    }
+    if (newObj.frequency_penalty === 0) {
+      delete newObj.frequency_penalty;
+    }
+    if (newObj.tools?.length === 0) {
+      delete newObj.tools;
+    }
+
+    if (
+      newObj.agentOptions &&
+      newObj.agentOptions.agent === 'functions' &&
+      newObj.agentOptions.skipCompletion === true &&
+      newObj.agentOptions.model === 'gpt-3.5-turbo' &&
+      newObj.agentOptions.temperature === 0
+    ) {
+      delete newObj.agentOptions;
+    }
+
+    return removeNullishValues(newObj);
+  })
+  .catch(() => ({}));
+
+type CompactEndpointSchema =
+  | typeof compactOpenAISchema
+  | typeof assistantSchema
+  | typeof compactGoogleSchema
+  | typeof bingAISchema
+  | typeof compactAnthropicSchema
+  | typeof compactChatGPTSchema
+  | typeof compactPluginsSchema;
 
 const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
   openAI: compactOpenAISchema,
+  azureOpenAI: compactOpenAISchema,
   assistant: assistantSchema,
-  // azureOpenAI: openAISchema,
-  // google: googleSchema,
-  // bingAI: bingAISchema,
-  // anthropic: anthropicSchema,
-  // chatGPTBrowser: chatGPTBrowserSchema,
-  // gptPlugins: gptPluginsSchema,
+  google: compactGoogleSchema,
+  /* BingAI needs all fields */
+  bingAI: bingAISchema,
+  anthropic: compactAnthropicSchema,
+  chatGPTBrowser: compactChatGPTSchema,
+  gptPlugins: compactPluginsSchema,
 };
 
 export const parseCompactConvo = (
