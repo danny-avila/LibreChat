@@ -1,6 +1,7 @@
 /**
  * Extracts a valid OpenAI baseURL from a given string, matching "url/v1," also an added suffix,
  * ending with "/openai" (to allow the Cloudflare, LiteLLM pattern).
+ * Returns the original URL if no match is found.
  *
  * Examples:
  * - `https://open.ai/v1/chat` -> `https://open.ai/v1`
@@ -9,12 +10,11 @@
  * - `https://open.ai/v1/hi/openai` -> `https://open.ai/v1/hi/openai`
  *
  * @param {string} url - The URL to be processed.
- * @returns {string|null} The matched pattern or null if no match is found.
+ * @returns {string} The matched pattern or input if no match is found.
  */
 function extractBaseURL(url) {
-  // First, let's make sure the URL contains '/v1'.
   if (!url.includes('/v1')) {
-    return null;
+    return url;
   }
 
   // Find the index of '/v1' to use it as a reference point.
