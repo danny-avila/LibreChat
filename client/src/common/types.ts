@@ -6,6 +6,7 @@ import type {
   TLoginUser,
   TUser,
 } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 
 export type TSetOption = (param: number | string) => (newValue: number | string | boolean) => void;
 export type TSetExample = (
@@ -13,6 +14,22 @@ export type TSetExample = (
   type: string,
   newValue: number | string | boolean | null,
 ) => void;
+
+export const alternateName = {
+  [EModelEndpoint.openAI]: 'OpenAI',
+  [EModelEndpoint.assistant]: 'Assistants',
+  [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
+  [EModelEndpoint.bingAI]: 'Bing',
+  [EModelEndpoint.chatGPTBrowser]: 'ChatGPT',
+  [EModelEndpoint.gptPlugins]: 'Plugins',
+  [EModelEndpoint.google]: 'PaLM',
+  [EModelEndpoint.anthropic]: 'Anthropic',
+};
+
+export const supportsFiles = {
+  [EModelEndpoint.openAI]: true,
+  [EModelEndpoint.assistant]: true,
+};
 
 export enum ESide {
   Top = 'top',
@@ -47,6 +64,8 @@ export type TSettingsProps = TBaseSettingsProps & {
 
 export type TModels = {
   models: string[];
+  showAbove?: boolean;
+  popover?: boolean;
 };
 
 export type TModelSelectProps = TSettingsProps & TModels;
@@ -64,7 +83,7 @@ export type TSetOptionsPayload = {
   addExample: () => void;
   removeExample: () => void;
   setAgentOption: TSetOption;
-  getConversation: () => TConversation | TPreset | null;
+  // getConversation: () => TConversation | TPreset | null;
   checkPluginSelection: (value: string) => boolean;
   setTools: (newValue: string) => void;
 };
@@ -201,3 +220,23 @@ export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model' | 'error'> &
     className?: string;
     endpoint?: string | null;
   };
+
+export type Option = Record<string, unknown> & {
+  label?: string;
+  value: string | number | null;
+};
+
+export type TOptionSettings = {
+  showExamples?: boolean;
+  isCodeChat?: boolean;
+};
+
+export interface ExtendedFile {
+  file: File;
+  width?: number;
+  height?: number;
+  preview: string;
+  progress: number;
+}
+
+export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };

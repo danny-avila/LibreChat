@@ -67,6 +67,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 placeholder={localize('com_endpoint_openai_custom_name_placeholder')}
                 className={cn(
                   defaultTextProps,
+                  'dark:bg-gray-700 dark:hover:bg-gray-700/60 dark:focus:bg-gray-700',
                   'flex h-10 max-h-10 w-full resize-none px-3 py-2',
                   removeFocusOutlines,
                 )}
@@ -85,6 +86,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 placeholder={localize('com_endpoint_openai_prompt_prefix_placeholder')}
                 className={cn(
                   defaultTextProps,
+                  'dark:bg-gray-700 dark:hover:bg-gray-700/60 dark:focus:bg-gray-700',
                   'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 ',
                 )}
               />
