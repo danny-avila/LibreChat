@@ -252,6 +252,7 @@ export default {
   com_nav_confirm_clear: 'Confirm Clear',
   com_nav_close_sidebar: 'Close sidebar',
   com_nav_open_sidebar: 'Open sidebar',
+  com_nav_send_message: 'Send message',
   com_nav_log_out: 'Log out',
   com_nav_user: 'USER',
   com_nav_clear_conversation: 'Clear conversations',
@@ -278,4 +279,5 @@ export default {
   com_nav_lang_korean: '한국어',
   com_nav_lang_vietnamese: 'Tiếng Việt',
   com_nav_lang_traditionalchinese: '繁體中文',
+  com_nav_lang_arabic: 'العربية',
 };

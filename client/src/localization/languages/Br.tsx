@@ -249,6 +249,7 @@ export default {
   com_nav_confirm_clear: 'Confirmar Limpeza',
   com_nav_close_sidebar: 'Fechar barra lateral',
   com_nav_open_sidebar: 'Abrir barra lateral',
+  com_nav_send_message: 'Enviar mensagem',
   com_nav_log_out: 'Sair',
   com_nav_user: 'USUÁRIO',
   com_nav_clear_conversation: 'Limpar conversas',
@@ -259,6 +260,5 @@ export default {
   com_nav_search_placeholder: 'Procurar mensagens',
   com_nav_setting_general: 'Geral',
   com_nav_setting_data: 'Controle de Dados',
-  com_nav_lang_auto: 'Auto detectar',
   com_nav_lang_brazilian_portuguese: 'Português Brasileiro',
 };

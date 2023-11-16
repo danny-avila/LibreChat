@@ -252,6 +252,7 @@ export default {
   com_nav_confirm_clear: 'Confirmer l\'effacement',
   com_nav_close_sidebar: 'Fermer la barre latérale',
   com_nav_open_sidebar: 'Ouvrir la barre latérale',
+  com_nav_send_message: 'Envoyer un message',
   com_nav_log_out: 'Se déconnecter',
   com_nav_user: 'UTILISATEUR',
   com_nav_clear_conversation: 'Effacer les conversations',

@@ -1,9 +1,5 @@
 import { atom } from 'recoil';
-
-type TOptionSettings = {
-  showExamples?: boolean;
-  isCodeChat?: boolean;
-};
+import type { TOptionSettings } from '~/common';
 
 const abortScroll = atom<boolean>({
   key: 'abortScroll',

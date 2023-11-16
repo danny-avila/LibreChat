@@ -1,14 +1,15 @@
-import { useNavigate } from 'react-router-dom';
-import { useLocalize, useConversation } from '~/hooks';
+import { useLocalize, useConversation, useNewConvo, useOriginNavigate } from '~/hooks';
 
 export default function NewChat() {
   const { newConversation } = useConversation();
-  const navigate = useNavigate();
+  const { newConversation: newConvo } = useNewConvo();
+  const navigate = useOriginNavigate();
   const localize = useLocalize();
 
   const clickHandler = () => {
+    newConvo();
     newConversation();
-    navigate('/chat/new');
+    navigate('new');
   };
 
   return (
