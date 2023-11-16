@@ -103,7 +103,7 @@ const PresetsMenu: FC = () => {
           <Content
             side="bottom"
             align="start"
-            className="mt-2 max-w-[370px] overflow-hidden rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-white md:min-w-[400px]"
+            className="mt-2 max-h-[495px] max-w-[370px] overflow-x-hidden rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-white md:min-w-[400px]"
           >
             {presets.length ? (
               <PresetItems

@@ -48,7 +48,7 @@ export default function HoverButtons({
   };
 
   return (
-    <div className="visible mt-0 mt-2 flex justify-center gap-1 self-end text-gray-400 lg:justify-start">
+    <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-400 lg:justify-start">
       <button
         className={cn(
           'hover-button rounded-md p-1 pl-0 text-gray-400 hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible md:group-[.final-completion]:visible',
