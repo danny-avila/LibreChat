@@ -1,3 +1,5 @@
+const { EModelEndpoint } = require('../routes/endpoints/schemas');
+
 const {
   OPENAI_API_KEY: openAIApiKey,
   AZURE_API_KEY: azureOpenAIApiKey,
@@ -18,12 +20,6 @@ function isUserProvided(key) {
   return key ? { userProvide: key === 'user_provided' } : false;
 }
 
-const openAI = isUserProvided(openAIApiKey);
-const azureOpenAI = isUserProvided(azureOpenAIApiKey);
-const bingAI = isUserProvided(bingToken);
-const chatGPTBrowser = isUserProvided(chatGPTToken);
-const anthropic = isUserProvided(anthropicApiKey);
-
 module.exports = {
   config: {
     openAIApiKey,
@@ -31,10 +27,11 @@ module.exports = {
     useAzurePlugins,
     userProvidedOpenAI,
     palmKey,
-    openAI,
-    azureOpenAI,
-    chatGPTBrowser,
-    anthropic,
-    bingAI,
+    [EModelEndpoint.openAI]: isUserProvided(openAIApiKey),
+    [EModelEndpoint.assistant]: isUserProvided(openAIApiKey),
+    [EModelEndpoint.azureOpenAI]: isUserProvided(azureOpenAIApiKey),
+    [EModelEndpoint.chatGPTBrowser]: isUserProvided(chatGPTToken),
+    [EModelEndpoint.anthropic]: isUserProvided(anthropicApiKey),
+    [EModelEndpoint.bingAI]: isUserProvided(bingToken),
   },
 };

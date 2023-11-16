@@ -1,3 +1,4 @@
+const { EModelEndpoint } = require('../routes/endpoints/schemas');
 const { availableTools } = require('../../app/clients/tools');
 const { addOpenAPISpecs } = require('../../app/clients/tools/util/addOpenAPISpecs');
 const {
@@ -7,6 +8,7 @@ const {
   userProvidedOpenAI,
   palmKey,
   openAI,
+  assistant,
   azureOpenAI,
   bingAI,
   chatGPTBrowser,
@@ -53,7 +55,16 @@ async function endpointController(req, res) {
       : false;
 
   res.send(
-    JSON.stringify({ azureOpenAI, openAI, google, bingAI, chatGPTBrowser, gptPlugins, anthropic }),
+    JSON.stringify({
+      [EModelEndpoint.openAI]: openAI,
+      [EModelEndpoint.assistant]: assistant,
+      [EModelEndpoint.azureOpenAI]: azureOpenAI,
+      [EModelEndpoint.google]: google,
+      [EModelEndpoint.bingAI]: bingAI,
+      [EModelEndpoint.chatGPTBrowser]: chatGPTBrowser,
+      [EModelEndpoint.gptPlugins]: gptPlugins,
+      [EModelEndpoint.anthropic]: anthropic,
+    }),
   );
 }
 

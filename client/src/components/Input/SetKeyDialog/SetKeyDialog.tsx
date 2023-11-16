@@ -1,20 +1,21 @@
 import React, { useState } from 'react';
+import { EModelEndpoint } from 'librechat-data-provider';
 import type { TDialogProps } from '~/common';
-import { Dialog, Dropdown } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { RevokeKeysButton } from '~/components/Nav';
-import { cn, alternateName } from '~/utils';
+import { Dialog, Dropdown } from '~/components/ui';
 import { useUserKey, useLocalize } from '~/hooks';
 import GoogleConfig from './GoogleConfig';
 import OpenAIConfig from './OpenAIConfig';
+import { alternateName } from '~/common';
 import OtherConfig from './OtherConfig';
 import HelpText from './HelpText';
 
 const endpointComponents = {
-  google: GoogleConfig,
-  openAI: OpenAIConfig,
-  azureOpenAI: OpenAIConfig,
-  gptPlugins: OpenAIConfig,
+  [EModelEndpoint.google]: GoogleConfig,
+  [EModelEndpoint.openAI]: OpenAIConfig,
+  [EModelEndpoint.azureOpenAI]: OpenAIConfig,
+  [EModelEndpoint.gptPlugins]: OpenAIConfig,
   default: OtherConfig,
 };
 

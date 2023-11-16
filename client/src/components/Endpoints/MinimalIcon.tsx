@@ -1,4 +1,4 @@
-import React from 'react';
+import { EModelEndpoint } from 'librechat-data-provider';
 import {
   AzureMinimalIcon,
   OpenAIMinimalIcon,
@@ -21,13 +21,19 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
   }
 
   const endpointIcons = {
-    azureOpenAI: { icon: <AzureMinimalIcon />, name: props.chatGptLabel || 'ChatGPT' },
-    openAI: { icon: <OpenAIMinimalIcon />, name: props.chatGptLabel || 'ChatGPT' },
-    gptPlugins: { icon: <PluginMinimalIcon />, name: 'Plugins' },
-    google: { icon: <PaLMinimalIcon />, name: props.modelLabel || 'PaLM2' },
-    anthropic: { icon: <AnthropicMinimalIcon />, name: props.modelLabel || 'Claude' },
-    bingAI: { icon: <BingAIMinimalIcon />, name: 'BingAI' },
-    chatGPTBrowser: { icon: <ChatGPTMinimalIcon />, name: 'ChatGPT' },
+    [EModelEndpoint.azureOpenAI]: {
+      icon: <AzureMinimalIcon />,
+      name: props.chatGptLabel || 'ChatGPT',
+    },
+    [EModelEndpoint.openAI]: { icon: <OpenAIMinimalIcon />, name: props.chatGptLabel || 'ChatGPT' },
+    [EModelEndpoint.gptPlugins]: { icon: <PluginMinimalIcon />, name: 'Plugins' },
+    [EModelEndpoint.google]: { icon: <PaLMinimalIcon />, name: props.modelLabel || 'PaLM2' },
+    [EModelEndpoint.anthropic]: {
+      icon: <AnthropicMinimalIcon />,
+      name: props.modelLabel || 'Claude',
+    },
+    [EModelEndpoint.bingAI]: { icon: <BingAIMinimalIcon />, name: 'BingAI' },
+    [EModelEndpoint.chatGPTBrowser]: { icon: <ChatGPTMinimalIcon />, name: 'ChatGPT' },
     default: { icon: <OpenAIMinimalIcon />, name: 'UNKNOWN' },
   };
 

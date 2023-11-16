@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import type { TPreset } from 'librechat-data-provider';
-import { Plugin } from '~/components/svg';
+import { EModelEndpoint } from 'librechat-data-provider';
 import EndpointOptionsDialog from '../Endpoints/EndpointOptionsDialog';
-import { cn, alternateName } from '~/utils/';
+import { Plugin } from '~/components/svg';
+import { alternateName } from '~/common';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 import store from '~/store';
 
@@ -24,7 +26,7 @@ const MessageHeader = ({ isSearchView = false }) => {
     return null;
   }
 
-  const isNotClickable = endpoint === 'chatGPTBrowser';
+  const isNotClickable = endpoint === EModelEndpoint.chatGPTBrowser;
 
   const plugins = (
     <>
@@ -43,7 +45,7 @@ const MessageHeader = ({ isSearchView = false }) => {
     } else {
       let _title = `${alternateName[endpoint] ?? endpoint}`;
 
-      if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
+      if (endpoint === EModelEndpoint.azureOpenAI || endpoint === EModelEndpoint.openAI) {
         const { chatGptLabel } = conversation;
         if (model) {
           _title += `: ${model}`;
@@ -51,7 +53,7 @@ const MessageHeader = ({ isSearchView = false }) => {
         if (chatGptLabel) {
           _title += ` as ${chatGptLabel}`;
         }
-      } else if (endpoint === 'google') {
+      } else if (endpoint === EModelEndpoint.google) {
         _title = 'PaLM';
         const { modelLabel, model } = conversation;
         if (model) {
@@ -60,7 +62,7 @@ const MessageHeader = ({ isSearchView = false }) => {
         if (modelLabel) {
           _title += ` as ${modelLabel}`;
         }
-      } else if (endpoint === 'bingAI') {
+      } else if (endpoint === EModelEndpoint.bingAI) {
         const { jailbreak, toneStyle } = conversation;
         if (toneStyle) {
           _title += `: ${toneStyle}`;
@@ -68,13 +70,13 @@ const MessageHeader = ({ isSearchView = false }) => {
         if (jailbreak) {
           _title += ' as Sydney';
         }
-      } else if (endpoint === 'chatGPTBrowser') {
+      } else if (endpoint === EModelEndpoint.chatGPTBrowser) {
         if (model) {
           _title += `: ${model}`;
         }
-      } else if (endpoint === 'gptPlugins') {
+      } else if (endpoint === EModelEndpoint.gptPlugins) {
         return plugins;
-      } else if (endpoint === 'anthropic') {
+      } else if (endpoint === EModelEndpoint.anthropic) {
         _title = 'Claude';
       } else if (endpoint === null) {
         null;

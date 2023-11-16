@@ -8,7 +8,7 @@ type TCleanupPreset = {
 const cleanupPreset = ({ preset: _preset }: TCleanupPreset): TPreset => {
   const { endpoint } = _preset;
   if (!endpoint) {
-    console.error(`Unknown endpoint ${endpoint}`);
+    console.error(`Unknown endpoint ${endpoint}`, _preset);
     return {
       endpoint: null,
       presetId: _preset?.presetId ?? null,

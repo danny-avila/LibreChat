@@ -4,7 +4,7 @@ import { cn } from '~/utils/';
 import { useLocalize } from '~/hooks';
 
 type FileUploadProps = {
-  onFileSelected: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onFileSelected: (jsonData: Record<string, unknown>) => void;
   className?: string;
   successText?: string;
   invalidText?: string;
