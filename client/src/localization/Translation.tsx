@@ -1,4 +1,5 @@
 import English from './languages/Eng';
+import Arabic from './languages/Ar';
 import Chinese from './languages/Zh';
 import German from './languages/De';
 import Italian from './languages/It';
@@ -17,6 +18,7 @@ import Turkish from './languages/Tr';
 
 const languageMap: { [key: string]: unknown } = {
   'en-US': English,
+  'ar-EG': Arabic,
   'zh-CN': Chinese,
   'de-DE': German,
   'es-ES': Spanish,

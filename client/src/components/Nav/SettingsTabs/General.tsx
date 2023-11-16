@@ -85,6 +85,7 @@ export const LangSelector = ({
         value={langcode}
       >
         <option value="auto">{localize('com_nav_lang_auto')}</option>
+        <option value="ar-EG">{localize('com_nav_lang_arabic')}</option>
         <option value="en-US">{localize('com_nav_lang_english')}</option>
         <option value="zh-CN">{localize('com_nav_lang_chinese')}</option>
         <option value="zh-TC">{localize('com_nav_lang_traditionalchinese')}</option>
