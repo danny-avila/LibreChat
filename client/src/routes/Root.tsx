@@ -7,7 +7,7 @@ import {
   useGetPresetsQuery,
   useGetSearchEnabledQuery,
 } from 'librechat-data-provider';
-
+import type { ContextType } from '~/common';
 import { Nav, MobileNav } from '~/components/Nav';
 import { useAuthContext, useServerStream, useConversation, useNewConvo } from '~/hooks';
 import store from '~/store';
@@ -77,7 +77,7 @@ export default function Root() {
         <div className="flex h-full w-full flex-1 flex-col bg-gray-50">
           <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-white pt-10 dark:bg-gray-800 md:pt-0">
             <MobileNav setNavVisible={setNavVisible} />
-            <Outlet />
+            <Outlet context={{ navVisible, setNavVisible } satisfies ContextType} />
           </div>
         </div>
       </div>

@@ -17,6 +17,7 @@ import type {
 } from 'librechat-data-provider';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import { useAuthContext } from './AuthContext';
+import useNewConvo from './useNewConvo';
 import useUserKey from './useUserKey';
 import store from '~/store';
 
@@ -31,6 +32,8 @@ export default function useChatHelpers(index = 0, paramId) {
   //   examples: [],
   //   tools: [],
   // };
+
+  const { newConversation } = useNewConvo(index);
   const { useCreateConversationAtom } = store;
   const { conversation, setConversation } = useCreateConversationAtom(index);
   const { conversationId, endpoint } = conversation ?? {};
@@ -319,6 +322,7 @@ export default function useChatHelpers(index = 0, paramId) {
   const [files, setFiles] = useState<ExtendedFile[]>([]);
 
   return {
+    newConversation,
     conversation,
     setConversation,
     addConvo,

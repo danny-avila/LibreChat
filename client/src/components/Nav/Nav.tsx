@@ -7,7 +7,7 @@ import {
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuthContext, useMediaQuery, useConversation, useConversations } from '~/hooks';
-import { TooltipProvider, Tooltip } from '~/components/ui/';
+import { TooltipProvider, Tooltip } from '~/components/ui';
 import { Conversations, Pages } from '../Conversations';
 import { Spinner } from '~/components';
 import SearchBar from './SearchBar';

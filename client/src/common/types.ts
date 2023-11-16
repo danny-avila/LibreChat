@@ -238,3 +238,5 @@ export interface ExtendedFile {
   preview: string;
   progress: number;
 }
+
+export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };
