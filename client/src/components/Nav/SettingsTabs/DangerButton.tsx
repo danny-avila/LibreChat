@@ -33,7 +33,7 @@ const DangerButton = (props: TDangerButtonProps, ref: ForwardedRef<HTMLButtonEle
 
   return (
     <div className="flex items-center justify-between">
-      {showText && <div>{localize(infoTextCode)}</div>}
+      {showText && <div> {localize(infoTextCode)} </div>}
       <DialogButton
         id={id}
         ref={ref}

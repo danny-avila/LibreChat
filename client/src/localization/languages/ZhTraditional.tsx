@@ -12,8 +12,7 @@ export default {
   com_ui_capability_decline_requests: '訓練有素以拒絕不適當的請求',
   com_ui_limitations: '限制',
   com_ui_limitation_incorrect_info: '有時可能會產生不正確的資訊',
-  com_ui_limitation_harmful_biased:
-    '有時可能會產生有害的指示或帶有偏見的內容',
+  com_ui_limitation_harmful_biased: '有時可能會產生有害的指示或帶有偏見的內容',
   com_ui_limitation_limited_2021: '對於 2021 年後的世界和事件的知識有限',
   com_ui_input: '輸入',
   com_ui_close: '關閉',
@@ -49,14 +48,10 @@ export default {
   com_ui_delete: '刪除',
   com_ui_delete_conversation: '刪除對話？',
   com_ui_delete_conversation_confirm: '這將刪除',
-  com_auth_error_login:
-    '無法使用提供的資訊登入。請檢查您的登入資訊後重試。',
-  com_auth_error_login_rl:
-    '短時間內嘗試登入的次數過多。請稍後再試。',
-  com_auth_error_login_ban:
-    '由於違反我們的服務條款，您的帳號已被暫時停用。',
-  com_auth_error_login_server:
-    '發生內部伺服器錯誤。請稍候片刻，然後重試。',
+  com_auth_error_login: '無法使用提供的資訊登入。請檢查您的登入資訊後重試。',
+  com_auth_error_login_rl: '短時間內嘗試登入的次數過多。請稍後再試。',
+  com_auth_error_login_ban: '由於違反我們的服務條款，您的帳號已被暫時停用。',
+  com_auth_error_login_server: '發生內部伺服器錯誤。請稍候片刻，然後重試。',
   com_auth_no_account: '還沒有帳號？',
   com_auth_sign_up: '註冊',
   com_auth_sign_in: '登入',
@@ -79,9 +74,8 @@ export default {
   com_auth_password_not_match: '密碼不符',
   com_auth_continue: '繼續',
   com_auth_create_account: '建立您的帳號',
-  com_nav_auto_scroll:'開啟時自動捲動至最新內容',
-  com_auth_error_create:
-    '嘗試註冊您的帳號時發生錯誤。請重試。',
+  com_nav_auto_scroll: '開啟時自動捲動至最新內容',
+  com_auth_error_create: '嘗試註冊您的帳號時發生錯誤。請重試。',
   com_auth_full_name: '全名',
   com_auth_name_required: '名稱必填',
   com_auth_name_min_length: '名稱長度必須至少有 3 個字元',
@@ -97,8 +91,7 @@ export default {
   com_auth_here: '這裡',
   com_auth_to_reset_your_password: '重設您的密碼。',
   com_auth_reset_password_link_sent: '電子郵件已傳送',
-  com_auth_reset_password_email_sent:
-    '已向您傳送電子郵件，其中包含進一步重設密碼的操作說明。',
+  com_auth_reset_password_email_sent: '已向您傳送電子郵件，其中包含進一步重設密碼的操作說明。',
   com_auth_error_reset_password:
     '重設密碼時出現問題。找不到使用提供的電子郵件地址的使用者。請重試。',
   com_auth_reset_password_success: '密碼重設成功',
@@ -154,8 +147,7 @@ export default {
   com_endpoint_openai_pres:
     '數值範圍介於 -2.0 和 2.0 之間。正值會根據該 token 是否在目前的文字中出現來進行懲罰，增加模型談及新主題的可能性。',
   com_endpoint_openai_custom_name_placeholder: '為 ChatGPT 設定自定義名稱',
-  com_endpoint_openai_prompt_prefix_placeholder:
-    '在系統訊息中設定自定義提示。',
+  com_endpoint_openai_prompt_prefix_placeholder: '在系統訊息中設定自定義提示。',
   com_endpoint_anthropic_temp:
     '範圍從 0 到 1。對於分析/多選題，使用接近 0 的溫度，對於創意和生成式任務，使用接近 1 的溫度。我們建議修改這個或 Top P，但不建議兩者都修改。',
   com_endpoint_anthropic_topp:
@@ -171,8 +163,7 @@ export default {
   com_endpoint_plug_skip_completion: '跳過完成步驟',
   com_endpoint_disabled_with_tools: '與工具一起停用',
   com_endpoint_disabled_with_tools_placeholder: '選擇工具時停用',
-  com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
-    '在系統訊息中新增自定義提示。',
+  com_endpoint_plug_set_custom_instructions_for_gpt_placeholder: '在系統訊息中新增自定義提示。',
   com_endpoint_import: '匯入',
   com_endpoint_set_custom_name: '設定自定義名稱，以便您找到此預設設定',
   com_endpoint_preset: '預設設定',
@@ -189,8 +180,7 @@ export default {
   com_endpoint_save: '儲存',
   com_endpoint_export: '匯出',
   com_endpoint_save_as_preset: '另存為預設設定',
-  com_endpoint_presets_clear_warning:
-    '您確定要清除所有預設設定嗎？此操作無法復原。',
+  com_endpoint_presets_clear_warning: '您確定要清除所有預設設定嗎？此操作無法復原。',
   com_endpoint_not_implemented: '尚未實做',
   com_endpoint_no_presets: '尚無預設設定',
   com_endpoint_not_available: '無可用選項',
@@ -228,8 +218,7 @@ export default {
     '確保點選「建立並繼續」並至少給予「Vertex AI 使用者」角色。最後，建立一個 JSON 金鑰以在此處匯入。',
   com_nav_plugin_store: '外掛商店',
   com_nav_plugin_search: '搜尋外掛',
-  com_nav_plugin_auth_error:
-    '嘗試驗證此外掛時發生錯誤。請重試。',
+  com_nav_plugin_auth_error: '嘗試驗證此外掛時發生錯誤。請重試。',
   com_nav_close_menu: '關閉側邊選單',
   com_nav_open_menu: '開啟側邊選單',
   com_nav_export_filename: '檔名',
@@ -250,11 +239,11 @@ export default {
   com_nav_confirm_clear: '確認清除',
   com_nav_close_sidebar: '關閉側邊選單',
   com_nav_open_sidebar: '開啟側邊選單',
+  com_nav_send_message: '傳送訊息',
   com_nav_log_out: '登出',
   com_nav_user: '使用者',
   com_nav_clear_conversation: '清除對話',
-  com_nav_clear_conversation_confirm_message:
-    '您確定要清除所有對話嗎？此操作無法復原。',
+  com_nav_clear_conversation_confirm_message: '您確定要清除所有對話嗎？此操作無法復原。',
   com_nav_help_faq: '說明與常見問題',
   com_nav_settings: '設定',
   com_nav_search_placeholder: '搜尋訊息',

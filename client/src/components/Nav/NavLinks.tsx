@@ -50,7 +50,7 @@ export default function NavLinks() {
             )}
             <Menu.Button
               className={cn(
-                'group-ui-open:bg-gray-800 flex w-full items-center gap-2.5 rounded-md px-3 py-3 text-sm transition-colors duration-200 hover:bg-gray-800',
+                'group-ui-open:bg-gray-800 rounded-sd flex w-full items-center gap-2.5 px-3 py-2 text-sm transition-colors duration-200 hover:bg-gray-800',
                 open ? 'bg-gray-800' : '',
               )}
               data-testid="nav-user"
@@ -69,18 +69,24 @@ export default function NavLinks() {
                   />
                 </div>
               </div>
-              <div className="grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-white">
+              <div
+                className="grow overflow-hidden text-ellipsis whitespace-nowrap text-left font-bold text-white"
+                style={{ marginTop: '-4px', marginLeft: '2px' }}
+              >
                 {user?.name || localize('com_nav_user')}
               </div>
-              <DotsIcon />
+
+              <div style={{ marginBottom: '5px' }}>
+                <DotsIcon />
+              </div>
             </Menu.Button>
 
             <Transition
               as={Fragment}
-              enter="transition ease-out duration-100 transform"
+              enter="transition ease-out duration-110 transform"
               enterFrom="translate-y-2 opacity-0"
               enterTo="translate-y-0 opacity-100"
-              leave="transition ease-in duration-75 transform"
+              leave="transition ease-in duration-100 transform"
               leaveFrom="translate-y-0 opacity-100"
               leaveTo="translate-y-2 opacity-0"
             >

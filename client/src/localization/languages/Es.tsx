@@ -253,6 +253,7 @@ export default {
   com_nav_confirm_clear: 'Confirmar Limpieza',
   com_nav_close_sidebar: 'Cerrar barra lateral',
   com_nav_open_sidebar: 'Abrir barra lateral',
+  com_nav_send_message: 'Enviar mensaje',
   com_nav_log_out: 'Cerrar sesión',
   com_nav_user: 'USUARIO',
   com_nav_clear_conversation: 'Limpiar conversaciones',
