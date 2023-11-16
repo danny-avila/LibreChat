@@ -1,7 +1,6 @@
 export { default as Plugin } from './Plugin';
 export { default as GPTIcon } from './GPTIcon';
 export { default as EditIcon } from './EditIcon';
-export { default as CogIcon } from './CogIcon';
 export { default as DataIcon } from './DataIcon';
 export { default as Panel } from './Panel';
 export { default as Spinner } from './Spinner';
@@ -30,3 +29,4 @@ export { default as PluginMinimalIcon } from './PluginMinimalIcon';
 export { default as BingAIMinimalIcon } from './BingAIMinimalIcon';
 export { default as PaLMinimalIcon } from './PaLMinimalIcon';
 export { default as AnthropicMinimalIcon } from './AnthropicMinimalIcon';
+export { default as SendMessageIcon } from './SendMessageIcon';
