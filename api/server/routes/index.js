@@ -15,6 +15,7 @@ const models = require('./models');
 const plugins = require('./plugins');
 const user = require('./user');
 const config = require('./config');
+const assistants = require('./assistants');
 
 module.exports = {
   search,
@@ -34,4 +35,5 @@ module.exports = {
   models,
   plugins,
   config,
+  assistants,
 };

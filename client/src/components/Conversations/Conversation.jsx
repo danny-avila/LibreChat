@@ -111,7 +111,7 @@ export default function Conversation({ conversation, retainView }) {
 
   if (currentConversation?.conversationId !== conversationId) {
     aProps.className =
-      'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-gray-800 hover:pr-4';
+      'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-gray-900 hover:pr-4';
   }
 
   return (
@@ -149,7 +149,7 @@ export default function Conversation({ conversation, retainView }) {
           />
         </div>
       ) : (
-        <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-gray-900 group-hover:from-gray-700/70" />
+        <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-black group-hover:from-gray-900" />
       )}
     </a>
   );

@@ -61,3 +61,5 @@ export const resetPassword = () => '/api/auth/resetPassword';
 export const plugins = () => '/api/plugins';
 
 export const config = () => '/api/config';
+
+export const assistants = (id?: string) => `/api/assistants${id ? `/${id}` : ''}`;

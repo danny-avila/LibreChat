@@ -20,7 +20,7 @@ type CodeBlockProps = Pick<CodeBarProps, 'lang' | 'plugin' | 'error'> & {
 const CodeBar: React.FC<CodeBarProps> = React.memo(({ lang, codeRef, error, plugin = null }) => {
   const [isCopied, setIsCopied] = useState(false);
   return (
-    <div className="relative flex items-center rounded-tl-md rounded-tr-md bg-gray-800 px-4 py-2 font-sans text-xs text-gray-200">
+    <div className="relative flex items-center rounded-tl-md rounded-tr-md bg-gray-800 px-4 py-2 font-sans text-xs text-gray-200 dark:bg-gray-900">
       <span className="">{lang}</span>
       {plugin ? (
         <InfoIcon className="ml-auto flex h-4 w-4 gap-2 text-white/50" />

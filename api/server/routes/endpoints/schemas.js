@@ -8,6 +8,7 @@ const EModelEndpoint = {
   google: 'google',
   gptPlugins: 'gptPlugins',
   anthropic: 'anthropic',
+  assistant: 'assistant',
 };
 
 const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
@@ -263,14 +264,33 @@ const gptPluginsSchema = tConversationSchema
     },
   }));
 
+const assistantSchema = tConversationSchema
+  .pick({
+    model: true,
+    assistant_id: true,
+    thread_id: true,
+  })
+  .transform((obj) => {
+    const newObj = { ...obj };
+    Object.keys(newObj).forEach((key) => {
+      const value = newObj[key];
+      if (value === undefined || value === null) {
+        delete newObj[key];
+      }
+    });
+    return newObj;
+  })
+  .catch(() => ({}));
+
 const endpointSchemas = {
-  openAI: openAISchema,
-  azureOpenAI: openAISchema,
-  google: googleSchema,
-  bingAI: bingAISchema,
-  anthropic: anthropicSchema,
-  chatGPTBrowser: chatGPTBrowserSchema,
-  gptPlugins: gptPluginsSchema,
+  [EModelEndpoint.openAI]: openAISchema,
+  [EModelEndpoint.assistant]: assistantSchema,
+  [EModelEndpoint.azureOpenAI]: openAISchema,
+  [EModelEndpoint.google]: googleSchema,
+  [EModelEndpoint.bingAI]: bingAISchema,
+  [EModelEndpoint.anthropic]: anthropicSchema,
+  [EModelEndpoint.chatGPTBrowser]: chatGPTBrowserSchema,
+  [EModelEndpoint.gptPlugins]: gptPluginsSchema,
 };
 
 function getFirstDefinedValue(possibleValues) {
@@ -303,19 +323,26 @@ const parseConvo = (endpoint, conversation, possibleValues) => {
 const getResponseSender = (endpointOption) => {
   const { endpoint, chatGptLabel, modelLabel, jailbreak } = endpointOption;
 
-  if (['openAI', 'azureOpenAI', 'gptPlugins', 'chatGPTBrowser'].includes(endpoint)) {
+  if (
+    [
+      EModelEndpoint.openAI,
+      EModelEndpoint.azureOpenAI,
+      EModelEndpoint.gptPlugins,
+      EModelEndpoint.chatGPTBrowser,
+    ].includes(endpoint)
+  ) {
     return chatGptLabel ?? 'ChatGPT';
   }
 
-  if (endpoint === 'bingAI') {
+  if (endpoint === EModelEndpoint.bingAI) {
     return jailbreak ? 'Sydney' : 'BingAI';
   }
 
-  if (endpoint === 'anthropic') {
+  if (endpoint === EModelEndpoint.anthropic) {
     return modelLabel ?? 'Anthropic';
   }
 
-  if (endpoint === 'google') {
+  if (endpoint === EModelEndpoint.google) {
     return modelLabel ?? 'PaLM2';
   }
 
@@ -325,4 +352,5 @@ const getResponseSender = (endpointOption) => {
 module.exports = {
   parseConvo,
   getResponseSender,
+  EModelEndpoint,
 };

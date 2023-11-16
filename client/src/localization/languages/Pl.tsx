@@ -194,6 +194,7 @@ export default {
   com_nav_confirm_clear: 'Potwierdź usunięcie',
   com_nav_close_sidebar: 'Zamknij pasek boczny',
   com_nav_open_sidebar: 'Otwórz pasek boczny',
+  com_nav_send_message: 'Wyślij wiadomość',
   com_nav_log_out: 'Wyloguj',
   com_nav_user: 'Użytkownik',
   com_nav_clear_conversation: 'Wyczyść rozmowę',

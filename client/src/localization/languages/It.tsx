@@ -253,6 +253,7 @@ export default {
   com_nav_confirm_clear: 'Conferma la cancellazione',
   com_nav_close_sidebar: 'Chiudi la barra laterale',
   com_nav_open_sidebar: 'Apri la barra laterale',
+  com_nav_send_message: 'Invia messaggio',
   com_nav_log_out: 'Esci',
   com_nav_user: 'UTENTE',
   com_nav_clear_conversation: 'Cancella conversazioni',
