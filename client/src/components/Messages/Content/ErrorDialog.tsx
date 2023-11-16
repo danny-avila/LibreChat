@@ -35,7 +35,9 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
   };
 
   const handlePurchase = async () => {
-    if (selectedTokens === null) {return;} // Ensure a package is selected
+    if (selectedTokens === null) {
+      return;
+    } // Ensure a package is selected
 
     setProcessingTokenAmount(selectedTokens);
     let amount;
@@ -74,6 +76,13 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
         console.error(error);
       } else {
         await fetchTokenBalance();
+
+        // Google Ads Conversion Tracking
+        window.gtag('event', 'conversion', {
+          send_to: 'AW-11258294301/1kv0CLC2sfcYEJ3gr_gp',
+          value: amount,
+          currency: 'CNY',
+        });
       }
     } catch (error) {
       console.error('Error:', error);
