@@ -1,12 +1,12 @@
 import { Fragment, Suspense } from 'react';
 import type { TResPlugin } from 'librechat-data-provider';
 import type { TMessageContent, TText, TDisplayProps } from '~/common';
-import Container from '~/components/Messages/Content/Container';
 import Plugin from '~/components/Messages/Content/Plugin';
 import Error from '~/components/Messages/Content/Error';
 import { DelayedRender } from '~/components/ui';
 import { useAuthContext } from '~/hooks';
 import EditMessage from './EditMessage';
+import Container from './Container';
 import Markdown from './Markdown';
 import { cn } from '~/utils';
 

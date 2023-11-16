@@ -154,7 +154,7 @@ export default function Nav({ navVisible, setNavVisible }) {
       <Tooltip>
         <div
           className={
-            'nav active dark max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-900 md:max-w-[260px]'
+            'nav active dark max-w-[320px] flex-shrink-0 overflow-x-hidden bg-black md:max-w-[260px]'
           }
           style={{
             width: navVisible ? navWidth : '0px',
