@@ -134,6 +134,8 @@ export default function OptionsBar({ messagesTree }) {
           <ModelSelect conversation={conversation} setOption={setOption} isMultiChat={true} />
           {!noSettings[endpoint] && (
             <Button
+              id="advanced-mode-button"
+              customId="advanced-mode-button"
               type="button"
               className={cn(
                 cardStyle,
@@ -141,7 +143,7 @@ export default function OptionsBar({ messagesTree }) {
               )}
               onClick={triggerAdvancedMode}
             >
-              <Settings2 className="w-4 text-gray-600 dark:text-white" />
+              <Settings2 id="advanced-settings" className="w-4 text-gray-600 dark:text-white" />
             </Button>
           )}
         </div>

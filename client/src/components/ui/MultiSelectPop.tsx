@@ -46,7 +46,7 @@ function SelectDropDownPop({
             <button
               data-testid="select-dropdown-button"
               className={cn(
-                'relative flex cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
+                'relative flex cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-white/20 dark:bg-gray-800 dark:bg-gray-800 sm:text-sm',
                 className ?? '',
               )}
             >
@@ -108,7 +108,7 @@ function SelectDropDownPop({
             <Content
               side="bottom"
               align="start"
-              className="mt-2 max-h-60 min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-100 bg-gray-900 bg-white shadow-lg dark:border-gray-700 dark:text-white"
+              className="mt-2 max-h-60 min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-white"
             >
               {availableValues.map((option) => {
                 if (!option) {
@@ -127,7 +127,7 @@ function SelectDropDownPop({
                         <img
                           src={option.icon}
                           alt={`${option.name} logo`}
-                          className="icon-sm mr-1 rounded-sm bg-white bg-cover"
+                          className="icon-sm mr-1 rounded-sm bg-white bg-cover dark:bg-gray-800"
                         />
                       ) : (
                         <Wrench className="icon-sm mr-1 rounded-sm bg-white bg-cover dark:bg-gray-800" />

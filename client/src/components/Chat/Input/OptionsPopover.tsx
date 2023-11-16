@@ -24,7 +24,15 @@ export default function OptionsPopover({
   PopoverButtons,
 }: TOptionsPopoverProps) {
   const popoverRef = useRef(null);
-  useOnClickOutside(popoverRef, () => closePopover(), ['dialog-template-content']);
+  useOnClickOutside(
+    popoverRef,
+    () => closePopover(),
+    ['dialog-template-content', 'shadcn-button', 'advanced-settings'],
+    (target) => {
+      const tagName = (target as Element)?.tagName;
+      return tagName === 'path' || tagName === 'svg' || tagName === 'circle';
+    },
+  );
 
   const localize = useLocalize();
   const cardStyle =
