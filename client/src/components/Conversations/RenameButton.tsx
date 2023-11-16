@@ -1,11 +1,10 @@
-import React, { ReactElement } from 'react';
-import RenameIcon from '../svg/RenameIcon';
-import CheckMark from '../svg/CheckMark';
+import type { MouseEvent, ReactElement } from 'react';
+import { RenameIcon, CheckMark } from '~/components/svg';
 
 interface RenameButtonProps {
   renaming: boolean;
-  renameHandler: () => void;
-  onRename: () => void;
+  renameHandler: (e: MouseEvent<HTMLButtonElement>) => void;
+  onRename: (e: MouseEvent<HTMLButtonElement>) => void;
   twcss?: string;
 }
 

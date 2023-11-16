@@ -15,6 +15,7 @@ const {
   messageUserLimiter,
 } = require('../../middleware');
 const { isEnabled } = require('../../utils');
+const { EModelEndpoint } = require('../endpoints/schemas');
 
 const { LIMIT_CONCURRENT_MESSAGES, LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 
@@ -34,11 +35,11 @@ if (isEnabled(LIMIT_MESSAGE_USER)) {
   router.use(messageUserLimiter);
 }
 
-router.use(['/azureOpenAI', '/openAI'], openAI);
-router.use('/google', google);
-router.use('/bingAI', bingAI);
-router.use('/chatGPTBrowser', askChatGPTBrowser);
-router.use('/gptPlugins', gptPlugins);
-router.use('/anthropic', anthropic);
+router.use([`/${EModelEndpoint.azureOpenAI}`, `/${EModelEndpoint.openAI}`], openAI);
+router.use(`/${EModelEndpoint.google}`, google);
+router.use(`/${EModelEndpoint.bingAI}`, bingAI);
+router.use(`/${EModelEndpoint.chatGPTBrowser}`, askChatGPTBrowser);
+router.use(`/${EModelEndpoint.gptPlugins}`, gptPlugins);
+router.use(`/${EModelEndpoint.anthropic}`, anthropic);
 
 module.exports = router;

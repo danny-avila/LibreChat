@@ -1,18 +1,20 @@
 import type { TConversation, TPreset, TEndpointsConfig } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import getLocalStorageItems from './getLocalStorageItems';
 
 type TConvoSetup = Partial<TPreset> | Partial<TConversation>;
 
 type TDefaultEndpoint = { convoSetup: TConvoSetup; endpointsConfig: TEndpointsConfig };
 
-const defaultEndpoints = [
-  'openAI',
-  'azureOpenAI',
-  'bingAI',
-  'chatGPTBrowser',
-  'gptPlugins',
-  'google',
-  'anthropic',
+export const defaultEndpoints: EModelEndpoint[] = [
+  EModelEndpoint.openAI,
+  EModelEndpoint.assistant,
+  EModelEndpoint.azureOpenAI,
+  EModelEndpoint.bingAI,
+  EModelEndpoint.chatGPTBrowser,
+  EModelEndpoint.gptPlugins,
+  EModelEndpoint.google,
+  EModelEndpoint.anthropic,
 ];
 
 const getEndpointFromSetup = (convoSetup: TConvoSetup, endpointsConfig: TEndpointsConfig) => {
