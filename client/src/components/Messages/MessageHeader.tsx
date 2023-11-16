@@ -89,8 +89,9 @@ const MessageHeader = ({ isSearchView = false }) => {
     <>
       <div
         className={cn(
-          'flex min-h-[60px] w-full flex-wrap items-center justify-between gap-3 border-b border-black/10 bg-white text-sm text-gray-500 transition-all hover:bg-gray-50 hover:bg-opacity-30 dark:border-gray-900/50 dark:bg-gray-800 dark:hover:bg-gray-700 dark:hover:bg-opacity-100',
-          isNotClickable ? '' : 'cursor-pointer ',
+          'flex min-h-[60px] w-full flex-wrap items-center justify-between gap-3 border-b border-black/10 bg-white text-sm text-gray-500 transition-all hover:bg-gray-50 dark:border-gray-900/50 dark:bg-gray-800 dark:hover:bg-gray-700',
+          isNotClickable ? '' : 'cursor-pointer',
+          'sticky top-0 z-10',
         )}
         onClick={() => (isNotClickable ? null : setSaveAsDialogShow(true))}
       >

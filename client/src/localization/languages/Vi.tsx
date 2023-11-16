@@ -253,6 +253,7 @@ export default {
   com_nav_confirm_clear: 'Xác nhận xóa',
   com_nav_close_sidebar: 'Đóng thanh bên',
   com_nav_open_sidebar: 'Mở thanh bên',
+  com_nav_send_message: 'Gửi tin nhắn',
   com_nav_log_out: 'Đăng xuất',
   com_nav_user: 'NGƯỜI DÙNG',
   com_nav_clear_conversation: 'Xóa cuộc trò chuyện',

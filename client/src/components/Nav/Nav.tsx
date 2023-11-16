@@ -221,7 +221,7 @@ export default function Nav({ navVisible, setNavVisible }) {
           </div>
         </div>
         {!navVisible && (
-          <div className="absolute left-2 top-2 z-10 hidden md:inline-block">
+          <div className="absolute left-2 top-2 z-20 hidden md:inline-block">
             <TooltipTrigger asChild>
               <button
                 type="button"

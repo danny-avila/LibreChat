@@ -245,6 +245,7 @@ export default {
   com_nav_confirm_clear: 'Confirm Clear',
   com_nav_close_sidebar: 'サイドバーを閉じる',
   com_nav_open_sidebar: 'サイドバーを開く',
+  com_nav_send_message: 'メッセージを送信する',
   com_nav_log_out: 'ログアウト',
   com_nav_user: 'ユーザ',
   com_nav_clear_conversation: '会話を削除する',
