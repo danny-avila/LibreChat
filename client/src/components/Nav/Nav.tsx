@@ -144,6 +144,12 @@ export default function Nav({ navVisible, setNavVisible }) {
     setNavVisible((prev: boolean) => !prev);
   };
 
+  const itemToggleNav = () => {
+    if (isSmallScreen) {
+      toggleNavVisible();
+    }
+  };
+
   const containerClasses =
     getConversationsQuery.isLoading && pageNumber === 1
       ? 'flex flex-col gap-2 text-gray-100 text-sm h-full justify-center items-center'
@@ -172,7 +178,7 @@ export default function Nav({ navVisible, setNavVisible }) {
               >
                 <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
                   <div className="mb-1 flex h-11 flex-row">
-                    <NewChat />
+                    <NewChat toggleNav={itemToggleNav} />
                   </div>
                   {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                   <div
@@ -187,7 +193,11 @@ export default function Nav({ navVisible, setNavVisible }) {
                       {(getConversationsQuery.isLoading && pageNumber === 1) || isFetching ? (
                         <Spinner />
                       ) : (
-                        <Conversations conversations={conversations} moveToTop={moveToTop} />
+                        <Conversations
+                          conversations={conversations}
+                          moveToTop={moveToTop}
+                          toggleNav={itemToggleNav}
+                        />
                       )}
                       <Pages
                         pageNumber={pageNumber}
