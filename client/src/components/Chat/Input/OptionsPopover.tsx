@@ -28,15 +28,22 @@ export default function OptionsPopover({
     popoverRef,
     () => closePopover(),
     ['dialog-template-content', 'shadcn-button', 'advanced-settings'],
-    (target) => {
-      const tagName = (target as Element)?.tagName;
+    (_target) => {
+      const target = _target as Element;
+      if (
+        target?.id === 'presets-button' ||
+        (target?.parentNode instanceof Element && target.parentNode.id === 'presets-button')
+      ) {
+        return false;
+      }
+      const tagName = target?.tagName;
       return tagName === 'path' || tagName === 'svg' || tagName === 'circle';
     },
   );
 
   const localize = useLocalize();
   const cardStyle =
-    'shadow-xl rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white';
+    'shadow-xl rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white ';
 
   if (!visible) {
     return null;
@@ -45,7 +52,7 @@ export default function OptionsPopover({
   return (
     <Portal>
       <Content sideOffset={8} align="start" ref={popoverRef} asChild>
-        <div className="z-0 flex w-full flex-col items-center md:px-4">
+        <div className="z-[70] flex w-screen flex-col items-center md:w-full md:px-4">
           <div
             className={cn(
               cardStyle,
