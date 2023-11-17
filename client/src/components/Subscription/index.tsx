@@ -159,6 +159,14 @@ function SubscriptionContent() {
     fetchSubscriptionData();
   }, [userId]);
 
+  const containerStyles = {
+    position: 'absolute', // or 'fixed' based on your requirement
+    top: '40%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)', // Centers the box both vertically and horizontally
+    // other styles if needed
+  };
+
   const boxStyles = {
     border: '2px solid #e0e0e0',
     borderRadius: '6px',
@@ -180,85 +188,88 @@ function SubscriptionContent() {
         ← {localize(lang, 'com_ui_back')}
       </button>
 
-      <div style={boxStyles}>
-        <div style={{ marginBottom: '1.5rem' }}>
-          <h2 style={{
-            fontSize: '1.5rem',
-            marginBottom: '0.5rem'
-          }}>Plan Subscription</h2>
-          <p style={{
-            marginBottom: '3rem'
-          }}></p>
-        </div>
+      <div style={containerStyles}>
+        <div style={boxStyles}>
+          <div style={{ marginBottom: '1.5rem' }}>
+            <h2 style={{
+              fontSize: '1.5rem',
+              marginBottom: '0.5rem',
+              textAlign: 'center'
+            }}>Plan Subscription</h2>
+            <p style={{
+              marginBottom: '3rem'
+            }}></p>
+          </div>
 
-        <div style={{ marginBottom: '1.5rem' }}>
-          <h2 style={{
-            fontSize: '1.5rem',
-            marginBottom: '0.5rem'
-          }}>Pricing</h2>
-          <ul style={{
-            marginBottom: '0.5rem',
-            listStyleType: 'disc',
-            paddingLeft: '1.5rem',
+          <div style={{ marginBottom: '1.5rem' }}>
+            <h2 style={{
+              fontSize: '1.5rem',
+              marginBottom: '0.5rem'
+            }}>Pricing:</h2>
+            <ul style={{
+              marginBottom: '0.5rem',
+              listStyleType: 'disc',
+              paddingLeft: '1.5rem',
+            }}>
+              <li>20 USD / month</li>
+            </ul>
+          </div>
+
+          <div style={{ marginBottom: '1.5rem' }}>
+            <h2 style={{
+              fontSize: '1.5rem',
+              marginBottom: '0.5rem'
+            }}>Expiration Date:</h2>
+            <ul style={{
+              marginBottom: '0.5rem',
+              listStyleType: 'disc',
+              paddingLeft: '1.5rem',
+            }}>
+              <li>{subscriptionDueDate ? subscriptionDueDate : 'Loading subscription expiration date...'}</li>
+              <li>Please renew your subscription before or on the expiration day!</li>
+            </ul>
+          </div>
+
+          <div style={{ marginBottom: '1.5rem' }}>
+            <h2 style={{
+              fontSize: '1.5rem',
+              marginBottom: '0.5rem'
+            }}>
+
+            </h2>
+          </div>
+
+          <div style={{ marginBottom: '1.5rem' }}>
+            <h2 style={{
+              fontSize: '1.5rem',
+              marginBottom: '0rem'
+            }}>Payment Method:</h2>
+          </div>
+
+          <div style={{
+            width: '90%',
+            padding: '2px',
+            border: '1px solid #e0e0e0',
+            borderRadius: '6px',
+            textAlign: 'center',
+            marginLeft: '6%',
           }}>
-            <li>20 USD / month</li>
-          </ul>
-        </div>
-
-        <div style={{ marginBottom: '1.5rem' }}>
-          <h2 style={{
-            fontSize: '1.5rem',
-            marginBottom: '0.5rem'
-          }}>Expiration Date</h2>
-          <ul style={{
-            marginBottom: '0.5rem',
-            listStyleType: 'disc',
-            paddingLeft: '1.5rem',
-          }}>
-            <li>{subscriptionDueDate ? subscriptionDueDate : 'Loading subscription expiration date...'}</li>
-            <li>Please renew you subcription before or at the expiration day!</li>
-          </ul>
-        </div>
-
-        <div style={{ marginBottom: '1.5rem' }}>
-          <h2 style={{
-            fontSize: '1.5rem',
-            marginBottom: '0.5rem'
-          }}>
-
-          </h2>
-        </div>
-
-        <div style={{ marginBottom: '1.5rem' }}>
-          <h2 style={{
-            fontSize: '1.5rem',
-            marginBottom: '0rem'
-          }}>Payment Method</h2>
-        </div>
-
-        <div style={{
-          width: '90%',
-          padding: '2px',
-          border: '1px solid #e0e0e0',
-          borderRadius: '6px',
-          textAlign: 'center',
-          marginLeft: '6%',
-        }}>
-          <button
-            onClick={handleSubscription}
-            style={{
-              width: '100%',
-              padding: '5px 0',
-              backgroundColor: '#007bff',
-              color: 'white',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              border: 'none',
-              fontSize: '22px'
-            }}
-          >
-            PayPal
-          </button>
+            <button
+              onClick={handleSubscription}
+              style={{
+                width: '100%',
+                padding: '5px 0',
+                backgroundColor: '#007bff',
+                color: 'white',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                border: 'none',
+                fontSize: '22px'
+              }}
+            >
+              PayPal
+            </button>
+          </div>
         </div>
       </div>
     </>

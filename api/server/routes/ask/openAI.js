@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const router = express.Router();
 const { titleConvo, OpenAIClient } = require('../../../app');
@@ -12,8 +13,11 @@ const requireJwtAuth = require('../../../middleware/requireJwtAuth');
 const checkSubscription = require('../../../middleware/checkSubscription.js');
 const trieSensitive = require('../../../utils/trieSensitive');
 const { getMessagesCount } = require('../../../models/Message');
+const Payment = require('../../../models/payments');
 
 const abortControllers = new Map();
+
+const baseUrl = process.env.BASE_URL
 
 router.post('/abort', requireJwtAuth, async (req, res) => {
   return await abortMessage(req, res, abortControllers);
@@ -40,7 +44,6 @@ router.post('/', requireJwtAuth, checkSubscription, async (req, res) => {
     }
   };
 
-  console.log('ask log');
   console.dir({ text, conversationId, endpointOption }, { depth: null });
 
   // eslint-disable-next-line no-use-before-define
@@ -128,6 +131,44 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
     };
   };
 
+  let someTimeAgo = new Date();
+  someTimeAgo.setSeconds(someTimeAgo.getSeconds() - 60 * 60 * 24); // 24 hours
+
+  let quota = JSON.parse(process.env.CHAT_QUOTA_PER_SECOND);
+
+  if (endpointOption.modelOptions.model in quota) {
+    let messagesCount = await getMessagesCount({
+      senderId: req.user.id,
+      model: endpointOption.modelOptions.model,
+      updatedAt: { $gte: someTimeAgo },
+    });
+
+    const userId = req.user.id
+    let dailyQuota = (quota[endpointOption.modelOptions.model] * 60 * 60 * 24).toFixed(0);
+
+    if (messagesCount >= dailyQuota) {
+      // throw new Error("Exceed daily quota! Please contact 615547 to purchase more quota via Wechat");
+      throw new Error(`超出了您的使用额度(${endpointOption.model}每天${dailyQuota}条消息)，+ 
+      如需购买更多额度, 请点击<a href="${baseUrl}/subscription/${userId}">付费计划</a>`);
+      // throw new Error(`超出了您的使用额度(${endpointOption.modelOptions.model}每天${dailyQuota}条消息`);
+    }
+  }
+
+  try {
+    const userId = req.user.id;
+    const latestPayment = await Payment.findOne({ userId: userId }).sort({ endTime: -1 });
+
+    if (!latestPayment || new Date() > latestPayment.endTime) {
+      throw new Error(`您的计划已过期，如需购买更多额度,请点击<a href="${baseUrl}/subscription/${userId}">付费计划</a>`);
+    }
+
+    req.user = { id: userId, ...latestPayment.toObject() };
+  } catch (error) {
+    console.error('Debug: Error caught in subscription check middleware', error); // Log the error
+    res.status(500).json({ message: 'Internal server error' });
+    return;
+  }
+
   const onStart = (userMessage) => {
     sendMessage(res, { message: userMessage, created: true });
     abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
@@ -152,23 +193,6 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
     }
 
     const client = new OpenAIClient(oaiApiKey, clientOptions);
-
-    let someTimeAgo = new Date();
-    someTimeAgo.setSeconds(someTimeAgo.getSeconds() - 60 * 60 * 24); // 24 hours
-
-    let quota = JSON.parse(process.env['CHAT_QUOTA_PER_SECOND']);
-    if (endpointOption.model in quota) {
-      let messagesCount = await getMessagesCount({
-        senderId: req.user.id,
-        model: endpointOption.model,
-        updatedAt: { $gte: someTimeAgo },
-      });
-      let dailyQuota = (quota[endpointOption.model] * 60 * 60 * 24).toFixed(0);
-      if (messagesCount >= dailyQuota) {
-        // throw new Error("Exceed daily quota! Please contact 615547 to purchase more quota via Wechat");
-        throw new Error(`超出了您的使用额度(${endpointOption.model}每天${dailyQuota}条消息)，请休息一下吧`);
-      }
-    }
 
     let response = await client.sendMessage(text, {
       user,
