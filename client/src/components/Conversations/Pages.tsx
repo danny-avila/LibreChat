@@ -35,7 +35,7 @@ export default function Pages({
         }
         disabled={pageNumber <= 1}
       >
-        &lt;&lt;
+        &lt;
       </button>
       <span className="flex-none text-gray-400">
         {pageNumber} / {pages}
@@ -48,7 +48,7 @@ export default function Pages({
         }
         disabled={pageNumber >= pages}
       >
-        &gt;&gt;
+        &gt;
       </button>
     </div>
   );

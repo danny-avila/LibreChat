@@ -1,18 +1,20 @@
 import type { TConversation, TPreset, TEndpointsConfig } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import getLocalStorageItems from './getLocalStorageItems';
 
 type TConvoSetup = Partial<TPreset> | Partial<TConversation>;
 
 type TDefaultEndpoint = { convoSetup: TConvoSetup; endpointsConfig: TEndpointsConfig };
 
-const defaultEndpoints = [
-  'openAI',
-  'azureOpenAI',
-  'bingAI',
-  'chatGPTBrowser',
-  'gptPlugins',
-  'google',
-  'anthropic',
+export const defaultEndpoints: EModelEndpoint[] = [
+  EModelEndpoint.openAI,
+  EModelEndpoint.assistant,
+  EModelEndpoint.azureOpenAI,
+  EModelEndpoint.bingAI,
+  EModelEndpoint.chatGPTBrowser,
+  EModelEndpoint.gptPlugins,
+  EModelEndpoint.google,
+  EModelEndpoint.anthropic,
 ];
 
 const getEndpointFromSetup = (convoSetup: TConvoSetup, endpointsConfig: TEndpointsConfig) => {
@@ -28,11 +30,18 @@ const getEndpointFromSetup = (convoSetup: TConvoSetup, endpointsConfig: TEndpoin
 const getEndpointFromLocalStorage = (endpointsConfig: TEndpointsConfig) => {
   try {
     const { lastConversationSetup } = getLocalStorageItems();
+    const { endpoint } = lastConversationSetup;
+    const isDefaultConfig = Object.values(endpointsConfig ?? {})?.every((value) => !value);
 
-    return (
-      lastConversationSetup.endpoint &&
-      (endpointsConfig[lastConversationSetup.endpoint] ? lastConversationSetup.endpoint : null)
-    );
+    if (isDefaultConfig && endpoint) {
+      return endpoint;
+    }
+
+    if (isDefaultConfig && endpoint) {
+      return endpoint;
+    }
+
+    return endpoint && endpointsConfig[endpoint] ? endpoint : null;
   } catch (error) {
     console.error(error);
     return null;

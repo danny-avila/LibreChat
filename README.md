@@ -100,6 +100,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Third-Party Tools](docs/features/third_party.md)
   * [Proxy](docs/features/proxy.md)
   * [Bing Jailbreak](docs/features/bing_jailbreak.md)
+  * [Token Usage](docs/features/token_usage.md)
 </details>
 
 <details>
@@ -112,6 +113,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Ngrok](docs/deployment/ngrok.md)
   * [HuggingFace](docs/deployment/huggingface.md)
   * [Render](docs/deployment/render.md)
+  * [Meilisearch in Render](docs/deployment/meilisearch_in_render.md)
   * [Hetzner](docs/deployment/hetzner_ubuntu.md)
   * [Heroku](docs/deployment/heroku.md)
 </details>
@@ -133,7 +135,9 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date)](https://star-history.com/#danny-avila/LibreChat&Date)
+<a href="https://star-history.com/#danny-avila/LibreChat&Date">
+  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date&theme=dark" onerror="this.src='https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date'" />
+</a>
 
 ---
 

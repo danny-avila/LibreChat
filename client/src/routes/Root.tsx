@@ -1,19 +1,21 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect, useState } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import {
-  useGetEndpointsQuery,
   useGetModelsQuery,
   useGetPresetsQuery,
   useGetSearchEnabledQuery,
 } from 'librechat-data-provider';
-
+import type { ContextType } from '~/common';
 import { Nav, MobileNav } from '~/components/Nav';
-import { useAuthContext, useServerStream } from '~/hooks';
+import { useAuthContext, useServerStream, useConversation, useNewConvo } from '~/hooks';
 import store from '~/store';
 
 export default function Root() {
+  const location = useLocation();
+  const { newConversation } = useConversation();
+  const { newConversation: newConvo } = useNewConvo();
   const { user, isAuthenticated } = useAuthContext();
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
@@ -25,12 +27,10 @@ export default function Root() {
 
   const setPresets = useSetRecoilState(store.presets);
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
-  const setEndpointsConfig = useSetRecoilState(store.endpointsConfig);
   const setModelsConfig = useSetRecoilState(store.modelsConfig);
 
-  const searchEnabledQuery = useGetSearchEnabledQuery();
-  const endpointsQuery = useGetEndpointsQuery();
-  const modelsQuery = useGetModelsQuery();
+  const searchEnabledQuery = useGetSearchEnabledQuery({ enabled: isAuthenticated });
+  const modelsQuery = useGetModelsQuery({ enabled: isAuthenticated });
   const presetsQuery = useGetPresetsQuery({ enabled: !!user });
 
   useEffect(() => {
@@ -38,16 +38,13 @@ export default function Root() {
   }, [navVisible]);
 
   useEffect(() => {
-    if (endpointsQuery.data) {
-      setEndpointsConfig(endpointsQuery.data);
-    } else if (endpointsQuery.isError) {
-      console.error('Failed to get endpoints', endpointsQuery.error);
-    }
-  }, [endpointsQuery.data, endpointsQuery.isError]);
-
-  useEffect(() => {
-    if (modelsQuery.data) {
+    if (modelsQuery.data && location.state?.from?.pathname.includes('/chat')) {
       setModelsConfig(modelsQuery.data);
+      // Note: passing modelsQuery.data prevents navigation
+      newConversation({}, undefined, modelsQuery.data);
+    } else if (modelsQuery.data) {
+      setModelsConfig(modelsQuery.data);
+      newConvo({ modelsData: modelsQuery.data });
     } else if (modelsQuery.isError) {
       console.error('Failed to get models', modelsQuery.error);
     }
@@ -80,7 +77,7 @@ export default function Root() {
         <div className="flex h-full w-full flex-1 flex-col bg-gray-50">
           <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-white pt-10 dark:bg-gray-800 md:pt-0">
             <MobileNav setNavVisible={setNavVisible} />
-            <Outlet />
+            <Outlet context={{ navVisible, setNavVisible } satisfies ContextType} />
           </div>
         </div>
       </div>

@@ -1,8 +1,12 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { Trash2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { useRecoilValue, useRecoilState } from 'recoil';
-import { useDeletePresetMutation, useCreatePresetMutation } from 'librechat-data-provider';
+import { useRecoilState } from 'recoil';
+import {
+  useDeletePresetMutation,
+  useCreatePresetMutation,
+  useGetEndpointsQuery,
+} from 'librechat-data-provider';
 import { Icon, EditPresetDialog } from '~/components/Endpoints';
 import EndpointItems from './EndpointItems';
 import PresetItems from './PresetItems';
@@ -23,7 +27,7 @@ import {
   TooltipContent,
 } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { cn, cleanupPreset } from '~/utils';
+import { cn, cleanupPreset, mapEndpoints } from '~/utils';
 import { useLocalize, useLocalStorage, useConversation, useDefaultConvo } from '~/hooks';
 import store from '~/store';
 
@@ -33,11 +37,14 @@ export default function NewConversationMenu() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showPresets, setShowPresets] = useState(true);
   const [showEndpoints, setShowEndpoints] = useState(true);
-  const [presetModelVisible, setPresetModelVisible] = useState(false);
+  const [presetModalVisible, setPresetModalVisible] = useState(false);
   const [preset, setPreset] = useState(false);
   const [conversation, setConversation] = useRecoilState(store.conversation) ?? {};
   const [messages, setMessages] = useRecoilState(store.messages);
-  const availableEndpoints = useRecoilValue(store.availableEndpoints);
+
+  const { data: availableEndpoints = [] } = useGetEndpointsQuery({
+    select: mapEndpoints,
+  });
 
   const [presets, setPresets] = useRecoilState(store.presets);
   const modularEndpoints = new Set(['gptPlugins', 'anthropic', 'google', 'openAI']);
@@ -93,7 +100,7 @@ export default function NewConversationMenu() {
     if (!newEndpoint) {
       return;
     } else {
-      newConversation({}, { endpoint: newEndpoint });
+      newConversation(null, { endpoint: newEndpoint });
     }
   };
 
@@ -124,7 +131,7 @@ export default function NewConversationMenu() {
   };
 
   const onChangePreset = (preset) => {
-    setPresetModelVisible(true);
+    setPresetModalVisible(true);
     setPreset(preset);
   };
 
@@ -262,8 +269,8 @@ export default function NewConversationMenu() {
             </DropdownMenuContent>
           </DropdownMenu>
           <EditPresetDialog
-            open={presetModelVisible}
-            onOpenChange={setPresetModelVisible}
+            open={presetModalVisible}
+            onOpenChange={setPresetModalVisible}
             preset={preset}
           />
         </Dialog>

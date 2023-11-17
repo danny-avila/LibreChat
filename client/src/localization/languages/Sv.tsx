@@ -224,6 +224,10 @@ export default {
   com_endpoint_config_key_google_service_account: 'Skapa ett tjänstekonto', // Create a Service Account
   com_endpoint_config_key_google_vertex_api_role:
     'Se till att klicka på "Skapa och fortsätt" för att ge åtminstone rollen "Vertex AI-användare". Skapa slutligen en JSON-nyckel att importera här.', // Make sure to click 'Create and Continue' to give at least the 'Vertex AI User' role. Lastly, create a JSON key to import here.
+  com_nav_plugin_store: 'Pluginbutik',
+  com_nav_plugin_search: 'Sök efter plugins',
+  com_nav_plugin_auth_error:
+    'Det uppstod ett fel när försöket att autentisera denna plugin gjordes. Försök igen.',
   com_nav_export_filename: 'Filnamn', // Filename
   com_nav_export_filename_placeholder: 'Ange filnamnet', // Set the filename
   com_nav_export_type: 'Typ', // Type
@@ -242,6 +246,7 @@ export default {
   com_nav_confirm_clear: 'Bekräfta rensning', // Confirm Clear
   com_nav_close_sidebar: 'Stäng sidofält', // Close sidebar
   com_nav_open_sidebar: 'Öppna sidofält', // Open sidebar
+  com_nav_send_message: 'Skicka meddelande', // Send message
   com_nav_log_out: 'Logga ut', // Log out
   com_nav_user: 'ANVÄNDARE', // USER
   com_nav_clear_conversation: 'Rensa konversationer', // Clear conversations

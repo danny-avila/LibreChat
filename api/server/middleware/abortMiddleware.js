@@ -1,5 +1,6 @@
+const { sendMessage, sendError, countTokens, isEnabled } = require('../utils');
 const { saveMessage, getConvo, getConvoTitle } = require('../../models');
-const { sendMessage, sendError, countTokens } = require('../utils');
+const clearPendingReq = require('../../cache/clearPendingReq');
 const spendTokens = require('../../models/spendTokens');
 const abortControllers = require('./abortControllers');
 
@@ -20,6 +21,9 @@ async function abortMessage(req, res) {
 const handleAbort = () => {
   return async (req, res) => {
     try {
+      if (isEnabled(process.env.LIMIT_CONCURRENT_MESSAGES)) {
+        await clearPendingReq({ userId: req.user.id });
+      }
       return await abortMessage(req, res);
     } catch (err) {
       console.error(err);

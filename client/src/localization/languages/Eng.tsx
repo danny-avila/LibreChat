@@ -2,7 +2,7 @@
 
 export default {
   com_ui_examples: 'Examples',
-  com_ui_new_chat: 'New chat',
+  com_ui_new_chat: 'New Chat',
   com_ui_example_quantum_computing: 'Explain quantum computing in simple terms',
   com_ui_example_10_year_old_b_day: 'Got any creative ideas for a 10 year old\'s birthday?',
   com_ui_example_http_in_js: 'How do I make an HTTP request in Javascript?',
@@ -22,6 +22,7 @@ export default {
   com_ui_use_prompt: 'Use prompt',
   com_ui_prev: 'Prev',
   com_ui_next: 'Next',
+  com_ui_stop: 'Stop',
   com_ui_prompt_templates: 'Prompt Templates',
   com_ui_hide_prompt_templates: 'Hide Prompt Templates',
   com_ui_showing: 'Showing',
@@ -43,7 +44,7 @@ export default {
   com_ui_all: 'all',
   com_ui_clear: 'Clear',
   com_ui_revoke: 'Revoke',
-  com_ui_revoke_info: 'Revoke all user provided credentials.',
+  com_ui_revoke_info: 'Revoke all user provided credentials',
   com_ui_confirm_action: 'Confirm Action',
   com_ui_chats: 'chats',
   com_ui_delete: 'Delete',
@@ -226,6 +227,13 @@ export default {
   com_endpoint_config_key_google_service_account: 'Create a Service Account',
   com_endpoint_config_key_google_vertex_api_role:
     'Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role. Lastly, create a JSON key to import here.',
+  com_nav_auto_scroll: 'Auto-scroll to Newest on Open',
+  com_nav_plugin_store: 'Plugin store',
+  com_nav_plugin_search: 'Search plugins',
+  com_nav_plugin_auth_error:
+    'There was an error attempting to authenticate this plugin. Please try again.',
+  com_nav_close_menu: 'Close sidebar',
+  com_nav_open_menu: 'Open sidebar',
   com_nav_export_filename: 'Filename',
   com_nav_export_filename_placeholder: 'Set the filename',
   com_nav_export_type: 'Type',
@@ -244,6 +252,7 @@ export default {
   com_nav_confirm_clear: 'Confirm Clear',
   com_nav_close_sidebar: 'Close sidebar',
   com_nav_open_sidebar: 'Open sidebar',
+  com_nav_send_message: 'Send message',
   com_nav_log_out: 'Log out',
   com_nav_user: 'USER',
   com_nav_clear_conversation: 'Clear conversations',
@@ -268,5 +277,7 @@ export default {
   com_nav_lang_japanese: '日本語',
   com_nav_lang_swedish: 'Svenska',
   com_nav_lang_korean: '한국어',
+  com_nav_lang_vietnamese: 'Tiếng Việt',
   com_nav_lang_traditionalchinese: '繁體中文',
+  com_nav_lang_arabic: 'العربية',
 };

@@ -8,7 +8,26 @@ export enum EModelEndpoint {
   google = 'google',
   gptPlugins = 'gptPlugins',
   anthropic = 'anthropic',
+  assistant = 'assistant',
 }
+
+export const EndpointURLs: { [key in EModelEndpoint]: string } = {
+  [EModelEndpoint.azureOpenAI]: '/api/ask/azureOpenAI',
+  [EModelEndpoint.openAI]: '/api/ask/openAI',
+  [EModelEndpoint.bingAI]: '/api/ask/bingAI',
+  [EModelEndpoint.chatGPTBrowser]: '/api/ask/chatGPTBrowser',
+  [EModelEndpoint.google]: '/api/ask/google',
+  [EModelEndpoint.gptPlugins]: '/api/ask/gptPlugins',
+  [EModelEndpoint.anthropic]: '/api/ask/anthropic',
+  [EModelEndpoint.assistant]: '/api/assistants/chat',
+};
+
+export const modularEndpoints = new Set<EModelEndpoint | string>([
+  EModelEndpoint.gptPlugins,
+  EModelEndpoint.anthropic,
+  EModelEndpoint.google,
+  EModelEndpoint.openAI,
+]);
 
 export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
@@ -134,6 +153,9 @@ export const tConversationSchema = z.object({
   toneStyle: z.string().nullable().optional(),
   maxOutputTokens: z.number().optional(),
   agentOptions: tAgentOptionsSchema.nullable().optional(),
+  /* assistant */
+  assistant_id: z.string().optional(),
+  thread_id: z.string().optional(),
 });
 
 export type TConversation = z.infer<typeof tConversationSchema>;
@@ -339,25 +361,48 @@ export const gptPluginsSchema = tConversationSchema
     },
   }));
 
+export function removeNullishValues<T extends object>(obj: T): T {
+  const newObj: Partial<T> = { ...obj };
+
+  (Object.keys(newObj) as Array<keyof T>).forEach((key) => {
+    if (newObj[key] === undefined || newObj[key] === null || newObj[key] === '') {
+      delete newObj[key];
+    }
+  });
+
+  return newObj as T;
+}
+
+export const assistantSchema = tConversationSchema
+  .pick({
+    model: true,
+    assistant_id: true,
+    thread_id: true,
+  })
+  .transform(removeNullishValues)
+  .catch(() => ({}));
+
 type EndpointSchema =
   | typeof openAISchema
   | typeof googleSchema
   | typeof bingAISchema
   | typeof anthropicSchema
   | typeof chatGPTBrowserSchema
-  | typeof gptPluginsSchema;
+  | typeof gptPluginsSchema
+  | typeof assistantSchema;
 
 const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
-  openAI: openAISchema,
-  azureOpenAI: openAISchema,
-  google: googleSchema,
-  bingAI: bingAISchema,
-  anthropic: anthropicSchema,
-  chatGPTBrowser: chatGPTBrowserSchema,
-  gptPlugins: gptPluginsSchema,
+  [EModelEndpoint.openAI]: openAISchema,
+  [EModelEndpoint.azureOpenAI]: openAISchema,
+  [EModelEndpoint.google]: googleSchema,
+  [EModelEndpoint.bingAI]: bingAISchema,
+  [EModelEndpoint.anthropic]: anthropicSchema,
+  [EModelEndpoint.chatGPTBrowser]: chatGPTBrowserSchema,
+  [EModelEndpoint.gptPlugins]: gptPluginsSchema,
+  [EModelEndpoint.assistant]: assistantSchema,
 };
 
-function getFirstDefinedValue(possibleValues: string[]) {
+export function getFirstDefinedValue(possibleValues: string[]) {
   let returnValue;
   for (const value of possibleValues) {
     if (value) {
@@ -368,7 +413,7 @@ function getFirstDefinedValue(possibleValues: string[]) {
   return returnValue;
 }
 
-type TPossibleValues = {
+export type TPossibleValues = {
   models: string[];
   secondaryModels?: string[];
 };
@@ -400,7 +445,7 @@ export const parseConvo = (
 
 export type TEndpointOption = {
   endpoint: EModelEndpoint;
-  model?: string;
+  model?: string | null;
   promptPrefix?: string;
   temperature?: number;
   chatGptLabel?: string | null;
@@ -412,21 +457,244 @@ export type TEndpointOption = {
 export const getResponseSender = (endpointOption: TEndpointOption): string => {
   const { endpoint, chatGptLabel, modelLabel, jailbreak } = endpointOption;
 
-  if (['openAI', 'azureOpenAI', 'gptPlugins', 'chatGPTBrowser'].includes(endpoint)) {
+  if (
+    [
+      EModelEndpoint.openAI,
+      EModelEndpoint.azureOpenAI,
+      EModelEndpoint.gptPlugins,
+      EModelEndpoint.chatGPTBrowser,
+    ].includes(endpoint)
+  ) {
     return chatGptLabel ?? 'ChatGPT';
   }
 
-  if (endpoint === 'bingAI') {
+  if (endpoint === EModelEndpoint.bingAI) {
     return jailbreak ? 'Sydney' : 'BingAI';
   }
 
-  if (endpoint === 'anthropic') {
+  if (endpoint === EModelEndpoint.anthropic) {
     return modelLabel ?? 'Anthropic';
   }
 
-  if (endpoint === 'google') {
+  if (endpoint === EModelEndpoint.google) {
     return modelLabel ?? 'PaLM2';
   }
 
   return '';
+};
+
+export const compactOpenAISchema = tConversationSchema
+  .pick({
+    model: true,
+    chatGptLabel: true,
+    promptPrefix: true,
+    temperature: true,
+    top_p: true,
+    presence_penalty: true,
+    frequency_penalty: true,
+  })
+  .transform((obj: Partial<TConversation>) => {
+    const newObj: Partial<TConversation> = { ...obj };
+    if (newObj.model === 'gpt-3.5-turbo') {
+      delete newObj.model;
+    }
+    if (newObj.temperature === 1) {
+      delete newObj.temperature;
+    }
+    if (newObj.top_p === 1) {
+      delete newObj.top_p;
+    }
+    if (newObj.presence_penalty === 0) {
+      delete newObj.presence_penalty;
+    }
+    if (newObj.frequency_penalty === 0) {
+      delete newObj.frequency_penalty;
+    }
+
+    return removeNullishValues(newObj);
+  })
+  .catch(() => ({}));
+
+export const compactGoogleSchema = tConversationSchema
+  .pick({
+    model: true,
+    modelLabel: true,
+    promptPrefix: true,
+    examples: true,
+    temperature: true,
+    maxOutputTokens: true,
+    topP: true,
+    topK: true,
+  })
+  .transform((obj) => {
+    const newObj: Partial<TConversation> = { ...obj };
+    if (newObj.model === 'chat-bison') {
+      delete newObj.model;
+    }
+    if (newObj.temperature === 0.2) {
+      delete newObj.temperature;
+    }
+    if (newObj.maxOutputTokens === 1024) {
+      delete newObj.maxOutputTokens;
+    }
+    if (newObj.topP === 0.95) {
+      delete newObj.topP;
+    }
+    if (newObj.topK === 40) {
+      delete newObj.topK;
+    }
+
+    return removeNullishValues(newObj);
+  })
+  .catch(() => ({}));
+
+export const compactAnthropicSchema = tConversationSchema
+  .pick({
+    model: true,
+    modelLabel: true,
+    promptPrefix: true,
+    temperature: true,
+    maxOutputTokens: true,
+    topP: true,
+    topK: true,
+  })
+  .transform((obj) => {
+    const newObj: Partial<TConversation> = { ...obj };
+    if (newObj.model === 'claude-1') {
+      delete newObj.model;
+    }
+    if (newObj.temperature === 1) {
+      delete newObj.temperature;
+    }
+    if (newObj.maxOutputTokens === 4000) {
+      delete newObj.maxOutputTokens;
+    }
+    if (newObj.topP === 0.7) {
+      delete newObj.topP;
+    }
+    if (newObj.topK === 5) {
+      delete newObj.topK;
+    }
+
+    return removeNullishValues(newObj);
+  })
+  .catch(() => ({}));
+
+export const compactChatGPTSchema = tConversationSchema
+  .pick({
+    model: true,
+  })
+  .transform((obj) => {
+    const newObj: Partial<TConversation> = { ...obj };
+    // model: obj.model ?? 'text-davinci-002-render-sha',
+    if (newObj.model === 'text-davinci-002-render-sha') {
+      delete newObj.model;
+    }
+
+    return removeNullishValues(newObj);
+  })
+  .catch(() => ({}));
+
+export const compactPluginsSchema = tConversationSchema
+  .pick({
+    model: true,
+    chatGptLabel: true,
+    promptPrefix: true,
+    temperature: true,
+    top_p: true,
+    presence_penalty: true,
+    frequency_penalty: true,
+    tools: true,
+    agentOptions: true,
+  })
+  .transform((obj) => {
+    const newObj: Partial<TConversation> = { ...obj };
+    if (newObj.model === 'gpt-3.5-turbo') {
+      delete newObj.model;
+    }
+    if (newObj.chatGptLabel === null) {
+      delete newObj.chatGptLabel;
+    }
+    if (newObj.promptPrefix === null) {
+      delete newObj.promptPrefix;
+    }
+    if (newObj.temperature === 0.8) {
+      delete newObj.temperature;
+    }
+    if (newObj.top_p === 1) {
+      delete newObj.top_p;
+    }
+    if (newObj.presence_penalty === 0) {
+      delete newObj.presence_penalty;
+    }
+    if (newObj.frequency_penalty === 0) {
+      delete newObj.frequency_penalty;
+    }
+    if (newObj.tools?.length === 0) {
+      delete newObj.tools;
+    }
+
+    if (
+      newObj.agentOptions &&
+      newObj.agentOptions.agent === 'functions' &&
+      newObj.agentOptions.skipCompletion === true &&
+      newObj.agentOptions.model === 'gpt-3.5-turbo' &&
+      newObj.agentOptions.temperature === 0
+    ) {
+      delete newObj.agentOptions;
+    }
+
+    return removeNullishValues(newObj);
+  })
+  .catch(() => ({}));
+
+type CompactEndpointSchema =
+  | typeof compactOpenAISchema
+  | typeof assistantSchema
+  | typeof compactGoogleSchema
+  | typeof bingAISchema
+  | typeof compactAnthropicSchema
+  | typeof compactChatGPTSchema
+  | typeof compactPluginsSchema;
+
+const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
+  openAI: compactOpenAISchema,
+  azureOpenAI: compactOpenAISchema,
+  assistant: assistantSchema,
+  google: compactGoogleSchema,
+  /* BingAI needs all fields */
+  bingAI: bingAISchema,
+  anthropic: compactAnthropicSchema,
+  chatGPTBrowser: compactChatGPTSchema,
+  gptPlugins: compactPluginsSchema,
+};
+
+export const parseCompactConvo = (
+  endpoint: EModelEndpoint | undefined,
+  conversation: Partial<TConversation | TPreset>,
+  possibleValues?: TPossibleValues,
+) => {
+  if (!endpoint) {
+    throw new Error(`undefined endpoint: ${endpoint}`);
+  }
+
+  const schema = compactEndpointSchemas[endpoint];
+
+  if (!schema) {
+    throw new Error(`Unknown endpoint: ${endpoint}`);
+  }
+
+  const convo = schema.parse(conversation) as TConversation;
+  // const { models, secondaryModels } = possibleValues ?? {};
+  const { models } = possibleValues ?? {};
+
+  if (models && convo) {
+    convo.model = getFirstDefinedValue(models) ?? convo.model;
+  }
+
+  // if (secondaryModels && convo.agentOptions) {
+  //   convo.agentOptionmodel = getFirstDefinedValue(secondaryModels) ?? convo.agentOptionmodel;
+  // }
+
+  return convo;
 };

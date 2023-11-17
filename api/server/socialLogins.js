@@ -1,4 +1,5 @@
 const session = require('express-session');
+const RedisStore = require('connect-redis').default;
 const passport = require('passport');
 const {
   googleLogin,
@@ -7,6 +8,7 @@ const {
   facebookLogin,
   setupOpenId,
 } = require('../strategies');
+const client = require('../cache/redis');
 
 const configureSocialLogins = (app) => {
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
@@ -28,13 +30,15 @@ const configureSocialLogins = (app) => {
     process.env.OPENID_SCOPE &&
     process.env.OPENID_SESSION_SECRET
   ) {
-    app.use(
-      session({
-        secret: process.env.OPENID_SESSION_SECRET,
-        resave: false,
-        saveUninitialized: false,
-      }),
-    );
+    const sessionOptions = {
+      secret: process.env.OPENID_SESSION_SECRET,
+      resave: false,
+      saveUninitialized: false,
+    };
+    if (process.env.USE_REDIS) {
+      sessionOptions.store = new RedisStore({ client, prefix: 'librechat' });
+    }
+    app.use(session(sessionOptions));
     app.use(passport.session());
     setupOpenId();
   }

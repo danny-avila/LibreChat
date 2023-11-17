@@ -1,36 +1,25 @@
 import { useRecoilValue } from 'recoil';
-import { OpenAISettings, BingAISettings, AnthropicSettings } from './Settings';
-import { GoogleSettings, PluginsSettings } from './Settings/MultiView';
-import type { TSettingsProps, TModelSelectProps, TBaseSettingsProps, TModels } from '~/common';
+import type { TSettingsProps } from '~/common';
+import { getSettings } from './Settings';
 import { cn } from '~/utils';
 import store from '~/store';
-
-const optionComponents: { [key: string]: React.FC<TModelSelectProps> } = {
-  openAI: OpenAISettings,
-  azureOpenAI: OpenAISettings,
-  bingAI: BingAISettings,
-  anthropic: AnthropicSettings,
-};
-
-const multiViewComponents: { [key: string]: React.FC<TBaseSettingsProps & TModels> } = {
-  google: GoogleSettings,
-  gptPlugins: PluginsSettings,
-};
 
 export default function Settings({
   conversation,
   setOption,
   isPreset = false,
   className = '',
-}: TSettingsProps) {
+  isMultiChat = false,
+}: TSettingsProps & { isMultiChat?: boolean }) {
   const modelsConfig = useRecoilValue(store.modelsConfig);
   if (!conversation?.endpoint) {
     return null;
   }
 
+  const { settings, multiViewSettings } = getSettings(isMultiChat);
   const { endpoint } = conversation;
   const models = modelsConfig?.[endpoint] ?? [];
-  const OptionComponent = optionComponents[endpoint];
+  const OptionComponent = settings[endpoint];
 
   if (OptionComponent) {
     return (
@@ -45,7 +34,7 @@ export default function Settings({
     );
   }
 
-  const MultiViewComponent = multiViewComponents[endpoint];
+  const MultiViewComponent = multiViewSettings[endpoint];
 
   if (!MultiViewComponent) {
     return null;

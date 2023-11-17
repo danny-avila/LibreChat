@@ -1,13 +1,16 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { useRecoilState, useSetRecoilState } from 'recoil';
 import { useUpdateConversationMutation } from 'librechat-data-provider';
-import RenameButton from './RenameButton';
-import DeleteButton from './DeleteButton';
-import { MinimalIcon } from '~/components/Endpoints';
 import { useConversations, useConversation } from '~/hooks';
+import { MinimalIcon } from '~/components/Endpoints';
+import { NotificationSeverity } from '~/common';
+import { useToastContext } from '~/Providers';
+import DeleteButton from './DeleteButton';
+import RenameButton from './RenameButton';
 import store from '~/store';
 
 export default function Conversation({ conversation, retainView }) {
+  const { showToast } = useToastContext();
   const [currentConversation, setCurrentConversation] = useRecoilState(store.conversation);
   const setSubmission = useSetRecoilState(store.submission);
 
@@ -63,7 +66,28 @@ export default function Conversation({ conversation, retainView }) {
     if (titleInput === title) {
       return;
     }
-    updateConvoMutation.mutate({ conversationId, title: titleInput });
+    updateConvoMutation.mutate(
+      { conversationId, title: titleInput },
+      {
+        onSuccess: () => {
+          refreshConversations();
+          if (conversationId == currentConversation?.conversationId) {
+            setCurrentConversation((prevState) => ({
+              ...prevState,
+              title: titleInput,
+            }));
+          }
+        },
+        onError: () => {
+          setTitleInput(title);
+          showToast({
+            message: 'Failed to rename conversation',
+            severity: NotificationSeverity.ERROR,
+            showIcon: true,
+          });
+        },
+      },
+    );
   };
 
   const icon = MinimalIcon({
@@ -73,19 +97,6 @@ export default function Conversation({ conversation, retainView }) {
     error: false,
     className: 'mr-0',
   });
-
-  useEffect(() => {
-    if (updateConvoMutation.isSuccess) {
-      refreshConversations();
-      if (conversationId == currentConversation?.conversationId) {
-        setCurrentConversation((prevState) => ({
-          ...prevState,
-          title: titleInput,
-        }));
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [updateConvoMutation.isSuccess]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
@@ -100,7 +111,7 @@ export default function Conversation({ conversation, retainView }) {
 
   if (currentConversation?.conversationId !== conversationId) {
     aProps.className =
-      'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-gray-800 hover:pr-4';
+      'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-gray-900 hover:pr-4';
   }
 
   return (
@@ -138,7 +149,7 @@ export default function Conversation({ conversation, retainView }) {
           />
         </div>
       ) : (
-        <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-gray-900 group-hover:from-gray-700/70" />
+        <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-black group-hover:from-gray-900" />
       )}
     </a>
   );

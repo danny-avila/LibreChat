@@ -8,147 +8,147 @@ const conversationPreset = {
   // for azureOpenAI, openAI, chatGPTBrowser only
   model: {
     type: String,
-    default: null,
+    // default: null,
     required: false,
   },
   // for azureOpenAI, openAI only
   chatGptLabel: {
     type: String,
-    default: null,
+    // default: null,
     required: false,
   },
   // for google only
   modelLabel: {
     type: String,
-    default: null,
+    // default: null,
     required: false,
   },
   promptPrefix: {
     type: String,
-    default: null,
+    // default: null,
     required: false,
   },
   temperature: {
     type: Number,
-    default: 1,
+    // default: 1,
     required: false,
   },
   top_p: {
     type: Number,
-    default: 1,
+    // default: 1,
     required: false,
   },
   // for google only
   topP: {
     type: Number,
-    default: 0.95,
+    // default: 0.95,
     required: false,
   },
   topK: {
     type: Number,
-    default: 40,
+    // default: 40,
     required: false,
   },
   maxOutputTokens: {
     type: Number,
-    default: 1024,
+    // default: 1024,
     required: false,
   },
   presence_penalty: {
     type: Number,
-    default: 0,
+    // default: 0,
     required: false,
   },
   frequency_penalty: {
     type: Number,
-    default: 0,
+    // default: 0,
     required: false,
   },
   // for bingai only
   jailbreak: {
     type: Boolean,
-    default: false,
+    // default: false,
   },
   context: {
     type: String,
-    default: null,
+    // default: null,
   },
   systemMessage: {
     type: String,
-    default: null,
+    // default: null,
   },
   toneStyle: {
     type: String,
-    default: null,
+    // default: null,
   },
 };
 
 const agentOptions = {
   model: {
     type: String,
-    default: null,
+    // default: null,
     required: false,
   },
   // for azureOpenAI, openAI only
   chatGptLabel: {
     type: String,
-    default: null,
+    // default: null,
     required: false,
   },
   // for google only
   modelLabel: {
     type: String,
-    default: null,
+    // default: null,
     required: false,
   },
   promptPrefix: {
     type: String,
-    default: null,
+    // default: null,
     required: false,
   },
   temperature: {
     type: Number,
-    default: 1,
+    // default: 1,
     required: false,
   },
   top_p: {
     type: Number,
-    default: 1,
+    // default: 1,
     required: false,
   },
   // for google only
   topP: {
     type: Number,
-    default: 0.95,
+    // default: 0.95,
     required: false,
   },
   topK: {
     type: Number,
-    default: 40,
+    // default: 40,
     required: false,
   },
   maxOutputTokens: {
     type: Number,
-    default: 1024,
+    // default: 1024,
     required: false,
   },
   presence_penalty: {
     type: Number,
-    default: 0,
+    // default: 0,
     required: false,
   },
   frequency_penalty: {
     type: Number,
-    default: 0,
+    // default: 0,
     required: false,
   },
   context: {
     type: String,
-    default: null,
+    // default: null,
   },
   systemMessage: {
     type: String,
-    default: null,
+    // default: null,
   },
 };
 

@@ -1,18 +1,20 @@
-import React from 'react';
-import { useLocalize, useConversation } from '~/hooks';
+import { useLocalize, useConversation, useNewConvo, useOriginNavigate } from '~/hooks';
 
 export default function NewChat() {
   const { newConversation } = useConversation();
+  const { newConversation: newConvo } = useNewConvo();
+  const navigate = useOriginNavigate();
   const localize = useLocalize();
 
   const clickHandler = () => {
-    // dispatch(setInputValue(''));
-    // dispatch(setQuery(''));
+    newConvo();
     newConversation();
+    navigate('new');
   };
 
   return (
     <a
+      data-testid="new-chat-button"
       onClick={clickHandler}
       className="flex h-11 flex-shrink-0 flex-grow cursor-pointer items-center gap-3 rounded-md border border-white/20 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10"
     >

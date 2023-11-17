@@ -27,7 +27,7 @@ const latestMessage = atom<TMessage | null>({
   default: null,
 });
 
-const messagesSiblingIdxFamily = atomFamily({
+const messagesSiblingIdxFamily = atomFamily<number, string | null | undefined>({
   key: 'messagesSiblingIdx',
   default: 0,
 });

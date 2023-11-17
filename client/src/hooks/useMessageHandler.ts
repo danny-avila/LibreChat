@@ -1,6 +1,6 @@
 import { v4 } from 'uuid';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
-import { parseConvo, getResponseSender } from 'librechat-data-provider';
+import { parseConvo, getResponseSender, useGetEndpointsQuery } from 'librechat-data-provider';
 import type { TMessage, TSubmission, TEndpointOption } from 'librechat-data-provider';
 import type { TAskFunction } from '~/common';
 import useUserKey from './useUserKey';
@@ -14,7 +14,7 @@ const useMessageHandler = () => {
   const currentConversation = useRecoilValue(store.conversation) || { endpoint: null };
   const setSubmission = useSetRecoilState(store.submission);
   const isSubmitting = useRecoilValue(store.isSubmitting);
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
+  const { data: endpointsConfig } = useGetEndpointsQuery();
   const [messages, setMessages] = useRecoilState(store.messages);
   const { endpoint } = currentConversation;
   const { getExpiry } = useUserKey(endpoint ?? '');
@@ -75,9 +75,8 @@ const useMessageHandler = () => {
       conversationId = null;
     }
     const currentMsg: TMessage = {
-      sender: 'User',
       text,
-      current: true,
+      sender: 'User',
       isCreatedByUser: true,
       parentMessageId,
       conversationId,

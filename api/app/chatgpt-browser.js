@@ -24,7 +24,7 @@ const browserClient = async ({
     key = await getUserKey({ userId, name: 'chatGPTBrowser' });
   }
 
-  const { ChatGPTBrowserClient } = await import('@waylaidwanderer/chatgpt-api');
+  const { ChatGPTBrowserClient } = await import('nodejs-gpt');
   const store = {
     store: new KeyvFile({ filename: './data/cache.json' }),
   };

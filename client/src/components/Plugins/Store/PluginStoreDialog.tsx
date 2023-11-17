@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Dialog } from '@headlessui/react';
 import { useRecoilState } from 'recoil';
-import { X } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import store from '~/store';
 import PluginStoreItem from './PluginStoreItem';
 import PluginPagination from './PluginPagination';
@@ -15,6 +15,7 @@ import {
   TError,
 } from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useLocalize } from '~/hooks';
 
 type TPluginStoreDialogProps = {
   isOpen: boolean;
@@ -22,6 +23,7 @@ type TPluginStoreDialogProps = {
 };
 
 function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
+  const localize = useLocalize();
   const { data: availablePlugins } = useAvailablePluginsQuery();
   const { user } = useAuthContext();
   const updateUserPlugins = useUpdateUserPluginsMutation();
@@ -34,6 +36,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const [showPluginAuthForm, setShowPluginAuthForm] = useState<boolean>(false);
   const [error, setError] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [searchChanged, setSearchChanged] = useState(false);
 
   const handleInstallError = (error: TError) => {
     setError(true);
@@ -121,41 +124,67 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     },
     [itemsPerPage],
   );
+  const [searchValue, setSearchValue] = useState<string>('');
+  const filteredPlugins = availablePlugins?.filter((plugin) =>
+    plugin.name.toLowerCase().includes(searchValue.toLowerCase()),
+  );
+
+  const handleSearch = (e) => {
+    setSearchValue(e.target.value);
+    setSearchChanged(true);
+  };
 
   useEffect(() => {
-    if (user) {
-      if (user.plugins) {
-        setUserPlugins(user.plugins);
+    if (user && user.plugins) {
+      setUserPlugins(user.plugins);
+    }
+
+    if (filteredPlugins) {
+      setMaxPage(Math.ceil(filteredPlugins.length / itemsPerPage));
+      if (searchChanged) {
+        setCurrentPage(1);
+        setSearchChanged(false);
       }
     }
-    if (availablePlugins) {
-      setMaxPage(Math.ceil(availablePlugins.length / itemsPerPage));
-    }
-  }, [availablePlugins, itemsPerPage, user]);
+  }, [availablePlugins, itemsPerPage, user, searchValue, filteredPlugins, searchChanged]);
 
   const handleChangePage = (page: number) => {
     setCurrentPage(page);
   };
 
   return (
-    <Dialog open={isOpen} onClose={() => setIsOpen(false)} className="relative z-[102]">
+    <Dialog
+      open={isOpen}
+      onClose={() => {
+        setIsOpen(false);
+        setCurrentPage(1);
+        setSearchValue('');
+      }}
+      className="relative z-[102]"
+    >
       {/* The backdrop, rendered as a fixed sibling to the panel container */}
       <div className="fixed inset-0 bg-gray-500/90 transition-opacity dark:bg-gray-800/90" />
       {/* Full-screen container to center the panel */}
       <div className="fixed inset-0 flex items-center justify-center p-4">
-        <Dialog.Panel className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-900 max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl">
+        <Dialog.Panel
+          className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-900 max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
+          style={{ minHeight: '610px' }}
+        >
           <div className="flex items-center justify-between border-b-[1px] border-black/10 px-4 pb-4 pt-5 dark:border-white/10 sm:p-6">
             <div className="flex items-center">
               <div className="text-center sm:text-left">
                 <Dialog.Title className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
-                  Plugin store
+                  {localize('com_nav_plugin_store')}
                 </Dialog.Title>
               </div>
             </div>
             <div>
               <div className="sm:mt-0">
                 <button
-                  onClick={() => setIsOpen(false)}
+                  onClick={() => {
+                    setIsOpen(false);
+                    setCurrentPage(1);
+                  }}
                   className="inline-block text-gray-500 hover:text-gray-100"
                   tabIndex={0}
                 >
@@ -169,8 +198,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
               className="relative m-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
               role="alert"
             >
-              There was an error attempting to authenticate this plugin. Please try again.{' '}
-              {errorMessage}
+              {localize('com_nav_plugin_auth_error')} {errorMessage}
             </div>
           )}
           {showPluginAuthForm && (
@@ -183,12 +211,37 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
           )}
           <div className="p-4 sm:p-6 sm:pt-4">
             <div className="mt-4 flex flex-col gap-4">
+              <div style={{ position: 'relative', display: 'inline-block', width: '250px' }}>
+                <input
+                  type="text"
+                  value={searchValue}
+                  onChange={handleSearch}
+                  placeholder={localize('com_nav_plugin_search')}
+                  style={{
+                    width: '100%',
+                    paddingLeft: '30px',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px', // This rounds the corners
+                  }}
+                />
+                <Search
+                  style={{
+                    position: 'absolute',
+                    left: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    width: '16px',
+                    height: '16px',
+                  }}
+                />
+              </div>
               <div
                 ref={gridRef}
                 className="grid grid-cols-1 grid-rows-2 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                style={{ minHeight: '410px' }}
               >
-                {availablePlugins &&
-                  availablePlugins
+                {filteredPlugins &&
+                  filteredPlugins
                     .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                     .map((plugin, index) => (
                       <PluginStoreItem
@@ -202,14 +255,14 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
               </div>
             </div>
             <div className="mt-2 flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
-              {maxPage > 1 && (
-                <div>
-                  <PluginPagination
-                    currentPage={currentPage}
-                    maxPage={maxPage}
-                    onChangePage={handleChangePage}
-                  />
-                </div>
+              {maxPage > 0 ? (
+                <PluginPagination
+                  currentPage={currentPage}
+                  maxPage={maxPage}
+                  onChangePage={handleChangePage}
+                />
+              ) : (
+                <div style={{ height: '21px' }}></div>
               )}
               {/* API not yet implemented: */}
               {/* <div className="flex flex-col items-center gap-2 sm:flex-row">

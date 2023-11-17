@@ -168,6 +168,10 @@ export default {
   com_endpoint_func_hover: 'Aktiviere die Plugin Funktion für ChatGPT',
   com_endpoint_skip_hover:
     'Aktivieren Sie das Überspringen des Abschlussschritts, der die endgültige Antwort und die generierten Schritte überprüft.',
+  com_nav_plugin_store: 'Plugin-Store',
+  com_nav_plugin_search: 'Suche nach Plugins',
+  com_nav_plugin_auth_error:
+    'Beim Versuch, dieses Plugin zu authentifizieren, ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.',
   com_nav_export_filename: 'Dateiname',
   com_nav_export_filename_placeholder: 'Lege einen Dateinamen fest',
   com_nav_export_type: 'Typ',
@@ -187,6 +191,7 @@ export default {
   com_nav_confirm_clear: 'Bestätige Löschung aller Chats',
   com_nav_close_sidebar: 'Schließe Seitenleiste',
   com_nav_open_sidebar: 'Öffne Seitenleiste',
+  com_nav_send_message: 'Sende Nachricht',
   com_nav_log_out: 'Ausloggen',
   com_nav_user: 'USER',
   com_nav_clear_conversation: 'Lösche Konversation',

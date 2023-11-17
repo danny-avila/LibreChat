@@ -29,7 +29,7 @@ const askBing = async ({
     key = await getUserKey({ userId, name: 'bingAI' });
   }
 
-  const { BingAIClient } = await import('@waylaidwanderer/chatgpt-api');
+  const { BingAIClient } = await import('nodejs-gpt');
   const store = {
     store: new KeyvFile({ filename: './data/cache.json' }),
   };
@@ -94,7 +94,7 @@ const askBing = async ({
     // don't give those parameters for new conversation
     // for new conversation, conversationSignature always is null
     if (conversationSignature) {
-      options.conversationSignature = conversationSignature;
+      options.encryptedConversationSignature = conversationSignature;
       options.clientId = clientId;
       options.invocationId = invocationId;
     }

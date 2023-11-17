@@ -27,7 +27,7 @@ export default function Chat() {
   const navigate = useNavigate();
 
   //disabled by default, we only enable it when messagesTree is null
-  const messagesQuery = useGetMessagesByConvoId(conversationId ?? '', { enabled: false });
+  const messagesQuery = useGetMessagesByConvoId(conversationId ?? '', { enabled: !messagesTree });
   const getConversationMutation = useGetConversationByIdMutation(conversationId ?? '');
   const { data: config } = useGetStartupConfig();
 
@@ -89,7 +89,8 @@ export default function Chat() {
       setShouldNavigate(false);
     }
     // conversationId (in url) should always follow conversation?.conversationId, unless conversation is null
-    else if (conversation?.conversationId !== conversationId) {
+    // messagesTree is null when user navigates, but not on page refresh, so we need to navigate in this case
+    else if (conversation?.conversationId !== conversationId && !messagesTree) {
       if (shouldNavigate) {
         navigate(`/chat/${conversation?.conversationId}`);
       } else {

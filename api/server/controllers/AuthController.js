@@ -1,15 +1,14 @@
+const crypto = require('crypto');
+const cookies = require('cookie');
+const jwt = require('jsonwebtoken');
+const Balance = require('../../models/Balance');
+const { Session, User } = require('../../models');
 const {
   registerUser,
   requestPasswordReset,
   resetPassword,
   setAuthTokens,
 } = require('../services/AuthService');
-const jwt = require('jsonwebtoken');
-const Session = require('../../models/Session');
-const User = require('../../models/User');
-const Balance = require('../../models/Balance');
-const crypto = require('crypto');
-const cookies = require('cookie');
 
 const registrationController = async (req, res) => {
   try {
@@ -85,14 +84,15 @@ const refreshController = async (req, res) => {
   }
 
   try {
-    const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    let payload;
+    payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
     const userId = payload.id;
     const user = await User.findOne({ _id: userId });
     if (!user) {
       return res.status(401).redirect('/login');
     }
 
-    if (process.env.NODE_ENV === 'development') {
+    if (process.env.NODE_ENV === 'CI') {
       const token = await setAuthTokens(userId, res);
       const userObj = user.toJSON();
       return res.status(200).send({ token, user: userObj });
@@ -108,13 +108,18 @@ const refreshController = async (req, res) => {
       const token = await setAuthTokens(userId, res, session._id);
       const userObj = user.toJSON();
       res.status(200).send({ token, user: userObj });
-    } else if (payload.exp > Date.now() / 1000) {
+    } else if (req?.query?.retry) {
+      // Retrying from a refresh token request that failed (401)
+      res.status(403).send('No session found');
+    } else if (payload.exp < Date.now() / 1000) {
       res.status(403).redirect('/login');
     } else {
       res.status(401).send('Refresh token expired or not found for this user');
     }
   } catch (err) {
-    res.status(401).send('Invalid refresh token');
+    console.error('Refresh token error', refreshToken);
+    console.error(err);
+    res.status(403).send('Invalid refresh token');
   }
 };
 

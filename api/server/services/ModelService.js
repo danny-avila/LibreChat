@@ -1,17 +1,24 @@
-const Keyv = require('keyv');
+const HttpsProxyAgent = require('https-proxy-agent');
 const axios = require('axios');
+const Keyv = require('keyv');
+const { isEnabled } = require('../utils');
+const { extractBaseURL } = require('../../utils');
+const keyvRedis = require('../../cache/keyvRedis');
 // const { getAzureCredentials, genAzureChatCompletion } = require('../../utils/');
 const { openAIApiKey, userProvidedOpenAI } = require('./EndpointService').config;
 
-const modelsCache = new Keyv({ namespace: 'models' });
+const modelsCache = isEnabled(process.env.USE_REDIS)
+  ? new Keyv({ store: keyvRedis })
+  : new Keyv({ namespace: 'models' });
 
-const { OPENROUTER_API_KEY, OPENAI_REVERSE_PROXY, CHATGPT_MODELS, ANTHROPIC_MODELS } =
+const { OPENROUTER_API_KEY, OPENAI_REVERSE_PROXY, CHATGPT_MODELS, ANTHROPIC_MODELS, PROXY } =
   process.env ?? {};
 
 const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _models = []) => {
   let models = _models.slice() ?? [];
   let apiKey = openAIApiKey;
   let basePath = 'https://api.openai.com/v1';
+  let reverseProxyUrl = OPENAI_REVERSE_PROXY;
   if (opts.azure) {
     return models;
     // const azure = getAzureCredentials();
@@ -19,16 +26,13 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
     //   .split('/deployments')[0]
     //   .concat(`/models?api-version=${azure.azureOpenAIApiVersion}`);
     // apiKey = azureOpenAIApiKey;
-  }
-
-  let reverseProxyUrl = OPENAI_REVERSE_PROXY;
-
-  if (OPENROUTER_API_KEY) {
+  } else if (OPENROUTER_API_KEY) {
     reverseProxyUrl = 'https://openrouter.ai/api/v1';
+    apiKey = OPENROUTER_API_KEY;
   }
 
   if (reverseProxyUrl) {
-    basePath = reverseProxyUrl.match(/.*v1/)[0];
+    basePath = extractBaseURL(reverseProxyUrl);
   }
 
   const cachedModels = await modelsCache.get(basePath);
@@ -36,13 +40,18 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
     return cachedModels;
   }
 
-  if (basePath.includes('v1') || opts.azure) {
+  if (basePath || opts.azure) {
     try {
-      const res = await axios.get(`${basePath}${opts.azure ? '' : '/models'}`, {
+      const payload = {
         headers: {
           Authorization: `Bearer ${apiKey}`,
         },
-      });
+      };
+
+      if (PROXY) {
+        payload.httpsAgent = new HttpsProxyAgent(PROXY);
+      }
+      const res = await axios.get(`${basePath}${opts.azure ? '' : '/models'}`, payload);
 
       models = res.data.data.map((item) => item.id);
       // console.log(`Fetched ${models.length} models from ${opts.azure ? 'Azure ' : ''}OpenAI API`);

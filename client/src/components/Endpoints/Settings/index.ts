@@ -5,3 +5,4 @@ export { default as PluginsSettings } from './Plugins';
 export { default as Examples } from './Examples';
 export { default as AgentSettings } from './AgentSettings';
 export { default as AnthropicSettings } from './Anthropic';
+export * from './settings';

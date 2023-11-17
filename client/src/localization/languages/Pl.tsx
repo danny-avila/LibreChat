@@ -171,6 +171,10 @@ export default {
   com_endpoint_skip_hover:
     'Omijaj etap uzupełnienia sprawdzający ostateczną odpowiedź i generowane kroki',
   com_endpoint_config_token: 'Token konfiguracji',
+  com_nav_plugin_store: 'Sklep z wtyczkami',
+  com_nav_plugin_search: 'Wyszukiwanie wtyczek',
+  com_nav_plugin_auth_error:
+    'Wystąpił błąd podczas próby uwierzytelnienia tej wtyczki. Proszę spróbować ponownie.',
   com_nav_export_filename: 'Nazwa pliku',
   com_nav_export_filename_placeholder: 'Podaj nazwę pliku',
   com_nav_export_type: 'Typ',
@@ -190,6 +194,7 @@ export default {
   com_nav_confirm_clear: 'Potwierdź usunięcie',
   com_nav_close_sidebar: 'Zamknij pasek boczny',
   com_nav_open_sidebar: 'Otwórz pasek boczny',
+  com_nav_send_message: 'Wyślij wiadomość',
   com_nav_log_out: 'Wyloguj',
   com_nav_user: 'Użytkownik',
   com_nav_clear_conversation: 'Wyczyść rozmowę',

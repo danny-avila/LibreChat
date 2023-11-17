@@ -1,3 +1,4 @@
+const Keyv = require('keyv');
 const express = require('express');
 const router = express.Router();
 const { MeiliSearch } = require('meilisearch');
@@ -6,8 +7,15 @@ const { Conversation, getConvosQueried } = require('../../models/Conversation');
 const { reduceHits } = require('../../lib/utils/reduceHits');
 const { cleanUpPrimaryKeyValue } = require('../../lib/utils/misc');
 const requireJwtAuth = require('../middleware/requireJwtAuth');
+const keyvRedis = require('../../cache/keyvRedis');
+const { isEnabled } = require('../utils');
 
-const cache = new Map();
+const expiration = 60 * 1000;
+const cache = isEnabled(process.env.USE_REDIS)
+  ? new Keyv({ store: keyvRedis })
+  : new Keyv({ namespace: 'search', ttl: expiration });
+
+router.use(requireJwtAuth);
 
 router.get('/sync', async function (req, res) {
   await Message.syncWithMeili();
@@ -15,24 +23,20 @@ router.get('/sync', async function (req, res) {
   res.send('synced');
 });
 
-router.get('/', requireJwtAuth, async function (req, res) {
+router.get('/', async function (req, res) {
   try {
-    let user = req.user.id;
-    user = user ?? null;
+    let user = req.user.id ?? '';
     const { q } = req.query;
     const pageNumber = req.query.pageNumber || 1;
-    const key = `${user || ''}${q}`;
-
-    if (cache.has(key)) {
+    const key = `${user}:search:${q}`;
+    const cached = await cache.get(key);
+    if (cached) {
       console.log('cache hit', key);
-      const cached = cache.get(key);
       const { pages, pageSize, messages } = cached;
       res
         .status(200)
         .send({ conversations: cached[pageNumber], pages, pageNumber, pageSize, messages });
       return;
-    } else {
-      cache.clear();
     }
 
     // const message = await Message.meiliSearch(q);
@@ -67,7 +71,7 @@ router.get('/', requireJwtAuth, async function (req, res) {
       if (message.conversationId.includes('--')) {
         message.conversationId = cleanUpPrimaryKeyValue(message.conversationId);
       }
-      if (result.convoMap[message.conversationId] && !message.error) {
+      if (result.convoMap[message.conversationId]) {
         const convo = result.convoMap[message.conversationId];
         const { title, chatGptLabel, model } = convo;
         message = { ...message, ...{ title, chatGptLabel, model } };
@@ -77,7 +81,7 @@ router.get('/', requireJwtAuth, async function (req, res) {
     result.messages = activeMessages;
     if (result.cache) {
       result.cache.messages = activeMessages;
-      cache.set(key, result.cache);
+      cache.set(key, result.cache, expiration);
       delete result.cache;
     }
     delete result.convoMap;

@@ -35,6 +35,9 @@ export function revokeAllUserKeys(): Promise<unknown> {
 }
 
 export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
+  if (conversationId === 'new') {
+    return Promise.resolve([]);
+  }
   return request.get(endpoints.messages(conversationId));
 }
 
@@ -101,11 +104,11 @@ export const searchConversations = async (
   return request.get(endpoints.search(q, pageNumber));
 };
 
-export const getAIEndpoints = () => {
+export const getAIEndpoints = (): Promise<t.TEndpointsConfig> => {
   return request.get(endpoints.aiEndpoints());
 };
 
-export const getModels = () => {
+export const getModels = async (): Promise<t.TModelsConfig> => {
   return request.get(endpoints.models());
 };
 
@@ -125,7 +128,7 @@ export const register = (payload: t.TRegisterUser) => {
   return request.post(endpoints.register(), payload);
 };
 
-export const refreshToken = () => request.post(endpoints.refreshToken());
+export const refreshToken = (retry?: boolean) => request.post(endpoints.refreshToken(retry));
 
 export const userKeyQuery = (name: string): Promise<t.TCheckUserKeyResponse> =>
   request.get(endpoints.userKeyQuery(name));
@@ -154,4 +157,29 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
 
 export const getStartupConfig = (): Promise<t.TStartupConfig> => {
   return request.get(endpoints.config());
+};
+
+export const createAssistant = (data: t.AssistantCreateParams): Promise<t.Assistant> => {
+  return request.post(endpoints.assistants(), data);
+};
+
+export const getAssistantById = (assistant_id: string): Promise<t.Assistant> => {
+  return request.get(endpoints.assistants(assistant_id));
+};
+
+export const updateAssistant = (
+  assistant_id: string,
+  data: t.AssistantUpdateParams,
+): Promise<t.Assistant> => {
+  return request.patch(endpoints.assistants(assistant_id), data);
+};
+
+export const deleteAssistant = (assistant_id: string): Promise<void> => {
+  return request.delete(endpoints.assistants(assistant_id));
+};
+
+export const listAssistants = (
+  params?: t.AssistantListParams,
+): Promise<t.AssistantListResponse> => {
+  return request.get(endpoints.assistants(), { params });
 };

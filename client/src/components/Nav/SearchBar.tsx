@@ -1,6 +1,7 @@
-import { forwardRef, useState, useEffect, Ref } from 'react';
+import { forwardRef, useState, useCallback, useMemo, Ref } from 'react';
 import { Search, X } from 'lucide-react';
-import { useRecoilState } from 'recoil';
+import { useSetRecoilState } from 'recoil';
+import debounce from 'lodash/debounce';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -10,32 +11,34 @@ type SearchBarProps = {
 
 const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) => {
   const { clearSearch } = props;
-  const [searchQuery, setSearchQuery] = useRecoilState(store.searchQuery);
+  const setSearchQuery = useSetRecoilState(store.searchQuery);
   const [showClearIcon, setShowClearIcon] = useState(false);
+  const [text, setText] = useState('');
   const localize = useLocalize();
+
+  const clearText = useCallback(() => {
+    setShowClearIcon(false);
+    setSearchQuery('');
+    clearSearch();
+    setText('');
+  }, [setSearchQuery, clearSearch]);
 
   const handleKeyUp = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const { value } = e.target as HTMLInputElement;
-    /* TODO: deprecated keyCode */
-    if (e.keyCode === 8 && value === '') {
-      setSearchQuery('');
-      clearSearch();
+    if (e.key === 'Backspace' && value === '') {
+      clearText();
     }
   };
+
+  const sendRequest = useCallback((value: string) => setSearchQuery(value), [setSearchQuery]);
+  const debouncedSendRequest = useMemo(() => debounce(sendRequest, 350), [sendRequest]);
 
   const onChange = (e: React.FormEvent<HTMLInputElement>) => {
     const { value } = e.target as HTMLInputElement;
-    setSearchQuery(value);
     setShowClearIcon(value.length > 0);
+    setText(value);
+    debouncedSendRequest(value);
   };
-
-  useEffect(() => {
-    if (searchQuery.length === 0) {
-      setShowClearIcon(false);
-    } else {
-      setShowClearIcon(true);
-    }
-  }, [searchQuery]);
 
   return (
     <div
@@ -46,7 +49,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
       <input
         type="text"
         className="m-0 mr-0 w-full border-none bg-transparent p-0 pl-7 text-sm leading-tight outline-none"
-        value={searchQuery}
+        value={text}
         onChange={onChange}
         onKeyDown={(e) => {
           e.code === 'Space' ? e.stopPropagation() : null;
@@ -58,10 +61,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
         className={`absolute right-3 h-5 w-5 cursor-pointer ${
           showClearIcon ? 'opacity-100' : 'opacity-0'
         } transition-opacity duration-1000`}
-        onClick={() => {
-          setSearchQuery('');
-          clearSearch();
-        }}
+        onClick={clearText}
       />
     </div>
   );

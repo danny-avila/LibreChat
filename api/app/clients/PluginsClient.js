@@ -6,6 +6,7 @@ const { addImages, buildErrorInput, buildPromptPrefix } = require('./output_pars
 const checkBalance = require('../../models/checkBalance');
 const { formatLangChainMessages } = require('./prompts');
 const { isEnabled } = require('../../server/utils');
+const { extractBaseURL } = require('../../utils');
 const { SelfReflectionTool } = require('./tools');
 const { loadTools } = require('./tools/util');
 
@@ -34,7 +35,7 @@ class PluginsClient extends OpenAIClient {
     this.isGpt3 = this.modelOptions?.model?.includes('gpt-3');
 
     if (this.options.reverseProxyUrl) {
-      this.langchainProxy = this.options.reverseProxyUrl.match(/.*v1/)[0];
+      this.langchainProxy = extractBaseURL(this.options.reverseProxyUrl);
     }
   }
 
@@ -226,13 +227,15 @@ class PluginsClient extends OpenAIClient {
       console.debug('[handleResponseMessage] Output:', { output, errorMessage, ...result });
     const { error } = responseMessage;
     if (!error) {
-      responseMessage.tokenCount = this.getTokenCount(responseMessage.text);
-      responseMessage.completionTokens = responseMessage.tokenCount;
+      responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
+      responseMessage.completionTokens = this.getTokenCount(responseMessage.text);
     }
 
+    // Record usage only when completion is skipped as it is already recorded in the agent phase.
     if (!this.agentOptions.skipCompletion && !error) {
       await this.recordTokenUsage(responseMessage);
     }
+
     await this.saveMessageToDatabase(responseMessage, saveOptions, user);
     delete responseMessage.tokenCount;
     return { ...responseMessage, ...result };
@@ -351,6 +354,7 @@ class PluginsClient extends OpenAIClient {
       const trimmedPartial = opts.getPartialText().replaceAll(':::plugin:::\n', '');
       responseMessage.text =
         trimmedPartial.length === 0 ? `${partialText}${this.result.output}` : partialText;
+      addImages(this.result.intermediateSteps, responseMessage);
       await this.generateTextStream(this.result.output, opts.onProgress, { delay: 5 });
       return await this.handleResponseMessage(responseMessage, saveOptions, user);
     }
