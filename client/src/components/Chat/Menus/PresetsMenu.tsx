@@ -116,18 +116,14 @@ const PresetsMenu: FC = () => {
             align="center"
             className="mt-2 max-h-[495px] overflow-x-hidden rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-white md:min-w-[400px]"
           >
-            {presets.length ? (
-              <PresetItems
-                presets={presets}
-                onSelectPreset={onSelectPreset}
-                onChangePreset={onChangePreset}
-                onDeletePreset={onDeletePreset}
-                clearAllPresets={clearAllPresets}
-                onFileSelected={onFileSelected}
-              />
-            ) : (
-              <div className="dark:text-gray-300">{localize('com_endpoint_no_presets')}</div>
-            )}
+            <PresetItems
+              presets={presets}
+              onSelectPreset={onSelectPreset}
+              onChangePreset={onChangePreset}
+              onDeletePreset={onDeletePreset}
+              clearAllPresets={clearAllPresets}
+              onFileSelected={onFileSelected}
+            />
           </Content>
         </div>
       </Portal>

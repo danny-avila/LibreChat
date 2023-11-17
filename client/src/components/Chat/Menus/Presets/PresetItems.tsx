@@ -59,7 +59,20 @@ const PresetItems: FC<{
           </Dialog>
         </div>
       </div>
+      {presets && presets.length === 0 && (
+        <div
+          role="menuitem"
+          className="pointer-none group m-1.5 flex h-8 min-w-[170px] gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5 md:min-w-[240px]"
+          tabIndex={-1}
+        >
+          <div className="flex h-full grow items-center justify-end gap-2">
+            {/* TODO: Create Preset from here */}
+            {localize('com_endpoint_no_presets')}
+          </div>
+        </div>
+      )}
       {presets &&
+        presets.length > 0 &&
         presets.map((preset, i) => {
           if (!preset) {
             return null;
@@ -82,7 +95,7 @@ const PresetItems: FC<{
                 >
                   <div className="flex h-full items-center justify-end gap-1">
                     <button
-                      className="m-0 h-full rounded-md px-4 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:p-2 sm:group-hover:visible"
+                      className="m-0 h-full rounded-md p-2 px-4 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -92,7 +105,7 @@ const PresetItems: FC<{
                       <TrashIcon />
                     </button>
                     <button
-                      className="m-0 h-full rounded-md px-4 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:p-2 sm:group-hover:visible"
+                      className="m-0 h-full rounded-md p-2 px-4 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
                       onClick={(e) => {
                         e.preventDefault();
                         onChangePreset(preset);
