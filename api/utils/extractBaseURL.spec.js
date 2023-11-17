@@ -28,9 +28,9 @@ describe('extractBaseURL', () => {
     );
   });
 
-  test('should return null if the URL does not match the expected pattern', () => {
+  test('should return input if the URL does not match the expected pattern', () => {
     const url = 'https://someotherdomain.com/notv1';
-    expect(extractBaseURL(url)).toBeNull();
+    expect(extractBaseURL(url)).toBe(url);
   });
 
   // Test our JSDoc examples.

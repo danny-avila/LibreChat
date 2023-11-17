@@ -36,10 +36,6 @@ class PluginsClient extends OpenAIClient {
 
     if (this.options.reverseProxyUrl) {
       this.langchainProxy = extractBaseURL(this.options.reverseProxyUrl);
-      !this.langchainProxy &&
-        console.warn(`The reverse proxy URL ${this.options.reverseProxyUrl} is not valid for Plugins.
-The url must follow OpenAI specs, for example: https://localhost:8080/v1/chat/completions
-If your reverse proxy is compatible to OpenAI specs in every other way, it may still work without plugins enabled.`);
     }
   }
 
