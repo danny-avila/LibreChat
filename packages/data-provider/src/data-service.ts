@@ -1,3 +1,4 @@
+import * as f from './types/files';
 import * as a from './types/assistants';
 import * as t from './types';
 import * as s from './schemas';
@@ -156,6 +157,8 @@ export const getStartupConfig = (): Promise<t.TStartupConfig> => {
   return request.get(endpoints.config());
 };
 
+/* Assistants */
+
 export const createAssistant = (data: a.AssistantCreateParams): Promise<a.Assistant> => {
   return request.post(endpoints.assistants(), data);
 };
@@ -179,4 +182,10 @@ export const listAssistants = (
   params?: a.AssistantListParams,
 ): Promise<a.AssistantListResponse> => {
   return request.get(endpoints.assistants(), { params });
+};
+
+/* Files */
+
+export const uploadImage = (data: FormData): Promise<f.FileUploadResponse> => {
+  return request.postMultiPart(endpoints.images(), data);
 };
