@@ -17,7 +17,7 @@ export default function Images({
       {files.map((file: ExtendedFile, index: number) => {
         const handleDelete = () => {
           setFiles((currentFiles) =>
-            currentFiles.filter((_file) => file.preview !== _file.preview),
+            currentFiles.filter((_file) => file.file_id !== _file.file_id),
           );
         };
         return (

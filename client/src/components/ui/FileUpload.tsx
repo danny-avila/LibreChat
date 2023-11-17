@@ -19,6 +19,10 @@ const FileUpload: React.FC<FileUploadProps> = ({
     if (onClick) {
       onClick();
     }
+    // necessary to reset the input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
     fileInputRef.current?.click();
   };
 
