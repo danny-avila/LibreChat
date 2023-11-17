@@ -1,5 +1,6 @@
-const Keyv = require('keyv');
+const HttpsProxyAgent = require('https-proxy-agent');
 const axios = require('axios');
+const Keyv = require('keyv');
 const { isEnabled } = require('../utils');
 const { extractBaseURL } = require('../../utils');
 const keyvRedis = require('../../cache/keyvRedis');
@@ -10,7 +11,7 @@ const modelsCache = isEnabled(process.env.USE_REDIS)
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: 'models' });
 
-const { OPENROUTER_API_KEY, OPENAI_REVERSE_PROXY, CHATGPT_MODELS, ANTHROPIC_MODELS } =
+const { OPENROUTER_API_KEY, OPENAI_REVERSE_PROXY, CHATGPT_MODELS, ANTHROPIC_MODELS, PROXY } =
   process.env ?? {};
 
 const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _models = []) => {
@@ -39,13 +40,18 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
     return cachedModels;
   }
 
-  if (basePath?.includes('v1') || opts.azure) {
+  if (basePath || opts.azure) {
     try {
-      const res = await axios.get(`${basePath}${opts.azure ? '' : '/models'}`, {
+      const payload = {
         headers: {
           Authorization: `Bearer ${apiKey}`,
         },
-      });
+      };
+
+      if (PROXY) {
+        payload.httpsAgent = new HttpsProxyAgent(PROXY);
+      }
+      const res = await axios.get(`${basePath}${opts.azure ? '' : '/models'}`, payload);
 
       models = res.data.data.map((item) => item.id);
       // console.log(`Fetched ${models.length} models from ${opts.azure ? 'Azure ' : ''}OpenAI API`);
