@@ -7,7 +7,7 @@ export * from './types/files';
  * TODO: move to client, or move schemas/types to their own package
  */
 export * from './react-query-service';
-export * from './query-keys';
+export * from './keys';
 export * from './assistants';
 /* api call helpers */
 export * from './headers-helpers';

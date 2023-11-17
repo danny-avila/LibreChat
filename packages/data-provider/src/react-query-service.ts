@@ -10,7 +10,7 @@ import * as t from './types';
 import * as s from './schemas';
 import * as dataService from './data-service';
 import request from './request';
-import { QueryKeys } from './query-keys';
+import { QueryKeys } from './keys';
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
   void,
