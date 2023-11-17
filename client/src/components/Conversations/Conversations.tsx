@@ -6,9 +6,11 @@ import { TConversation } from 'librechat-data-provider';
 export default function Conversations({
   conversations,
   moveToTop,
+  toggleNav,
 }: {
   conversations: TConversation[];
   moveToTop: () => void;
+  toggleNav: () => void;
 }) {
   const location = useLocation();
   const { pathname } = location;
@@ -24,6 +26,7 @@ export default function Conversations({
               key={convo.conversationId}
               conversation={convo}
               retainView={moveToTop}
+              toggleNav={toggleNav}
               i={i}
             />
           );

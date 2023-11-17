@@ -1709,3 +1709,33 @@ html {
   height:234px;
   width:234px
 }
+
+.border-token-border-heavy {
+  border-color: #c5c5d2;
+  border-color: var(--border-heavy)
+}
+
+.border-token-border-light {
+  border-color: #ececf1;
+  border-color: var(--border-light)
+}
+
+.border-token-border-medium {
+  border-color: #d9d9e3;
+  border-color: var(--border-medium)
+}
+
+.border-token-surface-primary {
+  border-color: #fff;
+  border-color: var(--surface-primary)
+}
+
+.border-token-surface-secondary {
+  border-color: #f7f7f8;
+  border-color: var(--surface-secondary)
+}
+
+.border-token-surface-tertiary {
+  border-color: #ececf1;
+  border-color: var(--surface-tertiary)
+}

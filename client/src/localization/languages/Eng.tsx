@@ -192,7 +192,7 @@ export default {
   com_endpoint_presets_clear_warning:
     'Are you sure you want to clear all presets? This is irreversible.',
   com_endpoint_not_implemented: 'Not implemented',
-  com_endpoint_no_presets: 'No preset yet',
+  com_endpoint_no_presets: 'No presets yet, use the settings button to create one',
   com_endpoint_not_available: 'No endpoint available',
   com_endpoint_view_options: 'View Options',
   com_endpoint_save_convo_as_preset: 'Save Conversation as Preset',
