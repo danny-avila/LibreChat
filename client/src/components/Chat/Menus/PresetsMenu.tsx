@@ -1,18 +1,18 @@
 import type { FC } from 'react';
 import { useState } from 'react';
 import { useRecoilState } from 'recoil';
+import { BookCopy } from 'lucide-react';
 import {
   modularEndpoints,
   useDeletePresetMutation,
   useCreatePresetMutation,
 } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
-import { Content, Portal, Root } from '@radix-ui/react-popover';
+import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
 import { useLocalize, useDefaultConvo, useNavigateToConvo } from '~/hooks';
 import { EditPresetDialog, PresetItems } from './Presets';
+import { cleanupPreset, cn } from '~/utils';
 import { useChatContext } from '~/Providers';
-import TitleButton from './UI/TitleButton';
-import { cleanupPreset } from '~/utils';
 import store from '~/store';
 
 const PresetsMenu: FC = () => {
@@ -86,7 +86,20 @@ const PresetsMenu: FC = () => {
 
   return (
     <Root>
-      <TitleButton primaryText={'Presets'} />
+      <Trigger asChild>
+        <button
+          className={cn(
+            'pointer-cursor relative flex flex-col rounded-md border border-black/10 bg-white text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
+            'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-black/10 dark:radix-state-open:bg-black/20',
+            'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-3 focus:ring-0 focus:ring-offset-0',
+          )}
+          id="presets-button"
+          data-testid="presets-button"
+          title={localize('com_ui_presets')}
+        >
+          <BookCopy className="icon-sm" id="presets-button" />
+        </button>
+      </Trigger>
       <Portal>
         <div
           style={{
@@ -100,29 +113,21 @@ const PresetsMenu: FC = () => {
         >
           <Content
             side="bottom"
-            align="start"
-            className="mt-2 max-h-[495px] max-w-[370px] overflow-x-hidden rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-white md:min-w-[400px]"
+            align="center"
+            className="mt-2 max-h-[495px] overflow-x-hidden rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-white md:min-w-[400px]"
           >
-            {presets.length ? (
-              <PresetItems
-                presets={presets}
-                onSelectPreset={onSelectPreset}
-                onChangePreset={onChangePreset}
-                onDeletePreset={onDeletePreset}
-                clearAllPresets={clearAllPresets}
-                onFileSelected={onFileSelected}
-              />
-            ) : (
-              <div className="dark:text-gray-300">{localize('com_endpoint_no_presets')}</div>
-            )}
+            <PresetItems
+              presets={presets}
+              onSelectPreset={onSelectPreset}
+              onChangePreset={onChangePreset}
+              onDeletePreset={onDeletePreset}
+              clearAllPresets={clearAllPresets}
+              onFileSelected={onFileSelected}
+            />
           </Content>
         </div>
       </Portal>
-      <EditPresetDialog
-        open={presetModalVisible}
-        onOpenChange={setPresetModalVisible}
-        // preset={preset as TPreset}
-      />
+      <EditPresetDialog open={presetModalVisible} onOpenChange={setPresetModalVisible} />
     </Root>
   );
 };
