@@ -173,7 +173,7 @@ export default function Nav({ navVisible, setNavVisible }) {
               <div
                 className={cn(
                   'scrollbar-trigger relative flex h-full w-full flex-1 items-start border-white/20 transition-opacity',
-                  isToggleHovering ? 'opacity-50' : 'opacity-100',
+                  isToggleHovering && !isSmallScreen ? 'opacity-50' : 'opacity-100',
                 )}
               >
                 <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
