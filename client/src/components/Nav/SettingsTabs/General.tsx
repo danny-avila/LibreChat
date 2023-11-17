@@ -85,6 +85,7 @@ export const LangSelector = ({
   const languageOptions = [
     { value: 'auto', display: localize('com_nav_lang_auto') },
     { value: 'en-US', display: localize('com_nav_lang_english') },
+    { value: 'tr-TR', display: localize('com_nav_lang_turkish') },
     { value: 'zh-CN', display: localize('com_nav_lang_chinese') },
     { value: 'zh-TC', display: localize('com_nav_lang_traditionalchinese') },
     { value: 'ar-EG', display: localize('com_nav_lang_arabic') },
