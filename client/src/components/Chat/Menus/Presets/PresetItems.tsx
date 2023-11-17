@@ -70,8 +70,7 @@ const PresetItems: FC<{
               <div key={`preset-${preset.presetId}`}>
                 <MenuItem
                   key={`preset-item-${preset.presetId}`}
-                  className="w-[380px] md:min-w-[240px]"
-                  textClassName="text-xs max-w-[180px] md:max-w-[250px]"
+                  textClassName="text-xs max-w-[200px] truncate md:max-w-full "
                   title={getPresetTitle(preset)}
                   disableHover={true}
                   onClick={() => onSelectPreset(preset)}

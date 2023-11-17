@@ -28,8 +28,15 @@ export default function OptionsPopover({
     popoverRef,
     () => closePopover(),
     ['dialog-template-content', 'shadcn-button', 'advanced-settings'],
-    (target) => {
-      const tagName = (target as Element)?.tagName;
+    (_target) => {
+      const target = _target as Element;
+      if (
+        target?.id === 'presets-button' ||
+        (target?.parentNode instanceof Element && target.parentNode.id === 'presets-button')
+      ) {
+        return false;
+      }
+      const tagName = target?.tagName;
       return tagName === 'path' || tagName === 'svg' || tagName === 'circle';
     },
   );
