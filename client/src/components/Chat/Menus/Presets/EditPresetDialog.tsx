@@ -88,13 +88,9 @@ const EditPresetDialog = ({ open, onOpenChange, title }: Omit<TEditPresetProps, 
                   </Label>
                   <Dropdown
                     value={endpoint || ''}
-                    onChange={setOption('endpoint')}
+                    onChange={(value) => setOption('endpoint')(value)}
                     options={availableEndpoints}
-                    className={cn(
-                      defaultTextProps,
-                      'flex h-10 max-h-10 w-full resize-none ',
-                      removeFocusOutlines,
-                    )}
+                    className={cn()}
                   />
                 </div>
               </div>
