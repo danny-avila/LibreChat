@@ -1739,13 +1739,3 @@ html {
   border-color: #ececf1;
   border-color: var(--surface-tertiary)
 }
-
-.hide-scrollbar {
-  /* Hide scrollbar for Chrome, Safari, and Opera */
-  scrollbar-width: none; /* For Firefox */
-  -ms-overflow-style: none; /* For Internet Explorer and Edge */
-}
-
-.hide-scrollbar::-webkit-scrollbar {
-  display: none; /* For WebKit browsers */
-}
