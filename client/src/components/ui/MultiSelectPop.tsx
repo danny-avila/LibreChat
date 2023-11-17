@@ -1,5 +1,5 @@
 import React from 'react';
-import { Wrench, ArrowRight } from 'lucide-react';
+import { Wrench } from 'lucide-react';
 import { Root, Trigger, Content, Portal } from '@radix-ui/react-popover';
 import type { TPlugin } from 'librechat-data-provider';
 import MenuItem from '~/components/Chat/Menus/UI/MenuItem';
@@ -19,18 +19,15 @@ type SelectDropDownProps = {
   optionValueKey?: string;
 };
 
-function SelectDropDownPop({
+function MultiSelectPop({
   title: _title = 'Plugins',
   value,
-  // TODO: do we need disabled here?
-  disabled,
   setSelected,
   availableValues,
   showAbove = false,
   showLabel = true,
   containerClassName,
   isSelected,
-  className,
   optionValueKey = 'value',
 }: SelectDropDownProps) {
   // const localize = useLocalize();
@@ -46,8 +43,9 @@ function SelectDropDownPop({
             <button
               data-testid="select-dropdown-button"
               className={cn(
-                'relative flex cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-white/20 dark:bg-gray-800 dark:bg-gray-800 sm:text-sm',
-                className ?? '',
+                'relative flex flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-white/20 dark:bg-gray-800 dark:bg-gray-800 sm:text-sm',
+                'pointer-cursor font-normal',
+                'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-black/10 dark:radix-state-open:bg-black/20',
               )}
             >
               {' '}
@@ -85,7 +83,7 @@ function SelectDropDownPop({
                   </span>
                 </span>
               </span>
-              <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+              <span className="absolute inset-y-0 right-0 flex items-center pr-2">
                 <svg
                   stroke="currentColor"
                   fill="none"
@@ -107,7 +105,7 @@ function SelectDropDownPop({
           <Portal>
             <Content
               side="bottom"
-              align="start"
+              align="center"
               className="mt-2 max-h-60 min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-white"
             >
               {availableValues.map((option) => {
@@ -144,4 +142,4 @@ function SelectDropDownPop({
   );
 }
 
-export default SelectDropDownPop;
+export default MultiSelectPop;
