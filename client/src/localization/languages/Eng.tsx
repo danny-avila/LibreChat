@@ -177,6 +177,7 @@ export default {
   com_endpoint_set_custom_name: 'Set a custom name, in case you can find this preset',
   com_endpoint_preset: 'preset',
   com_endpoint_presets: 'presets',
+  com_endpoint_preset_selected: 'Preset Active!',
   com_endpoint_preset_name: 'Preset Name',
   com_endpoint_new_topic: 'New Topic',
   com_endpoint: 'Endpoint',

@@ -49,6 +49,7 @@ export type TShowToast = {
   message: string;
   severity?: NotificationSeverity;
   showIcon?: boolean;
+  duration?: number;
 };
 
 export type TBaseSettingsProps = {
