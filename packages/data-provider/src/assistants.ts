@@ -5,7 +5,7 @@ import type {
   QueryObserverResult,
   UseInfiniteQueryOptions,
 } from '@tanstack/react-query';
-import * as t from './types';
+import * as t from './types/assistants';
 import * as dataService from './data-service';
 import { QueryKeys } from './query-keys';
 

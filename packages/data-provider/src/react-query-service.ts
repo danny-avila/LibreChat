@@ -9,6 +9,7 @@ import {
 import * as t from './types';
 import * as s from './schemas';
 import * as dataService from './data-service';
+import request from './request';
 import { QueryKeys } from './query-keys';
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
@@ -405,7 +406,7 @@ export const useRefreshTokenMutation = (): UseMutationResult<
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation(() => dataService.refreshToken(), {
+  return useMutation(() => request.refreshToken(), {
     onMutate: () => {
       queryClient.invalidateQueries([QueryKeys.models]);
     },

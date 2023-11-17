@@ -1,7 +1,6 @@
+import * as a from './types/assistants';
 import * as t from './types';
 import * as s from './schemas';
-/* TODO: fix dependency cycle */
-// eslint-disable-next-line import/no-cycle
 import request from './request';
 import * as endpoints from './api-endpoints';
 
@@ -128,8 +127,6 @@ export const register = (payload: t.TRegisterUser) => {
   return request.post(endpoints.register(), payload);
 };
 
-export const refreshToken = (retry?: boolean) => request.post(endpoints.refreshToken(retry));
-
 export const userKeyQuery = (name: string): Promise<t.TCheckUserKeyResponse> =>
   request.get(endpoints.userKeyQuery(name));
 
@@ -159,18 +156,18 @@ export const getStartupConfig = (): Promise<t.TStartupConfig> => {
   return request.get(endpoints.config());
 };
 
-export const createAssistant = (data: t.AssistantCreateParams): Promise<t.Assistant> => {
+export const createAssistant = (data: a.AssistantCreateParams): Promise<a.Assistant> => {
   return request.post(endpoints.assistants(), data);
 };
 
-export const getAssistantById = (assistant_id: string): Promise<t.Assistant> => {
+export const getAssistantById = (assistant_id: string): Promise<a.Assistant> => {
   return request.get(endpoints.assistants(assistant_id));
 };
 
 export const updateAssistant = (
   assistant_id: string,
-  data: t.AssistantUpdateParams,
-): Promise<t.Assistant> => {
+  data: a.AssistantUpdateParams,
+): Promise<a.Assistant> => {
   return request.patch(endpoints.assistants(assistant_id), data);
 };
 
@@ -179,7 +176,7 @@ export const deleteAssistant = (assistant_id: string): Promise<void> => {
 };
 
 export const listAssistants = (
-  params?: t.AssistantListParams,
-): Promise<t.AssistantListResponse> => {
+  params?: a.AssistantListParams,
+): Promise<a.AssistantListResponse> => {
   return request.get(endpoints.assistants(), { params });
 };
