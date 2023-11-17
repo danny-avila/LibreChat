@@ -59,3 +59,12 @@ export type AssistantListResponse = {
   last_id: string;
   has_more: boolean;
 };
+
+export type File = {
+  id: string; // The file identifier
+  bytes: number; // The size of the file, in bytes
+  created_at: number; // The Unix timestamp for when the file was created
+  filename: string; // The name of the file
+  object: string; // The object type, always 'file'
+  purpose: 'fine-tune' | 'fine-tune-results' | 'assistants' | 'assistants_output'; // The intended purpose of the file
+};
