@@ -102,24 +102,26 @@ export default function PluginsByIndex({
           )}
         />
       </Button>
-      <Menu
-        value={conversation.model ?? ''}
-        setValue={setOption('model')}
-        availableValues={models}
-        showAbove={showAbove}
-        showLabel={false}
-        className={cn(cardStyle, 'min-w-60 z-40 flex w-64 sm:w-48 ', visible ? '' : 'hidden')}
-      />
-      <PluginsMenu
-        value={conversation.tools || []}
-        isSelected={checkPluginSelection}
-        setSelected={setTools}
-        availableValues={availableTools}
-        optionValueKey="pluginKey"
-        showAbove={false}
-        showLabel={false}
-        className={cn(cardStyle, 'min-w-60 z-50 w-64 sm:w-48 ', visible ? '' : 'hidden')}
-      />
+      {visible && (
+        <>
+          <Menu
+            value={conversation.model ?? ''}
+            setValue={setOption('model')}
+            availableValues={models}
+            showAbove={showAbove}
+            showLabel={false}
+          />
+          <PluginsMenu
+            value={conversation.tools || []}
+            isSelected={checkPluginSelection}
+            setSelected={setTools}
+            availableValues={availableTools}
+            optionValueKey="pluginKey"
+            showAbove={false}
+            showLabel={false}
+          />
+        </>
+      )}
     </>
   );
 }
