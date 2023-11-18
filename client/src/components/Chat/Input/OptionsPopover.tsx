@@ -63,7 +63,7 @@ export default function OptionsPopover({
             <div className="flex w-full items-center bg-slate-100 px-2 py-2 dark:bg-gray-800/60">
               <Button
                 type="button"
-                className="h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
+                className="h-auto justify-start rounded-md bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
                 onClick={saveAsPreset}
               >
                 <Save className="mr-1 w-[14px]" />

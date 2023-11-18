@@ -31,7 +31,7 @@ const PresetItems: FC<{
     <>
       <div
         role="menuitem"
-        className="pointer-none group m-1.5 flex h-8 min-w-[170px] gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5 md:min-w-[240px]"
+        className="pointer-none group m-1.5 flex h-8 min-w-[170px] gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50  md:min-w-[240px]"
         tabIndex={-1}
       >
         <div className="flex h-full grow items-center justify-end gap-2">
@@ -62,7 +62,7 @@ const PresetItems: FC<{
       {presets && presets.length === 0 && (
         <div
           role="menuitem"
-          className="pointer-none group m-1.5 flex h-8 min-w-[170px] gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5 md:min-w-[240px]"
+          className="pointer-none group m-1.5 flex h-8 min-w-[170px] gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 md:min-w-[240px]"
           tabIndex={-1}
         >
           <div className="flex h-full grow items-center justify-end gap-2">
