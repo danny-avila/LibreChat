@@ -50,7 +50,7 @@ export default function NavLinks() {
             )}
             <Menu.Button
               className={cn(
-                'group-ui-open:bg-[#202123] duration-350 flex w-full items-center gap-2.5 rounded-lg px-3 py-1 text-sm transition-colors hover:bg-[#202123]',
+                'group-ui-open:bg-[#202123] duration-350 mt-text-sm mb-1 flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-[#202123]',
                 open ? 'bg-[#202123]' : '',
               )}
               data-testid="nav-user"
@@ -70,7 +70,7 @@ export default function NavLinks() {
                 </div>
               </div>
               <div
-                className="grow overflow-hidden text-ellipsis whitespace-nowrap text-left font-bold text-white"
+                className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-left font-bold text-white"
                 style={{ marginTop: '-4px', marginLeft: '2px' }}
               >
                 {user?.name || localize('com_nav_user')}
@@ -86,7 +86,7 @@ export default function NavLinks() {
               leaveFrom="translate-y-0 opacity-100"
               leaveTo="translate-y-2 opacity-0"
             >
-              <Menu.Items className="absolute bottom-full left-0 z-20 mb-2 w-full translate-y-0 overflow-hidden rounded-lg bg-[#202123] py-1.5 opacity-100 outline-none">
+              <Menu.Items className="absolute bottom-full left-0 z-20 mb-1 mt-1 w-full translate-y-0 overflow-hidden rounded-lg bg-[#202123] py-1.5 opacity-100 outline-none">
                 <Menu.Item as="div">
                   <NavLink
                     className={cn(
