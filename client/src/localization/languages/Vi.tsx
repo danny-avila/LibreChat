@@ -29,7 +29,7 @@ export default {
   com_ui_of: 'của',
   com_ui_entries: 'mục',
   com_ui_pay_per_call:
-    'Tất cả các cuộc trò chuyện AI ở một nơi. Thanh toán theo cuộc gọi, không phải hàng tháng',
+    'Tất cả các cuộc hội thoại AI ở một nơi. Trả tiền cho mỗi cuộc gọi chứ không phải mỗi tháng',
   com_ui_enter: 'Nhập',
   com_ui_submit: 'Gửi',
   com_ui_upload_success: 'Tải tệp thành công',
