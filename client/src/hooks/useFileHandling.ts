@@ -6,7 +6,7 @@ import { useUploadImageMutation } from '~/data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
 
 const reducer = new ImageBlobReduce();
-const resolution = 'low';
+const resolution = 'high';
 
 const useFileHandling = () => {
   // const [errors, setErrors] = useState<unknown[]>([]);
@@ -27,16 +27,15 @@ const useFileHandling = () => {
   };
 
   const uploadImage = useUploadImageMutation({
-    onMutate: (formData) => {
-      console.log('mutating', formData);
+    onMutate: () => {
+      console.log('mutating');
     },
   });
 
   const uploadFile = async (extendedFile: ExtendedFile) => {
     const formData = new FormData();
-    formData.append('filename', extendedFile.file.name);
-    formData.append('size', extendedFile.file.size.toString());
-    formData.append('type', extendedFile.file.type);
+    formData.append('file', extendedFile.file);
+    formData.append('file_id', extendedFile.file_id);
     if (extendedFile.width) {
       formData.append('width', extendedFile.width?.toString());
     }
@@ -44,13 +43,13 @@ const useFileHandling = () => {
       formData.append('height', extendedFile.height?.toString());
     }
 
+    console.log('uploading', formData);
     uploadImage.mutate(formData, {
       onSuccess: (data) => {
         console.log('upload success', data);
       },
       onError: (error, formData) => {
-        console.log('upload error', error);
-
+        // console.log('upload error', error);
         deleteFile(extendedFile.file_id);
       },
     });
@@ -74,6 +73,7 @@ const useFileHandling = () => {
           preview,
           progress: 0.2,
         };
+
         addFile(extendedFile);
 
         // async processing
@@ -82,7 +82,6 @@ const useFileHandling = () => {
         img.onload = async () => {
           extendedFile.width = img.width;
           extendedFile.height = img.height;
-          console.log('original dimensions', img.width, img.height);
 
           let max = 512;
 
@@ -97,6 +96,7 @@ const useFileHandling = () => {
           const resizedFile = new File([reducedBlob], originalFile.name, {
             type: originalFile.type,
           });
+
           const resizedPreview = URL.createObjectURL(resizedFile);
           extendedFile = {
             ...extendedFile,
@@ -113,7 +113,6 @@ const useFileHandling = () => {
               progress: 0.6,
             };
 
-            console.log('resized dimensions', resizedImg.width, resizedImg.height);
             replaceFile(extendedFile);
             URL.revokeObjectURL(resizedPreview); // Clean up the object URL
             uploadFile(extendedFile);

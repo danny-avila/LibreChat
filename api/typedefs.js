@@ -15,8 +15,23 @@
  */
 
 /**
- * @exports File
- * @typedef {import('librechat-data-provider').File} File
+ * @exports OpenAIFile
+ * @typedef {import('librechat-data-provider').File} OpenAIFile
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ImageMetadata
+ * @typedef {Object} ImageMetadata
+ * @property {string} file_id - The identifier of the file.
+ * @property {number} width - The width of the image.
+ * @property {number} height - The height of the image.
+ * @memberof typedefs
+ */
+
+/**
+ * @exports MongoFile
+ * @typedef {import('~/models/schema/fileSchema.js').MongoFile} MongoFile
  * @memberof typedefs
  */
 
