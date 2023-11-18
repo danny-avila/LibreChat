@@ -5,44 +5,48 @@ async function resizeImage(inputFilePath, resolution) {
   const maxShortSideHighRes = 768;
   const maxLongSideHighRes = 2000;
 
-  const metadata = await sharp(inputFilePath).metadata();
+  let newWidth, newHeight;
+  let resizeOptions = { fit: 'inside', withoutEnlargement: true };
 
-  // Low resolution mode
   if (resolution === 'low') {
-    return sharp(inputFilePath)
-      .resize({
-        width: maxLowRes,
-        height: maxLowRes,
-        fit: 'inside',
-      })
-      .toBuffer();
-  }
-
-  // High resolution mode
-  if (resolution === 'high') {
+    resizeOptions.width = maxLowRes;
+    resizeOptions.height = maxLowRes;
+  } else if (resolution === 'high') {
+    const metadata = await sharp(inputFilePath).metadata();
     const isWidthShorter = metadata.width < metadata.height;
-    let newWidth, newHeight;
 
     if (isWidthShorter) {
-      newWidth = metadata.width > maxShortSideHighRes ? maxShortSideHighRes : null;
-      newHeight = metadata.height > maxLongSideHighRes ? maxLongSideHighRes : null;
+      // Width is the shorter side
+      newWidth = Math.min(metadata.width, maxShortSideHighRes);
+      // Calculate new height to maintain aspect ratio
+      newHeight = Math.round((metadata.height / metadata.width) * newWidth);
+      // Ensure the long side does not exceed the maximum allowed
+      if (newHeight > maxLongSideHighRes) {
+        newHeight = maxLongSideHighRes;
+        newWidth = Math.round((metadata.width / metadata.height) * newHeight);
+      }
     } else {
-      newWidth = metadata.width > maxLongSideHighRes ? maxLongSideHighRes : null;
-      newHeight = metadata.height > maxShortSideHighRes ? maxShortSideHighRes : null;
+      // Height is the shorter side
+      newHeight = Math.min(metadata.height, maxShortSideHighRes);
+      // Calculate new width to maintain aspect ratio
+      newWidth = Math.round((metadata.width / metadata.height) * newHeight);
+      // Ensure the long side does not exceed the maximum allowed
+      if (newWidth > maxLongSideHighRes) {
+        newWidth = maxLongSideHighRes;
+        newHeight = Math.round((metadata.height / metadata.width) * newWidth);
+      }
     }
 
-    return sharp(inputFilePath)
-      .resize({
-        width: newWidth,
-        height: newHeight,
-        fit: 'inside',
-        withoutEnlargement: true,
-      })
-      .toBuffer();
+    resizeOptions.width = newWidth;
+    resizeOptions.height = newHeight;
+  } else {
+    throw new Error('Invalid resolution parameter');
   }
 
-  // Invalid resolution parameter
-  throw new Error('Invalid resolution parameter');
+  const resizedBuffer = await sharp(inputFilePath).resize(resizeOptions).toBuffer();
+
+  const resizedMetadata = await sharp(resizedBuffer).metadata();
+  return { buffer: resizedBuffer, width: resizedMetadata.width, height: resizedMetadata.height };
 }
 
 module.exports = { resizeImage };

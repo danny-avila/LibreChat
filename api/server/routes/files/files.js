@@ -10,7 +10,6 @@ const isUUID = z.string().uuid();
 
 router.delete('/', async (req, res) => {
   try {
-    console.log('req.body', req.body);
     const { files: _files } = req.body;
     const files = _files.filter((file) => {
       if (!file.file_id) {

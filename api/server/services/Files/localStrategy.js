@@ -13,8 +13,8 @@ const { convertToWebP } = require('./convert');
  * @returns {Promise<void>}
  */
 const localStrategy = async ({ res, file, metadata }) => {
-  const { file_id, temp_file_id, width, height } = metadata;
-  const { filepath, bytes } = await convertToWebP(file.path);
+  const { file_id, temp_file_id } = metadata;
+  const { filepath, bytes, width, height } = await convertToWebP(file.path);
   const result = await createOrUpdateFile(
     {
       file_id,

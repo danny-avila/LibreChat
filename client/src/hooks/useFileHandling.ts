@@ -16,6 +16,14 @@ const useFileHandling = () => {
     });
   };
 
+  const replaceFile = (newFile: ExtendedFile) => {
+    setFiles((currentFiles) => {
+      const updatedFiles = new Map(currentFiles);
+      updatedFiles.set(newFile.file_id, newFile);
+      return updatedFiles;
+    });
+  };
+
   const updateFileById = (fileId: string, updates: Partial<ExtendedFile>) => {
     setFiles((currentFiles) => {
       if (!currentFiles.has(fileId)) {
@@ -102,7 +110,7 @@ const useFileHandling = () => {
           file_id: v4(),
           file: originalFile,
           preview,
-          progress: 0.5,
+          progress: 0.2,
         };
 
         addFile(extendedFile);
@@ -116,6 +124,7 @@ const useFileHandling = () => {
             ...extendedFile,
             progress: 0.6,
           };
+          replaceFile(extendedFile);
 
           await uploadFile(extendedFile);
           URL.revokeObjectURL(preview); // Clean up the original object URL
