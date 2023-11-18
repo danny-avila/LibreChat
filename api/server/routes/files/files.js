@@ -2,6 +2,7 @@ const { z } = require('zod');
 const fs = require('fs').promises;
 const express = require('express');
 const { deleteFiles } = require('~/models');
+const path = require('path');
 
 const router = express.Router();
 
@@ -25,7 +26,7 @@ router.delete('/', async (req, res) => {
     const promises = [];
     promises.push(await deleteFiles(file_ids));
     for (const { filepath } of files) {
-      promises.push(await fs.unlink(filepath));
+      promises.push(await fs.unlink(path.join(req.app.locals.config.publicPath, filepath)));
     }
 
     await Promise.all(promises);

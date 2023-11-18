@@ -1,14 +1,26 @@
 import { v4 } from 'uuid';
 // import { useState } from 'react';
+import ImageBlobReduce from 'image-blob-reduce';
 import type { ExtendedFile } from '~/common';
 import { useUploadImageMutation } from '~/data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
+
+const reducer = new ImageBlobReduce();
+const resolution = 'high';
 
 const useFileHandling = () => {
   // const [errors, setErrors] = useState<unknown[]>([]);
   const { files, setFiles, setFilesLoading } = useChatContext();
 
   const addFile = (newFile: ExtendedFile) => {
+    setFiles((currentFiles) => {
+      const updatedFiles = new Map(currentFiles);
+      updatedFiles.set(newFile.file_id, newFile);
+      return updatedFiles;
+    });
+  };
+
+  const replaceFile = (newFile: ExtendedFile) => {
     setFiles((currentFiles) => {
       const updatedFiles = new Map(currentFiles);
       updatedFiles.set(newFile.file_id, newFile);
@@ -102,23 +114,72 @@ const useFileHandling = () => {
           file_id: v4(),
           file: originalFile,
           preview,
-          progress: 0.5,
+          progress: 0.2,
         };
 
         addFile(extendedFile);
 
         // async processing
+
         const img = new Image();
         img.onload = async () => {
           extendedFile.width = img.width;
           extendedFile.height = img.height;
+
+          let max = 512;
+
+          if (resolution === 'high') {
+            max = extendedFile.height > extendedFile.width ? 768 : 2000;
+          }
+
+          const reducedBlob = await reducer.toBlob(originalFile, {
+            max,
+          });
+
+          const resizedFile = new File([reducedBlob], originalFile.name, {
+            type: originalFile.type,
+          });
+
+          const resizedPreview = URL.createObjectURL(resizedFile);
           extendedFile = {
             ...extendedFile,
-            progress: 0.6,
+            file: resizedFile,
           };
 
-          await uploadFile(extendedFile);
+          const resizedImg = new Image();
+          resizedImg.onload = async () => {
+            extendedFile = {
+              ...extendedFile,
+              file: resizedFile,
+              width: resizedImg.width,
+              height: resizedImg.height,
+              progress: 0.6,
+            };
+
+            replaceFile(extendedFile);
+            URL.revokeObjectURL(resizedPreview); // Clean up the object URL
+            await uploadFile(extendedFile);
+          };
+          resizedImg.src = resizedPreview;
           URL.revokeObjectURL(preview); // Clean up the original object URL
+
+          /* TODO: send to backend server /api/files
+              use React Query Mutation to upload file (TypeScript), we need to make the CommonJS api endpoint (expressjs) to accept file upload
+              server needs the image file, which the server will convert to base64 to send to external API
+              server will then employ a 'saving' or 'caching' strategy based on admin configuration (can be local, CDN, etc.)
+              the expressjs server needs the following:
+
+              name,
+              size,
+              type,
+              width,
+              height,
+
+              use onSuccess, onMutate handlers to update the file progress
+
+              we need the full api handling for this, including the server-side
+
+          */
         };
         img.src = preview;
       } catch (error) {

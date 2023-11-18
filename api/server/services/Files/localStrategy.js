@@ -1,4 +1,5 @@
 const { createOrUpdateFile } = require('~/models');
+const { convertToWebP } = require('./convert');
 
 /**
  * Applies the local strategy for image uploads.
@@ -13,12 +14,13 @@ const { createOrUpdateFile } = require('~/models');
  */
 const localStrategy = async ({ res, file, metadata }) => {
   const { file_id, temp_file_id, width, height } = metadata;
+  const { filepath, bytes } = await convertToWebP(file.path);
   const result = await createOrUpdateFile(
     {
       file_id,
       temp_file_id,
-      bytes: file.size,
-      filepath: file.path,
+      bytes,
+      filepath,
       filename: file.name,
       type: file.type,
       width,
