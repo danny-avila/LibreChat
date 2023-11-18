@@ -1,5 +1,6 @@
-const cors = require('cors');
 const path = require('path');
+require('module-alias')({ base: path.resolve(__dirname, '..') });
+const cors = require('cors');
 const express = require('express');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
