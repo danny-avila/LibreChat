@@ -48,6 +48,7 @@ router.post('/', upload.single('file'), async (req, res) => {
   try {
     /* parse to validate api call */
     uuidSchema.parse(metadata.file_id);
+    metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
     await localStrategy({ res, file, metadata });
   } catch (error) {

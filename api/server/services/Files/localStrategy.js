@@ -1,4 +1,4 @@
-const { createOrUpdateFile } = require('../../../models');
+const { createOrUpdateFile } = require('~/models');
 
 /**
  * Applies the local strategy for image uploads.
@@ -12,10 +12,11 @@ const { createOrUpdateFile } = require('../../../models');
  * @returns {Promise<void>}
  */
 const localStrategy = async ({ res, file, metadata }) => {
-  const { file_id, width, height } = metadata;
+  const { file_id, temp_file_id, width, height } = metadata;
   const result = await createOrUpdateFile(
     {
-      temp_file_id: file_id,
+      file_id,
+      temp_file_id,
       bytes: file.size,
       filepath: file.path,
       filename: file.name,
