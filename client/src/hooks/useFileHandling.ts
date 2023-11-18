@@ -13,22 +13,69 @@ const useFileHandling = () => {
   const { files, setFiles } = useChatContext();
 
   const addFile = (newFile: ExtendedFile) => {
-    setFiles((currentFiles) => [...currentFiles, newFile]);
+    setFiles((currentFiles) => {
+      const updatedFiles = new Map(currentFiles);
+      updatedFiles.set(newFile.file_id, newFile);
+      return updatedFiles;
+    });
   };
 
   const replaceFile = (newFile: ExtendedFile) => {
-    setFiles((currentFiles) =>
-      currentFiles.map((f) => (f.file_id === newFile.file_id ? newFile : f)),
-    );
+    setFiles((currentFiles) => {
+      const updatedFiles = new Map(currentFiles);
+      updatedFiles.set(newFile.file_id, newFile);
+      return updatedFiles;
+    });
   };
 
-  const deleteFile = (file_id: string) => {
-    setFiles((currentFiles) => currentFiles.filter((_file) => file_id !== _file.file_id));
+  const updateFileById = (fileId: string, updates: Partial<ExtendedFile>) => {
+    setFiles((currentFiles) => {
+      if (!currentFiles.has(fileId)) {
+        console.warn(`File with id ${fileId} not found.`);
+        return currentFiles;
+      }
+
+      const updatedFiles = new Map(currentFiles);
+      const currentFile = updatedFiles.get(fileId);
+      updatedFiles.set(fileId, { ...currentFile, ...updates });
+
+      return updatedFiles;
+    });
+  };
+
+  // const deleteFile = (fileId: string) => {
+  //   setFiles((currentFiles) => {
+  //     const updatedFiles = new Map(currentFiles);
+  //     updatedFiles.delete(fileId);
+  //     return updatedFiles;
+  //   });
+  // };
+
+  const deleteFileById = (fileId: string) => {
+    setFiles((currentFiles) => {
+      const updatedFiles = new Map(currentFiles);
+      if (updatedFiles.has(fileId)) {
+        updatedFiles.delete(fileId);
+      } else {
+        console.warn(`File with id ${fileId} not found.`);
+      }
+      return updatedFiles;
+    });
   };
 
   const uploadImage = useUploadImageMutation({
     onMutate: () => {
-      console.log('mutating');
+      // console.log('mutating');
+    },
+    onSuccess: (data) => {
+      console.log('upload success', data);
+      updateFileById(data.temp_file_id, {
+        progress: 1,
+      });
+    },
+    onError: (error, body) => {
+      console.log('upload error', error);
+      deleteFileById(body.file_id);
     },
   });
 
@@ -43,16 +90,7 @@ const useFileHandling = () => {
       formData.append('height', extendedFile.height?.toString());
     }
 
-    console.log('uploading', formData);
-    uploadImage.mutate(formData, {
-      onSuccess: (data) => {
-        console.log('upload success', data);
-      },
-      onError: (error, formData) => {
-        // console.log('upload error', error);
-        deleteFile(extendedFile.file_id);
-      },
-    });
+    uploadImage.mutate({ formData, file_id: extendedFile.file_id });
   };
 
   const handleFiles = async (files: FileList | File[]) => {
@@ -104,7 +142,7 @@ const useFileHandling = () => {
           };
 
           const resizedImg = new Image();
-          resizedImg.onload = () => {
+          resizedImg.onload = async () => {
             extendedFile = {
               ...extendedFile,
               file: resizedFile,
@@ -115,10 +153,9 @@ const useFileHandling = () => {
 
             replaceFile(extendedFile);
             URL.revokeObjectURL(resizedPreview); // Clean up the object URL
-            uploadFile(extendedFile);
+            await uploadFile(extendedFile);
           };
           resizedImg.src = resizedPreview;
-
           URL.revokeObjectURL(preview); // Clean up the original object URL
 
           /* TODO: send to backend server /api/files

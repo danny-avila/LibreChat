@@ -319,7 +319,7 @@ export default function useChatHelpers(index = 0, paramId) {
     store.showAgentSettingsFamily(index),
   );
 
-  const [files, setFiles] = useState<ExtendedFile[]>([]);
+  const [files, setFiles] = useState(new Map());
 
   return {
     newConversation,
