@@ -1,26 +1,9 @@
 const { z } = require('zod');
-const path = require('path');
-const crypto = require('crypto');
-const fs = require('fs');
 const express = require('express');
-const router = express.Router();
-const multer = require('multer');
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const outputPath = path.join(req.app.locals.config.imageOutputPath, 'temp');
-    if (!fs.existsSync(outputPath)) {
-      fs.mkdirSync(outputPath, { recursive: true });
-    }
-    cb(null, outputPath);
-  },
-  filename: function (req, file, cb) {
-    req.file_id = crypto.randomUUID();
-    cb(null, req.file_id + '-' + file.originalname);
-  },
-});
-const upload = multer({ storage });
+const upload = require('./multer');
+const { localStrategy } = require('~/server/services/Files');
 
-const { localStrategy } = require('../../services/Files');
+const router = express.Router();
 
 router.post('/', upload.single('file'), async (req, res) => {
   const file = req.file;

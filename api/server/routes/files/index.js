@@ -9,12 +9,14 @@ const {
   // messageUserLimiter,
 } = require('../../middleware');
 
+const files = require('./files');
 const images = require('./images');
 
 router.use(requireJwtAuth);
 router.use(checkBan);
 router.use(uaParser);
 
+router.use('/', files);
 router.use('/images', images);
 
 module.exports = router;

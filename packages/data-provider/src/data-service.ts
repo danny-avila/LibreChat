@@ -189,3 +189,8 @@ export const listAssistants = (
 export const uploadImage = (data: FormData): Promise<f.FileUploadResponse> => {
   return request.postMultiPart(endpoints.images(), data);
 };
+
+export const deleteFiles = async (files: f.BatchFile[]): Promise<f.DeleteFilesResponse> =>
+  request.deleteWithOptions(endpoints.files(), {
+    data: { files },
+  });

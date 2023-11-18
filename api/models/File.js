@@ -29,10 +29,12 @@ const getFiles = async (filter) => {
  */
 const createOrUpdateFile = async (data, setTTL = false) => {
   const { file_id, ...update } = data;
-  if (setTTL) {
-    // Set to expire in 10 minutes
-    update.expiresAt = new Date(new Date().getTime() + 10 * 60000);
+  const updateOperation = { $set: update, $unset: {} };
+
+  if (!setTTL) {
+    updateOperation.$unset = { expiresAt: '' };
   }
+
   return await File.findOneAndUpdate({ file_id }, update, { new: true, upsert: true }).lean();
 };
 
@@ -45,10 +47,20 @@ const deleteFile = async (file_id) => {
   return await File.findOneAndDelete({ file_id }).lean();
 };
 
+/**
+ * Deletes multiple files identified by an array of file_ids.
+ * @param {Array<string>} file_ids - The unique identifiers of the files to delete.
+ * @returns {Promise<Object>} A promise that resolves to the result of the deletion operation.
+ */
+const deleteFiles = async (file_ids) => {
+  return await File.deleteMany({ file_id: { $in: file_ids } });
+};
+
 module.exports = {
   File,
   findFileById,
   getFiles,
   createOrUpdateFile,
   deleteFile,
+  deleteFiles,
 };

@@ -235,6 +235,7 @@ export type TOptionSettings = {
 export interface ExtendedFile {
   file: File;
   file_id: string;
+  filepath?: string;
   width?: number;
   height?: number;
   preview: string;

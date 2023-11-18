@@ -320,6 +320,7 @@ export default function useChatHelpers(index = 0, paramId) {
   );
 
   const [files, setFiles] = useState(new Map());
+  const [filesLoading, setFilesLoading] = useState(false);
 
   return {
     newConversation,
@@ -362,5 +363,7 @@ export default function useChatHelpers(index = 0, paramId) {
     files,
     setFiles,
     invalidateConvos,
+    filesLoading,
+    setFilesLoading,
   };
 }

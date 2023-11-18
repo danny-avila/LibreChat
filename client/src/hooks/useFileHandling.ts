@@ -10,7 +10,7 @@ const resolution = 'high';
 
 const useFileHandling = () => {
   // const [errors, setErrors] = useState<unknown[]>([]);
-  const { files, setFiles } = useChatContext();
+  const { files, setFiles, setFilesLoading } = useChatContext();
 
   const addFile = (newFile: ExtendedFile) => {
     setFiles((currentFiles) => {
@@ -64,14 +64,19 @@ const useFileHandling = () => {
   };
 
   const uploadImage = useUploadImageMutation({
-    onMutate: () => {
-      // console.log('mutating');
-    },
     onSuccess: (data) => {
       console.log('upload success', data);
       updateFileById(data.temp_file_id, {
-        progress: 1,
+        progress: 0.9,
+        filepath: data.filepath,
       });
+
+      setTimeout(() => {
+        updateFileById(data.temp_file_id, {
+          progress: 1,
+          filepath: data.filepath,
+        });
+      }, 300);
     },
     onError: (error, body) => {
       console.log('upload error', error);
@@ -184,7 +189,9 @@ const useFileHandling = () => {
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    event.stopPropagation();
     if (event.target.files) {
+      setFilesLoading(true);
       handleFiles(event.target.files);
       // reset the input
       event.target.value = '';

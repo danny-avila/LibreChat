@@ -8,6 +8,7 @@ const mongoose = require('mongoose');
  * @property {string} [temp_file_id] - Temporary File identifier
  * @property {number} bytes - Size of the file in bytes
  * @property {string} filename - Name of the file
+ * @property {string} filepath - Location of the file
  * @property {'file'} object - Type of object, always 'file'
  * @property {string} type - Type of file
  * @property {number} [width] - Optional width of the file
@@ -44,6 +45,10 @@ const fileSchema = mongoose.Schema(
       type: String,
       required: true,
     },
+    filepath: {
+      type: String,
+      required: true,
+    },
     object: {
       type: String,
       required: true,
@@ -55,7 +60,11 @@ const fileSchema = mongoose.Schema(
     },
     width: Number,
     height: Number,
-    expiresAt: Date,
+    expiresAt: {
+      type: Date,
+      expires: 600,
+      default: Date.now,
+    },
   },
   {
     timestamps: true,
