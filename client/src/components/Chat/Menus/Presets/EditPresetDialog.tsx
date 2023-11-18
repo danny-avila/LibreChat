@@ -90,7 +90,6 @@ const EditPresetDialog = ({ open, onOpenChange, title }: Omit<TEditPresetProps, 
                     value={endpoint || ''}
                     onChange={(value) => setOption('endpoint')(value)}
                     options={availableEndpoints}
-                    className={cn()}
                   />
                 </div>
               </div>
