@@ -2,11 +2,11 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import {
   AzureMinimalIcon,
   OpenAIMinimalIcon,
-  ChatGPTMinimalIcon,
+  LightningIcon,
   PluginMinimalIcon,
   BingAIMinimalIcon,
   PaLMinimalIcon,
-  AnthropicMinimalIcon,
+  AnthropicIcon,
 } from '~/components/svg';
 import { cn } from '~/utils';
 import { IconProps } from '~/common';
@@ -29,11 +29,11 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     [EModelEndpoint.gptPlugins]: { icon: <PluginMinimalIcon />, name: 'Plugins' },
     [EModelEndpoint.google]: { icon: <PaLMinimalIcon />, name: props.modelLabel || 'PaLM2' },
     [EModelEndpoint.anthropic]: {
-      icon: <AnthropicMinimalIcon />,
+      icon: <AnthropicIcon className="icon-md shrink-0 dark:text-white" />,
       name: props.modelLabel || 'Claude',
     },
     [EModelEndpoint.bingAI]: { icon: <BingAIMinimalIcon />, name: 'BingAI' },
-    [EModelEndpoint.chatGPTBrowser]: { icon: <ChatGPTMinimalIcon />, name: 'ChatGPT' },
+    [EModelEndpoint.chatGPTBrowser]: { icon: <LightningIcon />, name: 'ChatGPT' },
     default: { icon: <OpenAIMinimalIcon />, name: 'UNKNOWN' },
   };
 
