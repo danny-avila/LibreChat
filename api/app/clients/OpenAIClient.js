@@ -33,6 +33,7 @@ class OpenAIClient extends BaseClient {
     this.setOptions(options);
   }
 
+  // TODO: PluginsClient calls this 3x, unneeded
   setOptions(options) {
     if (this.options && !this.options.replaceOptions) {
       this.options.modelOptions = {

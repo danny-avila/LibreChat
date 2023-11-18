@@ -62,7 +62,7 @@ class BaseClient {
   }
 
   async setMessageOptions(opts = {}) {
-    if (opts && typeof opts === 'object') {
+    if (opts && opts.replaceOptions) {
       this.setOptions(opts);
     }
 
