@@ -26,6 +26,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
   console.log('ask log');
   console.dir({ text, conversationId, endpointOption }, { depth: null });
   let metadata;
+  let file_urls;
   let userMessage;
   let promptTokens;
   let userMessageId;
@@ -49,6 +50,8 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
         promptTokens = data[key];
       } else if (!conversationId && key === 'conversationId') {
         conversationId = data[key];
+      } else if (key === 'file_urls') {
+        file_urls = data[key];
       }
     }
   };
@@ -119,7 +122,10 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       response = { ...response, ...metadata };
     }
 
-    await saveMessage({ ...response, user });
+    if (file_urls) {
+      userMessage = { ...userMessage, file_urls };
+      delete userMessage.image_urls;
+    }
 
     sendMessage(res, {
       title: await getConvoTitle(user, conversationId),
@@ -129,6 +135,9 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       responseMessage: response,
     });
     res.end();
+
+    await saveMessage({ ...response, user });
+    await saveMessage(userMessage);
 
     if (parentMessageId === '00000000-0000-0000-0000-000000000000' && newConvo) {
       addTitle(req, {

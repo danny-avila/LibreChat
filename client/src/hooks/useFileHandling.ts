@@ -33,6 +33,10 @@ const useFileHandling = () => {
 
       const updatedFiles = new Map(currentFiles);
       const currentFile = updatedFiles.get(fileId);
+      if (!currentFile) {
+        console.warn(`File with id ${fileId} not found.`);
+        return currentFiles;
+      }
       updatedFiles.set(fileId, { ...currentFile, ...updates });
 
       return updatedFiles;
@@ -61,6 +65,10 @@ const useFileHandling = () => {
 
       setTimeout(() => {
         const file = files.get(data.temp_file_id);
+        if (!file) {
+          console.warn('File not found');
+          return;
+        }
         deleteFileById(data.temp_file_id);
         addFile({
           ...file,

@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const outputPath = path.join(req.app.locals.config.imageOutputPath, 'temp');
+    const outputPath = path.join(req.app.locals.config.imageOutput, 'temp');
     if (!fs.existsSync(outputPath)) {
       fs.mkdirSync(outputPath, { recursive: true });
     }

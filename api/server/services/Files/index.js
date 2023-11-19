@@ -1,9 +1,9 @@
 const localStrategy = require('./localStrategy');
-const convert = require('./convert');
+const process = require('./process');
 const save = require('./save');
 
 module.exports = {
   ...save,
-  ...convert,
+  ...process,
   localStrategy,
 };

@@ -22,16 +22,12 @@ import useUserKey from './useUserKey';
 import store from '~/store';
 
 // this to be set somewhere else
-export default function useChatHelpers(index = 0, paramId) {
+export default function useChatHelpers(index = 0, paramId: string | undefined) {
+  const [files, setFiles] = useState(new Map<string, ExtendedFile>());
+  const [filesLoading, setFilesLoading] = useState(false);
+
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuthContext();
-  // const tempConvo = {
-  //   endpoint: null,
-  //   conversationId: null,
-  //   jailbreak: false,
-  //   examples: [],
-  //   tools: [],
-  // };
 
   const { newConversation } = useNewConvo(index);
   const { useCreateConversationAtom } = store;
@@ -39,10 +35,6 @@ export default function useChatHelpers(index = 0, paramId) {
   const { conversationId, endpoint } = conversation ?? {};
 
   const queryParam = paramId === 'new' ? paramId : conversationId ?? paramId ?? '';
-
-  // if (!queryParam && paramId && paramId !== 'new') {
-
-  // }
 
   /* Messages: here simply to fetch, don't export and use `getMessages()` instead */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -96,10 +88,6 @@ export default function useChatHelpers(index = 0, paramId) {
     },
     [queryClient],
   );
-
-  // const getConvos = useCallback(() => {
-  //   return queryClient.getQueryData<TGetConversationsResponse>([QueryKeys.allConversations, { pageNumber: '1', active: true }]);
-  // }, [queryClient]);
 
   const invalidateConvos = useCallback(() => {
     queryClient.invalidateQueries([QueryKeys.allConversations, { active: true }]);
@@ -194,6 +182,12 @@ export default function useChatHelpers(index = 0, paramId) {
       messageId: isContinued && messageId ? messageId : fakeMessageId,
       error: false,
     };
+
+    if (files.size > 0) {
+      currentMsg.file_ids = Array.from(files.keys());
+      currentMsg.file_urls = Array.from(files.values()).map((file) => file.filepath) as string[];
+      setFiles(new Map());
+    }
 
     // construct the placeholder response message
     const generation = editedText ?? latestMessage?.text ?? '';
@@ -318,9 +312,6 @@ export default function useChatHelpers(index = 0, paramId) {
   const [showAgentSettings, setShowAgentSettings] = useRecoilState(
     store.showAgentSettingsFamily(index),
   );
-
-  const [files, setFiles] = useState(new Map());
-  const [filesLoading, setFilesLoading] = useState(false);
 
   return {
     newConversation,

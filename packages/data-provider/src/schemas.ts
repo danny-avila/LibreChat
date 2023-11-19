@@ -141,6 +141,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   plugin?: TResPlugin | null;
   plugins?: TResPlugin[];
   file_ids?: string[];
+  file_urls?: string[];
 };
 
 export const tConversationSchema = z.object({

@@ -9,6 +9,7 @@ import EditMessage from './EditMessage';
 import Container from './Container';
 import Markdown from './Markdown';
 import { cn } from '~/utils';
+import Image from './Image';
 
 const ErrorMessage = ({ text }: TText) => {
   const { logout } = useAuthContext();
@@ -27,22 +28,38 @@ const ErrorMessage = ({ text }: TText) => {
 };
 
 // Display Message Component
-const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => (
-  <Container>
-    <div
-      className={cn(
-        'markdown prose dark:prose-invert light w-full break-words',
-        isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-70',
-      )}
-    >
-      {!isCreatedByUser ? (
-        <Markdown content={text} message={message} showCursor={showCursor} />
-      ) : (
-        <>{text}</>
-      )}
-    </div>
-  </Container>
-);
+const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => {
+  const image_urls = message?.file_urls
+    ? message.file_urls.filter(
+      (url) =>
+        url.includes('images') ||
+          url.includes('jpg') ||
+          url.includes('png') ||
+          url.includes('jpeg') ||
+          url.includes('webp'),
+    )
+    : null;
+  return (
+    <Container>
+      {image_urls &&
+        image_urls.map((url, i) => (
+          <Image key={url} imageUrl={url} altText={text} n={image_urls.length} i={i} />
+        ))}
+      <div
+        className={cn(
+          'markdown prose dark:prose-invert light w-full break-words',
+          isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-70',
+        )}
+      >
+        {!isCreatedByUser ? (
+          <Markdown content={text} message={message} showCursor={showCursor} />
+        ) : (
+          <>{text}</>
+        )}
+      </div>
+    </Container>
+  );
+};
 
 // Unfinished Message Component
 const UnfinishedMessage = () => (
