@@ -1,12 +1,52 @@
 import { v4 } from 'uuid';
-// import { useState } from 'react';
+import debounce from 'lodash/debounce';
+import { useState, useEffect, useCallback } from 'react';
 import type { ExtendedFile } from '~/common';
-import { useUploadImageMutation } from '~/data-provider';
+import { useToastContext } from '~/Providers/ToastContext';
 import { useChatContext } from '~/Providers/ChatContext';
+import { useUploadImageMutation } from '~/data-provider';
+import { NotificationSeverity } from '~/common';
+
+const sizeMB = 20;
+const fileLimit = 10;
+const sizeLimit = sizeMB * 1024 * 1024; // 20 MB
+const supportedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
 const useFileHandling = () => {
-  // const [errors, setErrors] = useState<unknown[]>([]);
+  const { showToast } = useToastContext();
+  const [errors, setErrors] = useState<string[]>([]);
   const { files, setFiles, setFilesLoading } = useChatContext();
+
+  const displayToast = useCallback(() => {
+    if (errors.length > 1) {
+      const errorList = Array.from(new Set(errors))
+        .map((e, i) => `${i > 0 ? '• ' : ''}${e}\n`)
+        .join('');
+      showToast({
+        message: errorList,
+        severity: NotificationSeverity.ERROR,
+        duration: 5000,
+      });
+    } else if (errors.length === 1) {
+      showToast({
+        message: errors[0],
+        severity: NotificationSeverity.ERROR,
+        duration: 5000,
+      });
+    }
+
+    setErrors([]);
+  }, [errors, showToast]);
+
+  const debouncedDisplayToast = debounce(displayToast, 250);
+
+  useEffect(() => {
+    if (errors.length > 0) {
+      debouncedDisplayToast();
+    }
+
+    return () => debouncedDisplayToast.cancel();
+  }, [errors, debouncedDisplayToast]);
 
   const addFile = (newFile: ExtendedFile) => {
     setFiles((currentFiles) => {
@@ -92,15 +132,27 @@ const useFileHandling = () => {
     uploadImage.mutate({ formData, file_id: extendedFile.file_id });
   };
 
-  const handleFiles = async (files: FileList | File[]) => {
-    Array.from(files).forEach((originalFile) => {
-      if (!originalFile.type.startsWith('image/')) {
-        // TODO: showToast('Only image files are supported');
-        // TODO: handle other file types
+  const handleFiles = async (_files: FileList | File[]) => {
+    if (_files.length + files.size > fileLimit) {
+      setErrors((prevErrors) => [
+        ...prevErrors,
+        `You can only upload up to ${fileLimit} files at a time.`,
+      ]);
+      return;
+    }
+    Array.from(_files).forEach((originalFile) => {
+      if (!supportedTypes.includes(originalFile.type)) {
+        setErrors((prevErrors) => [
+          ...prevErrors,
+          'Currently, only JPEG, JPG, PNG, and WEBP files are supported.',
+        ]);
         return;
       }
 
-      // todo: Set File is loading
+      if (originalFile.size >= sizeLimit) {
+        setErrors((prevErrors) => [...prevErrors, `File size exceeds ${sizeMB} MB.`]);
+        return;
+      }
 
       try {
         const preview = URL.createObjectURL(originalFile);

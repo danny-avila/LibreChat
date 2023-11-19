@@ -31,7 +31,7 @@ async function encodeAndFormat(req, files) {
     promises.push(encodeAndMove(req, file));
   }
 
-  const detail = req.body.detail ?? 'low';
+  const detail = req.body.detail ?? 'high';
   const encodedImages = await Promise.all(promises);
   return [
     ...encodedImages.map((base64) => ({
