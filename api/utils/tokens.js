@@ -49,6 +49,8 @@ const maxTokensMap = {
   'gpt-3.5-turbo-0301': 4095,
   'gpt-3.5-turbo-16k': 15999,
   'gpt-3.5-turbo-16k-0613': 15999,
+  'gpt-3.5-turbo-1106': 16380, // -5 from max
+  'gpt-4-1106': 127995, // -5 from max
 };
 
 /**

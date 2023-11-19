@@ -18,7 +18,7 @@ export default function Footer() {
             rel="noreferrer"
             className="underline"
           >
-            {config?.appTitle || 'LibreChat'} v0.6.0
+            {config?.appTitle || 'LibreChat'} v0.6.1
           </a>
           {' - '}. {localize('com_ui_pay_per_call')}
         </>

@@ -1,4 +1,4 @@
-import { createContext } from 'react';
+import { createContext, useContext } from 'react';
 import type { TShowToast } from '~/common';
 import { useToast } from '~/hooks';
 
@@ -9,6 +9,10 @@ type ToastContextType = {
 export const ToastContext = createContext<ToastContextType>({
   showToast: () => ({}),
 });
+
+export function useToastContext() {
+  return useContext(ToastContext);
+}
 
 export default function ToastProvider({ children }) {
   const { showToast } = useToast();

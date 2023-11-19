@@ -84,6 +84,46 @@ https://{AZURE_OPENAI_API_INSTANCE_NAME}.openai.azure.com/openai/deployments/{AZ
 ```
 You should also consider changing the `AZURE_OPENAI_MODELS` variable to the models available in your deployment.
 
+#### Additional Configuration Notes
+
+- **Endpoint Construction**: The provided variables help customize the construction of the API URL for Azure.
+
+- **Model Deployment Naming**: As of 2023-11-10, the Azure API allows only one model per deployment. It's advisable to name your deployments after the model name (e.g., "gpt-3.5-turbo") for easy deployment switching. This is facilitated by setting `AZURE_USE_MODEL_AS_DEPLOYMENT_NAME` to `TRUE`.
+
+Alternatively, use custom deployment names and set `AZURE_OPENAI_DEFAULT_MODEL` for expected functionality.
+
+- **`AZURE_OPENAI_MODELS`**: List the available models, separated by commas without spaces. The first listed model will be the default. If left blank, internal settings will be used. Note that deployment names can't have periods, which are removed when generating the endpoint.
+
+Example use:
+
+```bash
+# .env file
+AZURE_OPENAI_MODELS=gpt-3.5-turbo,gpt-4,gpt-5
+
+```
+
+- **`AZURE_USE_MODEL_AS_DEPLOYMENT_NAME`**: Enable using the model name as the deployment name for the API URL.
+
+Example use:
+
+```bash
+# .env file
+AZURE_USE_MODEL_AS_DEPLOYMENT_NAME=TRUE
+
+```
+
+Note: Azure API does not use the `model` in the payload and is more of an identifying field for the LibreChat App. If using non-model deployment names, but you're having issues with the model not being recognized, you should set this field. It will also not be used as the deployment name if AZURE_USE_MODEL_AS_DEPLOYMENT_NAME is enabled, which will prioritize what the user selects as the model.
+
+- **`AZURE_OPENAI_DEFAULT_MODEL`**: Override the model setting for Azure, useful if using custom deployment names.
+
+Example use:
+
+```bash
+# .env file
+AZURE_OPENAI_DEFAULT_MODEL=gpt-3.5-turbo # do include periods in the model name here
+
+```
+
 ### Optional Variables
 
 * `AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME`: The deployment name for completion. This is currently not in use but may be used in future.

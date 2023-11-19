@@ -40,7 +40,7 @@ meili_data/
 api/node_modules/
 client/node_modules/
 bower_components/
-types/
+*.d.ts
 
 # Floobits
 .floo

@@ -20,7 +20,7 @@ export default function AutoScrollSwitch({
 
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_nav_auto_scroll')}</div>
+      <div> {localize('com_nav_auto_scroll')} </div>
       <Switch
         id="autoScroll"
         checked={autoScroll}

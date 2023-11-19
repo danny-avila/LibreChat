@@ -1,36 +1,32 @@
-import { useEffect } from 'react';
-import TrashIcon from '../svg/TrashIcon';
-import CrossIcon from '../svg/CrossIcon';
-import { useRecoilValue } from 'recoil';
+import { useParams } from 'react-router-dom';
 import { useDeleteConversationMutation } from 'librechat-data-provider';
-import { Dialog, DialogTrigger, Label } from '~/components/ui/';
-import DialogTemplate from '~/components/ui/DialogTemplate';
 import { useLocalize, useConversations, useConversation } from '~/hooks';
-import store from '~/store';
+import { Dialog, DialogTrigger, Label } from '~/components/ui';
+import DialogTemplate from '~/components/ui/DialogTemplate';
+import { TrashIcon, CrossIcon } from '~/components/svg';
 
 export default function DeleteButton({ conversationId, renaming, retainView, title }) {
   const localize = useLocalize();
-  const currentConversation = useRecoilValue(store.conversation) || {};
   const { newConversation } = useConversation();
   const { refreshConversations } = useConversations();
-
-  const confirmDelete = () => {
-    deleteConvoMutation.mutate({ conversationId, source: 'button' });
-  };
-
+  const { conversationId: currentConvoId } = useParams();
   const deleteConvoMutation = useDeleteConversationMutation(conversationId);
 
-  useEffect(() => {
-    if (deleteConvoMutation.isSuccess) {
-      if ((currentConversation as { conversationId?: string }).conversationId == conversationId) {
-        newConversation();
-      }
+  const confirmDelete = () => {
+    deleteConvoMutation.mutate(
+      { conversationId, source: 'button' },
+      {
+        onSuccess: () => {
+          if (currentConvoId == conversationId) {
+            newConversation();
+          }
 
-      refreshConversations();
-      retainView();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deleteConvoMutation.isSuccess]);
+          refreshConversations();
+          retainView();
+        },
+      },
+    );
+  };
 
   return (
     <Dialog>

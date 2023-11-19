@@ -1,4 +1,5 @@
 import type { TMessage } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 
@@ -7,6 +8,7 @@ type TUseGenerations = {
   message: TMessage;
   isSubmitting: boolean;
   isEditing?: boolean;
+  latestMessage?: TMessage | null;
 };
 
 export default function useGenerations({
@@ -14,13 +16,19 @@ export default function useGenerations({
   message,
   isSubmitting,
   isEditing = false,
+  latestMessage: _latestMessage,
 }: TUseGenerations) {
-  const latestMessage = useRecoilValue(store.latestMessage);
+  const latestMessage = useRecoilValue(store.latestMessage) ?? _latestMessage;
 
   const { error, messageId, searchResult, finish_reason, isCreatedByUser } = message ?? {};
-  const isEditableEndpoint = !!['azureOpenAI', 'openAI', 'gptPlugins', 'anthropic'].find(
-    (e) => e === endpoint,
-  );
+  const isEditableEndpoint = !![
+    EModelEndpoint.azureOpenAI,
+    EModelEndpoint.openAI,
+    EModelEndpoint.assistant,
+    EModelEndpoint.gptPlugins,
+    EModelEndpoint.anthropic,
+    EModelEndpoint.anthropic,
+  ].find((e) => e === endpoint);
 
   const continueSupported =
     latestMessage?.messageId === messageId &&
@@ -33,13 +41,13 @@ export default function useGenerations({
   const branchingSupported =
     // 5/21/23: Bing is allowing editing and Message regenerating
     !![
-      'azureOpenAI',
-      'openAI',
-      'chatGPTBrowser',
-      'google',
-      'bingAI',
-      'gptPlugins',
-      'anthropic',
+      EModelEndpoint.azureOpenAI,
+      EModelEndpoint.openAI,
+      EModelEndpoint.chatGPTBrowser,
+      EModelEndpoint.google,
+      EModelEndpoint.bingAI,
+      EModelEndpoint.gptPlugins,
+      EModelEndpoint.anthropic,
     ].find((e) => e === endpoint);
 
   const regenerateEnabled =
