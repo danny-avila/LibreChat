@@ -15,6 +15,7 @@ const supportedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 const useFileHandling = () => {
   const { showToast } = useToastContext();
   const [errors, setErrors] = useState<string[]>([]);
+  const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
   const { files, setFiles, setFilesLoading } = useChatContext();
 
   const displayToast = useCallback(() => {
@@ -115,6 +116,7 @@ const useFileHandling = () => {
     onError: (error, body) => {
       console.log('upload error', error);
       deleteFileById(body.file_id);
+      setError('An error occurred while uploading the file.');
     },
   });
 
@@ -134,30 +136,25 @@ const useFileHandling = () => {
 
   const handleFiles = async (_files: FileList | File[]) => {
     if (_files.length + files.size > fileLimit) {
-      setErrors((prevErrors) => [
-        ...prevErrors,
-        `You can only upload up to ${fileLimit} files at a time.`,
-      ]);
+      setError(`You can only upload up to ${fileLimit} files at a time.`);
       return;
     }
     Array.from(_files).forEach((originalFile) => {
       if (!supportedTypes.includes(originalFile.type)) {
-        setErrors((prevErrors) => [
-          ...prevErrors,
-          'Currently, only JPEG, JPG, PNG, and WEBP files are supported.',
-        ]);
+        setError('Currently, only JPEG, JPG, PNG, and WEBP files are supported.');
         return;
       }
 
       if (originalFile.size >= sizeLimit) {
-        setErrors((prevErrors) => [...prevErrors, `File size exceeds ${sizeMB} MB.`]);
+        setError(`File size exceeds ${sizeMB} MB.`);
         return;
       }
 
+      const file_id = v4();
       try {
         const preview = URL.createObjectURL(originalFile);
         let extendedFile: ExtendedFile = {
-          file_id: v4(),
+          file_id,
           file: originalFile,
           preview,
           progress: 0.2,
@@ -181,7 +178,9 @@ const useFileHandling = () => {
         };
         img.src = preview;
       } catch (error) {
+        deleteFileById(file_id);
         console.log('file handling error', error);
+        setError('An error occurred while processing the file.');
       }
     });
   };
