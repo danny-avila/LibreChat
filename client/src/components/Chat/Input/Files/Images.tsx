@@ -68,7 +68,7 @@ export default function Images({
   }
 
   const deleteFile = (_file: ExtendedFile) => {
-    const { file_id, progress, filepath = '' } = _file;
+    const { file_id, progress, temp_file_id = '', filepath = '' } = _file;
     if (progress < 1) {
       return;
     }
@@ -80,6 +80,7 @@ export default function Images({
     setFiles((currentFiles) => {
       const updatedFiles = new Map(currentFiles);
       updatedFiles.delete(file_id);
+      updatedFiles.delete(temp_file_id);
       return updatedFiles;
     });
 

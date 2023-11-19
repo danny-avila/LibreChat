@@ -64,16 +64,10 @@ const useFileHandling = () => {
       });
 
       setTimeout(() => {
-        const file = files.get(data.temp_file_id);
-        if (!file) {
-          console.warn('File not found');
-          return;
-        }
-        deleteFileById(data.temp_file_id);
-        addFile({
-          ...file,
+        updateFileById(data.temp_file_id, {
           progress: 1,
           file_id: data.file_id,
+          temp_file_id: data.temp_file_id,
           filepath: data.filepath,
         });
       }, 300);
