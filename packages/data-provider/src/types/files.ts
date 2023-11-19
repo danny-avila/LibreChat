@@ -1,5 +1,6 @@
 export type FileUploadResponse = {
   message: string;
+  file_id: string;
   temp_file_id: string;
   filepath: string;
 };

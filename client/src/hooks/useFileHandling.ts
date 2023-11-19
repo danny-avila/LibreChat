@@ -39,14 +39,6 @@ const useFileHandling = () => {
     });
   };
 
-  // const deleteFile = (fileId: string) => {
-  //   setFiles((currentFiles) => {
-  //     const updatedFiles = new Map(currentFiles);
-  //     updatedFiles.delete(fileId);
-  //     return updatedFiles;
-  //   });
-  // };
-
   const deleteFileById = (fileId: string) => {
     setFiles((currentFiles) => {
       const updatedFiles = new Map(currentFiles);
@@ -68,8 +60,12 @@ const useFileHandling = () => {
       });
 
       setTimeout(() => {
-        updateFileById(data.temp_file_id, {
+        const file = files.get(data.temp_file_id);
+        deleteFileById(data.temp_file_id);
+        addFile({
+          ...file,
           progress: 1,
+          file_id: data.file_id,
           filepath: data.filepath,
         });
       }, 300);
