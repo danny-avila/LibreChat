@@ -1,13 +1,14 @@
 import TextareaAutosize from 'react-textarea-autosize';
 import { supportsFiles } from 'librechat-data-provider';
-import { useTextarea } from '~/hooks';
 import { cn, removeFocusOutlines } from '~/utils';
+import { useTextarea } from '~/hooks';
 
 export default function Textarea({ value, onChange, setText, submitMessage, endpoint }) {
   const {
     inputRef,
-    handleKeyDown,
+    handlePaste,
     handleKeyUp,
+    handleKeyDown,
     handleCompositionStart,
     handleCompositionEnd,
     onHeightChange,
@@ -26,6 +27,7 @@ export default function Textarea({ value, onChange, setText, submitMessage, endp
       autoFocus
       value={value}
       onChange={onChange}
+      onPaste={handlePaste}
       onKeyUp={handleKeyUp}
       onKeyDown={handleKeyDown}
       onCompositionStart={handleCompositionStart}
