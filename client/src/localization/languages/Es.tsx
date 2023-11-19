@@ -113,9 +113,9 @@ export default {
   com_endpoint_bing_to_enable_sydney: 'Para activar Sydney',
   com_endpoint_bing_jailbreak: 'Jailbreak',
   com_endpoint_bing_context_placeholder:
-    'Bing puede usar hasta 7k tokens para el \'contexto\', al que puede hacer referencia para la conversación. El límite específico no se conoce, pero puede dar errores al superar los 7k tokens',
+    'Bing puede usar hasta 7k tokens para el "contexto", al que puede hacer referencia para la conversación. El límite específico no se conoce, pero puede dar errores al superar los 7k tokens',
   com_endpoint_bing_system_message_placeholder:
-    'ADVERTENCIA: ¡El uso indebido de esta función puede hacer que te BANEEN de usar Bing! Haz clic en \'Mensaje del sistema\' para ver las instrucciones completas y el mensaje predeterminado si se omite, que es el preajuste de \'Sydney\' que se considera seguro.',
+    'ADVERTENCIA: ¡El uso indebido de esta función puede hacer que te BANEEN de usar Bing! Haz clic en "Mensaje del sistema" para ver las instrucciones completas y el mensaje predeterminado si se omite, que es el preajuste de "Sydney" que se considera seguro.',
   com_endpoint_system_message: 'Mensaje del sistema',
   com_endpoint_default_blank: 'predeterminado: en blanco',
   com_endpoint_default_false: 'predeterminado: falso',
@@ -230,7 +230,7 @@ export default {
     'Usa las herramientas de desarrollo o una extensión mientras estás conectado al sitio para copiar el contenido de la cookie _U. Si esto falla, sigue estas',
   com_endpoint_config_key_edge_instructions: 'instrucciones',
   com_endpoint_config_key_edge_full_key_string: 'para proporcionar las cadenas de cookies completas.',
-  com_endpoint_config_key_chatgpt: 'Para obtener tu token de acceso para ChatGPT \'Versión gratuita\', inicia sesión en',
+  com_endpoint_config_key_chatgpt: 'Para obtener tu token de acceso para ChatGPT "Versión gratuita", inicia sesión en',
   com_endpoint_config_key_chatgpt_then_visit: 'luego visita',
   com_endpoint_config_key_chatgpt_copy_token: 'Copia el token de acceso.',
   com_endpoint_config_key_google_need_to: 'Necesitas',
