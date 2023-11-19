@@ -26,11 +26,6 @@ export const alternateName = {
   [EModelEndpoint.anthropic]: 'Anthropic',
 };
 
-export const supportsFiles = {
-  [EModelEndpoint.openAI]: true,
-  [EModelEndpoint.assistant]: true,
-};
-
 export enum ESide {
   Top = 'top',
   Right = 'right',

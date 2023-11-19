@@ -29,6 +29,28 @@ export const modularEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.openAI,
 ]);
 
+export const supportsFiles = {
+  [EModelEndpoint.openAI]: true,
+  [EModelEndpoint.assistant]: true,
+};
+
+export const openAIModels = [
+  'gpt-3.5-turbo-16k-0613',
+  'gpt-3.5-turbo-16k',
+  'gpt-4-1106-preview',
+  'gpt-3.5-turbo',
+  'gpt-3.5-turbo-1106',
+  'gpt-4-vision-preview',
+  'gpt-4',
+  'gpt-3.5-turbo-instruct-0914',
+  'gpt-3.5-turbo-0613',
+  'gpt-3.5-turbo-0301',
+  'gpt-3.5-turbo-instruct',
+  'gpt-4-0613',
+  'text-davinci-003',
+  'gpt-4-0314',
+];
+
 export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
 export const tPluginAuthConfigSchema = z.object({
@@ -118,6 +140,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
   plugin?: TResPlugin | null;
   plugins?: TResPlugin[];
+  file_ids?: string[];
 };
 
 export const tConversationSchema = z.object({

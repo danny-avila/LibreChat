@@ -1,8 +1,7 @@
-import type { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, supportsFiles } from 'librechat-data-provider';
 import { AttachmentIcon } from '~/components/svg';
 import { FileUpload } from '~/components/ui';
 import { useFileHandling } from '~/hooks';
-import { supportsFiles } from '~/common';
 
 export default function AttachFile({ endpoint }: { endpoint: EModelEndpoint | '' }) {
   const { handleFileChange } = useFileHandling();

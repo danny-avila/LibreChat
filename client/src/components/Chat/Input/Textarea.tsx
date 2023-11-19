@@ -1,5 +1,5 @@
 import TextareaAutosize from 'react-textarea-autosize';
-import { supportsFiles } from '~/common';
+import { supportsFiles } from 'librechat-data-provider';
 import { useTextarea } from '~/hooks';
 import { cn, removeFocusOutlines } from '~/utils';
 
