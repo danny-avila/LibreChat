@@ -184,8 +184,12 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     };
 
     if (files.size > 0) {
-      currentMsg.file_ids = Array.from(files.keys());
-      currentMsg.file_urls = Array.from(files.values()).map((file) => file.filepath) as string[];
+      currentMsg.file_ids = [];
+      currentMsg.file_urls = [];
+      Array.from(files.values()).forEach((file) => {
+        currentMsg?.file_ids?.push(file.file_id);
+        currentMsg?.file_urls?.push(file.filepath ?? '');
+      });
       setFiles(new Map());
     }
 
