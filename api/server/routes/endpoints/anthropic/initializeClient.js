@@ -7,8 +7,8 @@ const initializeClient = async ({ req, res }) => {
   const isUserProvided = ANTHROPIC_API_KEY === 'user_provided';
 
   let anthropicApiKey = isUserProvided ? await getAnthropicUserKey(req.user.id) : ANTHROPIC_API_KEY;
-  let Reverse_Proxy = process.env.ANTHROPIC_REVERSE_PROXY || undefined;
-  console.log('ANTHROPIC_REVERSE_PROXY', Reverse_Proxy);
+  let reverseProxy = process.env.ANTHROPIC_REVERSE_PROXY || undefined;
+  console.log('ANTHROPIC_REVERSE_PROXY', reverseProxy);
 
   if (expiresAt && isUserProvided) {
     checkUserKeyExpiry(
@@ -17,7 +17,7 @@ const initializeClient = async ({ req, res }) => {
     );
   }
 
-  const client = new AnthropicClient(anthropicApiKey, { req, res }, {}, Reverse_Proxy);
+  const client = new AnthropicClient(anthropicApiKey, { req, res }, {}, reverseProxy);
 
   return {
     client,
