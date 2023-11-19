@@ -7,7 +7,14 @@ const {
 } = require('./Message');
 const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
-const { findFileById, createOrUpdateFile, deleteFile, deleteFiles } = require('./File');
+const {
+  findFileById,
+  createFile,
+  updateFile,
+  deleteFile,
+  deleteFiles,
+  getFiles,
+} = require('./File');
 const Key = require('./Key');
 const User = require('./User');
 const Session = require('./Session');
@@ -38,7 +45,9 @@ module.exports = {
   deletePresets,
 
   findFileById,
-  createOrUpdateFile,
+  createFile,
+  updateFile,
   deleteFile,
   deleteFiles,
+  getFiles,
 };

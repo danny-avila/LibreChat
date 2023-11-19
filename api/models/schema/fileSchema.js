@@ -11,6 +11,7 @@ const mongoose = require('mongoose');
  * @property {string} filepath - Location of the file
  * @property {'file'} object - Type of object, always 'file'
  * @property {string} type - Type of file
+ * @property {number} usage - Number of uses of the file
  * @property {number} [width] - Optional width of the file
  * @property {number} [height] - Optional height of the file
  * @property {Date} [expiresAt] - Optional height of the file
@@ -41,6 +42,11 @@ const fileSchema = mongoose.Schema(
       type: Number,
       required: true,
     },
+    usage: {
+      type: Number,
+      required: true,
+      default: 0,
+    },
     filename: {
       type: String,
       required: true,
@@ -62,8 +68,7 @@ const fileSchema = mongoose.Schema(
     height: Number,
     expiresAt: {
       type: Date,
-      expires: 600,
-      default: Date.now,
+      expires: 3600,
     },
   },
   {

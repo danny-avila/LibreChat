@@ -4,12 +4,13 @@ const fileSchema = require('./schema/fileSchema');
 const File = mongoose.model('File', fileSchema);
 
 /**
- * Finds a file by its file_id.
+ * Finds a file by its file_id with additional query options.
  * @param {string} file_id - The unique identifier of the file.
+ * @param {object} options - Query options for filtering, projection, etc.
  * @returns {Promise<MongoFile>} A promise that resolves to the file document or null.
  */
-const findFileById = async (file_id) => {
-  return await File.findOne({ file_id }).lean();
+const findFileById = async (file_id, options = {}) => {
+  return await File.findOne({ file_id, ...options }).lean();
 };
 
 /**
@@ -22,20 +23,33 @@ const getFiles = async (filter) => {
 };
 
 /**
- * Updates a file identified by file_id with new data.
+ * Creates a new file with a TTL of 1 hour.
+ * @param {Object} data - The file data to be created, must contain file_id.
+ * @returns {Promise<MongoFile>} A promise that resolves to the created file document.
+ */
+const createFile = async (data) => {
+  const fileData = {
+    ...data,
+    expiresAt: new Date(Date.now() + 3600 * 1000),
+  };
+  return await File.findOneAndUpdate({ file_id: data.file_id }, fileData, {
+    new: true,
+    upsert: true,
+  }).lean();
+};
+
+/**
+ * Updates a file identified by file_id with new data and removes the TTL.
  * @param {Object} data - The data to update, must contain file_id.
- * @param {boolean} [setTTL=false] - Whether to set the expiresAt field to the current time.
  * @returns {Promise<MongoFile>} A promise that resolves to the updated file document.
  */
-const createOrUpdateFile = async (data, setTTL = false) => {
+const updateFile = async (data) => {
   const { file_id, ...update } = data;
-  const updateOperation = { $set: update, $unset: {} };
-
-  if (!setTTL) {
-    updateOperation.$unset = { expiresAt: '' };
-  }
-
-  return await File.findOneAndUpdate({ file_id }, update, { new: true, upsert: true }).lean();
+  const updateOperation = {
+    $set: update,
+    $unset: { expiresAt: '' }, // Remove the expiresAt field to prevent TTL
+  };
+  return await File.findOneAndUpdate({ file_id }, updateOperation, { new: true }).lean();
 };
 
 /**
@@ -60,7 +74,8 @@ module.exports = {
   File,
   findFileById,
   getFiles,
-  createOrUpdateFile,
+  createFile,
+  updateFile,
   deleteFile,
   deleteFiles,
 };
