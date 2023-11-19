@@ -113,9 +113,9 @@ export default {
   com_endpoint_bing_to_enable_sydney: 'Para ativar Sydney',
   com_endpoint_bing_jailbreak: 'Jailbreak',
   com_endpoint_bing_context_placeholder:
-    'Bing pode usar até 7k tokens para \'contexto\', que ele pode referenciar para a conversa. O limite específico não é conhecido, mas pode gerar erros se exceder 7k tokens',
+    'Bing pode usar até 7k tokens para "contexto", que ele pode referenciar para a conversa. O limite específico não é conhecido, mas pode gerar erros se exceder 7k tokens',
   com_endpoint_bing_system_message_placeholder:
-    'AVISO: O uso indevido deste recurso pode fazer com que você seja BANIDO de usar o Bing! Clique em \'Mensagem do Sistema\' para obter instruções completas e a mensagem padrão se omitida, que é o preset \'Sydney\' que é considerado seguro.',
+    'AVISO: O uso indevido deste recurso pode fazer com que você seja BANIDO de usar o Bing! Clique em "Mensagem do Sistema" para obter instruções completas e a mensagem padrão se omitida, que é o preset "Sydney" que é considerado seguro.',
   com_endpoint_system_message: 'Mensagem do Sistema',
   com_endpoint_default_blank: 'padrão: em branco',
   com_endpoint_default_false: 'padrão: falso',
@@ -218,14 +218,14 @@ export default {
     'Use as ferramentas de desenvolvimento ou uma extensão enquanto estiver logado no site para copiar o conteúdo do cookie _U. Se isso falhar, siga estas',
   com_endpoint_config_key_edge_instructions: 'instruções',
   com_endpoint_config_key_edge_full_key_string: 'para fornecer as strings completas dos cookies.',
-  com_endpoint_config_key_chatgpt: 'Para obter seu token de acesso para o ChatGPT \'Versão Gratuita\', faça login em',
+  com_endpoint_config_key_chatgpt: 'Para obter seu token de acesso para o ChatGPT "Versão Gratuita", faça login em',
   com_endpoint_config_key_chatgpt_then_visit: 'depois visite',
   com_endpoint_config_key_chatgpt_copy_token: 'Copie o token de acesso.',
   com_endpoint_config_key_google_need_to: 'Você precisa',
   com_endpoint_config_key_google_vertex_ai: 'Ativar o Vertex AI',
   com_endpoint_config_key_google_vertex_api: 'API no Google Cloud, depois',
   com_endpoint_config_key_google_vertex_api_role:
-    'Certifique-se de clicar em \'Criar e Continuar\' para dar pelo menos a função de \'Usuário do Vertex AI\'. Por último, crie uma chave JSON para importar aqui.',
+    'Certifique-se de clicar em "Criar e Continuar" para dar pelo menos a função de "Usuário do Vertex AI". Por último, crie uma chave JSON para importar aqui.',
   com_nav_auto_scroll: 'Auto-rolar para o mais recente ao abrir',
   com_nav_plugin_store: 'Loja de plugins',
   com_nav_plugin_search: 'Pesquisar plugins',
