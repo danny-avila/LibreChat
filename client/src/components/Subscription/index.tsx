@@ -195,7 +195,7 @@ function SubscriptionContent() {
               fontSize: '1.5rem',
               marginBottom: '0.5rem',
               textAlign: 'center'
-            }}>Plan Subscription</h2>
+            }}>{localize(lang, 'com_ui_plan_subscription')}</h2>
             <p style={{
               marginBottom: '3rem'
             }}></p>
@@ -205,13 +205,13 @@ function SubscriptionContent() {
             <h2 style={{
               fontSize: '1.5rem',
               marginBottom: '0.5rem'
-            }}>Pricing:</h2>
+            }}>{localize(lang, 'com_ui_pricing')}:</h2>
             <ul style={{
               marginBottom: '0.5rem',
               listStyleType: 'disc',
               paddingLeft: '1.5rem',
             }}>
-              <li>20 USD / month</li>
+              <li>{localize(lang, 'com_ui_monthly_price')}</li>
             </ul>
           </div>
 
@@ -219,14 +219,14 @@ function SubscriptionContent() {
             <h2 style={{
               fontSize: '1.5rem',
               marginBottom: '0.5rem'
-            }}>Expiration Date:</h2>
+            }}>{localize(lang, 'com_ui_expiration_date')}:</h2>
             <ul style={{
               marginBottom: '0.5rem',
               listStyleType: 'disc',
               paddingLeft: '1.5rem',
             }}>
               <li>{subscriptionDueDate ? subscriptionDueDate : 'Loading subscription expiration date...'}</li>
-              <li>Please renew your subscription before or on the expiration day!</li>
+              <li>{localize(lang, 'com_ui_reminder')}</li>
             </ul>
           </div>
 
@@ -243,7 +243,7 @@ function SubscriptionContent() {
             <h2 style={{
               fontSize: '1.5rem',
               marginBottom: '0rem'
-            }}>Payment Method:</h2>
+            }}>{localize(lang, 'com_ui_payment_method')}:</h2>
           </div>
 
           <div style={{

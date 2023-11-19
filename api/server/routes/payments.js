@@ -127,7 +127,7 @@ router.get('/subscription-endtime/:userId', requireJwtAuth, async (req, res) => 
       return res.status(404).json({ message: 'No subscription found for this user.' });
     }
 
-    const subscriptionDueDime = moment(latestPayment.endTime).format('MMM D, YYYY');
+    const subscriptionDueDime = moment(latestPayment.endTime).format('YYYY-MM-DD');
 
     // Send back the subscription end time
     res.json({ dueTime: subscriptionDueDime });
