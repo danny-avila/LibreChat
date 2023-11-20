@@ -42,8 +42,8 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
             height={file.height ?? 1920}
             width={file.width ?? 1080}
             altText={file.filename ?? 'Uploaded Image'}
-            n={imageFiles.length}
-            i={i}
+            // n={imageFiles.length}
+            // i={i}
           />
         ))}
       <div

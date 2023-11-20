@@ -105,11 +105,13 @@ const useFileHandling = () => {
       });
 
       setTimeout(() => {
+        const file = files.get(data.temp_file_id);
         updateFileById(data.temp_file_id, {
           progress: 1,
           file_id: data.file_id,
           temp_file_id: data.temp_file_id,
-          filepath: data.filepath,
+          // filepath: data.filepath,
+          filepath: file?.preview,
           type: data.type,
           height: data.height,
           width: data.width,
@@ -178,7 +180,7 @@ const useFileHandling = () => {
           replaceFile(extendedFile);
 
           await uploadFile(extendedFile);
-          URL.revokeObjectURL(preview); // Clean up the original object URL
+          // URL.revokeObjectURL(preview); // Clean up the original object URL
         };
         img.src = preview;
       } catch (error) {

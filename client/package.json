@@ -62,6 +62,7 @@
     "react-dnd-html5-backend": "^16.0.1",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.43.9",
+    "react-lazy-load-image-component": "^1.6.0",
     "react-markdown": "^8.0.6",
     "react-router-dom": "^6.11.2",
     "react-textarea-autosize": "^8.4.0",
