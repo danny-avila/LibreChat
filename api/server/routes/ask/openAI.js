@@ -123,8 +123,12 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     }
 
     if (file_urls) {
-      userMessage = { ...userMessage, file_urls };
+      userMessage.file_urls = file_urls;
       delete userMessage.image_urls;
+    }
+
+    if (req.body.file_ids) {
+      userMessage.file_ids = req.body.file_ids;
     }
 
     sendMessage(res, {

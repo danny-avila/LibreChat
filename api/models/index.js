@@ -14,6 +14,7 @@ const {
   deleteFile,
   deleteFiles,
   getFiles,
+  updateFileUsage,
 } = require('./File');
 const Key = require('./Key');
 const User = require('./User');
@@ -50,4 +51,5 @@ module.exports = {
   deleteFile,
   deleteFiles,
   getFiles,
+  updateFileUsage,
 };

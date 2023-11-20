@@ -53,6 +53,20 @@ const updateFile = async (data) => {
 };
 
 /**
+ * Increments the usage of a file identified by file_id.
+ * @param {Object} data - The data to update, must contain file_id and the increment value for usage.
+ * @returns {Promise<MongoFile>} A promise that resolves to the updated file document.
+ */
+const updateFileUsage = async (data) => {
+  const { file_id, inc = 1 } = data;
+  const updateOperation = {
+    $inc: { usage: inc },
+    $unset: { expiresAt: '' },
+  };
+  return await File.findOneAndUpdate({ file_id }, updateOperation, { new: true }).lean();
+};
+
+/**
  * Deletes a file identified by file_id.
  * @param {string} file_id - The unique identifier of the file to delete.
  * @returns {Promise<MongoFile>} A promise that resolves to the deleted file document or null.
@@ -76,6 +90,7 @@ module.exports = {
   getFiles,
   createFile,
   updateFile,
+  updateFileUsage,
   deleteFile,
   deleteFiles,
 };

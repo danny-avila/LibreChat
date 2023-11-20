@@ -85,6 +85,10 @@ const messageSchema = mongoose.Schema(
       select: false,
       default: false,
     },
+    file_ids: {
+      type: [String],
+      default: undefined,
+    },
     file_urls: {
       type: [String],
       default: undefined,
