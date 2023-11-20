@@ -14,6 +14,7 @@ import { router } from './routes';
 
 // Initialize GA4
 ReactGA.initialize('G-2HYZSSFTSV');
+ReactGA.initialize('AW-11258294301');
 
 const PageViewTracker = () => {
   const location = useLocation();
