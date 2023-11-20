@@ -29,21 +29,22 @@ const ErrorMessage = ({ text }: TText) => {
 
 // Display Message Component
 const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => {
-  const image_urls = message?.file_urls
-    ? message.file_urls.filter(
-      (url) =>
-        url.includes('images') ||
-          url.includes('jpg') ||
-          url.includes('png') ||
-          url.includes('jpeg') ||
-          url.includes('webp'),
-    )
+  const imageFiles = message?.files
+    ? message.files.filter((file) => file.type.startsWith('image/'))
     : null;
   return (
     <Container>
-      {image_urls &&
-        image_urls.map((url, i) => (
-          <Image key={url} imageUrl={url} altText={text} n={image_urls.length} i={i} />
+      {imageFiles &&
+        imageFiles.map((file, i) => (
+          <Image
+            key={file.file_id}
+            imagePath={file.filepath ?? ''}
+            height={file.height ?? 1920}
+            width={file.width ?? 1080}
+            altText={file.filename ?? 'Uploaded Image'}
+            n={imageFiles.length}
+            i={i}
+          />
         ))}
       <div
         className={cn(

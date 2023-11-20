@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 
-export default function DialogImage({ src = '' }) {
+export default function DialogImage({ src = '', width = 1920, height = 1080 }) {
   return (
     <Dialog.Portal>
       <Dialog.Overlay
@@ -32,7 +32,7 @@ export default function DialogImage({ src = '' }) {
         <Dialog.Content
           className="radix-state-open:animate-contentShow relative max-h-[85vh] max-w-[90vw] shadow-xl focus:outline-none"
           tabIndex={-1}
-          style={{ pointerEvents: 'auto', aspectRatio: 1.75 / 1 }}
+          style={{ pointerEvents: 'auto', aspectRatio: height > width ? 1 / 1.75 : 1.75 / 1 }}
         >
           <img src={src} alt="Uploaded image" className="h-full w-full object-contain" />
         </Dialog.Content>

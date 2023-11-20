@@ -183,13 +183,21 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       error: false,
     };
 
-    if (files.size > 0) {
-      currentMsg.file_ids = [];
-      currentMsg.file_urls = [];
-      Array.from(files.values()).forEach((file) => {
-        currentMsg?.file_ids?.push(file.file_id);
-        currentMsg?.file_urls?.push(file.filepath ?? '');
-      });
+    const parentMessage = currentMessages?.find(
+      (msg) => msg.messageId === latestMessage?.parentMessageId,
+    );
+    const reuseFiles = isRegenerate && parentMessage?.files;
+    if (reuseFiles && parentMessage.files?.length) {
+      currentMsg.files = parentMessage.files;
+      setFiles(new Map());
+    } else if (files.size > 0) {
+      currentMsg.files = Array.from(files.values()).map((file) => ({
+        file_id: file.file_id,
+        filepath: file.filepath,
+        type: file.type || '', // Ensure type is not undefined
+        height: file.height,
+        width: file.width,
+      }));
       setFiles(new Map());
     }
 

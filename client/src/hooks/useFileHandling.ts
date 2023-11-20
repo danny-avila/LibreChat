@@ -110,6 +110,10 @@ const useFileHandling = () => {
           file_id: data.file_id,
           temp_file_id: data.temp_file_id,
           filepath: data.filepath,
+          type: data.type,
+          height: data.height,
+          width: data.width,
+          filename: data.filename,
         });
       }, 300);
     },

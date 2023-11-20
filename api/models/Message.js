@@ -18,7 +18,7 @@ module.exports = {
     error,
     unfinished,
     cancelled,
-    file_urls,
+    files,
     isEdited = false,
     finish_reason = null,
     tokenCount = null,
@@ -51,8 +51,8 @@ module.exports = {
         model,
       };
 
-      if (file_urls) {
-        update.file_urls = file_urls;
+      if (files) {
+        update.files = files;
       }
       // may also need to update the conversation here
       await Message.findOneAndUpdate({ messageId }, update, { upsert: true, new: true });

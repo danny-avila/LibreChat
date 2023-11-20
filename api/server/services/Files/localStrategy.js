@@ -22,7 +22,7 @@ const localStrategy = async ({ res, file, metadata }) => {
       bytes,
       filepath,
       filename: file.originalname,
-      type: file.mimetype,
+      type: 'image/webp',
       width,
       height,
     },

@@ -26,7 +26,6 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
   console.log('ask log');
   console.dir({ text, conversationId, endpointOption }, { depth: null });
   let metadata;
-  let file_urls;
   let userMessage;
   let promptTokens;
   let userMessageId;
@@ -50,8 +49,6 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
         promptTokens = data[key];
       } else if (!conversationId && key === 'conversationId') {
         conversationId = data[key];
-      } else if (key === 'file_urls') {
-        file_urls = data[key];
       }
     }
   };
@@ -122,13 +119,9 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       response = { ...response, ...metadata };
     }
 
-    if (file_urls) {
-      userMessage.file_urls = file_urls;
+    if (client.options.attachments) {
+      userMessage.files = client.options.attachments;
       delete userMessage.image_urls;
-    }
-
-    if (req.body.file_ids) {
-      userMessage.file_ids = req.body.file_ids;
     }
 
     sendMessage(res, {

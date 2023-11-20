@@ -13,10 +13,10 @@ const { updateFileUsage } = require('~/models');
 //     }));
 // };
 
-const processFiles = async (req) => {
-  const { file_ids } = req.body;
+const processFiles = async (files) => {
   const promises = [];
-  for (let file_id of file_ids) {
+  for (let file of files) {
+    const { file_id } = file;
     promises.push(updateFileUsage({ file_id }));
   }
 

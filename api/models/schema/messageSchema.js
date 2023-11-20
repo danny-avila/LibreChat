@@ -85,14 +85,7 @@ const messageSchema = mongoose.Schema(
       select: false,
       default: false,
     },
-    file_ids: {
-      type: [String],
-      default: undefined,
-    },
-    file_urls: {
-      type: [String],
-      default: undefined,
-    },
+    files: [{ type: mongoose.Schema.Types.Mixed }],
     plugin: {
       latest: {
         type: String,

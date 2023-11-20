@@ -15,9 +15,9 @@ function buildEndpointOption(req, res, next) {
   const { endpoint } = req.body;
   const parsedBody = parseConvo(endpoint, req.body);
   req.body.endpointOption = buildFunction[endpoint](endpoint, parsedBody);
-  if (req.body.file_ids) {
+  if (req.body.files) {
     // hold the promise
-    req.body.endpointOption.attachments = processFiles(req);
+    req.body.endpointOption.attachments = processFiles(req.body.files);
   }
   next();
 }

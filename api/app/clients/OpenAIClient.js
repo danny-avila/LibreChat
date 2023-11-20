@@ -330,10 +330,13 @@ class OpenAIClient extends BaseClient {
 
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
-      orderedMessages[orderedMessages.length - 1].image_urls = await encodeAndFormat(
+      const { files, image_urls } = await encodeAndFormat(
         this.options.req,
-        attachments,
+        attachments.filter((file) => file.type.includes('image')),
       );
+
+      orderedMessages[orderedMessages.length - 1].image_urls = image_urls;
+      this.options.attachments = files;
     }
 
     const formattedMessages = orderedMessages.map((message, i) => {
@@ -372,13 +375,6 @@ class OpenAIClient extends BaseClient {
 
     if (promptTokens >= 0 && typeof opts.getReqData === 'function') {
       opts.getReqData({ promptTokens });
-    }
-
-    if (this.options.attachments && typeof opts.getReqData === 'function') {
-      const file_urls = (await this.options.attachments).map(
-        (file) => `/images/${this.user}/img-${file.file_id}.webp`,
-      );
-      opts.getReqData({ file_urls });
     }
 
     return result;

@@ -1,36 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, memo } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import DialogImage from './DialogImage';
 import { cn } from '~/utils';
 
 const Image = ({
-  imageUrl,
+  imagePath,
   altText,
+  height,
+  width,
   n,
   i,
 }: {
-  imageUrl: string;
+  imagePath: string;
   altText: string;
+  height: number;
+  width: number;
   n: number;
   i: number;
 }) => {
-  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
-
-  const handleImageLoad = (e: React.ChangeEvent<HTMLImageElement>) => {
-    setImageSize({
-      width: e.target.naturalWidth,
-      height: e.target.naturalHeight,
-    });
-  };
-
+  const [isLoaded, setIsLoaded] = useState(false);
+  const handleImageLoad = () => setIsLoaded(true);
   // const makeSquare = n >= 3 && i < 2;
-  const imageStyle = () => {
-    if (imageSize.height > 700 && n === 1) {
-      return { maxHeight: '700px', width: 'auto', color: 'transparent' };
-    }
-    return { maxWidth: '100%', height: 'auto', color: 'transparent' };
-  };
-
   return (
     <Dialog.Root>
       <div className="">
@@ -38,24 +28,28 @@ const Image = ({
           <Dialog.Trigger asChild>
             <button type="button" aria-haspopup="dialog" aria-expanded="false">
               <img
+                // loading="lazy"
                 alt={altText}
-                loading="lazy"
-                decoding="async"
                 className={cn(
                   'max-w-full opacity-100 transition-opacity duration-300',
                   // n >= 3 && i < 2 ? 'aspect-square object-cover' : '',
+                  isLoaded ? 'opacity-100' : 'opacity-0',
                 )}
-                src={imageUrl}
+                src={imagePath}
                 onLoad={handleImageLoad}
-                style={imageStyle()}
+                style={{
+                  height: 'auto',
+                  width,
+                  color: 'transparent',
+                }}
               />
             </button>
           </Dialog.Trigger>
         </div>
       </div>
-      <DialogImage src={imageUrl} />
+      <DialogImage src={imagePath} height={height} width={width} />
     </Dialog.Root>
   );
 };
 
-export default Image;
+export default memo(Image);

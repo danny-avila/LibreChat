@@ -231,7 +231,9 @@ export interface ExtendedFile {
   file: File;
   file_id: string;
   temp_file_id?: string;
+  type?: string;
   filepath?: string;
+  filename?: string;
   width?: number;
   height?: number;
   preview: string;

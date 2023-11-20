@@ -3,6 +3,11 @@ export type FileUploadResponse = {
   file_id: string;
   temp_file_id: string;
   filepath: string;
+  filename: string;
+  type: string;
+  size: number;
+  height: number;
+  width: number;
 };
 
 export type FileUploadBody = {

@@ -24,14 +24,17 @@ async function encodeAndMove(req, file) {
   const filepath = path.join(publicPath, file.filepath);
 
   if (!filepath.includes('temp')) {
-    return await encodeImage(newPath);
+    const base64 = await encodeImage(filepath);
+    return [file, base64];
   }
 
   const newPath = path.join(userPath, path.basename(file.filepath));
   await fs.promises.rename(filepath, newPath);
   const newFilePath = path.posix.join('/', 'images', req.user.id, path.basename(file.filepath));
-  await updateFile({ file_id: file.file_id, filepath: newFilePath });
-  return await encodeImage(newPath);
+  const promises = [];
+  promises.push(updateFile({ file_id: file.file_id, filepath: newFilePath }));
+  promises.push(encodeImage(newPath));
+  return await Promise.all(promises);
 }
 
 async function encodeAndFormat(req, files) {
@@ -44,15 +47,31 @@ async function encodeAndFormat(req, files) {
   // to prefer "high" but "low" may be used if the image is small enough
   const detail = req.body.detail ?? 'auto';
   const encodedImages = await Promise.all(promises);
-  return [
-    ...encodedImages.map((base64) => ({
+
+  const result = {
+    files: [],
+    image_urls: [],
+  };
+
+  for (const [file, base64] of encodedImages) {
+    result.image_urls.push({
       type: 'image_url',
       image_url: {
         url: `data:image/webp;base64,${base64}`,
         detail,
       },
-    })),
-  ];
+    });
+
+    result.files.push({
+      file_id: file.file_id,
+      filepath: file.filepath,
+      filename: file.filename,
+      type: file.type,
+      height: file.height,
+      width: file.width,
+    });
+  }
+  return result;
 }
 
 module.exports = {
