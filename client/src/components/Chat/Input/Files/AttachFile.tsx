@@ -10,12 +10,13 @@ export default function AttachFile({ endpoint }: { endpoint: EModelEndpoint | ''
   }
 
   return (
-    <div className="absolute bottom-1 left-0 md:left-1">
+    <div className="absolute bottom-2 left-2 md:bottom-3 md:left-4">
       <FileUpload handleFileChange={handleFileChange} className="flex">
         <button
           type="button"
           className="btn relative p-0 text-black dark:text-white"
           aria-label="Attach files"
+          style={{ padding: 0 }}
         >
           <div className="flex w-full items-center justify-center gap-2">
             <AttachmentIcon />
