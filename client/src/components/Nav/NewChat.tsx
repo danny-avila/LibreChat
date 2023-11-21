@@ -1,6 +1,6 @@
 import { useLocalize, useConversation, useNewConvo, useOriginNavigate } from '~/hooks';
 
-export default function NewChat() {
+export default function NewChat({ toggleNav }: { toggleNav: () => void }) {
   const { newConversation } = useConversation();
   const { newConversation: newConvo } = useNewConvo();
   const navigate = useOriginNavigate();
@@ -10,6 +10,7 @@ export default function NewChat() {
     newConvo();
     newConversation();
     navigate('new');
+    toggleNav();
   };
 
   return (

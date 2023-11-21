@@ -13,7 +13,7 @@ import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
-export default function Conversation({ conversation, retainView, i }) {
+export default function Conversation({ conversation, retainView, toggleNav, i }) {
   const { conversationId: currentConvoId } = useParams();
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
@@ -30,6 +30,8 @@ export default function Conversation({ conversation, retainView, i }) {
     if (currentConvoId === conversationId) {
       return;
     }
+
+    toggleNav();
 
     // set document title
     document.title = title;
