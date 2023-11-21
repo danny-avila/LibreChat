@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { TEndpointOption, getResponseSender } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import { useChatContext } from '~/Providers/ChatContext';
 import useFileHandling from './useFileHandling';
@@ -91,7 +92,9 @@ export default function useTextarea({ setText, submitMessage }) {
       return 'Edit your message or Regenerate.';
     }
 
-    return 'Message ChatGPT…';
+    const sender = getResponseSender(conversation as TEndpointOption);
+
+    return `Message ${sender ? sender : 'ChatGPT'}…`;
   };
 
   const onHeightChange = (height: number) => {
