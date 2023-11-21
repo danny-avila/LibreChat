@@ -35,7 +35,7 @@ function ChatView({ index = 0 }: { index?: number }) {
       <Presentation>
         {isLoading && conversationId !== 'new' ? (
           <div className="flex h-screen items-center justify-center">
-            <Spinner className="dark:text-white" />
+            <Spinner className="opacity-0" />
           </div>
         ) : messagesTree && messagesTree.length !== 0 ? (
           <MessagesView messagesTree={messagesTree} Header={<Header />} />

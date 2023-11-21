@@ -11,7 +11,7 @@ import { useChatContext } from '~/Providers';
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
-// import { cn } from '~/utils';
+import { cn } from '~/utils';
 
 export default function Message(props: TMessageProps) {
   const {
@@ -136,7 +136,15 @@ export default function Message(props: TMessageProps) {
                 </div>
               </div>
             </div>
-            <div className="agent-turn relative flex w-[calc(100%-50px)] w-full flex-col lg:w-[calc(100%-36px)]">
+            <div
+              className={cn(
+                'relative flex w-[calc(100%-50px)] w-full flex-col lg:w-[calc(100%-36px)]',
+                isCreatedByUser ? '' : 'agent-turn',
+              )}
+            >
+              <div className="select-none font-semibold">
+                {isCreatedByUser ? 'You' : message.sender}
+              </div>
               <div className="flex-col gap-1 md:gap-3">
                 <div className="flex max-w-full flex-grow flex-col gap-0">
                   {/* Legacy Plugins */}
