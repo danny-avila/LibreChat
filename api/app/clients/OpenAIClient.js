@@ -373,7 +373,7 @@ class OpenAIClient extends BaseClient {
       result.tokenCountMap = tokenCountMap;
     }
 
-    if (promptTokens >= 0 && typeof opts.getReqData === 'function') {
+    if (promptTokens >= 0 && typeof opts?.getReqData === 'function') {
       opts.getReqData({ promptTokens });
     }
 
