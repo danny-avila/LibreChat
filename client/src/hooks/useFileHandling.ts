@@ -8,8 +8,10 @@ import { useUploadImageMutation } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 
 const sizeMB = 20;
+const maxSize = 25;
 const fileLimit = 10;
 const sizeLimit = sizeMB * 1024 * 1024; // 20 MB
+const totalSizeLimit = maxSize * 1024 * 1024; // 25 MB
 const supportedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
 const useFileHandling = () => {
@@ -110,8 +112,9 @@ const useFileHandling = () => {
           progress: 1,
           file_id: data.file_id,
           temp_file_id: data.temp_file_id,
-          // filepath: data.filepath,
-          filepath: file?.preview,
+          filepath: data.filepath,
+          // filepath: file?.preview,
+          preview: file?.preview,
           type: data.type,
           height: data.height,
           width: data.width,
@@ -140,22 +143,69 @@ const useFileHandling = () => {
     uploadImage.mutate({ formData, file_id: extendedFile.file_id });
   };
 
-  const handleFiles = async (_files: FileList | File[]) => {
-    if (_files.length + files.size > fileLimit) {
+  const validateFiles = (fileList: File[]) => {
+    const existingFiles = Array.from(files.values());
+    const incomingTotalSize = fileList.reduce((total, file) => total + file.size, 0);
+    const currentTotalSize = existingFiles.reduce((total, file) => total + file.size, 0);
+
+    if (fileList.length + files.size > fileLimit) {
       setError(`You can only upload up to ${fileLimit} files at a time.`);
-      return;
+      return false;
     }
-    Array.from(_files).forEach((originalFile) => {
+
+    for (let i = 0; i < fileList.length; i++) {
+      const originalFile = fileList[i];
       if (!supportedTypes.includes(originalFile.type)) {
         setError('Currently, only JPEG, JPG, PNG, and WEBP files are supported.');
-        return;
+        return false;
       }
 
       if (originalFile.size >= sizeLimit) {
         setError(`File size exceeds ${sizeMB} MB.`);
-        return;
+        return false;
       }
+    }
 
+    if (currentTotalSize + incomingTotalSize > totalSizeLimit) {
+      setError(`The total size of the files cannot exceed ${maxSize} MB.`);
+      return false;
+    }
+
+    const combinedFilesInfo = [
+      ...existingFiles.map(
+        (file) => `${file.file.name}-${file.size}-${file.type?.split('/')[0] ?? 'file'}`,
+      ),
+      ...fileList.map((file) => `${file.name}-${file.size}-${file.type?.split('/')[0] ?? 'file'}`),
+    ];
+
+    const uniqueFilesSet = new Set(combinedFilesInfo);
+
+    if (uniqueFilesSet.size !== combinedFilesInfo.length) {
+      setError('Duplicate file detected.');
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleFiles = async (_files: FileList | File[]) => {
+    const fileList = Array.from(_files);
+    /* Validate files */
+    let filesAreValid: boolean;
+    try {
+      filesAreValid = validateFiles(fileList);
+    } catch (error) {
+      console.error('file validation error', error);
+      setError('An error occurred while validating the file.');
+      return;
+    }
+    if (!filesAreValid) {
+      setFilesLoading(false);
+      return;
+    }
+
+    /* Process files */
+    fileList.forEach((originalFile) => {
       const file_id = v4();
       try {
         const preview = URL.createObjectURL(originalFile);
@@ -164,6 +214,7 @@ const useFileHandling = () => {
           file: originalFile,
           preview,
           progress: 0.2,
+          size: originalFile.size,
         };
 
         addFile(extendedFile);
@@ -180,7 +231,8 @@ const useFileHandling = () => {
           replaceFile(extendedFile);
 
           await uploadFile(extendedFile);
-          // URL.revokeObjectURL(preview); // Clean up the original object URL
+          // This gets cleaned up in the Image component, after receiving the server image
+          // URL.revokeObjectURL(preview);
         };
         img.src = preview;
       } catch (error) {

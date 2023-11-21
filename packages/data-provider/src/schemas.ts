@@ -144,6 +144,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
     type: string;
     file_id: string;
     filename?: string;
+    preview?: string;
     filepath?: string;
     height?: number;
     width?: number;

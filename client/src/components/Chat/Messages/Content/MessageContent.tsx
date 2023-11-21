@@ -38,7 +38,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
         imageFiles.map((file, i) => (
           <Image
             key={file.file_id}
-            imagePath={file.filepath ?? ''}
+            imagePath={file.preview ?? file.filepath ?? ''}
             height={file.height ?? 1920}
             width={file.width ?? 1080}
             altText={file.filename ?? 'Uploaded Image'}
