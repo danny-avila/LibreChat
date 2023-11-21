@@ -1,6 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect } from 'react';
 import copy from 'copy-to-clipboard';
+import { useRecoilValue } from 'recoil';
 import { Plugin } from '~/components/Messages/Content';
 import MessageContent from './Content/MessageContent';
 import { Icon } from '~/components/Endpoints';
@@ -12,8 +13,10 @@ import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
 import { cn } from '~/utils';
+import store from '~/store';
 
 export default function Message(props: TMessageProps) {
+  const autoScroll = useRecoilValue(store.autoScroll);
   const {
     message,
     scrollToBottom,
@@ -27,7 +30,6 @@ export default function Message(props: TMessageProps) {
   const {
     ask,
     regenerate,
-    autoScroll,
     abortScroll,
     isSubmitting,
     conversation,

@@ -317,7 +317,6 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
   );
   const [showPopover, setShowPopover] = useRecoilState(store.showPopoverFamily(index));
   const [abortScroll, setAbortScroll] = useRecoilState(store.abortScrollFamily(index));
-  const [autoScroll, setAutoScroll] = useRecoilState(store.autoScrollFamily(index));
   const [preset, setPreset] = useRecoilState(store.presetByIndex(index));
   const [textareaHeight, setTextareaHeight] = useRecoilState(store.textareaHeightFamily(index));
   const [optionSettings, setOptionSettings] = useRecoilState(store.optionSettingsFamily(index));
@@ -351,8 +350,6 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     setShowPopover,
     abortScroll,
     setAbortScroll,
-    autoScroll,
-    setAutoScroll,
     showBingToneSetting,
     setShowBingToneSetting,
     preset,
