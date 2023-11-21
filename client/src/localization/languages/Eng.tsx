@@ -29,6 +29,7 @@ export default {
   com_ui_of: 'of',
   com_ui_entries: 'Entries',
   com_ui_pay_per_call: 'All AI conversations in one place. Pay per call and not per month',
+  com_ui_new_footer: 'All AI conversations in one place.',
   com_ui_enter: 'Enter',
   com_ui_submit: 'Submit',
   com_ui_upload_success: 'Successfully uploaded file',
