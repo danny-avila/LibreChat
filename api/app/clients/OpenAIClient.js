@@ -4,6 +4,7 @@ const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = requ
 const { encodeAndFormat, validateVisionModel } = require('~/server/services/Files/images');
 const { getModelMaxTokens, genAzureChatCompletion, extractBaseURL } = require('~/utils');
 const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
+const { getResponseSender, EModelEndpoint } = require('~/server/routes/endpoints/schemas');
 const { handleOpenAIErrors } = require('./tools/util');
 const spendTokens = require('~/models/spendTokens');
 const { createLLM, RunManager } = require('./llm');
@@ -25,7 +26,6 @@ class OpenAIClient extends BaseClient {
     this.ChatGPTClient = new ChatGPTClient();
     this.buildPrompt = this.ChatGPTClient.buildPrompt.bind(this);
     this.getCompletion = this.ChatGPTClient.getCompletion.bind(this);
-    this.sender = options.sender ?? 'ChatGPT';
     this.contextStrategy = options.contextStrategy
       ? options.contextStrategy.toLowerCase()
       : 'discard';
@@ -137,6 +137,14 @@ class OpenAIClient extends BaseClient {
         }) must be less than or equal to maxContextTokens (${this.maxContextTokens})`,
       );
     }
+
+    this.sender =
+      this.options.sender ??
+      getResponseSender({
+        model: this.modelOptions.model,
+        endpoint: EModelEndpoint.openAI,
+        chatGptLabel: this.options.chatGptLabel,
+      });
 
     this.userLabel = this.options.userLabel || 'User';
     this.chatGptLabel = this.options.chatGptLabel || 'Assistant';

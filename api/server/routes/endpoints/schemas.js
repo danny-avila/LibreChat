@@ -11,6 +11,17 @@ const EModelEndpoint = {
   assistant: 'assistant',
 };
 
+const alternateName = {
+  [EModelEndpoint.openAI]: 'OpenAI',
+  [EModelEndpoint.assistant]: 'Assistants',
+  [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
+  [EModelEndpoint.bingAI]: 'Bing',
+  [EModelEndpoint.chatGPTBrowser]: 'ChatGPT',
+  [EModelEndpoint.gptPlugins]: 'Plugins',
+  [EModelEndpoint.google]: 'PaLM',
+  [EModelEndpoint.anthropic]: 'Anthropic',
+};
+
 const supportsFiles = {
   [EModelEndpoint.openAI]: true,
   [EModelEndpoint.assistant]: true,
@@ -345,7 +356,7 @@ const parseConvo = (endpoint, conversation, possibleValues) => {
 };
 
 const getResponseSender = (endpointOption) => {
-  const { endpoint, chatGptLabel, modelLabel, jailbreak } = endpointOption;
+  const { model, endpoint, chatGptLabel, modelLabel, jailbreak } = endpointOption;
 
   if (
     [
@@ -355,7 +366,14 @@ const getResponseSender = (endpointOption) => {
       EModelEndpoint.chatGPTBrowser,
     ].includes(endpoint)
   ) {
-    return chatGptLabel ?? 'ChatGPT';
+    if (chatGptLabel) {
+      return chatGptLabel;
+    } else if (model && model.includes('gpt-3')) {
+      return 'GPT-3.5';
+    } else if (model && model.includes('gpt-4')) {
+      return 'GPT-4';
+    }
+    return alternateName[endpoint] ?? 'ChatGPT';
   }
 
   if (endpoint === EModelEndpoint.bingAI) {
@@ -380,4 +398,5 @@ module.exports = {
   supportsFiles,
   openAIModels,
   visionModels,
+  alternateName,
 };
