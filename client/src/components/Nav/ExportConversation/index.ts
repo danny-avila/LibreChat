@@ -1,2 +1,2 @@
 export { default as ExportConversation } from './ExportConversation';
-export { default as ExportModel } from './ExportModel';
+export { default as ExportModal } from './ExportModal';

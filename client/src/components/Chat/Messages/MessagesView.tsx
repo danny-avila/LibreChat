@@ -2,10 +2,10 @@ import { useLayoutEffect, useState, useRef, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
+import { useScreenshot, useScrollToRef } from '~/hooks';
 import { CSSTransition } from 'react-transition-group';
 import { useChatContext } from '~/Providers';
 import MultiMessage from './MultiMessage';
-import { useScrollToRef } from '~/hooks';
 
 export default function MessagesView({
   messagesTree: _messagesTree,
@@ -21,8 +21,7 @@ export default function MessagesView({
   const { conversation, showPopover, setAbortScroll } = useChatContext();
   const { conversationId } = conversation ?? {};
 
-  // TODO: screenshot target ref
-  // const { screenshotTargetRef } = useScreenshot();
+  const { screenshotTargetRef } = useScreenshot();
 
   const checkIfAtBottom = useCallback(() => {
     if (!scrollableRef.current) {
@@ -82,26 +81,28 @@ export default function MessagesView({
             ) : (
               <>
                 {Header && Header}
-                <MultiMessage
-                  key={conversationId} // avoid internal state mixture
-                  messageId={conversationId ?? null}
-                  messagesTree={_messagesTree}
-                  scrollToBottom={scrollToBottom}
-                  setCurrentEditId={setCurrentEditId}
-                  currentEditId={currentEditId ?? null}
-                />
-                <CSSTransition
-                  in={showScrollButton}
-                  timeout={400}
-                  classNames="scroll-down"
-                  unmountOnExit={false}
-                  // appear
-                >
-                  {() =>
-                    showScrollButton &&
-                    !showPopover && <ScrollToBottom scrollHandler={handleSmoothToRef} />
-                  }
-                </CSSTransition>
+                <div ref={screenshotTargetRef}>
+                  <MultiMessage
+                    key={conversationId} // avoid internal state mixture
+                    messageId={conversationId ?? null}
+                    messagesTree={_messagesTree}
+                    scrollToBottom={scrollToBottom}
+                    setCurrentEditId={setCurrentEditId}
+                    currentEditId={currentEditId ?? null}
+                  />
+                  <CSSTransition
+                    in={showScrollButton}
+                    timeout={400}
+                    classNames="scroll-down"
+                    unmountOnExit={false}
+                    // appear
+                  >
+                    {() =>
+                      showScrollButton &&
+                      !showPopover && <ScrollToBottom scrollHandler={handleSmoothToRef} />
+                    }
+                  </CSSTransition>
+                </div>
               </>
             )}
             <div

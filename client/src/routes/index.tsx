@@ -46,7 +46,7 @@ export const router = createBrowserRouter([
         children: [
           {
             index: true,
-            element: <Navigate to="/chat/new" replace={true} />,
+            element: <Navigate to="/c/new" replace={true} />,
           },
           {
             path: 'c/:conversationId?',

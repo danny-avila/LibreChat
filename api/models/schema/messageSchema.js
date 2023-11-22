@@ -85,6 +85,7 @@ const messageSchema = mongoose.Schema(
       select: false,
       default: false,
     },
+    files: [{ type: mongoose.Schema.Types.Mixed }],
     plugin: {
       latest: {
         type: String,

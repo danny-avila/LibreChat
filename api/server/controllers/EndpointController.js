@@ -8,7 +8,7 @@ const {
   userProvidedOpenAI,
   palmKey,
   openAI,
-  assistant,
+  // assistant,
   azureOpenAI,
   bingAI,
   chatGPTBrowser,
@@ -57,7 +57,7 @@ async function endpointController(req, res) {
   res.send(
     JSON.stringify({
       [EModelEndpoint.openAI]: openAI,
-      [EModelEndpoint.assistant]: assistant,
+      // [EModelEndpoint.assistant]: assistant,
       [EModelEndpoint.azureOpenAI]: azureOpenAI,
       [EModelEndpoint.google]: google,
       [EModelEndpoint.bingAI]: bingAI,
