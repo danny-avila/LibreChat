@@ -99,6 +99,7 @@ export const LangSelector = ({
     { value: 'sv-SE', display: localize('com_nav_lang_swedish') },
     { value: 'ko-KR', display: localize('com_nav_lang_korean') },
     { value: 'vi-VN', display: localize('com_nav_lang_vietnamese') },
+    { value: 'tr-TR', display: localize('com_nav_lang_turkish') },
   ];
 
   return (

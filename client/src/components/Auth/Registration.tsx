@@ -31,7 +31,7 @@ function Registration() {
   const onRegisterUserFormSubmit = (data: TRegisterUser) => {
     registerUser.mutate(data, {
       onSuccess: () => {
-        navigate('/chat/new');
+        navigate('/c/new');
       },
       onError: (error) => {
         setError(true);

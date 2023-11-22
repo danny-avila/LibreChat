@@ -75,7 +75,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             placeholder={localize('com_endpoint_prompt_prefix_placeholder')}
             className={cn(
               defaultTextProps,
-              'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 ',
+              'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2 ',
             )}
           />
         </div>
@@ -122,7 +122,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">
-            <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
+              <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_top_p')}{' '}
                 <small className="opacity-40">
                   ({localize('com_endpoint_default_with_num', '0.7')})

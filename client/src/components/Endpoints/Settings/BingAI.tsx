@@ -76,7 +76,7 @@ export default function Settings({ conversation, setOption, readonly }: TSetting
             placeholder={localize('com_endpoint_bing_context_placeholder')}
             className={cn(
               defaultTextProps,
-              'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2',
+              'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2',
             )}
           />
           <small className="mb-5 text-black dark:text-white">{`${localize(

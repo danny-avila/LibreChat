@@ -16,7 +16,7 @@ function Login() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/chat/new', { replace: true });
+      navigate('/c/new', { replace: true });
     }
   }, [isAuthenticated, navigate]);
 
