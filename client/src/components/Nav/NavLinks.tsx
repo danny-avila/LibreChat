@@ -41,8 +41,6 @@ function NavLinks() {
     conversation.conversationId !== 'new' &&
     conversation.conversationId !== 'search';
 
-  console.log('NavLinks', conversation, exportable);
-
   const clickHandler = () => {
     if (exportable) {
       setShowExports(true);
