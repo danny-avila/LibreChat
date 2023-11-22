@@ -66,7 +66,6 @@ async function endpointController(req, res) {
 
   const endpointsEnv = process.env.ENDPOINTS || '';
   if (endpointsEnv) {
-    console.log(`Using endpoints from environment variable ENDPOINTS=${endpointsEnv}`);
     enabledEndpoints = endpointsEnv
       .split(',')
       .filter((endpoint) => endpoint?.trim())
