@@ -8,17 +8,15 @@ import Cookies from 'js-cookie';
 import { v4 as uuidv4 } from 'uuid';
 
 function SubscriptionContent() {
-  // Moved the darkMode state inside the component
   const [darkMode, setDarkMode] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
-
   const [subscriptionUser, setSubscriptionUser] = useState<TUser | null>(null);
-  const [error, setError] = useState(''); // State to hold any error messages
-  // The useSearchParams hook should be inside the component
+  const [error, setError] = useState('');
   const [searchParams] = useSearchParams();
   const { userId = '' } = useParams();
   const lang = useRecoilValue(store.lang);
   const navigate = useNavigate();
   const [subscriptionDueDate, setSubscriptionDueDate] = useState('');
+  const [qrCodeUrl, setQrCodeUrl] = useState(null);
 
   const getUserByIdQuery = useGetUserByIdQuery(userId);
 
@@ -35,12 +33,12 @@ function SubscriptionContent() {
     const paymentId = searchParams.get('paymentId'); // or whatever the parameter is
     const payerId = searchParams.get('PayerID'); // PayPal often returns a PayerID
     if (paymentStatus) {
-      handlePaymentConfirmation(paymentStatus, userId, paymentId, payerId);
+      handlePayPalPaymentConfirmation(paymentStatus, userId, paymentId, payerId);
     }
   }, [searchParams, userId]);
 
+  //Effect for darkmode
   useEffect(() => {
-    // Moved inside the useEffect
     const matcher = window.matchMedia('(prefers-color-scheme: dark)');
     const onChange = (e) => setDarkMode(e.matches);
     matcher.addEventListener('change', onChange);
@@ -49,8 +47,8 @@ function SubscriptionContent() {
     };
   }, []); // Added setDarkMode to the dependency array
 
-  async function handleSubscription() {
-    console.log('handleSubscription function called with userId:', userId);
+  async function handleSubscription(paymentMethod) {
+    console.log(`handleSubscription function called with userId: ${userId} and paymentMethod: ${paymentMethod}`);
     setError('');
 
     const paymentReference = uuidv4(); // Generate a unique payment reference
@@ -58,6 +56,7 @@ function SubscriptionContent() {
     try {
       const body = JSON.stringify({
         userId, // Include userId for backend processing
+        paymentMethod, // Include the payment method in the request
         paymentReference, // Include the generated payment reference
       });
 
@@ -80,12 +79,19 @@ function SubscriptionContent() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      if (data && data.approval_url) {
-        console.log('Approval URL received:', data.approval_url);
+      // Handle response based on payment method
+      if (paymentMethod === 'paypal' && data.approval_url) {
         window.location.href = data.approval_url;
+      } else if (paymentMethod === 'wechat_pay' || paymentMethod === 'alipay') {
+        if (data.qrCodeUrl) {
+        // Display the QR code for WeChat Pay or Alipay
+          setQrCodeUrl(data.qrCodeUrl); // Set the QR code URL to state
+        } else {
+          console.error(`No QR code URL in the response for ${paymentMethod}`);
+          setError(`Failed to initiate ${paymentMethod}. Please try again.`);
+        }
       } else {
-        console.error('Failed to get approval URL');
-        setError('Failed to initiate payment. Please try again.');
+        throw new Error('Unsupported payment method');
       }
     } catch (error) {
       console.error(`An error occurred in handleSubscription: ${error}`);
@@ -93,8 +99,8 @@ function SubscriptionContent() {
     }
   }
 
-  async function handlePaymentConfirmation(paymentStatus, userId, paymentId, payerId) {
-    console.log(`handlePaymentConfirmation called with paymentStatus: ${paymentStatus}, userId: ${userId}, paymentId: ${paymentId}, payerId: ${payerId}`);
+  async function handlePayPalPaymentConfirmation(paymentStatus, userId, paymentId, payerId) {
+    console.log(`handlePaypalPaymentConfirmation called with paymentStatus: ${paymentStatus}, userId: ${userId}, paymentId: ${paymentId}, payerId: ${payerId}`);
 
     try {
       const body = JSON.stringify({
@@ -135,6 +141,41 @@ function SubscriptionContent() {
       navigate(`/subscription/${userId}/payment-failed`);
     }
   }
+
+  // Placeholder function for WeChat Pay payment confirmation
+  async function handleWeChatPayPaymentConfirmation() {
+    // TODO: Implement WeChat Pay confirmation logic
+  }
+
+  // Placeholder function for Alipay payment confirmation
+  async function handleAlipayPaymentConfirmation() {
+    // TODO: Implement Alipay confirmation logic
+  }
+
+  // Effect for handling payment status confirmation
+  useEffect(() => {
+    const paymentStatus = searchParams.get('paymentStatus');
+    const paymentMethod = searchParams.get('paymentMethod'); // Assuming you pass the payment method in the URL
+    const paymentId = searchParams.get('paymentId');
+    const payerId = searchParams.get('PayerID');
+
+    if (paymentStatus && paymentMethod) {
+      switch (paymentMethod) {
+        case 'paypal':
+          handlePayPalPaymentConfirmation(paymentStatus, userId, paymentId, payerId);
+          break;
+        case 'wechat_pay':
+          handleWeChatPayPaymentConfirmation();
+          break;
+        case 'alipay':
+          handleAlipayPaymentConfirmation();
+          break;
+        default:
+          console.error('Unsupported payment method');
+          setError('Unsupported payment method');
+      }
+    }
+  }, [searchParams, userId]);
 
   // Fetching subscription data
   useEffect(() => {
@@ -190,6 +231,14 @@ function SubscriptionContent() {
 
       <div style={containerStyles}>
         <div style={boxStyles}>
+          {/* QR Code Display */}
+          {qrCodeUrl && (
+            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+              <img src={qrCodeUrl} alt="WeChat Pay QR Code" style={{ maxWidth: '200px', marginBottom: '10px' }} />
+              <p>Scan the QR code with WeChat to complete the payment.</p>
+            </div>
+          )}
+
           <div style={{ marginBottom: '1.5rem' }}>
             <h2 style={{
               fontSize: '1.5rem',
@@ -246,29 +295,64 @@ function SubscriptionContent() {
             }}>{localize(lang, 'com_ui_payment_method')}:</h2>
           </div>
 
-          <div style={{
-            width: '90%',
-            padding: '2px',
-            border: '1px solid #e0e0e0',
-            borderRadius: '6px',
-            textAlign: 'center',
-            marginLeft: '6%',
-          }}>
-            <button
-              onClick={handleSubscription}
-              style={{
-                width: '100%',
-                padding: '5px 0',
-                backgroundColor: '#007bff',
-                color: 'white',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                border: 'none',
-                fontSize: '22px'
-              }}
-            >
+          {/* Payment Method Buttons */}
+          <div style={{ marginBottom: '1.5rem', textAlign: 'center' }}>
+            <div style={{ marginBottom: '10px' }}>
+              <button
+                onClick={() => handleSubscription('paypal')}
+                style={{
+                  width: '90%',
+                  padding: '10px',
+                  backgroundColor: '#108ee9',
+                  color: 'white',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  border: 'none',
+                  fontSize: '16px',
+                  margin: '0 auto'
+                }}
+              >
               PayPal
-            </button>
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '10px' }}>
+              <button
+                onClick={() => handleSubscription('wechat_pay')}
+                style={{
+                  width: '90%',
+                  padding: '10px',
+                  backgroundColor: '#108ee9',
+                  color: 'white',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  border: 'none',
+                  fontSize: '16px',
+                  margin: '0 auto'
+                }}
+              >
+              WeChat Pay
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '10px' }}>
+              <button
+                onClick={() => handleSubscription('alipay')}
+                style={{
+                  width: '90%',
+                  padding: '10px',
+                  backgroundColor: '#108ee9',
+                  color: 'white',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  border: 'none',
+                  fontSize: '16px',
+                  margin: '0 auto'
+                }}
+              >
+              Alipay
+              </button>
+            </div>
           </div>
         </div>
       </div>
