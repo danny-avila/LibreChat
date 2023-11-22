@@ -134,6 +134,9 @@ export const tConversationSchema = z.object({
   toneStyle: z.string().nullable().optional(),
   maxOutputTokens: z.number().optional(),
   agentOptions: tAgentOptionsSchema.nullable().optional(),
+  isPrivate: z.boolean().optional(),
+  likes: z.number().optional(),
+  likedBy: z.optional(z.record(z.unknown())),
 });
 
 export type TConversation = z.infer<typeof tConversationSchema>;

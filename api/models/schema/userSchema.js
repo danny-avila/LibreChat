@@ -81,6 +81,30 @@ const userSchema = mongoose.Schema(
     refreshToken: {
       type: [Session],
     },
+    refBy: {
+      type: String,
+      default: '',
+    },
+    referrals: {
+      type: Array,
+      default: [],
+    },
+    numOfReferrals: {
+      type: Number,
+      default: 0,
+    },
+    followers: {
+      type: Object,
+      default: {},
+    },
+    following: {
+      type: Object,
+      default: {},
+    },
+    biography: {
+      type: String,
+      default: '',
+    },
   },
   { timestamps: true },
 );

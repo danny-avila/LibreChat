@@ -5,7 +5,7 @@ const { isEnabled } = require('../utils');
 router.get('/', async function (req, res) {
   try {
     const payload = {
-      appTitle: process.env.APP_TITLE || 'LibreChat',
+      appTitle: process.env.APP_TITLE || 'AITok Chat',
       googleLoginEnabled: !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET,
       facebookLoginEnabled:
         !!process.env.FACEBOOK_CLIENT_ID && !!process.env.FACEBOOK_CLIENT_SECRET,
@@ -23,6 +23,8 @@ router.get('/', async function (req, res) {
       socialLoginEnabled: isEnabled(process.env.ALLOW_SOCIAL_LOGIN),
       emailEnabled:
         !process.env.EMAIL_SERVICE &&
+        !!process.env.EMAIL_SMTP_HOST &&
+        !!process.env.EMAIL_SMTP_PORT &&
         !!process.env.EMAIL_USERNAME &&
         !!process.env.EMAIL_PASSWORD &&
         !!process.env.EMAIL_FROM,

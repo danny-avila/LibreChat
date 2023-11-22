@@ -258,6 +258,28 @@ blockquote, dd, dl, fieldset, figure, h1, h2, h3, h4, h5, h6, hr, p, pre {
 	margin: 0;
 }
 
+.copied-toast-enter {
+  opacity: 0;
+  visibility: hidden
+}
+
+.copied-toast-enter-active {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 400ms, visibility 400ms;
+}
+
+.copied-toast-exit {
+  opacity: 1;
+  visibility: visible;
+}
+
+.copied-toast-exit-active {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 400ms, visibility 400ms;
+}
+
 .scroll-down-enter {
   opacity: 0;
 }

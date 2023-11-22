@@ -23,6 +23,7 @@ export default function Footer() {
           {' - '}. {localize('com_ui_pay_per_call')}
         </>
       )}
+      {config?.appTitle || 'AITok Chat'}
     </div>
   );
 }

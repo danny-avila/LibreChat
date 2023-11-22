@@ -8,8 +8,10 @@ import Footer from './Footer';
 import { useMessageHandler, ThemeContext } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
+import { useLocalize } from '~/hooks';
 
 export default function TextChat({ isSearchView = false }) {
+  const localize = useLocalize();
   const { ask, isSubmitting, handleStopGenerating, latestMessage, endpointsConfig } =
     useMessageHandler();
   const conversation = useRecoilValue(store.conversation);
@@ -100,15 +102,15 @@ export default function TextChat({ isSearchView = false }) {
 
   const getPlaceholderText = () => {
     if (isSearchView) {
-      return 'Click a message title to open its conversation.';
+      return localize('com_msg_open_conversation');
     }
 
     if (disabled) {
-      return 'Choose another model or customize GPT again';
+      return localize('com_msg_choose_another_model');
     }
 
     if (isNotAppendable) {
-      return 'Edit your message or Regenerate.';
+      return localize('com_msg_edit_message');
     }
 
     return '';

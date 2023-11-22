@@ -4,7 +4,7 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 
 const Logout = forwardRef(() => {
-  const { logout } = useAuthContext();
+  const { user, logout } = useAuthContext();
   const localize = useLocalize();
 
   const handleLogout = () => {
@@ -17,7 +17,7 @@ const Logout = forwardRef(() => {
       onClick={handleLogout}
     >
       <LogOutIcon />
-      {localize('com_nav_log_out')}
+      {user?.username || 'USER'} {localize('com_nav_log_out')}
     </button>
   );
 });

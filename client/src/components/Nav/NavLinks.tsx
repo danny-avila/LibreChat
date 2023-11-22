@@ -12,7 +12,7 @@ import { LinkIcon, DotsIcon, GearIcon } from '~/components';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
-
+import Profile from '../Profile';
 import store from '~/store';
 
 export default function NavLinks() {
@@ -24,6 +24,7 @@ export default function NavLinks() {
   const [showExports, setShowExports] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const localize = useLocalize();
+  const [showProfile, setShowProfile] = useState(false);
 
   const conversation = useRecoilValue(store.conversation) ?? ({} as TConversation);
 
@@ -37,6 +38,8 @@ export default function NavLinks() {
       setShowExports(true);
     }
   };
+
+  if (!user) {return null;}
 
   return (
     <>
@@ -124,6 +127,7 @@ export default function NavLinks() {
       </Menu>
       {showExports && <ExportModel open={showExports} onOpenChange={setShowExports} />}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
+      {showProfile && <Profile isOpen={showProfile} setIsOpen={setShowProfile} user={user} />}
     </>
   );
 }

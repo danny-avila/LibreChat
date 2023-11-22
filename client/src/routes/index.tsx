@@ -10,6 +10,10 @@ import {
   ApiErrorWatcher,
 } from '~/components/Auth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
+import Profile from '../components/Profile';
+import Leaderboard from '~/components/ui/Leaderboard';
+import SharedConvo from '~/components/ui/SharedConvo';
+import Recommendations from '~/components/ui/Recommendations';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -20,7 +24,7 @@ const AuthLayout = () => (
 
 export const router = createBrowserRouter([
   {
-    path: 'register',
+    path: 'register/:userId?',
     element: <Registration />,
   },
   {
@@ -53,6 +57,22 @@ export const router = createBrowserRouter([
           {
             path: 'search/:query?',
             element: <Search />,
+          },
+          {
+            path: 'chat/share/:conversationId?',
+            element: <SharedConvo />,
+          },
+          {
+            path: 'leaderboard',
+            element: <Leaderboard />,
+          },
+          {
+            path: 'home',
+            element: <Recommendations />,
+          },
+          {
+            path: 'profile/:userId?',
+            element: <Profile />,
           },
         ],
       },

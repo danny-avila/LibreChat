@@ -177,12 +177,16 @@ in the .env file modify this 4 variables:
 
 ```
 EMAIL_SERVICE=   # eg. gmail
+EMAIL_SMTP_HOST= #
+EMAIL_SMTP_PORT= #
 EMAIL_USERNAME=  # eg. your email address if using gmail
 EMAIL_PASSWORD=  # eg. this is the "app password" if using gmail
 EMAIL_FROM=      # eg. email address for from field like noreply@librechat.ai
 ```
 
 EMAIL_SERVICE is the name of the email service you are using (Gmail, Outlook, Yahoo Mail, ProtonMail, iCloud Mail, etc.).
+EMAIL_SMTP_HOST is the host address of the email smtp service you are using.
+EMAIL_SMTP_PORT is the port of the email smtp service you are using.
 EMAIL_USERNAME is the username of the email service (usually, it will be the email address, but in some cases, it can be an actual username used to access the account).
 EMAIL_PASSWORD is the password used to access the email service. This is not the password to access the email account directly, but a password specifically generated for this service.
 EMAIL_FROM is the email address that will appear in the "from" field when a user receives an email.
@@ -197,6 +201,8 @@ EMAIL_FROM is the email address that will appear in the "from" field when a user
 
 ```
 EMAIL_SERVICE=gmail
+EMAIL_SMTP_HOST=smtp-host
+EMAIL_SMTP_PORT=smtp-port
 EMAIL_USERNAME=your-email
 EMAIL_PASSWORD=your-app-password
 EMAIL_FROM=email address for the from field, e.g., noreply@librechat.ai

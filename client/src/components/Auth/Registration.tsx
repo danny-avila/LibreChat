@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useLocalize } from '~/hooks';
 import {
@@ -14,6 +14,7 @@ function Registration() {
   const { data: startupConfig } = useGetStartupConfig();
 
   const localize = useLocalize();
+  const { userId } = useParams() || '';
 
   const {
     register,
@@ -29,6 +30,7 @@ function Registration() {
   const password = watch('password');
 
   const onRegisterUserFormSubmit = (data: TRegisterUser) => {
+    if (userId) {data.refBy = userId;}
     registerUser.mutate(data, {
       onSuccess: () => {
         navigate('/chat/new');

@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useGetConversationByIdQuery } from 'librechat-data-provider';
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useSetRecoilState, useRecoilState, useRecoilValue } from 'recoil';
 import copy from 'copy-to-clipboard';
 import { SubRow, Plugin, MessageContent } from './Content';
@@ -14,6 +14,7 @@ import type { TMessageProps } from '~/common';
 import { cn } from '~/utils';
 import store from '~/store';
 import { useParams } from 'react-router-dom';
+import { useAuthContext } from '../../hooks/AuthContext';
 
 export default function Message(props: TMessageProps) {
   const {
@@ -25,14 +26,19 @@ export default function Message(props: TMessageProps) {
     siblingIdx,
     siblingCount,
     setSiblingIdx,
+    name = '',
+    userId = '',
   } = props;
 
   const setLatestMessage = useSetRecoilState(store.latestMessage);
   const [abortScroll, setAbortScroll] = useRecoilState(store.abortScroll);
+  const [isLiked, setIsLiked] = useState(false);
+  const [loading, setLoading] = useState(true);
   const { isSubmitting, ask, regenerate, handleContinue } = useMessageHandler();
   const { switchToConversation } = useConversation();
   const { conversationId } = useParams();
   const isSearching = useRecoilValue(store.isSearching);
+  const { token } = useAuthContext();
 
   const {
     text,
@@ -71,6 +77,10 @@ export default function Message(props: TMessageProps) {
       setLatestMessage({ ...message });
     }
   }, [isLast, message, setLatestMessage]);
+
+  useEffect(() => {
+    fetchLikeStatus();
+  }, []);
 
   if (!message) {
     return null;
@@ -123,6 +133,68 @@ export default function Message(props: TMessageProps) {
     setTimeout(() => {
       setIsCopied(false);
     }, 3000);
+  };
+
+  // const { token } = useAuthContext();
+
+  // initial fetch to find out if it is being liked
+  const fetchLikeStatus = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/messages/${message.conversationId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+      // Assuming 'data' is an array of message objects
+      data.forEach((item) => {
+        // Assuming each message object has a 'messageId' and 'likesMsg' property
+        const messageId = item.messageId;
+        const isLiked = item.likesMsg;
+        if (messageId === message.messageId) {
+          setIsLiked(isLiked);
+        }
+      });
+      setLoading(false);
+      // setIsLiked(data.isLiked);
+      // console.log('dataaaaaaa', data.likesConvo);
+      // Update the isLiked state based on the data received from the API
+      // setIsLiked();
+    } catch (error) {
+      console.log('Error fetching like status:', error);
+    }
+  };
+
+  // useEffect(() => {
+  //   fetchLikeStatus();
+  // }, []);
+
+  const handleLikeClick = async () => {
+    try {
+      const response = await fetch('/api/messages/like', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messageId: message.messageId,
+          isLiked: !isLiked,
+        }),
+      });
+      const data = await response.json();
+      if (data.message) {
+        console.log(data.message);
+        return;
+      }
+      // Update the isLiked state based on the API response
+      setIsLiked((prev) => !prev);
+    } catch (error) {
+      console.log('Error liking message:', error);
+    }
   };
 
   const clickSearchResult = async () => {
@@ -203,6 +275,8 @@ export default function Message(props: TMessageProps) {
               regenerate={() => regenerateMessage()}
               handleContinue={handleContinue}
               copyToClipboard={copyToClipboard}
+              handleLikeClick={handleLikeClick}
+              isLiked={isLiked}
             />
             <SubRow subclasses="switch-container">
               <SiblingSwitch
@@ -221,6 +295,8 @@ export default function Message(props: TMessageProps) {
         scrollToBottom={scrollToBottom}
         currentEditId={currentEditId}
         setCurrentEditId={setCurrentEditId}
+        name={name}
+        userId={userId}
       />
     </>
   );

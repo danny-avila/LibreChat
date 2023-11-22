@@ -3,7 +3,7 @@ const router = express.Router();
 const { getResponseSender } = require('../endpoints/schemas');
 const { sendMessage, createOnProgress } = require('../../utils');
 const { addTitle, initializeClient } = require('../endpoints/openAI');
-const { saveMessage, getConvoTitle, getConvo } = require('../../../models');
+const { saveMessage, getConvoTitle, getConvo, getMessagesCount } = require('../../../models');
 const {
   handleAbort,
   createAbortController,
@@ -12,7 +12,8 @@ const {
   validateEndpoint,
   buildEndpointOption,
 } = require('../../middleware');
-
+const trieSensitive = require('../../../utils/trieSensitive');
+const { handleError } = require('../../utils');
 router.post('/abort', handleAbort());
 
 router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, res) => {
@@ -35,6 +36,9 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
   const sender = getResponseSender(endpointOption);
   const newConvo = !conversationId;
   const user = req.user.id;
+  if (text.length === 0) {
+    return handleError(res, { text: 'Prompt empty or too short' });
+  }
 
   const addMetadata = (data) => (metadata = data);
 
@@ -93,6 +97,30 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
 
   try {
     const { client } = await initializeClient({ req, res, endpointOption });
+
+    const isSensitive = await trieSensitive.checkSensitiveWords(text);
+    if (isSensitive) {
+      throw new Error('请回避敏感词汇，谢谢！');
+    }
+
+    let someTimeAgo = new Date();
+    someTimeAgo.setSeconds(someTimeAgo.getSeconds() - 60 * 60 * 24); // 24 hours
+
+    let quota = JSON.parse(process.env['CHAT_QUOTA_PER_SECOND']);
+    if (endpointOption.model in quota) {
+      let messagesCount = await getMessagesCount({
+        senderId: req.user.id,
+        model: endpointOption.model,
+        updatedAt: { $gte: someTimeAgo },
+      });
+      let dailyQuota = (quota[endpointOption.model] * 60 * 60 * 24).toFixed(0);
+      if (messagesCount >= dailyQuota) {
+        // throw new Error("Exceed daily quota! Please contact 615547 to purchase more quota via Wechat");
+        throw new Error(
+          `超出了您的使用额度(${endpointOption.model}每天${dailyQuota}条消息)，如需购买更多额度，请加微信：615547`,
+        );
+      }
+    }
 
     let response = await client.sendMessage(text, {
       user,

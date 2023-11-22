@@ -56,7 +56,7 @@ const registerUser = async (user) => {
     return { status: 422, message: errorMessage };
   }
 
-  const { email, password, name, username } = user;
+  const { email, password, name, username, refBy } = user;
 
   try {
     const existingUser = await User.findOne({ email }).lean();
@@ -86,13 +86,36 @@ const registerUser = async (user) => {
       name,
       avatar: null,
       role: isFirstRegisteredUser ? 'ADMIN' : 'USER',
+      refBy: refBy,
+      following: {},
     });
+
+    const referrer = await User.findById(refBy);
+    if (referrer) {
+      newUser.following[`${referrer._id}`] = { name: referrer.name, username: referrer.username };
+    }
 
     const salt = bcrypt.genSaltSync(10);
     const hash = bcrypt.hashSync(newUser.password, salt);
     newUser.password = hash;
-    await newUser.save();
+    const registrationResult = await newUser.save();
 
+    if (refBy !== '') {
+      const follower = {};
+      follower[`followers.${registrationResult.id}`] = {
+        name: registrationResult.name,
+        username: registrationResult.username,
+      };
+
+      await User.updateOne(
+        { _id: refBy },
+        {
+          $push: { referrals: registrationResult.id },
+          $inc: { numOfReferrals: 1 },
+          $set: follower,
+        },
+      );
+    }
     return { status: 200, user: newUser };
   } catch (err) {
     return { status: 500, message: err?.message || 'Something went wrong' };
@@ -112,9 +135,7 @@ const requestPasswordReset = async (email) => {
   }
 
   let token = await Token.findOne({ userId: user._id });
-  if (token) {
-    await token.deleteOne();
-  }
+  if (token) {await token.deleteOne();}
 
   let resetToken = crypto.randomBytes(32).toString('hex');
   const hash = bcrypt.hashSync(resetToken, 10);
@@ -129,6 +150,8 @@ const requestPasswordReset = async (email) => {
 
   const emailEnabled =
     !!process.env.EMAIL_SERVICE &&
+    !!process.env.EMAIL_SMTP_HOST &&
+    !!process.env.EMAIL_SMTP_PORT &&
     !!process.env.EMAIL_USERNAME &&
     !!process.env.EMAIL_PASSWORD &&
     !!process.env.EMAIL_FROM;

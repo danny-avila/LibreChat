@@ -40,6 +40,7 @@ const browserClient = async ({
     proxy: process.env.PROXY ?? null,
     user: userId,
   };
+  console.log('token', process.env.CHATGPT_TOKEN);
 
   const client = new ChatGPTBrowserClient(clientOptions, store);
   let options = { onProgress, onEventMessage, abortController };

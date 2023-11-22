@@ -4,8 +4,10 @@ const {
   updateMessage,
   deleteMessagesSince,
   deleteMessages,
+  getMessagesCount,
+  likeMessage,
 } = require('./Message');
-const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
+const { getConvoTitle, getConvo, saveConvo, deleteConvos, likeConvo } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
 const Key = require('./Key');
 const User = require('./User');
@@ -25,12 +27,15 @@ module.exports = {
   updateMessage,
   deleteMessagesSince,
   deleteMessages,
+  likeMessage,
 
   getConvoTitle,
   getConvo,
   saveConvo,
   deleteConvos,
+  likeConvo,
 
+  getMessagesCount,
   getPreset,
   getPresets,
   savePreset,

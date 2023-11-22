@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const crypto = require('crypto');
 const Message = require('./schema/messageSchema');
 
 const idSchema = z.string().uuid();
@@ -24,6 +25,7 @@ module.exports = {
     plugin = null,
     plugins = null,
     model = null,
+    senderId = null,
   }) {
     try {
       const validConvoId = idSchema.safeParse(conversationId);
@@ -50,6 +52,7 @@ module.exports = {
           plugin,
           plugins,
           model,
+          senderId,
         },
         { upsert: true, new: true },
       );
@@ -93,6 +96,31 @@ module.exports = {
       throw new Error('Failed to update message.');
     }
   },
+
+  async likeMessage(messageId, isLiked) {
+    try {
+      const existingMsg = await Message.findOne({ messageId }).exec();
+
+      if (existingMsg) {
+        const update = {};
+        if (isLiked) {
+          // If isLiked is true, set likesMsg to true
+          update.likesMsg = true;
+        } else {
+          // If isLiked is false, set likesMsg to false
+          update.likesMsg = false;
+        }
+
+        return await Message.findOneAndUpdate({ messageId }, update, { new: true }).exec();
+      } else {
+        return { message: 'Message not found.' };
+      }
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error liking Message' };
+    }
+  },
+
   async deleteMessagesSince({ messageId, conversationId }) {
     try {
       const message = await Message.findOne({ messageId }).lean();
@@ -123,6 +151,53 @@ module.exports = {
     } catch (err) {
       console.error(`Error deleting messages: ${err}`);
       throw new Error('Failed to delete messages.');
+    }
+  },
+
+  async getRecentMessages() {
+    try {
+      return await Message.find().sort({ createdAt: -1 }).select('conversationId').limit(30).exec();
+    } catch (err) {
+      console.error(`Error fetching recents messages: ${err}`);
+      throw new Error('Failed to fetch recent messages.');
+    }
+  },
+
+  async duplicateMessages({ newConversationId, msgData }) {
+    try {
+      let newParentMessageId = '00000000-0000-0000-0000-000000000000';
+      let newMessageId = crypto.randomUUID();
+      const msgObjIds = [];
+
+      for (let i = 0; i < msgData.length; i++) {
+        let msgObj = structuredClone(msgData[i]);
+
+        delete msgObj._id;
+        msgObj.messageId = newMessageId;
+        msgObj.parentMessageId = newParentMessageId;
+        msgObj.conversationId = newConversationId;
+
+        newParentMessageId = newMessageId;
+        newMessageId = crypto.randomUUID();
+
+        const newMsg = new Message(msgObj);
+        const result = await newMsg.save();
+        msgObjIds.push(result.id);
+      }
+
+      return msgObjIds;
+    } catch (err) {
+      console.error(`Error duplicating messages: ${err}`);
+      throw new Error('Failed to duplicate messages.');
+    }
+  },
+
+  async getMessagesCount(filter) {
+    try {
+      return await Message.countDocuments(filter);
+    } catch (err) {
+      console.error(`Error counting messages: ${err}`);
+      throw new Error('Failed to count messages.');
     }
   },
 };

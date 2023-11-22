@@ -1,6 +1,9 @@
 export const user = () => '/api/user';
 
 export const balance = () => '/api/balance';
+export const userById = (id: string) => {
+  return `/api/user/${id}`;
+};
 
 export const userPlugins = () => '/api/user/plugins';
 
@@ -61,3 +64,31 @@ export const resetPassword = () => '/api/auth/resetPassword';
 export const plugins = () => '/api/plugins';
 
 export const config = () => '/api/config';
+
+export const recommendations = (type: string) => {
+  return `/api/convos/${type}`;
+};
+
+export const duplicateConversation = () => {
+  return '/api/convos/duplicate';
+};
+
+export const leaderboard = () => {
+  return '/api/leaderboard';
+};
+
+export const likedConversations = (userId: string) => {
+  return `/api/convos/likedConvos/${userId}`;
+};
+
+export const publicConversations = (userId: string) => {
+  return `/api/convos/publicConvos/${userId}`;
+};
+
+export const followUser = () => {
+  return '/api/user/follow';
+};
+
+export const likeConversation = () => {
+  return '/api/convos/like';
+};

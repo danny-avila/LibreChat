@@ -31,11 +31,11 @@ export default function ExportModel({ open, onOpenChange }) {
   );
 
   const typeOptions = [
-    { value: 'screenshot', display: 'screenshot (.png)' },
-    { value: 'text', display: 'text (.txt)' },
-    { value: 'markdown', display: 'markdown (.md)' },
-    { value: 'json', display: 'json (.json)' },
-    { value: 'csv', display: 'csv (.csv)' },
+    { value: 'screenshot', display: localize('com_nav_file_ext_png') },
+    { value: 'text', display: localize('com_nav_file_ext_txt') },
+    { value: 'markdown', display: localize('com_nav_file_ext_md') },
+    { value: 'json', display: localize('com_nav_file_ext_json') },
+    { value: 'csv', display: localize('com_nav_file_ext_csv') },
   ]; //,, 'webpage'];
 
   useEffect(() => {
@@ -336,7 +336,7 @@ export default function ExportModel({ open, onOpenChange }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title="Export conversation"
+        title={localize('com_nav_export_conversation')}
         className="max-w-full sm:max-w-2xl"
         main={
           <div className="flex w-full flex-col items-center gap-6">

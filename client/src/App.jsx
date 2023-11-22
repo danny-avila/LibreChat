@@ -7,6 +7,7 @@ import { ScreenshotProvider, ThemeProvider, useApiErrorBoundary } from './hooks'
 import { ToastProvider } from './Providers';
 import Toast from './components/ui/Toast';
 import { router } from './routes';
+import SetLanguage from './utils/setLang.jsx';
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
@@ -27,6 +28,7 @@ const App = () => {
         <ThemeProvider>
           <RadixToast.Provider>
             <ToastProvider>
+              <SetLanguage />
               <RouterProvider router={router} />
               <ReactQueryDevtools initialIsOpen={false} position="top-right" />
               <Toast />

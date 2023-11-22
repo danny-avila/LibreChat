@@ -6,6 +6,7 @@ const {
   saveConvo,
   saveMessage,
   deleteMessages,
+  likeMessage,
 } = require('../../models');
 const { countTokens } = require('../utils');
 const { requireJwtAuth, validateMessageReq } = require('../middleware/');
@@ -46,4 +47,15 @@ router.delete('/:conversationId/:messageId', validateMessageReq, async (req, res
   res.status(204).send();
 });
 
+router.post('/like', async (req, res) => {
+  const { messageId, isLiked } = req.body;
+
+  try {
+    const dbResponse = await likeMessage(messageId, isLiked);
+    res.status(201).send(dbResponse);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send(error);
+  }
+});
 module.exports = router;

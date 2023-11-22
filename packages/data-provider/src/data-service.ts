@@ -94,6 +94,10 @@ export function getUserBalance(): Promise<string> {
   return request.get(endpoints.balance());
 }
 
+export function getUserById(id: string) {
+  return request.get(endpoints.userById(id));
+}
+
 export const searchConversations = async (
   q: string,
   pageNumber: string,
@@ -155,3 +159,31 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
 export const getStartupConfig = (): Promise<t.TStartupConfig> => {
   return request.get(endpoints.config());
 };
+
+export const getRecommendations = (type: string): Promise<t.TConversation[]> => {
+  return request.get(endpoints.recommendations(type));
+};
+
+export const duplicateConversation = (payload: object) => {
+  return request.post(endpoints.duplicateConversation(), { arg: payload });
+};
+
+export const getLeaderboard = () => {
+  return request.get(endpoints.leaderboard());
+};
+
+export const getLikedConversations = (userId: string) => {
+  return request.get(endpoints.likedConversations(userId));
+};
+
+export const getPublicConverstaions = (userId: string) => {
+  return request.get(endpoints.publicConversations(userId));
+};
+
+export const followUser = (payload: object): Promise<t.TUser> => {
+  return request.post(endpoints.followUser(), { arg: payload });
+};
+
+export function likeConversation(payload: object) {
+  return request.post(endpoints.likeConversation(), { arg: payload });
+}

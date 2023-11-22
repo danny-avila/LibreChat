@@ -1,13 +1,64 @@
-import React from 'react';
+import { useGetUserByIdQuery } from 'librechat-data-provider';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';
 import { useLocalize, useConversation } from '~/hooks';
+import { useAuthContext } from '~/hooks/AuthContext';
+
 import store from '~/store';
 
 export default function MobileNav({ setNavVisible }) {
   const conversation = useRecoilValue(store.conversation);
   const { newConversation } = useConversation();
-  const { title = 'New Chat' } = conversation || {};
   const localize = useLocalize();
+  // const { title = 'New Chat' } = conversation || {};
+  const [title, setTitle] = useState('New Chat');
+  const navigate = useNavigate();
+  const { user } = useAuthContext();
+  const { userId = '' } = useParams();
+  const [profileUser, setProfileUser] = useState(null);
+  const [profileName, setProfileName] = useState('');
+
+  const getUserByIdQuery = useGetUserByIdQuery(userId);
+
+  useEffect(() => {
+    getUserByIdQuery.refetch();
+  }, [userId]);
+
+  useEffect(() => {
+    if (getUserByIdQuery.isSuccess) {
+      setProfileUser(getUserByIdQuery.data);
+    }
+  }, [getUserByIdQuery.isSuccess, getUserByIdQuery.data]);
+
+  useEffect(() => {
+    if (!profileUser) {
+      return;
+    }
+    if (user && user.id === userId) {
+      setProfileName(localize('com_ui_homepage'));
+    } else {
+      setProfileName(localize('com_ui_others_homepage', profileUser.username));
+    }
+  }, [profileUser, userId, user]);
+
+  useEffect(() => {
+    if (location.pathname === '/home') {
+      setTitle(localize('com_ui_recommendation'));
+    } else if (location.pathname === '/leaderboard') {
+      setTitle(localize('com_ui_leaderboard'));
+    } else if (location.pathname === '/chat/new') {
+      setTitle(localize('com_ui_new_chat'));
+    } else if (location.pathname.substring(0, 11) === '/chat/share') {
+      setTitle(' ');
+    } else if (location.pathname.substring(0, 8) === '/profile') {
+      setTitle(profileName);
+    } else if (conversation) {
+      setTitle(conversation.title);
+    } else {
+      setTitle(localize('com_ui_new_chat'));
+    }
+  }, [conversation, location.pathname, profileName]);
 
   return (
     <div className="fixed left-0 right-0 top-0 z-10 flex items-center border-b border-white/20 bg-gray-800 pl-1 pt-1 text-gray-200 sm:pl-3 md:hidden">
@@ -37,7 +88,14 @@ export default function MobileNav({ setNavVisible }) {
       <h1 className="flex-1 text-center text-base font-normal">
         {title || localize('com_ui_new_chat')}
       </h1>
-      <button type="button" className="px-3" onClick={() => newConversation()}>
+      <button
+        type="button"
+        className="px-3"
+        onClick={() => {
+          newConversation();
+          navigate('/chat/new');
+        }}
+      >
         <svg
           stroke="currentColor"
           fill="none"

@@ -60,8 +60,14 @@ export type TUser = {
   role: string;
   provider: string;
   plugins: string[];
+  refBy: string;
+  referrals: string[];
+  numOfReferrals: number;
   createdAt: string;
   updatedAt: string;
+  biography: string;
+  followers: object;
+  following: object;
 };
 
 export type TGetConversationsResponse = {
@@ -144,6 +150,7 @@ export type TRegisterUser = {
   username: string;
   password: string;
   confirm_password?: string;
+  refBy?: string;
 };
 
 export type TLoginUser = {

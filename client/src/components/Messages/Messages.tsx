@@ -9,6 +9,7 @@ import { Spinner } from '~/components';
 import { useScreenshot, useScrollToRef } from '~/hooks';
 
 import store from '~/store';
+import MessageHeaderButtons from './MessageHeaderButtons';
 
 export default function Messages({ isSearchView = false }) {
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
@@ -89,6 +90,7 @@ export default function Messages({ isSearchView = false }) {
             </div>
           ) : (
             <>
+              <MessageHeaderButtons />
               <MultiMessage
                 key={conversationId} // avoid internal state mixture
                 messageId={conversationId ?? null}

@@ -5,7 +5,7 @@ import {
   TSearchResults,
 } from 'librechat-data-provider';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import NewChat from './NewChat';
 import SearchBar from './SearchBar';
 import NavLinks from './NavLinks';
@@ -20,8 +20,20 @@ import {
 } from '~/hooks';
 import { cn } from '~/utils/';
 import store from '~/store';
+import NavLink from './NavLink';
+import CopyIcon from '../svg/CopyIcon';
+import CheckMark from '../svg/CheckMark';
 
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/';
+import Clipboard from '../svg/Clipboard';
+import useDebounce from '~/hooks/useDebounce';
+import LeaderboardIcon from '../svg/LeaderboardIcon';
+import NotebookIcon from '../svg/NotebookIcon';
+import { useNavigate, useParams } from 'react-router-dom';
+import HomeIcon from '../svg/HomeIcon';
+import LightBulbIcon from '../svg/LightBulbIcon';
+import ComputerIcon from '../svg/ComputerIcon';
+import ProfileIcon from '../svg/UserIcon';
 
 export default function Nav({ navVisible, setNavVisible }) {
   const [isHovering, setIsHovering] = useState(false);
@@ -65,6 +77,13 @@ export default function Nav({ navVisible, setNavVisible }) {
   const { refreshConversations } = useConversations();
 
   const [isFetching, setIsFetching] = useState(false);
+
+  const [refLink, setRefLink] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [widget, setWidget] = useRecoilState(store.widget);
+  const { user } = useAuthContext();
+  const { userId } = useParams();
+  const navigate = useNavigate();
 
   const searchQueryFn = useSearchQuery(searchQuery, pageNumber + '', {
     enabled: !!(!!searchQuery && searchQuery.length > 0 && isSearchEnabled && isSearching),
@@ -150,6 +169,53 @@ export default function Nav({ navVisible, setNavVisible }) {
     setNavVisible((prev: boolean) => !prev);
   };
 
+  const copyLinkHandler = () => {
+    navigator.clipboard.writeText(refLink);
+    setCopied(true);
+  };
+
+  const navigateToRegister = () => {
+    if (!user && userId) {
+      navigate(`/register/${userId}`);
+    } else {
+      navigate('/register');
+    }
+  };
+
+  const openWidgetHandler = (type) => () => {
+    if (
+      location.pathname.substring(1, 5) !== 'chat' ||
+      location.pathname.substring(0, 11) === '/chat/share'
+    ) {
+      newConversation();
+      navigate('/chat/new');
+      setWidget(`${type}`);
+    } else {
+      setWidget(widget === `${type}` ? '' : `${type}`);
+    }
+  };
+
+  const openWritingAssistantHandler = openWidgetHandler('wa');
+  const openCodingAssistantHandler = openWidgetHandler('ca');
+  const openAskMeAnythingHandler = openWidgetHandler('ama');
+  const openLeaderboardHandler = () => navigate('/leaderboard');
+  const openHomepageHandler = () => navigate('/home');
+  const openProfileHandler = () => navigate(`/profile/${user.id}`);
+
+  useEffect(() => {
+    if (user) {
+      setRefLink(window.location.protocol + '//' + window.location.host + `/register/${user.id}`);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    setTimeout(() => {
+      if (copied) {
+        setCopied(!copied);
+      }
+    }, 2000);
+  }, [copied]);
+
   const containerClasses =
     getConversationsQuery.isLoading && pageNumber === 1
       ? 'flex flex-col gap-2 text-gray-100 text-sm h-full justify-center items-center'
@@ -214,6 +280,55 @@ export default function Nav({ navVisible, setNavVisible }) {
                       />
                     </div>
                   </div>
+                  {user && (
+                    <NavLink
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                      // Add an SVG or icon for the Profile link here
+                      svg={() => <ProfileIcon />}
+                      text={localize('com_ui_homepage')}
+                      clickHandler={openProfileHandler}
+                    />
+                  )}
+                  <NavLink
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                    svg={() => <HomeIcon />}
+                    text={localize('com_ui_recommendation')}
+                    clickHandler={user ? openHomepageHandler : navigateToRegister}
+                  />
+                  <NavLink
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                    svg={() => <NotebookIcon />}
+                    text={localize('com_ui_writing_assistant')}
+                    clickHandler={user ? openWritingAssistantHandler : navigateToRegister}
+                  />
+                  <NavLink
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                    svg={() => <ComputerIcon />}
+                    text={localize('com_ui_coding_assistant')}
+                    clickHandler={user ? openCodingAssistantHandler : navigateToRegister}
+                  />
+                  <NavLink
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                    svg={() => <LightBulbIcon />}
+                    text={localize('com_ui_ask_me_anything')}
+                    clickHandler={user ? openAskMeAnythingHandler : navigateToRegister}
+                  />
+                  <NavLink
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                    svg={() => <LeaderboardIcon />}
+                    text={localize('com_ui_referrals_leaderboard')}
+                    clickHandler={user ? openLeaderboardHandler : navigateToRegister}
+                  />
+                  <NavLink
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                    svg={() => (copied ? <CheckMark /> : <Clipboard />)}
+                    text={
+                      copied
+                        ? localize('com_ui_copied_success')
+                        : localize('com_ui_copy_invitation_link')
+                    }
+                    clickHandler={user ? copyLinkHandler : navigateToRegister}
+                  />
                   <NavLinks />
                 </nav>
               </div>

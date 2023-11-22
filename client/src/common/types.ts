@@ -112,6 +112,8 @@ export type TMessageProps = {
   scrollToBottom?: () => void;
   setCurrentEditId?: React.Dispatch<React.SetStateAction<string | number | null>> | null;
   setSiblingIdx?: ((value: number) => void | React.Dispatch<React.SetStateAction<number>>) | null;
+  name?: string | null;
+  userId?: string | null;
 };
 
 export type TInitialProps = {

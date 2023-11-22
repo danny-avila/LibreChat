@@ -14,6 +14,7 @@ function RequestPasswordReset() {
     register,
     handleSubmit,
     formState: { errors },
+    watch,
   } = useForm<TRequestPasswordReset>();
   const requestPasswordReset = useRequestPasswordResetMutation();
   const config = useGetStartupConfig();
@@ -43,7 +44,7 @@ function RequestPasswordReset() {
     if (requestPasswordReset.isSuccess) {
       if (config.data?.emailEnabled) {
         setHeaderText(localize('com_auth_reset_password_link_sent'));
-        setBodyText(localize('com_auth_reset_password_email_sent'));
+        setBodyText(localize('com_auth_reset_password_email_sent', email));
       } else {
         setHeaderText(localize('com_auth_reset_password'));
         setBodyText(
@@ -61,7 +62,7 @@ function RequestPasswordReset() {
       setBodyText(undefined);
     }
   }, [requestPasswordReset.isSuccess, config.data?.emailEnabled, resetLink, localize]);
-
+  const email = watch('email');
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
       <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">

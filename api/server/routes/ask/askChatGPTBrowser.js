@@ -17,6 +17,7 @@ router.post('/', setHeaders, async (req, res) => {
   if (text.length === 0) {
     return handleError(res, { text: 'Prompt empty or too short' });
   }
+
   if (endpoint !== 'chatGPTBrowser') {
     return handleError(res, { text: 'Illegal request' });
   }

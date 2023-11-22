@@ -49,6 +49,22 @@ const convoSchema = mongoose.Schema(
       type: Number,
       default: 1,
     },
+    likes: {
+      type: Number,
+      default: 0,
+    },
+    likedBy: {
+      type: Object,
+      default: {},
+    },
+    isPrivate: {
+      type: Boolean,
+      default: false,
+    },
+    viewCount: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true },
 );

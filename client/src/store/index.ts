@@ -10,6 +10,8 @@ import search from './search';
 import preset from './preset';
 import lang from './language';
 import settings from './settings';
+import tabValue from './tabValue';
+import widget from './widget';
 
 export default {
   ...conversation,
@@ -24,4 +26,6 @@ export default {
   ...preset,
   ...lang,
   ...settings,
+  ...tabValue,
+  ...widget,
 };

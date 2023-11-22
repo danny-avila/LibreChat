@@ -18,6 +18,9 @@ userSchema.methods.toJSON = function () {
     plugins: this.plugins,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
+    followers: this.followers,
+    following: this.following,
+    biography: this.biography,
   };
 };
 

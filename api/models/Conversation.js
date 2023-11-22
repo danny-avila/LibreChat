@@ -4,7 +4,11 @@ const { getMessages, deleteMessages } = require('./Message');
 
 const getConvo = async (user, conversationId) => {
   try {
-    return await Conversation.findOne({ user, conversationId }).lean();
+    if (conversationId != null) {
+      return await Conversation.findOne({ conversationId }).lean();
+    } else {
+      return await Conversation.findOne({ user, conversationId }).lean();
+    }
   } catch (error) {
     console.log(error);
     return { message: 'Error getting single conversation' };
@@ -13,6 +17,14 @@ const getConvo = async (user, conversationId) => {
 
 module.exports = {
   Conversation,
+  getSharedConvo: async (conversationId) => {
+    try {
+      return await Conversation.findOne({ conversationId }).exec();
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error getting single conversation' };
+    }
+  },
   saveConvo: async (user, { conversationId, newConversationId, ...convo }) => {
     try {
       const messages = await getMessages({ conversationId });
@@ -131,5 +143,143 @@ module.exports = {
     let deleteCount = await Conversation.deleteMany({ ...filter, user });
     deleteCount.messages = await deleteMessages({ conversationId: { $in: ids } });
     return deleteCount;
+  },
+  getRecentConvos: async (userId) => {
+    try {
+      return await Conversation.find({
+        user: { $ne: userId },
+        isPrivate: { $eq: false },
+      })
+        .sort({ createdAt: -1 })
+        .limit(200)
+        .exec();
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error fetching recent conversations' };
+    }
+  },
+  getFollowingConvos: async (following) => {
+    try {
+      return await Conversation.find({
+        user: { $in: following },
+        isPrivate: { $eq: false },
+      })
+        .sort({ createdAt: -1 })
+        .limit(200)
+        .exec();
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error fetching recent conversations' };
+    }
+  },
+
+  likeConvo: async (conversationId, userId, liked) => {
+    try {
+      const conversation = await Conversation.findOne({ conversationId });
+      const likedBy = conversation.likedBy;
+
+      const update = {};
+      update[`likedBy.${userId}`] = { $type: 'date' };
+
+      if (!likedBy) {
+        // If the likedBy object is undefined, that means this conversation has 0 likes
+        return await Conversation.findOneAndUpdate(
+          { conversationId },
+          { $currentDate: update, $inc: { likes: 1 } },
+          { new: true, upsert: false },
+        ).exec();
+      } else {
+        // User request is the same as DB record
+        // e.g. User wants to like the conversation, but DB says that the user has already liked the conversation
+        if ((likedBy[userId] && liked) || (!likedBy[userId] && !liked)) {
+          return conversation;
+        } else if (liked) {
+          return await Conversation.findOneAndUpdate(
+            { conversationId },
+            { $currentDate: update, $inc: { likes: 1 } },
+            { new: true, upsert: false },
+          ).exec();
+        } else {
+          // User request is different from DB record
+          return await Conversation.findOneAndUpdate(
+            { conversationId },
+            { $unset: update, $inc: { likes: -1 } },
+            { new: true, upsert: false },
+          ).exec();
+        }
+      }
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error liking conversation' };
+    }
+  },
+  getHottestConvo: async (userId) => {
+    console.log(`calling getHottestConvo(${userId})`);
+    try {
+      return await Conversation.aggregate([
+        {
+          $match: {
+            isPrivate: { $eq: false },
+            user: { $ne: userId },
+          },
+        }, // Filter for documents where isPrivate is false and user is not equal to userId
+        {
+          $addFields: {
+            totalLikesAndViewCount: { $sum: ['$likes', '$viewCount'] },
+          },
+        },
+        { $sort: { totalLikesAndViewCount: -1 } },
+        { $limit: 200 },
+      ]);
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error getting the hottest conversations' };
+    }
+  },
+  getLikedConvos: async (userId) => {
+    try {
+      const filter = {};
+      filter[`likedBy.${userId}`] = { $exists: true };
+
+      const sortOrder = {};
+      sortOrder[`likedBy.${userId}`] = -1;
+      sortOrder['title'] = 1;
+
+      const dbResponse = await Conversation.find(filter).limit(30).sort(sortOrder).exec();
+      return dbResponse;
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error fetching liked conversations' };
+    }
+  },
+  getPublicConvos: async (userId) => {
+    try {
+      const dbResponse = await Conversation.find({
+        user: { $eq: userId },
+        isPrivate: { $eq: false },
+      })
+        .sort({ createdAt: -1 })
+        .limit(30)
+        .exec();
+
+      return dbResponse;
+    } catch (error) {
+      console.log(error);
+      return { message: 'Error fetching liked conversations' };
+    }
+  },
+  //increase conversation view count
+  increaseConvoViewCount: async (conversationId) => {
+    console.log(`increaseConvoViewCount(${conversationId}) called.`);
+    try {
+      return await Conversation.findOneAndUpdate(
+        { conversationId },
+        { $inc: { viewCount: 1 } },
+        { new: true, upsert: false },
+      ).exec();
+    } catch (error) {
+      console.log(error);
+      return { message: `Error increasing view count for conversation ${conversationId}` };
+    }
   },
 };

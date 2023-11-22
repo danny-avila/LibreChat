@@ -1,12 +1,30 @@
-import { useNavigate } from 'react-router-dom';
+import React from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useRecoilValue, useRecoilState } from 'recoil';
+import { useAuthContext } from '~/hooks/AuthContext';
+import store from '~/store';
 import { useLocalize, useConversation } from '~/hooks';
 
 export default function NewChat() {
   const { newConversation } = useConversation();
   const navigate = useNavigate();
   const localize = useLocalize();
+  const [widget, setWidget] = useRecoilState(store.widget); // eslint-disable-line
+  const { user } = useAuthContext();
+  const { userId } = useParams();
+
+  const navigateToRegister = () => {
+    if (!user && userId) {
+      navigate(`/register/${userId}`);
+    } else {
+      navigate('/register');
+    }
+  };
 
   const clickHandler = () => {
+    // dispatch(setInputValue(''));
+    // dispatch(setQuery(''));
+    setWidget('');
     newConversation();
     navigate('/chat/new');
   };
@@ -14,7 +32,7 @@ export default function NewChat() {
   return (
     <a
       data-testid="new-chat-button"
-      onClick={clickHandler}
+      onClick={user ? clickHandler : navigateToRegister}
       className="flex h-11 flex-shrink-0 flex-grow cursor-pointer items-center gap-3 rounded-md border border-white/20 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10"
     >
       <svg

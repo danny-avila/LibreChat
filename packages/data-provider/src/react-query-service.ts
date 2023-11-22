@@ -5,6 +5,7 @@ import {
   useQueryClient,
   UseMutationResult,
   QueryObserverResult,
+  QueryClient,
 } from '@tanstack/react-query';
 import * as t from './types';
 import * as s from './schemas';
@@ -19,12 +20,17 @@ export enum QueryKeys {
   name = 'name', // user key name
   models = 'models',
   balance = 'balance',
+  userById = 'userById',
   endpoints = 'endpoints',
   presets = 'presets',
   searchResults = 'searchResults',
   tokenCount = 'tokenCount',
   availablePlugins = 'availablePlugins',
   startupConfig = 'startupConfig',
+  recommendations = 'recommendations',
+  numOfReferrals = 'numOfReferrals',
+  likedConversations = 'likedConversations',
+  publicConversatons = 'publicConversatons',
 }
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
@@ -53,6 +59,15 @@ export const useGetUserQuery = (
     refetchOnMount: false,
     retry: false,
     ...config,
+  });
+};
+
+export const useGetUserByIdQuery = (id: string): QueryObserverResult<t.TUser> => {
+  return useQuery([QueryKeys.userById, id], () => dataService.getUserById(id), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
   });
 };
 
@@ -472,4 +487,74 @@ export const useGetStartupConfig = (): QueryObserverResult<t.TStartupConfig> => 
       refetchOnMount: false,
     },
   );
+};
+
+export const useGetRecommendationsQuery = (
+  type: string,
+): QueryObserverResult<t.TConversation[]> => {
+  return useQuery<t.TConversation[]>(
+    [QueryKeys.recommendations, type],
+    () => dataService.getRecommendations(type),
+    {
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: 1,
+    },
+  );
+};
+
+export const useDuplicateConvoMutation = (): unknown => {
+  return useMutation((payload: object) => dataService.duplicateConversation(payload));
+};
+
+export const useGetLeaderboardQuery = (): unknown => {
+  return useQuery([QueryKeys.numOfReferrals], () => dataService.getLeaderboard(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  });
+};
+
+export const useGetLikedConversationQuery = (
+  userId: string,
+): QueryObserverResult<t.TConversation[]> => {
+  return useQuery(
+    [QueryKeys.likedConversations, userId],
+    () => dataService.getLikedConversations(userId),
+    {
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  );
+};
+
+export const useGetPublicConversationQuery = (
+  userId: string,
+): QueryObserverResult<t.TConversation[]> => {
+  return useQuery(
+    [QueryKeys.publicConversatons, userId],
+    () => dataService.getPublicConverstaions(userId),
+    {
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  );
+};
+
+export const useFollowUserMutation = (): UseMutationResult<t.TUser, unknown, object, unknown> => {
+  return useMutation((payload: object) => dataService.followUser(payload));
+};
+
+export const useLikeConversationMutation = (id: string) => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: object) => dataService.likeConversation(payload), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.conversation, id]);
+      queryClient.invalidateQueries([QueryKeys.allConversations]);
+    },
+  });
 };

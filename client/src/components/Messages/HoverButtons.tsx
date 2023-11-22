@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import type { TConversation, TMessage } from 'librechat-data-provider';
-import { Clipboard, CheckMark, EditIcon, RegenerateIcon, ContinueIcon } from '~/components/svg';
+import {
+  Clipboard,
+  CheckMark,
+  EditIcon,
+  RegenerateIcon,
+  ContinueIcon,
+  LikeIcon,
+} from '~/components/svg';
 import { useGenerations, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -13,6 +20,8 @@ type THoverButtons = {
   message: TMessage;
   regenerate: () => void;
   handleContinue: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  handleLikeClick: unknown;
+  isLiked: boolean;
 };
 
 export default function HoverButtons({
@@ -21,6 +30,8 @@ export default function HoverButtons({
   copyToClipboard,
   conversation,
   isSubmitting,
+  handleLikeClick,
+  isLiked,
   message,
   regenerate,
   handleContinue,
@@ -77,14 +88,24 @@ export default function HoverButtons({
         {isCopied ? <CheckMark /> : <Clipboard />}
       </button>
       {regenerateEnabled ? (
-        <button
-          className="hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible"
-          onClick={regenerate}
-          type="button"
-          title={localize('com_ui_regenerate')}
-        >
-          <RegenerateIcon className="hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
-        </button>
+        <>
+          <button
+            className="hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400"
+            onClick={handleLikeClick}
+            type="button"
+            title={isLiked ? 'Unlike' : 'Like'}
+          >
+            <LikeIcon filled={isLiked} style={{ marginTop: '0' }} />
+          </button>
+          <button
+            className="hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible"
+            onClick={regenerate}
+            type="button"
+            title={localize('com_ui_regenerate')}
+          >
+            <RegenerateIcon className="hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
+          </button>
+        </>
       ) : null}
       {continueSupported ? (
         <button

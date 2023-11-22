@@ -30,8 +30,8 @@ describe('LangSelector', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.change(getByDisplayValue('English'), { target: { value: 'it-IT' } });
+    fireEvent.change(getByDisplayValue('English'), { target: { value: 'zh-CN' } });
 
-    expect(mockOnChange).toHaveBeenCalledWith('it-IT');
+    expect(mockOnChange).toHaveBeenCalledWith('zh-CN');
   });
 });
