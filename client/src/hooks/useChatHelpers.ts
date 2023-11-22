@@ -157,7 +157,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       endpoint,
       key: getExpiry(),
     } as TEndpointOption;
-    const responseSender = getResponseSender(endpointOption);
+    const responseSender = getResponseSender({ model: conversation?.model, ...endpointOption });
 
     let currentMessages: TMessage[] | null = getMessages() ?? [];
 

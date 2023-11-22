@@ -381,7 +381,7 @@ const getResponseSender = (endpointOption) => {
   }
 
   if (endpoint === EModelEndpoint.anthropic) {
-    return modelLabel ?? 'Anthropic';
+    return modelLabel ?? 'Claude';
   }
 
   if (endpoint === EModelEndpoint.google) {
