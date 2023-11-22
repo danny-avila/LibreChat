@@ -1,5 +1,5 @@
+import { defaultEndpoints } from 'librechat-data-provider';
 import type { TEndpointsConfig } from 'librechat-data-provider';
-import { defaultEndpoints } from './getDefaultEndpoint';
 
 const getEndpointsFilter = (config: TEndpointsConfig) => {
   const filter: Record<string, boolean> = {};
