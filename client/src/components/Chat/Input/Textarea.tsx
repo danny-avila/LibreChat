@@ -30,7 +30,7 @@ export default function Textarea({ value, onChange, setText, submitMessage, endp
       id="prompt-textarea"
       tabIndex={0}
       data-testid="text-input"
-      style={{ height: 44, overflowY: 'hidden' }}
+      style={{ height: 44, overflowY: 'auto' }}
       rows={1}
       placeholder={placeholder}
       className={cn(
