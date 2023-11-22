@@ -29,13 +29,9 @@ const fileFilter = (req, file, cb) => {
     );
   }
 
-  if (file.size > sizeLimit) {
-    return cb(new Error(`File size exceeds ${sizeLimit / 1024 / 1024} MB.`), false);
-  }
-
   cb(null, true);
 };
 
-const upload = multer({ storage, fileFilter });
+const upload = multer({ storage, fileFilter, limits: { fileSize: sizeLimit } });
 
 module.exports = upload;
