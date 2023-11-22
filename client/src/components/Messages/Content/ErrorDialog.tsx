@@ -79,7 +79,7 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
 
         // Google Ads Conversion Tracking
         window.gtag('event', 'conversion', {
-          send_to: 'AW-11258294301/1kv0CLC2sfcYEJ3gr_gp',
+          send_to: 'AW-11258294301/WxYWCKGGhvkYEJ3gr_gp',
           value: amount,
           currency: 'CNY',
         });
