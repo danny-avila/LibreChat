@@ -1,8 +1,8 @@
 const crypto = require('crypto');
 const TextStream = require('./TextStream');
-const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('../../models');
-const { addSpaceIfNeeded, isEnabled } = require('../../server/utils');
-const checkBalance = require('../../models/checkBalance');
+const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
+const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
+const checkBalance = require('~/models/checkBalance');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -62,7 +62,7 @@ class BaseClient {
   }
 
   async setMessageOptions(opts = {}) {
-    if (opts && typeof opts === 'object') {
+    if (opts && opts.replaceOptions) {
       this.setOptions(opts);
     }
 
@@ -417,6 +417,7 @@ class BaseClient {
       // this only matters when buildMessages is utilizing the parentMessageId, and may vary on implementation
       isEdited ? head : userMessage.messageId,
       this.getBuildMessagesOptions(opts),
+      opts,
     );
 
     if (tokenCountMap) {
@@ -636,14 +637,27 @@ class BaseClient {
       tokensPerName = -1;
     }
 
+    const processValue = (value) => {
+      if (typeof value === 'object' && value !== null) {
+        for (let [nestedKey, nestedValue] of Object.entries(value)) {
+          if (nestedKey === 'image_url' || nestedValue === 'image_url') {
+            continue;
+          }
+          processValue(nestedValue);
+        }
+      } else {
+        numTokens += this.getTokenCount(value);
+      }
+    };
+
     let numTokens = tokensPerMessage;
     for (let [key, value] of Object.entries(message)) {
-      numTokens += this.getTokenCount(value);
+      processValue(value);
+
       if (key === 'name') {
         numTokens += tokensPerName;
       }
     }
-
     return numTokens;
   }
 

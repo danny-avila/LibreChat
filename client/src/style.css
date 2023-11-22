@@ -898,15 +898,16 @@ button {
 }
 
 .btn {
-  align-items: center;
-  border-color: transparent;
-  border-radius: 0.25rem;
-  border-width: 1px;
-  display: inline-flex;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  padding: 0.5rem 0.75rem;
-  pointer-events: auto;
+  align-items:center;
+  border-color:transparent;
+  border-radius:.5rem;
+  border-width:1px;
+  display:inline-flex;
+  font-size:.875rem;
+  font-weight:500;
+  line-height:1.25rem;
+  padding:.5rem .75rem;
+  pointer-events:auto
 }
 .custom-btn {
   align-items: center;
@@ -1395,7 +1396,30 @@ html {
  height:100%
 }
 .markdown ol {
- counter-reset:item
+  counter-reset:list-number;
+  display:flex;
+  flex-direction:column;
+  list-style-type:none;
+  padding-left:0
+}
+.markdown ol>li {
+  counter-increment:list-number;
+  display:block;
+  margin-bottom:0;
+  margin-top:0;
+  min-height:28px
+}
+.markdown ol>li:before {
+  --tw-translate-x:-100%;
+  --tw-numeric-spacing:tabular-nums;
+  --tw-text-opacity:1;
+  color:rgba(142,142,160,var(--tw-text-opacity));
+  content:counters(list-number,".") ".";
+  font-variant-numeric:var(--tw-ordinal) var(--tw-slashed-zero) var(--tw-numeric-figure) var(--tw-numeric-spacing) var(--tw-numeric-fraction);
+  padding-right:.5rem;
+  position:absolute;
+  -webkit-transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+  transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))
 }
 .markdown ul li {
  display:block;

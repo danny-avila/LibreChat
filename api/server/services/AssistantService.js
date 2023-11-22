@@ -1,22 +1,6 @@
 const RunManager = require('./Runs/RunMananger');
 
 /**
- * @typedef {import('openai').OpenAI} OpenAI
- * @typedef {import('openai').OpenAI.Beta.Threads.ThreadMessage} ThreadMessage
- * @typedef {import('openai').OpenAI.Beta.Threads.RequiredActionFunctionToolCall} RequiredActionFunctionToolCall
- * @typedef {import('./Runs/RunManager').RunManager} RunManager
- */
-
-/**
- * @typedef {Object} Thread
- * @property {string} id - The identifier of the thread.
- * @property {string} object - The object type, always 'thread'.
- * @property {number} created_at - The Unix timestamp (in seconds) for when the thread was created.
- * @property {Object} [metadata] - Optional metadata associated with the thread.
- * @property {Message[]} [messages] - An array of messages associated with the thread.
- */
-
-/**
  * @typedef {Object} Message
  * @property {string} id - The identifier of the message.
  * @property {string} object - The object type, always 'thread.message'.
@@ -246,27 +230,6 @@ async function waitForRun({ openai, run_id, thread_id, runManager, pollIntervalM
 
   return run;
 }
-
-/**
- * @typedef {Object} AgentAction
- * @property {string} tool - The name of the tool used.
- * @property {string} toolInput - The input provided to the tool.
- * @property {string} log - A log or message associated with the action.
- */
-
-/**
- * @typedef {Object} AgentFinish
- * @property {Record<string, any>} returnValues - The return values of the agent's execution.
- * @property {string} log - A log or message associated with the finish.
- */
-
-/**
- * @typedef {AgentFinish & { run_id: string; thread_id: string; }} OpenAIAssistantFinish
- */
-
-/**
- * @typedef {AgentAction & { toolCallId: string; run_id: string; thread_id: string; }} OpenAIAssistantAction
- */
 
 /**
  * Retrieves the response from an OpenAI run.

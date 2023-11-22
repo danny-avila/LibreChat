@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, alternateName } from 'librechat-data-provider';
 import type { TDialogProps } from '~/common';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { RevokeKeysButton } from '~/components/Nav';
@@ -7,7 +7,6 @@ import { Dialog, Dropdown } from '~/components/ui';
 import { useUserKey, useLocalize } from '~/hooks';
 import GoogleConfig from './GoogleConfig';
 import OpenAIConfig from './OpenAIConfig';
-import { alternateName } from '~/common';
 import OtherConfig from './OtherConfig';
 import HelpText from './HelpText';
 

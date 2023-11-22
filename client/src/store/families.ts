@@ -83,25 +83,6 @@ const textareaHeightFamily = atomFamily<number, string | number>({
   default: 56,
 });
 
-const autoScrollFamily = atomFamily({
-  key: 'autoScrollByIndex',
-  default: localStorage.getItem('autoScroll') === 'true',
-  effects: [
-    ({ setSelf, onSet }) => {
-      const savedValue = localStorage.getItem('autoScroll');
-      if (savedValue != null) {
-        setSelf(savedValue === 'true');
-      }
-
-      onSet((newValue: unknown) => {
-        if (typeof newValue === 'boolean') {
-          localStorage.setItem('autoScroll', newValue.toString());
-        }
-      });
-    },
-  ] as const,
-});
-
 function useCreateConversationAtom(key: string | number) {
   const [keys, setKeys] = useRecoilState(conversationKeysAtom);
   const setConversation = useSetRecoilState(conversationByIndex(key));
@@ -127,7 +108,6 @@ export default {
   showAgentSettingsFamily,
   showBingToneSettingFamily,
   showPopoverFamily,
-  autoScrollFamily,
   latestMessageFamily,
   textareaHeightFamily,
   allConversationsSelector,

@@ -129,7 +129,7 @@ test('renders registration form', () => {
 //   console.log(history);
 //   waitFor(() => {
 //     // expect(mutate).toHaveBeenCalled();
-//     expect(history.location.pathname).toBe('/chat/new');
+//     expect(history.location.pathname).toBe('/c/new');
 //   });
 // });
 

@@ -7,8 +7,8 @@ const { logViolation } = require('../cache');
  * @async
  * @function
  * @param {Object} params - The function parameters.
- * @param {Object} params.req - The Express request object.
- * @param {Object} params.res - The Express response object.
+ * @param {Express.Request} params.req - The Express request object.
+ * @param {Express.Response} params.res - The Express response object.
  * @param {Object} params.txData - The transaction data.
  * @param {string} params.txData.user - The user ID or identifier.
  * @param {('prompt' | 'completion')} params.txData.tokenType - The type of token.

@@ -5,9 +5,9 @@ import type {
   QueryObserverResult,
   UseInfiniteQueryOptions,
 } from '@tanstack/react-query';
-import * as t from './types';
+import * as t from './types/assistants';
 import * as dataService from './data-service';
-import { QueryKeys } from './query-keys';
+import { QueryKeys } from './keys';
 
 /**
  * Hook for listing all assistants, with optional parameters provided for pagination and sorting
