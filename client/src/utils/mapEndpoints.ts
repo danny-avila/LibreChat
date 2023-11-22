@@ -1,5 +1,5 @@
+import { defaultEndpoints } from 'librechat-data-provider';
 import type { TEndpointsConfig } from 'librechat-data-provider';
-import { defaultEndpoints } from './getDefaultEndpoint';
 
 const getEndpointsFilter = (config: TEndpointsConfig) => {
   const filter: Record<string, boolean> = {};
@@ -16,5 +16,5 @@ const getAvailableEndpoints = (filter: Record<string, boolean>) => {
 
 export default function mapEndpoints(config: TEndpointsConfig) {
   const filter = getEndpointsFilter(config);
-  return getAvailableEndpoints(filter);
+  return getAvailableEndpoints(filter).sort((a, b) => config[a].order - config[b].order);
 }
