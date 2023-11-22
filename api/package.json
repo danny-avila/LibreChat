@@ -16,6 +16,12 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "_moduleAliases": {
+    "~": "."
+  },
+  "imports": {
+    "~/*": "./*"
+  },
   "bugs": {
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
@@ -48,7 +54,9 @@
     "langchain": "^0.0.186",
     "lodash": "^4.17.21",
     "meilisearch": "^0.33.0",
+    "module-alias": "^2.2.3",
     "mongoose": "^7.1.1",
+    "multer": "^1.4.5-lts.1",
     "nodejs-gpt": "^1.37.4",
     "nodemailer": "^6.9.4",
     "openai": "^4.16.1",

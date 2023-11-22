@@ -87,7 +87,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 className={cn(
                   defaultTextProps,
                   'dark:bg-gray-700 dark:hover:bg-gray-700/60 dark:focus:bg-gray-700',
-                  'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 ',
+                  'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2 ',
                 )}
               />
             </div>

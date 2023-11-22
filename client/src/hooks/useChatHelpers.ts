@@ -22,16 +22,12 @@ import useUserKey from './useUserKey';
 import store from '~/store';
 
 // this to be set somewhere else
-export default function useChatHelpers(index = 0, paramId) {
+export default function useChatHelpers(index = 0, paramId: string | undefined) {
+  const [files, setFiles] = useState(new Map<string, ExtendedFile>());
+  const [filesLoading, setFilesLoading] = useState(false);
+
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuthContext();
-  // const tempConvo = {
-  //   endpoint: null,
-  //   conversationId: null,
-  //   jailbreak: false,
-  //   examples: [],
-  //   tools: [],
-  // };
 
   const { newConversation } = useNewConvo(index);
   const { useCreateConversationAtom } = store;
@@ -39,10 +35,6 @@ export default function useChatHelpers(index = 0, paramId) {
   const { conversationId, endpoint } = conversation ?? {};
 
   const queryParam = paramId === 'new' ? paramId : conversationId ?? paramId ?? '';
-
-  // if (!queryParam && paramId && paramId !== 'new') {
-
-  // }
 
   /* Messages: here simply to fetch, don't export and use `getMessages()` instead */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -96,10 +88,6 @@ export default function useChatHelpers(index = 0, paramId) {
     },
     [queryClient],
   );
-
-  // const getConvos = useCallback(() => {
-  //   return queryClient.getQueryData<TGetConversationsResponse>([QueryKeys.allConversations, { pageNumber: '1', active: true }]);
-  // }, [queryClient]);
 
   const invalidateConvos = useCallback(() => {
     queryClient.invalidateQueries([QueryKeys.allConversations, { active: true }]);
@@ -194,6 +182,24 @@ export default function useChatHelpers(index = 0, paramId) {
       messageId: isContinued && messageId ? messageId : fakeMessageId,
       error: false,
     };
+
+    const parentMessage = currentMessages?.find(
+      (msg) => msg.messageId === latestMessage?.parentMessageId,
+    );
+    const reuseFiles = isRegenerate && parentMessage?.files;
+    if (reuseFiles && parentMessage.files?.length) {
+      currentMsg.files = parentMessage.files;
+      setFiles(new Map());
+    } else if (files.size > 0) {
+      currentMsg.files = Array.from(files.values()).map((file) => ({
+        file_id: file.file_id,
+        filepath: file.filepath,
+        type: file.type || '', // Ensure type is not undefined
+        height: file.height,
+        width: file.width,
+      }));
+      setFiles(new Map());
+    }
 
     // construct the placeholder response message
     const generation = editedText ?? latestMessage?.text ?? '';
@@ -311,15 +317,12 @@ export default function useChatHelpers(index = 0, paramId) {
   );
   const [showPopover, setShowPopover] = useRecoilState(store.showPopoverFamily(index));
   const [abortScroll, setAbortScroll] = useRecoilState(store.abortScrollFamily(index));
-  const [autoScroll, setAutoScroll] = useRecoilState(store.autoScrollFamily(index));
   const [preset, setPreset] = useRecoilState(store.presetByIndex(index));
   const [textareaHeight, setTextareaHeight] = useRecoilState(store.textareaHeightFamily(index));
   const [optionSettings, setOptionSettings] = useRecoilState(store.optionSettingsFamily(index));
   const [showAgentSettings, setShowAgentSettings] = useRecoilState(
     store.showAgentSettingsFamily(index),
   );
-
-  const [files, setFiles] = useState<ExtendedFile[]>([]);
 
   return {
     newConversation,
@@ -347,8 +350,6 @@ export default function useChatHelpers(index = 0, paramId) {
     setShowPopover,
     abortScroll,
     setAbortScroll,
-    autoScroll,
-    setAutoScroll,
     showBingToneSetting,
     setShowBingToneSetting,
     preset,
@@ -362,5 +363,7 @@ export default function useChatHelpers(index = 0, paramId) {
     files,
     setFiles,
     invalidateConvos,
+    filesLoading,
+    setFilesLoading,
   };
 }

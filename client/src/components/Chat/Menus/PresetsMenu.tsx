@@ -10,13 +10,14 @@ import {
 import type { TPreset } from 'librechat-data-provider';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
 import { useLocalize, useDefaultConvo, useNavigateToConvo } from '~/hooks';
+import { useChatContext, useToastContext } from '~/Providers';
 import { EditPresetDialog, PresetItems } from './Presets';
 import { cleanupPreset, cn } from '~/utils';
-import { useChatContext } from '~/Providers';
 import store from '~/store';
 
 const PresetsMenu: FC = () => {
   const localize = useLocalize();
+  const { showToast } = useToastContext();
   const { conversation, newConversation, setPreset } = useChatContext();
   const { navigateToConvo } = useNavigateToConvo();
   const getDefaultConversation = useDefaultConvo();
@@ -51,6 +52,12 @@ const PresetsMenu: FC = () => {
     if (!newPreset) {
       return;
     }
+
+    showToast({
+      message: localize('com_endpoint_preset_selected'),
+      showIcon: false,
+      duration: 750,
+    });
 
     if (
       modularEndpoints.has(endpoint ?? '') &&
@@ -95,7 +102,7 @@ const PresetsMenu: FC = () => {
           )}
           id="presets-button"
           data-testid="presets-button"
-          title={localize('com_ui_presets')}
+          title={localize('com_endpoint_examples')}
         >
           <BookCopy className="icon-sm" id="presets-button" />
         </button>

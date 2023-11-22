@@ -49,7 +49,7 @@ const MenuItem: FC<MenuItemProps> = ({
     <>
       <div
         role="menuitem"
-        className="group m-1.5 flex cursor-pointer gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"
+        className="group m-1.5 flex max-h-[40px] cursor-pointer gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"
         tabIndex={-1}
         {...rest}
         onClick={() => onSelectEndpoint(endpoint)}
@@ -75,7 +75,9 @@ const MenuItem: FC<MenuItemProps> = ({
                   className={cn(
                     'invisible flex gap-x-1 group-hover:visible',
                     selected ? 'visible' : '',
-                    expiryTime ? 'w-full rounded-lg p-2 hover:bg-gray-900' : '',
+                    expiryTime
+                      ? 'w-full rounded-lg p-2 hover:bg-gray-200 dark:hover:bg-gray-900'
+                      : '',
                   )}
                   onClick={(e) => {
                     e.preventDefault();
@@ -108,7 +110,7 @@ const MenuItem: FC<MenuItemProps> = ({
             )}
             {(!userProvidesKey || expiryTime) && (
               <div className="text-token-text-primary hidden gap-x-1 group-hover:flex ">
-                <div className="">New Chat</div>
+                {!userProvidesKey && <div className="">New Chat</div>}
                 <svg
                   width="24"
                   height="24"

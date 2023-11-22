@@ -1,21 +1,23 @@
 import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
-import { Fragment, useState } from 'react';
+import { Fragment, useState, memo } from 'react';
+import { useLocation } from 'react-router-dom';
+import { Menu, Transition } from '@headlessui/react';
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
-import { Menu, Transition } from '@headlessui/react';
-import { ExportModel } from './ExportConversation';
-import Settings from './Settings';
-import NavLink from './NavLink';
-import Logout from './Logout';
+import { ExportModal } from './ExportConversation';
 import { LinkIcon, GearIcon } from '~/components';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
+import Settings from './Settings';
+import NavLink from './NavLink';
+import Logout from './Logout';
 import { cn } from '~/utils/';
-
 import store from '~/store';
 
-export default function NavLinks() {
+function NavLinks() {
+  const localize = useLocalize();
+  const location = useLocation();
   const { user, isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
@@ -23,14 +25,23 @@ export default function NavLinks() {
   });
   const [showExports, setShowExports] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const localize = useLocalize();
 
-  const conversation = useRecoilValue(store.conversation) ?? ({} as TConversation);
+  let conversation;
+  const activeConvo = useRecoilValue(store.conversationByIndex(0));
+  const globalConvo = useRecoilValue(store.conversation) ?? ({} as TConversation);
+  if (location.state?.from?.pathname.includes('/chat')) {
+    conversation = globalConvo;
+  } else {
+    conversation = activeConvo;
+  }
 
   const exportable =
-    conversation?.conversationId &&
-    conversation?.conversationId !== 'new' &&
-    conversation?.conversationId !== 'search';
+    conversation &&
+    conversation.conversationId &&
+    conversation.conversationId !== 'new' &&
+    conversation.conversationId !== 'search';
+
+  console.log('NavLinks', conversation, exportable);
 
   const clickHandler = () => {
     if (exportable) {
@@ -124,8 +135,12 @@ export default function NavLinks() {
           </>
         )}
       </Menu>
-      {showExports && <ExportModel open={showExports} onOpenChange={setShowExports} />}
+      {showExports && (
+        <ExportModal open={showExports} onOpenChange={setShowExports} conversation={conversation} />
+      )}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
     </>
   );
 }
+
+export default memo(NavLinks);
