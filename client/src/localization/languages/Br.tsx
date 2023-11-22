@@ -72,7 +72,7 @@ export default {
   com_ui_copy_invitation_link: 'Copiar link do convite',
   com_ui_plan_subscription: 'Assinatura do Plano',
   com_ui_pricing: 'Preços',
-  com_ui_monthly_price: '140 CNY/mês',
+  com_ui_monthly_price: '20 USD/mês',
   com_ui_expiration_date: 'Data de Expiração',
   com_ui_reminder:
     'Por favor, renove sua assinatura antes ou na data de expiração!',

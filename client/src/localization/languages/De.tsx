@@ -72,7 +72,7 @@ export default {
   com_ui_copy_invitation_link: 'Einladungslink kopieren',
   com_ui_plan_subscription: 'Abonnement planen',
   com_ui_pricing: 'Preisgestaltung',
-  com_ui_monthly_price: '140 CNY/Monat',
+  com_ui_monthly_price: '20 USD/Monat',
   com_ui_expiration_date: 'Ablaufdatum',
   com_ui_reminder:
     'Bitte erneuern Sie Ihr Abonnement vor oder am Ablauftag!',

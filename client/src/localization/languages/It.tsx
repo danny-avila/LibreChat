@@ -24,7 +24,7 @@ export default {
   com_ui_subscriptionpage: 'Il Mio Piano',
   com_ui_plan_subscription: 'Abbonamento al Piano',
   com_ui_pricing: 'Prezzi',
-  com_ui_monthly_price: '140 CNY/mese',
+  com_ui_monthly_price: '20 USD/mese',
   com_ui_expiration_date: 'Data di Scadenza',
   com_ui_reminder:
     'Si prega di rinnovare labbonamento prima o alla data di scadenza!',

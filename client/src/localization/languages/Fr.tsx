@@ -24,7 +24,7 @@ export default {
   com_ui_subscriptionpage: 'Mon Plan',
   com_ui_plan_subscription: 'Abonnement au Plan',
   com_ui_pricing: 'Tarification',
-  com_ui_monthly_price: '140 CNY/mois',
+  com_ui_monthly_price: '20 USD/mois',
   com_ui_expiration_date: 'Date dexpiration',
   com_ui_reminder:
     'Veuillez renouveler votre abonnement avant ou le jour de lexpiration!',

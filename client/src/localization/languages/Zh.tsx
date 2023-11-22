@@ -73,7 +73,7 @@ export default {
   com_ui_copy_invitation_link: '复制邀请链接',
   com_ui_plan_subscription: '套餐订购',
   com_ui_pricing: '订阅价格',
-  com_ui_monthly_price: '140 CNY/月',
+  com_ui_monthly_price: '20 USD/月',
   com_ui_expiration_date: '有效期限',
   com_ui_reminder:
     '请在有效期限或之前续订您的订阅。',

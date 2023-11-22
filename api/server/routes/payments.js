@@ -37,8 +37,8 @@ router.post('/create-payment', requireJwtAuth, async (req, res) => {
         description: 'LibreChat Subscription',
         custom: paymentReference,
         amount: {
-          currency: 'CNY',
-          total: '140.00'
+          currency: 'USD',
+          total: '20.00'
         }
       }]
     };
@@ -73,8 +73,8 @@ router.get('/success', async (req, res) => {
       payer_id: PayerID,
       transactions: [{
         amount: {
-          currency: 'CNY',
-          total: '140.00'
+          currency: 'USD',
+          total: '20.00'
         }
       }]
     };

@@ -10,20 +10,19 @@ const {
   createOnProgress,
 } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
-const checkSubscription = require('../../../middleware/checkSubscription.js');
 const trieSensitive = require('../../../utils/trieSensitive');
 const { getMessagesCount } = require('../../../models/Message');
 const Payment = require('../../../models/payments');
 
 const abortControllers = new Map();
-
 const baseUrl = process.env.BASE_URL
+const chatQuotaPerSecond = process.env.CHAT_QUOTA_PER_SECOND
 
 router.post('/abort', requireJwtAuth, async (req, res) => {
   return await abortMessage(req, res, abortControllers);
 });
 
-router.post('/', requireJwtAuth, checkSubscription, async (req, res) => {
+router.post('/', requireJwtAuth, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId } = req.body;
   if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
   const isOpenAI = endpoint === 'openAI' || endpoint === 'azureOpenAI';
@@ -66,6 +65,7 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
     'Access-Control-Allow-Origin': '*',
     'X-Accel-Buffering': 'no'
   });
+
   let userMessage;
   let userMessageId;
   let responseMessageId;
@@ -131,41 +131,41 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
     };
   };
 
+  // Quota and subscription check
   let someTimeAgo = new Date();
+  const userId = req.user.id;
   someTimeAgo.setSeconds(someTimeAgo.getSeconds() - 60 * 60 * 24); // 24 hours
-
-  let quota = JSON.parse(process.env.CHAT_QUOTA_PER_SECOND);
+  console.log('someTimeAgo:', someTimeAgo);
+  let quota = JSON.parse(chatQuotaPerSecond);
+  console.log('quota:', quota);
+  console.log('Checking quota for model:', endpointOption.modelOptions.model);
 
   if (endpointOption.modelOptions.model in quota) {
     let messagesCount = await getMessagesCount({
-      senderId: req.user.id,
+      senderId: userId,
       model: endpointOption.modelOptions.model,
       updatedAt: { $gte: someTimeAgo },
     });
 
-    const userId = req.user.id
     let dailyQuota = (quota[endpointOption.modelOptions.model] * 60 * 60 * 24).toFixed(0);
 
+    console.log(`User ${userId} message count: ${messagesCount}, Daily quota: ${dailyQuota}`);
+
     if (messagesCount >= dailyQuota) {
-      // throw new Error("Exceed daily quota! Please contact 615547 to purchase more quota via Wechat");
-      throw new Error(`超出了您的使用额度(${endpointOption.model}每天${dailyQuota}条消息)，+ 
-      如需购买更多额度, 请点击<a href="${baseUrl}/subscription/${userId}">付费计划</a>`);
-      // throw new Error(`超出了您的使用额度(${endpointOption.modelOptions.model}每天${dailyQuota}条消息`);
+      // User exceeded daily quota, check for valid subscription
+      console.log(`User ${userId} exceeded daily quota. Checking subscription...`);
+      const latestPayment = await Payment.findOne({ userId: userId }).sort({ endTime: -1 });
+
+      if (!latestPayment || new Date() > latestPayment.endTime) {
+        console.log(`User ${userId} does not have a valid subscription`);
+        return handleError(res, { text:`超出了您的使用额度(${endpointOption.model}每天${dailyQuota}条消息)，+ 
+        如需购买更多额度, 请点击<a href="${baseUrl}/subscription/${userId}">付费计划</a>` });
+      }
+      console.log(`User ${userId} has a valid subscription`);
     }
-  }
-
-  try {
-    const userId = req.user.id;
-    const latestPayment = await Payment.findOne({ userId: userId }).sort({ endTime: -1 });
-
-    if (!latestPayment || new Date() > latestPayment.endTime) {
-      throw new Error(`您的计划已过期，如需购买更多额度,请点击<a href="${baseUrl}/subscription/${userId}">付费计划</a>`);
-    }
-
-    req.user = { id: userId, ...latestPayment.toObject() };
-  } catch (error) {
-    console.error('Debug: Error caught in subscription check middleware', error); // Log the error
-    res.status(500).json({ message: 'Internal server error' });
+  } else {
+    console.log('Invalid model option for quota check');
+    res.status(400).json({ message: 'Invalid model option.' });
     return;
   }
 
