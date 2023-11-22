@@ -1,6 +1,5 @@
 import type { TPreset } from 'librechat-data-provider';
-import { EModelEndpoint } from 'librechat-data-provider';
-import { alternateName } from '~/common';
+import { EModelEndpoint, alternateName } from 'librechat-data-provider';
 
 export const getPresetIcon = (preset: TPreset, Icon) => {
   return Icon({

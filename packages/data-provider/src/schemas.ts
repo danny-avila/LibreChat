@@ -11,6 +11,17 @@ export enum EModelEndpoint {
   assistant = 'assistant',
 }
 
+export const alternateName = {
+  [EModelEndpoint.openAI]: 'OpenAI',
+  [EModelEndpoint.assistant]: 'Assistants',
+  [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
+  [EModelEndpoint.bingAI]: 'Bing',
+  [EModelEndpoint.chatGPTBrowser]: 'ChatGPT',
+  [EModelEndpoint.gptPlugins]: 'Plugins',
+  [EModelEndpoint.google]: 'PaLM',
+  [EModelEndpoint.anthropic]: 'Anthropic',
+};
+
 export const EndpointURLs: { [key in EModelEndpoint]: string } = {
   [EModelEndpoint.azureOpenAI]: '/api/ask/azureOpenAI',
   [EModelEndpoint.openAI]: '/api/ask/openAI',
@@ -28,6 +39,28 @@ export const modularEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.google,
   EModelEndpoint.openAI,
 ]);
+
+export const supportsFiles = {
+  [EModelEndpoint.openAI]: true,
+  [EModelEndpoint.assistant]: true,
+};
+
+export const openAIModels = [
+  'gpt-3.5-turbo-16k-0613',
+  'gpt-3.5-turbo-16k',
+  'gpt-4-1106-preview',
+  'gpt-3.5-turbo',
+  'gpt-3.5-turbo-1106',
+  'gpt-4-vision-preview',
+  'gpt-4',
+  'gpt-3.5-turbo-instruct-0914',
+  'gpt-3.5-turbo-0613',
+  'gpt-3.5-turbo-0301',
+  'gpt-3.5-turbo-instruct',
+  'gpt-4-0613',
+  'text-davinci-003',
+  'gpt-4-0314',
+];
 
 export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
@@ -118,6 +151,15 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
   plugin?: TResPlugin | null;
   plugins?: TResPlugin[];
+  files?: {
+    type: string;
+    file_id: string;
+    filename?: string;
+    preview?: string;
+    filepath?: string;
+    height?: number;
+    width?: number;
+  }[];
 };
 
 export const tConversationSchema = z.object({
@@ -455,7 +497,7 @@ export type TEndpointOption = {
 };
 
 export const getResponseSender = (endpointOption: TEndpointOption): string => {
-  const { endpoint, chatGptLabel, modelLabel, jailbreak } = endpointOption;
+  const { model, endpoint, chatGptLabel, modelLabel, jailbreak } = endpointOption;
 
   if (
     [
@@ -465,7 +507,14 @@ export const getResponseSender = (endpointOption: TEndpointOption): string => {
       EModelEndpoint.chatGPTBrowser,
     ].includes(endpoint)
   ) {
-    return chatGptLabel ?? 'ChatGPT';
+    if (chatGptLabel) {
+      return chatGptLabel;
+    } else if (model && model.includes('gpt-3')) {
+      return 'GPT-3.5';
+    } else if (model && model.includes('gpt-4')) {
+      return 'GPT-4';
+    }
+    return alternateName[endpoint] ?? 'ChatGPT';
   }
 
   if (endpoint === EModelEndpoint.bingAI) {

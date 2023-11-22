@@ -87,6 +87,7 @@ const Image = ({
         </div>
       </div>
       <button
+        type="button"
         className="absolute right-1 top-1 -translate-y-1/2 translate-x-1/2 rounded-full border border-white bg-gray-500 p-0.5 text-white transition-colors hover:bg-black hover:opacity-100 group-hover:opacity-100 md:opacity-0"
         onClick={onDelete}
       >

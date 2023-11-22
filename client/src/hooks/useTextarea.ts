@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
+import { TEndpointOption, getResponseSender } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import { useChatContext } from '~/Providers/ChatContext';
+import useFileHandling from './useFileHandling';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
@@ -12,9 +14,11 @@ export default function useTextarea({ setText, submitMessage }) {
     setShowBingToneSetting,
     textareaHeight,
     setTextareaHeight,
+    setFilesLoading,
   } = useChatContext();
   const isComposing = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const { handleFiles } = useFileHandling();
 
   const isNotAppendable = (latestMessage?.unfinished && !isSubmitting) || latestMessage?.error;
   const { conversationId, jailbreak } = conversation || {};
@@ -88,7 +92,9 @@ export default function useTextarea({ setText, submitMessage }) {
       return 'Edit your message or Regenerate.';
     }
 
-    return 'Message ChatGPT…';
+    const sender = getResponseSender(conversation as TEndpointOption);
+
+    return `Message ${sender ? sender : 'ChatGPT'}…`;
   };
 
   const onHeightChange = (height: number) => {
@@ -101,10 +107,19 @@ export default function useTextarea({ setText, submitMessage }) {
     }
   };
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (e.clipboardData && e.clipboardData.files.length > 0) {
+      e.preventDefault();
+      setFilesLoading(true);
+      handleFiles(e.clipboardData.files);
+    }
+  };
+
   return {
     inputRef,
     handleKeyDown,
     handleKeyUp,
+    handlePaste,
     handleCompositionStart,
     handleCompositionEnd,
     placeholder: getPlaceholderText(),

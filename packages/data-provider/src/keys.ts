@@ -16,3 +16,8 @@ export enum QueryKeys {
   assistants = 'assistants',
   assistant = 'assistant',
 }
+
+export enum MutationKeys {
+  imageUpload = 'imageUpload',
+  fileDelete = 'fileDelete',
+}
