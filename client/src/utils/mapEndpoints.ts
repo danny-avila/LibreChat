@@ -16,5 +16,5 @@ const getAvailableEndpoints = (filter: Record<string, boolean>) => {
 
 export default function mapEndpoints(config: TEndpointsConfig) {
   const filter = getEndpointsFilter(config);
-  return getAvailableEndpoints(filter);
+  return getAvailableEndpoints(filter).sort((a, b) => config[a].order - config[b].order);
 }
