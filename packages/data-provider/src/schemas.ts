@@ -11,6 +11,17 @@ export enum EModelEndpoint {
   assistant = 'assistant',
 }
 
+export const defaultEndpoints: EModelEndpoint[] = [
+  EModelEndpoint.openAI,
+  EModelEndpoint.assistant,
+  EModelEndpoint.azureOpenAI,
+  EModelEndpoint.bingAI,
+  EModelEndpoint.chatGPTBrowser,
+  EModelEndpoint.gptPlugins,
+  EModelEndpoint.google,
+  EModelEndpoint.anthropic,
+];
+
 export const alternateName = {
   [EModelEndpoint.openAI]: 'OpenAI',
   [EModelEndpoint.assistant]: 'Assistants',
