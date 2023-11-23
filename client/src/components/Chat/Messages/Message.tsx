@@ -96,7 +96,7 @@ export default function Message(props: TMessageProps) {
     ...conversation,
     ...message,
     model: message?.model ?? conversation?.model,
-    size: 28.8,
+    size: 32,
   });
 
   const regenerateMessage = () => {
@@ -128,7 +128,7 @@ export default function Message(props: TMessageProps) {
             <div className="relative flex flex-shrink-0 flex-col items-end">
               <div>
                 <div className="pt-0.5">
-                  <div className="gizmo-shadow-stroke flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+                  <div className="h-[40px] w-[40px] gizmo-shadow-stroke flex h-6 w-6 items-center justify-center">
                     {typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
                       <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>
                     ) : (
@@ -141,7 +141,7 @@ export default function Message(props: TMessageProps) {
             <div
               className={cn('relative flex w-full flex-col', isCreatedByUser ? '' : 'agent-turn')}
             >
-              <div className="select-none font-semibold">
+              <div className="p-1 py-0 select-none font-semibold">
                 {isCreatedByUser ? 'You' : message.sender}
               </div>
               <div className="flex-col gap-1 md:gap-3">

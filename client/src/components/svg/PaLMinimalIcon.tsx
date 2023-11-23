@@ -9,7 +9,7 @@ export default function PaLMinimalIcon() {
       viewBox="0 0 32 32"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="h-4 w-4"
+      className="h-2/3 w-2/3"
       height="1em"
       width="1em"
       xmlns="http://www.w3.org/2000/svg"

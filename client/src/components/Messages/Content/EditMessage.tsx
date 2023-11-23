@@ -83,7 +83,7 @@ const EditMessage = ({
     <Container>
       <div
         data-testid="message-text-editor"
-        className="markdown prose dark:prose-invert light w-full whitespace-pre-wrap break-words border-none focus:outline-none"
+        className="p-1 py-0 markdown prose dark:prose-invert light w-full whitespace-pre-wrap break-words border-none focus:outline-none"
         contentEditable={true}
         ref={textEditor}
         suppressContentEditableWarning={true}
@@ -99,7 +99,7 @@ const EditMessage = ({
           {localize('com_ui_save')} {'&'} {localize('com_ui_submit')}
         </button>
         <button
-          className="btn btn-secondary relative mr-2"
+          className="btn btn-neutral relative mr-2"
           disabled={isSubmitting}
           onClick={updateMessage}
         >

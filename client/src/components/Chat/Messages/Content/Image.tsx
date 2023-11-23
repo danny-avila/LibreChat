@@ -46,7 +46,7 @@ const Image = ({
   return (
     <Dialog.Root>
       <div className="">
-        <div className="relative mt-1 flex h-auto w-full max-w-lg items-center justify-center overflow-hidden bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+        <div className="p-1 py-0 relative mt-1 flex h-auto w-full max-w-lg items-center justify-center overflow-hidden text-gray-500 dark:text-gray-400">
           <Dialog.Trigger asChild>
             <button type="button" aria-haspopup="dialog" aria-expanded="false">
               <LazyLoadImage

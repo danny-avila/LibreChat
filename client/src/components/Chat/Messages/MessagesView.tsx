@@ -67,7 +67,7 @@ export default function MessagesView({
 
   return (
     <div
-      className="flex-1 overflow-y-auto pt-0"
+      className="overflow-y-auto overflow-x-hidden flex-1 overflow-y-auto pt-0"
       ref={scrollableRef}
       onScroll={debouncedHandleScroll}
     >

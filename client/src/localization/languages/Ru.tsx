@@ -89,7 +89,7 @@ export default {
   com_auth_click_here: 'Нажмите здесь',
   com_auth_to_try_again: 'чтобы попробовать снова.',
   com_auth_submit_registration: 'Отправить регистрацию',
-  com_auth_welcome_back: 'С возвращением',
+  com_auth_welcome_back: 'Добро пожаловать',
   com_endpoint_open_menu: 'Открыть меню',
   com_endpoint_bing_enable_sydney: 'Включить Сидней',
   com_endpoint_bing_to_enable_sydney: 'Чтобы включить Сидней',

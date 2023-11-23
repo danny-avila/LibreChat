@@ -30,8 +30,8 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
   <Container>
     <div
       className={cn(
-        'markdown prose dark:prose-invert light w-full break-words',
-        isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-70',
+        'p-1 py-0 markdown prose dark:prose-invert light w-full break-words',
+        isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-70' : 'dark:text-gray-70',
       )}
     >
       {!isCreatedByUser ? (
