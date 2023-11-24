@@ -3,6 +3,7 @@ const User = require('../models/User');
 const config = require('../../config/loader');
 const domains = config.domains;
 const uploadProfilePictureFromURL = require('./ProfilePictureCreate');
+const { useFirebase } = require('../server/services/firebase');
 
 const githubLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
@@ -11,18 +12,22 @@ const githubLogin = async (accessToken, refreshToken, profile, cb) => {
     const oldUser = await User.findOne({ email });
     const ALLOW_SOCIAL_REGISTRATION =
       process.env.ALLOW_SOCIAL_REGISTRATION?.toLowerCase() === 'true';
-    console.log(profile.photos[0].value);
 
-    // Upload profile picture and get the download URL
-    const profilePictureResult = await uploadProfilePictureFromURL(
-      profile.id,
-      profile.photos[0].value,
-    );
-    console.log('Image uploaded successfully. Download URL:', profilePictureResult);
+    let avatarUrl;
 
-    // Use the download URL in the user creation or update logic
+    if (useFirebase) {
+      // Upload profile picture to Firebase Storage and get the download URL
+      avatarUrl = await uploadProfilePictureFromURL(githubId, profile.photos[0].value);
+      console.log('Image uploaded successfully. Download URL:', avatarUrl);
+    } else {
+      // Use the standard GitHub avatar URL
+      avatarUrl = profile.photos[0].value;
+      console.log('Using GitHub avatar URL:', avatarUrl);
+    }
+
+    // Use the download URL or GitHub avatar URL in the user creation or update logic
     if (oldUser) {
-      oldUser.avatar = profile.photos[0].value;
+      oldUser.avatar = avatarUrl;
       await oldUser.save();
       return cb(null, oldUser);
     } else if (ALLOW_SOCIAL_REGISTRATION) {
@@ -33,7 +38,7 @@ const githubLogin = async (accessToken, refreshToken, profile, cb) => {
         email,
         emailVerified: profile.emails[0].verified,
         name: profile.displayName,
-        avatar: profilePictureResult,
+        avatar: avatarUrl,
       }).save();
 
       return cb(null, newUser);

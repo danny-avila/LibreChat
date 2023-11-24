@@ -1,17 +1,31 @@
 const firebase = require('firebase/app');
 const { getStorage, ref, uploadBytes, getDownloadURL } = require('firebase/storage');
 
-// Initialize Firebase
-const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID,
-};
+let useFirebase = false;
 
-const app = firebase.initializeApp(firebaseConfig);
-const storage = getStorage(app);
+// Check if all Firebase configuration variables are present
+const firebaseConfigKeys = [
+  'FIREBASE_API_KEY',
+  'FIREBASE_AUTH_DOMAIN',
+  'FIREBASE_PROJECT_ID',
+  'FIREBASE_STORAGE_BUCKET',
+  'FIREBASE_MESSAGING_SENDER_ID',
+  'FIREBASE_APP_ID',
+];
 
-module.exports = { app, storage, ref, uploadBytes, getDownloadURL };
+if (firebaseConfigKeys.every((key) => process.env[key])) {
+  const firebaseConfig = Object.fromEntries(
+    firebaseConfigKeys.map((key) => [key.replace('FIREBASE_', '').toLowerCase(), process.env[key]]),
+  );
+
+  firebaseConfig.storageBucket = process.env.FIREBASE_STORAGE_BUCKET; // Add this line to set the storageBucket property
+
+  const app = firebase.initializeApp(firebaseConfig);
+  const storage = getStorage(app);
+
+  useFirebase = true;
+  module.exports = { app, storage, ref, uploadBytes, getDownloadURL, useFirebase };
+} else {
+  console.warn('Firebase configuration variables are missing. Firebase will not be used.');
+  module.exports = { useFirebase };
+}
