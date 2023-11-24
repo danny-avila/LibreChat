@@ -2,6 +2,7 @@ import debounce from 'lodash/debounce';
 import { useState, useEffect, useCallback } from 'react';
 import type { BatchFile } from 'librechat-data-provider';
 import { useDeleteFilesMutation } from '~/data-provider';
+import { useSetFilesToDelete } from '~/hooks';
 import { ExtendedFile } from '~/common';
 import Image from './Image';
 
@@ -14,6 +15,7 @@ export default function Images({
   setFiles: React.Dispatch<React.SetStateAction<Map<string, ExtendedFile>>>;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
+  const setFilesToDelete = useSetFilesToDelete();
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_batch, setFileDeleteBatch] = useState<BatchFile[]>([]);
   const files = Array.from(_files.values());
@@ -37,7 +39,7 @@ export default function Images({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [files]);
 
-  const deleteFiles = useDeleteFilesMutation({
+  const { mutateAsync } = useDeleteFilesMutation({
     onSuccess: () => {
       console.log('Files deleted');
     },
@@ -49,10 +51,10 @@ export default function Images({
   const executeBatchDelete = useCallback(
     (filesToDelete: BatchFile[]) => {
       console.log('Deleting files:', filesToDelete);
-      deleteFiles.mutate({ files: filesToDelete });
+      mutateAsync({ files: filesToDelete });
       setFileDeleteBatch([]);
     },
-    [deleteFiles],
+    [mutateAsync],
   );
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -81,6 +83,8 @@ export default function Images({
       const updatedFiles = new Map(currentFiles);
       updatedFiles.delete(file_id);
       updatedFiles.delete(temp_file_id);
+      const files = Object.fromEntries(updatedFiles);
+      setFilesToDelete(files);
       return updatedFiles;
     });
 
