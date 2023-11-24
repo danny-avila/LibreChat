@@ -45,18 +45,18 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
               },
             })}
             aria-invalid={!!errors.email}
-            className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
+            className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
             placeholder=" "
           ></input>
           <label
             htmlFor="email"
-            className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
+            className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
           >
             {localize('com_auth_email_address')}
           </label>
         </div>
         {errors.email && (
-          <span role="alert" className="mt-1 text-sm text-red-600">
+          <span role="alert" className="mt-1 text-sm text-black">
             {/* @ts-ignore not sure why*/}
             {errors.email.message}
           </span>
@@ -81,25 +81,25 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
               },
             })}
             aria-invalid={!!errors.password}
-            className="peer block w-full appearance-none rounded-t-md border-0 border-b-2 border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
+            className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
             placeholder=" "
           ></input>
           <label
             htmlFor="password"
-            className="absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-gray-500 duration-300 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
+            className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
           >
             {localize('com_auth_password')}
           </label>
         </div>
 
         {errors.password && (
-          <span role="alert" className="mt-1 text-sm text-red-600">
+          <span role="alert" className="mt-1 text-sm text-black">
             {/* @ts-ignore not sure why*/}
             {errors.password.message}
           </span>
         )}
       </div>
-      <a href="/forgot-password" className="text-sm text-green-500 hover:underline">
+      <a href="/forgot-password" className="text-sm font-medium text-green-500 hover:underline">
         {localize('com_auth_password_forgot')}
       </a>
       <div className="mt-6">
@@ -107,8 +107,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
           aria-label="Sign in"
           data-testid="login-button"
           type="submit"
-          className="w-full transform rounded-sm bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none"
-        >
+          className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none">
           {localize('com_auth_continue')}
         </button>
       </div>
