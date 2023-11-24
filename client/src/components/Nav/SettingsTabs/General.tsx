@@ -1,6 +1,6 @@
 import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
-import React, { useState, useContext, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useContext, useCallback, useRef } from 'react';
 import { useClearConversationsMutation } from 'librechat-data-provider';
 import {
   ThemeContext,
@@ -8,11 +8,13 @@ import {
   useOnClickOutside,
   useConversation,
   useConversations,
+  useLocalStorage,
 } from '~/hooks';
 import type { TDangerButtonProps } from '~/common';
+import AutoScrollSwitch from './AutoScrollSwitch';
 import DangerButton from './DangerButton';
 import store from '~/store';
-import useLocalStorage from '~/hooks/useLocalStorage';
+import { Dropdown } from '~/components/ui';
 
 export const ThemeSelector = ({
   theme,
@@ -23,18 +25,22 @@ export const ThemeSelector = ({
 }) => {
   const localize = useLocalize();
 
+  const themeOptions = [
+    { value: 'system', display: localize('com_nav_theme_system') },
+    { value: 'dark', display: localize('com_nav_theme_dark') },
+    { value: 'light', display: localize('com_nav_theme_light') },
+  ];
+
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_nav_theme')}</div>
-      <select
-        className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20 dark:bg-gray-900"
-        onChange={(e) => onChange(e.target.value)}
+      <div> {localize('com_nav_theme')} </div>
+      <Dropdown
         value={theme}
-      >
-        <option value="system">{localize('com_nav_theme_system')}</option>
-        <option value="dark">{localize('com_nav_theme_dark')}</option>
-        <option value="light">{localize('com_nav_theme_light')}</option>
-      </select>
+        onChange={onChange}
+        options={themeOptions}
+        width={150}
+        testId="theme-selector"
+      />
     </div>
   );
 };
@@ -75,29 +81,30 @@ export const LangSelector = ({
 }) => {
   const localize = useLocalize();
 
+  // Create an array of options for the Dropdown
+  const languageOptions = [
+    { value: 'auto', display: localize('com_nav_lang_auto') },
+    { value: 'en-US', display: localize('com_nav_lang_english') },
+    { value: 'zh-CN', display: localize('com_nav_lang_chinese') },
+    { value: 'zh-TC', display: localize('com_nav_lang_traditionalchinese') },
+    { value: 'ar-EG', display: localize('com_nav_lang_arabic') },
+    { value: 'de-DE', display: localize('com_nav_lang_german') },
+    { value: 'es-ES', display: localize('com_nav_lang_spanish') },
+    { value: 'fr-FR', display: localize('com_nav_lang_french') },
+    { value: 'it-IT', display: localize('com_nav_lang_italian') },
+    { value: 'pl-PL', display: localize('com_nav_lang_polish') },
+    { value: 'pt-BR', display: localize('com_nav_lang_brazilian_portuguese') },
+    { value: 'ru-RU', display: localize('com_nav_lang_russian') },
+    { value: 'ja-JP', display: localize('com_nav_lang_japanese') },
+    { value: 'sv-SE', display: localize('com_nav_lang_swedish') },
+    { value: 'ko-KR', display: localize('com_nav_lang_korean') },
+    { value: 'vi-VN', display: localize('com_nav_lang_vietnamese') },
+  ];
+
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_nav_language')}</div>
-      <select
-        className="w-24 rounded border border-black/10 bg-transparent text-sm dark:border-white/20 dark:bg-gray-900"
-        onChange={(e) => onChange(e.target.value)}
-        value={langcode}
-      >
-        <option value="auto">{localize('com_nav_lang_auto')}</option>
-        <option value="en-US">{localize('com_nav_lang_english')}</option>
-        <option value="zh-CN">{localize('com_nav_lang_chinese')}</option>
-        <option value="zh-TC">{localize('com_nav_lang_traditionalchinese')}</option>
-        <option value="de-DE">{localize('com_nav_lang_german')}</option>
-        <option value="es-ES">{localize('com_nav_lang_spanish')}</option>
-        <option value="fr-FR">{localize('com_nav_lang_french')}</option>
-        <option value="it-IT">{localize('com_nav_lang_italian')}</option>
-        <option value="pl-PL">{localize('com_nav_lang_polish')}</option>
-        <option value="pt-BR">{localize('com_nav_lang_brazilian_portuguese')}</option>
-        <option value="ru-RU">{localize('com_nav_lang_russian')}</option>
-        <option value="ja-JP">{localize('com_nav_lang_japanese')}</option>
-        <option value="sv-SE">{localize('com_nav_lang_swedish')}</option>
-        <option value="ko-KR">{localize('com_nav_lang_korean')}</option>
-      </select>
+      <div> {localize('com_nav_language')} </div>
+      <Dropdown value={langcode} onChange={onChange} options={languageOptions} />
     </div>
   );
 };
@@ -114,22 +121,23 @@ function General() {
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
 
-  useEffect(() => {
-    if (clearConvosMutation.isSuccess) {
-      newConversation();
-      refreshConversations();
-    }
-  }, [clearConvosMutation.isSuccess, newConversation, refreshConversations]);
-
-  const clearConvos = useCallback(() => {
+  const clearConvos = () => {
     if (confirmClear) {
       console.log('Clearing conversations...');
-      clearConvosMutation.mutate({});
       setConfirmClear(false);
+      clearConvosMutation.mutate(
+        {},
+        {
+          onSuccess: () => {
+            newConversation();
+            refreshConversations();
+          },
+        },
+      );
     } else {
       setConfirmClear(true);
     }
-  }, [confirmClear, clearConvosMutation]);
+  };
 
   const changeTheme = useCallback(
     (value: string) => {
@@ -174,6 +182,9 @@ function General() {
             showText={true}
             mutation={clearConvosMutation}
           />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <AutoScrollSwitch />
         </div>
       </div>
     </Tabs.Content>

@@ -120,7 +120,7 @@ export type TConfig = {
   availableModels?: [];
   userProvide?: boolean | null;
   availableTools?: [];
-  plugins?: [];
+  plugins?: Record<string, string>;
   azure?: boolean;
 };
 
@@ -181,6 +181,7 @@ export type TStartupConfig = {
   socialLoginEnabled: boolean;
   emailEnabled: boolean;
   checkBalance: boolean;
+  customFooter?: string;
 };
 
 export type TRefreshTokenResponse = {

@@ -21,6 +21,19 @@ export enum ESide {
   Left = 'left',
 }
 
+export enum NotificationSeverity {
+  INFO = 'info',
+  SUCCESS = 'success',
+  WARNING = 'warning',
+  ERROR = 'error',
+}
+
+export type TShowToast = {
+  message: string;
+  severity?: NotificationSeverity;
+  showIcon?: boolean;
+};
+
 export type TBaseSettingsProps = {
   conversation: TConversation | TPreset | null;
   className?: string;
@@ -177,6 +190,7 @@ export type TUserContext = {
 
 export type TAuthConfig = {
   loginRedirect: string;
+  test?: boolean;
 };
 
 export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model' | 'error'> &

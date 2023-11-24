@@ -1,5 +1,5 @@
 export * from './data-service';
-export * from './request';
+export { default as request } from './request';
 export * from './types';
 export * from './react-query-service';
 export * from './headers-helpers';

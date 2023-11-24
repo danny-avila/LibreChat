@@ -3,7 +3,7 @@ import type { TDialogProps } from '~/common';
 import { Dialog, Dropdown } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { RevokeKeysButton } from '~/components/Nav';
-import { cn, defaultTextProps, removeFocusOutlines, alternateName } from '~/utils';
+import { cn, alternateName } from '~/utils';
 import { useUserKey, useLocalize } from '~/hooks';
 import GoogleConfig from './GoogleConfig';
 import OpenAIConfig from './OpenAIConfig';
@@ -75,13 +75,7 @@ const SetKeyDialog = ({
               value={expiresAtLabel}
               onChange={handleExpirationChange}
               options={expirationOptions.map((option) => option.display)}
-              className={cn(
-                defaultTextProps,
-                'flex h-full w-full resize-none',
-                removeFocusOutlines,
-              )}
-              optionsClassName="max-h-72"
-              containerClassName="flex w-1/2 md:w-1/3 resize-none z-[51]"
+              width={185}
             />
             <EndpointComponent userKey={userKey} setUserKey={setUserKey} endpoint={endpoint} />
             <HelpText endpoint={endpoint} />

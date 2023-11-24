@@ -231,6 +231,7 @@ export default {
   com_nav_confirm_clear: '지우기 확인',
   com_nav_close_sidebar: '사이드바 닫기',
   com_nav_open_sidebar: '사이드바 열기',
+  com_nav_send_message: '메시지 보내기',
   com_nav_log_out: '로그아웃',
   com_nav_user: '사용자',
   com_nav_clear_conversation: '대화 지우기',

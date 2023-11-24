@@ -44,6 +44,16 @@ const formatMessage = ({ message, userName, assistantName, langChain = false }) 
     formattedMessage.name = assistantName;
   }
 
+  if (formattedMessage.name) {
+    // Conform to API regex: ^[a-zA-Z0-9_-]{1,64}$
+    // https://community.openai.com/t/the-format-of-the-name-field-in-the-documentation-is-incorrect/175684/2
+    formattedMessage.name = formattedMessage.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    if (formattedMessage.name.length > 64) {
+      formattedMessage.name = formattedMessage.name.substring(0, 64);
+    }
+  }
+
   if (!langChain) {
     return formattedMessage;
   }

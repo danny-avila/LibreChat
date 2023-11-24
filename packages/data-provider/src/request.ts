@@ -21,47 +21,49 @@ const processQueue = (error: AxiosError | null, token: string | null = null) => 
 
 axios.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     const originalRequest = error.config;
+
     if (error.response.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+
       if (isRefreshing) {
-        return new Promise(function (resolve, reject) {
-          failedQueue.push({ resolve, reject });
-        })
-          .then((token) => {
-            originalRequest.headers['Authorization'] = 'Bearer ' + token;
-            return axios(originalRequest);
-          })
-          .catch((err) => {
-            return Promise.reject(err);
+        try {
+          const token = await new Promise((resolve, reject) => {
+            failedQueue.push({ resolve, reject });
           });
+          originalRequest.headers['Authorization'] = 'Bearer ' + token;
+          return await axios(originalRequest);
+        } catch (err) {
+          return Promise.reject(err);
+        }
       }
 
-      originalRequest._retry = true;
       isRefreshing = true;
 
-      return new Promise(function (resolve, reject) {
-        refreshToken()
-          .then(({ token }) => {
-            if (token) {
-              originalRequest.headers['Authorization'] = 'Bearer ' + token;
-              setTokenHeader(token);
-              window.dispatchEvent(new CustomEvent('tokenUpdated', { detail: token }));
-              processQueue(null, token);
-              resolve(axios(originalRequest));
-            } else {
-              window.location.href = '/login';
-            }
-          })
-          .catch((err) => {
-            processQueue(err, null);
-            reject(err);
-          })
-          .then(() => {
-            isRefreshing = false;
-          });
-      });
+      try {
+        const { token } = await refreshToken(
+          // Handle edge case where we get a blank screen if the initial 401 error is from a refresh token request
+          originalRequest.url?.includes('api/auth/refresh') ? true : false,
+        );
+
+        if (token) {
+          originalRequest.headers['Authorization'] = 'Bearer ' + token;
+          setTokenHeader(token);
+          window.dispatchEvent(new CustomEvent('tokenUpdated', { detail: token }));
+          processQueue(null, token);
+          return await axios(originalRequest);
+        } else {
+          window.location.href = '/login';
+        }
+      } catch (err) {
+        processQueue(err as AxiosError, null);
+        return Promise.reject(err);
+      } finally {
+        isRefreshing = false;
+      }
     }
+
     return Promise.reject(error);
   },
 );

@@ -23,6 +23,7 @@ export default {
   com_ui_use_prompt: 'Usa il prompt',
   com_ui_prev: 'Precedente',
   com_ui_next: 'Successivo',
+  com_ui_stop: 'Stop',
   com_ui_prompt_templates: 'Modelli di prompt',
   com_ui_hide_prompt_templates: 'Nascondi modelli di prompt',
   com_ui_showing: 'Visualizzazione',
@@ -226,6 +227,7 @@ export default {
   com_endpoint_config_key_google_service_account: 'Crea un account di servizio',
   com_endpoint_config_key_google_vertex_api_role:
     'Assicurati di fare clic su \'Crea e continua\' per dare almeno il ruolo \'Utente Vertex AI\'. Infine, crea una chiave JSON da importare qui.',
+  com_nav_auto_scroll: 'Scorrimento automatico',
   com_nav_plugin_store: 'Negozio dei plugin',
   com_nav_plugin_search: 'Cerca plugin',
   com_nav_plugin_auth_error:
@@ -251,6 +253,7 @@ export default {
   com_nav_confirm_clear: 'Conferma la cancellazione',
   com_nav_close_sidebar: 'Chiudi la barra laterale',
   com_nav_open_sidebar: 'Apri la barra laterale',
+  com_nav_send_message: 'Invia messaggio',
   com_nav_log_out: 'Esci',
   com_nav_user: 'UTENTE',
   com_nav_clear_conversation: 'Cancella conversazioni',

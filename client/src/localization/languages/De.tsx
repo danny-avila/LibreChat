@@ -191,6 +191,7 @@ export default {
   com_nav_confirm_clear: 'Bestätige Löschung aller Chats',
   com_nav_close_sidebar: 'Schließe Seitenleiste',
   com_nav_open_sidebar: 'Öffne Seitenleiste',
+  com_nav_send_message: 'Sende Nachricht',
   com_nav_log_out: 'Ausloggen',
   com_nav_user: 'USER',
   com_nav_clear_conversation: 'Lösche Konversation',

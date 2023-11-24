@@ -241,7 +241,7 @@ class Env {
    * @returns {Boolean}
    */
   isCI() {
-    return this.currentEnvironment() === 'ci';
+    return this.currentEnvironment() === 'CI';
   }
 }
 

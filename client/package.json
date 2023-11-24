@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "0.5.9",
+  "version": "0.6.1",
   "description": "",
   "scripts": {
     "data-provider": "cd .. && npm run build:data-provider",
@@ -8,8 +8,8 @@
     "build:ci": "cross-env NODE_ENV=development vite build --mode ci",
     "dev": "cross-env NODE_ENV=development vite",
     "preview-prod": "cross-env NODE_ENV=development vite preview",
-    "test": "cross-env NODE_ENV=test jest --watch",
-    "test:ci": "cross-env NODE_ENV=test jest --ci",
+    "test": "cross-env NODE_ENV=development jest --watch",
+    "test:ci": "cross-env NODE_ENV=development jest --ci",
     "b:test": "NODE_ENV=test bunx jest --watch",
     "b:build": "NODE_ENV=production bun --bun vite build",
     "b:dev": "NODE_ENV=development bunx vite"
@@ -37,6 +37,7 @@
     "@radix-ui/react-slider": "^1.1.1",
     "@radix-ui/react-switch": "^1.0.3",
     "@radix-ui/react-tabs": "^1.0.3",
+    "@radix-ui/react-toast": "^1.1.5",
     "@radix-ui/react-tooltip": "^1.0.6",
     "@tanstack/react-query": "^4.28.0",
     "@zattoo/use-double-click": "1.2.0",
