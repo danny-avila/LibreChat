@@ -107,14 +107,11 @@ const useFileHandling = () => {
       });
 
       setTimeout(() => {
-        const file = files.get(data.temp_file_id);
         updateFileById(data.temp_file_id, {
           progress: 1,
           file_id: data.file_id,
           temp_file_id: data.temp_file_id,
           filepath: data.filepath,
-          // filepath: file?.preview,
-          preview: file?.preview,
           type: data.type,
           height: data.height,
           width: data.width,
@@ -232,7 +229,7 @@ const useFileHandling = () => {
 
           await uploadFile(extendedFile);
           // This gets cleaned up in the Image component, after receiving the server image
-          // URL.revokeObjectURL(preview);
+          URL.revokeObjectURL(preview);
         };
         img.src = preview;
       } catch (error) {
