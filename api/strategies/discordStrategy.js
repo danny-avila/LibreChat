@@ -2,6 +2,8 @@ const { Strategy: DiscordStrategy } = require('passport-discord');
 const User = require('../models/User');
 const config = require('../../config/loader');
 const domains = config.domains;
+const uploadProfilePictureFromURL = require('./ProfilePictureCreate');
+const { useFirebase } = require('../server/services/firebase');
 
 const discordLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
@@ -13,12 +15,17 @@ const discordLogin = async (accessToken, refreshToken, profile, cb) => {
     const ALLOW_SOCIAL_REGISTRATION =
       process.env.ALLOW_SOCIAL_REGISTRATION?.toLowerCase() === 'true';
     let avatarURL;
+
     if (profile.avatar) {
       const format = profile.avatar.startsWith('a_') ? 'gif' : 'png';
       avatarURL = `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.${format}`;
     } else {
       const defaultAvatarNum = Number(profile.discriminator) % 5;
       avatarURL = `https://cdn.discordapp.com/embed/avatars/${defaultAvatarNum}.png`;
+    }
+
+    if (useFirebase) {
+      avatarURL = await uploadProfilePictureFromURL(discordId, avatarURL);
     }
 
     if (oldUser) {

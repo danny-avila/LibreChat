@@ -16,16 +16,11 @@ const githubLogin = async (accessToken, refreshToken, profile, cb) => {
     let avatarUrl;
 
     if (useFirebase) {
-      // Upload profile picture to Firebase Storage and get the download URL
       avatarUrl = await uploadProfilePictureFromURL(githubId, profile.photos[0].value);
-      console.log('Image uploaded successfully. Download URL:', avatarUrl);
     } else {
-      // Use the standard GitHub avatar URL
       avatarUrl = profile.photos[0].value;
-      console.log('Using GitHub avatar URL:', avatarUrl);
     }
 
-    // Use the download URL or GitHub avatar URL in the user creation or update logic
     if (oldUser) {
       oldUser.avatar = avatarUrl;
       await oldUser.save();
