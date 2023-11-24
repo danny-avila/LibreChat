@@ -96,7 +96,7 @@ router.post('/create-payment-wechatpay', requireJwtAuth, async (req, res) => {
           product_data: {
             name: 'Subscription',
           },
-          unit_amount: 2000,
+          unit_amount: 14000,
         },
         quantity: 1,
       }],
@@ -147,6 +147,16 @@ router.get('/verify-wechatpay', requireJwtAuth, async (req, res) => {
       const userSession = await getUserSessionFromReference(paymentReference);
 
       console.log('[Verify WeChat Pay] User session found:', userSession);
+
+      await createPaymentRecord(
+        userId,
+        'wechat_pay',
+        session.id,
+        session.amount_total,
+        session.currency,
+        startTime,
+        endTime
+      );
 
       const formattedStartTime = moment(startTime).format('MMM D, YYYY HH:mm:ss');
       const formattedEndTime = moment(endTime).format('MMM D, YYYY HH:mm:ss');
@@ -282,25 +292,6 @@ router.get('/success', async (req, res) => {
         ({ startTime, endTime } = singlePaymentTimeTracker());
 
         console.log('[Payment Success] PayPal payment executed', executedPayment);
-        break;
-      }
-
-      case 'wechat_pay': {
-        console.log('[Payment Success] Processing WeChat Pay payment');
-
-        try {
-          const paymentIntent = await stripe.paymentIntents.retrieve(paymentId);
-
-          if (paymentIntent && paymentIntent.status === 'succeeded') {
-            ({ startTime, endTime } = singlePaymentTimeTracker());
-            sale = { amount: { total: paymentIntent.amount, currency: paymentIntent.currency } };
-          } else {
-            throw new Error('Payment through WeChat Pay is not successful.');
-          }
-        } catch (err) {
-          console.error(`[WeChat Pay Confirmation] Error: ${err.message}`);
-          return res.redirect(`${baseUrl}/subscription/payment-failed`);
-        }
         break;
       }
 
