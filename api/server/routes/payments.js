@@ -69,13 +69,8 @@ router.post('/create-payment-paypal', requireJwtAuth, async (req, res) => {
 router.post('/create-payment-wechatpay', requireJwtAuth, async (req, res) => {
   const paymentReference = req.body.paymentReference;
 
-  // console.log(`[Create WeChat Pay Payment] Request received ${session.id}`);
-  console.log('[Create WeChat Pay Payment] Request received');
-
-  // Log the details of the user and session id from the request
   const userId = req.user._id;
-  // const checkout_sessionId = req.query.session_id;
-  // console.log(`[Create WeChat Pay Payment] User ID: ${userId}, Checkout Session ID: ${checkout_sessionId}`);
+
   await PaymentRefUserId.savePaymentRefUserId({
     paymentReference,
     userId: userId
@@ -124,6 +119,54 @@ router.post('/create-payment-wechatpay', requireJwtAuth, async (req, res) => {
 
     // Additional log for debugging
     console.error('[Create WeChat Pay Payment] Full error stack:', error.stack);
+  }
+});
+
+// Alipay Endpoint
+router.post('/create-payment-alipay', requireJwtAuth, async (req, res) => {
+  const paymentReference = req.body.paymentReference;
+  console.log('[Create Alipay Payment] Request received');
+
+  const userId = req.user._id;
+  await PaymentRefUserId.savePaymentRefUserId({
+    paymentReference,
+    userId: userId
+  });
+
+  try {
+    console.log('[Create Alipay Payment] Creating Stripe Checkout Session');
+
+    const stripeParams = {
+      payment_method_types: ['alipay'],
+      line_items: [{
+        price_data: {
+          currency: 'cny',
+          product_data: {
+            name: 'Subscription',
+          },
+          unit_amount: 14000,
+        },
+        quantity: 1,
+      }],
+      mode: 'payment',
+      success_url: `${baseUrl}/subscription/alipay-return` +
+        `?paymentReference=${paymentReference}` +
+        '&paymentMethod=alipay' +
+        `&userId=${userId}` +
+        '&sessionId={CHECKOUT_SESSION_ID}',
+      cancel_url: `${baseUrl}/subscription/payment-failed`,
+    };
+
+    const session = await stripe.checkout.sessions.create(stripeParams);
+    const sessionId = session.id;
+    console.log('[Create Alipay Payment] Stripe Checkout Session parameters:', JSON.stringify(stripeParams));
+
+    console.log(`[Create Alipay Payment] Stripe Checkout Session Created: Session ID - ${sessionId}`);
+    res.json({ sessionId: session.id });
+  } catch (error) {
+    console.error(`[Create Alipay Payment] Error creating Alipay checkout session: ${error}`);
+    res.status(500).json({ error: error.toString() });
+    console.error('[Create Alipay Payment] Full error stack:', error.stack);
   }
 });
 
@@ -181,84 +224,62 @@ router.get('/verify-wechatpay', requireJwtAuth, async (req, res) => {
   }
 });
 
-// router.get('/subscription/:userId/payment-success', async (req, res) => {
-//   const userId = req.params.userId;
-//   const sessionId = req.query.session_id;
-//   ({ startTime, endTime } = singlePaymentTimeTracker());
+router.get('/verify-alipay', requireJwtAuth, async (req, res) => {
+  const { userId, paymentReference, sessionId } = req.query;
 
-//   // Process the payment success, retrieve additional details
-//   const sessionDetails = await stripe.checkout.sessions.retrieve(sessionId);
-//   // You may need to retrieve or compute paymentId, startTime, and endTime based on your application logic
+  try {
+    console.log('[Verify Alipay] Retrieving Stripe session for ID:', sessionId);
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
 
-//   // Redirect to the client-side route with all necessary parameters
-//   res.redirect(`/subscription/${userId}/payment-success?
-//   paymentId=${paymentId}&startTime=${startTime}&endTime=${endTime}`);
-// });
+    console.log('[Verify Alipay] Stripe session retrieved:', session);
 
-// Endpoint for creating Alipay payment
-// router.post('/create-payment-alipay', requireJwtAuth, async (req, res) => {
-//   const { userId, paymentReference } = req.body;
+    if (session.payment_status === 'paid') {
+      console.log('[Verify Alipay] Payment status is paid. Processing start and end times.');
+      const { startTime, endTime } = singlePaymentTimeTracker();
 
-//   try {
-//     await PaymentRefUserId.savePaymentRefUserId({
-//       paymentReference,
-//       userId: req.user._id
-//     });
+      console.log('[Verify Alipay] Calculated startTime and endTime:', startTime, endTime);
 
-//     // Create a payment intent for Alipay
-//     const paymentIntent = await stripe.paymentIntents.create({
-//       amount: 2000,
-//       currency: 'CNY',
-//       payment_method_types: ['alipay'],
-//       description: 'AItok monthly subscription',
-//     });
+      console.log('[Verify Alipay] Retrieving user session from reference');
+      const userSession = await getUserSessionFromReference(paymentReference);
 
-//     // Check for the presence of a client secret or a redirect URL
-//     if (paymentIntent && paymentIntent.client_secret) {
-//       // For Alipay, you might redirect the user to a Stripe-hosted page for payment
-//       res.json({ redirectUrl: paymentIntent.client_secret }); // Send redirect URL to the frontend
-//     } else {
-//       res.status(400).json({ error: 'Failed to create Alipay payment intent' });
-//     }
-//   } catch (error) {
-//     console.error(`[Create Alipay Payment] Exception occurred: ${error}`);
-//     res.status(500).json({ error: error.toString() });
-//   }
-// });
+      console.log('[Verify Alipay] User session found:', userSession);
 
-// // Webhook endpoint for Stripe
-// router.post('/stripe-webhook', express.raw({type: 'application/json'}), async (req, res) => {
-//   let event;
+      await createPaymentRecord(
+        userId,
+        'alipay',
+        session.id,
+        session.amount_total,
+        session.currency,
+        startTime,
+        endTime
+      );
 
-//   try {
-//     event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'],
-//     process.env.STRIPE_WEBHOOK_SECRET);
+      const formattedStartTime = moment(startTime).format('MMM D, YYYY HH:mm:ss');
+      const formattedEndTime = moment(endTime).format('MMM D, YYYY HH:mm:ss');
 
-//     // Handle the checkout.session.completed event
-//     if (event.type === 'checkout.session.completed') {
-//       const session = event.data.object;
-
-//       // Perform actions based on the session's status
-//       if (session.payment_status === 'paid') {
-//         // Similar logic as in the '/verify-wechatpay' endpoint
-//         const { startTime, endTime } = singlePaymentTimeTracker();
-//         // Update your database with the new payment record
-
-//         await createPaymentRecord(userId, paymentMethod, paymentId, amount, currency, startTime, endTime);
-//       }
-//     }
-
-//     res.status(200).send();
-//   } catch (err) {
-//     console.error(`Webhook Error: ${err.message}`);
-//     res.status(400).send(`Webhook Error: ${err.message}`);
-//   }
-// });
+      console.log('[Verify Alipay] Sending success response');
+      res.json({
+        status: 'success',
+        userId: userId,
+        startTime: formattedStartTime,
+        endTime: formattedEndTime
+      });
+    } else if (session.payment_status === 'unpaid') {
+      console.log('[Verify Alipay] Payment status is unpaid.');
+      res.json({ status: 'pending' });
+    } else {
+      console.log('[Verify Alipay] Payment status is failure.');
+      res.json({ status: 'failure' });
+    }
+  } catch (error) {
+    console.error('[Verify Alipay] Error verifying Alipay payment:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
 
 router.get('/success', async (req, res) => {
   const { paymentMethod, PayerID, paymentId, paymentReference } = req.query;
 
-  // Detailed log at the start
   console.log(
     `[Payment Success] Start processing with paymentMethod: ${paymentMethod},` +
     ` PayerID: ${PayerID},` +
@@ -313,7 +334,6 @@ router.get('/success', async (req, res) => {
     const formattedStartTime = moment(startTime).format('MMM D, YYYY HH:mm:ss');
     const formattedEndTime = moment(endTime).format('MMM D, YYYY HH:mm:ss');
 
-    // Log the final response
     console.log(
       `[Payment Success] Payment processed successfully for userId: ${userSession.userId}, ` +
       `paymentId: ${paymentId}`

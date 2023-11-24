@@ -19,7 +19,6 @@ function SubscriptionContent() {
   const lang = useRecoilValue(store.lang);
   const navigate = useNavigate();
   const [subscriptionDueDate, setSubscriptionDueDate] = useState('');
-  const [qrCodeUrl, setQrCodeUrl] = useState(null);
 
   const getUserByIdQuery = useGetUserByIdQuery(userId);
 
@@ -33,8 +32,8 @@ function SubscriptionContent() {
   // Effect for handling payment status confirmation
   useEffect(() => {
     const paymentStatus = searchParams.get('paymentStatus');
-    const paymentId = searchParams.get('paymentId'); // or whatever the parameter is
-    const payerId = searchParams.get('PayerID'); // PayPal often returns a PayerID
+    const paymentId = searchParams.get('paymentId');
+    const payerId = searchParams.get('PayerID');
     if (paymentStatus) {
       handlePayPalPaymentConfirmation(paymentStatus, userId, paymentId, payerId);
     }
@@ -48,13 +47,13 @@ function SubscriptionContent() {
     return () => {
       matcher.removeEventListener('change', onChange);
     };
-  }, []); // Added setDarkMode to the dependency array
+  }, []);
 
   async function handleSubscription(paymentMethod) {
     console.log(`handleSubscription function called with userId: ${userId} and paymentMethod: ${paymentMethod}`);
     setError('');
 
-    const paymentReference = uuidv4(); // Generate a unique payment reference
+    const paymentReference = uuidv4();
 
     try {
       const body = JSON.stringify({
@@ -62,7 +61,7 @@ function SubscriptionContent() {
         paymentReference, // Include the generated payment reference
       });
 
-      const token = Cookies.get('token'); // Retrieve the token from the cookies
+      const token = Cookies.get('token');
       console.log('token:', token)
 
       // Select the endpoint based on the payment method
@@ -111,7 +110,16 @@ function SubscriptionContent() {
           setError('Failed to initiate WeChat Pay. Please try again.');
         }
       } else if (paymentMethod === 'alipay') {
-        // handle Alipay payment method
+        if (data.sessionId) {
+          // For Alipay, the redirection to the Stripe Checkout is also necessary
+          console.log('Stripe Public Key:', STRIPE_PUBLIC_KEY);
+          const stripe = await loadStripe(STRIPE_PUBLIC_KEY);
+          stripe.redirectToCheckout({ sessionId: data.sessionId });
+          console.log(`Alipay Session ID: ${data.sessionId}`);
+        } else {
+          console.error('No session ID in the response for Alipay');
+          setError('Failed to initiate Alipay. Please try again.');
+        }
       } else {
         throw new Error('Unsupported payment method');
       }
@@ -128,7 +136,7 @@ function SubscriptionContent() {
 
     try {
       const body = JSON.stringify({
-        userId, // Include userId in the body for backend processing
+        userId,
         paymentId,
         payerId,
       });
@@ -166,86 +174,6 @@ function SubscriptionContent() {
     }
   }
 
-  // // Define a function to check payment status for wechat and alipay
-  // async function checkPaymentStatus(paymentReference) {
-  //   try {
-  //     const response = await fetch(`/api/payments/status/${paymentReference}`, {
-  //       headers: {
-  //         'Authorization': `Bearer ${Cookies.get('token')}`,
-  //       },
-  //     });
-  //     const data = await response.json();
-  //     if (response.ok) {
-  //       return data.status; // Assuming the backend sends a 'status' field
-  //     } else {
-  //       throw new Error(data.message);
-  //     }
-  //   } catch (error) {
-  //     console.error('Error checking payment status:', error);
-  //     setError('Failed to check payment status. Please try again.');
-  //   }
-  // }
-
-  //   // Placeholder function for WeChat Pay payment confirmation
-  //   async function handleWeChatPayPaymentConfirmation(paymentReference) {
-  //     const intervalId = setInterval(async () => {
-  //       const status = await checkPaymentStatus(paymentReference);
-  //       if (status === 'confirmed') {
-  //         clearInterval(intervalId);
-  //         navigate(`/subscription/${userId}/payment-success`);
-  //       } else if (status === 'failed') {
-  //         clearInterval(intervalId);
-  //         setError('Payment failed. Please try again.');
-  //         navigate(`/subscription/${userId}/payment-failed`);
-  //       }
-  //     }, 5000); // Poll every 5 seconds
-
-  //     return () => clearInterval(intervalId); // Clear interval on unmount
-  //   }
-
-  //   // Placeholder function for Alipay payment confirmation
-  //   async function handleAlipayPaymentConfirmation(paymentReference) {
-  //     const intervalId = setInterval(async () => {
-  //       const status = await checkPaymentStatus(paymentReference);
-  //       if (status === 'confirmed') {
-  //         clearInterval(intervalId);
-  //         navigate(`/subscription/${userId}/payment-success`);
-  //       } else if (status === 'failed') {
-  //         clearInterval(intervalId);
-  //         setError('Payment failed. Please try again.');
-  //         navigate(`/subscription/${userId}/payment-failed`);
-  //       }
-  //     }, 5000); // Poll every 5 seconds
-
-  //     return () => clearInterval(intervalId); // Clear interval on unmount
-  //   }
-
-  //   // Effect for handling payment status confirmation
-  //   useEffect(() => {
-  //     const paymentStatus = searchParams.get('paymentStatus');
-  //     const paymentMethod = searchParams.get('paymentMethod'); // Assuming you pass the payment method in the URL
-  //     const paymentId = searchParams.get('paymentId');
-  //     const payerId = searchParams.get('PayerID');
-  //     const paymentReference = searchParams.get('paymentReference');
-
-  //     if (paymentStatus && paymentMethod) {
-  //       switch (paymentMethod) {
-  //         case 'paypal':
-  //           handlePayPalPaymentConfirmation(paymentStatus, userId, paymentId, payerId);
-  //           break;
-  //         case 'wechat_pay':
-  //           handleWeChatPayPaymentConfirmation(paymentReference);
-  //           break;
-  //         case 'alipay':
-  //           handleAlipayPaymentConfirmation(paymentReference);
-  //           break;
-  //         default:
-  //           console.error('Unsupported payment method');
-  //           setError('Unsupported payment method');
-  //       }
-  //     }
-  //   }, [searchParams, userId]);
-
   // Fetching subscription data
   useEffect(() => {
     const fetchSubscriptionData = async () => {
@@ -270,11 +198,10 @@ function SubscriptionContent() {
   }, [userId]);
 
   const containerStyles = {
-    position: 'absolute', // or 'fixed' based on your requirement
+    position: 'absolute',
     top: '40%',
     left: '50%',
-    transform: 'translate(-50%, -50%)', // Centers the box both vertically and horizontally
-    // other styles if needed
+    transform: 'translate(-50%, -50%)',
   };
 
   const boxStyles = {
@@ -286,7 +213,7 @@ function SubscriptionContent() {
     backgroundColor: darkMode ? '#333' : '#ffffff',
     color: darkMode ? '#ffffff' : '#000000',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    transition: 'background-color 0.3s, color 0.3s', // Smooth transition for color changes
+    transition: 'background-color 0.3s, color 0.3s',
   };
 
   return (

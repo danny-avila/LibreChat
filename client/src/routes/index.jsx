@@ -14,6 +14,7 @@ import PaymentSuccess from '../components/Subscription/PaymentSuccess';
 import PaymentFailed from '../components/Subscription/PaymentFailed';
 import PaypalReturnHandler from '../components/Subscription/PaypalReturnHandler';
 import WeChatPayReturnHandler from '../components/Subscription/WeChatPayReturnHandler';
+import AlipayPayReturnHandler from '../components/Subscription/AlipayPayReturnHandler';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -93,6 +94,10 @@ export const router = createBrowserRouter([
               {
                 path: 'wechat-return',
                 element: <WeChatPayReturnHandler />
+              },
+              {
+                path: 'alipay-return',
+                element: <AlipayPayReturnHandler />
               },
               {
                 path: ':userId/payment-success',
