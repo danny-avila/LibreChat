@@ -81,7 +81,7 @@ export default {
   com_ui_expiration_date: 'Expiration Date',
   com_ui_reminder:
     'Please renew your subscription before or on the expiration day!',
-  com_ui_payment_method: 'Payment Method',
+  com_ui_payment_method: 'Payment Methods',
   com_ui_confirmation_for_subscribing: '🎉 Success! Your Payment is Confirmed!',
   com_ui_thanks_for_subscribing: 'Heartfelt thanks for subscribing! We have successfully processed your payment.',
   com_ui_access_info: 'Delight in your AITok access, available from {startTime} until {endTime}.',

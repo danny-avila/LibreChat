@@ -22,6 +22,30 @@ function SubscriptionContent() {
 
   const getUserByIdQuery = useGetUserByIdQuery(userId);
 
+  const subscriptionOptions = [
+    {
+      planId: 'month',
+      price: '120.00',
+      currencySymbol: '￥',
+      benefits: 'Unlimited Quota',
+      name: 'Monthly Plan'
+    },
+    {
+      planId: 'quarter',
+      price: '320.00',
+      currencySymbol: '￥',
+      benefits: '10% Monthly Savings',
+      name: 'Quarterly Plan'
+    },
+    {
+      planId: 'year',
+      price: '1100.00',
+      currencySymbol: '￥',
+      benefits: '20% Monthly Savings',
+      name: 'Yearly Plan'
+    }
+  ];
+
   // Effect for fetching user data
   useEffect(() => {
     if (getUserByIdQuery.isSuccess) {
@@ -49,16 +73,25 @@ function SubscriptionContent() {
     };
   }, []);
 
-  async function handleSubscription(paymentMethod) {
+  async function handleSubscription(paymentMethod, planType) {
     console.log(`handleSubscription function called with userId: ${userId} and paymentMethod: ${paymentMethod}`);
     setError('');
 
+    const selectedPlan = subscriptionOptions.find(plan => plan.planId === planType);
+    if (!selectedPlan) {
+      console.error('Selected plan not found');
+      setError('Invalid plan selected');
+      return;
+    }
+
     const paymentReference = uuidv4();
+    const amountToCharge = selectedPlan.price;
 
     try {
       const body = JSON.stringify({
         userId, // Include userId for backend processing
         paymentReference, // Include the generated payment reference
+        amount: amountToCharge
       });
 
       const token = Cookies.get('token');
@@ -197,23 +230,26 @@ function SubscriptionContent() {
     fetchSubscriptionData();
   }, [userId]);
 
-  const containerStyles = {
-    position: 'absolute',
-    top: '40%',
-    left: '50%',
-    transform: 'translate(-50%, -50%)',
+  const subscriptionContainerStyles = {
+    display: 'flex',
+    justifyContent: 'space-around', // This will add space around each item.
+    padding: '20px',
+    maxWidth: '1200px', // Adjust as needed
+    margin: 'auto'
   };
 
   const boxStyles = {
     border: '2px solid #e0e0e0',
     borderRadius: '6px',
     padding: '20px',
-    maxWidth: '372px',
-    margin: 'auto',
+    width: '30%', // Adjust the width as needed
+    margin: '0 10px', // Adds horizontal margin between boxes
     backgroundColor: darkMode ? '#333' : '#ffffff',
     color: darkMode ? '#ffffff' : '#000000',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
     transition: 'background-color 0.3s, color 0.3s',
+    // If you want to ensure that the boxes don't stick to each other on smaller screens:
+    minWidth: '250px' // Adjust minimum width as needed
   };
 
   return (
@@ -230,124 +266,118 @@ function SubscriptionContent() {
         ← {localize(lang, 'com_ui_back')}
       </button>
 
-      <div style={containerStyles}>
-        <div style={boxStyles}>
-          <div style={{ marginBottom: '1.5rem' }}>
-            <h2 style={{
-              fontSize: '1.5rem',
-              marginBottom: '0.5rem',
-              textAlign: 'center'
-            }}>{localize(lang, 'com_ui_plan_subscription')}</h2>
-            <p style={{
-              marginBottom: '3rem'
-            }}></p>
-          </div>
-
-          <div style={{ marginBottom: '1.5rem' }}>
-            <h2 style={{
-              fontSize: '1.5rem',
-              marginBottom: '0.5rem'
-            }}>{localize(lang, 'com_ui_pricing')}:</h2>
-            <ul style={{
-              marginBottom: '0.5rem',
-              listStyleType: 'disc',
-              paddingLeft: '1.5rem',
-            }}>
-              <li>{localize(lang, 'com_ui_monthly_price')}</li>
-            </ul>
-          </div>
-
-          <div style={{ marginBottom: '1.5rem' }}>
-            <h2 style={{
-              fontSize: '1.5rem',
-              marginBottom: '0.5rem'
-            }}>{localize(lang, 'com_ui_expiration_date')}:</h2>
-            <ul style={{
-              marginBottom: '0.5rem',
-              listStyleType: 'disc',
-              paddingLeft: '1.5rem',
-            }}>
-              <li>{subscriptionDueDate ? subscriptionDueDate : 'Loading subscription expiration date...'}</li>
-              <li>{localize(lang, 'com_ui_reminder')}</li>
-            </ul>
-          </div>
-
-          <div style={{ marginBottom: '1.5rem' }}>
-            <h2 style={{
-              fontSize: '1.5rem',
-              marginBottom: '0.5rem'
-            }}>
-
+      <div style={subscriptionContainerStyles}>
+        {subscriptionOptions.map(option => (
+          <div key={option.planId} style={boxStyles}>
+            <h2 style={{ fontSize: '1.5rem', marginBottom: '0.5rem', textAlign: 'center' }}>
+              {option.name}
             </h2>
-          </div>
-
-          {/* <div style={{ marginBottom: '1.5rem' }}>
-            <h2 style={{
-              fontSize: '1.5rem',
-              marginBottom: '0rem'
-            }}>{localize(lang, 'com_ui_payment_method')}:</h2>
-          </div> */}
-
-          {/* Payment Method Buttons */}
-          <div style={{ marginBottom: '1.5rem', textAlign: 'center' }}>
-            <div style={{ marginBottom: '10px' }}>
-              <button
-                onClick={() => handleSubscription('paypal')}
-                style={{
-                  width: '90%',
-                  padding: '10px',
-                  backgroundColor: '#108ee9',
-                  color: 'white',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  border: 'none',
-                  fontSize: '16px',
-                  margin: '0 auto'
-                }}
-              >
-              PayPal
-              </button>
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h2 style={{
+                fontSize: '1.5rem',
+                marginBottom: '0.5rem'
+              }}>{localize(lang, 'com_ui_pricing')}:</h2>
+              <ul style={{
+                marginBottom: '0.5rem',
+                listStyleType: 'disc',
+                paddingLeft: '1.5rem',
+              }}>
+                <li>{option.currencySymbol}{option.price}</li>
+                <li>{option.benefits}</li>
+              </ul>
             </div>
 
-            <div style={{ marginBottom: '10px' }}>
-              <button
-                onClick={() => handleSubscription('wechat_pay')}
-                style={{
-                  width: '90%',
-                  padding: '10px',
-                  backgroundColor: '#108ee9',
-                  color: 'white',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  border: 'none',
-                  fontSize: '16px',
-                  margin: '0 auto'
-                }}
-              >
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h2 style={{
+                fontSize: '1.5rem',
+                marginBottom: '0.5rem'
+              }}>{localize(lang, 'com_ui_expiration_date')}:</h2>
+              <ul style={{
+                marginBottom: '0.5rem',
+                listStyleType: 'disc',
+                paddingLeft: '1.5rem',
+              }}>
+                <li>{subscriptionDueDate ? subscriptionDueDate : 'Loading subscription expiration date...'}</li>
+                <li>{localize(lang, 'com_ui_reminder')}</li>
+              </ul>
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h2 style={{
+                fontSize: '1.5rem',
+                marginBottom: '0.5rem'
+              }}>
+
+              </h2>
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h2 style={{
+                fontSize: '1.5rem',
+                marginBottom: '0rem'
+              }}>{localize(lang, 'com_ui_payment_method')}:</h2>
+            </div>
+
+            <div style={{ marginBottom: '1.5rem', textAlign: 'center' }}>
+              <div style={{ marginBottom: '10px' }}>
+                <button
+                  onClick={() => handleSubscription('paypal', option.planId)}
+                  style={{
+                    width: '90%',
+                    padding: '10px',
+                    backgroundColor: '#108ee9',
+                    color: 'white',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    border: 'none',
+                    fontSize: '16px',
+                    margin: '0 auto'
+                  }}
+                >
+                PayPal
+                </button>
+              </div>
+
+              <div style={{ marginBottom: '10px' }}>
+                <button
+                  onClick={() => handleSubscription('wechat_pay', option.planId)}
+                  style={{
+                    width: '90%',
+                    padding: '10px',
+                    backgroundColor: '#108ee9',
+                    color: 'white',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    border: 'none',
+                    fontSize: '16px',
+                    margin: '0 auto'
+                  }}
+                >
               WeChat Pay
-              </button>
-            </div>
+                </button>
+              </div>
 
-            <div style={{ marginBottom: '10px' }}>
-              <button
-                onClick={() => handleSubscription('alipay')}
-                style={{
-                  width: '90%',
-                  padding: '10px',
-                  backgroundColor: '#108ee9',
-                  color: 'white',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  border: 'none',
-                  fontSize: '16px',
-                  margin: '0 auto'
-                }}
-              >
+              <div style={{ marginBottom: '10px' }}>
+                <button
+                  onClick={() => handleSubscription('alipay', option.planId)}
+                  style={{
+                    width: '90%',
+                    padding: '10px',
+                    backgroundColor: '#108ee9',
+                    color: 'white',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    border: 'none',
+                    fontSize: '16px',
+                    margin: '0 auto'
+                  }}
+                >
               Alipay
-              </button>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        ))}
       </div>
     </>
   );
