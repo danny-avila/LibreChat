@@ -59,3 +59,14 @@ export type AssistantListResponse = {
   last_id: string;
   has_more: boolean;
 };
+
+export type File = {
+  file_id: string;
+  id?: string;
+  temp_file_id?: string;
+  bytes: number;
+  created_at: number;
+  filename: string;
+  object: string;
+  purpose: 'fine-tune' | 'fine-tune-results' | 'assistants' | 'assistants_output';
+};

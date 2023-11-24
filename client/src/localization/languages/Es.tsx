@@ -4,7 +4,8 @@ export default {
   com_ui_examples: 'Ejemplos',
   com_ui_new_chat: 'Nuevo chat',
   com_ui_example_quantum_computing: 'Explica la computación cuántica en términos simples',
-  com_ui_example_10_year_old_b_day: '¿Tienes alguna idea creativa para el cumpleaños de un niño de 10 años?',
+  com_ui_example_10_year_old_b_day:
+    '¿Tienes alguna idea creativa para el cumpleaños de un niño de 10 años?',
   com_ui_example_http_in_js: '¿Cómo hago una solicitud HTTP en Javascript?',
   com_ui_capabilities: 'Capacidades',
   com_ui_capability_remember: 'Recuerda lo que el usuario dijo anteriormente en la conversación',
@@ -28,7 +29,8 @@ export default {
   com_ui_showing: 'Mostrando',
   com_ui_of: 'de',
   com_ui_entries: 'Entradas',
-  com_ui_pay_per_call: 'Todas las conversaciones de IA en un solo lugar. Paga por llamada y no por mes',
+  com_ui_pay_per_call:
+    'Todas las conversaciones de IA en un solo lugar. Paga por llamada y no por mes',
   com_ui_enter: 'Entrar',
   com_ui_submit: 'Enviar',
   com_ui_upload_success: 'Archivo subido con éxito',
@@ -54,8 +56,7 @@ export default {
     'No se pudo iniciar sesión con la información proporcionada. Por favor, comprueba tus credenciales e inténtalo de nuevo.',
   com_auth_error_login_rl:
     'Demasiados intentos de inicio de sesión en poco tiempo. Por favor, inténtalo de nuevo más tarde.',
-  com_auth_error_login_ban:
-    'Tu cuenta ha sido temporalmente baneada por violar nuestro servicio.',
+  com_auth_error_login_ban: 'Tu cuenta ha sido temporalmente baneada por violar nuestro servicio.',
   com_auth_error_login_server:
     'Hubo un error interno del servidor. Por favor, espera unos momentos e inténtalo de nuevo.',
   com_auth_no_account: '¿No tienes una cuenta?',
@@ -103,7 +104,8 @@ export default {
     'Hubo un problema al restablecer tu contraseña. No se encontró ningún usuario con la dirección de correo electrónico proporcionada. Por favor, inténtalo de nuevo.',
   com_auth_reset_password_success: 'Contraseña restablecida con éxito',
   com_auth_login_with_new_password: 'Ahora puedes iniciar sesión con tu nueva contraseña.',
-  com_auth_error_invalid_reset_token: 'Este token de restablecimiento de contraseña ya no es válido.',
+  com_auth_error_invalid_reset_token:
+    'Este token de restablecimiento de contraseña ya no es válido.',
   com_auth_click_here: 'Haz clic aquí',
   com_auth_to_try_again: 'para intentarlo de nuevo.',
   com_auth_submit_registration: 'Enviar registro',
@@ -132,22 +134,13 @@ export default {
     'Top-p cambia cómo el modelo selecciona tokens para la salida. Los tokens se seleccionan desde el más K (ver parámetro topK) probable al menos hasta que la suma de sus probabilidades sea igual al valor de top-p.',
   com_endpoint_google_topk:
     'Top K cambia cómo el modelo selecciona los tokens para la salida. Un top-k de 1 significa que el token seleccionado es el más probable entre todos los tokens en el vocabulario del modelo (también conocido como decodificación codiciosa), mientras que un top-k de 3 significa que el siguiente token se selecciona entre los 3 tokens más probables (usando temperatura).',
-  com_endpoint_google_maxoutputtokens:
-    'Número máximo de tokens que pueden generarse en la respuesta. Especifique un valor menor para respuestas más cortas y un valor mayor para respuestas más largas.',
-  com_endpoint_google_custom_name_placeholder: 'Establece un nombre personalizado para PaLM2',
   com_endpoint_google_prompt_prefix_placeholder:
     'Establece instrucciones o contexto personalizado. Ignorado si está vacío.',
-  com_endpoint_custom_name: 'Nombre Personalizado',
-  com_endpoint_prompt_prefix: 'Prefijo de Indicación',
-  com_endpoint_temperature: 'Temperatura',
-  com_endpoint_default: 'predeterminado',
-  com_endpoint_top_p: 'Top P',
-  com_endpoint_google_topk:
-    'Top-k cambia cómo el modelo selecciona tokens para la salida. Un top-k de 1 significa que el token seleccionado es el más probable entre todos los tokens del vocabulario del modelo (también llamado decodificación codiciosa), mientras que un top-k de 3 significa que el siguiente token se selecciona entre los 3 tokens más probables (usando la temperatura).',
   com_endpoint_google_maxoutputtokens:
     'Número máximo de tokens que se pueden generar en la respuesta. Especifica un valor menor para respuestas más cortas y un valor mayor para respuestas más largas.',
   com_endpoint_google_custom_name_placeholder: 'Establece un nombre personalizado para PaLM2',
-  com_endpoint_prompt_prefix_placeholder: 'Establece instrucciones o contexto personalizados. Se ignora si está vacío.',
+  com_endpoint_prompt_prefix_placeholder:
+    'Establece instrucciones o contexto personalizados. Se ignora si está vacío.',
   com_endpoint_custom_name: 'Nombre personalizado',
   com_endpoint_prompt_prefix: 'Prefijo de indicación',
   com_endpoint_temperature: 'Temperatura',
@@ -176,7 +169,8 @@ export default {
     'Top-k cambia cómo el modelo selecciona tokens para la salida. Un top-k de 1 significa que el token seleccionado es el más probable entre todos los tokens del vocabulario del modelo (también llamado decodificación codiciosa), mientras que un top-k de 3 significa que el siguiente token se selecciona entre los 3 tokens más probables (usando la temperatura).',
   com_endpoint_anthropic_maxoutputtokens:
     'Número máximo de tokens que se pueden generar en la respuesta. Especifica un valor menor para respuestas más cortas y un valor mayor para respuestas más largas.',
-  com_endpoint_anthropic_custom_name_placeholder: 'Establece un nombre personalizado para Anthropic',
+  com_endpoint_anthropic_custom_name_placeholder:
+    'Establece un nombre personalizado para Anthropic',
   com_endpoint_frequency_penalty: 'Penalización de frecuencia',
   com_endpoint_presence_penalty: 'Penalización de presencia',
   com_endpoint_plug_use_functions: 'Usar funciones',
@@ -186,7 +180,8 @@ export default {
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
     'Establece instrucciones personalizadas para incluir en el mensaje del sistema. Predeterminado: ninguno',
   com_endpoint_import: 'Importar',
-  com_endpoint_set_custom_name: 'Establece un nombre personalizado, en caso de que puedas encontrar este preajuste',
+  com_endpoint_set_custom_name:
+    'Establece un nombre personalizado, en caso de que puedas encontrar este preajuste',
   com_endpoint_preset: 'preajuste',
   com_endpoint_presets: 'preajustes',
   com_endpoint_preset_name: 'Nombre del preajuste',
@@ -222,15 +217,19 @@ export default {
   com_endpoint_config_key_encryption: 'Tu clave será encriptada y borrada a las',
   com_endpoint_config_key_expiry: 'la hora de caducidad',
   com_endpoint_config_key_import_json_key: 'Importar clave JSON de cuenta de servicio.',
-  com_endpoint_config_key_import_json_key_success: 'Clave JSON de cuenta de servicio importada con éxito',
+  com_endpoint_config_key_import_json_key_success:
+    'Clave JSON de cuenta de servicio importada con éxito',
   com_endpoint_config_key_import_json_key_invalid:
     'Clave JSON de cuenta de servicio inválida, ¿importaste el archivo correcto?',
-  com_endpoint_config_key_get_edge_key: 'Para obtener tu token de acceso para Bing, inicia sesión en',
+  com_endpoint_config_key_get_edge_key:
+    'Para obtener tu token de acceso para Bing, inicia sesión en',
   com_endpoint_config_key_get_edge_key_dev_tool:
     'Usa las herramientas de desarrollo o una extensión mientras estás conectado al sitio para copiar el contenido de la cookie _U. Si esto falla, sigue estas',
   com_endpoint_config_key_edge_instructions: 'instrucciones',
-  com_endpoint_config_key_edge_full_key_string: 'para proporcionar las cadenas de cookies completas.',
-  com_endpoint_config_key_chatgpt: 'Para obtener tu token de acceso para ChatGPT "Versión gratuita", inicia sesión en',
+  com_endpoint_config_key_edge_full_key_string:
+    'para proporcionar las cadenas de cookies completas.',
+  com_endpoint_config_key_chatgpt:
+    'Para obtener tu token de acceso para ChatGPT "Versión gratuita", inicia sesión en',
   com_endpoint_config_key_chatgpt_then_visit: 'luego visita',
   com_endpoint_config_key_chatgpt_copy_token: 'Copia el token de acceso.',
   com_endpoint_config_key_google_need_to: 'Necesitas',
@@ -238,41 +237,41 @@ export default {
   com_endpoint_config_key_google_vertex_api: 'API en Google Cloud, luego',
   com_endpoint_config_key_google_service_account: 'Crear una cuenta de servicio',
   com_endpoint_config_key_google_vertex_api_role:
-'Asegúrate de hacer clic en "Crear y continuar" para dar al menos el rol de "Usuario de Vertex AI". Por último, crea una clave JSON para importarla aquí.',
-com_nav_auto_scroll: 'Desplazamiento automático al más reciente al abrir',
-com_nav_plugin_store: 'Tienda de plugins',
-com_nav_plugin_search: 'Buscar plugins',
-com_nav_plugin_auth_error:
-'Hubo un error al intentar autenticar este plugin. Por favor, inténtalo de nuevo.',
-com_nav_close_menu: 'Cerrar barra lateral',
-com_nav_open_menu: 'Abrir barra lateral',
-com_nav_export_filename: 'Nombre de archivo',
-com_nav_export_filename_placeholder: 'Establece el nombre de archivo',
-com_nav_export_type: 'Tipo',
-com_nav_export_include_endpoint_options: 'Incluir opciones de punto final',
-com_nav_enabled: 'Habilitado',
-com_nav_not_supported: 'No compatible',
-com_nav_export_all_message_branches: 'Exportar todas las ramas de mensajes',
-com_nav_export_recursive_or_sequential: '¿Recursivo o secuencial?',
-com_nav_export_recursive: 'Recursivo',
-com_nav_export_conversation: 'Exportar conversación',
-com_nav_theme: 'Tema',
-com_nav_theme_system: 'Sistema',
-com_nav_theme_dark: 'Oscuro',
-com_nav_theme_light: 'Claro',
-com_nav_clear_all_chats: 'Borrar todos los chats',
-com_nav_confirm_clear: 'Confirmar borrado',
-com_nav_close_sidebar: 'Cerrar barra lateral',
-com_nav_open_sidebar: 'Abrir barra lateral',
-com_nav_send_message: 'Enviar mensaje',
-com_nav_log_out: 'Cerrar sesión',
-com_nav_user: 'USUARIO',
-com_nav_clear_conversation: 'Borrar conversaciones',
-com_nav_clear_conversation_confirm_message:
-'¿Estás seguro de que quieres borrar todas las conversaciones? Esto es irreversible.',
-com_nav_help_faq: 'Ayuda y preguntas frecuentes',
-com_nav_settings: 'Ajustes',
-com_nav_search_placeholder: 'Buscar mensajes',
-com_nav_setting_general: 'General',
-com_nav_setting_data: 'Controles de datos',
+    'Asegúrate de hacer clic en "Crear y continuar" para dar al menos el rol de "Usuario de Vertex AI". Por último, crea una clave JSON para importarla aquí.',
+  com_nav_auto_scroll: 'Desplazamiento automático al más reciente al abrir',
+  com_nav_plugin_store: 'Tienda de plugins',
+  com_nav_plugin_search: 'Buscar plugins',
+  com_nav_plugin_auth_error:
+    'Hubo un error al intentar autenticar este plugin. Por favor, inténtalo de nuevo.',
+  com_nav_close_menu: 'Cerrar barra lateral',
+  com_nav_open_menu: 'Abrir barra lateral',
+  com_nav_export_filename: 'Nombre de archivo',
+  com_nav_export_filename_placeholder: 'Establece el nombre de archivo',
+  com_nav_export_type: 'Tipo',
+  com_nav_export_include_endpoint_options: 'Incluir opciones de punto final',
+  com_nav_enabled: 'Habilitado',
+  com_nav_not_supported: 'No compatible',
+  com_nav_export_all_message_branches: 'Exportar todas las ramas de mensajes',
+  com_nav_export_recursive_or_sequential: '¿Recursivo o secuencial?',
+  com_nav_export_recursive: 'Recursivo',
+  com_nav_export_conversation: 'Exportar conversación',
+  com_nav_theme: 'Tema',
+  com_nav_theme_system: 'Sistema',
+  com_nav_theme_dark: 'Oscuro',
+  com_nav_theme_light: 'Claro',
+  com_nav_clear_all_chats: 'Borrar todos los chats',
+  com_nav_confirm_clear: 'Confirmar borrado',
+  com_nav_close_sidebar: 'Cerrar barra lateral',
+  com_nav_open_sidebar: 'Abrir barra lateral',
+  com_nav_send_message: 'Enviar mensaje',
+  com_nav_log_out: 'Cerrar sesión',
+  com_nav_user: 'USUARIO',
+  com_nav_clear_conversation: 'Borrar conversaciones',
+  com_nav_clear_conversation_confirm_message:
+    '¿Estás seguro de que quieres borrar todas las conversaciones? Esto es irreversible.',
+  com_nav_help_faq: 'Ayuda y preguntas frecuentes',
+  com_nav_settings: 'Ajustes',
+  com_nav_search_placeholder: 'Buscar mensajes',
+  com_nav_setting_general: 'General',
+  com_nav_setting_data: 'Controles de datos',
 };

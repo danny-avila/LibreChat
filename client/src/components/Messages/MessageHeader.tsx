@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
+import { EModelEndpoint, alternateName } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
-import { EModelEndpoint } from 'librechat-data-provider';
 import EndpointOptionsDialog from '../Endpoints/EndpointOptionsDialog';
 import { Plugin } from '~/components/svg';
-import { alternateName } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

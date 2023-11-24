@@ -1,9 +1,9 @@
 import { createContext, useContext } from 'react';
 import type { TShowToast } from '~/common';
-import { useToast } from '~/hooks';
+import useToast from '~/hooks/useToast';
 
 type ToastContextType = {
-  showToast: ({ message, severity, showIcon }: TShowToast) => void;
+  showToast: ({ message, severity, showIcon, duration }: TShowToast) => void;
 };
 
 export const ToastContext = createContext<ToastContextType>({

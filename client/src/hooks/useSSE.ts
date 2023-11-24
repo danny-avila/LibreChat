@@ -272,6 +272,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       }
       if (data.created) {
         message = {
+          ...message,
           ...data.message,
           overrideParentMessageId: message?.overrideParentMessageId,
         };

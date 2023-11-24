@@ -18,6 +18,7 @@ module.exports = {
     error,
     unfinished,
     cancelled,
+    files,
     isEdited = false,
     finish_reason = null,
     tokenCount = null,
@@ -30,29 +31,31 @@ module.exports = {
       if (!validConvoId.success) {
         return;
       }
+
+      const update = {
+        user,
+        messageId: newMessageId || messageId,
+        conversationId,
+        parentMessageId,
+        sender,
+        text,
+        isCreatedByUser,
+        isEdited,
+        finish_reason,
+        error,
+        unfinished,
+        cancelled,
+        tokenCount,
+        plugin,
+        plugins,
+        model,
+      };
+
+      if (files) {
+        update.files = files;
+      }
       // may also need to update the conversation here
-      await Message.findOneAndUpdate(
-        { messageId },
-        {
-          user,
-          messageId: newMessageId || messageId,
-          conversationId,
-          parentMessageId,
-          sender,
-          text,
-          isCreatedByUser,
-          isEdited,
-          finish_reason,
-          error,
-          unfinished,
-          cancelled,
-          tokenCount,
-          plugin,
-          plugins,
-          model,
-        },
-        { upsert: true, new: true },
-      );
+      await Message.findOneAndUpdate({ messageId }, update, { upsert: true, new: true });
 
       return {
         messageId,

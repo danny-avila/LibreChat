@@ -4,14 +4,18 @@ import type { TShowToast } from '~/common';
 import { NotificationSeverity } from '~/common';
 import store from '~/store';
 
-export default function useToast(timeoutDuration = 100) {
+export default function useToast(showDelay = 100) {
   const [toast, setToast] = useRecoilState(store.toastState);
-  const timerRef = useRef<number | null>(null);
+  const showTimerRef = useRef<number | null>(null);
+  const hideTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     return () => {
-      if (timerRef.current !== null) {
-        clearTimeout(timerRef.current);
+      if (showTimerRef.current !== null) {
+        clearTimeout(showTimerRef.current);
+      }
+      if (hideTimerRef.current !== null) {
+        clearTimeout(hideTimerRef.current);
       }
     };
   }, []);
@@ -20,14 +24,24 @@ export default function useToast(timeoutDuration = 100) {
     message,
     severity = NotificationSeverity.SUCCESS,
     showIcon = true,
+    duration = 3000, // default duration for the toast to be visible
   }: TShowToast) => {
-    setToast({ ...toast, open: false });
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
+    // Clear existing timeouts
+    if (showTimerRef.current !== null) {
+      clearTimeout(showTimerRef.current);
     }
-    timerRef.current = window.setTimeout(() => {
+    if (hideTimerRef.current !== null) {
+      clearTimeout(hideTimerRef.current);
+    }
+
+    // Timeout to show the toast
+    showTimerRef.current = window.setTimeout(() => {
       setToast({ open: true, message, severity, showIcon });
-    }, timeoutDuration);
+      // Hides the toast after the specified duration
+      hideTimerRef.current = window.setTimeout(() => {
+        setToast((prevToast) => ({ ...prevToast, open: false }));
+      }, duration);
+    }, showDelay);
   };
 
   return {

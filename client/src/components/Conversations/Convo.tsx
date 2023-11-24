@@ -38,7 +38,12 @@ export default function Conversation({ conversation, retainView, toggleNav, i })
 
     // set conversation to the new conversation
     if (conversation?.endpoint === 'gptPlugins') {
-      const lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools') ?? '') || [];
+      let lastSelectedTools = [];
+      try {
+        lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools') ?? '') ?? [];
+      } catch (e) {
+        // console.error(e);
+      }
       navigateToConvo({ ...conversation, tools: lastSelectedTools });
     } else {
       navigateToConvo(conversation);

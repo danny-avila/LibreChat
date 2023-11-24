@@ -529,9 +529,9 @@ describe('BaseClient', () => {
       );
     });
 
-    test('setOptions is called with the correct arguments', async () => {
+    test('setOptions is called with the correct arguments only when replaceOptions is set to true', async () => {
       TestClient.setOptions = jest.fn();
-      const opts = { conversationId: '123', parentMessageId: '456' };
+      const opts = { conversationId: '123', parentMessageId: '456', replaceOptions: true };
       await TestClient.sendMessage('Hello, world!', opts);
       expect(TestClient.setOptions).toHaveBeenCalledWith(opts);
       TestClient.setOptions.mockClear();
