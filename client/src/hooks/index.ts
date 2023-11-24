@@ -29,4 +29,5 @@ export { default as useMessageHandler } from './useMessageHandler';
 export { default as useOriginNavigate } from './useOriginNavigate';
 export { default as useNavigateToConvo } from './useNavigateToConvo';
 export { default as useSetIndexOptions } from './useSetIndexOptions';
+export { default as useSetFilesToDelete } from './useSetFilesToDelete';
 export { default as useGenerationsByLatest } from './useGenerationsByLatest';

@@ -8,8 +8,8 @@ const router = express.Router();
 
 const isUUID = z.string().uuid();
 
-const isValidPath = (base, subfolder, filepath) => {
-  const normalizedBase = path.resolve(base, subfolder, 'temp');
+const isValidPath = (req, base, subfolder, filepath) => {
+  const normalizedBase = path.resolve(base, subfolder, req.user.id);
   const normalizedFilepath = path.resolve(filepath);
   return normalizedFilepath.startsWith(normalizedBase);
 };
@@ -20,7 +20,7 @@ const deleteFile = async (req, file) => {
   const subfolder = parts[1];
   const filepath = path.join(publicPath, file.filepath);
 
-  if (!isValidPath(publicPath, subfolder, filepath)) {
+  if (!isValidPath(req, publicPath, subfolder, filepath)) {
     throw new Error('Invalid file path');
   }
 
@@ -39,6 +39,11 @@ router.delete('/', async (req, res) => {
       }
       return isUUID.safeParse(file.file_id).success;
     });
+
+    if (files.length === 0) {
+      res.status(204).json({ message: 'Nothing provided to delete' });
+      return;
+    }
 
     const file_ids = files.map((file) => file.file_id);
     const promises = [];
