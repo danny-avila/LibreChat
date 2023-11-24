@@ -40,6 +40,11 @@ router.delete('/', async (req, res) => {
       return isUUID.safeParse(file.file_id).success;
     });
 
+    if (files.length === 0) {
+      res.status(204).json({ message: 'Nothing provided to delete' });
+      return;
+    }
+
     const file_ids = files.map((file) => file.file_id);
     const promises = [];
     promises.push(await deleteFiles(file_ids));

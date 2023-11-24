@@ -5,6 +5,7 @@ import type { ExtendedFile } from '~/common';
 import { useToastContext } from '~/Providers/ToastContext';
 import { useChatContext } from '~/Providers/ChatContext';
 import { useUploadImageMutation } from '~/data-provider';
+import useSetFilesToDelete from './useSetFilesToDelete';
 import { NotificationSeverity } from '~/common';
 
 const sizeMB = 20;
@@ -19,6 +20,7 @@ const useFileHandling = () => {
   const [errors, setErrors] = useState<string[]>([]);
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
   const { files, setFiles, setFilesLoading } = useChatContext();
+  const setFilesToDelete = useSetFilesToDelete();
 
   const displayToast = useCallback(() => {
     if (errors.length > 1) {
@@ -82,6 +84,11 @@ const useFileHandling = () => {
       }
       updatedFiles.set(fileId, { ...currentFile, ...updates });
 
+      if (updates['filepath'] && updates['progress'] !== 1) {
+        const files = Object.fromEntries(updatedFiles);
+        setFilesToDelete(files);
+      }
+
       return updatedFiles;
     });
   };
@@ -94,6 +101,9 @@ const useFileHandling = () => {
       } else {
         console.warn(`File with id ${fileId} not found.`);
       }
+
+      const files = Object.fromEntries(updatedFiles);
+      setFilesToDelete(files);
       return updatedFiles;
     });
   };
@@ -228,7 +238,6 @@ const useFileHandling = () => {
           replaceFile(extendedFile);
 
           await uploadFile(extendedFile);
-          // This gets cleaned up in the Image component, after receiving the server image
           URL.revokeObjectURL(preview);
         };
         img.src = preview;
