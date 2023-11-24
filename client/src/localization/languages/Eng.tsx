@@ -355,6 +355,7 @@ export default {
   com_nav_lang_korean: '한국어',
   com_nav_lang_vietnamese: 'Tiếng Việt',
   com_nav_lang_traditionalchinese: '繁體中文',
+  com_nav_lang_turkish: 'Türkçe',
   com_nav_file_ext_png: 'screenshot (.png)',
   com_nav_file_ext_txt: 'text (.txt)',
   com_nav_file_ext_md: 'markdown (.md)',

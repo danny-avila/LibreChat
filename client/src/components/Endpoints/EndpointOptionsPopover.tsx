@@ -2,14 +2,24 @@ import React from 'react';
 import { Save } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { Button } from '~/components/ui';
-import { CrossIcon } from '~/components/svg';
+import { CheckMark, CrossIcon } from '~/components/svg';
 import PopoverButtons from './PopoverButtons';
 import { cn, removeFocusOutlines } from '~/utils';
 import { useLocalize } from '~/hooks';
+import { unknown } from 'zod';
+import { Content } from '@radix-ui/react-dialog';
 
 type TEndpointOptionsPopoverProps = {
   children: React.ReactNode;
+  content: React.ReactNode;
   visible: boolean;
+  widget: boolean;
+  additionalButton: {
+    buttonClass: string;
+    handler: () => void;
+    icon: React.ReactNode;
+    label: string;
+  } | null;
   endpoint: EModelEndpoint;
   saveAsPreset: () => void;
   closePopover: () => void;
@@ -17,8 +27,11 @@ type TEndpointOptionsPopoverProps = {
 
 export default function EndpointOptionsPopover({
   children,
+  content,
   endpoint,
   visible,
+  widget = false,
+  additionalButton = null,
   saveAsPreset,
   closePopover,
 }: TEndpointOptionsPopoverProps) {
@@ -46,9 +59,32 @@ export default function EndpointOptionsPopover({
               className="h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
               onClick={saveAsPreset}
             >
-              <Save className="mr-1 w-[14px]" />
-              {localize('com_endpoint_save_as_preset')}
+              {!widget ? (
+                <>
+                  <Save className="mr-1 w-[14px]" />
+                  {localize('com_endpoint_save_as_preset')}
+                </>
+              ) : (
+                <>
+                  {/* <CheckMark className="mr-1 w-[14px]" /> */}
+                  <CheckMark />
+                  {localize('com_endpoint_confirm')}
+                </>
+              )}
             </Button>
+            {additionalButton && (
+              <Button
+                type="button"
+                className={cn(
+                  additionalButton.buttonClass,
+                  'ml-1 h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0',
+                )}
+                onClick={additionalButton.handler}
+              >
+                {additionalButton.icon}
+                {additionalButton.label}
+              </Button>
+            )}
             <PopoverButtons endpoint={endpoint} />
             <Button
               type="button"
@@ -62,6 +98,7 @@ export default function EndpointOptionsPopover({
             </Button>
           </div>
           <div>{children}</div>
+          <div>{content}</div>
         </div>
       </div>
     </>

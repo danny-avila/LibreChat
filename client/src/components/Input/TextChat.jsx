@@ -9,6 +9,7 @@ import { useMessageHandler, ThemeContext } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 import { useLocalize } from '~/hooks';
+import ChatWidget from '../Input/ChatWidgetMenu';
 
 export default function TextChat({ isSearchView = false }) {
   const localize = useLocalize();
@@ -140,6 +141,12 @@ export default function TextChat({ isSearchView = false }) {
         }}
       >
         <OptionsBar />
+        <div className="relative flex flex-row py-2 md:mb-[-16px] md:py-4 lg:mb-[-32px]">
+          <span className="flex w-full flex-row items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
+            <ChatWidget />
+            {/* <WritingAssistant /> */}
+          </span>
+        </div>
         <div className="input-panel md:bg-vert-light-gradient dark:md:bg-vert-dark-gradient relative w-full border-t bg-white py-2 dark:border-white/20 dark:bg-gray-800 md:border-t-0 md:border-transparent md:bg-transparent md:dark:border-transparent md:dark:bg-transparent">
           <form className="stretch z-[60] mx-2 flex flex-row gap-3 last:mb-2 md:mx-4 md:pt-2 md:last:mb-6 lg:mx-auto lg:max-w-3xl lg:pt-6">
             <div className="relative flex h-full flex-1 md:flex-col">

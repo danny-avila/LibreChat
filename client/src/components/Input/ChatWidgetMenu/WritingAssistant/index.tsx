@@ -79,6 +79,7 @@ function WritingAssistant() {
       }}
       additionalButton={{
         label: showExample ? '恢复' : '示例',
+        buttonClass: '',
         handler: showExampleHandler,
         icon: <MessagesSquared className="mr-1 w-[14px]" />,
       }}
