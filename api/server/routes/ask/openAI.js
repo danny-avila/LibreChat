@@ -9,6 +9,8 @@ const {
   createOnProgress,
 } = require('./handlers');
 const requireJwtAuth = require('../../../middleware/requireJwtAuth');
+const User = require('../../../models/User');
+const { getMessagesCount } = require('../../../models/Message');
 const trieSensitive = require('../../../utils/trieSensitive');
 
 const abortControllers = new Map();
@@ -37,6 +39,29 @@ router.post('/', requireJwtAuth, async (req, res) => {
       frequency_penalty: req.body?.frequency_penalty ?? 0
     }
   };
+
+  let currentTime = new Date();
+  const user = await User.findById(req.user.id).exec();
+  let quota = 0;
+  if (('proMemberExpiredAt' in user) && (user.proMemberExpiredAt > currentTime)) { // If not proMember, check quota
+    quota = JSON.parse(process.env['CHAT_QUOTA_PER_DAY_PRO_MEMBER']);
+  } else {
+    quota = JSON.parse(process.env['CHAT_QUOTA_PER_DAY']);
+  }
+
+  let someTimeAgo = currentTime;
+  someTimeAgo.setSeconds(currentTime.getSeconds() - 60 * 60 * 24); // 24 hours
+  if (endpointOption.modelOptions.model in quota) {
+    let messagesCount = await getMessagesCount({
+      senderId: req.user.id,
+      model: endpointOption.modelOptions.model,
+      updatedAt: { $gte: someTimeAgo },
+    });
+    let dailyQuota = (quota[endpointOption.modelOptions.model]).toFixed(0);
+    if (messagesCount >= dailyQuota) {
+      return handleError(res, { text: `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)，通过此网页购买更多额度：https://www.iaitok.com/pay` });
+    }
+  }
 
   console.log('ask log');
   console.dir({ text, conversationId, endpointOption }, { depth: null });
