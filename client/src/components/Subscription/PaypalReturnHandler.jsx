@@ -13,7 +13,12 @@ const PaypalReturnHandler = () => {
     console.log(`[PaypalReturnHandler] Payment ID: ${paymentId}, Payer ID: ${PayerID}, Payment Reference: ${paymentReference}`);
 
     if (paymentId && PayerID && paymentReference) {
-      const queryParams = new URLSearchParams({ PayerID, paymentId, paymentReference }).toString();
+      const queryParams = new URLSearchParams({
+        PayerID,
+        paymentId,
+        paymentReference,
+        paymentMethod: 'paypal'
+      }).toString();
 
       fetch(`/api/payments/success?${queryParams}`, {
         method: 'GET',

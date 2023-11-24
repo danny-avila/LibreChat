@@ -13,6 +13,7 @@ import Recommendations from '~/components/ui/Recommendations';
 import PaymentSuccess from '../components/Subscription/PaymentSuccess';
 import PaymentFailed from '../components/Subscription/PaymentFailed';
 import PaypalReturnHandler from '../components/Subscription/PaypalReturnHandler';
+import WeChatPayReturnHandler from '../components/Subscription/WeChatPayReturnHandler';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -88,6 +89,10 @@ export const router = createBrowserRouter([
               {
                 path: 'paypal-return',
                 element: <PaypalReturnHandler />
+              },
+              {
+                path: 'wechat-return',
+                element: <WeChatPayReturnHandler />
               },
               {
                 path: ':userId/payment-success',

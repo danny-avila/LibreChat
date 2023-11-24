@@ -6,6 +6,9 @@ import store from '~/store';
 import { localize } from '~/localization/Translation';
 import Cookies from 'js-cookie';
 import { v4 as uuidv4 } from 'uuid';
+import { loadStripe } from '@stripe/stripe-js';
+
+const STRIPE_PUBLIC_KEY = import.meta.env.VITE_STRIPE_PUBLIC_KEY
 
 function SubscriptionContent() {
   const [darkMode, setDarkMode] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -35,7 +38,7 @@ function SubscriptionContent() {
     if (paymentStatus) {
       handlePayPalPaymentConfirmation(paymentStatus, userId, paymentId, payerId);
     }
-  }, [searchParams, userId]);
+  }, [searchParams, userId, handlePayPalPaymentConfirmation]);
 
   //Effect for darkmode
   useEffect(() => {
@@ -56,21 +59,36 @@ function SubscriptionContent() {
     try {
       const body = JSON.stringify({
         userId, // Include userId for backend processing
-        paymentMethod, // Include the payment method in the request
         paymentReference, // Include the generated payment reference
       });
 
       const token = Cookies.get('token'); // Retrieve the token from the cookies
       console.log('token:', token)
 
-      const response = await fetch('/api/payments/create-payment', {
+      // Select the endpoint based on the payment method
+      let endpoint = '';
+      switch (paymentMethod) {
+        case 'paypal':
+          endpoint = '/api/payments/create-payment-paypal';
+          break;
+        case 'wechat_pay':
+          endpoint = '/api/payments/create-payment-wechatpay';
+          break;
+        case 'alipay':
+          endpoint = '/api/payments/create-payment-alipay';
+          break;
+        default:
+          throw new Error('Unsupported payment method');
+      }
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`, // Include the token in the header
+          'Authorization': `Bearer ${token}`,
         },
         body
-      });
+      })
 
       const data = await response.json();
       console.log('Received response from /create-payment:', data);
@@ -82,14 +100,18 @@ function SubscriptionContent() {
       // Handle response based on payment method
       if (paymentMethod === 'paypal' && data.approval_url) {
         window.location.href = data.approval_url;
-      } else if (paymentMethod === 'wechat_pay' || paymentMethod === 'alipay') {
-        if (data.qrCodeUrl) {
-        // Display the QR code for WeChat Pay or Alipay
-          setQrCodeUrl(data.qrCodeUrl); // Set the QR code URL to state
+      } else if (paymentMethod === 'wechat_pay') {
+        if (data.sessionId) {
+          console.log('Stripe Public Key:', STRIPE_PUBLIC_KEY);
+          const stripe = await loadStripe(STRIPE_PUBLIC_KEY);
+          stripe.redirectToCheckout({ sessionId: data.sessionId });
+          console.log(`{ sessionId:, ${data.sessionId} }`)
         } else {
-          console.error(`No QR code URL in the response for ${paymentMethod}`);
-          setError(`Failed to initiate ${paymentMethod}. Please try again.`);
+          console.error('No session ID in the response for WeChat Pay');
+          setError('Failed to initiate WeChat Pay. Please try again.');
         }
+      } else if (paymentMethod === 'alipay') {
+        // handle Alipay payment method
       } else {
         throw new Error('Unsupported payment method');
       }
@@ -100,7 +122,9 @@ function SubscriptionContent() {
   }
 
   async function handlePayPalPaymentConfirmation(paymentStatus, userId, paymentId, payerId) {
-    console.log(`handlePaypalPaymentConfirmation called with paymentStatus: ${paymentStatus}, userId: ${userId}, paymentId: ${paymentId}, payerId: ${payerId}`);
+    console.log(
+      `handlePaypalPaymentConfirmation called with paymentStatus: ${paymentStatus},` +
+      `userId: ${userId}, paymentId: ${paymentId}, payerId: ${payerId}`);
 
     try {
       const body = JSON.stringify({
@@ -142,40 +166,85 @@ function SubscriptionContent() {
     }
   }
 
-  // Placeholder function for WeChat Pay payment confirmation
-  async function handleWeChatPayPaymentConfirmation() {
-    // TODO: Implement WeChat Pay confirmation logic
-  }
+  // // Define a function to check payment status for wechat and alipay
+  // async function checkPaymentStatus(paymentReference) {
+  //   try {
+  //     const response = await fetch(`/api/payments/status/${paymentReference}`, {
+  //       headers: {
+  //         'Authorization': `Bearer ${Cookies.get('token')}`,
+  //       },
+  //     });
+  //     const data = await response.json();
+  //     if (response.ok) {
+  //       return data.status; // Assuming the backend sends a 'status' field
+  //     } else {
+  //       throw new Error(data.message);
+  //     }
+  //   } catch (error) {
+  //     console.error('Error checking payment status:', error);
+  //     setError('Failed to check payment status. Please try again.');
+  //   }
+  // }
 
-  // Placeholder function for Alipay payment confirmation
-  async function handleAlipayPaymentConfirmation() {
-    // TODO: Implement Alipay confirmation logic
-  }
+  //   // Placeholder function for WeChat Pay payment confirmation
+  //   async function handleWeChatPayPaymentConfirmation(paymentReference) {
+  //     const intervalId = setInterval(async () => {
+  //       const status = await checkPaymentStatus(paymentReference);
+  //       if (status === 'confirmed') {
+  //         clearInterval(intervalId);
+  //         navigate(`/subscription/${userId}/payment-success`);
+  //       } else if (status === 'failed') {
+  //         clearInterval(intervalId);
+  //         setError('Payment failed. Please try again.');
+  //         navigate(`/subscription/${userId}/payment-failed`);
+  //       }
+  //     }, 5000); // Poll every 5 seconds
 
-  // Effect for handling payment status confirmation
-  useEffect(() => {
-    const paymentStatus = searchParams.get('paymentStatus');
-    const paymentMethod = searchParams.get('paymentMethod'); // Assuming you pass the payment method in the URL
-    const paymentId = searchParams.get('paymentId');
-    const payerId = searchParams.get('PayerID');
+  //     return () => clearInterval(intervalId); // Clear interval on unmount
+  //   }
 
-    if (paymentStatus && paymentMethod) {
-      switch (paymentMethod) {
-        case 'paypal':
-          handlePayPalPaymentConfirmation(paymentStatus, userId, paymentId, payerId);
-          break;
-        case 'wechat_pay':
-          handleWeChatPayPaymentConfirmation();
-          break;
-        case 'alipay':
-          handleAlipayPaymentConfirmation();
-          break;
-        default:
-          console.error('Unsupported payment method');
-          setError('Unsupported payment method');
-      }
-    }
-  }, [searchParams, userId]);
+  //   // Placeholder function for Alipay payment confirmation
+  //   async function handleAlipayPaymentConfirmation(paymentReference) {
+  //     const intervalId = setInterval(async () => {
+  //       const status = await checkPaymentStatus(paymentReference);
+  //       if (status === 'confirmed') {
+  //         clearInterval(intervalId);
+  //         navigate(`/subscription/${userId}/payment-success`);
+  //       } else if (status === 'failed') {
+  //         clearInterval(intervalId);
+  //         setError('Payment failed. Please try again.');
+  //         navigate(`/subscription/${userId}/payment-failed`);
+  //       }
+  //     }, 5000); // Poll every 5 seconds
+
+  //     return () => clearInterval(intervalId); // Clear interval on unmount
+  //   }
+
+  //   // Effect for handling payment status confirmation
+  //   useEffect(() => {
+  //     const paymentStatus = searchParams.get('paymentStatus');
+  //     const paymentMethod = searchParams.get('paymentMethod'); // Assuming you pass the payment method in the URL
+  //     const paymentId = searchParams.get('paymentId');
+  //     const payerId = searchParams.get('PayerID');
+  //     const paymentReference = searchParams.get('paymentReference');
+
+  //     if (paymentStatus && paymentMethod) {
+  //       switch (paymentMethod) {
+  //         case 'paypal':
+  //           handlePayPalPaymentConfirmation(paymentStatus, userId, paymentId, payerId);
+  //           break;
+  //         case 'wechat_pay':
+  //           handleWeChatPayPaymentConfirmation(paymentReference);
+  //           break;
+  //         case 'alipay':
+  //           handleAlipayPaymentConfirmation(paymentReference);
+  //           break;
+  //         default:
+  //           console.error('Unsupported payment method');
+  //           setError('Unsupported payment method');
+  //       }
+  //     }
+  //   }, [searchParams, userId]);
 
   // Fetching subscription data
   useEffect(() => {
@@ -223,7 +292,12 @@ function SubscriptionContent() {
   return (
     <>
       <button
-        className='absolute top-12 left-0 mx-2 my-1 py-2 px-3 flex items-center rounded-md text-gray-800 hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600 md:top-1 md:left-12'
+        className={
+          'absolute top-12 left-0 mx-2 my-1 py-2 px-3 ' +
+          'flex items-center rounded-md text-gray-800 ' +
+          'hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600 ' +
+          'md:top-1 md:left-12'
+        }
         onClick={() => navigate(-1)}
       >
         ← {localize(lang, 'com_ui_back')}
@@ -231,14 +305,6 @@ function SubscriptionContent() {
 
       <div style={containerStyles}>
         <div style={boxStyles}>
-          {/* QR Code Display */}
-          {qrCodeUrl && (
-            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-              <img src={qrCodeUrl} alt="WeChat Pay QR Code" style={{ maxWidth: '200px', marginBottom: '10px' }} />
-              <p>Scan the QR code with WeChat to complete the payment.</p>
-            </div>
-          )}
-
           <div style={{ marginBottom: '1.5rem' }}>
             <h2 style={{
               fontSize: '1.5rem',
@@ -288,12 +354,12 @@ function SubscriptionContent() {
             </h2>
           </div>
 
-          <div style={{ marginBottom: '1.5rem' }}>
+          {/* <div style={{ marginBottom: '1.5rem' }}>
             <h2 style={{
               fontSize: '1.5rem',
               marginBottom: '0rem'
             }}>{localize(lang, 'com_ui_payment_method')}:</h2>
-          </div>
+          </div> */}
 
           {/* Payment Method Buttons */}
           <div style={{ marginBottom: '1.5rem', textAlign: 'center' }}>
