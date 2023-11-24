@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, memo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
 import * as Dialog from '@radix-ui/react-dialog';
 import DialogImage from './DialogImage';
@@ -19,7 +19,6 @@ const Image = ({
   // n: number;
   // i: number;
 }) => {
-  const prevImagePathRef = useRef<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const handleImageLoad = () => setIsLoaded(true);
   const [minDisplayTimeElapsed, setMinDisplayTimeElapsed] = useState(false);
@@ -31,17 +30,14 @@ const Image = ({
     }
     return () => clearTimeout(timer);
   }, [isLoaded]);
-
-  useEffect(() => {
-    const prevImagePath = prevImagePathRef.current;
-    if (prevImagePath && prevImagePath?.startsWith('blob:') && prevImagePath !== imagePath) {
-      URL.revokeObjectURL(prevImagePath);
-    }
-    prevImagePathRef.current = imagePath;
-  }, [imagePath]);
   // const makeSquare = n >= 3 && i < 2;
 
-  const placeholderHeight = height > width ? '900px' : '288px';
+  let placeholderHeight = '288px';
+  if (height > width) {
+    placeholderHeight = '900px';
+  } else if (height === width) {
+    placeholderHeight = width + 'px';
+  }
 
   return (
     <Dialog.Root>
@@ -82,4 +78,4 @@ const Image = ({
   );
 };
 
-export default memo(Image);
+export default Image;
