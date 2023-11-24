@@ -33,7 +33,7 @@ const githubLogin = async (accessToken, refreshToken, profile, cb) => {
         email,
         emailVerified: profile.emails[0].verified,
         name: profile.displayName,
-        avatar: profile.photos[0].value,
+        avatar: profilePictureResult,
       }).save();
 
       return cb(null, newUser);
