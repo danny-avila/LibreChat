@@ -1,13 +1,15 @@
 # Build API, Client and Data Provider
 FROM node:19-alpine AS base
 
-WORKDIR /app
-COPY config/loader.js ./config/
-RUN npm install dotenv
+# WORKDIR /app
+# COPY config/loader.js ./config/
+# RUN touch .env
+# RUN npm install dotenv
 
 WORKDIR /app/api
 COPY api/package*.json ./
 COPY api/ ./
+RUN touch .env
 RUN npm install
 
 # React client build
