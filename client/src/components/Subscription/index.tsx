@@ -139,8 +139,13 @@ function SubscriptionContent() {
         if (data.sessionId) {
           console.log('Stripe Public Key:', STRIPE_PUBLIC_KEY);
           const stripe = await loadStripe(STRIPE_PUBLIC_KEY);
-          stripe.redirectToCheckout({ sessionId: data.sessionId });
-          console.log(`{ sessionId:, ${data.sessionId} }`)
+          if (stripe) {
+            stripe.redirectToCheckout({ sessionId: data.sessionId });
+            console.log(`{ sessionId:, ${data.sessionId} }`)
+          } else {
+            console.error('Stripe could not be initialized.');
+            alert('Payment service could not be initialized. Please check your connection and try again.');
+          }
         } else {
           console.error('No session ID in the response for WeChat Pay');
           setError('Failed to initiate WeChat Pay. Please try again.');
@@ -148,7 +153,13 @@ function SubscriptionContent() {
       } else if (paymentMethod === 'alipay') {
         if (data.sessionId) {
           const stripe = await loadStripe(STRIPE_PUBLIC_KEY);
-          stripe.redirectToCheckout({ sessionId: data.sessionId });
+          if (stripe) {
+            stripe.redirectToCheckout({ sessionId: data.sessionId });
+            console.log(`{ sessionId:, ${data.sessionId} }`)
+          } else {
+            console.error('Stripe could not be initialized.');
+            alert('Payment service could not be initialized. Please check your connection and try again.');
+          }
         } else {
           console.error('No session ID in the response for Alipay');
           setError('Failed to initiate Alipay. Please try again.');
@@ -156,9 +167,14 @@ function SubscriptionContent() {
       } else {
         throw new Error('Unsupported payment method');
       }
-    } catch (error) {
-      console.error(`An error occurred in handleSubscription: ${error}`);
-      setError(`An error occurred: ${error.message}`);
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        console.error(`An error occurred in handleSubscription: ${error.message}`);
+        setError(`An error occurred: ${error.message}`);
+      } else {
+        console.error('An unexpected error occurred:', error);
+        setError(`An unexpected error occurred: ${JSON.stringify(error)}`);
+      }
     }
   }
 
@@ -201,8 +217,13 @@ function SubscriptionContent() {
         navigate(`/subscription/${userId}/payment-failed`);
       }
     } catch (error) {
-      console.error(`An error occurred during payment confirmation: ${error}`);
-      setError(`An error occurred: ${error.message}`);
+      if (error instanceof Error) {
+        console.error(`An error occurred during payment confirmation: ${error.message}`);
+        setError(`An error occurred: ${error.message}`);
+      } else {
+        console.error('An unexpected error occurred during payment confirmation:', error);
+        setError('An unexpected error occurred. Please try again.');
+      }
       navigate(`/subscription/${userId}/payment-failed`);
     }
   }
