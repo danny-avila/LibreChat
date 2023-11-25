@@ -39,14 +39,20 @@ export default function CreationHeader({
   const onSelect = (value: string) => {
     const assistant = assistants.data?.find((assistant) => assistant.id === value);
     if (!assistant) {
+      localStorage.setItem('lastAssistant', '');
       reset();
       return;
     }
-    onChange({
+
+    const update = {
       ...assistant,
       label: assistant?.name ?? '',
       value: assistant?.id ?? '',
-    });
+    };
+
+    localStorage.setItem('lastAssistant', JSON.stringify(update));
+
+    onChange(update);
     const actions: Actions = {
       function: false,
       code_interpreter: false,
