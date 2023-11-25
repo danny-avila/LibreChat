@@ -1,10 +1,12 @@
 const passport = require('passport');
 const express = require('express');
 const router = express.Router();
-const config = require('../../../config/loader');
 const { setAuthTokens } = require('../services/AuthService');
 const { loginLimiter, checkBan } = require('../middleware');
-const domains = config.domains;
+const domains = {
+  client: process.env.DOMAIN_CLIENT,
+  server: process.env.DOMAIN_SERVER,
+};
 
 router.use(loginLimiter);
 
