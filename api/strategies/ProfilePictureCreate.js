@@ -1,10 +1,15 @@
+const sharp = require('sharp');
 const { storage, ref, uploadBytes, getDownloadURL } = require('../server/services/firebase');
 const fetch = require('node-fetch');
+
+async function convertToWebP(inputBuffer) {
+  return sharp(inputBuffer).resize({ width: 150 }).toFormat('webp').toBuffer();
+}
 
 async function uploadProfilePictureFromURL(userId, imageUrl) {
   try {
     // Initialize Firebase Storage reference
-    const profilePicRef = ref(storage, `profile_pictures/${userId}`);
+    const profilePicRef = ref(storage, `users/${userId}/profilePicture`);
 
     // Check if an image already exists at the specified path
     try {
@@ -25,10 +30,13 @@ async function uploadProfilePictureFromURL(userId, imageUrl) {
     // Convert the image to a buffer
     const imageBuffer = await response.buffer();
 
-    // Upload the image to Firebase Storage
-    await uploadBytes(profilePicRef, imageBuffer);
+    // Convert and resize the image to WebP
+    const webPBuffer = await convertToWebP(imageBuffer);
 
-    console.log('Image uploaded successfully');
+    // Upload the WebP image to Firebase Storage
+    await uploadBytes(profilePicRef, webPBuffer);
+
+    console.log('WebP Image uploaded successfully');
 
     // Get the download URL
     const url = await getDownloadURL(profilePicRef);
