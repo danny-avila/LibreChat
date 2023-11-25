@@ -74,7 +74,8 @@ function SubscriptionContent() {
   }, []);
 
   async function handleSubscription(paymentMethod, planType) {
-    console.log(`handleSubscription function called with userId: ${userId} and paymentMethod: ${paymentMethod}`);
+    console.log(`handleSubscription function called with userId: ${userId}, paymentMethod: ${paymentMethod}` +
+    `planId:${planType}`);
     setError('');
 
     const selectedPlan = subscriptionOptions.find(plan => plan.planId === planType);
@@ -101,6 +102,8 @@ function SubscriptionContent() {
       let endpoint = '';
       switch (paymentMethod) {
         case 'paypal':
+          console.log(`Sending request with planId: ${planType}`);
+          // console.log('Request body:', JSON.stringify({ userId, paymentReference, planId: selectedPlan.planId }));
           endpoint = '/api/payments/create-payment-paypal';
           break;
         case 'wechat_pay':
@@ -119,7 +122,7 @@ function SubscriptionContent() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body
+        body: JSON.stringify({ userId, paymentReference, planId: selectedPlan.planId })
       })
 
       const data = await response.json();
@@ -144,11 +147,8 @@ function SubscriptionContent() {
         }
       } else if (paymentMethod === 'alipay') {
         if (data.sessionId) {
-          // For Alipay, the redirection to the Stripe Checkout is also necessary
-          console.log('Stripe Public Key:', STRIPE_PUBLIC_KEY);
           const stripe = await loadStripe(STRIPE_PUBLIC_KEY);
           stripe.redirectToCheckout({ sessionId: data.sessionId });
-          console.log(`Alipay Session ID: ${data.sessionId}`);
         } else {
           console.error('No session ID in the response for Alipay');
           setError('Failed to initiate Alipay. Please try again.');
@@ -226,15 +226,14 @@ function SubscriptionContent() {
         setError('Failed to fetch subscription data');
       }
     };
-
     fetchSubscriptionData();
   }, [userId]);
 
   const subscriptionContainerStyles = {
     display: 'flex',
-    justifyContent: 'space-around', // This will add space around each item.
+    justifyContent: 'space-around',
     padding: '20px',
-    maxWidth: '1200px', // Adjust as needed
+    maxWidth: '1200px',
     margin: 'auto'
   };
 
@@ -242,14 +241,13 @@ function SubscriptionContent() {
     border: '2px solid #e0e0e0',
     borderRadius: '6px',
     padding: '20px',
-    width: '30%', // Adjust the width as needed
-    margin: '0 10px', // Adds horizontal margin between boxes
+    width: '30%',
+    margin: '0 10px',
     backgroundColor: darkMode ? '#333' : '#ffffff',
     color: darkMode ? '#ffffff' : '#000000',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
     transition: 'background-color 0.3s, color 0.3s',
-    // If you want to ensure that the boxes don't stick to each other on smaller screens:
-    minWidth: '250px' // Adjust minimum width as needed
+    minWidth: '250px'
   };
 
   return (
@@ -321,7 +319,10 @@ function SubscriptionContent() {
             <div style={{ marginBottom: '1.5rem', textAlign: 'center' }}>
               <div style={{ marginBottom: '10px' }}>
                 <button
-                  onClick={() => handleSubscription('paypal', option.planId)}
+                  onClick={() => {
+                    console.log(`PayPal button clicked with planId: ${option.planId}`);
+                    handleSubscription('paypal', option.planId);
+                  }}
                   style={{
                     width: '90%',
                     padding: '10px',
@@ -353,7 +354,7 @@ function SubscriptionContent() {
                     margin: '0 auto'
                   }}
                 >
-              WeChat Pay
+                WeChat Pay
                 </button>
               </div>
 
@@ -372,7 +373,7 @@ function SubscriptionContent() {
                     margin: '0 auto'
                   }}
                 >
-              Alipay
+                Alipay
                 </button>
               </div>
             </div>
