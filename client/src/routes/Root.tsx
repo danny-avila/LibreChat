@@ -9,13 +9,12 @@ import {
 } from 'librechat-data-provider';
 import type { ContextType } from '~/common';
 import { Nav, MobileNav } from '~/components/Nav';
-import { useAuthContext, useServerStream, useConversation, useNewConvo } from '~/hooks';
+import { useAuthContext, useServerStream, useConversation } from '~/hooks';
 import store from '~/store';
 
 export default function Root() {
   const location = useLocation();
   const { newConversation } = useConversation();
-  const { newConversation: newConvo } = useNewConvo();
   const { user, isAuthenticated } = useAuthContext();
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
@@ -44,7 +43,6 @@ export default function Root() {
       newConversation({}, undefined, modelsQuery.data);
     } else if (modelsQuery.data) {
       setModelsConfig(modelsQuery.data);
-      newConvo({ modelsData: modelsQuery.data });
     } else if (modelsQuery.isError) {
       console.error('Failed to get models', modelsQuery.error);
     }
