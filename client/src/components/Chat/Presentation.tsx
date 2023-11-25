@@ -5,7 +5,13 @@ import { useDragHelpers, useSetFilesToDelete } from '~/hooks';
 import DragDropOverlay from './Input/Files/DragDropOverlay';
 import { useDeleteFilesMutation } from '~/data-provider';
 
-export default function Presentation({ children }: { children: React.ReactNode }) {
+export default function Presentation({
+  children,
+  panel,
+}: {
+  children: React.ReactNode;
+  panel?: React.ReactNode;
+}) {
   const { isOver, canDrop, drop } = useDragHelpers();
   const setFilesToDelete = useSetFilesToDelete();
   const { mutateAsync } = useDeleteFilesMutation({
@@ -44,6 +50,7 @@ export default function Presentation({ children }: { children: React.ReactNode }
           {isActive && <DragDropOverlay />}
         </div>
       </div>
+      {panel && panel}
     </div>
   );
 }

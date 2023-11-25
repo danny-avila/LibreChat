@@ -1,24 +1,31 @@
+import { useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
-import ChatView from '~/components/Chat/SingleChatView';
+import { useGetConvoIdQuery } from 'librechat-data-provider/react-query';
+import AssistantsView from '~/components/Chat/AssistantsView';
 import useAuthRedirect from './useAuthRedirect';
-import { buildTree } from '~/utils';
+import { useSetStorage } from '~/hooks';
 import store from '~/store';
 
-export default function AssistantsRoute() {
+export default function ChatRoute() {
   const index = 0;
+  const setStorage = useSetStorage();
   const { conversationId } = useParams();
-  const { conversation } = store.useCreateConversationAtom(index);
+  const { conversation, setConversation } = store.useCreateConversationAtom(index);
+  const { isAuthenticated } = useAuthRedirect();
+  const hasSetConversation = useRef(false);
 
-  const { data: messagesTree = null } = useGetMessagesByConvoId(conversationId ?? '', {
-    enabled: !!(conversationId && conversationId !== 'new'),
-    select: (data) => {
-      const dataTree = buildTree(data, false);
-      return dataTree?.length === 0 ? null : dataTree ?? null;
-    },
+  const initialConvoQuery = useGetConvoIdQuery(conversationId ?? '', {
+    enabled: isAuthenticated && conversationId !== 'new',
   });
 
-  const { isAuthenticated } = useAuthRedirect();
+  useEffect(() => {
+    if (initialConvoQuery.data && !hasSetConversation.current) {
+      setStorage(initialConvoQuery.data);
+      setConversation(initialConvoQuery.data);
+      hasSetConversation.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialConvoQuery.data]);
 
   if (!isAuthenticated) {
     return null;
@@ -37,5 +44,5 @@ export default function AssistantsRoute() {
     return null;
   }
 
-  return <ChatView index={index} messagesTree={messagesTree} />;
+  return <AssistantsView index={index} />;
 }
