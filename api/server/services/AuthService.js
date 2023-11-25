@@ -4,10 +4,13 @@ const User = require('../../models/User');
 const Session = require('../../models/Session');
 const Token = require('../../models/schema/tokenSchema');
 const { registerSchema, errorsToString } = require('../../strategies/validators');
-const config = require('../../../config/loader');
 const { sendEmail } = require('../utils');
-const domains = config.domains;
-const isProduction = config.isProduction;
+const domains = {
+  client: process.env.DOMAIN_CLIENT,
+  server: process.env.DOMAIN_SERVER,
+};
+
+const isProduction = process.env.NODE_ENV === 'production';
 
 /**
  * Logout user

@@ -3,8 +3,6 @@ const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-const config = require('../../config/loader');
-const domains = config.domains;
 
 const User = require('../models/User');
 
@@ -42,7 +40,7 @@ async function setupOpenId() {
     const client = new issuer.Client({
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
-      redirect_uris: [domains.server + process.env.OPENID_CALLBACK_URL],
+      redirect_uris: [process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL],
     });
 
     const openidLogin = new OpenIDStrategy(
