@@ -229,6 +229,7 @@ export default {
   com_endpoint_config_key_google_service_account: 'Create a Service Account',
   com_endpoint_config_key_google_vertex_api_role:
     'Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role. Lastly, create a JSON key to import here.',
+  com_nav_welcome_message: 'How can I help you today?',
   com_nav_auto_scroll: 'Auto-scroll to Newest on Open',
   com_nav_plugin_store: 'Plugin store',
   com_nav_plugin_search: 'Search plugins',
@@ -283,4 +284,5 @@ export default {
   com_nav_lang_traditionalchinese: '繁體中文',
   com_nav_lang_arabic: 'العربية',
   com_nav_lang_turkish: 'Türkçe',
+  com_nav_lang_dutch: 'Nederlands',
 };
