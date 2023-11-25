@@ -1,3 +1,5 @@
+// Dutch phrases
+
 export default {
   com_ui_examples: 'Voorbeelden',
   com_ui_new_chat: 'Nieuwe chat',
