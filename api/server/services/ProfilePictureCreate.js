@@ -1,37 +1,45 @@
 const sharp = require('sharp');
 const { storage, ref, uploadBytes, getDownloadURL } = require('./firebase');
 const fetch = require('node-fetch');
+const fs = require('fs').promises; // Aggiunta per gestire i file
 
 async function convertToWebP(inputBuffer) {
   return sharp(inputBuffer).resize({ width: 150 }).toFormat('webp').toBuffer();
 }
 
-async function uploadProfilePictureFromURL(userId, imageUrl) {
+async function uploadProfilePicture(userId, input) {
   try {
-    // Initialize Firebase Storage reference
-    const profilePicRef = ref(storage, `users/${userId.toString()}/profilePicture`);
-
-    console.log('User ID:', userId.toString());
-
-    // Fetch the image from the provided URL
-    const response = await fetch(imageUrl);
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch image. Status: ${response.status}`);
+    if (userId === undefined) {
+      throw new Error('User ID is undefined');
     }
 
-    // Convert the image to a buffer
-    const imageBuffer = await response.buffer();
+    const profilePicRef = ref(storage, `users/${userId.toString()}/profilePicture`);
+    let imageBuffer;
 
-    // Convert and resize the image to WebP
+    if (typeof input === 'string') {
+      const response = await fetch(input);
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image from URL. Status: ${response.status}`);
+      }
+
+      imageBuffer = await response.buffer();
+    } else if (input instanceof Buffer) {
+      imageBuffer = input;
+    } else if (typeof input === 'object' && input instanceof File) {
+      // Se l'input è un oggetto File, leggi il suo contenuto come buffer
+      const fileContent = await fs.readFile(input.path);
+      imageBuffer = Buffer.from(fileContent);
+    } else {
+      throw new Error('Invalid input type. Expected URL, Buffer, or File.');
+    }
+
     const webPBuffer = await convertToWebP(imageBuffer);
 
-    // Upload the WebP image to Firebase Storage
     await uploadBytes(profilePicRef, webPBuffer);
 
     console.log('WebP Image uploaded successfully');
 
-    // Get the download URL
     const url = await getDownloadURL(profilePicRef);
 
     return url;
@@ -41,4 +49,4 @@ async function uploadProfilePictureFromURL(userId, imageUrl) {
   }
 }
 
-module.exports = uploadProfilePictureFromURL;
+module.exports = uploadProfilePicture;

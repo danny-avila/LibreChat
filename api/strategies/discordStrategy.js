@@ -2,7 +2,7 @@ const { Strategy: DiscordStrategy } = require('passport-discord');
 const User = require('../models/User');
 const config = require('../../config/loader');
 const domains = config.domains;
-const uploadProfilePictureFromURL = require('~/server/services/ProfilePictureCreate');
+const uploadProfilePicture = require('~/server/services/ProfilePictureCreate');
 const { useFirebase } = require('../server/services/firebase');
 
 const discordLogin = async (accessToken, refreshToken, profile, cb) => {
@@ -30,7 +30,7 @@ const discordLogin = async (accessToken, refreshToken, profile, cb) => {
 
       if (useFirebase) {
         const userId = oldUser._id;
-        const avatarURL = await uploadProfilePictureFromURL(userId, profile.photos[0].value);
+        const avatarURL = await uploadProfilePicture(userId, profile.photos[0].value);
         console.log('avatarURL', avatarURL);
         oldUser.avatar = avatarURL;
         await oldUser.save();
@@ -49,7 +49,7 @@ const discordLogin = async (accessToken, refreshToken, profile, cb) => {
 
       if (useFirebase) {
         const userId = newUser._id;
-        const avatarURL = await uploadProfilePictureFromURL(userId, profile.photos[0].value);
+        const avatarURL = await uploadProfilePicture(userId, profile.photos[0].value);
         console.log('avatarURL', avatarURL);
         newUser.avatar = avatarURL;
         await newUser.save();

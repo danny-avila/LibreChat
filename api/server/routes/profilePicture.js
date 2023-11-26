@@ -1,16 +1,26 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer'); // Aggiunto per gestire i dati FormData
 
-const uploadProfilePictureFromURL = require('~/server/services/ProfilePictureCreate');
+const uploadProfilePicture = require('~/server/services/ProfilePictureCreate');
 const { requireJwtAuth } = require('../middleware/');
 const { getUserController } = require('../controllers/AuthController');
 
+// Configura multer per gestire i dati FormData
+const upload = multer();
+
 router.get('/', requireJwtAuth, getUserController);
 
-router.post('/', async (req, res) => {
+router.post('/', upload.single('input'), async (req, res) => {
   try {
-    const { userId, imageUrl } = req.body;
-    const url = await uploadProfilePictureFromURL(userId, imageUrl);
+    const { userId } = req.body;
+    const input = req.file.buffer; // Utilizza req.file.buffer per ottenere i dati del file
+
+    if (!userId) {
+      throw new Error('User ID is undefined');
+    }
+
+    const url = await uploadProfilePicture(userId, input);
     res.json({ url });
   } catch (error) {
     console.error('Error:', error.message);
