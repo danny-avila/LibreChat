@@ -100,7 +100,7 @@ nav:
       - Google: 'features/plugins/google_search.md'
       - Stable Diffusion: 'features/plugins/stable_diffusion.md'
       - Wolfram: 'features/plugins/wolfram.md'
-      - Azure Cognitive Search: 'features/plugins/azure_cognitive_search.md'
+      - Azure AI Search: 'features/plugins/azure_ai_search.md'
       - Make Your Own Plugin: 'features/plugins/make_your_own.md'
       - Using official ChatGPT Plugins: 'features/plugins/chatgpt_plugins_openapi.md'
     - Automated Moderation: 'features/mod_system.md'
