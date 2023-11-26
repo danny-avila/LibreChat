@@ -184,6 +184,63 @@ router.post('/create-payment-alipay', requireJwtAuth, async (req, res) => {
   }
 });
 
+router.post('/create-payment-unionpay', requireJwtAuth, async (req, res) => {
+  console.log('Create Union Pay - Start');
+
+  const { paymentReference, planId } = req.body;
+  const userId = req.user._id;
+
+  console.log(`Received data: Payment Reference: ${paymentReference}, Plan ID: ${planId}, User ID: ${userId}`);
+
+  if (!planPricing[planId]) {
+    console.error('Invalid planId:', planId);
+    return res.status(400).json({ error: 'Invalid planId' });
+  }
+
+  const priceDetails = planPricing[planId];
+  console.log(`Price Details: ${JSON.stringify(priceDetails)}`);
+
+  try {
+    // Save the payment reference and user ID for later verification
+    console.log('Saving payment reference and user ID');
+    await PaymentRefUserId.savePaymentRefUserId({
+      paymentReference,
+      userId: userId
+    });
+
+    const stripeParams = {
+      payment_method_types: ['card'],
+      line_items: [{
+        price_data: {
+          currency: priceDetails.currency,
+          product_data: {
+            name: `Subscription - ${planId}`,
+          },
+          unit_amount: parseInt(priceDetails.price * 100),
+        },
+        quantity: 1,
+      }],
+      mode: 'payment',
+      success_url: `${baseUrl}/subscription/unionpay-return` +
+        `?paymentReference=${paymentReference}` +
+        '&paymentMethod=unionpay' +
+        `&userId=${userId}` +
+        '&sessionId={CHECKOUT_SESSION_ID}' +
+        `&planId=${planId}`,
+      cancel_url: `${baseUrl}/subscription/payment-failed`,
+    };
+
+    console.log('Creating Stripe checkout session with params:', JSON.stringify(stripeParams));
+    const session = await stripe.checkout.sessions.create(stripeParams);
+    console.log('Stripe session created successfully:', session.id);
+
+    res.json({ sessionId: session.id });
+  } catch (error) {
+    console.error(`[Create UnionPay Payment] Error creating UnionPay checkout session: ${error}`);
+    res.status(500).json({ error: error.toString() });
+  }
+});
+
 router.get('/verify-wechatpay', requireJwtAuth, async (req, res) => {
   const { userId, sessionId, planId } = req.query;
   console.log(`plan type is: ${planId}`)
@@ -266,6 +323,46 @@ router.get('/verify-alipay', requireJwtAuth, async (req, res) => {
     }
   } catch (error) {
     console.error('[Verify Alipay] Error verifying Alipay payment:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+router.get('/verify-unionpay', requireJwtAuth, async (req, res) => {
+  const { userId, sessionId, planId } = req.query;
+  console.log(`plan type is: ${planId}`)
+
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (session.payment_status === 'paid') {
+      const { subscriptionStartDate, expirationDate } = calcExpiryDate(planId);
+
+      await createPaymentRecord(
+        userId,
+        'unionpay',
+        session.id,
+        session.amount_total,
+        session.currency,
+        planId,
+        subscriptionStartDate,
+        expirationDate
+      );
+
+      const formattedSubscriptionStartDate = moment(subscriptionStartDate).format('MMM D, YYYY HH:mm:ss');
+      const formattedExpirationDate = moment(expirationDate).format('MMM D, YYYY HH:mm:ss');
+
+      res.json({
+        status: 'success',
+        userId: userId,
+        subscriptionStartDate: formattedSubscriptionStartDate,
+        expirationDate: formattedExpirationDate
+      });
+    } else if (session.payment_status === 'unpaid') {
+      res.json({ status: 'pending' });
+    } else {
+      res.json({ status: 'failure' });
+    }
+  } catch (error) {
+    console.error('[Verify Alipay] Error verifying Union Pay payment:', error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });

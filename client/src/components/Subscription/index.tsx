@@ -113,6 +113,9 @@ function SubscriptionContent() {
         case 'alipay':
           endpoint = '/api/payments/create-payment-alipay';
           break;
+        case 'unionpay':
+          endpoint = '/api/payments/create-payment-unionpay';
+          break;
         default:
           throw new Error('Unsupported payment method');
       }
@@ -164,6 +167,20 @@ function SubscriptionContent() {
         } else {
           console.error('No session ID in the response for Alipay');
           setError('Failed to initiate Alipay. Please try again.');
+        }
+      } else if (paymentMethod === 'unionpay') {
+        if (data.sessionId) {
+          const stripe = await loadStripe(STRIPE_PUBLIC_KEY);
+          if (stripe) {
+            stripe.redirectToCheckout({ sessionId: data.sessionId });
+            console.log(`{ sessionId:, ${data.sessionId} }`)
+          } else {
+            console.error('Stripe could not be initialized.');
+            alert('Payment service could not be initialized. Please check your connection and try again.');
+          }
+        } else {
+          console.error('No session ID in the response for Unionpay');
+          setError('Failed to initiate Unionpay. Please try again.');
         }
       } else {
         throw new Error('Unsupported payment method');
@@ -396,6 +413,26 @@ function SubscriptionContent() {
                   }}
                 >
                 Alipay
+                </button>
+
+              </div>
+
+              <div style={{ marginBottom: '10px' }}>
+                <button
+                  onClick={() => handleSubscription('unionpay', option.planId)}
+                  style={{
+                    width: '90%',
+                    padding: '10px',
+                    backgroundColor: '#108ee9',
+                    color: 'white',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    border: 'none',
+                    fontSize: '16px',
+                    margin: '0 auto'
+                  }}
+                >
+                UnionPay
                 </button>
               </div>
             </div>

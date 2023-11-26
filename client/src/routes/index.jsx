@@ -14,7 +14,8 @@ import PaymentSuccess from '../components/Subscription/PaymentSuccess';
 import PaymentFailed from '../components/Subscription/PaymentFailed';
 import PaypalReturnHandler from '../components/Subscription/PaypalReturnHandler';
 import WeChatPayReturnHandler from '../components/Subscription/WeChatPayReturnHandler';
-import AlipayPayReturnHandler from '../components/Subscription/AlipayPayReturnHandler';
+import AliPayReturnHandler from '../components/Subscription/AliPayReturnHandler';
+import UnionPayReturnHandler from '../components/Subscription/UnionPayReturnHandler';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -97,7 +98,11 @@ export const router = createBrowserRouter([
               },
               {
                 path: 'alipay-return',
-                element: <AlipayPayReturnHandler />
+                element: <AliPayReturnHandler />
+              },
+              {
+                path: 'unionpay-return',
+                element: <UnionPayReturnHandler />
               },
               {
                 path: ':userId/payment-success',
