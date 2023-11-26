@@ -70,6 +70,7 @@ const startServer = async () => {
   app.use('/api/config', routes.config);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', routes.files);
+  app.use('/api/profilePicture', routes.profilePicture);
 
   // Static files
   app.get('/*', function (req, res) {

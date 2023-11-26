@@ -2,7 +2,7 @@ const { Strategy: DiscordStrategy } = require('passport-discord');
 const User = require('../models/User');
 const config = require('../../config/loader');
 const domains = config.domains;
-const uploadProfilePictureFromURL = require('./ProfilePictureCreate');
+const uploadProfilePictureFromURL = require('~/server/services/ProfilePictureCreate');
 const { useFirebase } = require('../server/services/firebase');
 
 const discordLogin = async (accessToken, refreshToken, profile, cb) => {
@@ -24,13 +24,18 @@ const discordLogin = async (accessToken, refreshToken, profile, cb) => {
       avatarURL = `https://cdn.discordapp.com/embed/avatars/${defaultAvatarNum}.png`;
     }
 
-    if (useFirebase) {
-      avatarURL = await uploadProfilePictureFromURL(discordId, avatarURL);
-    }
-
     if (oldUser) {
       oldUser.avatar = avatarURL;
       await oldUser.save();
+
+      if (useFirebase) {
+        const userId = oldUser._id;
+        const avatarURL = await uploadProfilePictureFromURL(userId, profile.photos[0].value);
+        console.log('avatarURL', avatarURL);
+        oldUser.avatar = avatarURL;
+        await oldUser.save();
+      }
+
       return cb(null, oldUser);
     } else if (ALLOW_SOCIAL_REGISTRATION) {
       const newUser = await new User({
@@ -41,6 +46,14 @@ const discordLogin = async (accessToken, refreshToken, profile, cb) => {
         name: profile.global_name,
         avatar: avatarURL,
       }).save();
+
+      if (useFirebase) {
+        const userId = newUser._id;
+        const avatarURL = await uploadProfilePictureFromURL(userId, profile.photos[0].value);
+        console.log('avatarURL', avatarURL);
+        newUser.avatar = avatarURL;
+        await newUser.save();
+      }
 
       return cb(null, newUser);
     }

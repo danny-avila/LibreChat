@@ -2,7 +2,7 @@ const { Strategy: GitHubStrategy } = require('passport-github2');
 const User = require('../models/User');
 const config = require('../../config/loader');
 const domains = config.domains;
-const uploadProfilePictureFromURL = require('./ProfilePictureCreate');
+const uploadProfilePictureFromURL = require('~/server/services/ProfilePictureCreate');
 const { useFirebase } = require('../server/services/firebase');
 
 const githubLogin = async (accessToken, refreshToken, profile, cb) => {
@@ -13,17 +13,21 @@ const githubLogin = async (accessToken, refreshToken, profile, cb) => {
     const ALLOW_SOCIAL_REGISTRATION =
       process.env.ALLOW_SOCIAL_REGISTRATION?.toLowerCase() === 'true';
 
-    let avatarUrl;
-
-    if (useFirebase) {
-      avatarUrl = await uploadProfilePictureFromURL(githubId, profile.photos[0].value);
-    } else {
-      avatarUrl = profile.photos[0].value;
-    }
+    const avatarUrl = profile.photos[0].value;
 
     if (oldUser) {
       oldUser.avatar = avatarUrl;
       await oldUser.save();
+
+      if (useFirebase) {
+        const userId = oldUser._id;
+        const avatarURL = await uploadProfilePictureFromURL(userId, profile.photos[0].value);
+        console.log('avatarURL', avatarURL);
+
+        oldUser.avatar = avatarURL;
+        await oldUser.save();
+      }
+
       return cb(null, oldUser);
     } else if (ALLOW_SOCIAL_REGISTRATION) {
       const newUser = await new User({
@@ -36,10 +40,17 @@ const githubLogin = async (accessToken, refreshToken, profile, cb) => {
         avatar: avatarUrl,
       }).save();
 
+      if (useFirebase) {
+        const userId = newUser._id;
+        const avatarURL = await uploadProfilePictureFromURL(userId, profile.photos[0].value);
+        console.log('avatarURL', avatarURL);
+
+        newUser.avatar = avatarURL;
+        await newUser.save();
+      }
+
       return cb(null, newUser);
     }
-
-    return cb(null, false, { message: 'User not found.' });
   } catch (err) {
     console.error(err);
     return cb(err);

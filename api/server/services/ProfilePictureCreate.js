@@ -1,5 +1,5 @@
 const sharp = require('sharp');
-const { storage, ref, uploadBytes, getDownloadURL } = require('../server/services/firebase');
+const { storage, ref, uploadBytes, getDownloadURL } = require('./firebase');
 const fetch = require('node-fetch');
 
 async function convertToWebP(inputBuffer) {
@@ -9,16 +9,9 @@ async function convertToWebP(inputBuffer) {
 async function uploadProfilePictureFromURL(userId, imageUrl) {
   try {
     // Initialize Firebase Storage reference
-    const profilePicRef = ref(storage, `users/${userId}/profilePicture`);
+    const profilePicRef = ref(storage, `users/${userId.toString()}/profilePicture`);
 
-    // Check if an image already exists at the specified path
-    try {
-      const existingUrl = await getDownloadURL(profilePicRef);
-      console.log('Image already exists. Returning existing URL:', existingUrl);
-      return existingUrl;
-    } catch (e) {
-      // No existing image, proceed with uploading
-    }
+    console.log('User ID:', userId.toString());
 
     // Fetch the image from the provided URL
     const response = await fetch(imageUrl);

@@ -3,7 +3,6 @@ const { getStorage, ref, uploadBytes, getDownloadURL } = require('firebase/stora
 
 let useFirebase = false;
 
-// Check if all Firebase configuration variables are present
 const firebaseConfigKeys = [
   'FIREBASE_API_KEY',
   'FIREBASE_AUTH_DOMAIN',
@@ -18,7 +17,7 @@ if (firebaseConfigKeys.every((key) => process.env[key])) {
     firebaseConfigKeys.map((key) => [key.replace('FIREBASE_', '').toLowerCase(), process.env[key]]),
   );
 
-  firebaseConfig.storageBucket = process.env.FIREBASE_STORAGE_BUCKET; // Add this line to set the storageBucket property
+  firebaseConfig.storageBucket = process.env.FIREBASE_STORAGE_BUCKET;
 
   const app = firebase.initializeApp(firebaseConfig);
   const storage = getStorage(app);

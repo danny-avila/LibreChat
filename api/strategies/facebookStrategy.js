@@ -2,7 +2,7 @@ const FacebookStrategy = require('passport-facebook').Strategy;
 const User = require('../models/User');
 const config = require('../../config/loader');
 const domains = config.domains;
-const uploadProfilePictureFromURL = require('./ProfilePictureCreate');
+const uploadProfilePictureFromURL = require('~/server/services/ProfilePictureCreate');
 const { useFirebase } = require('../server/services/firebase');
 
 const facebookLogin = async (accessToken, refreshToken, profile, cb) => {
@@ -15,15 +15,20 @@ const facebookLogin = async (accessToken, refreshToken, profile, cb) => {
     const ALLOW_SOCIAL_REGISTRATION =
       process.env.ALLOW_SOCIAL_REGISTRATION?.toLowerCase() === 'true';
 
-    let avatarURL = profile.photos[0]?.value;
-
-    if (useFirebase) {
-      avatarURL = await uploadProfilePictureFromURL(facebookId, avatarURL);
-    }
+    const avatarURL = profile.photos[0]?.value;
 
     if (oldUser) {
       oldUser.avatar = avatarURL;
       await oldUser.save();
+
+      if (useFirebase) {
+        const userId = oldUser._id;
+        const avatarURL = await uploadProfilePictureFromURL(userId, profile.photos[0].value);
+        console.log('avatarURL', avatarURL);
+        oldUser.avatar = avatarURL;
+        await oldUser.save();
+      }
+
       return cb(null, oldUser);
     } else if (ALLOW_SOCIAL_REGISTRATION) {
       const newUser = await new User({
@@ -34,6 +39,14 @@ const facebookLogin = async (accessToken, refreshToken, profile, cb) => {
         name: profile.name?.givenName + ' ' + profile.name?.familyName,
         avatar: avatarURL,
       }).save();
+
+      if (useFirebase) {
+        const userId = newUser._id;
+        const avatarURL = await uploadProfilePictureFromURL(userId, profile.photos[0].value);
+        console.log('avatarURL', avatarURL);
+        newUser.avatar = avatarURL;
+        await newUser.save();
+      }
 
       return cb(null, newUser);
     }
