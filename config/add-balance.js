@@ -52,6 +52,13 @@ const Transaction = require('../api/models/Transaction');
     // console.purple(`[DEBUG] Args Length: ${process.argv.length}`);
   }
 
+  if (!process.env.CHECK_BALANCE) {
+    console.red(
+      'Error: CHECK_BALANCE environment variable is not set! Configure it to use it: `CHECK_BALANCE=true`',
+    );
+    silentExit(1);
+  }
+
   /**
    * If we don't have the right number of arguments, lets prompt the user for them
    */
@@ -99,7 +106,7 @@ const Transaction = require('../api/models/Transaction');
   }
 
   // Check the result
-  if (!result.tokenCredits) {
+  if (!result?.tokenCredits) {
     console.red('Error: Something went wrong while updating the balance!');
     console.error(result);
     silentExit(1);

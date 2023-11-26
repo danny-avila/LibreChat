@@ -548,7 +548,7 @@ ${botMessage.message}
     if (isChatGptModel) {
       return { prompt: [instructionsPayload, messagePayload], context };
     }
-    return { prompt, context };
+    return { prompt, context, promptTokens: currentTokenCount };
   }
 
   getTokenCount(text) {
